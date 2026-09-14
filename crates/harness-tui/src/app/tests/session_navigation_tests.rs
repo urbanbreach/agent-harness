@@ -216,7 +216,7 @@ pub(super) fn replay_child_navigation_does_not_emit_live_intents() {
 
     app.handle_key(key(KeyCode::Up));
     assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
-    assert_eq!(app.active_profile(), "default");
+    assert_eq!(app.active_profile(), "planner");
     assert!(intents.lock().unwrap_or_abort().is_empty());
 }
 
@@ -478,6 +478,8 @@ pub(super) fn live_inline_child_navigation_restores_live_parent_mode() {
         app.ingest_event(event);
     }
 
+    let parent_metadata = app.launch_metadata.clone().with_oauth_authentication();
+    app.set_launch_metadata(parent_metadata.clone());
     app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
     app.handle_key(key(KeyCode::Down));
 
@@ -495,6 +497,7 @@ pub(super) fn live_inline_child_navigation_restores_live_parent_mode() {
 
     assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
     assert!(!app.replay_mode);
+    assert_eq!(app.launch_metadata, parent_metadata);
     app.focus = Focus::Prompt;
     app.handle_key(key(KeyCode::Char('x')));
     assert_eq!(app.composer.prompt_buffer, "x");

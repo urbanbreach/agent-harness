@@ -1,34 +1,43 @@
 use super::*;
 
 pub(super) fn apply_canonical_provider_presentation(
-    canonical: &CanonicalSessionProjection,
+    events: &[EventEnvelopeV1],
+    transcript: &harness_core::transcript_projection::TranscriptProjection,
     activities: &mut VecDeque<ActivityEntry>,
 ) -> (
     Option<(u64, Option<RequestBudgetSnapshot>)>,
     Option<ActiveContextUsage>,
 ) {
     let mut latest_request_budget = None;
-    for start in canonical.provider_request_starts() {
+    for event in events {
+        let EventV1::ProviderRequestStarted(start) = &event.payload else {
+            continue;
+        };
+        let turn_request_id = event.correlation_id.as_deref();
+        let provider_request_id = start.request_id.as_str();
         if latest_request_budget
             .as_ref()
-            .is_none_or(|(seq, _)| start.seq >= *seq)
+            .is_none_or(|(seq, _)| event.seq >= *seq)
         {
             latest_request_budget = Some((
-                start.seq,
-                start.metadata.and_then(|metadata| metadata.context_budget),
+                event.seq,
+                start
+                    .metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.context_budget),
             ));
         }
-        let request_id = start.turn_request_id.unwrap_or(start.request_id);
+        let request_id = turn_request_id.unwrap_or(provider_request_id);
         let activity_index =
-            provider_activity_index(activities, start.turn_request_id, start.request_id)
+            provider_activity_index(activities, turn_request_id, provider_request_id)
                 .unwrap_or_else(|| {
                     let index = activities.len();
                     activities.push_back(new_streaming_activity_entry(
                         NewStreamingActivityEntryArgs {
                             request_id: request_id.to_string(),
-                            profile_label: start.agent_id.map_or_else(
+                            profile_label: event.actor.agent_id.as_deref().map_or_else(
                                 || "default".to_string(),
-                                |agent_id| profile_label(&canonical.transcript, Some(agent_id)),
+                                |agent_id| profile_label(transcript, Some(agent_id)),
                             ),
                             model_id: start.model_id.to_string(),
                             provider_id: start.provider_id.to_string(),
@@ -36,8 +45,8 @@ pub(super) fn apply_canonical_provider_presentation(
                             user_timestamp: None,
                             request_data: None,
                             transcript_text: String::new(),
-                            first_seq: start.seq,
-                            first_mono_ms: start.mono_ms,
+                            first_seq: event.seq,
+                            first_mono_ms: event.mono_ms,
                         },
                     ));
                     index
@@ -45,18 +54,14 @@ pub(super) fn apply_canonical_provider_presentation(
         let activity = &mut activities[activity_index];
         activity.provider_id = start.provider_id.to_string();
         activity.model_id = start.model_id.to_string();
-        activity.request_data = Some(ProviderRequestStartedEvent {
-            request_id: start.request_id.into(),
-            provider_id: start.provider_id.to_string(),
-            model_id: start.model_id.to_string(),
-            prompt_summary: start.prompt_summary.to_string(),
-            request_digest: start.request_digest.to_string(),
-            metadata: start.metadata.cloned(),
-        });
-        activity.request_started_mono_ms = Some(start.mono_ms);
+        activity.request_data = Some(start.clone());
+        activity.request_started_mono_ms = Some(event.mono_ms);
     }
 
-    for fragment in canonical.provider_fragments() {
+    for fragment in events
+        .iter()
+        .filter_map(canonical_provider_fragment_for_event)
+    {
         let Some(activity) =
             provider_activity_mut(activities, fragment.turn_request_id, fragment.request_id)
         else {
@@ -79,15 +84,18 @@ pub(super) fn apply_canonical_provider_presentation(
     }
 
     let mut active_context_usage = None;
-    for finish in canonical.provider_request_finishes() {
+    for event in events {
+        let EventV1::ProviderRequestFinished(finish) = &event.payload else {
+            continue;
+        };
         let Some(activity) = provider_activity_mut(
             activities,
-            finish.turn_request_id,
-            finish.payload.request_id.as_str(),
+            event.correlation_id.as_deref(),
+            finish.request_id.as_str(),
         ) else {
             continue;
         };
-        if let Some(usage) = finish.payload.usage.as_ref() {
+        if let Some(usage) = finish.usage.as_ref() {
             activity.usage = Some(ActivityUsage {
                 prompt_tokens: usage.prompt_tokens,
                 completion_tokens: usage.completion_tokens,
@@ -100,7 +108,7 @@ pub(super) fn apply_canonical_provider_presentation(
             };
             active_context_usage = Some(ActiveContextUsage::estimate(context_tokens));
         }
-        activity.cache_usage = finish.payload.metadata.as_ref().and_then(|metadata| {
+        activity.cache_usage = finish.metadata.as_ref().and_then(|metadata| {
             match (metadata.cache_read_tokens, metadata.cache_write_tokens) {
                 (None, None) => None,
                 (read_tokens, write_tokens) => Some(ActivityCacheUsage {
@@ -110,10 +118,10 @@ pub(super) fn apply_canonical_provider_presentation(
             }
         });
         if activity.status == ActivityStatus::Error {
-            activity.error_message = provider_error_detail(finish.payload);
+            activity.error_message = provider_error_detail(finish);
         }
-        activity.last_seq = activity.last_seq.max(finish.seq);
-        activity.last_mono_ms = finish.mono_ms;
+        activity.last_seq = activity.last_seq.max(event.seq);
+        activity.last_mono_ms = event.mono_ms;
     }
     (latest_request_budget, active_context_usage)
 }

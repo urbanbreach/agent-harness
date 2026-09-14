@@ -4,9 +4,6 @@ impl SessionProjection {
     pub(super) fn update_live_orchestration_event(&mut self, event: &EventEnvelopeV1) -> bool {
         match &event.payload {
             EventV1::TaskScheduled(data) => {
-                if let Some(request_id) = event.correlation_id.as_deref() {
-                    self.note_child_agent_request(event, request_id);
-                }
                 if data.state == harness_core::event::TaskScheduleState::Queued {
                     self.mark_scheduled_activity_queued(event);
                 }

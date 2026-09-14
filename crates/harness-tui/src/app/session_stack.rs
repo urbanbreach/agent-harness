@@ -12,6 +12,7 @@ use super::child_session::{
     child_agent_info_from_events, child_task_info_from_events, safe_session_id_path_component,
     session_id_from_path, sibling_session_id, subagent_usage_label,
 };
+use super::session_live_routing::{child_request_ids_for_session, event_belongs_to_child_session};
 use super::{
     set_pending_live_prompt_draft, task_child_request_id_from_output,
     task_child_session_id_from_output, AppState, Focus, LaunchMetadata, ModelOption,
@@ -175,13 +176,17 @@ impl AppState {
     pub(super) fn child_session_ids(&self) -> Vec<String> {
         let mut child_session_ids = Vec::new();
         let delegated_child_request_ids = self.delegated_child_request_ids();
+        let owned_child_request_ids =
+            self.delegated_child_request_ids_for_parent_view(self.current_session_id());
 
         for activity in &self.activities {
-            if delegated_child_request_ids.contains(activity.request_id.as_str()) {
+            if delegated_child_request_ids.contains(activity.request_id.as_str())
+                || owned_child_request_ids.contains(activity.request_id.as_str())
+            {
                 continue;
             }
             for tool_call in &activity.tool_calls {
-                let Some(child_session_id) = Self::task_tool_child_session_id_from_entry(tool_call)
+                let Some(child_session_id) = self.task_tool_child_session_id_from_entry(tool_call)
                 else {
                     continue;
                 };
@@ -216,7 +221,7 @@ impl AppState {
             .or_else(|| task_child_request_id_from_output(tool_call.output_json.as_ref()))
     }
 
-    fn task_tool_child_session_id_from_entry(tool_call: &ToolCallEntry) -> Option<String> {
+    fn task_tool_child_session_id_from_entry(&self, tool_call: &ToolCallEntry) -> Option<String> {
         if !Self::tool_call_is_task_spawn(tool_call) {
             return None;
         }
@@ -228,6 +233,10 @@ impl AppState {
             .and_then(non_empty_trimmed)
             .map(str::to_string)
             .or_else(|| task_child_session_id_from_output(tool_call.output_json.as_ref()))
+            .or_else(|| {
+                self.transcript_task_row_for_tool_call(tool_call)?
+                    .child_session_id
+            })
     }
 
     pub(super) fn tool_call_is_task_spawn(tool_call: &ToolCallEntry) -> bool {
@@ -246,7 +255,11 @@ impl AppState {
         Some(SessionNavigationSnapshot {
             session_path: self.session_path.clone()?,
             events: self.events.clone(),
-            launch_metadata: self.launch_metadata.clone(),
+            launch_metadata: if self.launch_metadata.model().is_some() {
+                self.launch_metadata.clone()
+            } else {
+                infer_launch_metadata_from_events(&self.events, &self.launch_metadata)
+            },
             child_session_ids: self.child_session_ids(),
             replay_mode: self.replay_mode,
         })
@@ -256,11 +269,8 @@ impl AppState {
         self.replay_mode = snapshot.replay_mode;
         self.session_path = Some(snapshot.session_path);
         self.set_launch_metadata(snapshot.launch_metadata);
+        self.runtime_context_metadata = Some(self.launch_metadata.clone());
         self.replace_events(snapshot.events);
-        let restored_metadata =
-            infer_launch_metadata_from_events(&self.events, &self.launch_metadata);
-        self.launch_metadata = restored_metadata.clone();
-        self.runtime_context_metadata = Some(restored_metadata);
         self.active_review_surface = None;
         self.review_surface_focus_return = None;
         self.active_tab = Tab::Run;
@@ -366,57 +376,35 @@ impl AppState {
             return None;
         }
 
-        let child_request_ids = self
-            .activities
-            .iter()
-            .flat_map(|activity| activity.tool_calls.iter())
-            .filter_map(|tool_call| {
-                let child_session = tool_call
-                    .lineage
-                    .as_ref()
-                    .and_then(|lineage| lineage.child_session_id.as_deref())
-                    .and_then(non_empty_trimmed)
-                    .map(str::to_string)
-                    .or_else(|| {
-                        task_child_session_id_from_output(tool_call.output_json.as_ref())
-                    })?;
-                (child_session == session_id).then(|| {
-                    tool_call
-                        .lineage
-                        .as_ref()
-                        .and_then(|lineage| lineage.child_request_id.as_deref())
-                        .and_then(non_empty_trimmed)
-                        .map(str::to_string)
-                        .or_else(|| {
-                            task_child_request_id_from_output(tool_call.output_json.as_ref())
-                        })
-                })
-            })
-            .flatten()
-            .collect::<BTreeSet<_>>();
+        // An inline view omits sibling/descendant transcripts. Their events
+        // remain in the ancestor snapshots for navigation into a nested child.
+        let events = std::iter::once(self.events.as_slice())
+            .chain(
+                self.session_navigation_stack
+                    .iter()
+                    .rev()
+                    .map(|snapshot| snapshot.events.as_slice()),
+            )
+            .find_map(|source| {
+                let requests = child_request_ids_for_session(source, session_id);
+                let events = source
+                    .iter()
+                    .filter(|event| {
+                        matches!(event.payload, EventV1::RunStarted(_))
+                            || event_belongs_to_child_session(event, &requests, session_id)
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                events
+                    .iter()
+                    .any(|event| !matches!(event.payload, EventV1::RunStarted(_)))
+                    .then_some(events)
+            })?;
 
-        let events = self
-            .events
-            .iter()
-            .filter(|event| {
-                matches!(&event.payload, EventV1::RunStarted(_))
-                    || event.actor.agent_id.as_deref() == Some(session_id)
-                    || event
-                        .correlation_id
-                        .as_deref()
-                        .is_some_and(|request_id| child_request_ids.contains(request_id))
-                    || matches!(
-                        &event.payload,
-                        EventV1::AgentSpawned(payload) if payload.agent_id == session_id
-                    )
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-
-        (!events.is_empty()).then(|| SessionNavigationSnapshot {
+        Some(SessionNavigationSnapshot {
             session_path,
+            launch_metadata: infer_launch_metadata_from_events(&events, &self.launch_metadata),
             events,
-            launch_metadata: self.launch_metadata.clone(),
             child_session_ids: Vec::new(),
             replay_mode: true,
         })

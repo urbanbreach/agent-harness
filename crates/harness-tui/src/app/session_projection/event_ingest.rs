@@ -26,9 +26,7 @@ impl SessionProjection {
         event: &EventEnvelopeV1,
         fragment: CanonicalProviderFragment<'_>,
     ) {
-        self.note_child_agent_request(event, fragment.request_id);
         let turn_id = Self::canonical_provider_turn_id(event, fragment.request_id);
-        self.note_child_agent_request(event, turn_id);
         let index = self
             .activity_index_for_provider_event(event, fragment.request_id)
             .unwrap_or_else(|| {

@@ -58,6 +58,29 @@ pub(crate) enum ProjectionDelta {
     ReplayPending,
 }
 
+pub(crate) struct LiveCompaction {
+    pub(crate) agent_id: String,
+    pub(crate) generation: u64,
+    pub(crate) trigger_reason: String,
+    pub(crate) preview: Option<String>,
+}
+
+impl AppState {
+    pub(crate) fn active_compaction(&self) -> Option<&LiveCompaction> {
+        if self.replay_mode || self.projection.run_terminal_seen {
+            return None;
+        }
+        self.projection
+            .live_compactions
+            .values()
+            .filter(|status| {
+                status.preview.is_some()
+                    && !self.projection.child_agent_ids.contains(&status.agent_id)
+            })
+            .max_by_key(|status| status.generation)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct LiveTurnWatchers {
     pub(crate) commands: usize,
@@ -132,6 +155,7 @@ impl From<Vec<EventEnvelopeV1>> for EventDetailsCache {
 
 #[derive(Default)]
 pub struct SessionProjection {
+    live_compactions: BTreeMap<String, LiveCompaction>,
     pub(crate) events: EventDetailsCache,
     canonical_projection: Option<CanonicalSessionProjection>,
     canonical_projection_error: Option<String>,
@@ -164,6 +188,7 @@ pub struct SessionProjection {
 
 impl SessionProjection {
     pub(crate) fn reset(&mut self) {
+        self.live_compactions.clear();
         self.events.clear();
         self.canonical_projection = None;
         self.canonical_projection_error = None;
@@ -262,6 +287,41 @@ impl SessionProjection {
 
     pub(crate) fn ingest_live_event(&mut self, event: &LiveEventEnvelope) {
         let (provider_request_id, tool_input) = match &event.payload {
+            LiveEventV1::CompactionProgress {
+                agent_id,
+                generation,
+                trigger_reason,
+                preview,
+            } => {
+                if self.live_compactions.get(agent_id).is_some_and(|current| {
+                    current.generation > *generation
+                        || (current.generation == *generation && current.preview.is_none())
+                }) {
+                    return;
+                }
+                let preview = preview.as_ref().map(|text| {
+                    use unicode_segmentation::UnicodeSegmentation;
+                    let text = crate::text::collapse_inline_whitespace(
+                        &crate::text::strip_ansi_escapes(text),
+                    );
+                    let start = text
+                        .grapheme_indices(true)
+                        .rev()
+                        .nth(511)
+                        .map_or(0, |(index, _)| index);
+                    text[start..].to_string()
+                });
+                self.live_compactions.insert(
+                    agent_id.clone(),
+                    LiveCompaction {
+                        agent_id: agent_id.clone(),
+                        generation: *generation,
+                        trigger_reason: trigger_reason.clone(),
+                        preview,
+                    },
+                );
+                return;
+            }
             LiveEventV1::ProviderTextDelta { request_id, .. }
             | LiveEventV1::ProviderReasoningDelta { request_id, .. } => (request_id.as_str(), None),
             LiveEventV1::ProviderToolInputDelta {
@@ -302,6 +362,7 @@ impl SessionProjection {
         let activity = &mut self.activities[activity_index];
         activity.status = ActivityStatus::Streaming;
         match &event.payload {
+            LiveEventV1::CompactionProgress { .. } => return,
             LiveEventV1::ProviderTextDelta { delta, .. } => {
                 if !delta.is_empty() {
                     if let Some(state) = self.transient_assistants.get_mut(provider_request_id) {
@@ -388,7 +449,7 @@ impl SessionProjection {
         self.enforce_transcript_memory_cap();
     }
 
-    pub(crate) fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
+    fn finish_transient_state_for_event(&mut self, event: &EventEnvelopeV1) {
         match &event.payload {
             EventV1::ToolCallRequested(_) => {
                 let request_id = self
@@ -425,6 +486,9 @@ impl SessionProjection {
                 }
             }
         }
+    }
+
+    pub(crate) fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
         self.unsettled_durable_events.push(event.clone());
         let should_settle = canonical_projection_update_for_event(&event.payload)
             == CanonicalProjectionUpdate::Settle;
@@ -480,7 +544,9 @@ impl SessionProjection {
     ) -> usize {
         let previous_activity_count = self.activities.len();
         let previous_trimmed_count = self.transcript_trimmed_count;
+        self.finish_transient_state_for_event(&event);
         self.seen_seqs.insert(event.seq);
+        self.note_agent_ownership(&event);
         self.update_live_presentation_for_event(&event, historical);
         self.transcript_delta = if historical {
             ProjectionDelta::ReplayPending
@@ -496,6 +562,7 @@ impl SessionProjection {
         event: EventEnvelopeV1,
         historical: bool,
     ) -> usize {
+        self.note_agent_ownership(&event);
         self.update_phase_for_event(&event);
         self.seen_seqs.insert(event.seq);
         self.transcript_delta = if historical {
@@ -507,7 +574,14 @@ impl SessionProjection {
         self.enforce_event_memory_cap()
     }
 
-    pub(crate) fn replace_settled_projection(&mut self, events: &[EventEnvelopeV1]) {
+    pub(crate) fn replace_settled_projection(&mut self, events: &[EventEnvelopeV1], inline: bool) {
+        if inline {
+            self.canonical_projection = None;
+            self.canonical_projection_error = None;
+            self.unsettled_durable_events.clear();
+            self.rebuild_settled_presentation(true);
+            return;
+        }
         if events.is_empty() {
             self.canonical_projection = None;
             self.canonical_projection_error = None;
@@ -521,7 +595,7 @@ impl SessionProjection {
                 self.unsettled_durable_events.clear();
                 self.canonical_projection_generation =
                     self.canonical_projection_generation.saturating_add(1);
-                self.rebuild_settled_presentation();
+                self.rebuild_settled_presentation(false);
             }
             Err(error) => {
                 self.canonical_projection = None;
@@ -548,7 +622,7 @@ impl SessionProjection {
                 self.unsettled_durable_events.clear();
                 self.canonical_projection_generation =
                     self.canonical_projection_generation.saturating_add(1);
-                self.rebuild_settled_presentation();
+                self.rebuild_settled_presentation(false);
                 true
             }
             Err(error) => {
@@ -556,6 +630,20 @@ impl SessionProjection {
                 false
             }
         }
+    }
+
+    pub(crate) fn ingest_inline_event(
+        &mut self,
+        event: EventEnvelopeV1,
+        historical: bool,
+    ) -> usize {
+        let should_settle = canonical_projection_update_for_event(&event.payload)
+            == CanonicalProjectionUpdate::Settle;
+        let trimmed = self.ingest_transient_view_event(event, historical);
+        if should_settle {
+            self.rebuild_settled_presentation(true);
+        }
+        trimmed
     }
 
     pub(crate) fn take_transcript_delta(&mut self) -> ProjectionDelta {
@@ -758,12 +846,36 @@ impl SessionProjection {
             .unwrap_or(provider_request_id)
     }
 
+    fn note_agent_ownership(&mut self, event: &EventEnvelopeV1) {
+        // Snapshot restoration needs the same ownership as live ingestion, even
+        // when canonical history supplies the activity presentation.
+        let request_id = match &event.payload {
+            EventV1::AgentSpawned(data) => {
+                self.agent_profiles
+                    .insert(data.agent_id.clone(), data.profile.clone());
+                if data.parent_agent_id.is_some() {
+                    self.child_agent_ids.insert(data.agent_id.clone());
+                }
+                return;
+            }
+            EventV1::UserMessageSubmitted(data) => Some(data.request_id.as_str()),
+            EventV1::ProviderRequestStarted(data) => Some(data.request_id.as_str()),
+            EventV1::ProviderRequestFinished(data) => Some(data.request_id.as_str()),
+            EventV1::TaskScheduled(_) | EventV1::ToolCallRequested(_) => {
+                event.correlation_id.as_deref()
+            }
+            _ => canonical_provider_fragment_for_event(event).map(|fragment| fragment.request_id),
+        };
+        if let Some(request_id) = request_id {
+            self.note_child_agent_request(event, request_id);
+            let turn_id = Self::canonical_provider_turn_id(event, request_id);
+            self.note_child_agent_request(event, turn_id);
+        }
+    }
+
     fn note_child_agent_request(&mut self, event: &EventEnvelopeV1, request_id: &str) {
-        let Some(agent_id) = event
-            .actor
-            .agent_id
-            .as_deref()
-            .or_else(|| event.stream_key.as_deref()?.strip_prefix("agent:"))
+        let Some(agent_id) =
+            super::child_session::event_agent_id(&event.actor, event.stream_key.as_deref())
         else {
             return;
         };
@@ -1436,9 +1548,15 @@ impl SessionProjection {
                     trimmed += chunk.len();
                     chunk.clear();
                 } else {
-                    let to_trim = excess - trimmed;
+                    let to_trim = unicode_segmentation::UnicodeSegmentation::grapheme_indices(
+                        chunk.as_str(),
+                        true,
+                    )
+                    .map(|(index, _)| index)
+                    .find(|&index| index >= excess - trimmed)
+                    .unwrap_or(chunk.len());
                     *chunk = chunk.split_off(to_trim);
-                    trimmed = excess;
+                    trimmed += to_trim;
                 }
             }
             if trimmed < excess {
@@ -1446,6 +1564,7 @@ impl SessionProjection {
             }
         }
         self.transcript_trimmed_count += trimmed;
+        self.transcript_delta = ProjectionDelta::FullRebuild;
     }
 }
 

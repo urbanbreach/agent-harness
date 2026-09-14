@@ -22,13 +22,6 @@ impl SessionProjection {
                     entry.error_message = Some(data.error.clone());
                 }
             }
-            EventV1::AgentSpawned(data) => {
-                self.agent_profiles
-                    .insert(data.agent_id.clone(), data.profile.clone());
-                if data.parent_agent_id.is_some() {
-                    self.child_agent_ids.insert(data.agent_id.clone());
-                }
-            }
             EventV1::UserMessageSubmitted(data) => {
                 self.update_live_user_message(event, data);
             }
@@ -48,7 +41,6 @@ impl SessionProjection {
         event: &EventEnvelopeV1,
         data: &UserMessageSubmittedEvent,
     ) {
-        self.note_child_agent_request(event, data.request_id.as_str());
         if let Some(index) = self.activity_index_for_user_message(data, event.seq) {
             let status =
                 if self.has_other_streaming_activity_in_request_scope(data.request_id.as_str()) {
@@ -109,9 +101,7 @@ impl SessionProjection {
                 .and_then(|metadata| metadata.context_budget);
             self.latest_request_budget = Some((event.seq, snapshot));
         }
-        self.note_child_agent_request(event, data.request_id.as_str());
         let turn_id = Self::canonical_provider_turn_id(event, data.request_id.as_str());
-        self.note_child_agent_request(event, turn_id);
         for row in self.orchestration_tasks.values_mut() {
             if row.effective_child_request_id() == Some(turn_id)
                 || row.effective_child_request_id() == Some(data.request_id.as_str())
@@ -176,9 +166,7 @@ impl SessionProjection {
         event: &EventEnvelopeV1,
         data: &ProviderRequestFinishedEvent,
     ) {
-        self.note_child_agent_request(event, data.request_id.as_str());
         let turn_id = Self::canonical_provider_turn_id(event, data.request_id.as_str());
-        self.note_child_agent_request(event, turn_id);
         let provider_error_detail = provider_error_detail(data);
         if let Some(index) = self.activity_index_for_provider_event(event, data.request_id.as_str())
         {

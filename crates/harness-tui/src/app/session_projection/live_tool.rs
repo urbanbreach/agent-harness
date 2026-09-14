@@ -5,9 +5,6 @@ impl SessionProjection {
         match &event.payload {
             EventV1::ToolCallRequested(data) => {
                 let target_corr_id = event.correlation_id.clone();
-                if let Some(request_id) = target_corr_id.as_deref() {
-                    self.note_child_agent_request(event, request_id);
-                }
                 let use_back = self
                     .activities
                     .back()

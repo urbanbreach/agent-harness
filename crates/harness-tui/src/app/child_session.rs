@@ -1,6 +1,6 @@
 use std::path::{Component, Path};
 
-use harness_core::event::{EventEnvelopeV1, EventV1};
+use harness_core::event::{EventActor, EventEnvelopeV1, EventV1};
 use serde_json::Value;
 
 use super::{json_string_field, AppState};
@@ -11,6 +11,16 @@ pub(super) struct ChildTaskInfo {
     pub(super) label: Option<String>,
     pub(super) description: Option<String>,
     pub(super) request_id: Option<String>,
+}
+
+pub(super) fn event_agent_id<'a>(
+    actor: &'a EventActor,
+    stream_key: Option<&'a str>,
+) -> Option<&'a str> {
+    actor
+        .agent_id
+        .as_deref()
+        .or_else(|| stream_key?.strip_prefix("agent:"))
 }
 
 pub(super) fn session_id_from_path(path: &Path) -> Option<String> {
