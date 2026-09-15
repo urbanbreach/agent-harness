@@ -165,8 +165,11 @@ fn render_dashboard_roster(
         String::new()
     };
     frame.render_widget(
-        Paragraph::new(format!("{total} agents · {working} working{pending_count}"))
-            .style(Style::default().fg(theme.text.secondary)),
+        Paragraph::new(format!(
+            "{total} {} · {working} working{pending_count}",
+            if total == 1 { "agent" } else { "agents" }
+        ))
+        .style(Style::default().fg(theme.text.secondary)),
         header,
     );
     for item in layout.items {
