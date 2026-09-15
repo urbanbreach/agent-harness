@@ -299,6 +299,7 @@ fn expanded_high_value_keys_are_registered() {
         "permission.doom_loop",
         "permission.shell_allowlist",
         "runtime.compaction.keep_recent_tokens",
+        "runtime.compaction.threshold_tokens",
         "runtime.compaction.fallback_input_tokens",
         "runtime.compaction.auto_retry_overflow",
     ] {
@@ -320,6 +321,8 @@ fn map_settings_use_deep_merge_strategy() {
         "model_profile",
         "keybinds",
         "ui",
+        "runtime.compaction.model_thresholds",
+        "runtime.compaction.agent_thresholds",
     ] {
         let entry = setting_definition(id).unwrap_or_else(|| panic!("missing {id}"));
         assert_eq!(

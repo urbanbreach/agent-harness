@@ -411,6 +411,11 @@ fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
                 },
               },
               runtime: {
+                compaction: {
+                  threshold_percent: 70,
+                  threshold_tokens: 20000,
+                  model_thresholds: { "default:gpt-4o-mini": 65, "default:another-model": 60 },
+                },
                 background_tasks: {
                   default_concurrency: 2,
                   provider_concurrency: 2,
@@ -453,6 +458,12 @@ fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
                   tools: ["read"],
                 },
               },
+              runtime: {
+                compaction: {
+                  model_thresholds: { "default:gpt-4o-mini": { tokens: 18000 } },
+                  agent_thresholds: { "default": 50 },
+                },
+              },
               permissions: {
                 defaults: {
                   shell: "allow",
@@ -475,6 +486,26 @@ fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
         PermissionMode::Allow
     ));
     assert!(loaded.config.agents.contains_key("default"));
+    let compaction = &loaded.config.runtime.compaction;
+    for (profile, model, expected) in [
+        ("default", "default:gpt-4o-mini", serde_json::json!(50)),
+        (
+            "other",
+            "default:gpt-4o-mini",
+            serde_json::json!({"tokens": 18000}),
+        ),
+        ("other", "default:another-model", serde_json::json!(60)),
+        (
+            "other",
+            "default:unconfigured",
+            serde_json::json!({"tokens": 20000}),
+        ),
+    ] {
+        assert_eq!(
+            serde_json::to_value(compaction.threshold_override(profile, model)).unwrap_or_abort(),
+            expected
+        );
+    }
     assert_eq!(loaded.primary_path(), Some(cwd_config.as_path()));
 }
 

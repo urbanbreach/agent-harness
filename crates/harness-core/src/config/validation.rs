@@ -8,6 +8,27 @@ pub(super) fn is_blank_config_value(value: &str) -> bool {
     non_empty_trimmed(value).is_none()
 }
 
+pub(super) fn validate_compaction_thresholds(config: &HarnessConfig) -> Result<(), ConfigError> {
+    for profile in config.runtime.compaction.agent_thresholds.keys() {
+        if !config.agents.contains_key(profile) {
+            return Err(ConfigError::InvalidReference(format!(
+                "runtime.compaction.agent_thresholds references unknown agent profile `{profile}`"
+            )));
+        }
+    }
+    for model in config.runtime.compaction.model_thresholds.keys() {
+        let valid = model.split_once(':').is_some_and(|(provider, model)| {
+            !provider.is_empty() && !provider.contains('/') && !model.is_empty()
+        }) && !model.chars().any(char::is_whitespace);
+        if !valid {
+            return Err(ConfigError::InvalidReference(format!(
+                "runtime.compaction.model_thresholds key `{model}` must use `provider:model`"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn validate_mcp_servers(config: &HarnessConfig) -> Result<(), ConfigError> {
     for (server_name, server) in &config.integrations.mcp.servers {
         if is_blank_config_value(server_name) {

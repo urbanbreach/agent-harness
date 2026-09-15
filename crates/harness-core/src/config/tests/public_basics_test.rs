@@ -12,10 +12,39 @@ fn compaction_settings_default_and_serialize_alias() {
     let customized_via_alias: CompactionRuntimeConfig = serde_json::from_value(serde_json::json!({
         "reserveTokens": 65_536,
         "keepRecentTokens": 10_000,
+        "threshold_percent": 70,
+        "model_thresholds": {"mock:model-a": 65, "mock:model-c": {"tokens": 18_000}},
+        "agent_thresholds": {"alpha": 55, "gamma": {"tokens": 8_000}},
     }))
     .unwrap_or_abort();
     assert_eq!(customized_via_alias.reserve_tokens, 65_536);
     assert_eq!(customized_via_alias.keep_recent_tokens, 10_000);
+    assert_eq!(
+        default_compaction.threshold_override("alpha", "mock:model-a"),
+        None
+    );
+    for (profile, model, expected) in [
+        ("alpha", "mock:model-a", serde_json::json!(55)),
+        ("alpha", "mock:model-b", serde_json::json!(55)),
+        ("beta", "mock:model-a", serde_json::json!(65)),
+        ("beta", "mock:model-b", serde_json::json!(70)),
+        (
+            "beta",
+            "mock:model-c",
+            serde_json::json!({"tokens": 18_000}),
+        ),
+        (
+            "gamma",
+            "mock:model-c",
+            serde_json::json!({"tokens": 8_000}),
+        ),
+    ] {
+        assert_eq!(
+            serde_json::to_value(customized_via_alias.threshold_override(profile, model))
+                .unwrap_or_abort(),
+            expected
+        );
+    }
 
     let serialized = serde_json::to_value(&customized_via_alias).unwrap_or_abort();
     assert_eq!(
@@ -26,6 +55,87 @@ fn compaction_settings_default_and_serialize_alias() {
         serialized.get("keep_recent_tokens"),
         Some(&serde_json::Value::from(10_000))
     );
+    let restored: CompactionSettings = serde_json::from_value(serialized).unwrap_or_abort();
+    assert_eq!(restored, customized_via_alias);
+}
+
+#[test]
+fn compaction_threshold_config_validates_values_and_scope_keys() {
+    let mut root: serde_json::Value = json5::from_str(&config_fixture(
+        "default: { tools: [] },",
+        "test-key",
+        None,
+        None,
+    ))
+    .unwrap_or_abort();
+    for (settings, valid) in [
+        (
+            serde_json::json!({"threshold_percent": 1, "agent_thresholds": {"default": 100}, "model_thresholds": {"default:gpt-4o-mini": 80}}),
+            true,
+        ),
+        (serde_json::json!({"threshold_percent": 100}), true),
+        (serde_json::json!({"threshold_percent": null}), true),
+        (serde_json::json!({"threshold_tokens": 1}), true),
+        (
+            serde_json::json!({"threshold_tokens": 4_294_967_295_u32}),
+            true,
+        ),
+        (serde_json::json!({"threshold_tokens": null}), true),
+        (serde_json::json!({"threshold_tokens": 0}), false),
+        (serde_json::json!({"threshold_tokens": -1}), false),
+        (serde_json::json!({"threshold_tokens": 50.5}), false),
+        (
+            serde_json::json!({"threshold_tokens": 4_294_967_296_u64}),
+            false,
+        ),
+        (
+            serde_json::json!({"model_thresholds": {"default:gpt-4o-mini": {"tokens": 80_000}}, "agent_thresholds": {"default": {"tokens": 1}}}),
+            true,
+        ),
+        (
+            serde_json::json!({"model_thresholds": {"default:gpt-4o-mini": {"tokens": 0}}}),
+            false,
+        ),
+        (
+            serde_json::json!({"agent_thresholds": {"default": {"tokens": -1}}}),
+            false,
+        ),
+        (
+            serde_json::json!({"agent_thresholds": {"default": {"tokens": 80_000, "percent": 50}}}),
+            false,
+        ),
+        (serde_json::json!({"threshold_percent": 0}), false),
+        (serde_json::json!({"threshold_percent": 101}), false),
+        (serde_json::json!({"threshold_percent": 50.5}), false),
+        (
+            serde_json::json!({"model_thresholds": {"default:gpt-4o-mini": 0}}),
+            false,
+        ),
+        (
+            serde_json::json!({"agent_thresholds": {"default": 101}}),
+            false,
+        ),
+        (
+            serde_json::json!({"agent_thresholds": {"missing-agent": 50}}),
+            false,
+        ),
+        (
+            serde_json::json!({"model_thresholds": {"missing-provider-prefix": 50}}),
+            false,
+        ),
+        (
+            serde_json::json!({"model_thresholds": {"default/gpt-4o-mini": 50}}),
+            false,
+        ),
+        (
+            serde_json::json!({"model_thresholds": {"default:": 50}}),
+            false,
+        ),
+    ] {
+        root["runtime"]["compaction"] = settings.clone();
+        let result = load_config_from_str(&root.to_string());
+        assert_eq!(result.is_ok(), valid, "{settings}: {result:?}");
+    }
 }
 
 #[test]
