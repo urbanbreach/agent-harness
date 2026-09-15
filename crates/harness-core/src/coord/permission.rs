@@ -541,14 +541,22 @@ pub(super) fn evaluate_permission_rule_requests_with_ruleset(
     kind: PermissionKind,
     selectors: &[PermissionRuleRequest],
     ruleset: &[crate::perm::PermissionRule],
+    is_child: bool,
 ) -> PolicyDecision {
+    let evaluate = |selector| {
+        if is_child {
+            policy.evaluate_child_request_with_ruleset(profile, kind, selector, ruleset)
+        } else {
+            policy.evaluate_request_with_ruleset(profile, kind, selector, ruleset)
+        }
+    };
     if selectors.is_empty() {
-        return policy.evaluate_request_with_ruleset(profile, kind, None, ruleset);
+        return evaluate(None);
     }
 
     let mut ask_decision = None;
     for selector in selectors {
-        match policy.evaluate_request_with_ruleset(profile, kind, Some(selector), ruleset) {
+        match evaluate(Some(selector)) {
             PolicyDecision::Deny => return PolicyDecision::Deny,
             decision @ PolicyDecision::Ask { .. } => ask_decision = Some(decision),
             PolicyDecision::Allow => {}
