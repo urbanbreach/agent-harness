@@ -6,9 +6,13 @@
       "sections": []
     },
     "explore": {
-      "digest12": "d9c9e1b703f0",
-      "line_count": 9,
-      "sections": []
+      "digest12": "7fdc0308ff1e",
+      "line_count": 32,
+      "sections": [
+        "Scope",
+        "Search workflow",
+        "Results"
+      ]
     },
     "general": {
       "digest12": "786be16a1543",
@@ -16,9 +20,14 @@
       "sections": []
     },
     "librarian": {
-      "digest12": "554705180af7",
-      "line_count": 7,
-      "sections": []
+      "digest12": "6e504cb2080c",
+      "line_count": 44,
+      "sections": [
+        "Scope and version",
+        "Research workflow",
+        "Evidence and recovery",
+        "Results"
+      ]
     }
   },
   "schema_version": "v1-prompt-assets-snapshot-v1"
