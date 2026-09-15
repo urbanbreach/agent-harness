@@ -48,7 +48,7 @@ Three mechanisms ask for extra operator confirmation even when the base permissi
 |---|---|---|---|
 | `read` `.env` patterns | Reading a file whose basename matches `*.env` or `*.env.*` | ask | `*.env.example` is explicitly allowed. Paths outside the workspace raise `external_directory` instead. |
 | `external_directory` | Any tool argument, including bash `cwd`/`workdir` and path-like `--option=value` values, that resolves outside the configured workspace | ask | Grant-gated: an approved ask can record a call-scoped prefix so later calls under the same path do not re-ask until the run ends. Bash path-like tokens that the shell scanner misses are denied, not allowed. |
-| `doom_loop` | The third identical call to the same tool with the same arguments | ask | Streak is counted per `(tool_id, permission_request_digest)` on the run. `allow` with mode `once` resets the streak; `always` marks the run as always-granted so the kind no longer asks. |
+| `doom_loop` | The third identical call to the same tool with the same arguments | ask | Streak is counted per `(tool_id, permission_request_digest)` on the run. `allow` with mode `once` resets the streak; `always` marks the run as always-granted so the kind no longer asks; a child deny still wins. |
 
 There is no OpenCode-style temporary-directory whitelist. Workspace-relative paths and explicit call-scoped grants are the only supported escape gates.
 
@@ -58,7 +58,7 @@ The runtime-enforced vs behavioral split is explicit:
 
 | Promise | Enforced by runtime? | Notes |
 |---|---|---|
-| Tool availability for the generic agent | yes | Coordinator filters the singleton toolset before execution. |
+| Tool availability for the generic agent | yes | Coordinator checks the registered actor's own toolset before execution. |
 | Catch-all deny hides tools from the model | yes | Provider tool lists omit tools whose last matching permission rule is `pattern: "*"` + `action: deny` (Harness `disabled` / `visibleTools`). Partial path/command allows keep the tool visible. |
 | Permission decision before execution | yes | Permission policy returns allow/ask/deny before tool code runs. |
 | Bash globs and `/dev/null` | yes (permission-patterns mode) | Shell globs and safe device redirects are not hard-blocked as workspace escapes; true out-of-workspace paths still fail closed. |
@@ -67,13 +67,27 @@ The runtime-enforced vs behavioral split is explicit:
 
 ## Generic agent summary
 
-The generic agent uses the configured top-level permission policy plus its optional singleton `agent.permission` overlay:
+The generic agent uses the configured top-level permission policy plus its optional `agent.default.permission` overlay:
 
 | Execution | Notable allow | Notable ask | Notable deny |
 |---|---|---|---|
 | `default` | configured ordinary tools, including `task` when enabled | `external_directory`, `doom_loop`, and any operator-configured asks | any capability denied by the effective policy |
 
-The generic parent and each named subagent have explicit toolsets and permission overlays. Worker capability filtering and direct-child ownership prevent delegation bypasses.
+The generic parent and each named subagent have independent toolsets and role permissions. Parent tool membership and `task` permission gate child starts and continuations. A parent's role edit deny does not restrict a child whose own role allows editing.
+
+For every child action, combine the child's role decision with shared policy (without the parent's role overlay): **deny wins; otherwise ask wins; otherwise allow**. This applies to ordinary tools, external-directory checks, and threshold-triggered doom-loop checks. Remembered grants and always-approve shortcuts cannot override a child deny. Selector exceptions keep partially permitted tools visible; the coordinator checks the actual arguments before execution. Primary-agent precedence is unchanged.
+
+| Role | Default capability posture |
+|---|---|
+| `explore` | Read/search, native AST search, web research, session inspection, batch, bash, LSP, skills, and discovered MCP; no native edits, questions, tasks, or todo mutation |
+| `librarian` | Explore's tools plus external `codesearch` |
+| `general` | Librarian's native tools except skill loading, plus editing; no redelegation by default |
+
+Research prompts prohibit implementation work, but bash and MCP remain capable of mutation. Native editing and `lsp.rename` stay unavailable. Skill loading uses read permission plus the existing per-skill policy; task denial does not block it. See the [exact role tool lists](../operations/generic-agent-and-tasks.md#permission-and-toolset-boundaries).
+
+Discovered concrete MCP tools are automatic for the primary agent and both research roles. General requires exact registered IDs in its tool list. Both policy layers must permit their existing capabilities: stdio MCP uses `bash`; HTTP MCP uses network policy. Neither transport nor read-only hints prove safety. Generic MCP gateways are not added by discovery.
+
+Skills supply instructions and cannot grant tools. Worker membership checks also apply to batch inner calls. Runtime metadata describes the child's own scope even when parent and child use the same profile name; available tools may still ask or deny for specific arguments. Resume uses current configuration and the same child preparation as fresh spawn, without rewriting historical metadata.
 
 ## Pattern-rule evaluation
 
