@@ -14,14 +14,13 @@ fn deny(permission: &str) -> PermissionRuleset {
 }
 
 #[test]
-fn task_permission_hides_every_task_authorized_tool() {
+fn task_permission_hides_delegation_but_not_skill_loading() {
     // arrange
     let ruleset = deny("task");
 
     // act
     for tool_id in [
         "task",
-        "skill",
         "background_output",
         "background_cancel",
         "todowrite",
@@ -33,6 +32,16 @@ fn task_permission_hides_every_task_authorized_tool() {
             "`{tool_id}` must not be advertised when its execution permission is denied"
         );
     }
+    assert!(!is_tool_call_disabled(
+        "skill",
+        ToolCapability::ReadFs,
+        &ruleset
+    ));
+    assert!(is_tool_call_disabled(
+        "skill",
+        ToolCapability::ReadFs,
+        &deny("read")
+    ));
 }
 
 #[test]

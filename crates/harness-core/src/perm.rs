@@ -604,6 +604,35 @@ impl PermissionPolicy {
         }
     }
 
+    /// A delegated role can narrow shared policy, but cannot override its deny or ask.
+    pub fn evaluate_child_request_with_ruleset(
+        &self,
+        profile: Option<&str>,
+        kind: PermissionKind,
+        selector: Option<&PermissionRuleRequest>,
+        ruleset: &[PermissionRule],
+    ) -> PolicyDecision {
+        match (
+            self.evaluate_request_with_ruleset(profile, kind, selector, ruleset),
+            self.evaluate_request(None, kind, selector),
+        ) {
+            (PolicyDecision::Deny, _) | (_, PolicyDecision::Deny) => PolicyDecision::Deny,
+            (ask @ PolicyDecision::Ask { .. }, _) | (_, ask @ PolicyDecision::Ask { .. }) => ask,
+            _ => PolicyDecision::Allow,
+        }
+    }
+
+    pub fn is_child_tool_call_fully_denied(
+        &self,
+        profile: Option<&str>,
+        tool_id: &str,
+        capability: ToolCapability,
+        ruleset: &[PermissionRule],
+    ) -> bool {
+        self.is_tool_call_fully_denied(profile, tool_id, capability, ruleset)
+            || self.is_tool_call_fully_denied(None, tool_id, capability, &[])
+    }
+
     pub fn is_tool_call_fully_denied(
         &self,
         profile: Option<&str>,
@@ -624,13 +653,20 @@ impl PermissionPolicy {
         }) {
             return false;
         }
-        if profile
-            .and_then(|profile| self.profile_overrides.get(profile))
-            .is_some_and(|permissions| {
-                profile_rules_for_kind(&permissions.rules, kind)
-                    .iter()
-                    .any(|rule| rule.mode != PermissionMode::Deny)
-            })
+        let permissions = profile.and_then(|profile| self.profile_overrides.get(profile));
+        if permissions.is_some_and(|permissions| {
+            profile_rules_for_kind(&permissions.rules, kind)
+                .iter()
+                .any(|rule| rule.mode != PermissionMode::Deny)
+        }) {
+            return false;
+        }
+        if permissions
+            .and_then(|permissions| profile_mode_for_request(permissions, kind, None))
+            .is_none()
+            && profile_rules_for_kind(&self.default_rules, kind)
+                .iter()
+                .any(|rule| rule.mode != PermissionMode::Deny)
         {
             return false;
         }
@@ -801,7 +837,7 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
 
     match canonical_tool_id {
         "question" => Some(PermissionKind::Question),
-        "task" | "skill" => Some(PermissionKind::Task),
+        "task" => Some(PermissionKind::Task),
         "background_cancel" | "background_output" => Some(PermissionKind::Task),
         "todoread" | "todowrite" => Some(PermissionKind::Task),
         "webfetch" => Some(PermissionKind::WebFetch),
@@ -812,7 +848,7 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
         "lsp" => Some(PermissionKind::Lsp),
         "lsp.rename" => Some(PermissionKind::EditFs),
         "bash" | "shell.run" => Some(PermissionKind::Shell),
-        "read" => Some(PermissionKind::Read),
+        "read" | "skill" => Some(PermissionKind::Read),
         "edit" | "write" | "apply_patch" => Some(PermissionKind::EditFs),
         "github.issue" | "github.pull_request" => Some(PermissionKind::Network),
         _ if canonical_tool_id.starts_with("edit.") => Some(PermissionKind::EditFs),
