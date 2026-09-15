@@ -71,18 +71,49 @@ fn public_agent_config_materializes_primary_and_named_subagents() {
         parsed.agents["librarian"].system_prompt.as_deref(),
         Some("Research the question")
     );
-    let explore = &parsed.agents["explore"];
-    assert!(!explore.tools.iter().any(|tool| tool == "codesearch"));
-    assert_eq!(
-        explore.permissions.as_ref().unwrap_or_abort().codesearch,
-        Some(PermissionMode::Deny)
-    );
-    let librarian = &parsed.agents["librarian"];
-    assert!(librarian.tools.iter().any(|tool| tool == "codesearch"));
-    assert_eq!(
-        librarian.permissions.as_ref().unwrap_or_abort().codesearch,
-        Some(PermissionMode::Allow)
-    );
+    for name in ["explore", "librarian"] {
+        let profile = &parsed.agents[name];
+        let mut tools = vec![
+            "read",
+            "glob",
+            "grep",
+            "list",
+            "ast_grep_search",
+            "webfetch",
+            "websearch",
+            "session_list",
+            "session_read",
+            "session_search",
+            "session_info",
+            "batch",
+            "bash",
+            "lsp",
+            "skill",
+        ];
+        if name == "librarian" {
+            tools.push("codesearch");
+        }
+        assert_eq!(profile.tools, tools, "{name}");
+        let permissions = profile.permissions.as_ref().unwrap_or_abort();
+        assert_eq!(
+            (
+                &permissions.edit,
+                &permissions.shell,
+                &permissions.lsp,
+                &permissions.codesearch
+            ),
+            (
+                &Some(PermissionMode::Deny),
+                &Some(PermissionMode::Allow),
+                &Some(PermissionMode::Allow),
+                &Some(PermissionMode::Allow)
+            ),
+        );
+    }
+    let mut general_tools = parsed.agents["librarian"].tools.clone();
+    general_tools.retain(|tool| tool != "skill");
+    general_tools.extend(["edit", "write", "apply_patch"].map(str::to_string));
+    assert_eq!(parsed.agents["general"].tools, general_tools);
 }
 
 #[test]

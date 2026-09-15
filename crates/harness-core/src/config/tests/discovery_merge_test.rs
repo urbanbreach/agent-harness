@@ -364,7 +364,7 @@ Prompt."#,
     // assert
     let general = parsed.agents.get("general").unwrap_or_abort();
     assert!(general.tools.iter().any(|tool| tool == "edit"));
-    assert!(general.tools.iter().any(|tool| tool == "skill"));
+    assert!(!general.tools.iter().any(|tool| tool == "skill"));
 }
 
 #[test]
