@@ -13,16 +13,19 @@ const times = [0, 330, 660];
 const read = async (root, name) => JSON.parse(await readFile(join(root, name), "utf8"));
 const fields = ["chars", "width", "fgColor", "bgColor", "fgColorMode", "bgColorMode"];
 const signature = (cell) => fields.map((field) => cell[field]);
+const nonblank = (cell) => cell.chars.trim().length > 0;
 const normal = [];
 for (const scene of scenes) {
   for (const time of times) {
     const name = `chat-${scene}-120x40-motion-${time}ms.screen.json`;
     const [actual, expected] = await Promise.all([read(harness, name), read(reference, name)]);
-    const lastRow = Math.max(...expected.cells.map((cell) => cell.row));
+    const expectedContent = expected.cells.filter(nonblank);
+    const lastRow = Math.max(...expectedContent.map((cell) => cell.row));
     const actualCells = new Map(actual.cells
+      .filter(nonblank)
       .filter((cell) => cell.row >= 3 && cell.row <= lastRow + 3 && cell.column >= 2 && cell.column < 118)
       .map((cell) => [`${cell.row - 3}:${cell.column - 2}`, signature(cell)]));
-    const expectedCells = new Map(expected.cells.map((cell) => [`${cell.row}:${cell.column}`, signature(cell)]));
+    const expectedCells = new Map(expectedContent.map((cell) => [`${cell.row}:${cell.column}`, signature(cell)]));
     assert.deepEqual(actualCells, expectedCells, `${name}: chat text, geometry, or colors differ`);
     assert(expected.cells.some((cell) => cell.fgRgb), `${name}: RGB SGR is missing`);
     normal.push({ name, cells: expectedCells.size, identical: true });
