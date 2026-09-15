@@ -25,13 +25,13 @@ fn shipped_profiles_filter_provider_tools_from_permission_rulesets() {
 
     // assert
     assert!(!explore.permission_ruleset.is_empty());
-    for hidden in ["edit", "write", "task"] {
+    for hidden in ["edit", "write", "apply_patch", "task", "lsp.rename"] {
         assert!(
             !explore_ids.contains(hidden),
             "explore provider defs must omit denied {hidden}: {explore_ids:?}"
         );
     }
-    for visible in ["bash", "webfetch", "websearch"] {
+    for visible in ["ast_grep_search", "webfetch", "websearch", "bash", "lsp", "skill"] {
         assert!(
             explore_ids.contains(visible),
             "explore provider defs must retain {visible}: {explore_ids:?}"

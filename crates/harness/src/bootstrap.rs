@@ -185,14 +185,7 @@ fn task_tool_description_for_profile(
         .iter()
         .filter(|(_, profile)| profile.mode != AgentMode::Primary)
         .filter(|(name, _)| task_profile_allowed(parent_profile, name, permission_policy))
-        .map(|(name, profile)| {
-            let tools = if profile.tools.is_empty() {
-                "no tools".to_string()
-            } else {
-                profile.tools.join(", ")
-            };
-            format!("- {name}: {} Tools: {tools}.", profile.description)
-        })
+        .map(|(name, profile)| format!("- {name}: {}", profile.description))
         .collect::<Vec<_>>();
     subagents.sort();
 
@@ -429,12 +422,16 @@ fn interactive_agent_profiles_with_extra_tools(
                     )
                 })?;
 
-        let toolset: Vec<String> = normalize_profile_toolset(&profile_cfg.tools, editing_surface)
-            .iter()
-            .map(String::as_str)
-            .chain(extra_tool_ids.iter().map(String::as_str))
-            .map(ToOwned::to_owned)
-            .collect();
+        let mut toolset = normalize_profile_toolset(&profile_cfg.tools, editing_surface);
+        if profile_cfg.mode == AgentMode::Primary
+            || matches!(profile_name.as_str(), "explore" | "librarian")
+        {
+            for tool_id in extra_tool_ids {
+                if !toolset.contains(tool_id) {
+                    toolset.push(tool_id.clone());
+                }
+            }
+        }
         let system_prompt = compose_interactive_system_prompt(
             cfg,
             profile_name,
@@ -690,6 +687,7 @@ mod tests {
               model: "default/gpt-5.4-mini",
               tools: ["read"],
             },
+            librarian: { tools: ["read", "mcp.docs-rs.search_in_crate"] },
             "#,
         );
 
@@ -702,6 +700,21 @@ mod tests {
         )
         .unwrap_or_abort();
 
+        assert!(!profiles["general"]
+            .toolset
+            .iter()
+            .any(|tool| tool.starts_with("mcp.")));
+        assert_eq!(
+            profiles["librarian"].toolset,
+            [
+                "read",
+                "mcp.docs-rs.search_in_crate",
+                "mcp.gh_grep.searchGitHub"
+            ]
+        );
+        for tool in ["mcp.docs-rs.search_in_crate", "mcp.gh_grep.searchGitHub"] {
+            assert!(profiles["explore"].toolset.contains(&tool.to_string()));
+        }
         assert!(profiles["default"].toolset.contains(&"read".to_string()));
         assert!(profiles["default"]
             .toolset
@@ -750,13 +763,21 @@ mod tests {
         assert!(!profiles["default"]
             .toolset
             .contains(&"plan_exit".to_string()));
-        for tool in ["read", "grep", "bash", "webfetch", "websearch"] {
+        for tool in ["read", "grep", "ast_grep_search", "webfetch", "websearch"] {
             assert!(
                 profiles["explore"].toolset.contains(&tool.to_string()),
                 "missing explore tool {tool}"
             );
         }
-        assert!(!profiles["explore"].toolset.contains(&"edit".to_string()));
+        for role in ["explore", "librarian"] {
+            assert!(profiles[role].toolset.iter().all(|tool| ![
+                "edit",
+                "write",
+                "apply_patch",
+                "task"
+            ]
+            .contains(&tool.as_str())));
+        }
         assert!(profiles["general"].toolset.contains(&"edit".to_string()));
         assert!(profiles["general"].toolset.contains(&"bash".to_string()));
         assert!(!profiles["general"].toolset.contains(&"task".to_string()));
