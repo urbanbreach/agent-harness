@@ -130,7 +130,12 @@ pub(in crate::coord) async fn prepare_session_compaction(
                     EventV1::ProviderRequestStarted(started)
                         if event.actor.agent_id.as_deref() == Some(agent_id) =>
                     {
-                        Some(started.request_id.as_str())
+                        Some(
+                            event
+                                .correlation_id
+                                .as_deref()
+                                .unwrap_or(started.request_id.as_str()),
+                        )
                     }
                     _ => None,
                 })
@@ -163,7 +168,26 @@ pub(in crate::coord) async fn prepare_session_compaction(
     let occupied = context_budget
         .anchored_context_tokens(&context_messages, last_compaction_seq)
         .unwrap_or(total_tokens);
-    let threshold = super::policy::threshold_tokens(context_window, latest_compaction);
+    let threshold_hundredths = settings
+        .threshold_override(
+            run_state
+                .agents
+                .get(agent_id)
+                .map_or("", |profile| profile.name.as_str()),
+            &format!("{}:{}", model.provider_id, model.model_id),
+        )
+        .map_or_else(
+            || {
+                u64::from(context_window)
+                    * u64::from(super::policy::threshold_percent(
+                        context_window,
+                        super::policy::previous_yield(&all_events, agent_id),
+                    ))
+            },
+            |threshold| threshold.token_hundredths(context_window),
+        );
+    let threshold = super::policy::threshold_tokens(threshold_hundredths);
+    let lead = super::policy::lead_tokens(threshold_hundredths);
     let hard_limit = context_window.saturating_sub(super::policy::reserve_tokens(
         settings.reserve_tokens,
         context_window,
@@ -176,22 +200,19 @@ pub(in crate::coord) async fn prepare_session_compaction(
         || context_budget.requires_compaction()
         || occupied >= hard_limit;
     let lead_threshold = if trigger_reason == "idle" {
-        context_window / 2
+        context_window.div_ceil(2)
     } else {
-        threshold.saturating_sub(super::policy::lead_tokens(threshold))
+        threshold.saturating_sub(lead)
     };
     if !required && occupied < lead_threshold {
         return Ok(None);
     }
     let history_allowance = CompactionBudget::resolve(Some(request_budget), &all_events, agent_id)
-        .history_allowance(
-            super::policy::keep_recent_tokens(
-                settings.keep_recent_tokens,
-                context_window,
-                latest_compaction,
-            ),
-            true,
-        );
+        .history_allowance(super::policy::keep_recent_tokens(
+            settings.keep_recent_tokens,
+            context_window,
+            threshold_hundredths,
+        ));
     let Some(typed) = prepare_typed_compaction(TypedCompactionPreparationRequest {
         events: &all_events,
         agent_id,
@@ -221,7 +242,7 @@ pub(in crate::coord) async fn prepare_session_compaction(
     let summary_prompt = if previous_summary.is_none() && cut_point.is_split_turn {
         super::super::compaction::TURN_PREFIX_SUMMARIZATION_PROMPT.to_string()
     } else {
-        build_summarization_prompt(&[], previous_summary.as_deref(), None, &file_ops)
+        build_summarization_prompt(previous_summary.as_deref(), &file_ops)
     };
     messages_to_summarize.extend(turn_prefix_messages);
     messages_to_summarize.retain(|message| !matches!(message, ConversationMessage::Checkpoint(_)));
@@ -255,10 +276,7 @@ pub(in crate::coord) async fn prepare_session_compaction(
         required,
         warm_max_growth: history_allowance.max(8192),
         within_grace: !force_compact
-            && occupied
-                < threshold
-                    .saturating_add(super::policy::lead_tokens(threshold))
-                    .min(hard_limit)
+            && occupied < threshold.saturating_add(lead).min(hard_limit)
             && !context_budget.requires_compaction(),
         first_kept_event_seq: cut_point.first_kept_event_seq,
         first_kept_request_id: cut_point.first_kept_request_id,

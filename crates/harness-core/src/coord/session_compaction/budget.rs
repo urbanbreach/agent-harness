@@ -106,7 +106,7 @@ impl CompactionBudget {
         self.request
     }
 
-    pub(super) fn history_allowance(self, keep_recent_tokens: u32, _reserve_summary: bool) -> u32 {
+    pub(super) fn history_allowance(self, keep_recent_tokens: u32) -> u32 {
         let Some(snapshot) = self.request else {
             return keep_recent_tokens;
         };
