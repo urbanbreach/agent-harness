@@ -12,7 +12,24 @@ Harness materializes the interactive configuration as `default` so persisted eve
 
 ## Permission and toolset boundaries
 
-The coordinator remains the authority for both tool availability and permission decisions. A tool absent from the generic toolset is not advertised to the provider. A denied capability is blocked before execution. Child tasks do not gain permissions from prompt text or from being delegated.
+The coordinator owns tool availability and permission decisions. Each child uses its own configured `agent.<name>.tools` and `agent.<name>.permission`. A parent's toolset and `task` permission control whether it can start or continue the selected child; the parent's other role restrictions are not inherited. A parent with `edit: "deny"` can delegate implementation to `general` when shared policy permits editing.
+
+For child actions, shared top-level policy is a ceiling: combine the child's role decision with shared policy using **deny first, then ask, then allow**. Existing approvals can satisfy an ask, but cannot override a deny. Primary-agent permission precedence is unchanged. Tools absent from the child's list remain unavailable, including calls inside `batch`.
+
+| Role | Default tools |
+|---|---|
+| `explore` | `read`, `glob`, `grep`, `list`, `ast_grep_search`, `webfetch`, `websearch`, `session_list`, `session_read`, `session_search`, `session_info`, `batch`, `bash`, `lsp`, `skill` |
+| `librarian` | Explore's tools plus `codesearch` |
+| `general` | Librarian's native tools except `skill`, plus `edit`, `write`, `apply_patch` |
+| `default` | Existing primary tools, including task delegation and skill loading |
+
+Research roles deny native editing, questions, delegation, and todo mutation. Both can run bash commands, use LSP queries, and load skills. Their prompts direct them to research rather than implementation; bash and MCP can still mutate files, so an edit deny is not filesystem confinement. The explicit `lsp.rename` editing tool remains unavailable. Explore has native AST search; Librarian additionally has external `codesearch`.
+
+MCP discovery automatically adds concrete tools from configured servers to `default`, `explore`, and `librarian`, including when the native tool list is customized. General still requires exact MCP IDs in its tool list. Both role and shared policy constrain MCP execution: stdio MCP uses the `bash` capability; HTTP MCP uses network policy. Discovery does not add the generic MCP gateway tools.
+
+The `skill` tool uses read permission and the existing per-skill load policy, independently of task delegation permission. Skills supply instructions; an `allowed_tools` declaration cannot grant tools or permissions. General continues to receive skills through the parent's `load_skills`. Task results report the prepared child's actual toolset, with available tools still subject to argument-specific permission checks. Resume prepares children from current configuration using the same rules as fresh spawn; historical policy snapshots are not restored or rewritten.
+
+Permissions are policy checks, not operating-system confinement. See the [permissions threat model](../permissions/permissions.md).
 
 ## Structured delegation body
 
