@@ -53,8 +53,8 @@ use super::ui_tool_visibility::{
     tool_disclosure_state, tool_hidden_from_transcript, TranscriptToolCallDisclosureState,
 };
 use super::ui_transcript_bash::{
-    append_harness_bash_panel, shell_tool_command, shell_tool_output, shell_tool_title_description,
-    HarnessBashPanel,
+    append_harness_bash_panel, shell_tool_command, shell_tool_output, shell_tool_structured_output,
+    shell_tool_title_description, HarnessBashPanel,
 };
 use super::ui_transcript_events::{
     activity_has_thinking_text, provider_event_matches_activity, turn_event_matches_activity,

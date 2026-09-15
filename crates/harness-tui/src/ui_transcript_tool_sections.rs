@@ -241,8 +241,14 @@ pub(super) fn build_transcript_tool_call_section(
                 let cmd = shell_tool_command(tool_call).unwrap_or_else(|| "Shell".to_string());
                 let description = shell_tool_title_description(tool_call, session_path);
                 let title = format!("Run {}", description.as_deref().unwrap_or(&cmd));
-                let shell_output =
-                    shell_tool_output(tool_call).or_else(|| expanded.then(String::new));
+                // Failure summaries are error messages; only actual stdout/stderr
+                // belongs in the terminal-output panel.
+                let shell_output = if tool_call.status == ToolCallDisplayStatus::Failed {
+                    shell_tool_structured_output(tool_call.output_json.as_ref())
+                } else {
+                    shell_tool_output(tool_call)
+                }
+                .or_else(|| expanded.then(String::new));
                 let has_output = shell_output.is_some();
                 if let Some(output) = shell_output {
                     push_bash_panel_block(&mut detail_blocks, &cmd, &output, description);
@@ -808,19 +814,24 @@ fn prepare_failed_tool_details(
         return;
     }
 
-    // Failed edits reveal their error below the header, using the same muted
-    // decoration as Grok's edit block. Keep the full recorded error text.
+    // Commands and edits separate errors from their headers. Edits use Grok's
+    // muted decoration; command failures retain the error foreground.
     if tool_call.status == ToolCallDisplayStatus::Failed
         && matches!(
             tool_call.effective_tool_id(),
-            "edit" | "write" | "fs.write" | "edit.hashline_apply"
+            "shell.run" | "bash" | "edit" | "write" | "fs.write" | "edit.hashline_apply"
         )
     {
+        let error_tone = if matches!(tool_call.effective_tool_id(), "shell.run" | "bash") {
+            TranscriptToolCallDetailTone::Error
+        } else {
+            TranscriptToolCallDetailTone::Secondary
+        };
         for block in detail_blocks {
             if let TranscriptToolCallDetailBlock::Message { text, tone } = block {
                 if *tone == TranscriptToolCallDetailTone::Error {
                     *text = format!("\n{text}");
-                    *tone = TranscriptToolCallDetailTone::Secondary;
+                    *tone = error_tone;
                 }
             }
         }

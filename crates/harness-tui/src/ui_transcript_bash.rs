@@ -156,7 +156,9 @@ pub(super) fn shell_tool_output(tool_call: &ToolCallEntry) -> Option<String> {
         .or_else(|| tool_call.output_summary.clone())
 }
 
-fn shell_tool_structured_output(output_json: Option<&serde_json::Value>) -> Option<String> {
+pub(super) fn shell_tool_structured_output(
+    output_json: Option<&serde_json::Value>,
+) -> Option<String> {
     let value = output_json?;
     let stdout = value.get("stdout").and_then(serde_json::Value::as_str);
     let stderr = value.get("stderr").and_then(serde_json::Value::as_str);
