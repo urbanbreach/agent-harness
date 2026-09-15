@@ -314,6 +314,26 @@ const SETTINGS_REGISTRY: &[SettingDefinition] = &[
         Some("20000"),
     ),
     runtime_public(
+        "runtime.compaction.threshold_percent",
+        "harness.runtime.compaction.threshold_percent",
+        None,
+    ),
+    runtime_public(
+        "runtime.compaction.threshold_tokens",
+        "harness.runtime.compaction.threshold_tokens",
+        None,
+    ),
+    runtime_public_map(
+        "runtime.compaction.model_thresholds",
+        "harness.runtime.compaction.model_thresholds",
+        Some("{}"),
+    ),
+    runtime_public_map(
+        "runtime.compaction.agent_thresholds",
+        "harness.runtime.compaction.agent_thresholds",
+        Some("{}"),
+    ),
+    runtime_public(
         "runtime.compaction.fallback_input_tokens",
         "harness.runtime.compaction.fallback_input_tokens",
         Some("32768"),

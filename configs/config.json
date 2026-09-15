@@ -63,6 +63,13 @@
     "CompactionSettings": {
       "additionalProperties": false,
       "properties": {
+        "agent_thresholds": {
+          "additionalProperties": {
+            "$ref": "#/definitions/CompactionThreshold"
+          },
+          "description": "Fixed thresholds by agent profile key; overrides model and global settings.",
+          "type": "object"
+        },
         "auto_retry_overflow": {
           "default": true,
           "type": "boolean"
@@ -89,6 +96,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "model_thresholds": {
+          "additionalProperties": {
+            "$ref": "#/definitions/CompactionThreshold"
+          },
+          "description": "Fixed percentages or `{ \"tokens\": count }` by canonical `provider:model` reference.",
+          "type": "object"
+        },
         "reserve_tokens": {
           "default": 16384,
           "format": "uint32",
@@ -106,9 +120,58 @@
         "suppress_auto_compaction": {
           "default": false,
           "type": "boolean"
+        },
+        "threshold_percent": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CompactionThresholdPercent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Fixed trigger percentage (1–100). Unset uses the adaptive compaction policy."
+        },
+        "threshold_tokens": {
+          "description": "Fixed token count. Overrides the global percentage when both are set.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "type": "object"
+    },
+    "CompactionThreshold": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/CompactionThresholdPercent"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "tokens": {
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "tokens"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "A bare integer is a percentage; an object specifies an absolute token count."
+    },
+    "CompactionThresholdPercent": {
+      "description": "A percentage validated at the configuration boundary, including map values.",
+      "format": "uint8",
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
     },
     "FormatterConfig": {
       "additionalProperties": {

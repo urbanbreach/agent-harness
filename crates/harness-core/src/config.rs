@@ -2,6 +2,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
+    num::NonZeroU32,
     path::{Path, PathBuf},
 };
 
@@ -128,8 +129,8 @@ pub use self::settings_write::{
     SettingEditorKind, SettingWriteError,
 };
 use self::validation::{
-    is_blank_config_value, validate_hook_definitions, validate_lsp_overrides, validate_mcp_servers,
-    validate_skill_roots,
+    is_blank_config_value, validate_compaction_thresholds, validate_hook_definitions,
+    validate_lsp_overrides, validate_mcp_servers, validate_skill_roots,
 };
 
 #[derive(Debug, Error)]
@@ -397,6 +398,7 @@ impl HarnessConfig {
         validate_skill_roots(self)?;
         validate_lsp_overrides(self)?;
         validate_mcp_servers(self)?;
+        validate_compaction_thresholds(self)?;
 
         Ok(())
     }
@@ -503,6 +505,18 @@ impl Default for ProviderRetryRuntimeConfig {
 pub struct CompactionSettings {
     #[serde(default = "default_compaction_enabled")]
     pub enabled: bool,
+    /// Fixed trigger percentage (1–100). Unset uses the adaptive compaction policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub threshold_percent: Option<CompactionThresholdPercent>,
+    /// Fixed token count. Overrides the global percentage when both are set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub threshold_tokens: Option<NonZeroU32>,
+    /// Fixed percentages or `{ "tokens": count }` by canonical `provider:model` reference.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub model_thresholds: BTreeMap<String, CompactionThreshold>,
+    /// Fixed thresholds by agent profile key; overrides model and global settings.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub agent_thresholds: BTreeMap<String, CompactionThreshold>,
     #[serde(default = "default_compaction_reserve_tokens", alias = "reserveTokens")]
     pub reserve_tokens: u32,
     #[serde(
@@ -537,6 +551,10 @@ impl Default for CompactionSettings {
     fn default() -> Self {
         Self {
             enabled: default_compaction_enabled(),
+            threshold_percent: None,
+            threshold_tokens: None,
+            model_thresholds: BTreeMap::new(),
+            agent_thresholds: BTreeMap::new(),
             reserve_tokens: default_compaction_reserve_tokens(),
             keep_recent_tokens: default_compaction_keep_recent_tokens(),
             auto_retry_overflow: default_compaction_auto_retry_overflow(),
@@ -546,6 +564,65 @@ impl Default for CompactionSettings {
             split_oversized_turns: false,
             suppress_auto_compaction: false,
         }
+    }
+}
+
+/// A percentage validated at the configuration boundary, including map values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(try_from = "u8")]
+#[schemars(!try_from)]
+pub struct CompactionThresholdPercent(#[schemars(range(min = 1, max = 100))] u8);
+
+impl TryFrom<u8> for CompactionThresholdPercent {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        if (1..=100).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err("compaction threshold percentage must be an integer from 1 through 100")
+        }
+    }
+}
+
+impl From<CompactionThresholdPercent> for u32 {
+    fn from(value: CompactionThresholdPercent) -> Self {
+        Self::from(value.0)
+    }
+}
+
+/// A bare integer is a percentage; an object specifies an absolute token count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum CompactionThreshold {
+    Percent(CompactionThresholdPercent),
+    Tokens { tokens: NonZeroU32 },
+}
+
+impl CompactionThreshold {
+    /// Keep fractional percentage thresholds exact until the final comparison.
+    pub(crate) fn token_hundredths(self, window: u32) -> u64 {
+        match self {
+            Self::Percent(percent) => u64::from(window) * u64::from(u32::from(percent)),
+            Self::Tokens { tokens } => u64::from(tokens.get()) * 100,
+        }
+    }
+}
+
+impl CompactionSettings {
+    pub(crate) fn threshold_override(
+        &self,
+        profile: &str,
+        model_ref: &str,
+    ) -> Option<CompactionThreshold> {
+        self.agent_thresholds
+            .get(profile)
+            .or_else(|| self.model_thresholds.get(model_ref))
+            .copied()
+            .or(self
+                .threshold_tokens
+                .map(|tokens| CompactionThreshold::Tokens { tokens }))
+            .or(self.threshold_percent.map(CompactionThreshold::Percent))
     }
 }
 
