@@ -350,6 +350,7 @@ function composerMultilineActionsContract(options) {
       { kind: "type", value: "first line" },
       { kind: "key", value: "Enter" },
       { kind: "type", value: "second line" },
+      { kind: "wait", value: "second line" },
       { kind: "wait", value: "Enter:newline" },
       { kind: "wait", value: "Alt+Enter:send" },
       { kind: "wait", value: "Alt+i:interject" },
@@ -362,12 +363,14 @@ function composerMultilineActionsContract(options) {
       { kind: "waitCount", value: "QUEUED", count: 2 },
       { kind: "type", value: "replacement text" },
       { kind: "key", value: "Alt+r" },
-      { kind: "waitCount", value: "QUEUED", count: 3 },
+      // At 80x24 the first submission has scrolled out of the viewport.
+      { kind: "waitTitle", value: "P0-04 replacement interrupted" },
+      { kind: "waitCount", value: "QUEUED", count: 2 },
       { kind: "capture" },
       { kind: "key", value: "Control+Q" },
       { kind: "key", value: "Control+Q" },
     ],
-    assertions: ["MULTILINE", "QUEUED", "second line", "interject text", "replacement text"],
+    assertions: ["MULTILINE", "QUEUED", "interject text", "replacement text"],
     expectNaturalExit: true,
   };
 }
