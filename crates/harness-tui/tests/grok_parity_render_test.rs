@@ -386,7 +386,7 @@ fn verify_chat_scene(width: u16, height: u16, reduced: bool, scene: &str) {
     };
     let first = chat_frame(&app);
     let label = chat_scene_label(scene);
-    let label_cells = |buffer: &Buffer| {
+    let text_cells = |buffer: &Buffer, label: &str| {
         buffer.content.chunks(usize::from(width)).find_map(|row| {
             row.windows(label.chars().count())
                 .find(|cells| {
@@ -398,6 +398,15 @@ fn verify_chat_scene(width: u16, height: u16, reduced: bool, scene: &str) {
                 .map(<[_]>::to_vec)
         })
     };
+    if scene == "failedopen" {
+        let error = text_cells(&first, "terminal unavailable").unwrap_or_abort();
+        assert!(
+            error.iter().all(|cell| {
+                cell.fg == app.theme().status.error && cell.bg == app.theme().surface.shell
+            }),
+            "command failure must retain error styling outside the output panel"
+        );
+    }
     let mut previous = 0;
     for milliseconds in [0, 330, 660] {
         app.advance_wall_clock_for_motion_evidence(Duration::from_millis(milliseconds - previous));
@@ -410,13 +419,13 @@ fn verify_chat_scene(width: u16, height: u16, reduced: bool, scene: &str) {
         );
         if scene != "answer" {
             assert!(
-                label_cells(&frame).is_some(),
+                text_cells(&frame, label).is_some(),
                 "missing {label}: {}",
                 text(&frame)
             );
             assert_eq!(
-                label_cells(&frame),
-                label_cells(&first),
+                text_cells(&frame, label),
+                text_cells(&first, label),
                 "{scene}: title animated"
             );
             assert!(text(&frame).contains('◆') || text(&frame).contains('◈'));
