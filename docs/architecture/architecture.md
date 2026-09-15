@@ -544,8 +544,24 @@ Pressure prefers matching completed provider usage plus subsequent messages. Wit
 it estimates UTF-16 characters / 4, with long opaque runs weighted fourfold. Summary request sizing
 also weights CJK text. Thresholds range from 45% for windows up to 16,000 to 80% above 512,000;
 high-yield compaction lowers the next threshold by five percentage points, bounded at 40%.
+Yield measures the replaced messages and previous summary minus the new summary, relative to
+the prior context size. It is derived from journal boundaries on resume; retained messages and
+provider overhead do not count as savings.
 Reserve grows to 4% of the window, capped at 49,152 tokens. Recent retention scales for large windows
 and stays within the threshold's remaining headroom.
+
+`runtime.compaction.threshold_percent` sets a fixed percentage from 1 through 100;
+`threshold_tokens` sets a positive token count and overrides the global percentage.
+`model_thresholds` overrides it by canonical `provider:model` reference, and
+`agent_thresholds` overrides both by agent profile key. These maps accept either
+a bare percentage or `{ "tokens": count }`. Unset scopes use the next
+scope, ultimately falling back to the adaptive policy. Fixed overrides also drive
+preparation and retention headroom; hard model budgets and reserves take priority.
+Fractional trigger thresholds round up to the first integer token count that
+meets the percentage.
+Integer arithmetic avoids Senpi's floating-point roundoff, which occasionally
+postpones an integral trigger by one token; numerical behavior is therefore not
+literally identical for every possible window size.
 
 Background preparation starts 8,192–32,768 tokens before the soft threshold. Successful interactive
 turns can also prepare while idle. A prepared summary is reused only when the original history is
