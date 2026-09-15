@@ -1,8 +1,8 @@
 use super::{
     permission_kind_for_capability, permission_kind_for_tool, permission_kind_for_tool_call,
-    PermissionDecision, PermissionGrantMatcher, PermissionGrantRequest, PermissionGrantSet,
-    PermissionKind, PermissionPolicy, PermissionRuleRequest, PermissionToolSelector,
-    PolicyDecision,
+    PermissionAction, PermissionDecision, PermissionGrantMatcher, PermissionGrantRequest,
+    PermissionGrantSet, PermissionKind, PermissionPolicy, PermissionRule, PermissionRuleRequest,
+    PermissionToolSelector, PolicyDecision, DEFAULT_ASK_TIMEOUT_MS,
 };
 use crate::config::{
     PermissionMode, PermissionRuleSet, PermissionSelector, PermissionSelectorRule,
@@ -514,7 +514,7 @@ fn native_tool_ids_resolve_to_permission_kinds_without_aliases() {
     assert_eq!(permission_kind_for_tool("task"), Some(PermissionKind::Task));
     assert_eq!(
         permission_kind_for_tool("skill"),
-        Some(PermissionKind::Task)
+        Some(PermissionKind::Read)
     );
     assert_eq!(
         permission_kind_for_tool("webfetch"),
@@ -562,5 +562,128 @@ fn native_tool_ids_resolve_to_permission_kinds_without_aliases() {
     assert_eq!(
         permission_kind_for_capability(ToolCapability::SpawnAgent),
         Some(PermissionKind::Task)
+    );
+}
+
+#[test]
+fn child_roles_combine_with_shared_policy_and_preserve_selector_exceptions() {
+    let ask = PolicyDecision::Ask {
+        timeout_ms: DEFAULT_ASK_TIMEOUT_MS,
+        default_decision: PermissionDecision::Deny,
+    };
+    for (role, shared, expected) in [
+        (
+            PermissionAction::Allow,
+            PermissionMode::Allow,
+            PolicyDecision::Allow,
+        ),
+        (
+            PermissionAction::Deny,
+            PermissionMode::Allow,
+            PolicyDecision::Deny,
+        ),
+        (
+            PermissionAction::Allow,
+            PermissionMode::Deny,
+            PolicyDecision::Deny,
+        ),
+        (PermissionAction::Allow, PermissionMode::Ask, ask),
+        (PermissionAction::Ask, PermissionMode::Allow, ask),
+        (
+            PermissionAction::Ask,
+            PermissionMode::Deny,
+            PolicyDecision::Deny,
+        ),
+        (
+            PermissionAction::Deny,
+            PermissionMode::Ask,
+            PolicyDecision::Deny,
+        ),
+    ] {
+        let policy = PermissionPolicy::new(shared, PermissionMode::Allow, PermissionMode::Allow);
+        let rules = [PermissionRule {
+            permission: "edit".into(),
+            pattern: "*".into(),
+            action: role,
+        }];
+        assert_eq!(
+            policy.evaluate_child_request_with_ruleset(
+                Some("general"),
+                PermissionKind::EditFs,
+                None,
+                &rules
+            ),
+            expected
+        );
+    }
+
+    let mut policy = PermissionPolicy::new(
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+        PermissionMode::Allow,
+    );
+    policy.default_rules.edit = vec![PermissionSelectorRule {
+        selector: PermissionSelector::Glob("allowed/**".into()),
+        mode: PermissionMode::Allow,
+    }];
+    let explicit_allow = vec![PermissionRule {
+        permission: "edit".into(),
+        pattern: "*".into(),
+        action: PermissionAction::Allow,
+    }];
+    for rules in [&[][..], explicit_allow.as_slice()] {
+        assert!(!policy.is_child_tool_call_fully_denied(
+            Some("general"),
+            "write",
+            ToolCapability::EditFs,
+            rules
+        ));
+        for (path, expected) in [
+            ("allowed/file.rs", PolicyDecision::Allow),
+            ("blocked/file.rs", PolicyDecision::Deny),
+        ] {
+            assert_eq!(
+                policy.evaluate_child_request_with_ruleset(
+                    Some("general"),
+                    PermissionKind::EditFs,
+                    Some(&PermissionRuleRequest::WorkspacePath(path.into())),
+                    rules
+                ),
+                expected
+            );
+        }
+    }
+    let mut role_rules = vec![PermissionRule {
+        permission: "edit".into(),
+        pattern: "*".into(),
+        action: PermissionAction::Deny,
+    }];
+    assert!(policy.is_child_tool_call_fully_denied(
+        None,
+        "write",
+        ToolCapability::EditFs,
+        &role_rules
+    ));
+    role_rules.push(PermissionRule {
+        permission: "edit".into(),
+        pattern: "allowed/**".into(),
+        action: PermissionAction::Allow,
+    });
+    assert!(!policy.is_child_tool_call_fully_denied(
+        None,
+        "write",
+        ToolCapability::EditFs,
+        &role_rules
+    ));
+    assert_eq!(
+        policy.evaluate_child_request_with_ruleset(
+            None,
+            PermissionKind::EditFs,
+            Some(&PermissionRuleRequest::WorkspacePath(
+                "allowed/file.rs".into()
+            )),
+            &role_rules
+        ),
+        PolicyDecision::Allow
     );
 }
