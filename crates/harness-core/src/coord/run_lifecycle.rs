@@ -304,6 +304,12 @@ impl Coordinator {
                 restored_subagent_parent_by_id.insert(agent_id.clone(), parent_agent_id.clone());
             }
 
+            let profile_cfg = prepare_agent_profile(
+                profile_cfg,
+                parent_agent_id.is_some(),
+                self.config.tool_registry.as_ref(),
+                &self.config.permission_policy,
+            );
             agents.insert(agent_id.clone(), profile_cfg);
             restored_agent_bindings.push((agent_id.clone(), profile_name.clone(), parent_agent_id));
         }
@@ -702,57 +708,18 @@ impl Coordinator {
             ));
         }
 
-        let mut profile_cfg = self
+        let profile_cfg = self
             .config
             .agent_profiles
             .get(&profile)
             .cloned()
             .ok_or_else(|| CoordinatorError::UnknownAgent(profile.clone()))?;
-
-        if let Some(parent_id) = parent_agent_id.as_ref() {
-            if let Some(parent_profile) = run_state.agents.get(parent_id) {
-                let mut child_permission = profile_cfg.permission_ruleset.clone();
-                if profile_cfg.toolset.iter().any(|tool| tool == "task")
-                    && !child_permission
-                        .iter()
-                        .any(|rule| rule.permission == "task")
-                {
-                    child_permission.push(crate::perm::PermissionRule {
-                        permission: "task".to_string(),
-                        pattern: "*".to_string(),
-                        action: crate::perm::PermissionAction::Allow,
-                    });
-                }
-                if profile_cfg.toolset.iter().any(|tool| tool == "todowrite")
-                    && !child_permission
-                        .iter()
-                        .any(|rule| rule.permission == "todowrite")
-                {
-                    child_permission.push(crate::perm::PermissionRule {
-                        permission: "todowrite".to_string(),
-                        pattern: "*".to_string(),
-                        action: crate::perm::PermissionAction::Allow,
-                    });
-                }
-                let derived = crate::perm::derive_subagent_session_permission(
-                    &parent_profile.permission_ruleset,
-                    &child_permission,
-                );
-                profile_cfg.permission_ruleset =
-                    crate::perm::merge_rulesets([child_permission, derived]);
-            }
-        }
-
-        profile_cfg.toolset.retain(|tool_id| {
-            self.config.tool_registry.get(tool_id).is_none_or(|tool| {
-                !self.config.permission_policy.is_tool_call_fully_denied(
-                    Some(&profile_cfg.name),
-                    tool_id,
-                    tool.capability(),
-                    &profile_cfg.permission_ruleset,
-                )
-            })
-        });
+        let profile_cfg = prepare_agent_profile(
+            profile_cfg,
+            parent_agent_id.is_some(),
+            self.config.tool_registry.as_ref(),
+            &self.config.permission_policy,
+        );
 
         let agent_id = format!("agent_{:06}", run_state.next_agent_id);
         run_state.next_agent_id += 1;
@@ -995,4 +962,53 @@ fn next_agent_counter_for_run(
     }
 
     checked_next_counter(max_agent_id, run_id, "agent id")
+}
+
+fn prepare_agent_profile(
+    mut profile: AgentProfile,
+    has_parent: bool,
+    registry: &ToolRegistry,
+    policy: &PermissionPolicy,
+) -> AgentProfile {
+    if has_parent {
+        for permission in ["task", "todowrite"] {
+            if profile.toolset.iter().any(|tool| tool == permission)
+                && !profile
+                    .permission_ruleset
+                    .iter()
+                    .any(|rule| rule.permission == permission)
+            {
+                profile
+                    .permission_ruleset
+                    .push(crate::perm::PermissionRule {
+                        permission: permission.to_string(),
+                        pattern: "*".to_string(),
+                        action: crate::perm::PermissionAction::Allow,
+                    });
+            }
+        }
+        let defaults =
+            crate::perm::derive_subagent_session_permission(&[], &profile.permission_ruleset);
+        profile.permission_ruleset.extend(defaults);
+    }
+    profile.toolset.retain(|tool_id| {
+        registry.get(tool_id).is_none_or(|tool| {
+            if has_parent {
+                !policy.is_child_tool_call_fully_denied(
+                    Some(&profile.name),
+                    tool_id,
+                    tool.capability(),
+                    &profile.permission_ruleset,
+                )
+            } else {
+                !policy.is_tool_call_fully_denied(
+                    Some(&profile.name),
+                    tool_id,
+                    tool.capability(),
+                    &profile.permission_ruleset,
+                )
+            }
+        })
+    });
+    profile
 }

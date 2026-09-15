@@ -194,6 +194,10 @@ impl Coordinator {
                 kind,
                 &rule_selectors,
                 effective_permission_ruleset,
+                actor
+                    .agent_id
+                    .as_ref()
+                    .is_some_and(|id| run_state.subagent_parent_by_id.contains_key(id)),
             )
         });
         let hashline_edit = hashline_edit_metadata(&tool_id, &args_json, &tool_call_id);
@@ -664,8 +668,13 @@ where
 {
     let digest = permission_request_digest(&args.tool_id, &args.args_json);
     let streak = run_state.note_identical_tool_call(&args.tool_id, &digest);
+    let is_child = args
+        .actor
+        .agent_id
+        .as_ref()
+        .is_some_and(|id| run_state.subagent_parent_by_id.contains_key(id));
 
-    if run_state.doom_loop_always_granted || streak < DOOM_LOOP_STREAK_THRESHOLD {
+    if streak < DOOM_LOOP_STREAK_THRESHOLD || (!is_child && run_state.doom_loop_always_granted) {
         return gate_external_directory_and_start(
             clock,
             redactor,
@@ -685,6 +694,7 @@ where
         PermissionKind::DoomLoop,
         &[],
         &args.permission_ruleset,
+        is_child,
     );
     let grant_request = permission_grant_request(
         &run_state.info.workspace_root,
@@ -694,7 +704,10 @@ where
         &digest,
     );
 
-    if run_state.permission_grant_authorizes(&grant_request) {
+    if (!is_child || decision != PolicyDecision::Deny)
+        && (run_state.doom_loop_always_granted
+            || run_state.permission_grant_authorizes(&grant_request))
+    {
         return gate_external_directory_and_start(
             clock,
             redactor,
@@ -851,6 +864,10 @@ where
         PermissionKind::ExternalDirectory,
         &selectors,
         &args.permission_ruleset,
+        args.actor
+            .agent_id
+            .as_ref()
+            .is_some_and(|id| run_state.subagent_parent_by_id.contains_key(id)),
     );
     let digest = permission_request_digest(&args.tool_id, &args.args_json);
     let authorized = external_directory_grants_authorize(
