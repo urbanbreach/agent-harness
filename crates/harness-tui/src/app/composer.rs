@@ -28,6 +28,7 @@ pub struct ComposerState {
     pub prompt_buffer: String,
     pub prompt_cursor: usize,
     pub selection_anchor: Option<usize>,
+    pub(super) pointer_selection: Option<(usize, ratatui::layout::Rect)>,
     pub prompt_history: Vec<String>,
     pub prompt_history_index: Option<usize>,
     pub(super) prompt_history_path: Option<PathBuf>,

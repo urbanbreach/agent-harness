@@ -7,6 +7,179 @@ mod recorded_tools;
 
 const STRUCTURED_MARKDOWN: &str = "**outer *inner* end** and **[reference](https://example.com)**.\n\n~~~rust\nfn main() {\n\tlet value = 42;\n    println!(\"{value}\");\n}\n~~~\n\n| Left | Center | Right |\n| :--- | :---: | ---: |\n| alpha | beta | 123 |\n\n> outer quote\n> > nested quote with wrapped words\n\n$E=mc^2$\n\n";
 
+#[test]
+fn composer_selection_and_mentions_follow_visible_wrapped_cells() {
+    for (width, height) in [(40, 24), (80, 24), (120, 40)] {
+        let area = Rect::new(0, 0, width, height);
+        let mut app = AppState::new_live(None, false, None);
+        app.set_reduced_motion_for_evidence(true);
+        app.set_frame_area(area);
+        app.set_file_mention_collaborators_for_test(
+            PathBuf::from("/virtual/workspace"),
+            vec!["src/main.rs".into()],
+            123,
+        );
+        for ch in "@main".chars() {
+            app.handle_key(key(KeyCode::Char(ch)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+        app.handle_paste("cafe\u{301} 👩‍💻 hello");
+        app.handle_key(key_with_modifiers(
+            KeyCode::Left,
+            KeyModifiers::SHIFT | KeyModifiers::CONTROL,
+        ));
+        let _ = capture(&app, area, "composer-selection");
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap_or_abort();
+        terminal
+            .draw(|frame| render_app(frame, &app))
+            .unwrap_or_abort();
+        let buffer = terminal.backend().buffer();
+        let selected: String = buffer
+            .content
+            .iter()
+            .filter(|cell| cell.modifier.contains(Modifier::REVERSED))
+            .map(|cell| cell.symbol())
+            .collect();
+        assert_eq!(
+            selected, "hello",
+            "selection must be visible at {width}x{height}"
+        );
+        let mention = buffer
+            .content
+            .iter()
+            .find(|cell| cell.symbol() == "@")
+            .unwrap_or_abort();
+        assert_eq!(mention.fg, app.theme().status.warning);
+        assert!(buffer
+            .content
+            .iter()
+            .any(|cell| cell.symbol() == "e\u{301}"));
+        assert!(buffer.content.iter().any(|cell| cell.symbol() == "👩‍💻"));
+        let index = buffer
+            .content
+            .iter()
+            .position(|cell| cell.modifier.contains(Modifier::REVERSED))
+            .unwrap_or_abort();
+        let index = u16::try_from(index).unwrap_or_abort();
+        let hello = (index % width, index / width);
+        assert_eq!(
+            terminal.get_cursor_position().unwrap_or_abort(),
+            hello.into()
+        );
+
+        // Drive actual pointer input against the cells the user sees.
+        for (kind, column) in [
+            (MouseEventKind::Down(MouseButton::Left), hello.0),
+            (MouseEventKind::Drag(MouseButton::Left), hello.0 + 5),
+            (MouseEventKind::Up(MouseButton::Left), hello.0 + 5),
+        ] {
+            app.handle_mouse(
+                MouseEvent {
+                    kind,
+                    column,
+                    row: hello.1,
+                    modifiers: KeyModifiers::NONE,
+                },
+                area,
+                None,
+                None,
+                None,
+            );
+        }
+        assert_eq!(
+            app.composer.selection_anchor,
+            Some(app.composer.prompt_cursor - 5)
+        );
+        app.handle_paste("ready");
+        assert_eq!(
+            app.composer.prompt_buffer,
+            "@src/main.rs cafe\u{301} 👩‍💻 ready"
+        );
+        let _ = capture(&app, area, "composer-mouse-edit");
+
+        // A grapheme that straddled the old scalar-width boundary stays on one row.
+        app.clear_prompt_input();
+        let input_width = FrameLayoutPlan::for_app(&app, area)
+            .composer
+            .unwrap_or_abort()
+            .width
+            - 6;
+        let prefix = "x".repeat(usize::from(input_width - 2));
+        app.handle_paste(&format!("{prefix}👩‍💻e\u{301}界"));
+        terminal
+            .draw(|frame| render_app(frame, &app))
+            .unwrap_or_abort();
+        let buffer = terminal.backend().buffer();
+        let index = buffer
+            .content
+            .iter()
+            .position(|cell| cell.symbol() == "👩‍💻")
+            .unwrap_or_abort();
+        let index = u16::try_from(index).unwrap_or_abort();
+        let emoji = (index % width, index / width);
+        assert_eq!(buffer[(emoji.0 - 1, emoji.1)].symbol(), "x");
+        for kind in [
+            MouseEventKind::Down(MouseButton::Left),
+            MouseEventKind::Up(MouseButton::Left),
+        ] {
+            app.handle_mouse(
+                MouseEvent {
+                    kind,
+                    column: emoji.0 + 1,
+                    row: emoji.1,
+                    modifiers: KeyModifiers::NONE,
+                },
+                area,
+                None,
+                None,
+                None,
+            );
+        }
+        assert_eq!(app.composer.prompt_cursor, prefix.len());
+        let _ = capture(&app, area, "composer-unicode-wrap");
+        app.handle_key(key(KeyCode::Delete));
+        assert_eq!(app.composer.prompt_buffer, format!("{prefix}e\u{301}界"));
+        app.handle_key(key_with_modifiers(KeyCode::Right, KeyModifiers::SHIFT));
+        app.handle_paste("A");
+        assert_eq!(app.composer.prompt_buffer, format!("{prefix}A界"));
+
+        // A new key owner and a resized surface invalidate an unfinished drag.
+        let pointer = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: emoji.0,
+            row: emoji.1,
+            modifiers: KeyModifiers::NONE,
+        };
+        app.handle_composer_mouse(pointer, area);
+        app.handle_key(key_with_modifiers(
+            KeyCode::Char('p'),
+            KeyModifiers::CONTROL,
+        ));
+        let cursor = app.composer.prompt_cursor;
+        assert!(!app.handle_composer_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Drag(MouseButton::Left),
+                column: 0,
+                ..pointer
+            },
+            area
+        ));
+        assert_eq!(app.composer.prompt_cursor, cursor);
+        app.handle_key(key(KeyCode::Esc));
+        app.handle_composer_mouse(pointer, area);
+        assert!(!app.handle_composer_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Drag(MouseButton::Left),
+                column: 0,
+                ..pointer
+            },
+            Rect::new(0, 0, width + 1, height)
+        ));
+        app.replay_mode = true;
+        assert!(!app.handle_composer_mouse(pointer, area));
+    }
+}
+
 fn event(run: &str, seq: u64, payload: EventV1) -> EventEnvelopeV1 {
     EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,

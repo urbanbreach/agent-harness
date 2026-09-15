@@ -22,6 +22,7 @@ mod presentation;
 #[path = "ui_composer/viewport.rs"]
 mod viewport;
 
+pub(crate) use bordered::composer_input_viewport;
 pub(super) use bordered::{connect_waiting_owns_input, render_bordered_composer};
 pub(super) use document::render_document_composer_content;
 pub(super) use file_tags::composer_line_with_file_tags;
@@ -32,16 +33,16 @@ pub(super) use metadata::{
 pub(super) use viewport::composer_viewport;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct ComposerViewport {
-    pub(super) lines: Vec<String>,
-    pub(super) line_starts: Vec<usize>,
-    pub(super) cursor: Option<(usize, usize)>,
+pub(crate) struct ComposerViewport {
+    pub(crate) lines: Vec<String>,
+    pub(crate) line_starts: Vec<usize>,
+    pub(crate) cursor: Option<(usize, usize)>,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ComposerVisualChar {
+struct ComposerVisualChar<'a> {
     index: usize,
-    ch: char,
+    text: &'a str,
     width: usize,
 }
 

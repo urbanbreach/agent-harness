@@ -116,6 +116,7 @@ mod ui_transcript_test_helpers;
 
 pub(crate) use ui_transcript_layout::TranscriptContentAnchor;
 
+pub(crate) use ui_chrome::composer_input_viewport;
 use ui_chrome::{
     compact_inline_payload, display_width, elevated_card_surface, interruptive_modal_block,
     live_transcript_shell_section, muted_meta_style, panel_block, panel_style, render_footer,

@@ -18,6 +18,7 @@ impl AppState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        self.composer.pointer_selection = None;
         self.modal_interaction.invalidate();
         if self.handle_pending_quit_confirmation(&key) {
             self.maybe_auto_exit();
@@ -999,9 +1000,7 @@ impl AppState {
                     self.sync_file_mention_overlay();
                     return;
                 }
-                if self.composer.prompt_cursor > 0 {
-                    self.composer.prompt_cursor -= 1;
-                }
+                self.composer.prompt_cursor = self.prompt_grapheme_boundary(false);
                 self.composer.selection_anchor = None;
                 self.sync_file_mention_overlay();
                 return;
@@ -1013,9 +1012,7 @@ impl AppState {
                     self.sync_file_mention_overlay();
                     return;
                 }
-                if self.composer.prompt_cursor < self.prompt_char_count() {
-                    self.composer.prompt_cursor += 1;
-                }
+                self.composer.prompt_cursor = self.prompt_grapheme_boundary(true);
                 self.composer.selection_anchor = None;
                 self.sync_file_mention_overlay();
                 return;

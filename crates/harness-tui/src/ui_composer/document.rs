@@ -205,6 +205,7 @@ pub(crate) fn render_document_composer_content(
                     &app.file_mention_tags,
                     base_style,
                     tag_style,
+                    super::file_tags::composer_selection(app),
                 )
             }
         })

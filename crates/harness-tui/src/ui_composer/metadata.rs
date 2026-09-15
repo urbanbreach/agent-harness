@@ -60,7 +60,7 @@ fn composer_metadata_color(tone: ComposerMetadataTone, theme: &Theme) -> Color {
 fn composer_metadata_segments_width(segments: &[(String, ComposerMetadataTone)]) -> usize {
     segments
         .iter()
-        .map(|(text, _)| text.chars().count())
+        .map(|(text, _)| display_width(text))
         .sum::<usize>()
 }
 
@@ -167,7 +167,7 @@ fn composer_metadata_text(
 fn best_fit_text(options: &[String], max_width: usize) -> String {
     options
         .iter()
-        .find(|option| option.chars().count() <= max_width)
+        .find(|option| display_width(option) <= max_width)
         .cloned()
         .unwrap_or_else(|| {
             truncate_plain_text(options.first().map(String::as_str).unwrap_or(""), max_width)

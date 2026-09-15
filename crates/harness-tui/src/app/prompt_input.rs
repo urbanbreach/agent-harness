@@ -336,6 +336,7 @@ impl AppState {
     }
 
     pub fn handle_paste(&mut self, text: &str) {
+        self.composer.pointer_selection = None;
         if self.status_dashboard_is_active() {
             if let Some(dashboard) = self.dashboard.as_mut().filter(|dashboard| {
                 dashboard.focus() == crate::dashboard_integration::DashboardPane::Reply
@@ -415,15 +416,10 @@ impl AppState {
 
         self.continued_live_reopen_surface_active = false;
         self.composer.push_undo();
-        self.composer.prompt_cursor -= 1;
-        self.adjust_file_mention_tags_for_delete(
+        self.delete_prompt_range(
+            self.prompt_grapheme_boundary(false),
             self.composer.prompt_cursor,
-            self.composer.prompt_cursor + 1,
         );
-        let byte_idx = self.prompt_cursor_byte_index();
-        self.composer.prompt_buffer.remove(byte_idx);
-        self.sync_slash_overlay();
-        self.sync_file_mention_overlay();
     }
 
     pub(in crate::app) fn delete_prompt_char(&mut self) {
@@ -453,14 +449,10 @@ impl AppState {
 
         self.continued_live_reopen_surface_active = false;
         self.composer.push_undo();
-        self.adjust_file_mention_tags_for_delete(
+        self.delete_prompt_range(
             self.composer.prompt_cursor,
-            self.composer.prompt_cursor + 1,
+            self.prompt_grapheme_boundary(true),
         );
-        let byte_idx = self.prompt_cursor_byte_index();
-        self.composer.prompt_buffer.remove(byte_idx);
-        self.sync_slash_overlay();
-        self.sync_file_mention_overlay();
     }
 
     fn echo_submitted_prompt(&mut self, text: String, status: ActivityStatus) {

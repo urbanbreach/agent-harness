@@ -27,6 +27,7 @@ use self::ui_control_dock_disclosure::{
 };
 #[path = "ui_composer.rs"]
 mod ui_composer;
+pub(crate) use self::ui_composer::composer_input_viewport;
 use self::ui_composer::render_document_composer_content;
 #[cfg(test)]
 use self::ui_composer::{

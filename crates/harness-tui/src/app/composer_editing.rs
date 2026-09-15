@@ -1,4 +1,5 @@
 use super::*;
+use unicode_segmentation::UnicodeSegmentation;
 
 fn collect_chars(text: &str) -> Vec<char> {
     text.chars().collect()
@@ -34,6 +35,27 @@ fn find_word_end_right(chars: &[char], cursor: usize) -> usize {
 }
 
 impl AppState {
+    pub(in crate::app) fn prompt_grapheme_boundary(&self, forward: bool) -> usize {
+        let mut boundaries =
+            self.composer
+                .prompt_buffer
+                .graphemes(true)
+                .scan(0, |end, grapheme| {
+                    *end += grapheme.chars().count();
+                    Some(*end)
+                });
+        if forward {
+            boundaries
+                .find(|end| *end > self.composer.prompt_cursor)
+                .unwrap_or(self.prompt_char_count())
+        } else {
+            boundaries
+                .take_while(|end| *end < self.composer.prompt_cursor)
+                .last()
+                .unwrap_or(0)
+        }
+    }
+
     fn composer_chars(&self) -> Vec<char> {
         collect_chars(&self.composer.prompt_buffer)
     }
@@ -101,7 +123,7 @@ impl AppState {
         if self.composer.selection_anchor.is_none() {
             self.composer.selection_anchor = Some(self.composer.prompt_cursor);
         }
-        self.composer.prompt_cursor -= 1;
+        self.composer.prompt_cursor = self.prompt_grapheme_boundary(false);
         self.sync_file_mention_overlay();
     }
 
@@ -112,7 +134,7 @@ impl AppState {
         if self.composer.selection_anchor.is_none() {
             self.composer.selection_anchor = Some(self.composer.prompt_cursor);
         }
-        self.composer.prompt_cursor += 1;
+        self.composer.prompt_cursor = self.prompt_grapheme_boundary(true);
         self.sync_file_mention_overlay();
     }
 
