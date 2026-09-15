@@ -836,6 +836,10 @@ Public compaction knobs live under `runtime.compaction`:
 | Key | Default | Purpose |
 | --- | --- | --- |
 | `enabled` | `true` | Master switch for proactive, pre-prompt, overflow-retry, and manual compaction. When `false`, all compaction paths become no-ops. |
+| `threshold_percent` | unset | Fixed percentage of the context window, an integer from 1 through 100. Used when no global token threshold is set. |
+| `threshold_tokens` | unset | Fixed positive token count; overrides the global percentage when both are set. |
+| `model_thresholds` | `{}` | Percentages or `{ "tokens": count }` keyed by canonical `provider:model` references; override the global threshold. |
+| `agent_thresholds` | `{}` | Percentages or `{ "tokens": count }` keyed by agent profile names from `agent`; override model and global thresholds. |
 | `reserveTokens` / `reserve_tokens` | `16384` | Safety margin subtracted from the usable context window before compaction is considered. |
 | `keepRecentTokens` / `keep_recent_tokens` | `20000` | Target number of recent tokens to preserve verbatim after compaction. The latest complete turn is always preserved. |
 | `splitOversizedTurns` / `split_oversized_turns` | `false` | Allows overflow compaction to split an oversized latest turn, summarizing the earlier portion while preserving a suffix as recent provider context. |
@@ -843,6 +847,55 @@ Public compaction knobs live under `runtime.compaction`:
 | `structuredSummaryContract` / `structured_summary_contract` | `true` | Requires summaries to carry the Harness sections `Goal`, `Constraints`, `Progress`, `Key Decisions`, `Next Steps`, and `Critical Context`. Set `false` only for legacy heading compatibility. |
 | `estimatedTokenTriggers` / `estimated_token_triggers` | `true` | Enables the explicitly conservative automatic-compaction mode only when all model limits are unknown. This mode is labeled conservative and never claims exact model capacity or a percentage. |
 | `fallbackInputTokens` / `fallback_input_tokens` | `32768` | Non-exact conservative input cap used only by that all-limits-unknown mode. Set to `0` (or disable `estimatedTokenTriggers`) to leave capacity unknown and automatic pressure undecided. |
+
+For example, merge this into a config that defines the `explore` agent profile:
+
+```jsonc
+{
+  "runtime": {
+    "compaction": {
+      "threshold_percent": 70,
+      "model_thresholds": { "openai:gpt-4o-mini": 80 },
+      "agent_thresholds": { "explore": 55 }
+    }
+  }
+}
+```
+
+For absolute amounts, use `threshold_tokens` globally and `{ "tokens": count }`
+inside model/agent maps. Bare numbers inside those maps remain percentages:
+
+```jsonc
+{
+  "runtime": {
+    "compaction": {
+      "threshold_tokens": 80000,
+      "model_thresholds": { "openai:gpt-4o-mini": { "tokens": 64000 } },
+      "agent_thresholds": { "explore": { "tokens": 32000 } }
+    }
+  }
+}
+```
+
+Token amounts must be integers from 1 through 4,294,967,295. At the global scope,
+`threshold_tokens` takes priority over `threshold_percent`; set it to `null` to
+clear an inherited token amount. Precedence is agent profile, then selected model,
+then global threshold, then the adaptive default, regardless of the unit. Profile
+overrides apply to every instance of that profile. A
+fixed override does not change after a high-yield compaction. Without an override,
+the default is 45%, 50%, 55%, 60%, 70%, or 80% for windows ending at 16,000, 32,000,
+64,000, 128,000, 512,000, or above 512,000 tokens, respectively. Saving more than
+half the previous context lowers the next threshold by five percentage points.
+Savings count replaced messages and the old summary minus the new summary;
+retained messages and provider overhead do not count as savings.
+Fractional token thresholds round up; compaction is required at equality.
+
+These are soft thresholds. The model's input budget and reserve still require
+compaction earlier when necessary, even with `threshold_percent: 100`. Background
+preparation may start before the threshold but cannot commit solely because its
+summary is ready. Unknown model capacity still follows the conservative fallback
+setting; an override does not establish an unknown model's true limits. Model and
+agent threshold maps merge by key across config layers.
 
 On successful compaction, the coordinator appends a single `SessionCompaction` event to the event log and updates the in-memory provider context. The event carries the generated summary, token estimate before compaction, the sequence number of the first preserved event, replay-derived read/modified file lists, the trigger reason, and hook provenance. No separate checkpoint artifact is written; the summary lives entirely in the event and the in-memory `ProviderContext`. Resume reconstructs provider context from the latest `SessionCompaction` event for the agent, then replays post-compaction deltas from `events.jsonl`; the event log itself stays append-only.
 
