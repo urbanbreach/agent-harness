@@ -210,12 +210,29 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
 async fn child_session_permission_inheritance_isolated_by_task() {
     let workspace = setup_workspace_fixture();
 
-    let (handle, run, worker_id) = spawn_run(workspace.workspace()).await;
+    let mut config = CoordinatorConfig::new(workspace.workspace().join("sessions"));
+    config.permission_policy = child_observability_permission_policy();
+    config.tool_registry = Arc::new(coordinator_registry(pwd_allowlist()));
+    config.agent_profiles =
+        BTreeMap::from([("general".into(), profile("general", &["task", "bash"]))]);
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("same_profile_child", workspace.workspace())
+        .await
+        .unwrap_or_abort();
+    let worker_id = handle
+        .spawn_agent_idle(anonymous_supervisor_actor(), "general", None)
+        .await
+        .unwrap_or_abort();
 
     let inherited_spawn = handle
         .request_tool_call(
             worker_actor(&worker_id),
-            Some("parent".to_string()),
+            Some("general".to_string()),
             "task",
             json!({
                 "description": "Inherited child scope",
@@ -232,7 +249,7 @@ async fn child_session_permission_inheritance_isolated_by_task() {
     let restricted_spawn = handle
         .request_tool_call(
             worker_actor(&worker_id),
-            Some("parent".to_string()),
+            Some("general".to_string()),
             "task",
             json!({
                 "description": "Restricted child scope",
@@ -259,7 +276,10 @@ async fn child_session_permission_inheritance_isolated_by_task() {
         inherited_output.pointer("/permissions/scope_relation"),
         Some(&json!("isolated_by_child_profile"))
     );
-    assert_eq!(inherited_output.pointer("/child_toolset"), Some(&json!([])));
+    assert_eq!(
+        inherited_output.pointer("/child_toolset"),
+        Some(&json!(["task"]))
+    );
     assert_eq!(
         inherited_output.pointer("/child_runtime/permission_posture/bash"),
         Some(&json!("deny_by_toolset"))
@@ -294,7 +314,7 @@ async fn child_session_permission_inheritance_isolated_by_task() {
         .unwrap_or_abort();
     assert_eq!(
         restricted_output.pointer("/permissions/parent_scope"),
-        Some(&json!("parent"))
+        Some(&json!("general"))
     );
     assert_eq!(
         restricted_output.pointer("/permissions/child_scope"),
@@ -307,7 +327,7 @@ async fn child_session_permission_inheritance_isolated_by_task() {
     assert_eq!(restricted_output.get("status"), Some(&json!("scheduled")));
     assert_eq!(
         restricted_output.pointer("/child_toolset"),
-        Some(&json!([]))
+        Some(&json!(["task"]))
     );
     assert_eq!(
         restricted_output.pointer("/child_runtime/permission_posture/bash"),

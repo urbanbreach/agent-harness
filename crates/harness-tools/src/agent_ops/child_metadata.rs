@@ -302,17 +302,12 @@ pub(super) fn child_permission_metadata(
     runtime: &AgentRuntimeInfo,
 ) -> ChildPermissionMetadata {
     let parent_scope = ctx.profile.clone();
-    let scope_relation = if parent_scope.as_deref() == Some(runtime.profile_name.as_str()) {
-        "inherits_parent_scope"
-    } else {
-        "isolated_by_child_profile"
-    };
 
     ChildPermissionMetadata {
         spawn_permission_kind: "task",
         parent_scope,
         child_scope: runtime.profile_name.clone(),
-        scope_relation,
+        scope_relation: "isolated_by_child_profile",
     }
 }
 
