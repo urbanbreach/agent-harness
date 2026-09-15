@@ -280,18 +280,9 @@ pub fn format_file_operations(read_files: &[String], modified_files: &[String]) 
 
 /// Build the summarization prompt for the history portion of a compaction.
 ///
-/// Constructs a prompt containing:
-/// 1. The serialized conversation wrapped in `<conversation>` tags
-/// 2. The previous summary wrapped in `<previous-summary>` tags (if present)
-/// 3. The base prompt ([`SUMMARIZATION_PROMPT`] or [`UPDATE_SUMMARIZATION_PROMPT`])
-/// 4. Custom instructions appended as `Additional focus: ...` (if present)
-/// 5. File operations context (read/modified file lists)
-///
-/// Ports Pi's inline prompt building from `generateSummary`.
+/// Includes the previous summary, summary instructions, and file-operation context.
 pub fn build_summarization_prompt(
-    messages: &[ConversationMessage],
     previous_summary: Option<&str>,
-    custom_instructions: Option<&str>,
     file_ops: &FileOperations,
 ) -> String {
     let mut prompt_text = if let Some(previous) = previous_summary {
@@ -307,21 +298,6 @@ pub fn build_summarization_prompt(
     } else {
         SUMMARIZATION_PROMPT.to_string()
     };
-    if !messages.is_empty() {
-        prompt_text = format!(
-            "<conversation>\n{}\n</conversation>\n\n{prompt_text}",
-            serialize_conversation(messages)
-        );
-    }
-    if let Some(instructions) = custom_instructions.filter(|text| !text.trim().is_empty()) {
-        prompt_text.push_str(&format!(
-            "\n\n<custom-instructions>\n{}\n</custom-instructions>",
-            instructions
-                .trim()
-                .replace("</custom-instructions>", "[/custom-instructions]")
-        ));
-    }
-
     let (read_files, modified_files) = compute_file_lists(file_ops);
     let file_ops_text = format_file_operations(&read_files, &modified_files);
     if !file_ops_text.is_empty() {
@@ -329,27 +305,6 @@ pub fn build_summarization_prompt(
     }
 
     prompt_text
-}
-
-/// Build the turn-prefix summarization prompt for a split turn.
-///
-/// Constructs a prompt containing the serialized turn-prefix messages wrapped in
-/// `<conversation>` tags, followed by [`TURN_PREFIX_SUMMARIZATION_PROMPT`].
-///
-/// When `is_split_turn` is true, the caller should generate both the history
-/// summary (via [`build_summarization_prompt`]) and the turn-prefix summary
-/// (via this function), then combine the LLM results with a `---` separator:
-///
-/// ```text
-/// {history_summary}\n\n---\n\n**Turn Context (split turn):**\n\n{turn_prefix_summary}
-/// ```
-///
-/// Ports Pi's inline prompt building from `generateTurnPrefixSummary`.
-pub fn build_turn_prefix_prompt(messages: &[ConversationMessage]) -> String {
-    let conversation_text = serialize_conversation(messages);
-    format!(
-        "<conversation>\n{conversation_text}\n</conversation>\n\n{TURN_PREFIX_SUMMARIZATION_PROMPT}"
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -610,14 +565,9 @@ mod tests {
 
     #[test]
     fn build_summarization_prompt_no_previous_summary() {
-        let messages = vec![user_msg("Build a feature"), assistant_msg("Working on it.")];
         let file_ops = FileOperations::new();
-        let prompt = build_summarization_prompt(&messages, None, None, &file_ops);
+        let prompt = build_summarization_prompt(None, &file_ops);
 
-        assert!(prompt.starts_with("<conversation>"));
-        assert!(prompt.contains("[User]: Build a feature"));
-        assert!(prompt.contains("[Assistant]: Working on it."));
-        assert!(prompt.contains("</conversation>"));
         assert!(prompt.contains(SUMMARIZATION_PROMPT));
         assert!(!prompt.contains("<previous-summary>"));
         assert!(!prompt.contains(UPDATE_SUMMARIZATION_PROMPT));
@@ -625,10 +575,8 @@ mod tests {
 
     #[test]
     fn build_summarization_prompt_with_previous_summary() {
-        let messages = vec![user_msg("Continue the work")];
         let file_ops = FileOperations::new();
-        let prompt =
-            build_summarization_prompt(&messages, Some("## Goal\nPrevious goal"), None, &file_ops);
+        let prompt = build_summarization_prompt(Some("## Goal\nPrevious goal"), &file_ops);
 
         assert!(prompt.contains("<previous-summary>"));
         assert!(prompt.contains("## Goal\nPrevious goal"));
@@ -639,29 +587,12 @@ mod tests {
     }
 
     #[test]
-    fn build_summarization_prompt_with_custom_instructions() {
-        let messages = vec![user_msg("Do something")];
-        let file_ops = FileOperations::new();
-        let prompt = build_summarization_prompt(
-            &messages,
-            None,
-            Some("Focus on security implications"),
-            &file_ops,
-        );
-
-        assert!(prompt.contains(
-            "<custom-instructions>\nFocus on security implications\n</custom-instructions>"
-        ));
-    }
-
-    #[test]
     fn build_summarization_prompt_includes_file_operations() {
-        let messages = vec![user_msg("Read and edit files")];
         let mut file_ops = FileOperations::new();
         file_ops.read.insert("src/lib.rs".to_string());
         file_ops.edited.insert("Cargo.toml".to_string());
 
-        let prompt = build_summarization_prompt(&messages, None, None, &file_ops);
+        let prompt = build_summarization_prompt(None, &file_ops);
 
         assert!(prompt.contains("<read-files>"));
         assert!(prompt.contains("src/lib.rs"));
@@ -671,61 +602,11 @@ mod tests {
 
     #[test]
     fn build_summarization_prompt_no_file_ops_omits_tags() {
-        let messages = vec![user_msg("Hello")];
         let file_ops = FileOperations::new();
-        let prompt = build_summarization_prompt(&messages, None, None, &file_ops);
+        let prompt = build_summarization_prompt(None, &file_ops);
 
         assert!(!prompt.contains("<read-files>"));
         assert!(!prompt.contains("<modified-files>"));
-    }
-
-    // -----------------------------------------------------------------------
-    // build_turn_prefix_prompt
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn build_turn_prefix_prompt_structure() {
-        let messages = vec![
-            user_msg("Fix the bug in auth.rs"),
-            assistant_msg("I'll start by reading the file."),
-        ];
-        let prompt = build_turn_prefix_prompt(&messages);
-
-        assert!(prompt.starts_with("<conversation>"));
-        assert!(prompt.contains("[User]: Fix the bug in auth.rs"));
-        assert!(prompt.contains("[Assistant]: I'll start by reading the file."));
-        assert!(prompt.contains("</conversation>"));
-        assert!(prompt.contains(TURN_PREFIX_SUMMARIZATION_PROMPT));
-    }
-
-    // -----------------------------------------------------------------------
-    // Split turn combination
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn split_turn_prompts_combined_with_separator() {
-        // When is_split_turn is true, the caller builds both prompts and
-        // combines the LLM results with a --- separator.
-        let history_messages = vec![user_msg("Build feature X"), assistant_msg("Done.")];
-        let turn_prefix_messages =
-            vec![user_msg("Also fix bug Y"), assistant_msg("Working on it.")];
-
-        let history_prompt =
-            build_summarization_prompt(&history_messages, None, None, &FileOperations::new());
-        let turn_prefix_prompt = build_turn_prefix_prompt(&turn_prefix_messages);
-
-        // Both prompts are independently valid
-        assert!(history_prompt.contains(SUMMARIZATION_PROMPT));
-        assert!(turn_prefix_prompt.contains(TURN_PREFIX_SUMMARIZATION_PROMPT));
-
-        // The LLM results would be combined as:
-        // {history_summary}\n\n---\n\n**Turn Context (split turn):**\n\n{turn_prefix_summary}
-        let combined = format!(
-            "{}\n\n---\n\n**Turn Context (split turn):**\n\n{}",
-            "history summary", "turn prefix summary"
-        );
-        assert!(combined.contains("---"));
-        assert!(combined.contains("**Turn Context (split turn):**"));
     }
 
     // -----------------------------------------------------------------------

@@ -5,8 +5,6 @@ use harness_providers::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::digest::digest12_json;
-
 use super::super::compaction::SUMMARIZATION_SYSTEM_PROMPT;
 use super::summary_reducer::SummaryGenerationError;
 
@@ -23,20 +21,11 @@ impl SummaryText {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::coord) enum SummaryTerminalStatus {
-    Completed,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::coord) struct GeneratedSummary {
     pub(in crate::coord) text: SummaryText,
     pub(in crate::coord) task_intent: Option<String>,
     pub(in crate::coord) usage: Option<CompletionUsage>,
-    pub(in crate::coord) provider_id: String,
-    pub(in crate::coord) model_id: String,
-    pub(in crate::coord) request_digest: String,
-    pub(in crate::coord) terminal_status: SummaryTerminalStatus,
 }
 
 pub(super) struct SummaryGenerationRequest<'a> {
@@ -126,7 +115,7 @@ pub(super) async fn generate_summary(
             progress.publish(text);
         }
     };
-    let (reduced, request_digest) = loop {
+    let reduced = loop {
         let input_tokens = summary_input_tokens(&request.messages);
         let budget_ms = u64::from(input_tokens)
             .saturating_mul(2)
@@ -146,7 +135,7 @@ pub(super) async fn generate_summary(
             result = tokio::time::timeout(std::time::Duration::from_millis(budget_ms), attempt) => result.unwrap_or(Err(SummaryGenerationError::DurationBudget)),
         };
         match outcome {
-            Ok(reduced) => break (reduced, digest12_json(&request)),
+            Ok(reduced) => break reduced,
             Err(SummaryGenerationError::Provider {
                 category: Some(harness_providers::ProviderErrorCategory::ContextWindowExceeded),
                 ..
@@ -202,10 +191,6 @@ pub(super) async fn generate_summary(
         text: SummaryText(summary),
         task_intent,
         usage: reduced.usage,
-        provider_id: generation.provider_id.to_string(),
-        model_id: generation.model_id.to_string(),
-        request_digest,
-        terminal_status: SummaryTerminalStatus::Completed,
     })
 }
 
@@ -353,7 +338,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn compaction_v2_summary_generation_result_captures_terminal_digest_and_provenance() {
+    async fn compaction_v2_summary_generation_preserves_text_usage_and_request_model() {
         // Given: deterministic provider events with exact usage and request capture.
         let usage = CompletionUsage {
             prompt_tokens: 17,
@@ -389,26 +374,16 @@ mod tests {
             .expect("summary request lock should remain available")
             .clone()
             .expect("generator should submit one request");
-        let expected_digest = digest12_json(&request);
 
-        // Then: the generated value owns terminal state, digest, provenance, text, and usage.
+        // Then: the completed summary preserves text and usage, and the request targets the configured model.
         assert_eq!(
             (
                 generated.text.as_str(),
                 generated.usage.as_ref(),
-                generated.provider_id.as_str(),
-                generated.model_id.as_str(),
-                generated.request_digest.as_str(),
-                generated.terminal_status,
+                request.provider_id.as_deref(),
+                request.model_id.as_str(),
             ),
-            (
-                "generated summary",
-                Some(&usage),
-                "mock",
-                "model-1",
-                expected_digest.as_str(),
-                SummaryTerminalStatus::Completed,
-            )
+            ("generated summary", Some(&usage), Some("mock"), "model-1")
         );
     }
     #[tokio::test(start_paused = true)]
