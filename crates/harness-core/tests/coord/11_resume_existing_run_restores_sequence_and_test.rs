@@ -309,7 +309,7 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
                 3,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000002".to_string(),
-                    profile: "default".to_string(),
+                    profile: "general".to_string(),
                     parent_agent_id: Some("agent_000001".to_string()),
                 }),
             ),
@@ -338,9 +338,125 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
     let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
     config.deterministic_store = true;
     config.command_buffer = 64;
-    config.provider = Arc::new(CapturingProvider::new(vec!["resumed child answer"]));
+    let provider = Arc::new(CapturingProvider::new(vec![
+        "fresh child answer",
+        "resumed child answer",
+    ]));
+    config.provider = Arc::clone(&provider) as Arc<dyn Provider>;
     config.agent_profiles = agent_profiles();
+    let mut general = config.agent_profiles.remove("alpha").unwrap_or_abort();
+    general.name = "general".into();
+    config.agent_profiles.insert("general".into(), general);
     config.hook_runtime_config = hook_runtime_config;
+    config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+    );
+    for (name, action) in [
+        ("default", harness_core::perm::PermissionAction::Deny),
+        ("general", harness_core::perm::PermissionAction::Allow),
+    ] {
+        let profile = config.agent_profiles.get_mut(name).unwrap_or_abort();
+        profile.toolset = vec!["write".into(), "shell.run".into()];
+        profile.permission_ruleset = vec![
+            harness_core::perm::PermissionRule {
+                permission: "edit".into(),
+                pattern: "*".into(),
+                action,
+            },
+            harness_core::perm::PermissionRule {
+                permission: "bash".into(),
+                pattern: "*".into(),
+                action: harness_core::perm::PermissionAction::Allow,
+            },
+        ];
+    }
+    struct ResumeWriteTool(Arc<AtomicUsize>);
+    #[async_trait]
+    impl Tool for ResumeWriteTool {
+        fn id(&self) -> &str {
+            "write"
+        }
+        fn capability(&self) -> ToolCapability {
+            ToolCapability::EditFs
+        }
+        async fn call(
+            &self,
+            _ctx: ToolContext,
+            _args: serde_json::Value,
+        ) -> Result<ToolResult, ToolError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(ToolResult::text("write permitted"))
+        }
+    }
+    let edits = Arc::new(AtomicUsize::new(0));
+    let shells = Arc::new(AtomicUsize::new(0));
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(ResumeWriteTool(Arc::clone(&edits))));
+    registry.register(Arc::new(CountingShellTool {
+        calls: Arc::clone(&shells),
+    }));
+    config.tool_registry = Arc::new(registry);
+    let mut fresh_config = config.clone();
+    fresh_config.session_dir = temp_dir.path().join("fresh-sessions");
+    let fresh = spawn_coordinator(
+        fresh_config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let fresh_run = fresh
+        .start_run("fresh", temp_dir.path())
+        .await
+        .unwrap_or_abort();
+    let parent = fresh
+        .spawn_agent_idle(supervisor_actor(), "default", None)
+        .await
+        .unwrap_or_abort();
+    let child = fresh
+        .spawn_agent_idle(supervisor_actor(), "general", Some(parent))
+        .await
+        .unwrap_or_abort();
+    let fresh_runtime = fresh.agent_runtime_info(&child).await.unwrap_or_abort();
+    assert_eq!(fresh_runtime.toolset, ["write"]);
+    let request = fresh
+        .request_agent_turn(supervisor_actor(), &child, "fresh child prompt")
+        .await
+        .unwrap_or_abort();
+    wait_for_events(&fresh_run.events_path, Duration::from_secs(3), |events| {
+        events.iter().any(|event| {
+            event.correlation_id.as_deref() == Some(request.as_str())
+                && matches!(event.payload, EventV1::TaskCompleted(_))
+        })
+    })
+    .await;
+    let actor = EventActor::new(ActorKind::Worker, Some(child));
+    let call = fresh
+        .request_tool_call(
+            actor.clone(),
+            None,
+            "write",
+            json!({"filePath": "allowed.txt"}),
+        )
+        .await
+        .unwrap_or_abort();
+    wait_for_events(&fresh_run.events_path, Duration::from_secs(3), |events| events.iter().any(|event| matches!(&event.payload, EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == call))).await;
+    assert!(fresh
+        .request_tool_call(
+            actor.clone(),
+            None,
+            "shell.run",
+            json!({"cmd": "echo blocked"})
+        )
+        .await
+        .is_err());
+    fresh.stop_run().await.unwrap_or_abort();
+    assert_eq!(edits.load(Ordering::SeqCst), 1);
+    assert_eq!(provider.requests().len(), 1);
+    let inspection = inspect_resume_plan(&temp_dir.path().join(run_id));
+    assert!(inspection.is_resumable, "{inspection:?}");
+    assert_eq!(provider.requests().len(), 1);
+    assert_eq!(edits.load(Ordering::SeqCst), 1);
 
     let clock = Arc::new(FakeClock::new());
     let redactor = Arc::new(DefaultRedactor::default());
@@ -351,13 +467,55 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
         .await
         .unwrap_or_abort();
 
+    assert_eq!(
+        coordinator
+            .agent_runtime_info("agent_000002")
+            .await
+            .unwrap_or_abort(),
+        fresh_runtime
+    );
+    assert_eq!(
+        provider.requests().len(),
+        1,
+        "resume must not call the provider"
+    );
+    assert_eq!(
+        edits.load(Ordering::SeqCst),
+        1,
+        "resume must not replay tools"
+    );
+    assert!(coordinator
+        .request_tool_call(
+            actor.clone(),
+            None,
+            "shell.run",
+            json!({"cmd": "echo blocked"})
+        )
+        .await
+        .is_err());
+    let call = coordinator
+        .request_tool_call(actor, None, "write", json!({"filePath": "allowed.txt"}))
+        .await
+        .unwrap_or_abort();
+    wait_for_events(&run.events_path, Duration::from_secs(3), |events| events.iter().any(|event| matches!(&event.payload, EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == call))).await;
+    assert_eq!(edits.load(Ordering::SeqCst), 2);
+    assert_eq!(shells.load(Ordering::SeqCst), 0);
     let request_id = coordinator
         .request_agent_turn(supervisor_actor(), "agent_000002", "resume child prompt")
         .await
         .unwrap_or_abort();
     assert_eq!(request_id, "req_000002");
 
-    tokio::task::yield_now().await;
+    wait_for_events(&run.events_path, Duration::from_secs(3), |events| {
+        events.iter().any(|event| {
+            event.correlation_id.as_deref() == Some(request_id.as_str())
+                && matches!(event.payload, EventV1::TaskCompleted(_))
+        })
+    })
+    .await;
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].tools, requests[1].tools);
     coordinator.stop_run().await.unwrap_or_abort();
 
     let hook_output = fs::read_to_string(&hook_output_path).unwrap_or_abort();
