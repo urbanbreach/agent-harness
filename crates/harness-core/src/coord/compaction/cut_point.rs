@@ -35,11 +35,7 @@ pub(crate) fn find_safe_cut_point(
                 .tool_pairs
                 .iter()
                 .any(|pair| pair.result_entry_id == entry.entry.id);
-            let joins_next = entry
-                .tool_pairs
-                .iter()
-                .any(|pair| pair.assistant_entry_id == entry.entry.id);
-            candidate_for_payload(&entry.entry.payload, joins_previous, joins_next)
+            candidate_for_payload(&entry.entry.payload, joins_previous)
         })
         .collect::<Vec<_>>();
     let mut plan = plan_safe_cut(&candidates, keep_recent_tokens, estimate_text_tokens)?;
@@ -76,7 +72,7 @@ pub(crate) fn find_safe_cut_point(
 
 pub(crate) fn estimate_typed_entries_tokens(entries: &[CompactionSnapshotEntry]) -> u32 {
     entries.iter().fold(0_u32, |total, entry| {
-        let candidate = candidate_for_payload(&entry.entry.payload, false, false);
+        let candidate = candidate_for_payload(&entry.entry.payload, false);
         total.saturating_add(candidate.tokens(estimate_text_tokens))
     })
 }
@@ -84,14 +80,13 @@ pub(crate) fn estimate_typed_entries_tokens(entries: &[CompactionSnapshotEntry])
 fn candidate_for_payload(
     payload: &SessionEntryPayload,
     joins_previous: bool,
-    joins_next: bool,
 ) -> SafeCutCandidate<'_> {
     match payload {
         SessionEntryPayload::UserMessage { text, attachments } if attachments.is_empty() => {
             SafeCutCandidate::text(text)
         }
         SessionEntryPayload::UserMessage { text, .. } => {
-            SafeCutCandidate::atomic(estimate_text_tokens(text), joins_previous, joins_next)
+            SafeCutCandidate::atomic(estimate_text_tokens(text), joins_previous)
         }
         SessionEntryPayload::AssistantMessage { parts, .. } => match parts.as_slice() {
             [AssistantPart::Text { text }] | [AssistantPart::Reasoning { text }] => {
@@ -109,7 +104,6 @@ fn candidate_for_payload(
                     tokens.saturating_add(part_tokens)
                 }),
                 joins_previous,
-                joins_next,
             ),
         },
         SessionEntryPayload::ToolResult {
@@ -126,21 +120,20 @@ fn candidate_for_payload(
                 estimate_text_tokens,
             ),
             true,
-            joins_next,
         ),
         SessionEntryPayload::SystemContextUpdate { context }
         | SessionEntryPayload::CustomModelVisibleContext { context, .. } => {
-            SafeCutCandidate::atomic(estimate_text_tokens(context), joins_previous, joins_next)
+            SafeCutCandidate::atomic(estimate_text_tokens(context), joins_previous)
         }
         SessionEntryPayload::CompactionSummary { summary, .. }
         | SessionEntryPayload::BranchSummary { summary } => {
-            SafeCutCandidate::atomic(estimate_text_tokens(summary), joins_previous, joins_next)
+            SafeCutCandidate::atomic(estimate_text_tokens(summary), joins_previous)
         }
         SessionEntryPayload::ModelChange { .. }
         | SessionEntryPayload::ReasoningSettingChange { .. }
         | SessionEntryPayload::CustomPersistedState { .. }
         | SessionEntryPayload::SessionMetadata { .. } => {
-            SafeCutCandidate::atomic(0, joins_previous, joins_next)
+            SafeCutCandidate::atomic(0, joins_previous)
         }
     }
 }
