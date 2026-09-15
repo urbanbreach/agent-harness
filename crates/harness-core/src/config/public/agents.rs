@@ -229,66 +229,36 @@ fn primary_tools() -> Vec<String> {
 }
 
 fn general_tools() -> Vec<String> {
-    tool_ids(&[
-        "question",
-        "skill",
-        "websearch",
-        "webfetch",
-        "codesearch",
-        "ast_grep_search",
-        "lsp",
-        "read",
-        "glob",
-        "grep",
-        "list",
-        "session_list",
-        "session_read",
-        "session_search",
-        "session_info",
-        "edit",
-        "write",
-        "apply_patch",
-        "bash",
-        "batch",
-    ])
+    let mut tools = librarian_tools();
+    tools.retain(|tool| tool != "skill");
+    tools.extend(tool_ids(&["edit", "write", "apply_patch"]));
+    tools
 }
 
 fn research_tools() -> Vec<String> {
     tool_ids(&[
-        "bash",
-        "webfetch",
-        "websearch",
         "read",
         "glob",
         "grep",
         "list",
+        "ast_grep_search",
+        "webfetch",
+        "websearch",
         "session_list",
         "session_read",
         "session_search",
         "session_info",
-        "ast_grep_search",
         "batch",
+        "bash",
+        "lsp",
+        "skill",
     ])
 }
 
 fn librarian_tools() -> Vec<String> {
-    tool_ids(&[
-        "bash",
-        "webfetch",
-        "websearch",
-        "codesearch",
-        "lsp",
-        "read",
-        "glob",
-        "grep",
-        "list",
-        "session_list",
-        "session_read",
-        "session_search",
-        "session_info",
-        "ast_grep_search",
-        "batch",
-    ])
+    let mut tools = research_tools();
+    tools.push("codesearch".to_string());
+    tools
 }
 
 fn tool_ids(ids: &[&str]) -> Vec<String> {
@@ -320,8 +290,8 @@ fn explore_permissions() -> ProfilePermissions {
         todowrite: Some(PermissionMode::Deny),
         webfetch: Some(PermissionMode::Allow),
         websearch: Some(PermissionMode::Allow),
-        codesearch: Some(PermissionMode::Deny),
-        lsp: Some(PermissionMode::Deny),
+        codesearch: Some(PermissionMode::Allow),
+        lsp: Some(PermissionMode::Allow),
         ..ProfilePermissions::default()
     }
 }
