@@ -18,7 +18,7 @@ impl<'a> SafeCutCandidate<'a> {
         }
     }
 
-    pub(crate) const fn atomic(tokens: u32, joins_previous: bool, _joins_next: bool) -> Self {
+    pub(crate) const fn atomic(tokens: u32, joins_previous: bool) -> Self {
         Self {
             content: SafeCutContent::Atomic(tokens),
             joins_previous,

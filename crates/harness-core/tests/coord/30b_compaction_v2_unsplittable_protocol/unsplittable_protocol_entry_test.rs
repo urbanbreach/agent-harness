@@ -4,7 +4,7 @@ async fn compaction_v2_atomic_tool_pair_compacts_only_at_message_boundaries() {
     let typed_cut = plan_safe_cut(
         &[
             SafeCutCandidate::text("older reducible answer"),
-            SafeCutCandidate::atomic(12_500, true, false),
+            SafeCutCandidate::atomic(12_500, true),
         ],
         1_000,
         estimate_compaction_text_tokens,
