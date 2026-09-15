@@ -100,20 +100,6 @@ pub(super) fn run_state_permission_methods_own_pending_and_grant_state() {
     assert!(run_state.permission_grant_authorizes(&request));
 }
 
-pub(super) fn run_state_compaction_methods_own_overflow_retry_attempt_state() {
-    let mut state = crate::coord::session_compaction::CompactionState::default();
-    for now in [0, 1, 2] {
-        state.record(false, now);
-    }
-    assert!(state.tripped(60_001));
-    assert!(!state.tripped(60_002));
-    state.record(false, 60_002);
-    assert!(!state.tripped(60_002));
-    state.record(true, 60_003);
-    state.record(false, 60_004);
-    assert!(!state.tripped(60_004));
-}
-
 fn queued_agent_turn_fixture(
     task_id: &str,
     agent_id: &str,

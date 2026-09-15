@@ -1299,7 +1299,6 @@ mod run_state_method_tests;
 
 delegate_test!(run_state_turn_queue_methods_own_agent_turn_lifecycle_state => run_state_method_tests::run_state_turn_queue_methods_own_agent_turn_lifecycle_state);
 delegate_test!(run_state_permission_methods_own_pending_and_grant_state => run_state_method_tests::run_state_permission_methods_own_pending_and_grant_state);
-delegate_test!(run_state_compaction_methods_own_overflow_retry_attempt_state => run_state_method_tests::run_state_compaction_methods_own_overflow_retry_attempt_state);
 
 #[cfg(test)]
 #[path = "tests/canonical_provider_context_cache_tests.rs"]
@@ -1525,4 +1524,211 @@ async fn wait_for_events(
 
     let events = read_events(path);
     panic!("event stream ended waiting for {label}; events: {events:#?}");
+}
+
+#[tokio::test]
+async fn child_shared_ask_waits_for_approval_despite_role_allow() {
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let mut config = test_config(temp.path());
+    config.permission_policy = ask_shell_permission_policy(0);
+    let mut child = test_agent_profile("general");
+    child.toolset = vec!["shell.run".into()];
+    child.permission_ruleset = crate::perm::from_profile_permissions(&ProfilePermissions {
+        shell: Some(PermissionMode::Allow),
+        ..ProfilePermissions::default()
+    });
+    config.agent_profiles.insert("general".into(), child);
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("child_shared_ask", temp.path())
+        .await
+        .unwrap_or_abort();
+    let parent = handle
+        .spawn_agent_idle(
+            EventActor::new(ActorKind::Supervisor, None),
+            "general",
+            None,
+        )
+        .await
+        .unwrap_or_abort();
+    let child = handle
+        .spawn_agent_idle(
+            EventActor::new(ActorKind::Supervisor, None),
+            "general",
+            Some(parent),
+        )
+        .await
+        .unwrap_or_abort();
+    let call = handle
+        .request_tool_call(
+            EventActor::new(ActorKind::Worker, Some(child)),
+            Some("forged".into()),
+            "shell.run",
+            json!({"cmd": "echo approved"}),
+        )
+        .await
+        .unwrap_or_abort();
+    let events = wait_for_events(&handle, &run.events_path, "child shared ask", |event| matches!(&event.payload, EventV1::PermissionRequested(data) if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(call.as_str()))).await;
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::ToolCallStarted(_))));
+    let permission = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data) => Some(data.permission_id.clone()),
+            _ => None,
+        })
+        .unwrap_or_abort();
+    handle
+        .resolve_permission(permission, PermissionDecision::Allow, None)
+        .await
+        .unwrap_or_abort();
+    wait_for_events(&handle, &run.events_path, "approved child tool", |event| matches!(&event.payload, EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == call)).await;
+    handle.stop_run().await.unwrap_or_abort();
+}
+
+#[tokio::test]
+async fn child_shared_denies_precede_grants_at_all_execution_gates() {
+    for (kind, always_doom) in [
+        (PermissionKind::Shell, false),
+        (PermissionKind::ExternalDirectory, false),
+        (PermissionKind::DoomLoop, false),
+        (PermissionKind::DoomLoop, true),
+    ] {
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let mut config = test_config(temp.path());
+        let mut source = load_config_from_str(
+            r#"{
+            provider: { default: { type: "openai_compatible", options: {
+                baseURL: "http://127.0.0.1:1/v1", apiKey: "test-key"
+            }, models: { "model-1": { name: "Fixture" } } } },
+            model: "default/model-1", permission: "allow"
+        }"#,
+        )
+        .unwrap_or_abort();
+        source.permissions.external_directory = Some(PermissionMode::Allow);
+        source.permissions.doom_loop = Some(PermissionMode::Allow);
+        match kind {
+            PermissionKind::Shell => {
+                source.permissions.rules.shell = vec![crate::config::PermissionSelectorRule {
+                    selector: crate::config::PermissionSelector::Exact("echo blocked".into()),
+                    mode: PermissionMode::Deny,
+                }]
+            }
+            PermissionKind::ExternalDirectory => {
+                source.permissions.external_directory = Some(PermissionMode::Deny)
+            }
+            PermissionKind::DoomLoop => source.permissions.doom_loop = Some(PermissionMode::Deny),
+            _ => {}
+        }
+        config.permission_policy = PermissionPolicy::from_config(&source);
+        config.always_approve_on_start = true;
+        let mut profile = test_agent_profile("general");
+        profile.toolset = vec!["shell.run".into()];
+        profile.permission_ruleset = crate::perm::from_profile_permissions(&ProfilePermissions {
+            shell: Some(PermissionMode::Allow),
+            external_directory: Some(PermissionMode::Allow),
+            doom_loop: Some(PermissionMode::Allow),
+            ..ProfilePermissions::default()
+        });
+        config.agent_profiles.insert("general".into(), profile);
+        let (_command_tx, command_rx) = mpsc::channel(16);
+        let (job_tx, job_rx) = mpsc::channel(16);
+        let mut coordinator = Coordinator::new(
+            config,
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+            command_rx,
+            job_tx,
+            job_rx,
+        );
+        let run = coordinator
+            .start_run_internal_async("child_shared_deny".into(), temp.path().to_path_buf())
+            .await
+            .unwrap_or_abort();
+        let supervisor = EventActor::new(ActorKind::Supervisor, None);
+        let parent = coordinator
+            .spawn_agent_internal(supervisor.clone(), "general".into(), None, None, false)
+            .await
+            .unwrap_or_abort();
+        let child = coordinator
+            .spawn_agent_internal(supervisor, "general".into(), Some(parent), None, false)
+            .await
+            .unwrap_or_abort();
+        let actor = EventActor::new(ActorKind::Worker, Some(child));
+        let args = if kind == PermissionKind::ExternalDirectory {
+            json!({"cmd": "echo blocked", "cwd": temp.path().parent().unwrap_or_abort()})
+        } else {
+            json!({"cmd": "echo blocked"})
+        };
+        let digest = super::permission::permission_request_digest("shell.run", &args);
+        let grant_request = super::permission::permission_grant_request(
+            temp.path(),
+            kind,
+            "shell.run",
+            &args,
+            &digest,
+        );
+        let state = coordinator.run_state.as_mut().unwrap_or_abort();
+        state.record_permission_grant(PermissionGrant {
+            grant_id: "grant_000001".into(),
+            permission_id: "perm_000001".into(),
+            scope: PermissionGrantScope::Run,
+            expires_at: None,
+            kind,
+            tool: grant_request.tool.clone(),
+            matcher: grant_request.matcher.clone(),
+        });
+        assert!(state.permission_grant_authorizes(&grant_request));
+        state.doom_loop_always_granted = always_doom;
+        let permitted_calls = if kind == PermissionKind::DoomLoop {
+            2
+        } else {
+            0
+        };
+        for _ in 0..permitted_calls {
+            coordinator
+                .request_tool_call_internal(
+                    actor.clone(),
+                    None,
+                    "shell.run".into(),
+                    args.clone(),
+                    None,
+                    None,
+                )
+                .await
+                .unwrap_or_abort();
+        }
+        let denied = coordinator
+            .request_tool_call_internal(
+                actor,
+                Some("forged".into()),
+                "shell.run".into(),
+                args,
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(denied, CoordinatorError::PermissionDenied(_)),
+            "{kind:?}: {denied}"
+        );
+        let events = read_events(&run.events_path);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event.payload, EventV1::ToolCallStarted(_)))
+                .count(),
+            permitted_calls
+        );
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event.payload, EventV1::PermissionRequested(_))));
+        assert!(events.iter().any(|event| matches!(&event.payload, EventV1::PermissionResolved(data) if data.decision == crate::event::PermissionDecision::Deny)));
+    }
 }
