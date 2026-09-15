@@ -4,6 +4,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     text::Line,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::{AppState, Focus};
 use crate::overlay::OverlayKind;
@@ -838,8 +839,8 @@ fn word_wrapped_line_count(line: &str, width: usize) -> usize {
     }
 
     let chars = line
-        .chars()
-        .map(|ch| (ch, display_width(&ch.to_string()).max(1)))
+        .graphemes(true)
+        .map(|grapheme| (grapheme, display_width(grapheme).max(1)))
         .collect::<Vec<_>>();
     let mut count = 0usize;
     let mut start = 0usize;
@@ -852,12 +853,12 @@ fn word_wrapped_line_count(line: &str, width: usize) -> usize {
 
         if let Some(break_at) = chars[start..fit_end]
             .iter()
-            .rposition(|(ch, _)| ch.is_whitespace())
+            .rposition(|(ch, _)| ch.chars().all(char::is_whitespace))
             .map(|offset| start + offset)
             .filter(|break_at| *break_at > start)
         {
             start = break_at + 1;
-        } else if chars[fit_end].0.is_whitespace() {
+        } else if chars[fit_end].0.chars().all(char::is_whitespace) {
             start = fit_end + 1;
         } else {
             start = fit_end.max(start + 1);
@@ -867,7 +868,7 @@ fn word_wrapped_line_count(line: &str, width: usize) -> usize {
     count.max(1)
 }
 
-fn word_wrap_fit_end(chars: &[(char, usize)], start: usize, width: usize) -> usize {
+fn word_wrap_fit_end(chars: &[(&str, usize)], start: usize, width: usize) -> usize {
     let mut used = 0usize;
     for (position, (_, char_width)) in chars.iter().enumerate().skip(start) {
         if position > start && used.saturating_add(*char_width) > width {
@@ -1102,6 +1103,7 @@ mod live_dock_tests;
 mod tests {
     use super::*;
     use crate::UnwrapOrAbort;
+    use unicode_segmentation::UnicodeSegmentation;
 
     #[test]
     fn split_secondary_surface_stacks_vertically_in_narrow_tall_windows() {

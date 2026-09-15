@@ -1,4 +1,5 @@
 use super::*;
+use unicode_segmentation::UnicodeSegmentation;
 
 pub(crate) fn composer_viewport(
     text: &str,
@@ -50,20 +51,24 @@ fn composer_visual_lines(
     let width = width.max(1);
     let mut lines = Vec::new();
     let mut cursor = None;
+    let mut char_index = 0;
     let chars = text
-        .chars()
-        .enumerate()
-        .map(|(index, ch)| ComposerVisualChar {
-            index,
-            ch,
-            width: display_width(&ch.to_string()).max(1),
+        .graphemes(true)
+        .map(|grapheme| {
+            let index = char_index;
+            char_index += grapheme.chars().count();
+            ComposerVisualChar {
+                index,
+                text: grapheme,
+                width: display_width(grapheme).max(1),
+            }
         })
         .collect::<Vec<_>>();
 
     let mut segment_start = 0usize;
     let mut fallback_start = 0usize;
     for position in 0..=chars.len() {
-        let hard_break = position == chars.len() || chars[position].ch == '\n';
+        let hard_break = position == chars.len() || chars[position].text == "\n";
         if !hard_break {
             continue;
         }
@@ -132,7 +137,7 @@ fn wrap_composer_visual_segment(
 
         if let Some(break_at) = chars[start..fit_end]
             .iter()
-            .rposition(|visual_char| visual_char.ch.is_whitespace())
+            .rposition(|visual_char| visual_char.text.chars().all(char::is_whitespace))
             .map(|offset| start + offset)
             .filter(|break_at| *break_at > start)
         {
@@ -148,7 +153,7 @@ fn wrap_composer_visual_segment(
             continue;
         }
 
-        if chars[fit_end].ch.is_whitespace() {
+        if chars[fit_end].text.chars().all(char::is_whitespace) {
             emit_composer_visual_line(
                 &chars[start..fit_end],
                 chars[start].index,
@@ -205,7 +210,7 @@ fn emit_composer_visual_line(
         .unwrap_or(fallback_start);
     if let Some(cursor_index) = cursor_char_index {
         if let Some(last) = chars.last() {
-            let line_end = last.index + 1;
+            let line_end = last.index + last.text.chars().count();
             if cursor_index >= line_start && cursor_index < line_end {
                 let column = chars
                     .iter()
@@ -220,7 +225,7 @@ fn emit_composer_visual_line(
     }
 
     lines.push((
-        chars.iter().map(|visual_char| visual_char.ch).collect(),
+        chars.iter().map(|visual_char| visual_char.text).collect(),
         line_start,
     ));
 }

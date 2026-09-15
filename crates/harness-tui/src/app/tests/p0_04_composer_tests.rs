@@ -251,7 +251,8 @@ fn multiline_getter_badge_and_queue_state_are_visible() {
     assert!(app.composer.composer_multiline_mode());
     assert_eq!(app.queued_prompt_count, 1);
     assert!(rendered.contains("queued 1"));
-    assert!(rendered.contains("MULTILINE"));
+    assert_eq!(rendered.matches("MULTILINE").count(), 1);
+    assert!(!rendered.contains(" · multiline"));
     assert!(
         !rendered.contains("Enter:queue"),
         "multiline footer must not advertise Enter as queue\n{rendered}"

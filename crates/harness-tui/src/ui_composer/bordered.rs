@@ -32,9 +32,6 @@ pub(crate) fn render_bordered_composer(
     if let Some(completion) = composer_view.completion.as_ref() {
         extra_identity.push(format!("{} suggestions", completion.items.len()));
     }
-    if app.composer.composer_multiline_mode() {
-        extra_identity.push("MULTILINE".to_string());
-    }
     let badge = composer_model_badge(
         app,
         &extra_identity,
@@ -46,16 +43,7 @@ pub(crate) fn render_bordered_composer(
         badge
     };
     let content_lines = context.composer_lines.max(1);
-    let strip_height = area
-        .height
-        .min(content_lines.saturating_add(2))
-        .max(3.min(area.height).max(1));
-    let strip = Rect {
-        x: area.x,
-        y: area.y,
-        width: area.width,
-        height: strip_height,
-    };
+    let strip = composer_strip(area, content_lines);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -67,10 +55,8 @@ pub(crate) fn render_bordered_composer(
 
     let composer_text = app.composer_render_text();
     let composer_empty = composer_text.is_empty();
-    let glyph_cols = 3_usize;
-    let draft_width = usize::from(inner.width)
-        .saturating_sub(glyph_cols.saturating_add(1))
-        .max(1);
+    let input = composer_text_area(strip);
+    let draft_width = usize::from(input.width).max(1);
     let max_visible = usize::from(inner.height.min(content_lines).max(1));
     let show_cursor = !context.dock.composer_disabled && focused;
     let ghost_visible = app.composer_ghost_eligible();
@@ -165,22 +151,37 @@ pub(crate) fn render_bordered_composer(
     let viewport = &resolved.viewport;
 
     let base_style = Style::default().fg(body_color).bg(composer_surface);
+    let tag_style = base_style
+        .fg(theme.status.warning)
+        .add_modifier(Modifier::BOLD);
+    let selection = super::file_tags::composer_selection(app);
+    let plain_text = composer_empty
+        || context.dock.composer_disabled
+        || app.collapsed_paste_presentation().is_some();
     let body_lines = viewport
         .lines
         .iter()
+        .zip(&viewport.line_starts)
         .enumerate()
-        .map(|(row, line)| {
-            let mut spans = if row == 0 {
-                vec![
-                    Span::styled(glyph_prefix.clone(), glyph_style),
-                    Span::styled(line.clone(), base_style),
-                ]
+        .map(|(row, (line, start))| {
+            let body = if plain_text {
+                Line::from(Span::styled(line.clone(), base_style))
             } else {
-                vec![
-                    Span::styled(" ".repeat(glyph_cols), base_style),
-                    Span::styled(line.clone(), base_style),
-                ]
+                composer_line_with_file_tags(
+                    line,
+                    *start,
+                    &app.file_mention_tags,
+                    base_style,
+                    tag_style,
+                    selection.clone(),
+                )
             };
+            let mut spans = vec![if row == 0 {
+                Span::styled(glyph_prefix.clone(), glyph_style)
+            } else {
+                Span::styled(" ".repeat(glyph_cols), base_style)
+            }];
+            spans.extend(body.spans);
             if ghost_visible
                 && viewport.cursor.is_some_and(|(cursor_row, cursor_col)| {
                     cursor_row == row && cursor_col == display_width(line)
@@ -219,6 +220,52 @@ pub(crate) fn render_bordered_composer(
             frame.set_cursor_position((cursor_x, cursor_y));
         }
     }
+}
+
+fn composer_strip(area: Rect, content_lines: u16) -> Rect {
+    Rect {
+        height: area.height.min(content_lines.max(1).saturating_add(2)),
+        ..area
+    }
+}
+
+fn composer_text_area(strip: Rect) -> Rect {
+    Rect::new(
+        strip.x.saturating_add(4),
+        strip.y.saturating_add(1),
+        strip.width.saturating_sub(6),
+        strip.height.saturating_sub(2),
+    )
+}
+
+pub(crate) fn composer_input_viewport(
+    app: &AppState,
+    frame_area: Rect,
+) -> Option<(Rect, ComposerViewport)> {
+    let composer = FrameLayoutPlan::for_app(app, frame_area).composer?;
+    let text = app.composer_render_text();
+    let lines = if app.startup_shell_visible() {
+        startup_composer_input_height(&text, composer.width, frame_area.height)
+    } else {
+        composer_input_height(&text, composer.width)
+    };
+    let input = composer_text_area(composer_strip(composer, lines));
+    if input.width == 0 || input.height == 0 {
+        return None;
+    }
+    let resolved = super::presentation::resolve_composer(
+        app,
+        &text,
+        app.focus == Focus::Prompt,
+        app.composer_disabled(),
+        app.startup_shell_visible(),
+        "",
+        usize::from(input.width),
+        usize::from(input.height),
+        input.height.saturating_add(2),
+        app.focus == Focus::Prompt,
+    )?;
+    Some((input, resolved.viewport))
 }
 
 fn bordered_composer_placeholder(

@@ -34,7 +34,7 @@ pub(crate) fn composer_model_badge(
         status.push(format!("queued {}", app.queued_prompt_count));
     }
     if app.composer.multiline_mode {
-        status.push("multiline".to_string());
+        status.push("MULTILINE".to_string());
     }
 
     let identity = identity.join(" · ");

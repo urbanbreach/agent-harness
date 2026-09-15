@@ -1279,11 +1279,7 @@ impl AppState {
         if let Some((_, cursor)) = self.collapsed_paste_presentation() {
             return cursor;
         }
-        if self.composer.editor_text() != self.composer.prompt_buffer {
-            self.composer.prompt_cursor
-        } else {
-            self.composer.editor_cursor()
-        }
+        self.composer.prompt_cursor
     }
 
     pub(crate) fn composer_ghost_eligible(&self) -> bool {

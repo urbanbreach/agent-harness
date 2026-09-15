@@ -282,11 +282,63 @@ impl AppState {
         ) {
             return false;
         }
-        let actual_composer = crate::layout::FrameLayoutPlan::for_app(self, frame_area).composer;
-        if !actual_composer.is_some_and(|area| rect_contains(area, mouse.column, mouse.row)) {
+        if self.composer_disabled() || self.overlay_stack().blocks_pointer_interaction() {
+            self.composer.pointer_selection = None;
             return false;
         }
+        if self
+            .composer
+            .pointer_selection
+            .is_some_and(|(_, area)| area != frame_area)
+        {
+            self.composer.pointer_selection = None;
+            return false;
+        }
+        let actual_composer = crate::layout::FrameLayoutPlan::for_app(self, frame_area).composer;
+        let inside =
+            actual_composer.is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
+        if !inside && self.composer.pointer_selection.is_none() {
+            return false;
+        }
+        let hit = ui::composer_input_viewport(self, frame_area).and_then(|(input, viewport)| {
+            let row = usize::from(mouse.row.saturating_sub(input.y))
+                .min(viewport.lines.len().saturating_sub(1));
+            let line = viewport.lines.get(row)?;
+            Some(
+                viewport.line_starts[row]
+                    + question_answer_cursor_for_column(
+                        line,
+                        usize::from(mouse.column.saturating_sub(input.x)),
+                    ),
+            )
+        });
         self.focus = Focus::Prompt;
+        if let Some(cursor) = hit {
+            match mouse.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    let anchor = if mouse.modifiers.contains(KeyModifiers::SHIFT) {
+                        self.composer
+                            .selection_anchor
+                            .unwrap_or(self.composer.prompt_cursor)
+                    } else {
+                        cursor
+                    };
+                    self.composer.pointer_selection = Some((anchor, frame_area));
+                    self.composer.selection_anchor = (anchor != cursor).then_some(anchor);
+                    self.composer.prompt_cursor = cursor;
+                }
+                MouseEventKind::Drag(MouseButton::Left) | MouseEventKind::Up(MouseButton::Left) => {
+                    if let Some((anchor, _)) = self.composer.pointer_selection {
+                        self.composer.selection_anchor = (anchor != cursor).then_some(anchor);
+                        self.composer.prompt_cursor = cursor;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)) {
+            self.composer.pointer_selection = None;
+        }
         true
     }
 
@@ -602,7 +654,8 @@ impl AppState {
     }
 
     fn clear_blocked_pointer_state(&mut self) -> bool {
-        let changed = self.transcript_view.transcript_scrollbar_drag.is_some()
+        let changed = self.composer.pointer_selection.is_some()
+            || self.transcript_view.transcript_scrollbar_drag.is_some()
             || self.transcript_view.hovered_transcript_target.is_some()
             || self.transcript_view.return_to_live_hovered
             || self.hovered_subagent_footer_target.is_some()
@@ -617,6 +670,7 @@ impl AppState {
         self.hovered_live_turn_stop = false;
         self.hovered_live_turn_background = false;
         self.pending_subagent_footer_target = None;
+        self.composer.pointer_selection = None;
         self.clear_transcript_selection();
         self.clear_operator_sidebar_selection();
         changed
@@ -1052,6 +1106,12 @@ impl AppState {
         }
 
         self.set_frame_area(frame_area);
+
+        if self.composer.pointer_selection.is_some()
+            && self.handle_composer_mouse_event(mouse, frame_area)
+        {
+            return true;
+        }
 
         if self.handle_todo_pane_mouse(mouse, frame_area) {
             return true;
