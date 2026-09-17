@@ -97,10 +97,7 @@ impl AppState {
         }
     }
 
-    pub(in crate::app) fn handle_new_worktree_dialog_paste(&mut self, text: &str) -> bool {
-        if !self.new_worktree_dialog.visible {
-            return false;
-        }
+    pub(in crate::app) fn handle_new_worktree_dialog_paste(&mut self, text: &str) {
         for character in text.chars().filter(|character| !character.is_control()) {
             if self.new_worktree_dialog.input.len() + character.len_utf8() > MAX_WORKTREE_NAME_BYTES
             {
@@ -111,6 +108,5 @@ impl AppState {
                 .insert(self.new_worktree_dialog.cursor, character);
             self.new_worktree_dialog.cursor += character.len_utf8();
         }
-        true
     }
 }

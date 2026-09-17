@@ -14,6 +14,7 @@ pub(crate) enum ModalViewKey {
     Lineage,
     ForkSelector,
     PlanPreview,
+    SettingsValue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +39,7 @@ pub(crate) enum ModalTarget {
     Close,
     Input,
     Row(usize),
+    Tab(usize),
     Scrollbar,
     Footer(ModalAction),
 }
@@ -175,9 +177,16 @@ impl AppState {
                 self.modal_interaction.hovered = target;
                 let selection_changed = match (model.key, target) {
                     (ModalSurfaceKey::Help, _) => false,
+                    (
+                        ModalSurfaceKey::Overlay {
+                            view: ModalViewKey::SettingsValue,
+                            ..
+                        },
+                        _,
+                    ) => false,
                     (_, Some(ModalTarget::Row(index))) => self.select_modal_row(model.key, index),
                     (_, Some(ModalTarget::Close | ModalTarget::Input | ModalTarget::Scrollbar))
-                    | (_, Some(ModalTarget::Footer(_)))
+                    | (_, Some(ModalTarget::Footer(_) | ModalTarget::Tab(_)))
                     | (_, None) => false,
                 };
                 Some(owner_changed || hover_changed || selection_changed)
@@ -327,7 +336,40 @@ impl AppState {
                 self.dismiss_modal(owner);
                 true
             }
+            ModalPressLocation::Target(ModalTarget::Row(index))
+                if matches!(
+                    owner,
+                    ModalSurfaceKey::Overlay {
+                        view: ModalViewKey::SettingsValue,
+                        ..
+                    }
+                ) =>
+            {
+                self.settings_editor_choose(index);
+                true
+            }
+            ModalPressLocation::Target(ModalTarget::Tab(index)) => {
+                if self.settings_editor_tab()
+                    != if index == 0 {
+                        super::SettingsTab::Runtime
+                    } else {
+                        super::SettingsTab::Tui
+                    }
+                {
+                    self.settings_editor_switch_tab();
+                }
+                true
+            }
             ModalPressLocation::Target(ModalTarget::Row(index)) => {
+                if matches!(
+                    owner,
+                    ModalSurfaceKey::Overlay {
+                        kind: OverlayKind::SettingsEditor,
+                        ..
+                    }
+                ) {
+                    self.settings_interaction.filtering = false;
+                }
                 self.select_modal_row(owner, index);
                 self.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
                 true
@@ -343,6 +385,18 @@ impl AppState {
             }
             ModalPressLocation::Target(ModalTarget::Input) if owner == ModalSurfaceKey::Help => {
                 self.help_browser.activate_search()
+            }
+            ModalPressLocation::Target(ModalTarget::Input)
+                if matches!(
+                    owner,
+                    ModalSurfaceKey::Overlay {
+                        kind: OverlayKind::SettingsEditor,
+                        ..
+                    }
+                ) =>
+            {
+                self.settings_interaction.filtering = true;
+                true
             }
             ModalPressLocation::Target(ModalTarget::Input | ModalTarget::Scrollbar) => false,
         }

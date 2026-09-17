@@ -346,8 +346,8 @@ impl AppState {
         self.status_banner = None;
         self.details_scroll = 0;
         self.transcript_view.transcript_scroll = 0;
-        self.composer.prompt_history.clear();
         self.composer.prompt_history_index = None;
+        self.composer.prompt_history_draft = None;
         self.replay_mode = false;
         self.session_path = None;
         self.palette_visible = false;
@@ -1041,8 +1041,8 @@ impl AppState {
         self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
         self.question_prompt = super::QuestionPromptState::default();
-        self.composer.prompt_history.clear();
         self.composer.prompt_history_index = None;
+        self.composer.prompt_history_draft = None;
         self.replay_mode = false;
         self.session_path = None;
         self.continued_post_run_handoff_active = false;

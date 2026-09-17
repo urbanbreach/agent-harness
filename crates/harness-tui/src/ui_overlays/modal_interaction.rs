@@ -599,22 +599,53 @@ fn prompt_stash_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {
 }
 
 fn settings_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {
-    uniform_list_model(
+    let editing = app.settings_interaction.edit.is_some();
+    let (count, selected) = match super::settings_editor::choices(app) {
+        Some((choices, selected)) => (choices.len(), selected),
+        None if editing => (0, app.settings_editor_selected_index()),
+        None => (
+            app.settings_editor_rows().len(),
+            app.settings_editor_selected_index(),
+        ),
+    };
+    let mut model = uniform_list_model(
         app,
         ModalSurfaceKey::Overlay {
             kind: OverlayKind::SettingsEditor,
-            view: ModalViewKey::Primary,
+            view: if editing {
+                ModalViewKey::SettingsValue
+            } else {
+                ModalViewKey::Primary
+            },
         },
-        centered_clamped(root, 48, 88, 10, 28),
-        3,
-        if app.settings_interaction.edit.is_some() {
-            0
-        } else {
-            app.settings_editor_rows().len()
-        },
-        app.settings_editor_selected_index(),
+        centered_clamped(root, 48, 88, 8, if editing { 12 } else { 28 }),
+        if editing { 2 } else { 3 },
+        count,
+        selected,
         1,
-    )
+    )?;
+    if !editing && model.popup.height > 4 {
+        let popup = model.popup;
+        let width = popup.width.saturating_sub(4);
+        if popup.height > 5 {
+            model.regions.push(ModalHitRegion {
+                target: ModalTarget::Input,
+                area: Rect::new(popup.x + 2, popup.y + 3, width, 1).intersection(popup),
+            });
+        }
+        let tabs = if app.settings_editor_tab() == crate::app::SettingsTab::Runtime {
+            [(0, 9), (11, 3)]
+        } else {
+            [(0, 7), (9, 5)]
+        };
+        for (index, (x, length)) in tabs.into_iter().enumerate() {
+            model.regions.push(ModalHitRegion {
+                target: ModalTarget::Tab(index),
+                area: Rect::new(popup.x + 2 + x, popup.y + 2, length, 1).intersection(popup),
+            });
+        }
+    }
+    Some(model)
 }
 
 fn plan_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {

@@ -24,7 +24,8 @@ pub(super) fn help_mouse_hover_preserves_keyboard_selection_and_click_opens_deta
             | ModalTarget::Input
             | ModalTarget::Row(_)
             | ModalTarget::Scrollbar
-            | ModalTarget::Footer(_) => None,
+            | ModalTarget::Footer(_)
+            | ModalTarget::Tab(_) => None,
         })
         .unwrap_or_abort();
     let selected = app.help_browser.selected;

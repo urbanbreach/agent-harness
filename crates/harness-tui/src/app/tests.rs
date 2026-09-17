@@ -305,6 +305,7 @@ fn transcript_click_position_in_area(app: &AppState, area: Rect, needle: &str) -
             .map(|x| buffer[(x, y)].symbol())
             .collect::<String>();
         if let Some(column) = row.find(needle) {
+            let column = unicode_width::UnicodeWidthStr::width(&row[..column]);
             return (u16::try_from(column + 1).unwrap_or_abort(), y);
         }
     }

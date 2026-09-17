@@ -337,6 +337,24 @@ impl AppState {
 
     pub fn handle_paste(&mut self, text: &str) {
         self.composer.pointer_selection = None;
+        match self.overlay_stack().top() {
+            Some(OverlayKind::SettingsEditor) => {
+                self.handle_settings_editor_paste(text);
+                return;
+            }
+            Some(OverlayKind::NewWorktreeDialog) => {
+                self.handle_new_worktree_dialog_paste(text);
+                return;
+            }
+            Some(OverlayKind::StatusDialog) if self.status_dashboard_is_active() => {}
+            None
+            | Some(
+                OverlayKind::SlashCommands
+                | OverlayKind::FileMentions
+                | OverlayKind::PermissionModal,
+            ) => {}
+            Some(_) => return,
+        }
         if self.status_dashboard_is_active() {
             if let Some(dashboard) = self.dashboard.as_mut().filter(|dashboard| {
                 dashboard.focus() == crate::dashboard_integration::DashboardPane::Reply
@@ -349,9 +367,6 @@ impl AppState {
         }
         if self.active_permission().is_some() {
             self.handle_permission_feedback_paste(text);
-            return;
-        }
-        if self.handle_new_worktree_dialog_paste(text) {
             return;
         }
         if self.handle_todo_pane_paste(text) {
@@ -556,102 +571,6 @@ impl AppState {
             attachments: submission.attachments,
             launch_metadata: self.launch_metadata.clone(),
         });
-    }
-
-    pub(in crate::app) fn _handle_prompt_key(&mut self, key_code: KeyCode) -> bool {
-        match key_code {
-            KeyCode::Enter => {
-                self.submit_prompt();
-                true
-            }
-            KeyCode::Esc => {
-                self.composer.prompt_buffer.clear();
-                self.composer.prompt_cursor = 0;
-                self.composer.prompt_history_index = None;
-                true
-            }
-            KeyCode::Up => {
-                if !self.composer.prompt_history.is_empty() {
-                    let next_idx = match self.composer.prompt_history_index {
-                        Some(idx) => idx.saturating_sub(1),
-                        None => self.composer.prompt_history.len().saturating_sub(1),
-                    };
-                    self.composer.prompt_history_index = Some(next_idx);
-                    self.composer.prompt_buffer = self.composer.prompt_history[next_idx].clone();
-                    self.composer.prompt_cursor = self.composer.prompt_buffer.len();
-                }
-                true
-            }
-            KeyCode::Down => {
-                if let Some(idx) = self.composer.prompt_history_index {
-                    if idx + 1 < self.composer.prompt_history.len() {
-                        let next_idx = idx + 1;
-                        self.composer.prompt_history_index = Some(next_idx);
-                        self.composer.prompt_buffer =
-                            self.composer.prompt_history[next_idx].clone();
-                        self.composer.prompt_cursor = self.composer.prompt_buffer.len();
-                    } else {
-                        self.composer.prompt_history_index = None;
-                        self.composer.prompt_buffer.clear();
-                        self.composer.prompt_cursor = 0;
-                    }
-                }
-                true
-            }
-            KeyCode::Left => {
-                if self.composer.prompt_cursor > 0 {
-                    self.composer.prompt_cursor -= 1;
-                }
-                true
-            }
-            KeyCode::Right => {
-                if self.composer.prompt_cursor < self.composer.prompt_buffer.chars().count() {
-                    self.composer.prompt_cursor += 1;
-                }
-                true
-            }
-            KeyCode::Backspace => {
-                if self.composer.prompt_cursor > 0 {
-                    self.composer.prompt_cursor -= 1;
-                    let byte_idx = self
-                        .composer
-                        .prompt_buffer
-                        .char_indices()
-                        .nth(self.composer.prompt_cursor)
-                        .map(|(i, _)| i)
-                        .unwrap_or(self.composer.prompt_buffer.len());
-                    self.composer.prompt_buffer.remove(byte_idx);
-                }
-                true
-            }
-            KeyCode::Delete => {
-                if self.composer.prompt_cursor < self.composer.prompt_buffer.chars().count() {
-                    let byte_idx = self
-                        .composer
-                        .prompt_buffer
-                        .char_indices()
-                        .nth(self.composer.prompt_cursor)
-                        .map(|(i, _)| i)
-                        .unwrap_or(self.composer.prompt_buffer.len());
-                    self.composer.prompt_buffer.remove(byte_idx);
-                }
-                true
-            }
-            KeyCode::Char(c) => {
-                let byte_idx = self
-                    .composer
-                    .prompt_buffer
-                    .char_indices()
-                    .nth(self.composer.prompt_cursor)
-                    .map(|(i, _)| i)
-                    .unwrap_or(self.composer.prompt_buffer.len());
-                self.composer.prompt_buffer.insert(byte_idx, c);
-                self.composer.prompt_cursor += 1;
-                true
-            }
-            KeyCode::Tab | KeyCode::BackTab => false,
-            _ => true,
-        }
     }
 
     pub(in crate::app) fn submit_prompt(&mut self) {
