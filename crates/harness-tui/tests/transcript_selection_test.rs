@@ -144,6 +144,18 @@ fn osc52_rejects_oversized_payload_and_tmux_wraps_safe_sequence() {
     // assert
     assert!(sequence.starts_with("\x1bPtmux;\x1b"));
     assert!(sequence.ends_with("\x1b\\"));
+    for (text, encoded) in [
+        ("", ""),
+        ("f", "Zg=="),
+        ("fo", "Zm8="),
+        ("foo", "Zm9v"),
+        ("🦀", "8J+mgA=="),
+    ] {
+        assert_eq!(
+            build_osc52(text, TmuxSequence::Direct).expect("small payload"),
+            format!("\x1b]52;c;{encoded}\x07")
+        );
+    }
 }
 
 #[test]

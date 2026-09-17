@@ -35,7 +35,6 @@ unicode-segmentation = "1.12"
 
 [dev-dependencies]
 harness-providers = { path = "../harness-providers" }
-harness-testkit = { path = "../harness-testkit" }
 image = { version = "0.25", default-features = false, features = ["png"] }
 insta = { version = "1.39", features = ["json"] }
 tempfile.workspace = true

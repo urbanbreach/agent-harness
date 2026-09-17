@@ -5,32 +5,6 @@ pub const INPUT_BATCH_TIME: Duration = Duration::from_millis(2);
 pub const LIVE_BATCH_LIMIT: usize = 16;
 pub const LIVE_BATCH_TIME: Duration = Duration::from_millis(2);
 
-pub trait ArbiterClock {
-    fn now(&self) -> Instant;
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SystemArbiterClock;
-
-impl ArbiterClock for SystemArbiterClock {
-    fn now(&self) -> Instant {
-        Instant::now()
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RuntimePriority {
-    FatalWriterFailure,
-    FrameAcknowledged,
-    Quit,
-    Cancel,
-    TerminalInput,
-    PacerDeadline,
-    AnimationDeadline,
-    LiveUpdate,
-    Park,
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RuntimeReady {
     pub fatal_writer_failure: bool,
@@ -54,22 +28,6 @@ pub enum RuntimeDecision {
     AnimationDeadline,
     LiveUpdate,
     Park,
-}
-
-impl RuntimeDecision {
-    pub const fn priority(self) -> RuntimePriority {
-        match self {
-            Self::FatalWriterFailure => RuntimePriority::FatalWriterFailure,
-            Self::FrameAcknowledged => RuntimePriority::FrameAcknowledged,
-            Self::Quit => RuntimePriority::Quit,
-            Self::Cancel => RuntimePriority::Cancel,
-            Self::TerminalInput => RuntimePriority::TerminalInput,
-            Self::PacerDeadline => RuntimePriority::PacerDeadline,
-            Self::AnimationDeadline => RuntimePriority::AnimationDeadline,
-            Self::LiveUpdate => RuntimePriority::LiveUpdate,
-            Self::Park => RuntimePriority::Park,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
