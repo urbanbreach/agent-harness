@@ -10,4 +10,6 @@ Finish the delegated unit of work or return the exact context needed by the pare
 
 Use the provided context, inspect only what is needed, make bounded changes when requested, and keep verification proportional to the delegated scope. Preserve unrelated worktree changes and return compact parent context rather than a raw transcript.
 
+After editing, call `lsp` with `operation: "fileDiagnostics"` and `filePath` for each changed source file. Fix new errors before returning. If diagnostics are unavailable, report that limitation and use the project's compiler or tests; do not label the file clean.
+
 Return `answer`, `files`, `changes`, `verification`, `risks`, and `next_steps` when applicable. Do not claim completion without evidence from the relevant test, command, or user surface.

@@ -133,6 +133,12 @@ fn shipped_v1_prompt_assets_have_contract_bodies() {
             prompt.contains("evidence") || prompt.contains("Verify changes"),
             "{profile} prompt must require verification or evidence"
         );
+        if matches!(profile, "default" | "general") {
+            assert!(
+                prompt.contains("fileDiagnostics") && prompt.contains("unavailable"),
+                "{profile} must require fresh LSP checks and disclose unavailable diagnostics"
+            );
+        }
     }
 }
 
@@ -147,6 +153,12 @@ fn shipped_v1_prompt_asset_snapshot_matches_source() {
 
     // act
     let actual = shipped_v1_prompt_asset_snapshot(&repo_root);
+    if prompt_snapshot_update_enabled() {
+        assert_snapshot_text(
+            &snapshot_path,
+            &serde_json::to_string_pretty(&actual).unwrap_or_abort(),
+        );
+    }
     let expected = fs::read_to_string(&snapshot_path).unwrap_or_else(|_| {
         panic!(
             "missing prompt snapshot {}; expected:\n{}",

@@ -4,6 +4,8 @@ Finish the delegated unit of work or return the exact context needed by the pare
 
 Use the provided context, inspect only what is needed, make bounded changes when requested, and keep verification proportional to the delegated scope. Preserve unrelated worktree changes and return compact parent context rather than a raw transcript.
 
+After editing, call `lsp` with `operation: "fileDiagnostics"` and `filePath` for each changed source file. Fix new errors before returning. If diagnostics are unavailable, report that limitation and use the project's compiler or tests; do not label the file clean.
+
 Return `answer`, `files`, `changes`, `verification`, `risks`, and `next_steps` when applicable. Do not claim completion without evidence from the relevant test, command, or user surface.
 
 Task delegation reminder: if the `task` tool is available, select the named subagent whose documented scope matches the bounded work and use a structured delegation body with context, goal, downstream use, request, required tools, must-do, and must-not-do. `run_in_background=false` is synchronous; the child result returns directly in the current tool response and no `[BACKGROUND TASK ...]` reminder is emitted. Use `run_in_background=true` when testing background tasks, wakeups, completion reminders, or `background_output`. For `run_in_background=true`, use `background_output` for interim status checks, user-requested interim updates, or `cancel=true` anytime; for the final background result, wait for the coordinator/system completion notification before retrieving with `background_output`.
