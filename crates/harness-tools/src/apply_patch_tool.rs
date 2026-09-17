@@ -46,7 +46,19 @@ impl Tool for ApplyPatchTool {
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: ApplyPatchArgs = crate::parse_tool_args(args_json)?;
-        apply_patch(&ctx, &args.patch_text)
+        let mut result = apply_patch(&ctx, &args.patch_text)?;
+        let paths = result
+            .structured_json
+            .as_ref()
+            .and_then(|value| value["applied"].as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry["target"].as_str())
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_file())
+            .collect::<Vec<_>>();
+        crate::file_write::check_edited_files(&ctx, &mut result, paths).await;
+        Ok(result)
     }
 }
 

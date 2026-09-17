@@ -67,7 +67,7 @@ impl Tool for WriteTool {
         let workspace = canonical_workspace_root(&ctx)?;
         let resource = workspace_relative_display(&workspace, &resolved_path)?;
         let format_warning = run_file_formatter(&workspace, &resolved_path).await;
-        let diagnostics = run_lsp_diagnostics(workspace.clone(), resolved_path.clone()).await;
+        let diagnostics = run_lsp_diagnostics(&ctx, resolved_path.clone()).await;
         result.display_text = format!(
             "{} file successfully: {resource}",
             if existed { "Wrote" } else { "Created" }
@@ -104,20 +104,18 @@ pub(crate) async fn run_file_formatter(
 }
 
 pub(crate) async fn run_lsp_diagnostics(
-    workspace_root: std::path::PathBuf,
+    ctx: &ToolContext,
     file_path: std::path::PathBuf,
 ) -> Result<LspOperationResponse, String> {
-    tokio::task::spawn_blocking(move || {
-        execute_lsp_operation(&LspOperationRequest {
-            operation: LspOperation::WorkspaceDiagnostics,
-            input: LspOperationInput::File {
-                file_path: &file_path,
-            },
-            workspace_root: &workspace_root,
-        })
-    })
+    execute_lsp_operation(
+        &ctx.tool_state,
+        LspOperationRequest {
+            operation: LspOperation::FileDiagnostics,
+            input: LspOperationInput::File { file_path },
+            workspace_root: ctx.workspace_root.clone(),
+        },
+    )
     .await
-    .map_err(|err| format!("lsp task failed: {err}"))?
     .map_err(|err| err.to_string())
 }
 
@@ -126,9 +124,28 @@ pub(crate) fn append_lsp_diagnostics(
     diagnostics: &Result<LspOperationResponse, String>,
     file_path: &std::path::Path,
 ) {
-    let Ok(response) = diagnostics else {
-        return;
+    let response = match diagnostics {
+        Ok(response) => response,
+        Err(error) => {
+            // Unsupported file types and explicitly disabled servers are not failed checks.
+            if !error.contains("unsupported lsp language extension")
+                && !error.contains("lsp is disabled by config")
+                && !error.contains("disabled for extension")
+            {
+                display_text.push_str("\n\nLSP diagnostics unavailable: ");
+                display_text.push_str(error);
+            }
+            return;
+        }
     };
+    if response
+        .diagnostics
+        .iter()
+        .all(|report| report.diagnostics.is_empty())
+    {
+        display_text.push_str("\n\nLSP diagnostics: no issues found.");
+        return;
+    }
 
     let mut project_reports = 0usize;
     for report in &response.diagnostics {
@@ -147,6 +164,22 @@ pub(crate) fn append_lsp_diagnostics(
         project_reports += 1;
         display_text.push_str("\n\nLSP errors detected in other files:\n");
         display_text.push_str(&block);
+    }
+}
+
+pub(crate) async fn check_edited_files(
+    ctx: &ToolContext,
+    result: &mut ToolResult,
+    paths: impl IntoIterator<Item = std::path::PathBuf>,
+) {
+    let mut checks = serde_json::Map::new();
+    for path in paths.into_iter().collect::<std::collections::BTreeSet<_>>() {
+        let diagnostics = run_lsp_diagnostics(ctx, path.clone()).await;
+        append_lsp_diagnostics(&mut result.display_text, &diagnostics, &path);
+        checks.insert(path.display().to_string(), diagnostics_json(&diagnostics));
+    }
+    if let Some(structured) = result.structured_json.as_mut() {
+        structured["diagnostics"] = Value::Object(checks);
     }
 }
 

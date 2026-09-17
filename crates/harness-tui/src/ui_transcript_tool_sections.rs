@@ -585,7 +585,7 @@ pub(super) fn build_transcript_tool_call_section(
     let (
         mut title,
         icon,
-        visual_style,
+        mut visual_style,
         uses_generic_output_visibility,
         mut detail_blocks,
         mut header_path_metadata,
@@ -630,6 +630,9 @@ pub(super) fn build_transcript_tool_call_section(
     }
 
     replace_recorded_output(&mut detail_blocks, tool_call, generic_output_visible);
+    if push_edit_diagnostics(&mut detail_blocks, tool_call, expanded) {
+        visual_style = TranscriptToolCallVisualStyle::Block;
+    }
     if detail_blocks.is_empty()
         && uses_generic_output_visibility
         && if tool_call.status == ToolCallDisplayStatus::Failed {
@@ -1301,6 +1304,37 @@ fn push_truncated_output_artifact_block(
         text,
         tone: TranscriptToolCallDetailTone::Secondary,
     });
+}
+
+fn push_edit_diagnostics(
+    blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    tool: &crate::app::ToolCallEntry,
+    expanded: bool,
+) -> bool {
+    if tool.status != ToolCallDisplayStatus::Succeeded
+        || !matches!(
+            tool.effective_tool_id(),
+            "edit.hashline_apply" | "edit" | "write" | "fs.write" | "apply_patch"
+        )
+    {
+        return false;
+    }
+    let Some((_, diagnostics)) = tool
+        .output_summary
+        .as_deref()
+        .and_then(|text| text.split_once("\n\nLSP "))
+    else {
+        return false;
+    };
+    // Edit diffs replace the ordinary output body; keep their verification result alongside it.
+    push_collapsible_output_block(
+        blocks,
+        &format!("LSP {diagnostics}"),
+        TranscriptToolCallDetailTone::Secondary,
+        HARNESS_GENERIC_OUTPUT_LINE_CLAMP,
+        expanded,
+    );
+    true
 }
 
 fn push_collapsible_output_block(

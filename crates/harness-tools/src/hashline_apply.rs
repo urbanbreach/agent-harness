@@ -154,8 +154,10 @@ impl Tool for HashlineApplyTool {
         args_json: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
         let patch: HashlinePatch = crate::parse_tool_args(args_json)?;
-
-        apply_hashline_patch_to_workspace(&ctx, patch)
+        let path = resolve_workspace_target_path(&ctx, &patch.path)?;
+        let mut result = apply_hashline_patch_to_workspace(&ctx, patch)?;
+        crate::file_write::check_edited_files(&ctx, &mut result, [path]).await;
+        Ok(result)
     }
 }
 

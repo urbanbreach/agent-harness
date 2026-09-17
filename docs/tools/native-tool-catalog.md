@@ -46,6 +46,45 @@ Tool execution still goes through the coordinator permission path before the too
 - `ast_grep_replace` maps to `edit` and defaults to dry-run. It invokes the local `ast-grep` CLI only for JSON rewrite planning, rejects traversal/unknown/unsupported args, refuses partial apply when results are truncated, validates adapter byte ranges against current file contents, and applies only through Harness workspace path checks, atomic writes, and diff artifacts.
 - `codesearch` itself is a remote/public backend integration, not local-first symbol lookup. For first-party code, prefer `grep` for text, `ast_grep_search` for structural code, or `lsp` for language-server symbols/references.
 
+## LSP verification
+
+After changing source, use `lsp` with `operation: "fileDiagnostics"` and the changed
+`filePath`. `write`, `edit`, `apply_patch`, and the hashline compatibility tools also
+attach diagnostics for each surviving changed file. An edit still succeeds if the
+language server is unavailable; the output and structured diagnostics report the
+failed check. Unsupported extensions and explicitly disabled servers do not add
+an automatic warning. Diff views retain the diagnostic result.
+
+Language servers persist for the active run, shared by its agents, explicit LSP
+calls, rename, and automatic edit checks. The pool keys connections by project
+root and effective server configuration, admits at most six cached servers, evicts
+the least recently used idle server when full, and closes servers after five idle
+minutes or when the run ends. A cancelled or failed check discards its connection;
+the next call can start a fresh server. No daemon, dependencies, or global pool.
+
+Up to 200 open files are synchronized with increasing document versions; unchanged
+text is not resent, supported save notifications are sent, and deleted or redirected
+files are closed. Shutdown attempts the protocol handshake before a bounded kill. Pull diagnostics use result IDs and
+accept unchanged reports only with a matching cache. Push diagnostics reject old
+versions; versionless pushes settle for 250 ms. Missing, stale, malformed,
+disconnected, or timed-out results are not clean checks. Calls have a 30-second
+budget (including queueing) and a 10-second diagnostic wait. Cold rust-analyzer
+startup waits for its readiness notification. Requests serialize per server;
+independent servers run concurrently. Valid empty navigation results return
+immediately without the former repeated retries.
+
+`workspaceDiagnostics` checks files supported by the selected server through the
+same per-file path, skipping `.git`, `target`, and `node_modules`. It rejects scans
+over 200 files instead of returning a partial clean result. Prefer changed-file
+checks for large projects, and use the compiler/tests when diagnostics are unavailable.
+
+Run `scripts/qa/verify-lsp.sh` for protocol regressions, coordinator edit simulations,
+release-mode rust-analyzer checks against `cargo check --offline`, and production TUI
+frames rendered in xterm.js at 40, 80, and 120 columns. This opt-in lane requires
+Python 3, rust-analyzer, Cargo/nextest, `/usr/bin/chromium`, and the existing
+`scripts/qa` Node dependencies. It writes logs, durable events, diffs, ANSI frames,
+screenshots, cold/warm call timings, process-reuse assertions, and a source-hash manifest under `.omo/evidence/`.
+
 ## Bash safety
 
 The `bash` wrapper default timeout is 120000 ms. The output cap is 2000 lines or 51200 bytes before full output is written to artifacts. Shell commands are controlled by permission patterns and workspace path safety by default, not a static executable allowlist; a disallowed invocation is reported as a blocked command. Permission-pattern mode allows approved interpreter command modes such as `python3 -c` and heredocs, file-descriptor redirections such as `2>&1`, and literal executable discovery with `command -v` or `command -V`, while continuing to block general shell-wrapper and environment-dump commands. A standalone trailing `&` remains blocked because Harness does not detach untracked shell processes; use coordinator-owned background tasks for managed asynchronous work. Legacy-executables mode retains stricter interpreter-mode checks. Shell search/read/edit shortcuts such as `find`, `grep`/`rg`, `cat`, `head`, `tail`, `sed`, and `awk` are discouraged; use `glob`, `grep`, `list`, `read`, or `edit` instead. This guidance mirrors `shell_run.rs` and `shell_safety.rs`.
