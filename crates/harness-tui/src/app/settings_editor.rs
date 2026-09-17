@@ -323,11 +323,8 @@ impl AppState {
             .iter()
             .position(|index| *index == self.settings_editor_selected)
             .unwrap_or_default();
-        let next = (isize::try_from(current).unwrap_or_default() + delta).clamp(
-            0,
-            isize::try_from(indices.len().saturating_sub(1)).unwrap_or_default(),
-        );
-        self.settings_editor_selected = indices[usize::try_from(next).unwrap_or_default()];
+        let next = current.saturating_add_signed(delta).min(indices.len() - 1);
+        self.settings_editor_selected = indices[next];
     }
 
     fn settings_indices(&self) -> impl Iterator<Item = usize> + '_ {
@@ -385,6 +382,12 @@ impl AppState {
     }
 
     pub fn settings_editor_selected_id(&self) -> Option<&'static str> {
+        if !self
+            .settings_indices()
+            .any(|index| index == self.settings_editor_selected)
+        {
+            return None;
+        }
         settings_registry()
             .get(self.settings_editor_selected)
             .map(|entry| entry.setting_id.as_str())
@@ -710,7 +713,16 @@ impl AppState {
                     self.settings_interaction.filtering = false
                 }
                 KeyCode::Backspace => {
-                    let _ = self.settings_interaction.query.pop();
+                    use unicode_segmentation::UnicodeSegmentation;
+                    let query = &mut self.settings_interaction.query;
+                    let end = query
+                        .grapheme_indices(true)
+                        .next_back()
+                        .map_or(0, |(i, _)| i);
+                    query.truncate(end);
+                }
+                KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.settings_interaction.query.clear();
                 }
                 KeyCode::Char(c)
                     if !key
@@ -733,6 +745,33 @@ impl AppState {
         false
     }
 
+    pub(in crate::app) fn handle_settings_editor_paste(&mut self, text: &str) {
+        let text: String = text.chars().filter(|c| !c.is_control()).collect();
+        if let Some(edit) = &mut self.settings_interaction.edit {
+            if !matches!(edit.kind, SettingEditorKind::Choice(_)) {
+                edit.error = None;
+                let _ = edit.editor.insert_text(&text);
+            }
+        } else {
+            self.settings_interaction.filtering = true;
+            self.settings_interaction.query.push_str(&text);
+            let first = self.settings_indices().next().unwrap_or_default();
+            self.settings_editor_selected = first;
+        }
+        self.modal_interaction.invalidate();
+    }
+
+    pub(in crate::app) fn settings_editor_choose(&mut self, index: usize) {
+        if let Some(edit) = &mut self.settings_interaction.edit {
+            if let SettingEditorKind::Choice(choices) = edit.kind {
+                if let Some(choice) = choices.get(index) {
+                    edit.editor = ComposerEditor::from_text(choice);
+                    edit.error = None;
+                }
+            }
+        }
+    }
+
     fn handle_settings_value_key(&mut self, mut edit: SettingsValueEdit, key: KeyEvent) {
         if key.code == KeyCode::Esc {
             self.modal_interaction.invalidate();
@@ -749,6 +788,23 @@ impl AppState {
                     self.show_toast("Setting saved for the next session", ToastVariant::Info);
                     self.modal_interaction.invalidate();
                     return;
+                }
+                Some(Err(SettingWriteError::Parse(message)))
+                    if message == format!("invalid value for `{}`", edit.id) =>
+                {
+                    edit.error = Some(
+                        match edit.kind {
+                            SettingEditorKind::Integer => {
+                                "Enter a whole number in the allowed range."
+                            }
+                            SettingEditorKind::String => {
+                                "Enter nonempty text without control characters."
+                            }
+                            SettingEditorKind::Choice(_) => "Choose one of the listed values.",
+                            SettingEditorKind::Boolean => "Choose true or false.",
+                        }
+                        .into(),
+                    );
                 }
                 Some(Err(err)) => edit.error = Some(err.to_string()),
                 None => edit.error = Some("No project configuration is bound".into()),
@@ -832,7 +888,7 @@ impl SettingsValueEdit {
         self.error = None;
         match key.code {
             KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.editor = ComposerEditor::default();
+                self.editor.select_all();
             }
             KeyCode::Char(c)
                 if !key

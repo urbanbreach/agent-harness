@@ -683,7 +683,7 @@ pub(super) fn new_session_resets_transcript_but_keeps_unsent_draft() {
 
     assert!(app.events.is_empty());
     assert!(app.activities.is_empty());
-    assert!(app.composer.prompt_history.is_empty());
+    assert_eq!(app.composer.prompt_history, vec!["older sent prompt"]);
     assert_eq!(app.composer.prompt_buffer, "unsent startup draft");
     assert_eq!(
         app.composer.prompt_cursor,

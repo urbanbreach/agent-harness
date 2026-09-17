@@ -93,9 +93,12 @@ pub(super) fn render_body(frame: &mut Frame, theme: &Theme, popup: Rect, chrome:
         .fg(ui_chrome::command_palette_muted(theme))
         .bg(surface);
 
-    if let Some(breadcrumb) = chrome.breadcrumb {
+    if let Some(breadcrumb) = chrome.breadcrumb.filter(|_| popup.height > 3) {
         frame.render_widget(
-            Paragraph::new(Span::styled(breadcrumb, muted)),
+            Paragraph::new(Span::styled(
+                truncate_plain_text(breadcrumb, usize::from(popup.width.saturating_sub(4))),
+                muted,
+            )),
             Rect::new(
                 popup.x.saturating_add(2),
                 popup.y.saturating_add(1),
@@ -104,15 +107,32 @@ pub(super) fn render_body(frame: &mut Frame, theme: &Theme, popup: Rect, chrome:
             ),
         );
     }
-    if let Some(tabs) = chrome.tabs {
-        let labels = tabs.labels;
-        let text = if tabs.selected == 0 {
-            format!("[{}]  {}", labels[0], labels[1])
-        } else {
-            format!("{}  [{}]", labels[0], labels[1])
-        };
+    if let Some(tabs) = chrome.tabs.filter(|_| popup.height > 4) {
+        let text = tabs
+            .labels
+            .iter()
+            .enumerate()
+            .flat_map(|(index, label)| {
+                let selected = index == tabs.selected;
+                [
+                    Span::styled(
+                        if selected {
+                            format!("[{label}]")
+                        } else {
+                            (*label).to_string()
+                        },
+                        if selected {
+                            primary.fg(theme.text.accent).add_modifier(Modifier::BOLD)
+                        } else {
+                            muted
+                        },
+                    ),
+                    Span::raw("  "),
+                ]
+            })
+            .collect::<Vec<_>>();
         frame.render_widget(
-            Paragraph::new(Span::styled(text, primary)),
+            Paragraph::new(Line::from(text)),
             Rect::new(
                 popup.x.saturating_add(2),
                 popup.y.saturating_add(2),

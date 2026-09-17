@@ -456,12 +456,214 @@ fn dashboard_tail_pins_prompt_and_secondary_editors_keep_recorded_content() {
             app.handle_key(key(KeyCode::Esc));
         }
     }
-    for (width, height) in [(20, 8), (47, 9), (48, 10)] {
+    for (width, height) in [(5, 4), (20, 6), (20, 8), (47, 9), (48, 10)] {
         let area = Rect::new(0, 0, width, height);
         let mut app = AppState::new_live(None, false, None);
         app.set_frame_area(area);
         app.execute_slash_command("settings", None);
         let _ = capture(&app, area, "settings-narrow");
+    }
+}
+
+#[test]
+fn settings_drafts_filter_choose_and_edit_through_visible_controls() {
+    for (width, height) in [(40, 12), (80, 24), (120, 40)] {
+        verify_settings_controls(Rect::new(0, 0, width, height));
+    }
+}
+
+fn verify_settings_controls(area: Rect) {
+    let root = tempfile::tempdir().unwrap_or_abort();
+    let path = root.path().join("settings.json");
+    let initial_config = r#"{"providers":{"default":{"type":"openai_compatible","base_url":"http://127.0.0.1:9/v1","api_key":"test-key","models":{"test":{"display_name":"Test"}}}},"model":"default:test"}"#;
+    fs::write(&path, initial_config).unwrap_or_abort();
+    let mut app = AppState::new_live(None, false, None);
+    app.set_reduced_motion_for_evidence(true);
+    app.set_frame_area(area);
+    app.handle_paste("keep this draft");
+    app.bind_settings_project_config(&path, true, true, true, true, true, false);
+    app.execute_action(Action::OpenSettings);
+    app.handle_key(key(KeyCode::End));
+    assert_eq!(
+        app.settings_editor_selected_index(),
+        app.settings_editor_rows().len() - 1
+    );
+    app.handle_key(key(KeyCode::Home));
+    assert_eq!(app.settings_editor_selected_index(), 0);
+    app.handle_key(key(KeyCode::PageDown));
+    assert_eq!(
+        app.settings_editor_selected_index(),
+        usize::from(area.height.min(28) - 6)
+    );
+    app.handle_key(key(KeyCode::Home));
+
+    click_settings_text(&mut app, area, "TUI");
+    assert_eq!(app.settings_editor_tab(), SettingsTab::Tui);
+    click_settings_text(&mut app, area, "Runtime");
+    click_settings_text(&mut app, area, "/ to search");
+    assert!(app.settings_interaction.filtering);
+    app.handle_paste("no-such-setting👩‍💻");
+    app.handle_key(key(KeyCode::Backspace));
+    assert_eq!(app.settings_interaction.query, "no-such-setting");
+    let rendered = capture(&app, area, "settings-no-matches");
+    assert!(rendered.contains("No matches"), "{rendered}");
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.settings_editor_selected_id().is_none());
+    assert!(app.settings_interaction.edit.is_none());
+
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('a'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_paste("permission bash");
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Enter));
+    let rendered = capture(&app, area, "settings-choices");
+    for choice in ["ask", "allow", "deny"] {
+        assert!(rendered.contains(choice), "{rendered}");
+    }
+    click_settings_text(&mut app, area, "allow");
+    assert_eq!(
+        app.settings_interaction
+            .edit
+            .as_ref()
+            .unwrap_or_abort()
+            .editor
+            .text(),
+        "allow"
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap_or_abort(), initial_config);
+    app.handle_paste("deny");
+    assert_eq!(
+        app.settings_interaction
+            .edit
+            .as_ref()
+            .unwrap_or_abort()
+            .editor
+            .text(),
+        "allow"
+    );
+    let _ = capture(&app, area, "settings-choice-selected");
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.settings_interaction.edit.is_none());
+    assert_eq!(
+        harness_core::config::read_project_setting_value(&path, "permission.bash")
+            .unwrap_or_abort()
+            .as_deref(),
+        Some("allow")
+    );
+
+    verify_settings_value_drafts(&mut app, area, &path);
+    app.handle_key(key(KeyCode::Esc));
+    assert_eq!(app.composer.prompt_buffer, "keep this draft");
+    verify_modal_paste_ownership(&mut app);
+}
+
+fn verify_modal_paste_ownership(app: &mut AppState) {
+    for action in [Action::OpenSettings, Action::OpenThemeDialog] {
+        app.execute_action(action);
+        let draft = app.composer.prompt_buffer.clone();
+        app.handle_paste("must stay in the modal");
+        assert_eq!(app.composer.prompt_buffer, draft);
+        app.handle_key(key(KeyCode::Esc));
+        if app.settings_editor_visible {
+            app.handle_key(key(KeyCode::Esc));
+        }
+    }
+}
+
+fn verify_settings_value_drafts(app: &mut AppState, area: Rect, path: &Path) {
+    let (width, height) = (area.width, area.height);
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('a'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_paste("fallback input tokens");
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('a'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_paste("invalid");
+    let before = fs::read(path).unwrap_or_abort();
+    app.handle_key(key(KeyCode::Enter));
+    let rendered = capture(app, area, "settings-invalid-value");
+    assert!(rendered.contains("Enter a whole number"), "{rendered}");
+    assert_eq!(fs::read(path).unwrap_or_abort(), before);
+    app.handle_key(key(KeyCode::Esc));
+
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('a'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_paste("session dir");
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('a'),
+        KeyModifiers::CONTROL,
+    ));
+    let value = format!("{}cafe\u{301}👩‍💻界", "workspace/".repeat(12));
+    app.handle_paste(&value);
+    app.handle_key(key(KeyCode::Left));
+    let rendered = capture(app, area, "settings-unicode-edit");
+    assert!(
+        rendered.contains("cafe\u{301}👩‍💻") && rendered.contains('界'),
+        "{rendered}"
+    );
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap_or_abort();
+    terminal
+        .draw(|frame| render_app(frame, app))
+        .unwrap_or_abort();
+    let buffer = terminal.backend().buffer();
+    let caret = buffer
+        .content
+        .iter()
+        .find(|cell| cell.symbol() == "界")
+        .unwrap_or_abort();
+    assert_eq!(
+        caret.bg,
+        app.theme().text.primary,
+        "caret must follow the Unicode cursor"
+    );
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('a'),
+        KeyModifiers::CONTROL,
+    ));
+    let _ = capture(app, area, "settings-value-selection");
+    app.handle_paste("captured-sessions");
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(
+        harness_core::config::read_project_setting_value(path, "runtime.session_dir")
+            .unwrap_or_abort()
+            .as_deref(),
+        Some("captured-sessions")
+    );
+}
+
+fn click_settings_text(app: &mut AppState, area: Rect, text: &str) {
+    let (column, row) = transcript_click_position_in_area(app, area, text);
+    for kind in [
+        MouseEventKind::Down(MouseButton::Left),
+        MouseEventKind::Up(MouseButton::Left),
+    ] {
+        app.handle_mouse(
+            MouseEvent {
+                kind,
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            },
+            area,
+            None,
+            None,
+            None,
+        );
     }
 }
 

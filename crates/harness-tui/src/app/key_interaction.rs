@@ -1404,6 +1404,19 @@ impl AppState {
             return;
         }
         match key.code {
+            KeyCode::Home => self.settings_editor_move(isize::MIN),
+            KeyCode::End => self.settings_editor_move(isize::MAX),
+            KeyCode::PageUp | KeyCode::PageDown => {
+                let page = self
+                    .last_frame_area
+                    .map_or(22, |area| area.height.min(28).saturating_sub(6));
+                let page = isize::try_from(page).unwrap_or(22);
+                self.settings_editor_move(if key.code == KeyCode::PageDown {
+                    page
+                } else {
+                    -page
+                });
+            }
             KeyCode::Esc => {
                 self.close_settings_editor();
             }

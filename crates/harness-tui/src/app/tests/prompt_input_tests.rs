@@ -99,19 +99,39 @@ pub(super) fn prompt_history_persists_and_restores_draft_after_recall() {
         "prompt history should be stored under the session data dir"
     );
 
+    for use_launcher in [false, true] {
+        if use_launcher {
+            live.apply_new_session_launcher_selection();
+        } else {
+            live.execute_slash_command("new", None);
+        }
+        live.handle_key(key(KeyCode::Up));
+        assert_eq!(live.prompt_history_matches(), vec!["persisted prompt"]);
+        live.handle_key(key(KeyCode::Esc));
+    }
+    live.handle_paste("newer prompt");
+    live.handle_key(key(KeyCode::Enter));
+
+    // Consume the startup handoff, then verify a restart keeps both submissions.
+    drop(AppState::new_live_with_prompt_history_path(
+        None,
+        false,
+        None,
+        Some(history_path.clone()),
+    ));
     let mut restarted =
         AppState::new_startup_with_prompt_history_path(Vec::new(), None, Some(history_path));
     assert_eq!(
         restarted.composer.prompt_history,
-        vec!["persisted prompt".to_string()]
+        vec!["persisted prompt".to_string(), "newer prompt".to_string()]
     );
 
     restarted.focus = Focus::Prompt;
     restarted.composer.prompt_buffer = "draft text".to_string();
     restarted.composer.prompt_cursor = 0;
     restarted.handle_key(key(KeyCode::Up));
-    assert_eq!(restarted.composer.prompt_buffer, "persisted prompt");
-    assert_eq!(restarted.composer.prompt_history_index, Some(0));
+    assert_eq!(restarted.composer.prompt_buffer, "newer prompt");
+    assert_eq!(restarted.composer.prompt_history_index, Some(1));
 
     restarted.handle_key(key(KeyCode::Down));
     assert_eq!(restarted.composer.prompt_buffer, "draft text");
@@ -123,6 +143,10 @@ pub(super) fn prompt_history_persists_and_restores_draft_after_recall() {
         restarted.overlay_stack().top(),
         Some(OverlayKind::PromptHistory)
     );
+    assert_eq!(
+        restarted.prompt_history_matches(),
+        vec!["newer prompt", "persisted prompt"]
+    );
     for c in "missing".chars() {
         restarted.handle_key(key(KeyCode::Char(c)));
     }
@@ -131,7 +155,7 @@ pub(super) fn prompt_history_persists_and_restores_draft_after_recall() {
     assert!(restarted.composer.prompt_buffer.is_empty());
     restarted.handle_key(key(KeyCode::Up));
     restarted.handle_key(key(KeyCode::Enter));
-    assert_eq!(restarted.composer.prompt_buffer, "persisted prompt");
+    assert_eq!(restarted.composer.prompt_buffer, "newer prompt");
     assert!(!restarted.prompt_history_picker.visible);
 }
 

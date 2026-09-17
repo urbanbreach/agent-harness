@@ -42,7 +42,7 @@ fn p1_02_settings_chrome_renders_exactly_at_canonical_viewports() {
         );
         assert!(
             rows[usize::from(model.popup.bottom() - 2)]
-                .contains("↑/↓ navigate · Enter edit · Esc close"),
+                .contains("↑↓ navigate · / search · Tab switch · Enter edit · Esc close"),
             "viewport={width}x{height}"
         );
     }

@@ -131,6 +131,9 @@ pub(crate) fn modal_scrollbar_geometry(
     offset: usize,
     max_scroll: usize,
 ) -> Option<ModalScrollbarGeometry> {
+    if area.width == 0 || area.height == 0 {
+        return None;
+    }
     let track = modal_list_row_layout(area, max_scroll).scrollbar?;
     let visible = usize::from(track.height);
     let total = visible.saturating_add(max_scroll);

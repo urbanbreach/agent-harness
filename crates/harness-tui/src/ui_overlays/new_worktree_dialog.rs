@@ -112,17 +112,30 @@ pub(super) fn render_new_worktree_dialog(
     );
 }
 
-fn input_viewport(input: &str, cursor: usize, width: usize) -> (String, usize) {
+pub(super) fn input_viewport(input: &str, cursor: usize, width: usize) -> (String, usize) {
+    use unicode_segmentation::UnicodeSegmentation;
     if width == 0 {
         return (String::new(), 0);
     }
-    let cursor = cursor.min(input.len());
+    let cursor = input
+        .grapheme_indices(true)
+        .map(|(i, _)| i)
+        .chain([input.len()])
+        .take_while(|i| *i <= cursor)
+        .last()
+        .unwrap_or(0);
     let prefix = &input[..cursor];
+    let caret_width = input[cursor..]
+        .graphemes(true)
+        .next()
+        .map_or(1, unicode_width::UnicodeWidthStr::width)
+        .max(1)
+        .min(width);
     let mut start = cursor;
     let mut cursor_column = 0usize;
-    for (byte_index, character) in prefix.char_indices().rev() {
-        let character_width = unicode_width::UnicodeWidthChar::width(character).unwrap_or(0);
-        if cursor_column.saturating_add(character_width) > width.saturating_sub(1) {
+    for (byte_index, character) in prefix.grapheme_indices(true).rev() {
+        let character_width = unicode_width::UnicodeWidthStr::width(character);
+        if cursor_column.saturating_add(character_width) > width.saturating_sub(caret_width) {
             break;
         }
         cursor_column = cursor_column.saturating_add(character_width);
@@ -130,12 +143,12 @@ fn input_viewport(input: &str, cursor: usize, width: usize) -> (String, usize) {
     }
     let mut visible = String::new();
     let mut visible_width = 0usize;
-    for character in input[start..].chars() {
-        let character_width = unicode_width::UnicodeWidthChar::width(character).unwrap_or(0);
+    for character in input[start..].graphemes(true) {
+        let character_width = unicode_width::UnicodeWidthStr::width(character);
         if visible_width.saturating_add(character_width) > width {
             break;
         }
-        visible.push(character);
+        visible.push_str(character);
         visible_width = visible_width.saturating_add(character_width);
     }
     (visible, cursor_column.min(width - 1))
