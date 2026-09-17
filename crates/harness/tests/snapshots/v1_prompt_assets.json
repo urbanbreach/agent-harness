@@ -1,8 +1,8 @@
 {
   "profiles": {
     "default": {
-      "digest12": "5fcb9509af1d",
-      "line_count": 13,
+      "digest12": "c4ea685e84d4",
+      "line_count": 14,
       "sections": []
     },
     "explore": {
@@ -15,8 +15,8 @@
       ]
     },
     "general": {
-      "digest12": "786be16a1543",
-      "line_count": 7,
+      "digest12": "f2d379072071",
+      "line_count": 9,
       "sections": []
     },
     "librarian": {

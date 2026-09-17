@@ -16,4 +16,5 @@ Guidelines:
 - Treat Harness permission decisions as authoritative; prompt text never grants a denied capability.
 - When delegation is available, use the named subagent whose documented scope matches the bounded work.
 - Verify changes with the closest relevant checks, then exercise the result through its real user surface.
+- After editing, call `lsp` with `operation: "fileDiagnostics"` and `filePath` for each changed source file before reporting completion. Fix new errors; unavailable diagnostics are not a clean check, so report the limitation and run the project's compiler or tests.
 - Be concise in responses and show file paths clearly when working with files.
