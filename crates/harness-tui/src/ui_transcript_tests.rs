@@ -1985,7 +1985,7 @@ fn completed_reasoning_header_without_title_renders_thinking() {
 }
 
 #[test]
-fn streaming_reasoning_defaults_to_last_three_wrapped_rows() {
+fn streaming_reasoning_defaults_to_last_five_wrapped_rows() {
     // arrange
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -2008,7 +2008,7 @@ fn streaming_reasoning_defaults_to_last_three_wrapped_rows() {
     let rendered = lines.join("\n");
 
     // act
-    // Then: only the final three wrapped rows remain visible behind an ellipsis.
+    // Then: only the final five wrapped rows remain visible behind an ellipsis.
     // assert
     assert!(!rendered.contains("PREVIEW_START"), "{rendered}");
     assert!(rendered.contains('…'), "{rendered}");
@@ -2021,7 +2021,7 @@ fn streaming_reasoning_defaults_to_last_three_wrapped_rows() {
         .iter()
         .filter(|line| !line.trim().is_empty())
         .count();
-    assert_eq!(visible_rows, 3, "{lines:#?}");
+    assert_eq!(visible_rows, 5, "{lines:#?}");
 }
 
 #[test]
