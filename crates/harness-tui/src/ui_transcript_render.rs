@@ -1167,9 +1167,11 @@ fn append_reasoning_block(
             .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
             .max(1),
     );
-    let preview_inserted = !completed && !expanded && body_lines.len() > 3;
+    // Five rows keep more prose or three single-line summaries with their gaps.
+    let preview_rows = 5;
+    let preview_inserted = !completed && !expanded && body_lines.len() > preview_rows;
     let selection_rows = if preview_inserted {
-        let preview_start = body_lines.len() - 3;
+        let preview_start = body_lines.len() - preview_rows;
         let mut preview = vec![Line::from(vec![
             Span::raw(content_prefix.to_string()),
             Span::styled("…", muted_style(theme.text.secondary)),

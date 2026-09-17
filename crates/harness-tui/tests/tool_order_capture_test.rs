@@ -576,21 +576,36 @@ fn production_ordering_capture() -> Result<()> {
                         }
                     }
                 }
-                if scenario["name"] == "thought-preview"
-                    && action["name"] == "three-headers"
-                    && width == 40
-                {
-                    let preview = text
-                        .lines()
-                        .map(str::trim)
-                        .skip_while(|row| *row != "┃  …")
-                        .take(4)
-                        .collect::<Vec<_>>();
-                    assert_eq!(
-                        preview,
-                        ["┃  …", "┃", "┃  Planning synthetic status", "┃  checks"],
-                        "preview must use Grok's wrapped rows before taking the last three\n{text}"
-                    );
+                if scenario["name"] == "thought-preview" && action["name"] == "three-headers" {
+                    if width == 40 {
+                        let preview = text
+                            .lines()
+                            .map(str::trim)
+                            .skip_while(|row| *row != "┃  …")
+                            .take(6)
+                            .collect::<Vec<_>>();
+                        assert_eq!(
+                            preview,
+                            [
+                                "┃  …",
+                                "┃  Choosing unique fixture with",
+                                "┃  wrap check",
+                                "┃",
+                                "┃  Planning synthetic status",
+                                "┃  checks"
+                            ],
+                            "preview must wrap before taking the last five rows\n{text}"
+                        );
+                        assert!(!text.contains("Preparing synthetic preview"), "{text}");
+                    } else {
+                        assert!(text.contains("Preparing synthetic preview"), "{text}");
+                        assert!(
+                            text.contains("Choosing unique fixture with wrap check"),
+                            "{text}"
+                        );
+                        assert!(text.contains("Planning synthetic status checks"), "{text}");
+                        assert!(!text.lines().any(|line| line.trim() == "┃  …"), "{text}");
+                    }
                 }
                 if scenario["name"] == "interleave" && action["name"] == "requested-ab" {
                     assert!(text.contains("Reading 2 files"), "{name}: {text}");

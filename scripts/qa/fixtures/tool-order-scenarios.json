@@ -31,7 +31,7 @@
       {"op": "snapshot", "name": "two-headers"},
       {"op": "advance", "ms": 150},
       {"op": "reasoning", "text": "\n\n**Planning synthetic status checks**"},
-      {"op": "snapshot", "name": "three-headers", "absent": ["Preparing synthetic preview"]},
+      {"op": "snapshot", "name": "three-headers"},
       {"op": "advance", "ms": 33}, {"op": "snapshot", "name": "preview-tick-1"},
       {"op": "advance", "ms": 33}, {"op": "snapshot", "name": "preview-tick-2"},
       {"op": "advance", "ms": 264}, {"op": "snapshot", "name": "preview-tick-10"},
@@ -39,7 +39,19 @@
       {"op": "snapshot", "name": "partial-next-header"},
       {"op": "advance", "ms": 150},
       {"op": "reasoning", "text": " synthetic header**"},
-      {"op": "snapshot", "name": "four-headers"}
+      {"op": "snapshot", "name": "four-headers", "absent": ["Preparing synthetic preview"]}
+    ]},
+    {"name": "thought-prose", "actions": [
+      {"op": "reasoning", "text": "First inspect the inputs.  \nThen trace each caller.  \nCheck the shared renderer."},
+      {"op": "snapshot", "name": "three-rows", "contains": ["First inspect the inputs.", "Check the shared renderer."]},
+      {"op": "advance", "ms": 50},
+      {"op": "reasoning", "text": "  \nKeep the existing wrapping.  \nAllow more reading space."},
+      {"op": "snapshot", "name": "five-rows", "contains": ["First inspect the inputs.", "Then trace each caller.", "Check the shared renderer.", "Keep the existing wrapping.", "Allow more reading space."]},
+      {"op": "advance", "ms": 50},
+      {"op": "reasoning", "text": "  \nFinally verify the result."},
+      {"op": "snapshot", "name": "six-rows-scroll", "contains": ["Then trace each caller.", "Finally verify the result."], "absent": ["First inspect the inputs."]},
+      {"op": "text", "text": "The preview is verified."},
+      {"op": "snapshot", "name": "answer", "contains": ["Thought", "The preview is verified."], "absent": ["First inspect the inputs.", "Finally verify the result."]}
     ]},
     {"name": "thought-command", "actions": [
       {"op": "reasoning", "text": "**Planning the inspection**"}, {"op": "advance", "ms": 150},
