@@ -22,7 +22,7 @@ src/
 |------|----------|-------|
 | Add or route a command | `lib.rs` | Root `Commands` dispatch and global options |
 | Change prompt completion | `prompt/stream.rs` | Live/durable reconciliation and timeout state |
-| Change session lifecycle | `sessions/manage.rs`, `sessions/rewind.rs` | Locking, cleanup, restart, rollback |
+| Change session lifecycle | `sessions.rs`, `sessions/rewind.rs` | Reopen, continuation, rewind, rollback |
 | Change export safety | `sessions/export/` | Credentials, readiness, routes, fail-closed scan |
 | Change replay indexing | `replay/history_index.rs` | Fingerprints, locks, atomic index replacement |
 | Change TUI event flow | `tui/live_events.rs`, `tui/live_intents.rs` | Lag recovery, intents, terminal events |

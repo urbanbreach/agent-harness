@@ -525,11 +525,12 @@ pub(crate) fn prepare_tool_result(content: &str) -> Option<PreparedToolResult> {
             HarnessToolResultContent::File { .. } => None,
         })
         .collect::<Vec<_>>();
-    let text = text_parts
-        .join("\n")
-        .trim()
-        .to_string()
-        .if_empty_then(|| payload.text.clone());
+    let text = text_parts.join("\n").trim().to_string();
+    let text = if text.is_empty() {
+        payload.text.clone()
+    } else {
+        text
+    };
     let images = payload
         .content
         .into_iter()
@@ -605,20 +606,6 @@ fn validated_openai_image_url(uri: &str, mime: &str) -> Option<String> {
     }
 
     Some(format!("data:{normalized_mime};base64,{base64}"))
-}
-
-trait EmptyStringExt {
-    fn if_empty_then(self, fallback: impl FnOnce() -> String) -> String;
-}
-
-impl EmptyStringExt for String {
-    fn if_empty_then(self, fallback: impl FnOnce() -> String) -> String {
-        if self.is_empty() {
-            fallback()
-        } else {
-            self
-        }
-    }
 }
 
 #[derive(Debug, Serialize)]

@@ -1046,28 +1046,6 @@ impl AppState {
         }
     }
 
-    fn _handle_modal_key(&mut self, key: KeyEvent) -> bool {
-        let Some((permission_id, _)) = self.active_permission() else {
-            return false;
-        };
-
-        match (key.code, key.modifiers) {
-            (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
-                self.send_permission_intent(permission_id, PermissionDecision::Allow, None, None);
-                true
-            }
-            (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-                self.send_permission_intent(permission_id, PermissionDecision::Deny, None, None);
-                true
-            }
-            (KeyCode::Esc, KeyModifiers::NONE) => {
-                self.send_permission_intent(permission_id, PermissionDecision::Deny, None, None);
-                true
-            }
-            _ => false,
-        }
-    }
-
     fn ensure_question_answer_state(
         &mut self,
         permission_id: &str,

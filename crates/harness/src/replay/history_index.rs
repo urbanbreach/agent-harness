@@ -24,27 +24,6 @@ pub struct SessionHistoryIndexReport {
     pub index_path: PathBuf,
 }
 
-trait JournalSource {
-    fn open_session(&mut self, run_dir: &Path) -> SessionInspectionEntry;
-    fn opened(&self) -> usize;
-}
-
-#[derive(Debug, Default)]
-struct FileJournalSource {
-    opened: usize,
-}
-
-impl JournalSource for FileJournalSource {
-    fn open_session(&mut self, run_dir: &Path) -> SessionInspectionEntry {
-        self.opened += 1;
-        inspect_single_session(run_dir)
-    }
-
-    fn opened(&self) -> usize {
-        self.opened
-    }
-}
-
 pub fn inspect_session_catalog_indexed(
     session_dir: &Path,
 ) -> Result<SessionHistoryIndexReport, String> {
@@ -60,15 +39,6 @@ pub fn rebuild_session_catalog_index(
 fn update_index(
     session_dir: &Path,
     force_rebuild: bool,
-) -> Result<SessionHistoryIndexReport, String> {
-    let mut source = FileJournalSource::default();
-    update_index_with_source(session_dir, force_rebuild, &mut source)
-}
-
-fn update_index_with_source(
-    session_dir: &Path,
-    force_rebuild: bool,
-    source: &mut dyn JournalSource,
 ) -> Result<SessionHistoryIndexReport, String> {
     fs::read_dir(session_dir).map_err(|error| {
         format!(
@@ -98,6 +68,7 @@ fn update_index_with_source(
     let removed = retained_count != index.entries.len();
 
     let mut journals_scanned = 0;
+    let mut journals_opened = 0;
     for (run_dir, fingerprint) in journals {
         let unchanged = index.entries.get(&run_dir).is_some_and(|indexed| {
             indexed.fingerprint == fingerprint && indexed.entry.run_dir == run_dir
@@ -106,12 +77,11 @@ fn update_index_with_source(
             continue;
         }
         journals_scanned += 1;
+        journals_opened += 1;
+        let entry = inspect_single_session(&run_dir).normalize_lineage().into();
         index.entries.insert(
             run_dir.clone(),
-            IndexedSessionHistoryEntry {
-                fingerprint,
-                entry: source.open_session(&run_dir).normalize_lineage().into(),
-            },
+            IndexedSessionHistoryEntry { fingerprint, entry },
         );
     }
 
@@ -130,7 +100,7 @@ fn update_index_with_source(
     Ok(SessionHistoryIndexReport {
         entries,
         journals_scanned,
-        journals_opened: source.opened(),
+        journals_opened,
         rebuilt,
         recovery_reason,
         index_path,
