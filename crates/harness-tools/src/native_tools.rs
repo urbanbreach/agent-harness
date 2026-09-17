@@ -662,7 +662,7 @@ impl Tool for QuestionTool {
 impl Tool for LspTool {
     tool_metadata!(
         "lsp",
-        "Performs LSP operations through local language servers.",
+        "Use fileDiagnostics on each changed source file after editing and before reporting completion; provide operation and filePath. Also supports semantic navigation, symbols, and workspaceDiagnostics. Unavailable diagnostics are not a clean check; report the limitation and use the project's compiler or tests.",
         ToolCapability::ReadFs,
         code_lsp_parameters_json_schema()
     );

@@ -1,5 +1,6 @@
 // allow: SIZE_OK — tool trait and registry (schema + execution + artifacts)
 use crate::UnwrapOrAbort;
+use std::any::{Any, TypeId};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -134,11 +135,40 @@ impl ToolResult {
 #[derive(Debug, Clone, Default)]
 pub struct ToolRunState {
     edit_session: EditSession,
+    resources: Arc<Mutex<RunResources>>,
+}
+
+#[derive(Default)]
+struct RunResources(BTreeMap<TypeId, Arc<dyn Any + Send + Sync>>);
+
+impl std::fmt::Debug for RunResources {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunResources")
+            .field("count", &self.0.len())
+            .finish()
+    }
 }
 
 impl ToolRunState {
     pub fn edit_session(&self) -> &EditSession {
         &self.edit_session
+    }
+
+    /// Lazily share a tool resource across this run's calls and agents. Resources
+    /// are dropped with the run state; they are never stored in durable history.
+    pub fn resource<T: Default + Send + Sync + 'static>(&self) -> Result<Arc<T>, ToolError> {
+        let mut resources = self
+            .resources
+            .lock()
+            .map_err(|_| ToolError::Execution("run resource lock poisoned".to_string()))?;
+        Arc::clone(
+            resources
+                .0
+                .entry(TypeId::of::<T>())
+                .or_insert_with(|| Arc::new(T::default())),
+        )
+        .downcast::<T>()
+        .map_err(|_| ToolError::Execution("run resource type mismatch".to_string()))
     }
 }
 

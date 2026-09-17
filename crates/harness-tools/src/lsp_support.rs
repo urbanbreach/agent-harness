@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use harness_core::config::{registered_lsp_config, LspConfig, LspServerConfig};
-use harness_core::tool::ToolError;
+use harness_core::tool::{ToolError, ToolRunState};
 use harness_core::ToolResultExt;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -11,11 +11,12 @@ use walkdir::{DirEntry, WalkDir};
 
 use crate::workspace_paths::file_uri_from_path;
 
+mod pool;
 mod session;
 #[cfg(test)]
 mod tests;
 
-use self::session::{request_with_retry, request_with_retry_no_empty_retry, LspSession};
+use self::session::{request_with_retry, LspSession};
 
 const SUPPORTED_LSP_OPERATION_NAMES: &[&str] = &[
     "goToDefinition",
@@ -44,6 +45,7 @@ const FILE_LSP_OPERATION_NAMES: &[&str] =
     &["documentSymbol", "fileDiagnostics", "workspaceDiagnostics"];
 const QUERY_LSP_OPERATION_NAMES: &[&str] = &["workspaceSymbol"];
 const WORKSPACE_DIAGNOSTICS_SKIPPED_DIR_NAMES: &[&str] = &[".git", "target", "node_modules"];
+const MAX_WORKSPACE_DIAGNOSTICS_FILES: usize = 200;
 
 const RUST_ROOT_MARKERS: &[&str] = &["Cargo.toml", "rust-project.json"];
 const TYPESCRIPT_ROOT_MARKERS: &[&str] = &[
@@ -190,34 +192,34 @@ impl LspPosition {
     }
 }
 
-pub(crate) struct LspOperationRequest<'a> {
+pub(crate) struct LspOperationRequest {
     pub(crate) operation: LspOperation,
-    pub(crate) input: LspOperationInput<'a>,
-    pub(crate) workspace_root: &'a Path,
+    pub(crate) input: LspOperationInput,
+    pub(crate) workspace_root: PathBuf,
 }
 
-pub(crate) struct LspRenameRequest<'a> {
-    pub(crate) file_path: &'a Path,
+pub(crate) struct LspRenameRequest {
+    pub(crate) file_path: PathBuf,
     pub(crate) position: LspPosition,
-    pub(crate) workspace_root: &'a Path,
-    pub(crate) new_name: &'a str,
+    pub(crate) workspace_root: PathBuf,
+    pub(crate) new_name: String,
 }
 
-pub(crate) enum LspOperationInput<'a> {
+pub(crate) enum LspOperationInput {
     Position {
-        file_path: &'a Path,
+        file_path: PathBuf,
         position: LspPosition,
     },
     File {
-        file_path: &'a Path,
+        file_path: PathBuf,
     },
     Query {
-        file_path: &'a Path,
-        query: &'a str,
+        file_path: PathBuf,
+        query: String,
     },
 }
 
-impl LspOperationInput<'_> {
+impl LspOperationInput {
     fn file_path(&self) -> &Path {
         match self {
             Self::Position { file_path, .. }
@@ -235,7 +237,7 @@ impl LspOperationInput<'_> {
 
     fn query(&self) -> Option<&str> {
         match self {
-            Self::Query { query, .. } => Some(*query),
+            Self::Query { query, .. } => Some(query.as_str()),
             Self::Position { .. } | Self::File { .. } => None,
         }
     }
@@ -308,8 +310,9 @@ pub(crate) fn format_diagnostics(reports: &[LspDiagnosticReport]) -> String {
         .join("\n")
 }
 
-pub(crate) fn execute_lsp_operation(
-    request: &LspOperationRequest<'_>,
+pub(crate) async fn execute_lsp_operation(
+    state: &ToolRunState,
+    request: LspOperationRequest,
 ) -> Result<LspOperationResponse, ToolError> {
     let file_path = request
         .input
@@ -318,8 +321,22 @@ pub(crate) fn execute_lsp_operation(
         .tool_err("failed to resolve file path")?;
     let cfg = registered_lsp_config();
     let spec = server_for_path(&file_path, &cfg)?;
-    let root = project_root(&file_path, request.workspace_root, spec.root_markers);
-    let mut session = LspSession::start(&spec, &root)?;
+    let root = project_root(&file_path, &request.workspace_root, spec.root_markers);
+    state
+        .resource::<pool::LspPool>()?
+        .execute(spec.clone(), root.clone(), move |session| {
+            execute_operation(session, &request, &file_path, &spec, &root)
+        })
+        .await
+}
+
+fn execute_operation(
+    session: &mut LspSession,
+    request: &LspOperationRequest,
+    file_path: &Path,
+    spec: &LspServerSpec,
+    root: &Path,
+) -> Result<LspOperationResponse, ToolError> {
     let server = LspServerMetadata {
         name: spec.name.clone(),
         command: spec.command.clone(),
@@ -327,50 +344,37 @@ pub(crate) fn execute_lsp_operation(
 
     match request.operation {
         LspOperation::FileDiagnostics => {
-            session.open_file(&file_path, spec.name.as_str())?;
-            refresh_diagnostics_after_open(
-                &mut session,
-                "textDocument/diagnostic",
-                json!({
-                    "textDocument": { "uri": file_uri_from_path(&file_path) },
-                }),
-            )?;
-            let diagnostics = vec![session.diagnostics_for(&file_path)];
+            session.open_file(file_path, spec.name.as_str())?;
+            session.collect_diagnostics(file_path)?;
+            let diagnostics = vec![session.diagnostics_for(file_path)];
             return Ok(LspOperationResponse {
                 server,
-                result: file_diagnostics_result(&file_path, &diagnostics),
+                result: file_diagnostics_result(file_path, &diagnostics),
                 diagnostics,
             });
         }
         LspOperation::WorkspaceDiagnostics => {
-            let opened_files = open_workspace_files_for_diagnostics(&mut session, &root, &spec)?;
-            refresh_diagnostics_after_open(
-                &mut session,
-                "workspace/diagnostic",
-                json!({
-                    "previousResultIds": [],
-                }),
-            )?;
-            let diagnostics = session.diagnostics();
+            let diagnostics = open_workspace_files_for_diagnostics(session, root, spec)?;
+            let opened_files = diagnostics.len();
             return Ok(LspOperationResponse {
                 server,
-                result: workspace_diagnostics_result(&root, opened_files, &diagnostics),
+                result: workspace_diagnostics_result(root, opened_files, &diagnostics),
                 diagnostics,
             });
         }
-        _ => session.open_file(&file_path, spec.name.as_str())?,
+        _ => session.open_file(file_path, spec.name.as_str())?,
     }
 
     let result = match request.operation {
-        LspOperation::GoToDefinition => request_with_retry_no_empty_retry(
-            &mut session,
+        LspOperation::GoToDefinition => request_with_retry(
+            session,
             "textDocument/definition",
-            position_request_params(request, &file_path)?,
+            position_request_params(request, file_path)?,
         ),
         LspOperation::FindReferences => {
-            let position = position_request_params(request, &file_path)?;
+            let position = position_request_params(request, file_path)?;
             request_with_retry(
-                &mut session,
+                session,
                 "textDocument/references",
                 json!({
                     "textDocument": position["textDocument"].clone(),
@@ -380,19 +384,19 @@ pub(crate) fn execute_lsp_operation(
             )
         }
         LspOperation::Hover => request_with_retry(
-            &mut session,
+            session,
             "textDocument/hover",
-            position_request_params(request, &file_path)?,
+            position_request_params(request, file_path)?,
         ),
         LspOperation::DocumentSymbol => request_with_retry(
-            &mut session,
+            session,
             "textDocument/documentSymbol",
             json!({
-                "textDocument": { "uri": file_uri_from_path(&file_path) },
+                "textDocument": { "uri": file_uri_from_path(file_path) },
             }),
         ),
         LspOperation::WorkspaceSymbol => request_with_retry(
-            &mut session,
+            session,
             "workspace/symbol",
             json!({
                 "query": request.input.query().ok_or_else(|| ToolError::InvalidArguments(
@@ -401,24 +405,24 @@ pub(crate) fn execute_lsp_operation(
             }),
         ),
         LspOperation::GoToImplementation => request_with_retry(
-            &mut session,
+            session,
             "textDocument/implementation",
-            position_request_params(request, &file_path)?,
+            position_request_params(request, file_path)?,
         ),
         LspOperation::PrepareCallHierarchy => request_with_retry(
-            &mut session,
+            session,
             "textDocument/prepareCallHierarchy",
-            position_request_params(request, &file_path)?,
+            position_request_params(request, file_path)?,
         ),
         LspOperation::IncomingCalls => request_call_hierarchy(
-            &mut session,
+            session,
             "callHierarchy/incomingCalls",
-            position_request_params(request, &file_path)?,
+            position_request_params(request, file_path)?,
         ),
         LspOperation::OutgoingCalls => request_call_hierarchy(
-            &mut session,
+            session,
             "callHierarchy/outgoingCalls",
-            position_request_params(request, &file_path)?,
+            position_request_params(request, file_path)?,
         ),
         LspOperation::FileDiagnostics
         | LspOperation::WorkspaceDiagnostics
@@ -445,7 +449,7 @@ fn request_call_hierarchy(
 }
 
 fn position_request_params(
-    request: &LspOperationRequest<'_>,
+    request: &LspOperationRequest,
     file_path: &Path,
 ) -> Result<Value, ToolError> {
     let position = request.input.position().ok_or_else(|| {
@@ -490,117 +494,86 @@ fn diagnostic_count(reports: &[LspDiagnosticReport]) -> usize {
     reports.iter().map(|report| report.diagnostics.len()).sum()
 }
 
-fn refresh_diagnostics_after_open(
-    session: &mut LspSession,
-    method: &str,
-    params: Value,
-) -> Result<(), ToolError> {
-    match request_with_retry(session, method, params) {
-        Ok(_) => Ok(()),
-        Err(ToolError::Execution(message)) if is_unsupported_diagnostic_request(&message) => Ok(()),
-        Err(err) => Err(err),
-    }
-}
-
-fn is_unsupported_diagnostic_request(message: &str) -> bool {
-    let normalized = message.to_ascii_lowercase();
-    normalized.contains("method not found")
-        || normalized.contains("not implemented")
-        || normalized.contains("-32601")
-}
-
 fn open_workspace_files_for_diagnostics(
     session: &mut LspSession,
     root: &Path,
     spec: &LspServerSpec,
-) -> Result<usize, ToolError> {
-    let mut files = WalkDir::new(root)
+) -> Result<Vec<LspDiagnosticReport>, ToolError> {
+    let mut files = BTreeSet::new();
+    for entry in WalkDir::new(root)
         .follow_links(false)
         .into_iter()
         .filter_entry(|entry| !should_skip_workspace_diagnostics_entry(entry))
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_file())
-        .map(|entry| entry.into_path())
-        .filter(|path| matches_lsp_extension(path, &spec.extensions))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    files.sort();
+    {
+        let entry = entry.tool_err("failed to scan diagnostic workspace")?;
+        if entry.file_type().is_file() && matches_lsp_extension(entry.path(), &spec.extensions) {
+            files.insert(entry.into_path());
+            if files.len() > MAX_WORKSPACE_DIAGNOSTICS_FILES {
+                return Err(ToolError::Execution(format!("workspace diagnostics exceeds {MAX_WORKSPACE_DIAGNOSTICS_FILES} files; use fileDiagnostics on changed files")));
+            }
+        }
+    }
+    let mut reports = Vec::with_capacity(files.len());
     for path in &files {
         session.open_file(path, spec.name.as_str())?;
+        session.collect_diagnostics(path)?;
+        reports.push(session.diagnostics_for(path));
     }
-    Ok(files.len())
+    Ok(reports)
 }
 
-pub(crate) fn execute_lsp_rename(
-    request: &LspRenameRequest<'_>,
+pub(crate) async fn execute_lsp_rename(
+    state: &ToolRunState,
+    request: LspRenameRequest,
 ) -> Result<LspRenameResponse, ToolError> {
-    let StartedLspSession {
-        file_path,
-        spec,
-        mut session,
-    } = start_lsp_session(request.file_path, request.workspace_root)?;
-
-    let position = json!({
-        "textDocument": { "uri": file_uri_from_path(&file_path) },
-        "position": {
-            "line": request.position.line(),
-            "character": request.position.character(),
-        },
-    });
-
-    let prepare_result =
-        request_with_retry(&mut session, "textDocument/prepareRename", position.clone())?;
-    if prepare_result.is_null() {
-        return Err(ToolError::Execution(
-            "language server reported rename is unavailable at the requested position".to_string(),
-        ));
-    }
-
-    let workspace_edit = request_with_retry(
-        &mut session,
-        "textDocument/rename",
-        json!({
-            "textDocument": position["textDocument"].clone(),
-            "position": position["position"].clone(),
-            "newName": request.new_name,
-        }),
-    )?;
-
-    Ok(LspRenameResponse {
-        server: LspServerMetadata {
-            name: spec.name,
-            command: spec.command,
-        },
-        prepare_result,
-        workspace_edit,
-        diagnostics: session.diagnostics(),
-    })
-}
-
-struct StartedLspSession {
-    file_path: PathBuf,
-    spec: LspServerSpec,
-    session: LspSession,
-}
-
-fn start_lsp_session(
-    file_path: &Path,
-    workspace_root: &Path,
-) -> Result<StartedLspSession, ToolError> {
-    let file_path = file_path
+    let file_path = request
+        .file_path
         .canonicalize()
         .tool_err("failed to resolve file path")?;
-    let cfg = registered_lsp_config();
-    let spec = server_for_path(&file_path, &cfg)?;
-    let root = project_root(&file_path, workspace_root, spec.root_markers);
-    let mut session = LspSession::start(&spec, &root)?;
-    session.open_file(&file_path, spec.name.as_str())?;
-    Ok(StartedLspSession {
-        file_path,
-        spec,
-        session,
-    })
+    let spec = server_for_path(&file_path, &registered_lsp_config())?;
+    let root = project_root(&file_path, &request.workspace_root, spec.root_markers);
+    state
+        .resource::<pool::LspPool>()?
+        .execute(spec.clone(), root, move |session| {
+            session.open_file(&file_path, &spec.name)?;
+            let position = json!({
+                "textDocument": { "uri": file_uri_from_path(&file_path) },
+                "position": {
+                    "line": request.position.line(),
+                    "character": request.position.character(),
+                },
+            });
+
+            let prepare_result =
+                request_with_retry(session, "textDocument/prepareRename", position.clone())?;
+            if prepare_result.is_null() {
+                return Err(ToolError::Execution(
+                    "language server reported rename is unavailable at the requested position"
+                        .to_string(),
+                ));
+            }
+
+            let workspace_edit = request_with_retry(
+                session,
+                "textDocument/rename",
+                json!({
+                    "textDocument": position["textDocument"].clone(),
+                    "position": position["position"].clone(),
+                    "newName": request.new_name,
+                }),
+            )?;
+
+            Ok(LspRenameResponse {
+                server: LspServerMetadata {
+                    name: spec.name.clone(),
+                    command: spec.command.clone(),
+                },
+                prepare_result,
+                workspace_edit,
+                diagnostics: session.diagnostics(),
+            })
+        })
+        .await
 }
 
 fn should_skip_workspace_diagnostics_entry(entry: &DirEntry) -> bool {
@@ -624,7 +597,7 @@ fn matches_lsp_extension(path: &Path, supported_extensions: &[String]) -> bool {
         .any(|supported| supported.eq_ignore_ascii_case(&normalized))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct LspServerSpec {
     name: String,
     disabled: bool,

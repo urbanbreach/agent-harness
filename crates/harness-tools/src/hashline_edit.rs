@@ -112,7 +112,21 @@ impl Tool for HashlineEditTool {
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: HashlineEditArgs = crate::parse_tool_args(args_json)?;
-        execute_hashline_edit(&ctx, args).await
+        let needs_diagnostics = args.old_string.is_none()
+            && args.new_string.is_none()
+            && args.replace_all.is_none()
+            && !args.delete;
+        let target = args
+            .rename
+            .as_deref()
+            .unwrap_or(&args.file_path)
+            .to_string();
+        let mut result = execute_hashline_edit(&ctx, args).await?;
+        if needs_diagnostics {
+            let path = resolve_workspace_target_path(&ctx, &target)?;
+            crate::file_write::check_edited_files(&ctx, &mut result, [path]).await;
+        }
+        Ok(result)
     }
 }
 

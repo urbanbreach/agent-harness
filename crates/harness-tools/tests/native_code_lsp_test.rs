@@ -19,3 +19,18 @@ mod part_04_native_code_lsp_install_decision_test {
     use super::*;
     include!("native_code_lsp/04_native_code_lsp_install_decision_test.rs");
 }
+
+mod protocol {
+    use super::*;
+    include!("native_code_lsp/05_native_code_lsp_protocol_test.rs");
+}
+
+mod native {
+    use super::*;
+    include!("native_code_lsp/06_lsp_rust_analyzer_recorded.rs");
+}
+
+mod simulation {
+    use super::*;
+    include!("native_code_lsp/07_native_code_lsp_edit_simulation_test.rs");
+}

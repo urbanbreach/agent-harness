@@ -65,7 +65,7 @@ pub(crate) async fn execute_exact_edit(
     let workspace = canonical_workspace_root(ctx)?;
     let resource = workspace_relative_display(&workspace, &resolved_path)?;
     let format_warning = run_file_formatter(&workspace, &resolved_path).await;
-    let diagnostics = run_lsp_diagnostics(workspace.clone(), resolved_path.clone()).await;
+    let diagnostics = run_lsp_diagnostics(ctx, resolved_path.clone()).await;
     result.display_text = format!(
         "Edited file successfully: {resource}\nReplacements: {}",
         replacements

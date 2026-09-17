@@ -55,7 +55,7 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
         .await
         .unwrap_or_abort();
 
-    tokio::task::yield_now().await;
+    common::wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
     handle.stop_run().await.unwrap_or_abort();
 
     let updated = fs::read_to_string(&file_path).unwrap_or_abort();
@@ -129,7 +129,7 @@ async fn hashline_apply_mismatch_leaves_file_unchanged() {
         .await
         .unwrap_or_abort();
 
-    tokio::task::yield_now().await;
+    common::wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
     handle.stop_run().await.unwrap_or_abort();
 
     let unchanged = fs::read_to_string(&file_path).unwrap_or_abort();
@@ -212,7 +212,7 @@ async fn hashline_apply_overlap_rejection_explains_recovery() {
         .await
         .unwrap_or_abort();
 
-    tokio::task::yield_now().await;
+    common::wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
     handle.stop_run().await.unwrap_or_abort();
 
     let unchanged = fs::read_to_string(&file_path).unwrap_or_abort();
@@ -321,7 +321,7 @@ async fn hashline_apply_permission_ask_blocks_until_resolved() {
         .await
         .unwrap_or_abort();
 
-    tokio::task::yield_now().await;
+    common::wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
     handle.stop_run().await.unwrap_or_abort();
 
     assert_eq!(

@@ -41,21 +41,16 @@ impl CodeLspRenameExecutor {
     ) -> Result<ToolResult, ToolError> {
         let position = LspPosition::from_one_based(request.line, request.character)?;
         let file_path = resolve_existing_path(ctx, &request.file_path)?;
-        let response = tokio::task::spawn_blocking({
-            let workspace_root = ctx.workspace_root.clone();
-            let file_path = file_path.clone();
-            let new_name = request.new_name.clone();
-            move || {
-                execute_lsp_rename(&LspRenameRequest {
-                    file_path: &file_path,
-                    position,
-                    workspace_root: &workspace_root,
-                    new_name: &new_name,
-                })
-            }
-        })
-        .await
-        .tool_err("lsp rename task failed")??;
+        let response = execute_lsp_rename(
+            &ctx.tool_state,
+            LspRenameRequest {
+                file_path: file_path.clone(),
+                position,
+                workspace_root: ctx.workspace_root.clone(),
+                new_name: request.new_name.clone(),
+            },
+        )
+        .await?;
 
         let plan = RenamePlan::from_workspace_edit(ctx, &response.workspace_edit)?;
         let symbol_preview = RenamePreparePreview::from_prepare_result(&response.prepare_result)

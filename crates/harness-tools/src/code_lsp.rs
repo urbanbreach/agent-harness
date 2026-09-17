@@ -1,6 +1,6 @@
 // allow: SIZE_OK — LSP tool wrapper (diagnostics + symbols + rename)
 use crate::UnwrapOrAbort;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
 use harness_core::ToolResultExt;
@@ -38,7 +38,7 @@ impl CodeLspExecutor {
                 (
                     operation,
                     file_path.clone(),
-                    OwnedLspOperationInput::Position {
+                    LspOperationInput::Position {
                         file_path,
                         position,
                     },
@@ -56,7 +56,7 @@ impl CodeLspExecutor {
                 (
                     operation,
                     file_path.clone(),
-                    OwnedLspOperationInput::File { file_path },
+                    LspOperationInput::File { file_path },
                     json!({}),
                 )
             }
@@ -69,7 +69,7 @@ impl CodeLspExecutor {
                 (
                     operation,
                     file_path.clone(),
-                    OwnedLspOperationInput::Query {
+                    LspOperationInput::Query {
                         file_path,
                         query: query.clone(),
                     },
@@ -86,62 +86,17 @@ impl CodeLspExecutor {
             }
         };
 
-        let response = run_lsp_operation(ctx.workspace_root.clone(), operation, input).await?;
+        let response = execute_lsp_operation(
+            &ctx.tool_state,
+            LspOperationRequest {
+                workspace_root: ctx.workspace_root.clone(),
+                operation,
+                input,
+            },
+        )
+        .await?;
         build_result(operation, &file_path, extra_args, response)
     }
-}
-
-enum OwnedLspOperationInput {
-    Position {
-        file_path: PathBuf,
-        position: LspPosition,
-    },
-    File {
-        file_path: PathBuf,
-    },
-    Query {
-        file_path: PathBuf,
-        query: String,
-    },
-}
-
-async fn run_lsp_operation(
-    workspace_root: PathBuf,
-    operation: LspOperation,
-    input: OwnedLspOperationInput,
-) -> Result<LspOperationResponse, ToolError> {
-    tokio::task::spawn_blocking(move || match input {
-        OwnedLspOperationInput::Position {
-            file_path,
-            position,
-        } => execute_lsp_operation(&LspOperationRequest {
-            operation,
-            input: LspOperationInput::Position {
-                file_path: &file_path,
-                position,
-            },
-            workspace_root: &workspace_root,
-        }),
-        OwnedLspOperationInput::File { file_path } => execute_lsp_operation(&LspOperationRequest {
-            operation,
-            input: LspOperationInput::File {
-                file_path: &file_path,
-            },
-            workspace_root: &workspace_root,
-        }),
-        OwnedLspOperationInput::Query { file_path, query } => {
-            execute_lsp_operation(&LspOperationRequest {
-                operation,
-                input: LspOperationInput::Query {
-                    file_path: &file_path,
-                    query: &query,
-                },
-                workspace_root: &workspace_root,
-            })
-        }
-    })
-    .await
-    .tool_err("lsp task failed")?
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
