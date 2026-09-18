@@ -385,6 +385,8 @@ impl Capture {
                 );
             }
             "fold-selected" => self.state.toggle_fold_selected(),
+            // The reference keeps the thought selected when its context group opens.
+            "select-thought" => {}
             // Grok keeps compact rows when details are hidden; there is no success-row visibility toggle.
             "details-off" | "barrier" | "provider-finish" | "commit" => {}
             "dense" => {

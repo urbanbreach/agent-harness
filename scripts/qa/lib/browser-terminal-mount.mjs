@@ -12,6 +12,7 @@ export async function mountTerminal(page, settings) {
   await page.setContent(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(settings.title)}</title></head><body><main id="terminal" aria-label="Harness terminal"></main></body></html>`);
   await page.addStyleTag({ content: `${tokens()}\n${xtermCss}\n@font-face{font-family:"Harness QA Mono";src:url(data:font/ttf;base64,${font}) format("truetype");font-display:block}` });
   await page.addScriptTag({ path: join(xtermRoot, "lib/xterm.js") });
+  await page.addScriptTag({ path: require.resolve("@xterm/addon-unicode-graphemes") });
   await page.evaluate(async ({ cols, rows, initialTitle, hostWidth, hostHeight, captureAllCells }) => {
     await document.fonts.ready;
     await document.fonts.load('16px "Harness QA Mono"');
@@ -30,6 +31,7 @@ export async function mountTerminal(page, settings) {
         selectionBackground: "rgb(85, 87, 83)",
       },
     });
+    terminal.loadAddon(new UnicodeGraphemesAddon.UnicodeGraphemesAddon());
     const host = document.querySelector("#terminal");
     host.style.width = `${hostWidth}px`;
     host.style.height = `${hostHeight}px`;

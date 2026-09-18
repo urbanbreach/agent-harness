@@ -21,6 +21,9 @@ use serde_json::{json, Value};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const FIXTURE: &str = include_str!("../../../scripts/qa/fixtures/tool-order-scenarios.json");
 
+#[path = "tool_order_capture/batch_lifecycle_test.rs"]
+mod batch_lifecycle;
+
 struct Capture {
     app: AppState,
     events: Vec<EventEnvelopeV1>,
@@ -263,6 +266,19 @@ impl Capture {
                 self.app
                     .handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
             }
+            "select-thought" => {
+                self.app.focus = Focus::Details;
+                let keymap = self.app.keymap.clone();
+                self.app
+                    .keymap
+                    .apply_overrides(&BTreeMap::from([("move_up".into(), "alt+up".into())]));
+                // Step back past the tool and its expanded context header.
+                for _ in 0..2 {
+                    self.app
+                        .handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
+                }
+                self.app.keymap = keymap;
+            }
             "details-off" => {
                 self.app
                     .handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
@@ -396,6 +412,38 @@ fn render(app: &AppState, width: u16, height: u16) -> Result<Buffer> {
     let mut terminal = Terminal::new(TestBackend::new(width, height))?;
     terminal.draw(|frame| render_app(frame, app))?;
     Ok(terminal.backend().buffer().clone())
+}
+
+#[test]
+fn assistant_timestamp_keeps_a_gutter_at_the_wrap_boundary() -> Result<()> {
+    let mut fixture: Value = serde_json::from_str(FIXTURE)?;
+    fixture["timestamp"] = json!("2026-09-13T00:43:00Z");
+    let mut state = Capture::new(&fixture)?;
+    state.live("provider_text_delta", json!({"request_id":"provider", "delta":
+        "I’ll inspect the first transcript section before continuing with the ordered delay and projection read."}))?;
+    for width in [80, 120] {
+        let buffer = render(&state.app, width, 40)?;
+        let rows = buffer
+            .content
+            .chunks(usize::from(width))
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let first = rows
+            .iter()
+            .find(|row| row.contains("I’ll inspect"))
+            .ok_or("missing assistant row")?;
+        let colon = first.find(":43").ok_or("missing assistant timestamp")?;
+        let clock_start = first[..colon]
+            .rfind(' ')
+            .ok_or("missing timestamp gutter")?
+            + 1;
+        assert!(first[..clock_start].ends_with("  "), "{first}");
+        assert!(
+            !first.contains("projection read."),
+            "boundary sentence must wrap before the timestamp: {first}"
+        );
+    }
+    Ok(())
 }
 
 #[test]
