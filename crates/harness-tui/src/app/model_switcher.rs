@@ -779,6 +779,15 @@ impl AppState {
             return;
         };
 
+        let selected_model = if selected_model.provider == self.launch_metadata.provider()
+            && Some(selected_model.model.as_str()) == self.launch_metadata.model()
+        {
+            self.launch_metadata
+                .to_model_option()
+                .unwrap_or(selected_model)
+        } else {
+            selected_model
+        };
         self.apply_selected_model_option(selected_model, true);
         self.close_palette();
     }
