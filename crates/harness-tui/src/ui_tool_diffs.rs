@@ -65,6 +65,32 @@ pub(super) fn collect_apply_patch_file_render_entries(
     }
 
     if entries.is_empty() {
+        if let Some(applied) = tool_call
+            .output_json
+            .as_ref()
+            .and_then(|value| value.get("applied"))
+            .and_then(serde_json::Value::as_array)
+        {
+            let diffs = tool_call_diff_artifacts(tool_call);
+            for (index, edit) in applied.iter().enumerate() {
+                let Some(path) = edit
+                    .get("resource")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(non_empty_trimmed)
+                else {
+                    continue;
+                };
+                if seen.insert(path.to_owned()) {
+                    entries.push(ApplyPatchFileRenderEntry {
+                        file_path: path.to_owned(),
+                        diff_rel_path: diffs.get(index).map(|(path, _)| path.clone()),
+                    });
+                }
+            }
+        }
+    }
+
+    if entries.is_empty() {
         let diff_artifacts = tool_call_diff_artifacts(tool_call);
         let diff_paths = diff_artifacts
             .into_iter()

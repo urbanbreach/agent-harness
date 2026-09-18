@@ -173,7 +173,11 @@ fn terminal_panel_entry_from_tool_call(tool_call: &ToolCallEntry) -> Option<Term
         tool_call_id: tool_call.tool_call_id.clone(),
         command,
         cwd,
-        status: tool_call.status.into(),
+        status: if tool_call.command_failure().is_some() {
+            TerminalPanelStatus::Failed
+        } else {
+            tool_call.status.into()
+        },
         stdout: stdout.filter(|value| !value.is_empty()),
         stderr: stderr.filter(|value| !value.is_empty()),
         exit_code: shell_output_i64(tool_call, "status"),

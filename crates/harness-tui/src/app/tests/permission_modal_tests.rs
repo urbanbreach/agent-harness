@@ -50,15 +50,37 @@ pub(super) fn permission_modal_preempts_palette() {
     };
 
     let mut app = AppState::new_live(None, false, Some(intent_sink));
+    for event in shell_test_events(
+        ToolCallStatus::Succeeded,
+        serde_json::json!({
+            "command":"printf preview", "status":0, "success":true, "stdout":"preview"
+        }),
+    ) {
+        app.ingest_event(event);
+    }
+
     app.handle_key(key_with_modifiers(
         KeyCode::Char('p'),
         KeyModifiers::CONTROL,
     ));
     app.handle_key(key(KeyCode::Char('d')));
 
+    app.open_review_surface(ReviewSurface::Help);
+    assert!(render_text(&app, 120, 40).contains("Help"));
+    let tool_id = app.activities[0].tool_calls[0].tool_call_id.clone();
+    assert!(app.select_transcript_tool(&tool_id));
+    assert!(app.open_selected_transcript_viewer());
+    assert!(render_text(&app, 120, 40).contains("Enter:quote"));
+
+    app.ingest_event(shell_requested(
+        6,
+        "req_shell_panel",
+        "tc_overlay_preempt",
+        r#"{"command":"printf pending"}"#,
+    ));
     app.ingest_event(envelope(
-        1,
-        "req_overlay_preempt",
+        7,
+        "req_shell_panel",
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_overlay_preempt".to_string(),
             kind: "edit_fs".to_string(),
@@ -69,6 +91,24 @@ pub(super) fn permission_modal_preempts_palette() {
             default_decision: harness_core::event::PermissionDecision::Deny,
         }),
     ));
+
+    let screen = render_text(&app, 120, 40);
+    assert!(screen.contains("permission summary"), "{screen}");
+    assert!(!screen.contains("Help"), "{screen}");
+    assert!(!screen.contains("shortcuts ·"), "{screen}");
+    assert!(!screen.contains("Enter:quote"), "{screen}");
+    if let Some(directory) = std::env::var_os("HARNESS_TOOL_RUNTIME_HARNESS_DIR") {
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap_or_abort();
+        let (bytes, _) =
+            super::tool_runtime_capture_tests::draw(&mut app, Rect::new(0, 0, 120, 40))
+                .unwrap_or_abort();
+        std::fs::write(
+            directory.join("permission-viewer-help-120x40-motion-0ms.ansi"),
+            bytes,
+        )
+        .unwrap_or_abort();
+    }
 
     app.handle_key(key_with_modifiers(
         KeyCode::Char('y'),

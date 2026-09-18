@@ -888,6 +888,10 @@ pub(crate) fn viewer_preamble_lines(
 
 pub(crate) fn recorded_tool_viewer_text(tool: &crate::app::ToolCallEntry) -> String {
     let mut text = recorded_tool_viewer_body(tool);
+    if let Some(failure) = tool.command_failure() {
+        text.push_str("\n\n");
+        text.push_str(&failure);
+    }
     for hook in &tool.hook_executions {
         text.push_str("\n\n");
         if let Some(phase) = &hook.hook_event {

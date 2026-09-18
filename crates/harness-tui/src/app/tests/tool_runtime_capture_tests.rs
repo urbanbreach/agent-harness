@@ -5,7 +5,7 @@ use std::time::Duration;
 
 type CaptureResult<T> = Result<T, Box<dyn std::error::Error>>;
 
-fn draw(app: &mut AppState, area: Rect) -> CaptureResult<(Vec<u8>, Vec<String>)> {
+pub(super) fn draw(app: &mut AppState, area: Rect) -> CaptureResult<(Vec<u8>, Vec<String>)> {
     app.set_frame_area(area);
     let mut bytes = Vec::new();
     let painted = {

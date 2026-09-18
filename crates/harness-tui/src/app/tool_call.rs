@@ -139,6 +139,8 @@ impl ToolCallEntry {
     pub fn presentation(&self) -> ToolCallPresentation {
         let status = if self.has_correlated_background_cancellation() {
             ToolCallPresentationStatus::Cancelled
+        } else if self.command_failure().is_some() {
+            ToolCallPresentationStatus::Failed
         } else {
             ToolCallPresentation::from_display_status(self.status).status
         };
@@ -153,6 +155,26 @@ impl ToolCallEntry {
             status,
             duration_ms: terminal.then_some(self.timing_elapsed_ms).flatten(),
             result_count: terminal.then(|| self.structured_result_count()).flatten(),
+        }
+    }
+
+    pub(crate) fn command_failure(&self) -> Option<String> {
+        if !matches!(self.effective_tool_id(), "bash" | "shell.run")
+            || !matches!(
+                self.status,
+                ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed
+            )
+        {
+            return None;
+        }
+        let output = self.output_json.as_ref()?;
+        let code = output.get("status").and_then(serde_json::Value::as_i64);
+        if code.is_some_and(|code| code != 0) {
+            code.map(|code| format!("Command exited with status {code}"))
+        } else if output.get("success").and_then(serde_json::Value::as_bool) == Some(false) {
+            Some("Command failed".to_string())
+        } else {
+            None
         }
     }
 
