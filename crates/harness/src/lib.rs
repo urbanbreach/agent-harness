@@ -1546,18 +1546,19 @@ fn config_explain_json(
     let mut source_path = None;
     let mut source_value = None;
     for layer_path in &loaded.paths {
-        let (defines_path, layer_value) = match layer_value_at_path(layer_path, &segments) {
-            Ok(Some(value)) => (true, Some(redact_value(&redactor, &value))),
-            Ok(None) => (false, None),
-            Err(err) => {
-                layer_rows.push(serde_json::json!({
-                    "path": layer_path.display().to_string(),
-                    "defines_path": false,
-                    "error": err,
-                }));
-                continue;
-            }
-        };
+        let (defines_path, layer_value) =
+            match layer_value_at_path(&redactor, layer_path, &segments) {
+                Ok(Some(value)) => (true, Some(value)),
+                Ok(None) => (false, None),
+                Err(err) => {
+                    layer_rows.push(serde_json::json!({
+                        "path": layer_path.display().to_string(),
+                        "defines_path": false,
+                        "error": err,
+                    }));
+                    continue;
+                }
+            };
         if defines_path {
             source_path = Some(layer_path.display().to_string());
             source_value = layer_value.clone();
@@ -1625,6 +1626,7 @@ fn value_at_path<'a>(
 }
 
 fn layer_value_at_path(
+    redactor: &DefaultRedactor,
     path: &std::path::Path,
     segments: &[String],
 ) -> Result<Option<serde_json::Value>, String> {
@@ -1632,7 +1634,8 @@ fn layer_value_at_path(
         std::fs::read_to_string(path).map_err(|err| format!("read {}: {err}", path.display()))?;
     let root: serde_json::Value =
         json5::from_str(&raw).map_err(|err| format!("parse {}: {err}", path.display()))?;
-    Ok(value_at_path(&root, segments).cloned())
+    let redacted_root = redact_value(redactor, &root);
+    Ok(value_at_path(&redacted_root, segments).cloned())
 }
 
 #[cfg(test)]
