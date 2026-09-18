@@ -836,6 +836,7 @@ fn append_markdownish_line(
 
     if let Some((list_prefix, text, list_style, text_style)) = markdown_list_prefix(trimmed, theme)
     {
+        let start = lines.len();
         append_prefixed_wrapped_spans_line(
             lines,
             &format!("{prefix}{indent}{list_prefix}"),
@@ -843,6 +844,15 @@ fn append_markdownish_line(
             parse_inline_markdown_spans(text, text_style, color, theme),
             width,
         );
+        let continuation = format!(
+            "{prefix}{indent}{}",
+            " ".repeat(display_width(&list_prefix))
+        );
+        for line in lines.iter_mut().skip(start + 1) {
+            if let Some(span) = line.spans.first_mut() {
+                span.content = continuation.clone().into();
+            }
+        }
         return;
     }
 
