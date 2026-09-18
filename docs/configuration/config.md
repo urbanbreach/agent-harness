@@ -416,6 +416,14 @@ defaults.
 - Markdown agent discovery is last-wins: project-level markdown files override
   shipped agents with the same name.
 
+JSON config layers merge key-by-key before defaults and required-model
+validation apply to the merged result. A section a higher layer omits is
+inherited from the lower layer, so a project config that only sets `model`
+keeps the global `permission`, `formatter`, and `skills` sections. Within a
+merged section, arrays replace lower-layer values instead of concatenating,
+`instructions` lists accumulate in layer order, and `file` permission
+references resolve relative to the directory of the layer that declares them.
+
 ## Extension manifest descriptors
 
 Typed extension manifests are not a runtime config key in V1. The descriptor

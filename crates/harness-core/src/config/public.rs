@@ -15,6 +15,7 @@ pub use self::contract::{
     PublicConfigContract, PublicConfigKeyStatus, PublicConfigPermissionName, PublicConfigSurface,
     PublicConfigTopLevelKey, PublicUnsupportedInactiveValue,
 };
+pub(super) use normalization::canonicalize_public_layer_for_merge;
 pub(crate) use normalization::translate_public_formatter_config;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -202,6 +203,17 @@ impl InstructionList {
             Self::Single(value) => vec![value.clone()],
             Self::Many(values) => values.clone(),
         }
+    }
+}
+
+pub(super) fn public_config_instructions(
+    instructions: Option<&Value>,
+) -> Result<Vec<String>, ConfigError> {
+    match instructions {
+        Some(value) => serde_json::from_value::<InstructionList>(value.clone())
+            .map(|parsed| parsed.entries())
+            .map_err(|err| ConfigError::ParseJson5(err.to_string())),
+        None => Ok(Vec::new()),
     }
 }
 
@@ -638,15 +650,7 @@ pub(super) fn translate_public_runtime_root(
         serde_json::to_value(formatter).map_err(|err| ConfigError::ParseJson5(err.to_string()))?,
     );
 
-    let instructions = object
-        .get("instructions")
-        .map(|value| {
-            serde_json::from_value::<InstructionList>(value.clone())
-                .map(|parsed| parsed.entries())
-                .map_err(|err| ConfigError::ParseJson5(err.to_string()))
-        })
-        .transpose()?
-        .unwrap_or_default();
+    let instructions = public_config_instructions(object.get("instructions"))?;
 
     Ok((Value::Object(translated), instructions))
 }
