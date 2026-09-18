@@ -356,7 +356,9 @@ impl SessionProjection {
                 text_first_seq: None,
             });
 
-        if matches!(&event.payload, LiveEventV1::ProviderTextDelta { delta, .. } if !delta.is_empty())
+        if matches!(&event.payload,
+            LiveEventV1::ProviderTextDelta { delta, .. }
+                | LiveEventV1::ProviderToolInputDelta { delta, .. } if !delta.is_empty())
         {
             self.finish_live_reasoning(provider_request_id, event.mono_ms);
         }

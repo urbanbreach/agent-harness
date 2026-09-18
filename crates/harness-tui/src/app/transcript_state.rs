@@ -1011,14 +1011,25 @@ pub(super) fn transcript_events_for_activity(
     activity: &ActivityEntry,
 ) -> Vec<TranscriptEvent> {
     let mut blocks = Vec::new();
+    let lifecycle = block_lifecycle(activity.status);
     if let Some(user_message) = activity.user_message.as_ref() {
-        blocks.push((BlockKind::User, user_message.text.clone(), None));
+        blocks.push((BlockKind::User, user_message.text.clone(), None, lifecycle));
     }
     if !activity.thinking_text.is_empty() {
-        blocks.push((BlockKind::Thinking, activity.thinking_text.clone(), None));
+        blocks.push((
+            BlockKind::Thinking,
+            activity.thinking_text.clone(),
+            None,
+            lifecycle,
+        ));
     }
     if !activity.transcript_text.is_empty() {
-        blocks.push((BlockKind::Assistant, activity.transcript_text.clone(), None));
+        blocks.push((
+            BlockKind::Assistant,
+            activity.transcript_text.clone(),
+            None,
+            lifecycle,
+        ));
     }
     for tool in &activity.tool_calls {
         let content = tool
@@ -1027,10 +1038,23 @@ pub(super) fn transcript_events_for_activity(
             .unwrap_or(tool.args_summary.as_str())
             .to_owned();
         let raw = tool.output_json.as_ref().map(RawDisclosure::from_json);
-        blocks.push((BlockKind::Tool, content, raw));
+        let lifecycle = match tool.status {
+            ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
+                BlockLifecycle::Waiting
+            }
+            ToolCallDisplayStatus::Running => BlockLifecycle::Tool,
+            ToolCallDisplayStatus::Succeeded => BlockLifecycle::Completed,
+            ToolCallDisplayStatus::Failed => BlockLifecycle::Failed,
+        };
+        blocks.push((BlockKind::Tool, content, raw, lifecycle));
     }
     if blocks.is_empty() {
-        blocks.push((BlockKind::System, activity.status.to_string(), None));
+        blocks.push((
+            BlockKind::System,
+            activity.status.to_string(),
+            None,
+            lifecycle,
+        ));
     }
 
     let turn_index = u64::try_from(activity_index).unwrap_or(u64::MAX);

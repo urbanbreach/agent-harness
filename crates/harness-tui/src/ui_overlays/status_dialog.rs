@@ -56,8 +56,18 @@ pub(crate) fn render_status_dashboard_surface(
     };
 
     render_interactive_dashboard(frame, app, theme, surface);
-    if dashboard.layout().details.is_some() {
-        render_dashboard_summary(frame, app, theme, dashboard.layout().shell.composer);
+    if let Some(details) = dashboard.layout().details.filter(|area| area.height >= 13) {
+        render_dashboard_summary(
+            frame,
+            app,
+            theme,
+            Rect::new(
+                details.x.saturating_add(1),
+                details.bottom().saturating_sub(4),
+                details.width.saturating_sub(2),
+                3,
+            ),
+        );
     }
     if dashboard.help_visible() {
         render_dashboard_help(frame, theme, content, dashboard);
@@ -106,8 +116,6 @@ fn render_interactive_dashboard(frame: &mut Frame, app: &AppState, theme: &Theme
     render_dashboard_reply(frame, app, theme, layout.reply, dashboard);
     if let Some(details) = layout.details {
         render_dashboard_details(frame, theme, details, dashboard);
-        let inner = inset_rect(details, 2, 1);
-        render_status_dialog_body(frame, theme, inner, status_dialog_body(app, theme));
     }
     let focus = if dashboard.search_state().context.is_some() {
         format!("/{}", dashboard.search_state().query)
@@ -507,7 +515,14 @@ fn render_dashboard_details(
         ],
         Err(error) => vec![error.to_string()],
     };
-    render_dashboard_pane(frame, theme, area, "Details", lines);
+    render_dashboard_pane(
+        frame,
+        theme,
+        area,
+        "Details",
+        lines,
+        if area.height >= 13 { 4 } else { 0 },
+    );
 }
 
 fn render_dashboard_pane(
@@ -516,6 +531,7 @@ fn render_dashboard_pane(
     area: Rect,
     title: &str,
     lines: Vec<String>,
+    footer_rows: u16,
 ) {
     let surface = theme.surface.canvas;
     let block = Block::default()
@@ -523,7 +539,8 @@ fn render_dashboard_pane(
         .border_style(Style::default().fg(theme.terminal_colors.muted).bg(surface))
         .style(Style::default().bg(surface))
         .title(title);
-    let inner = block.inner(area);
+    let mut inner = block.inner(area);
+    inner.height = inner.height.saturating_sub(footer_rows);
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);
     frame.render_widget(
@@ -601,7 +618,7 @@ fn render_dashboard_help(
         .into_iter()
         .map(|entry| format!("{}  {}", entry.key, entry.action))
         .collect::<Vec<_>>();
-    render_dashboard_pane(frame, theme, area, "Dashboard help", lines);
+    render_dashboard_pane(frame, theme, area, "Dashboard help", lines, 0);
 }
 
 fn dashboard_status_label(status: crate::dashboard::DashboardStatus) -> &'static str {
