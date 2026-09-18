@@ -182,7 +182,7 @@ pub(super) struct OpenAiChatDeltaChunk {
     #[serde(default, alias = "reasoning_content")]
     pub(super) reasoning_text: Option<String>,
     #[serde(default)]
-    pub(super) tool_calls: Vec<OpenAiChatToolCallDeltaChunk>,
+    pub(super) tool_calls: Option<Vec<OpenAiChatToolCallDeltaChunk>>,
 }
 
 #[derive(Debug, Deserialize)]
