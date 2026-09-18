@@ -1,6 +1,132 @@
 use super::*;
 
 #[test]
+fn open_tool_viewer_refreshes_when_the_command_finishes() {
+    let mut app = AppState::new_live(None, false, None);
+    let events = shell_test_events(
+        ToolCallStatus::Succeeded,
+        serde_json::json!({
+            "command":"produce output", "status":0, "success":true, "stdout":"OUTPUT_READY", "stderr":""
+        }),
+    );
+    let finished = events
+        .iter()
+        .find(|event| matches!(event.payload, EventV1::ToolCallFinished(_)))
+        .unwrap_or_abort()
+        .clone();
+    for event in events.into_iter().filter(|event| event.seq < finished.seq) {
+        app.ingest_event(event);
+    }
+    let id = app.activities[0].tool_calls[0].tool_call_id.clone();
+    assert!(app.select_transcript_tool(&id));
+    assert!(app.open_selected_transcript_viewer());
+    assert!(!app
+        .transcript_viewer()
+        .unwrap_or_abort()
+        .content()
+        .content()
+        .contains("OUTPUT_READY"));
+    app.ingest_event(finished);
+    assert!(app
+        .transcript_viewer()
+        .unwrap_or_abort()
+        .content()
+        .content()
+        .contains("OUTPUT_READY"));
+}
+
+#[test]
+fn deep_tool_search_keeps_the_match_above_the_search_footer() {
+    let mut app = AppState::new_live(None, false, None);
+    for event in shell_test_events(
+        ToolCallStatus::Succeeded,
+        serde_json::json!({
+            "command": "produce output", "status": 0, "success": true,
+            "stdout": (1..=60).map(|i| format!("DEEP_{i:03}")).collect::<Vec<_>>().join("\n"),
+            "stderr": ""
+        }),
+    ) {
+        app.ingest_event(event);
+    }
+    app.ingest_event(envelope(
+        100,
+        "next",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "next".into(),
+            text: "Following turn".into(),
+        }),
+    ));
+    app.set_frame_area(Rect::new(0, 0, 80, 24));
+    let _ = render_text(&app, 80, 24);
+    app.focus = Focus::Details;
+    app.transcript_view.search_query = "DEEP_030".into();
+    app.find_transcript_match(None);
+    let screen = render_text(&app, 80, 24);
+    assert_eq!(screen.matches("DEEP_030").count(), 2, "{screen}");
+    assert!(screen
+        .lines()
+        .find(|line| line.contains("n/N next/previous"))
+        .unwrap_or_abort()
+        .trim_end()
+        .ends_with("n/N next/previous"));
+}
+
+#[test]
+fn filtered_viewer_quotes_the_visible_line_without_selection() {
+    let (mut app, ids) = command_group_app(1);
+    app.set_frame_area(Rect::new(0, 0, 80, 24));
+    assert!(app.select_transcript_tool(&ids[0]));
+    assert!(app.open_selected_transcript_viewer());
+    let viewer = app
+        .transcript_integration
+        .as_mut()
+        .and_then(TranscriptComposite::viewer_mut)
+        .unwrap_or_abort();
+    viewer
+        .update_content(
+            crate::transcript_block_viewer::ViewerBlockContent::new(
+                &(1..=80)
+                    .map(|i| {
+                        if i == 3 {
+                            "RESULT_MARKER".to_owned()
+                        } else {
+                            format!("Line {i:03}")
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                None,
+            )
+            .with_preamble(crate::transcript_block_viewer::ViewerPreamble::Read {
+                path: "sample.txt".into(),
+                details: String::new(),
+                start_line: Some(1),
+            }),
+        )
+        .unwrap_or_abort();
+    app.handle_key(key(KeyCode::End));
+    assert!(render_text(&app, 80, 24).contains("Line 080"));
+    app.handle_key(key(KeyCode::Char('v')));
+    let screen = render_text(&app, 80, 24);
+    assert!(screen.contains("Line 080"), "{screen}");
+    app.handle_key(key(KeyCode::Esc));
+    app.handle_key(key(KeyCode::Char('f')));
+    for character in "RESULT_MARKER".chars() {
+        app.handle_key(key(KeyCode::Char(character)));
+        app.set_frame_area(Rect::new(0, 0, 120, 40));
+    }
+    app.handle_key(key(KeyCode::Enter));
+    assert!(render_text(&app, 80, 24).contains("RESULT_MARKER"));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(
+        app.composer.prompt_buffer.contains("RESULT_MARKER"),
+        "{:?}",
+        app.composer.prompt_buffer
+    );
+    assert!(render_text(&app, 80, 24).contains("RESULT_MARKER"));
+}
+
+#[test]
 fn transcript_search_opens_the_matching_member_of_a_collapsed_group() {
     let (mut app, ids) = command_group_app(14);
     let _ = render_text(&app, 80, 24);
@@ -12,6 +138,14 @@ fn transcript_search_opens_the_matching_member_of_a_collapsed_group() {
         matches!(app.selected_transcript_entry().and_then(|entry| entry.target), Some(TranscriptMouseTarget::Tool { tool_call_id }) if tool_call_id == ids[0])
     );
     assert!(render_text(&app, 80, 24).contains("command-00"));
+    app.focus = Focus::Details;
+    app.transcript_view.search_query = "command-".into();
+    app.find_transcript_match(None);
+    app.handle_key(key(KeyCode::Char('n')));
+    assert_eq!(app.transcript_view.search_match, 1);
+    app.handle_key(key_with_modifiers(KeyCode::Char('N'), KeyModifiers::SHIFT));
+    assert_eq!(app.transcript_view.search_match, 0);
+    assert!(app.composer.prompt_buffer.is_empty());
 }
 
 fn command_group_app(command_count: usize) -> (AppState, Vec<String>) {

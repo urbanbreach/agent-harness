@@ -135,6 +135,18 @@ impl AppState {
             }
         }
         self.transcript_integration = Some(composite);
+        if self.transcript_viewer().is_some() {
+            if let Some(entry) = self.selected_transcript_entry() {
+                let content = self.selected_entry_content(&entry);
+                if let Some(viewer) = self
+                    .transcript_integration
+                    .as_mut()
+                    .and_then(TranscriptComposite::viewer_mut)
+                {
+                    let _ = viewer.update_content(content);
+                }
+            }
+        }
     }
 
     pub fn transcript_following(&self) -> bool {
