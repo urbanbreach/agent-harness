@@ -218,8 +218,10 @@ fn model_switcher_enter_emits_switch_intent_for_selected_model() {
     };
 
     let mut app = AppState::new_live(None, false, Some(sink));
+    let mut selected = primary_subagent_models()[0].clone();
+    selected.variant = Some("max".to_string());
     app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
+        LaunchMetadata::from_model_option(&selected)
             .with_available_models(primary_subagent_models())
             .with_mode_label("Continued"),
     );
@@ -242,7 +244,7 @@ fn model_switcher_enter_emits_switch_intent_for_selected_model() {
         panic!("expected switch model intent");
     };
     assert_eq!(profile, "default");
-    assert_eq!(launch_metadata.variant(), None);
+    assert_eq!(launch_metadata.variant(), Some("max"));
 }
 
 fn authenticated_builtin_models() -> Vec<harness_tui::app::ModelOption> {
