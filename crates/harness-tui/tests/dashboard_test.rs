@@ -283,3 +283,44 @@ fn dashboard_eligibility_is_configurable_without_rendered_string_inspection() {
             .is_eligible
     );
 }
+
+#[test]
+fn completed_live_turn_uses_updated_title_and_leaves_working_roster() {
+    let events = vec![
+        started("live", 1),
+        marker("live", 2, Marker::Stream),
+        event(
+            "live",
+            3,
+            EventV1::SessionTitleUpdated(harness_core::event::SessionTitleUpdatedEvent {
+                title: "Renamed live session".into(),
+            }),
+        ),
+        event(
+            "live",
+            4,
+            EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
+                task_id: "turn".into(),
+                result_summary: "done".into(),
+                result_digest: "digest".into(),
+                metadata: Some(harness_core::event::TaskCompletionMetadata {
+                    task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+                    ..Default::default()
+                }),
+            }),
+        ),
+        marker("live", 5, Marker::Finished),
+        started("live", 6),
+    ];
+    let registry = DashboardReplayRegistry::from_sessions(vec![session(
+        "live",
+        None,
+        SessionModeSource::InteractiveLive,
+        events,
+    )]);
+    let model = build_dashboard_read_model(&registry, &DashboardEligibilityRules::default())
+        .unwrap_or_abort();
+    let row = model.row("live").unwrap_or_abort();
+    assert_eq!(row.title.as_deref(), Some("Renamed live session"));
+    assert_eq!(row.status, DashboardStatus::Completed);
+}

@@ -199,7 +199,14 @@ fn base_row(
     let creation_seq = events.first().map_or(0, |event| event.seq);
     DashboardRow {
         selection_key: key,
-        title: session.catalog.run_name.clone(),
+        title: events
+            .iter()
+            .rev()
+            .find_map(|event| match &event.payload {
+                EventV1::SessionTitleUpdated(data) => Some(data.title.clone()),
+                _ => None,
+            })
+            .or_else(|| session.catalog.run_name.clone()),
         status: derive_status(session.catalog.status, events),
         activity: DashboardActivity {
             last_event_seq: last_event.map_or(0, |event| event.seq),
