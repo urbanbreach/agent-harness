@@ -238,8 +238,11 @@ fn multiline_getter_badge_and_queue_state_are_visible() {
         "p0-04-model",
         "mock:p0-04-model",
     ));
-    active_turn(&mut app);
     app.composer.multiline_mode = true;
+    let idle = render_text(&app, 100, 30);
+    assert!(idle.contains("Alt+Enter:send"), "{idle}");
+    assert!(!idle.contains(" Enter:send"), "{idle}");
+    active_turn(&mut app);
     app.handle_paste("draft");
     app.queued_prompt_count = 1;
     assert!(app.has_live_turn_activity());

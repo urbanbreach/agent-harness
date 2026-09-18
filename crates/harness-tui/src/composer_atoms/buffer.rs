@@ -170,9 +170,7 @@ impl AtomBuffer {
                 current.display_width = current.display_width.saturating_add(atom.display_width);
             }
         }
-        if !current.atom_ids.is_empty() || lines.is_empty() {
-            lines.push(current);
-        }
+        lines.push(current);
         lines
     }
 

@@ -63,7 +63,12 @@ impl super::AppState {
         if let Some(probe) = &self.current_directory_probe {
             return probe();
         }
-        super::test_workspace_env_override().unwrap_or_else(WorkspaceEnvironment::current)
+        super::test_workspace_env_override().unwrap_or_else(|| {
+            self.file_mention_workspace_root
+                .as_ref()
+                .map(|root| WorkspaceEnvironment::discover(root.clone()))
+                .unwrap_or_else(WorkspaceEnvironment::current)
+        })
     }
 
     #[cfg(test)]

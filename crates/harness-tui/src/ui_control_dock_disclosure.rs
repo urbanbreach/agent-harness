@@ -82,7 +82,10 @@ pub(super) fn composer_shortcut_hints(app: &AppState, composer_disabled: bool) -
         return app.keymap.get_binding_label(Action::Palette, "commands");
     }
 
-    let send = app.keymap.get_binding_label(Action::SubmitPrompt, "send");
+    let send = format!(
+        "{}:send",
+        crate::ui::ui_chrome::composer_footer_binding(app, Action::SubmitPrompt)
+    );
     let history = composer_history_binding_hint(app);
     if history == "-" {
         format!("{send} · {newline} newline")
@@ -894,6 +897,11 @@ fn live_freeze_primary_shortcut_disclosure_row(
 }
 
 fn freeze_preferred_binding(app: &AppState, action: Action, freeze_label: &str) -> String {
+    if app.composer.composer_multiline_mode()
+        && matches!(action, Action::SubmitPrompt | Action::InsertNewline)
+    {
+        return crate::ui::ui_chrome::composer_footer_binding(app, action);
+    }
     let bindings = app.keymap.get_binding_strs(action);
     if bindings.iter().any(|binding| binding == freeze_label) {
         return freeze_label.to_string();
