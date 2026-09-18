@@ -148,7 +148,7 @@ fn serialization_preserves_atom_identity_and_typed_nontext_kinds() {
 fn viewport_wrapping_keeps_atoms_whole_and_identity_ordered() {
     // arrange
     // Given: atoms whose widths force a wrap, plus an explicit newline.
-    let buffer = AtomBuffer::from_text("ab界c\nde");
+    let buffer = AtomBuffer::from_text("ab界c\nde\n");
     let ids: Vec<_> = buffer.atoms().iter().map(|atom| atom.id).collect();
 
     // When: wrapping is measured in terminal cells, not bytes or chars.
@@ -168,7 +168,7 @@ fn viewport_wrapping_keeps_atoms_whole_and_identity_ordered() {
             .iter()
             .map(|line| line.display_width)
             .collect::<Vec<_>>(),
-        vec![4, 1, 2]
+        vec![4, 1, 2, 0]
     );
     assert!(lines.iter().all(|line| line.display_width <= 4));
     assert_eq!(AtomBoundary::Before, AtomCursor::start().boundary);

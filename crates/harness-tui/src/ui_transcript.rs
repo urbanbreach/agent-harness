@@ -484,6 +484,12 @@ fn transcript_pane_context<'a>(
     area: Rect,
     theme: &'a Theme,
 ) -> TranscriptPaneContext<'a> {
+    let area = Rect {
+        height: area.height.saturating_sub(u16::from(
+            app.transcript_view.search_editing || !app.transcript_view.search_query.is_empty(),
+        )),
+        ..area
+    };
     if !app.replay_mode {
         let startup_or_empty = app.startup_shell_visible() || live_empty_state_visible(app);
         let horizontal_gutter = if startup_or_empty {
@@ -559,6 +565,29 @@ fn render_measured_transcript_pane(
     theme: &Theme,
     empty_surface: Color,
 ) {
+    if app.transcript_view.search_editing || !app.transcript_view.search_query.is_empty() {
+        let state = &app.transcript_view;
+        let label = if state.search_match_count == 0 {
+            format!("/{} · no results", state.search_query)
+        } else {
+            format!(
+                "/{} · {}/{} · n/N next/previous",
+                state.search_query,
+                state.search_match + 1,
+                state.search_match_count
+            )
+        };
+        let footer = Rect::new(inner_area.x, inner_area.bottom(), inner_area.width, 1);
+        frame.render_widget(Clear, footer);
+        frame.render_widget(
+            Paragraph::new(label).style(
+                Style::default()
+                    .fg(theme.text.primary)
+                    .bg(theme.surface.canvas),
+            ),
+            footer,
+        );
+    }
     let show_scrollbar = with_measured_transcript_layout_for_width_on_surface(
         app,
         theme,
@@ -689,33 +718,6 @@ fn render_measured_transcript_pane(
                 theme,
             );
             render_response_position_affordance(frame, surface_area, app);
-            if app.transcript_view.search_editing || !app.transcript_view.search_query.is_empty() {
-                let state = &app.transcript_view;
-                let label = if state.search_match_count == 0 {
-                    format!("/{} · no results", state.search_query)
-                } else {
-                    format!(
-                        "/{} · {}/{} · n/N next/previous",
-                        state.search_query,
-                        state.search_match + 1,
-                        state.search_match_count
-                    )
-                };
-                let footer = Rect::new(
-                    surface_area.x,
-                    surface_area.bottom().saturating_sub(1),
-                    surface_area.width,
-                    surface_area.height.min(1),
-                );
-                frame.render_widget(
-                    Paragraph::new(label).style(
-                        Style::default()
-                            .fg(theme.text.primary)
-                            .bg(theme.surface.canvas),
-                    ),
-                    footer,
-                );
-            }
             render_transcript_scrollbar(
                 frame,
                 theme,
@@ -841,6 +843,8 @@ fn transcript_more_below_area(app: &AppState, viewport: Rect) -> Rect {
 
 fn transcript_more_below_uses_gap(app: &AppState) -> bool {
     !app.replay_mode
+        && !app.transcript_view.search_editing
+        && app.transcript_view.search_query.is_empty()
         && app
             .last_frame_area()
             .is_none_or(|area| crate::layout::composer_footer_spacer_rows(area.height) > 0)

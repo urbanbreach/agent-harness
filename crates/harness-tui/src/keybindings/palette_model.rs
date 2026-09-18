@@ -334,8 +334,8 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     PaletteCommandEntry {
         id: "session.export",
         category: PaletteCategory::Session,
-        title: DynamicTitle::Static("Export session transcript"),
-        description: "Export the session transcript to a file",
+        title: DynamicTitle::Static("Export session (CLI)"),
+        description: "Show the CLI command for exporting a session",
         suggested: SuggestedRule::Never,
         dispatch: PaletteDispatch::Action(Action::ExportSession),
     },
