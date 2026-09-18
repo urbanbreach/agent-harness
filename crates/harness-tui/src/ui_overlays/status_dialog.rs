@@ -328,8 +328,8 @@ fn render_dashboard_peek(
                     .permission_modal_selection(&permission.permission_id)
                     .number();
                 for (index, label) in [
-                    "Review always-approve mode",
-                    "Allow this session",
+                    "Enable always-approve mode",
+                    "Remember this approval for this session",
                     "Allow once",
                     "Reject and add feedback",
                 ]

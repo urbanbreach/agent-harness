@@ -1,6 +1,6 @@
 use harness_core::event::{
     BackgroundTaskNotificationStatus, EventEnvelopeV1, EventV1, TaskScheduleState,
-    TaskScheduledEvent,
+    TaskScheduledEvent, TaskTerminalScope,
 };
 use harness_core::proj::RunStatus;
 use harness_core::session::canonical_provider_fragment_payload;
@@ -29,6 +29,7 @@ pub(super) fn derive_status(
             _ => {}
         }
         status = match &event.payload {
+            EventV1::RunStarted(_) if status == DashboardStatus::Completed => status,
             EventV1::RunStarted(_) => DashboardStatus::Running,
             EventV1::TaskScheduled(TaskScheduledEvent {
                 state: TaskScheduleState::Queued,
@@ -41,6 +42,15 @@ pub(super) fn derive_status(
             EventV1::ProviderRequestStarted(_) => DashboardStatus::Streaming,
             payload if canonical_provider_fragment_payload(payload).is_some() => {
                 DashboardStatus::Streaming
+            }
+            EventV1::TaskCompleted(data)
+                if data
+                    .metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.task_scope)
+                    == Some(TaskTerminalScope::AgentTurn) =>
+            {
+                DashboardStatus::Completed
             }
             EventV1::RunFinished(_) => DashboardStatus::Completed,
             EventV1::RunFailed(_) => DashboardStatus::Failed,
