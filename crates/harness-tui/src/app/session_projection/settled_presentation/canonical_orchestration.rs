@@ -14,10 +14,17 @@ pub(super) fn apply_canonical_background_notifications(
             .delivered_turn_request_id
             .as_deref()
             .unwrap_or(data.child_request_id.as_str());
-        if !activities
-            .iter()
-            .any(|activity| activity.request_id == request_id)
+        if let Some(activity) = activities
+            .iter_mut()
+            .find(|activity| activity.request_id == request_id)
         {
+            if activity.first_seq >= notification.seq {
+                activity.user_message = Some(UserMessageSubmittedEvent {
+                    request_id: request_id.into(),
+                    text: background_task_notification_text(data),
+                });
+            }
+        } else {
             let mut activity = new_streaming_activity_entry(NewStreamingActivityEntryArgs {
                 request_id: request_id.to_string(),
                 profile_label: profile_label(

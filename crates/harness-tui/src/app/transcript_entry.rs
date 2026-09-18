@@ -172,13 +172,9 @@ impl AppState {
             .unwrap_or(entry);
         self.select_transcript_entry(selected);
         if let Some(line) = selected.text.lines().position(|line| line.contains(&query)) {
-            let viewport = self.transcript_view.measured_viewport();
-            self.transcript_view.set_measured_viewport(
-                super::transcript_viewport::MeasuredTranscriptViewport::detached(
-                    selected.top + line,
-                    viewport.max_scroll(),
-                ),
-            );
+            if let Some(top) = ui::transcript_entry_scroll_top(self, area, selected.top + line) {
+                self.set_transcript_scroll_from_top_with_max(top, selected.max_scroll);
+            }
         }
     }
 

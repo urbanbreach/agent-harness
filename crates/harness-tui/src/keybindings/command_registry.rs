@@ -255,6 +255,9 @@ pub(super) const fn help_category(action: Action) -> Option<HelpCategory> {
         | Action::VariantCycle
         | Action::Quit => Some(HelpCategory::Essentials),
         Action::InsertNewline
+        | Action::InterjectPrompt
+        | Action::CancelAndReplacePrompt
+        | Action::ToggleMultiline
         | Action::ClearPrompt
         | Action::HistoryUp
         | Action::HistoryDown
@@ -320,10 +323,7 @@ pub(super) const fn help_category(action: Action) -> Option<HelpCategory> {
         | Action::OpenLineageBrowser
         | Action::AlwaysApprovePermission => Some(HelpCategory::Session),
         Action::ToggleTasks | Action::ToggleTodos => Some(HelpCategory::Dashboard),
-        Action::InterjectPrompt
-        | Action::CancelAndReplacePrompt
-        | Action::ToggleMultiline
-        | Action::OpenEventLog
+        Action::OpenEventLog
         | Action::AllowPermission
         | Action::DenyPermission
         | Action::DismissModal
