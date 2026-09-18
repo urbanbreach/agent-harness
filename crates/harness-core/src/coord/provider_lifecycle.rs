@@ -314,6 +314,7 @@ impl Coordinator {
             let request_id = response.request_id.to_string();
             if let Err(err) = self.snapshot_workspace_internal(request_id.clone()).await {
                 tracing::warn!(error = %err, request_id, "failed to snapshot workspace before tool batch");
+                self.publish_runtime_warning("Workspace snapshot failed; this tool batch has no new revert point. See the runtime log for details.".to_string())?;
             }
         }
 

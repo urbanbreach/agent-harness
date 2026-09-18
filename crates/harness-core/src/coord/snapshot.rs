@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tokio::fs;
@@ -17,9 +17,9 @@ const DEFAULT_IGNORED_DIRS: &[&str] = &[".git", ".agent-harness", "target"];
 const DEFAULT_IGNORED_FILES: &[&str] = &[".envrc"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct SnapshotEntry {
-    digest: String,
-    content: String,
+pub(super) struct SnapshotEntry {
+    pub(super) digest: String,
+    pub(super) content: Option<String>,
 }
 
 impl Coordinator {
@@ -39,10 +39,14 @@ impl Coordinator {
             .await
             .map_err(|err| CoordinatorError::SnapshotFailed(format!("create dir: {err}")))?;
 
-        let entries = collect_workspace_entries(&workspace_root)
+        let entries = collect_workspace_entries(&workspace_root, self.redactor.as_ref())
             .await
             .map_err(|err| CoordinatorError::SnapshotFailed(err.to_string()))?;
         let file_count = entries.len();
+        let protected_count = entries
+            .values()
+            .filter(|entry| entry.content.is_none())
+            .count();
         let payload: BTreeMap<String, SnapshotEntry> = entries;
 
         let mut value = serde_json::to_value(&payload)
@@ -81,6 +85,10 @@ impl Coordinator {
             }),
         )?;
 
+        if protected_count > 0 {
+            self.publish_runtime_warning(format!("Workspace snapshot saved; {protected_count} binary or sensitive files are protected from revert. Revert restores safe text files only."))?;
+        }
+
         Ok(WorkspaceSnapshotSummary {
             request_id: request_id.into(),
             artifact_path,
@@ -91,36 +99,87 @@ impl Coordinator {
 
 async fn collect_workspace_entries(
     workspace_root: &Path,
+    redactor: &(impl crate::redact::Redactor + ?Sized),
 ) -> Result<BTreeMap<String, SnapshotEntry>, std::io::Error> {
     let mut entries = BTreeMap::new();
-    let mut stack: Vec<std::path::PathBuf> = vec![workspace_root.to_path_buf()];
+    for path in workspace_files(workspace_root).await? {
+        let relative = normalize_relative_path(path.strip_prefix(workspace_root).unwrap_or(&path));
+        let bytes = fs::read(&path).await?;
+        let digest = digest12(&bytes);
+        let content = String::from_utf8(bytes)
+            .ok()
+            .filter(|text| !text.contains('\0'))
+            .filter(|text| redactor.redact_text(text) == *text)
+            .filter(|text| {
+                // Structured config credentials must not hide inside a JSON string field.
+                json5::from_str::<serde_json::Value>(text)
+                    .ok()
+                    .is_none_or(|value| crate::redact::redact_value(redactor, &value) == value)
+            });
+        entries.insert(relative, SnapshotEntry { digest, content });
+    }
+    Ok(entries)
+}
 
+pub(super) async fn workspace_files(workspace_root: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
+    let mut files = Vec::new();
+    // Use Git's own exclusions for repository snapshots. This also excludes generated
+    // session histories and snapshot artifacts instead of recursively capturing them.
+    if workspace_root.join(".git").exists() {
+        let root = workspace_root.to_path_buf();
+        let paths = tokio::task::spawn_blocking(move || {
+            crate::vcs::git_output(
+                &root,
+                &[
+                    "ls-files",
+                    "--cached",
+                    "--others",
+                    "--exclude-standard",
+                    "-z",
+                ],
+            )
+        })
+        .await
+        .map_err(std::io::Error::other)?
+        .map_err(std::io::Error::other)?;
+        for relative in paths
+            .split('\0')
+            .filter(|path| !path.is_empty() && !should_ignore_path(path))
+        {
+            let path = workspace_root.join(relative);
+            match fs::symlink_metadata(&path).await {
+                Ok(metadata) if metadata.is_file() => files.push(path),
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+        }
+        files.sort();
+        files.dedup();
+        return Ok(files);
+    }
+    let mut stack = vec![workspace_root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let mut read_dir = fs::read_dir(&dir).await?;
         while let Some(entry) = read_dir.next_entry().await? {
             let path = entry.path();
-            let relative = path.strip_prefix(workspace_root).unwrap_or(&path);
-            let relative_str = normalize_relative_path(relative);
-
-            if should_ignore_path(&relative_str) {
+            let relative =
+                normalize_relative_path(path.strip_prefix(workspace_root).unwrap_or(&path));
+            if should_ignore_path(&relative) {
                 continue;
             }
-
             let file_type = entry.file_type().await?;
             if file_type.is_dir() {
                 stack.push(path);
             } else if file_type.is_file() {
-                let content = fs::read_to_string(&path).await?;
-                let digest = digest12(content.as_bytes());
-                entries.insert(relative_str, SnapshotEntry { digest, content });
+                files.push(path);
             }
         }
     }
-
-    Ok(entries)
+    Ok(files)
 }
 
-fn should_ignore_path(relative: &str) -> bool {
+pub(super) fn should_ignore_path(relative: &str) -> bool {
     if relative.is_empty() {
         return false;
     }
@@ -143,6 +202,6 @@ fn should_ignore_path(relative: &str) -> bool {
     false
 }
 
-fn normalize_relative_path(path: &Path) -> String {
+pub(super) fn normalize_relative_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
