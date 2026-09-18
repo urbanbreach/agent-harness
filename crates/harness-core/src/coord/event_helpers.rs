@@ -637,3 +637,29 @@ pub(in crate::coord) fn system_actor() -> EventActor {
 pub(in crate::coord) fn agent_actor(agent_id: &str) -> EventActor {
     EventActor::new(ActorKind::Worker, Some(agent_id.to_string()))
 }
+
+impl super::Coordinator {
+    pub(in crate::coord) fn publish_runtime_warning(
+        &mut self,
+        message: String,
+    ) -> Result<(), CoordinatorError> {
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Ok(());
+        };
+        let builder = EventBuilder::new(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state.info.run_id.to_string(),
+        );
+        publish_live_event(
+            &builder,
+            run_state,
+            LiveEventPublishArgs {
+                actor: super::system_actor(),
+                stream_key: None,
+                correlation_id: None,
+                payload: crate::event::LiveEventV1::RuntimeWarning { message },
+            },
+        )
+    }
+}

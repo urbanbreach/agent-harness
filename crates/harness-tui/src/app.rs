@@ -1971,7 +1971,9 @@ impl AppState {
             .correlation_id
             .as_deref()
             .unwrap_or(match &event.payload {
-                LiveEventV1::CompactionProgress { .. } => return,
+                LiveEventV1::CompactionProgress { .. } | LiveEventV1::RuntimeWarning { .. } => {
+                    return
+                }
                 LiveEventV1::ProviderTextDelta { request_id, .. }
                 | LiveEventV1::ProviderReasoningDelta { request_id, .. }
                 | LiveEventV1::ProviderToolInputDelta { request_id, .. } => request_id.as_str(),
