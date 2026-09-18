@@ -155,11 +155,17 @@ pub(super) fn terminal_panel_renders_failed_command_stderr_and_exit_status() {
         app.ingest_event(event);
     }
     assert!(!app.terminal_panel_visible());
+    app.focus = Focus::Details;
     app.handle_key(key(KeyCode::Char('4')));
     assert!(app.terminal_panel_visible());
 
     let debug = render_debug(&app, 140, 40);
     assert!(debug.contains("failed"));
+    let tool = &app.activities[0].tool_calls[0];
+    assert_eq!(
+        tool.presentation().status,
+        ToolCallPresentationStatus::Failed
+    );
     assert!(debug.contains("exit 101"));
     assert!(debug.contains("stderr> test failed"));
     assert!(debug.contains("output truncated"));

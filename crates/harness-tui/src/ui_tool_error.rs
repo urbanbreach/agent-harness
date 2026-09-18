@@ -73,6 +73,12 @@ fn detail_blocks_surface_error(
 }
 
 fn tool_error_display(tool_call: &ToolCallEntry) -> Option<ToolErrorDisplay> {
+    if let Some(body) = tool_call.command_failure() {
+        return Some(ToolErrorDisplay {
+            subtitle: "Failed".into(),
+            body,
+        });
+    }
     if tool_call.status != ToolCallDisplayStatus::Failed {
         return None;
     }

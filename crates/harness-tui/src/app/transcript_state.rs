@@ -718,16 +718,22 @@ impl AppState {
         let Some(edits) = data
             .output_json
             .as_ref()
-            .and_then(|output| output.get("edits"))
+            .and_then(|output| output.get("edits").or_else(|| output.get("applied")))
             .and_then(serde_json::Value::as_array)
         else {
             return;
         };
         for edit in edits {
-            if edit.get("deleted").and_then(serde_json::Value::as_bool) == Some(true) {
+            if edit.get("deleted").and_then(serde_json::Value::as_bool) == Some(true)
+                || edit.get("type").and_then(serde_json::Value::as_str) == Some("delete")
+            {
                 continue;
             }
-            let Some(path) = edit.get("path").and_then(serde_json::Value::as_str) else {
+            let Some(path) = edit
+                .get("path")
+                .or_else(|| edit.get("resource"))
+                .and_then(serde_json::Value::as_str)
+            else {
                 continue;
             };
             self.transcript_view.expanded_patch_file_outputs.insert(

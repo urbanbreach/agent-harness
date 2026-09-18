@@ -465,25 +465,18 @@ pub(super) fn mouse_click_toggles_apply_patch_file_disclosure() {
             output_summary: Some("Success. Updated the following files".to_string()),
             output_digest: None,
             output_json: Some(serde_json::json!({
-                "files": ["M notes/a.md", "M notes/b.md"],
-                "edits": [
-                    {
-                        "edit_id": "apply-patch-a",
-                        "path": "notes/a.md",
-                        "summary": "apply patch update notes/a.md",
-                        "deleted": false,
-                        "diff_rel_path": "artifacts/apply-a.diff",
-                        "diff_digest": "digest-apply-a"
-                    },
-                    {
-                        "edit_id": "apply-patch-b",
-                        "path": "notes/b.md",
-                        "summary": "apply patch update notes/b.md",
-                        "deleted": false
-                    }
+                "applied": [
+                    {"resource": "notes/a.md", "type": "update"},
+                    {"resource": "notes/b.md", "type": "add"}
                 ]
             })),
-            metadata: None,
+            metadata: Some(harness_core::event::ToolCallMetadata {
+                artifact_refs: vec![harness_core::event::EventArtifactRef {
+                    path: "artifacts/apply-a.diff".to_string(),
+                    digest: None,
+                }],
+                ..Default::default()
+            }),
         }),
     ));
 

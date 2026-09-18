@@ -22,6 +22,15 @@ impl AppState {
             EventV1::EditApplied(edit) => paths.extend(edit.diff_rel_path.clone()),
             EventV1::ToolCallFinished(tool) => {
                 paths.extend(
+                    tool.metadata
+                        .iter()
+                        .flat_map(|metadata| &metadata.artifact_refs)
+                        .filter(|artifact| {
+                            artifact.path.ends_with(".diff") || artifact.path.ends_with(".before")
+                        })
+                        .map(|artifact| artifact.path.clone()),
+                );
+                paths.extend(
                     tool.output_json
                         .as_ref()
                         .into_iter()
