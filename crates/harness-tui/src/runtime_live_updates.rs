@@ -182,6 +182,7 @@ fn apply_update(
                 }
             }
             app.ingest_runtime_event(*event);
+            experience.sync_activity(app);
         }
         LiveUpdate::AlwaysApproveModeChanged { enabled } => {
             app.set_always_approve_mode(enabled);

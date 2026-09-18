@@ -83,6 +83,30 @@ impl RuntimeExperience {
         }
     }
 
+    pub(crate) fn sync_activity(&mut self, app: &crate::app::AppState) {
+        use crate::app::RuntimeStateKind;
+        let activity = match app.runtime_state().kind {
+            RuntimeStateKind::PermissionBlocked | RuntimeStateKind::PermissionPending => {
+                TitleActivity::AwaitingPermission
+            }
+            RuntimeStateKind::Sending | RuntimeStateKind::Streaming => {
+                if app.activities.iter().any(|activity| {
+                    activity
+                        .tool_calls
+                        .iter()
+                        .any(|tool| tool.status == crate::app::ToolCallDisplayStatus::Running)
+                }) {
+                    TitleActivity::ToolRunning
+                } else {
+                    TitleActivity::Streaming
+                }
+            }
+            RuntimeStateKind::Failure => TitleActivity::Failed,
+            _ => TitleActivity::Idle,
+        };
+        self.title_state.set_activity(activity);
+    }
+
     pub fn set_focus<W: Write>(&mut self, focused: bool, out: &mut W) {
         self.notification_policy.set_focus(if focused {
             FocusState::Focused
