@@ -1,5 +1,5 @@
 use super::*;
-use crate::transcript_blocks::{BlockKind, BlockSnapshot};
+use crate::transcript_blocks::{BlockKind, BlockSnapshot, FoldState};
 
 pub(crate) fn lines(blocks: &[BlockSnapshot], width: u16, theme: &Theme) -> Vec<Line<'static>> {
     blocks
@@ -9,6 +9,20 @@ pub(crate) fn lines(blocks: &[BlockSnapshot], width: u16, theme: &Theme) -> Vec<
 }
 
 fn block_lines(block: &BlockSnapshot, width: u16, theme: &Theme) -> Vec<Line<'static>> {
+    if block.kind == BlockKind::Thinking {
+        return vec![Line::from(Span::styled(
+            "Thought",
+            Style::default().fg(theme.text.secondary),
+        ))];
+    }
+    if block.fold_state == FoldState::Collapsed {
+        let summary =
+            ui_tool_output::safe_tool_text(block.content.lines().next().unwrap_or_default());
+        return vec![Line::from(Span::styled(
+            ui_chrome::truncate_plain_text(&summary, usize::from(width)),
+            Style::default().fg(theme.text.secondary),
+        ))];
+    }
     let mut lines = Vec::new();
     if block.kind == BlockKind::User {
         for (index, row) in wrap_completion_text(
@@ -72,4 +86,32 @@ pub(crate) fn frame(
             .take(height.saturating_sub(visible.len())),
     );
     visible
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transcript_blocks::BlockLifecycle;
+    use crate::transcript_identity::BlockId;
+
+    #[test]
+    fn collapsed_tool_output_stays_one_row_in_measurement_and_paint() {
+        let block = BlockSnapshot {
+            id: BlockId::from_replay(1, 0, 0),
+            kind: BlockKind::Tool,
+            lifecycle: BlockLifecycle::Completed,
+            content: format!("Batch completed\n{}", "full tool output\n".repeat(10_000)),
+            fold_state: FoldState::Collapsed,
+            raw: None,
+        };
+        let mut blocks = [block];
+        let theme = Theme::default();
+        let measured = lines(&blocks, 80, &theme);
+        assert_eq!(measured.len(), 1);
+        assert_eq!(measured[0].to_string(), "Batch completed");
+        assert_eq!(frame(&blocks, 80, 10, 0, &theme), measured);
+        blocks[0].kind = BlockKind::Thinking;
+        assert_eq!(lines(&blocks, 80, &theme)[0].to_string(), "Thought");
+        assert_eq!(frame(&blocks, 80, 10, 0, &theme)[0].to_string(), "Thought");
+    }
 }

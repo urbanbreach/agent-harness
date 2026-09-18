@@ -336,12 +336,14 @@ fn chat_app(scene: &str, reduced: bool) -> AppState {
             }));
         }
     }
-    if scene == "contextopen" || scene == "commandsopen" {
+    expand_chat_scene(&mut app, scene);
+    app
+}
+
+fn expand_chat_scene(app: &mut AppState, scene: &str) {
+    if matches!(scene, "contextopen" | "commandsopen") {
         app.focus = harness_tui::app::Focus::Details;
-        app.handle_key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Down,
-            crossterm::event::KeyModifiers::NONE,
-        ));
+        assert!(app.select_transcript_tool("chat-group-0"));
         app.handle_key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Enter,
             crossterm::event::KeyModifiers::NONE,
@@ -354,7 +356,6 @@ fn chat_app(scene: &str, reduced: bool) -> AppState {
     if scene.starts_with("commands") {
         app.set_transcript_scroll_for_test(usize::MAX);
     }
-    app
 }
 
 fn chat_scene_label(scene: &str) -> &'static str {
