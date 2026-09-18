@@ -167,7 +167,12 @@ impl ProjectionIndex {
                     let Some(assistant) = self.assistants.get_mut(request_id) else {
                         continue;
                     };
-                    if !assistant.semantic_parts_authoritative {
+                    // Coordinator-owned calls (including batch children) can arrive
+                    // after the provider commits its response.
+                    if !assistant.semantic_parts_authoritative
+                        || matches!(part, AssistantPart::ToolCall(tool) if !assistant.parts.iter().any(|(_, existing)|
+                            matches!(existing, AssistantPart::ToolCall(existing) if existing.tool_call_id == tool.tool_call_id)))
+                    {
                         assistant.parts.push((fact.sequence, part.clone()));
                     }
                 }
@@ -188,15 +193,18 @@ impl ProjectionIndex {
                         continue;
                     };
                     assistant.finished = true;
-                    if !parts.is_empty() {
-                        assistant.parts = parts
-                            .iter()
-                            .cloned()
-                            .map(|part| (fact.sequence, part))
-                            .collect();
-                        assistant.semantic_parts_authoritative = true;
-                        assistant.provenance.clone_from(provenance);
+                    if parts.is_empty() {
+                        continue;
                     }
+                    assistant.parts.retain(|(_, part)| {
+                        matches!(part, AssistantPart::ToolCall(tool) if !parts.iter().any(|committed|
+                            matches!(committed, AssistantPart::ToolCall(committed) if committed.tool_call_id == tool.tool_call_id)))
+                    });
+                    assistant
+                        .parts
+                        .extend(parts.iter().cloned().map(|part| (fact.sequence, part)));
+                    assistant.semantic_parts_authoritative = true;
+                    assistant.provenance.clone_from(provenance);
                 }
                 LegacyFactKind::RunStarted
                 | LegacyFactKind::Title(_)
