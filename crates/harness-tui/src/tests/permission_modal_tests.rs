@@ -43,8 +43,8 @@ pub(super) fn permission_dock_packs_measured_content_rows() {
         .expect("option 4 must render");
     let footer = lines
         .iter()
-        .position(|line| line.contains("1/4:select"))
-        .expect("1/4:select footer must render");
+        .position(|line| line.contains("1-4:activate"))
+        .expect("1-4:activate footer must render");
 
     // Then: title, detail, gap, options, and footer occupy only their measured rows.
     assert!(
@@ -65,7 +65,7 @@ pub(super) fn permission_dock_packs_measured_content_rows() {
         "4-option product keybind packing must stay closed\n{rendered}"
     );
     assert!(
-        rendered.contains("Yes, allow all edits during this session"),
+        rendered.contains("Yes, remember this approval for this session"),
         "session option 2 must remain present\n{rendered}"
     );
 }

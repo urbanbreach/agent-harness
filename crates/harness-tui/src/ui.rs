@@ -250,9 +250,24 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
         );
     }
     render_footer(frame, app, &plan, theme);
-    if let Some(viewer) = app.transcript_viewer() {
-        let surface = viewer.render_surface(area);
-        crate::transcript_block_viewer::render_to_buffer(frame.buffer_mut(), area, &surface, theme);
+    // Permission input owns the dock; review surfaces must not conceal it.
+    if !app
+        .overlay_stack()
+        .ordered()
+        .contains(&crate::overlay::OverlayKind::PermissionModal)
+    {
+        if let Some(surface) = app.review_surface() {
+            render_review_surface(frame, app, theme, &plan, surface);
+        }
+        if let Some(viewer) = app.transcript_viewer() {
+            let surface = viewer.render_surface(area);
+            crate::transcript_block_viewer::render_to_buffer(
+                frame.buffer_mut(),
+                area,
+                &surface,
+                theme,
+            );
+        }
     }
     render_overlays(frame, app, theme, &plan);
     render_toast(frame, app, area, theme);
@@ -275,22 +290,10 @@ fn render_surface(
     theme: &Theme,
     plan: &FrameLayoutPlan,
 ) {
-    match app.review_surface() {
-        None => {
-            if app.replay_mode {
-                render_replay_session_surface(frame, app, theme, plan)
-            } else {
-                render_live_session_surface(frame, app, theme, plan)
-            }
-        }
-        Some(surface) => {
-            if app.replay_mode {
-                render_replay_session_surface(frame, app, theme, plan)
-            } else {
-                render_live_session_surface(frame, app, theme, plan)
-            }
-            render_review_surface(frame, app, theme, plan, surface);
-        }
+    if app.replay_mode {
+        render_replay_session_surface(frame, app, theme, plan)
+    } else {
+        render_live_session_surface(frame, app, theme, plan)
     }
 }
 

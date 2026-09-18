@@ -962,7 +962,7 @@ fn permission_shell_hints(
     let mut hints = if editing {
         vec![("Enter", ":send")]
     } else {
-        vec![("1/4", ":select"), ("Tab", ":next option")]
+        vec![("1-4", ":activate"), ("Tab", ":next option")]
     };
     if measure.detail_rows > 5 {
         hints.push((

@@ -270,11 +270,11 @@ pub(super) fn render_inline_permission_dock(
     let selection = app.permission_modal_selection(&permission.permission_id);
     let options = [
         (
-            "Yes, and don't ask again for anything (always-approve mode)",
+            "Yes, enable always-approve mode",
             selection == PermissionModalSelection::AllowAlways,
         ),
         (
-            "Yes, allow all edits during this session",
+            "Yes, remember this approval for this session",
             selection == PermissionModalSelection::AllowSession,
         ),
         ("Yes", selection == PermissionModalSelection::AllowOnce),
