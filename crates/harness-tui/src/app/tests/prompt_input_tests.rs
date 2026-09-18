@@ -102,6 +102,10 @@ pub(super) fn prompt_history_persists_and_restores_draft_after_recall() {
     for use_launcher in [false, true] {
         if use_launcher {
             live.apply_new_session_launcher_selection();
+            assert!(
+                live.should_quit,
+                "a launcher selection must hand off the live runtime immediately"
+            );
         } else {
             live.execute_slash_command("new", None);
         }

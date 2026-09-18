@@ -309,7 +309,8 @@ impl AppState {
         match command {
             "usage" | "extensions" => true,
             "new" | "status" | "dashboard" | "toggles" | "auth" | "connect" | "help" | "exit"
-            | "mcps" | "timestamps" | "thinking" | "settings" | "view-plan" | "vim" => true,
+            | "mcps" | "timestamps" | "thinking" | "settings" | "view-plan" | "vim"
+            | "worktree" => true,
             "sessions" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
@@ -498,6 +499,10 @@ impl AppState {
             "export" => {
                 self.restore_slash_draft(preserved_draft);
                 self.execute_action(Action::ExportSession);
+            }
+            "worktree" => {
+                self.restore_slash_draft(preserved_draft);
+                self.open_worktree_picker();
             }
             "import" => {
                 self.restore_slash_draft(preserved_draft);
@@ -1016,9 +1021,6 @@ impl AppState {
     }
 
     pub(in crate::app) fn apply_fresh_session_launcher_selection(&mut self, intent: UiIntent) {
-        let lifecycle_exit = self.startup_mode
-            || self.post_run_handoff_visible()
-            || self.completed_session_shell_active();
         let prompt_buffer = self.composer.prompt_buffer.clone();
         let prompt_cursor = self.composer.prompt_cursor;
         set_pending_live_prompt_draft(Some(prompt_buffer.clone()));
@@ -1057,9 +1059,7 @@ impl AppState {
 
         self.close_session_history();
         self.emit_ui_intent(intent);
-        if lifecycle_exit {
-            self.should_quit = true;
-        }
+        self.should_quit = true;
     }
 
     pub(in crate::app) fn select_previous_startup_launcher_action(&mut self) {

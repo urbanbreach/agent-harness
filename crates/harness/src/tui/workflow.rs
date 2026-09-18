@@ -15,6 +15,7 @@ pub(super) enum InteractiveWorkflow {
     Startup,
     NewSession,
     NewWorktreeSession { name: Option<String> },
+    SwitchWorktreeSession { worktree_path: PathBuf },
     Continue { run_id: String, run_dir: PathBuf },
     Replay { run_dir: PathBuf },
     Quit,
@@ -81,11 +82,11 @@ pub(super) async fn run_interactive_workflow_loop<
 ) -> Result<(), String>
 where
     LoadStartupEntries: FnMut() -> Result<Vec<SessionHistoryEntry>, String>,
-    StartupRunner: FnMut(Vec<SessionHistoryEntry>) -> StartupFuture,
+    StartupRunner: FnMut(Vec<SessionHistoryEntry>, Option<String>) -> StartupFuture,
     StartupFuture: Future<Output = Result<InteractiveWorkflow, String>>,
     NewSessionRunner: FnMut() -> NewSessionFuture,
     NewSessionFuture: Future<Output = Result<InteractiveWorkflow, String>>,
-    NewWorktreeSessionRunner: FnMut(Option<String>) -> NewWorktreeSessionFuture,
+    NewWorktreeSessionRunner: FnMut(Option<String>, Option<PathBuf>) -> NewWorktreeSessionFuture,
     NewWorktreeSessionFuture: Future<Output = Result<InteractiveWorkflow, String>>,
     ContinueRunner: FnMut(String, PathBuf) -> ContinueFuture,
     ContinueFuture: Future<Output = Result<InteractiveWorkflow, String>>,
@@ -93,12 +94,30 @@ where
     ReplayFuture: Future<Output = Result<InteractiveWorkflow, String>>,
 {
     let mut workflow = initial_workflow;
+    let mut startup_notice = None;
     loop {
         workflow = match workflow {
-            InteractiveWorkflow::Startup => run_startup(load_startup_entries()?).await?,
+            InteractiveWorkflow::Startup => {
+                run_startup(load_startup_entries()?, startup_notice.take()).await?
+            }
             InteractiveWorkflow::NewSession => run_new_session().await?,
             InteractiveWorkflow::NewWorktreeSession { name } => {
-                run_new_worktree_session(name).await?
+                match run_new_worktree_session(name, None).await {
+                    Ok(next) => next,
+                    Err(error) => {
+                        startup_notice = Some(error);
+                        InteractiveWorkflow::Startup
+                    }
+                }
+            }
+            InteractiveWorkflow::SwitchWorktreeSession { worktree_path } => {
+                match run_new_worktree_session(None, Some(worktree_path)).await {
+                    Ok(next) => next,
+                    Err(error) => {
+                        startup_notice = Some(error);
+                        InteractiveWorkflow::Startup
+                    }
+                }
             }
             InteractiveWorkflow::Continue { run_id, run_dir } => {
                 run_continue(run_id, run_dir).await?
@@ -114,6 +133,9 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         Some(UiIntent::NewSession) => InteractiveWorkflow::NewSession,
         Some(UiIntent::NewWorktreeSession { name }) => {
             InteractiveWorkflow::NewWorktreeSession { name }
+        }
+        Some(UiIntent::SwitchWorktree { worktree_path }) => {
+            InteractiveWorkflow::SwitchWorktreeSession { worktree_path }
         }
         Some(UiIntent::ReplaySession { run_dir, .. }) => InteractiveWorkflow::Replay { run_dir },
         Some(UiIntent::ContinueSession { run_id, run_dir }) => {
@@ -140,7 +162,6 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::DeleteSession { .. })
         | Some(UiIntent::RevertWorkspace { .. })
         | Some(UiIntent::ExportSession)
-        | Some(UiIntent::SwitchWorktree { .. })
         | Some(UiIntent::ImportForeignSession { .. })
         | Some(UiIntent::RunShellCommand { .. }) => InteractiveWorkflow::Quit,
     }
@@ -178,6 +199,11 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         UiIntent::NewWorktreeSession { name } => {
             Some(InteractiveWorkflow::NewWorktreeSession { name: name.clone() })
         }
+        UiIntent::SwitchWorktree { worktree_path } => {
+            Some(InteractiveWorkflow::SwitchWorktreeSession {
+                worktree_path: worktree_path.clone(),
+            })
+        }
         UiIntent::ReplaySession { run_dir, .. } => Some(InteractiveWorkflow::Replay {
             run_dir: run_dir.clone(),
         }),
@@ -202,7 +228,6 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         | UiIntent::DeleteSession { .. }
         | UiIntent::RevertWorkspace { .. }
         | UiIntent::ExportSession
-        | UiIntent::SwitchWorktree { .. }
         | UiIntent::ImportForeignSession { .. }
         | UiIntent::RunShellCommand { .. } => None,
     }
@@ -257,4 +282,48 @@ pub(super) fn take_selected_workflow_or(
         .lock()
         .map_err(|_| "live workflow selection lock poisoned".to_string())
         .map(|mut slot| slot.take().unwrap_or(default))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::future::ready;
+
+    #[tokio::test]
+    async fn worktree_errors_return_to_the_launcher_with_a_notice() -> Result<(), String> {
+        let mut launches = 0;
+        let mut attempts = 0;
+        run_interactive_workflow_loop(
+            InteractiveWorkflow::NewWorktreeSession {
+                name: Some("collision".into()),
+            },
+            || Ok(Vec::new()),
+            |_, notice| {
+                assert_eq!(notice.as_deref(), Some("worktree unavailable"));
+                launches += 1;
+                ready(Ok(if launches == 1 {
+                    InteractiveWorkflow::SwitchWorktreeSession {
+                        worktree_path: PathBuf::from("checkout"),
+                    }
+                } else {
+                    InteractiveWorkflow::Quit
+                }))
+            },
+            || ready(Ok(InteractiveWorkflow::Quit)),
+            |name, path| {
+                attempts += 1;
+                if attempts == 1 {
+                    assert_eq!(name.as_deref(), Some("collision"));
+                } else {
+                    assert_eq!(path, Some(PathBuf::from("checkout")));
+                }
+                ready(Err("worktree unavailable".into()))
+            },
+            |_, _| ready(Ok(InteractiveWorkflow::Quit)),
+            |_| ready(Ok(InteractiveWorkflow::Quit)),
+        )
+        .await?;
+        assert_eq!((launches, attempts), (2, 2));
+        Ok(())
+    }
 }

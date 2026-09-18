@@ -41,11 +41,28 @@ pub(super) async fn run_new_worktree_live_session(
     settings: &LiveSettings,
     demo_mode: bool,
     name: Option<String>,
+    worktree_path: Option<PathBuf>,
     launch_selection: LaunchSelection,
     coordinator_config_warmup: LiveCoordinatorConfigWarmup,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("new_worktree_live.begin");
-    let worktree_settings = prepare_worktree_live_settings(settings, name.as_deref())?;
+    let worktree_settings = if let Some(path) = worktree_path {
+        let entries =
+            harness_core::worktree::list_session_worktrees(&settings.workspace_root, None)
+                .map_err(|error| error.to_string())?;
+        let path = path.canonicalize().map_err(|error| error.to_string())?;
+        if !entries
+            .iter()
+            .any(|entry| entry.path.canonicalize().ok().as_ref() == Some(&path))
+        {
+            return Err("Selected checkout is not a worktree of this repository".to_string());
+        }
+        let mut selected = settings.clone();
+        selected.workspace_root = path;
+        selected
+    } else {
+        prepare_worktree_live_settings(settings, name.as_deref())?
+    };
     profile_handoff(&format!(
         "new_worktree_live.created {}",
         worktree_settings.workspace_root.display()

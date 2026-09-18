@@ -408,10 +408,11 @@ async fn run_interactive_mode(
             },
             {
                 let launch_selection = Arc::clone(&launch_selection);
-                move |session_history_entries| {
+                move |session_history_entries, startup_notice| {
                     run_startup_launcher(
                         cmd.exit_on_finish,
                         session_history_entries,
+                        startup_notice,
                         Arc::clone(&launch_selection),
                         persist_model_selection,
                         Some(prompt_history_path_for_session_dir(&settings.session_dir)),
@@ -440,12 +441,13 @@ async fn run_interactive_mode(
             {
                 let launch_selection = Arc::clone(&launch_selection);
                 let coordinator_config_warmup = coordinator_config_warmup.clone();
-                move |name| {
+                move |name, worktree_path| {
                     run_new_worktree_live_session(
                         cmd,
                         settings,
                         demo_mode,
                         name,
+                        worktree_path,
                         Arc::clone(&launch_selection),
                         coordinator_config_warmup.clone(),
                     )
@@ -528,10 +530,11 @@ async fn run_direct_continue_mode(
             },
             {
                 let launch_selection = Arc::clone(&launch_selection);
-                move |session_history_entries| {
+                move |session_history_entries, startup_notice| {
                     run_startup_launcher(
                         cmd.exit_on_finish,
                         session_history_entries,
+                        startup_notice,
                         Arc::clone(&launch_selection),
                         persist_model_selection,
                         Some(prompt_history_path_for_session_dir(&settings.session_dir)),
@@ -560,12 +563,13 @@ async fn run_direct_continue_mode(
             {
                 let launch_selection = Arc::clone(&launch_selection);
                 let coordinator_config_warmup = coordinator_config_warmup.clone();
-                move |name| {
+                move |name, worktree_path| {
                     run_new_worktree_live_session(
                         cmd,
                         settings,
                         demo_mode,
                         name,
+                        worktree_path,
                         Arc::clone(&launch_selection),
                         coordinator_config_warmup.clone(),
                     )
@@ -605,6 +609,7 @@ async fn run_direct_continue_mode(
 async fn run_startup_launcher(
     exit_on_finish: bool,
     session_history_entries: Vec<SessionHistoryEntry>,
+    startup_notice: Option<String>,
     launch_selection: LaunchSelection,
     persist_model_selection: bool,
     prompt_history_path: Option<PathBuf>,
@@ -616,6 +621,12 @@ async fn run_startup_launcher(
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
     let selected_intent_sink = Arc::clone(&selected_intent);
     let (live_update_tx, live_update_rx) = live_update_channel();
+    if let Some(message) = startup_notice {
+        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+            message,
+            level: harness_tui::OperatorNoticeLevel::Error,
+        });
+    }
     let auth_update_tx = live_update_tx.clone();
     if let Some(notice) = auth_backend.model_prompt_notice(&recover_mutex_lock(&launch_selection)) {
         let _ = live_update_tx.send(notice);
@@ -655,6 +666,7 @@ async fn run_startup_launcher(
             intent,
             UiIntent::NewSession
                 | UiIntent::NewWorktreeSession { .. }
+                | UiIntent::SwitchWorktree { .. }
                 | UiIntent::ReplaySession { .. }
                 | UiIntent::ContinueSession { .. }
                 | UiIntent::SubmitPrompt { .. }
