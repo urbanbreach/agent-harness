@@ -24,12 +24,15 @@ fn non_empty_str(value: &str) -> Option<&str> {
     has_trimmed_content(value).then_some(value)
 }
 
-fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
+fn harness_lineage(run_dir: &Path) -> Option<Value> {
     let body = fs::read_to_string(run_dir.join("meta.json")).ok()?;
     let metadata: Value = serde_json::from_str(&body).ok()?;
-    metadata
-        .get("harness_lineage")
-        .and_then(|lineage| lineage.get("parent_run_id"))
+    metadata.get("harness_lineage").cloned()
+}
+
+fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
+    harness_lineage(run_dir)?
+        .get("parent_run_id")
         .and_then(Value::as_str)
         .and_then(non_empty_trimmed)
         .map(str::to_string)
@@ -54,6 +57,17 @@ impl AppState {
     }
 
     pub(crate) fn current_subagent_session_present(&self) -> bool {
+        if self
+            .session_path
+            .as_deref()
+            .and_then(harness_lineage)
+            .is_some_and(|lineage| {
+                lineage.get("relationship").and_then(Value::as_str)
+                    == Some("child_session_materialization")
+            })
+        {
+            return false;
+        }
         let Some(current_session_id) = self.current_session_id() else {
             return false;
         };
@@ -103,6 +117,9 @@ impl AppState {
     }
 
     pub(crate) fn current_subagent_session_info(&self) -> Option<SubagentSessionInfo> {
+        if !self.current_subagent_session_present() {
+            return None;
+        }
         let current_session_id = self.current_session_id()?;
         let parent_snapshot = self.session_navigation_stack.last();
         let parent_session_id = parent_snapshot
@@ -930,6 +947,22 @@ mod tests {
             Some("run-001"),
             "current_session_id must return the last path component"
         );
+    }
+
+    #[test]
+    fn fork_lineage_keeps_the_live_composer_visible() {
+        let run = tempfile::tempdir().unwrap_or_abort();
+        fs::write(run.path().join("meta.json"), r#"{"harness_lineage":{"relationship":"child_session_materialization","parent_run_id":"parent"}}"#).unwrap_or_abort();
+        let app = AppState::new_live(Some(run.path().to_path_buf()), false, None);
+        assert_eq!(app.current_parent_session_id().as_deref(), Some("parent"));
+        assert!(!app.current_subagent_session_present());
+        assert!(app.current_subagent_session_info().is_none());
+        assert!(crate::layout::FrameLayoutPlan::for_app(
+            &app,
+            ratatui::layout::Rect::new(0, 0, 120, 40)
+        )
+        .composer
+        .is_some());
     }
 
     #[test]
