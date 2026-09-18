@@ -94,6 +94,18 @@ impl ViewerState {
         &self.content
     }
 
+    pub(crate) fn update_content(
+        &mut self,
+        content: ViewerBlockContent,
+    ) -> Result<(), ViewerError> {
+        if self.content == content {
+            return Ok(());
+        }
+        self.content = content;
+        self.selection = None;
+        self.rebuild_display()
+    }
+
     pub const fn mode(&self) -> ViewerMode {
         self.mode
     }
@@ -270,6 +282,9 @@ impl ViewerState {
         if (width, height) == (self.width, self.height) {
             return Ok(());
         }
+        let keep_cursor_visible = height < self.height
+            && (self.scroll_top()..self.scroll_top().saturating_add(self.height))
+                .contains(&self.cursor.row);
         let anchor = self.scroll_anchor().map_err(ViewerError::Scroll)?;
         let width_changed = self.width != width;
         self.width = width;
@@ -286,6 +301,9 @@ impl ViewerState {
         }
         self.scroll_top = anchor.resolve(&self.layout).map_err(ViewerError::Scroll)?;
         self.transition = None;
+        if keep_cursor_visible {
+            self.reveal_cursor();
+        }
         Ok(())
     }
 

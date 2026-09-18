@@ -9,6 +9,18 @@ pub(crate) struct ViewerLayout {
     pub(crate) shortcuts: Rect,
 }
 
+impl ViewerLayout {
+    pub(crate) fn content_body(self, status_visible: bool) -> Rect {
+        Rect {
+            height: self
+                .body
+                .height
+                .saturating_sub(if status_visible { 2 } else { 0 }),
+            ..self.body
+        }
+    }
+}
+
 pub(crate) fn viewer_layout(area: Rect) -> ViewerLayout {
     let overlay = Rect {
         height: area.height.saturating_sub(2),

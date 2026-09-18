@@ -4,20 +4,17 @@ use crate::transcript_selection::{CellPoint, NavigationKey, Viewport};
 impl AppState {
     pub(crate) fn resize_transcript_viewer(&mut self, area: Rect) {
         let theme = *self.theme();
-        let body = crate::transcript_block_viewer::viewer_layout(area).body;
+        let layout = crate::transcript_block_viewer::viewer_layout(area);
         if let Some(viewer) = self
             .transcript_integration
             .as_mut()
             .and_then(TranscriptComposite::viewer_mut)
         {
             let _ = viewer.set_theme(theme);
+            let body = layout.content_body(viewer.input_active() || viewer.visual_mode());
             let _ = viewer.resize(
                 usize::from(body.width.max(1)),
-                usize::from(
-                    body.height
-                        .saturating_sub(u16::from(viewer.input_active()))
-                        .max(1),
-                ),
+                usize::from(body.height.max(1)),
             );
         }
     }
@@ -204,6 +201,7 @@ impl AppState {
         else {
             return false;
         };
+        let body = layout.content_body(viewer.input_active() || viewer.visual_mode());
         let point = CellPoint::new(
             viewer.scroll_top() + usize::from(mouse.row.saturating_sub(layout.body.y)),
             usize::from(mouse.column.saturating_sub(layout.body.x)),
@@ -217,7 +215,7 @@ impl AppState {
                 let _ = viewer.scroll_by(3.0);
             }
             MouseEventKind::Down(MouseButton::Left) => {
-                if !layout.body.contains(position) {
+                if !body.contains(position) {
                     return true;
                 }
                 self.transcript_view.viewer_pointer_anchor = Some(point);

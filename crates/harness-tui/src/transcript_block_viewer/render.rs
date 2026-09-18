@@ -217,13 +217,7 @@ pub fn render_to_buffer(
             Style::default().fg(theme.terminal_colors.muted)
         })
         .render(layout.close, buffer);
-    let body = Rect {
-        height: layout
-            .body
-            .height
-            .saturating_sub(u16::from(surface.search_active)),
-        ..layout.body
-    };
+    let body = layout.content_body(surface.search_active || surface.visual_mode);
     for (offset, line) in surface
         .lines
         .iter()
