@@ -56,6 +56,8 @@ pub struct LiveEventEnvelope {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event_type", content = "data", rename_all = "snake_case")]
 pub enum LiveEventV1 {
+    /// Ephemeral operator feedback, with no transcript or provider payload.
+    RuntimeWarning { message: String },
     /// Ephemeral compaction feedback. `None` retires this generation's indicator.
     CompactionProgress {
         agent_id: String,

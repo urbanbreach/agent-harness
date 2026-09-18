@@ -219,6 +219,7 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
                 self.write_thinking(delta);
             }
             LiveEventV1::CompactionProgress { .. }
+            | LiveEventV1::RuntimeWarning { .. }
             | LiveEventV1::ProviderReasoningDelta { .. }
             | LiveEventV1::ProviderToolInputDelta { .. } => {}
         }
@@ -731,7 +732,9 @@ fn event_matches_request(event: &EventEnvelopeV1, request_id: &str) -> bool {
 
 fn live_event_matches_prompt(event: &LiveEventEnvelope, request_id: &str) -> bool {
     let provider_request_id = match &event.payload {
-        LiveEventV1::CompactionProgress { .. } => return false,
+        LiveEventV1::CompactionProgress { .. } | LiveEventV1::RuntimeWarning { .. } => {
+            return false
+        }
         LiveEventV1::ProviderTextDelta { request_id, .. }
         | LiveEventV1::ProviderReasoningDelta { request_id, .. }
         | LiveEventV1::ProviderToolInputDelta { request_id, .. } => request_id.as_str(),
