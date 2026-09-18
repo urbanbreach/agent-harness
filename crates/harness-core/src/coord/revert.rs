@@ -2,7 +2,6 @@ use crate::UnwrapOrAbort;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 use crate::digest::digest12;
@@ -14,13 +13,10 @@ use super::{
 };
 
 const SNAPSHOTS_DIR: &str = "snapshots";
-const DEFAULT_IGNORED_FILES: &[&str] = &[".envrc"];
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct SnapshotEntry {
-    digest: String,
-    content: String,
-}
+use super::snapshot::{
+    normalize_relative_path, should_ignore_path, workspace_files, SnapshotEntry,
+};
 
 impl Coordinator {
     pub(in crate::coord) async fn revert_workspace_internal(
@@ -68,7 +64,21 @@ impl Coordinator {
         // Paths present in the snapshot must be restored to their captured state.
         for path in snapshot_paths.iter() {
             let entry = snapshot.get(*path).unwrap_or_abort();
-            match apply_restore(&workspace_root, path, Some(&entry.content)).await {
+            let Some(content) = entry
+                .content
+                .as_deref()
+                .filter(|content| digest12(content.as_bytes()) == entry.digest)
+            else {
+                if current_entries.get(*path) != Some(&entry.digest) {
+                    failed_paths.push((
+                        path.to_string(),
+                        "binary or redacted content cannot be restored; file left unchanged"
+                            .to_string(),
+                    ));
+                }
+                continue;
+            };
+            match apply_restore(&workspace_root, path, Some(content)).await {
                 Ok(true) => restored_paths.push(path.to_string()),
                 Ok(false) => {}
                 Err(reason) => failed_paths.push((path.to_string(), reason)),
@@ -126,29 +136,10 @@ async fn current_workspace_entries(
     workspace_root: &Path,
 ) -> Result<BTreeMap<String, String>, std::io::Error> {
     let mut entries = BTreeMap::new();
-    let mut stack: Vec<PathBuf> = vec![workspace_root.to_path_buf()];
-
-    while let Some(dir) = stack.pop() {
-        let mut read_dir = fs::read_dir(&dir).await?;
-        while let Some(entry) = read_dir.next_entry().await? {
-            let path = entry.path();
-            let relative = path.strip_prefix(workspace_root).unwrap_or(&path);
-            let relative_str = normalize_relative_path(relative);
-
-            if should_ignore_path(&relative_str) {
-                continue;
-            }
-
-            let file_type = entry.file_type().await?;
-            if file_type.is_dir() {
-                stack.push(path);
-            } else if file_type.is_file() {
-                let content = fs::read_to_string(&path).await?;
-                entries.insert(relative_str, digest12(content.as_bytes()));
-            }
-        }
+    for path in workspace_files(workspace_root).await? {
+        let relative = normalize_relative_path(path.strip_prefix(workspace_root).unwrap_or(&path));
+        entries.insert(relative, digest12(&fs::read(&path).await?));
     }
-
     Ok(entries)
 }
 
@@ -164,10 +155,10 @@ async fn apply_restore(
     match content {
         Some(expected) => {
             if exists {
-                let current = fs::read_to_string(&target)
+                let current = fs::read(&target)
                     .await
                     .map_err(|err| format!("read failed: {err}"))?;
-                if current == expected {
+                if current == expected.as_bytes() {
                     return Ok(false);
                 }
             }
@@ -206,31 +197,4 @@ fn resolve_within_workspace(workspace_root: &Path, relative: &str) -> Result<Pat
         return Err(format!("path escapes workspace root: {relative}"));
     }
     Ok(candidate)
-}
-
-fn should_ignore_path(relative: &str) -> bool {
-    if relative.is_empty() {
-        return false;
-    }
-    let normalized = relative.replace('\\', "/");
-    let segments: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
-    for ignored in [".git", ".agent-harness", "target"] {
-        if segments.contains(&ignored) {
-            return true;
-        }
-    }
-    if let Some(file_name) = segments.last() {
-        if DEFAULT_IGNORED_FILES.contains(file_name)
-            || *file_name == ".env"
-            || file_name.starts_with(".env.")
-            || file_name.ends_with(".env")
-        {
-            return true;
-        }
-    }
-    false
-}
-
-fn normalize_relative_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
 }

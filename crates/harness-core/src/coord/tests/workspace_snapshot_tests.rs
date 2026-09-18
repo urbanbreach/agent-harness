@@ -16,6 +16,20 @@ pub(super) async fn snapshot_captures_workspace_and_emits_event() {
     fs::create_dir_all(&workspace).unwrap_or_abort();
     fs::write(workspace.join("a.txt"), "alpha").unwrap_or_abort();
     fs::write(workspace.join("b.txt"), "beta").unwrap_or_abort();
+    assert!(std::process::Command::new("git")
+        .args(["init", "--quiet"])
+        .arg(&workspace)
+        .status()
+        .unwrap_or_abort()
+        .success());
+    fs::write(workspace.join(".gitignore"), "ignored/\n").unwrap_or_abort();
+    fs::create_dir(workspace.join("ignored")).unwrap_or_abort();
+    fs::write(workspace.join("ignored/generated.bin"), [0_u8, 255]).unwrap_or_abort();
+    fs::write(
+        workspace.join("config.jsonc"),
+        r#"{provider: {options: {apiKey: "snapshot-sensitive-fixture"}}}"#,
+    )
+    .unwrap_or_abort();
 
     let handle = spawn_coordinator(
         test_config(temp_dir.path()),
@@ -33,7 +47,21 @@ pub(super) async fn snapshot_captures_workspace_and_emits_event() {
         .unwrap_or_abort();
 
     assert_eq!(summary.request_id, "req_000001".into());
-    assert_eq!(summary.file_count, 2);
+    assert_eq!(summary.file_count, 4);
+    let artifact =
+        fs::read_to_string(run.artifacts_dir.join(&summary.artifact_path)).unwrap_or_abort();
+    assert!(!artifact.contains("snapshot-sensitive-fixture"));
+    assert!(!artifact.contains("generated.bin"));
+    let payload: serde_json::Value = serde_json::from_str(&artifact).unwrap_or_abort();
+    assert!(payload["config.jsonc"]["content"].is_null());
+    handle
+        .revert_workspace("req_000001")
+        .await
+        .unwrap_or_abort();
+    assert_eq!(
+        fs::read(workspace.join("ignored/generated.bin")).unwrap_or_abort(),
+        [0, 255]
+    );
     assert!(summary.artifact_path.starts_with("snapshots/"));
     assert!(run.artifacts_dir.join(&summary.artifact_path).is_file());
 
@@ -46,7 +74,7 @@ pub(super) async fn snapshot_captures_workspace_and_emits_event() {
         })
         .unwrap_or_abort();
     assert_eq!(snapshot_event.request_id, "req_000001".into());
-    assert_eq!(snapshot_event.file_count, 2);
+    assert_eq!(snapshot_event.file_count, 4);
     assert!(!snapshot_event.artifact_digest.is_empty());
 }
 
@@ -54,6 +82,7 @@ pub(super) async fn revert_restores_workspace_from_snapshot() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
     fs::create_dir_all(&workspace).unwrap_or_abort();
+    fs::write(workspace.join("asset.png"), [0_u8, 255, 1]).unwrap_or_abort();
     fs::write(workspace.join("keep.txt"), "keep-original").unwrap_or_abort();
     fs::write(workspace.join("change.txt"), "change-original").unwrap_or_abort();
     fs::write(workspace.join("remove.txt"), "remove-original").unwrap_or_abort();
@@ -111,15 +140,25 @@ pub(super) async fn revert_restores_workspace_from_snapshot() {
         })
         .unwrap_or_abort();
     assert_eq!(reverted_event.snapshot_request_id, "req_revert_001");
-    assert!(reverted_event
-        .restored_paths
-        .contains(&"change.txt".to_string()));
-    assert!(reverted_event
-        .restored_paths
-        .contains(&"remove.txt".to_string()));
+    assert_eq!(reverted_event.restored_paths, summary.restored_paths);
     assert!(reverted_event
         .removed_paths
         .contains(&"add.txt".to_string()));
+    assert_eq!(
+        fs::read(workspace.join("asset.png")).unwrap_or_abort(),
+        vec![0, 255, 1]
+    );
+    fs::write(workspace.join("asset.png"), [0_u8, 254, 2]).unwrap_or_abort();
+    let partial = handle
+        .revert_workspace("req_revert_001")
+        .await
+        .unwrap_or_abort();
+    assert_eq!(partial.failed_paths.len(), 1);
+    assert_eq!(partial.failed_paths[0].0, "asset.png");
+    assert_eq!(
+        fs::read(workspace.join("asset.png")).unwrap_or_abort(),
+        vec![0, 254, 2]
+    );
 }
 
 pub(super) async fn formatter_runs_configured_command_on_edited_file() {
