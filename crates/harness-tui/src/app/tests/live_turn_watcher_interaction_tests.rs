@@ -47,36 +47,62 @@ pub(super) fn ingest_demotable_child_turn(app: &mut AppState) {
 }
 
 pub(super) fn clicking_live_turn_watcher_opens_status_dashboard() {
-    // Given: an idle live shell with one background task watcher.
+    // Given: a streaming parent turn with background task watchers.
     let mut app = AppState::new_live(None, false, None);
-    app.ingest_event(envelope(
-        1,
-        "req_watcher",
-        EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_watcher".into(),
-            state: TaskScheduleState::Started,
-            queue_key: Some("background:analysis".to_string()),
-            metadata: None,
-        }),
-    ));
-    let frame_area = Rect::new(0, 0, 100, 30);
+    app.ingest_event(provider_started(1, "req_watcher", "default", "model"));
+    for seq in 2..=4 {
+        app.ingest_event(envelope(
+            seq,
+            "req_watcher",
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: format!("task_watcher_{seq}").into(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("background:analysis".to_string()),
+                metadata: None,
+            }),
+        ));
+    }
+    let live = |id: &str, text: &str| {
+        RuntimeEvent::Live(Box::new(LiveEventEnvelope {
+            event_id: id.into(),
+            run_id: "run_app_tests".into(),
+            mono_ms: 5,
+            ts: None,
+            actor: EventActor::new(ActorKind::System, Some("app-tests".into())),
+            correlation_id: Some("req_watcher".into()),
+            causation_id: None,
+            stream_key: None,
+            payload: LiveEventV1::ProviderTextDelta {
+                request_id: "req_watcher".into(),
+                delta: text.into(),
+            },
+        }))
+    };
+    app.ingest_runtime_event(live("first", "Live dashboard preview"));
+    let frame_area = Rect::new(0, 0, 100, 40);
     let cue = ui::live_turn_watching_rect(&app, frame_area).expect("watcher cue");
 
-    // When: the operator clicks the persistent watcher cue.
-    let handled = app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: cue.x,
-            row: cue.y,
-            modifiers: KeyModifiers::NONE,
-        },
-        frame_area,
-        None,
-        None,
-        None,
-    );
+    // When: the operator double-clicks the watcher while text is still streaming.
+    for _ in 0..2 {
+        assert!(app.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: cue.x,
+                row: cue.y,
+                modifiers: KeyModifiers::NONE,
+            },
+            frame_area,
+            None,
+            None,
+            None,
+        ));
+    }
 
-    // Then: Harness opens its existing task/status dashboard.
-    assert!(handled);
+    // The preview uses the live projection and continues updating; Escape stays responsive.
     assert!(app.status_dashboard_is_active());
+    assert!(render_text(&app, 100, 40).contains("Live dashboard preview"));
+    app.ingest_runtime_event(live("next", " keeps updating"));
+    assert!(render_text(&app, 100, 40).contains("keeps updating"));
+    app.handle_key(key(KeyCode::Esc));
+    assert!(!app.status_dashboard_is_active());
 }

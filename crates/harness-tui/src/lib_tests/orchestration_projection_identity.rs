@@ -333,8 +333,7 @@ pub(super) fn background_notification_projects_chat_reminder_without_duplicate_u
     assert_eq!(activity.status, app::ActivityStatus::Queued);
     assert_eq!(activity.profile_label, "build");
     let reminder = activity.user_message.as_ref().unwrap_or_abort();
-    assert!(reminder.text.contains("[BACKGROUND TASK COMPLETED]"));
-    assert!(reminder.text.contains("ID: agent_child"));
+    assert_eq!(reminder.text, "Background task completed · agent_child");
     assert!(!reminder.text.contains("summarize README"));
     assert!(!reminder.text.contains("sessionId"));
     assert!(!reminder.text.contains("secret"));
@@ -342,10 +341,6 @@ pub(super) fn background_notification_projects_chat_reminder_without_duplicate_u
         .text
         .chars()
         .any(|ch| ch.is_control() && ch != '\n'));
-    assert!(reminder
-        .text
-        .contains("background_output(request_id=\"req_child\")"));
-    assert!(reminder.text.contains("task(session_id=\"agent_child\")"));
 
     app.ingest_event(envelope(
         3,
@@ -365,7 +360,7 @@ pub(super) fn background_notification_projects_chat_reminder_without_duplicate_u
             .as_ref()
             .unwrap_or_abort()
             .text,
-        "<system-reminder>canonical coordinator wakeup</system-reminder>"
+        "Background task completed · agent_child"
     );
     assert_eq!(app.activities[0].status, app::ActivityStatus::Queued);
 
