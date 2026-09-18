@@ -169,7 +169,12 @@ async fn apply_chat_chunk(
         )
         .await
             || !send_optional_delta(tx, choice.delta.content, ProviderStreamEvent::TextDelta).await
-            || !consume_tool_call_deltas(tx, &choice.delta.tool_calls, tool_call_state).await
+            || !consume_tool_call_deltas(
+                tx,
+                choice.delta.tool_calls.as_deref().unwrap_or_default(),
+                tool_call_state,
+            )
+            .await
         {
             return None;
         }
