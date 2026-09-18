@@ -414,10 +414,9 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
     let prompt_row = find_line_containing(&lines, "Restyle the transcript shell").unwrap_or_abort();
     let tool_row =
         find_line_containing_all_from(&lines, prompt_row + 1, &["Read 1 file"]).unwrap_or_abort();
-    assert!(
-        !rendered.contains("Thought"),
-        "finished reasoning folds into the context group"
-    );
+    let thought_row = find_line_containing(&lines, "Thought").unwrap_or_abort();
+    assert!(prompt_row < thought_row && thought_row < tool_row);
+    assert!(!rendered.contains("Drafting a document-like plan"));
     let body_row = find_line_containing_from(
         &lines,
         tool_row + 1,
@@ -495,8 +494,7 @@ pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() 
     app.activities[0].thinking_text = "Drafting a document-like plan with enough extra detail to force a wrapped continuation so the nested rail stays visible on every continued row.".to_string();
     app.transcript_view.selected_activity_index = 0;
     assert!(app.move_transcript_entry(true));
-    // Expanding a context group selects its first member, the Thought.
-    assert!(app.toggle_selected_transcript_fold());
+    // The thought has its own disclosure, separate from the context tools.
     assert!(app.toggle_selected_transcript_fold());
 
     // Scroll to top so wrapped thinking first-line + body both stay visible under breadcrumb chrome.
@@ -529,10 +527,6 @@ pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() 
 pub(super) fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows() {
     let mut app = rich_transcript_fixture_app();
 
-    app.transcript_view.selected_activity_index = 0;
-    assert!(app.move_transcript_entry(true));
-    assert!(app.toggle_selected_transcript_fold()); // reveal the group's Thought header
-
     let initial = render_live_lines(&app, 120, 30);
     assert!(initial.contains("Thought"));
     assert!(!initial.contains("Drafting a document-like plan"));
@@ -545,12 +539,11 @@ pub(super) fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows
 
     run_palette_command(&mut app, "expand thinking");
     let restored = render_live_lines(&app, 120, 30);
-    assert!(!restored.contains("Thought"));
+    assert!(restored.contains("Thought"));
     assert!(!restored.contains("Drafting a document-like plan"));
 
     app.transcript_view.selected_activity_index = 0;
-    assert!(app.move_transcript_entry(true)); // reselect the restored group
-    assert!(app.toggle_selected_transcript_fold()); // visibility changes reset the group fold
+    assert!(app.move_transcript_entry(true)); // select the restored Thought header
     assert!(app.toggle_selected_transcript_fold());
     let expanded = render_live_lines(&app, 120, 30);
     assert!(expanded.contains("Drafting a document-like plan"));

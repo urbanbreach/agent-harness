@@ -1045,22 +1045,19 @@ pub(super) fn transcript_events_for_activity(
         timeline_status(activity.status),
         lifecycle_state(activity),
     )));
-    events.extend(
-        blocks
-            .into_iter()
-            .enumerate()
-            .map(|(block_index, (kind, content, raw))| {
-                let block_index = u64::try_from(block_index).unwrap_or(u64::MAX);
-                TranscriptEvent::BlockCreated(BlockSeed {
-                    id: replay.block_id(block_index),
-                    turn_id: replay.turn_id(),
-                    kind,
-                    lifecycle: block_lifecycle(activity.status),
-                    content,
-                    raw,
-                })
-            }),
-    );
+    events.extend(blocks.into_iter().enumerate().map(
+        |(block_index, (kind, content, raw, lifecycle))| {
+            let block_index = u64::try_from(block_index).unwrap_or(u64::MAX);
+            TranscriptEvent::BlockCreated(BlockSeed {
+                id: replay.block_id(block_index),
+                turn_id: replay.turn_id(),
+                kind,
+                lifecycle,
+                content,
+                raw,
+            })
+        },
+    ));
     events
 }
 

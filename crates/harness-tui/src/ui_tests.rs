@@ -453,12 +453,13 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
     ));
 
     let transcript = transcript_debug(&app);
-    assert!(!transcript.contains("Thought"));
+    let thought_index = transcript.find("Thought").unwrap_or_abort();
     let answer_index = transcript
         .find("Found the transcript renderer and the composer chrome.")
         .unwrap_or_abort();
     let tool_index = transcript.find("Read 1 file").unwrap_or_abort();
 
+    assert!(thought_index < tool_index);
     assert!(tool_index < answer_index);
 }
 

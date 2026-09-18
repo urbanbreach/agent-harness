@@ -446,6 +446,8 @@ impl TranscriptTurnSection {
     pub(super) fn reasoning_active(&self, part_index: usize) -> bool {
         self.header.status == ActivityStatus::Streaming
             && part_index + 1 == self.assistant_parts.len()
+            && matches!(self.assistant_parts.get(part_index),
+                Some(TranscriptAssistantPart::Reasoning(reasoning)) if reasoning.duration_ms.is_none())
             && !self.assistant_tools().any(|tool| {
                 matches!(tool.header.tool_id.as_str(), "question" | "user.question")
                     || tool.header.presentation.status == ToolCallPresentationStatus::Waiting

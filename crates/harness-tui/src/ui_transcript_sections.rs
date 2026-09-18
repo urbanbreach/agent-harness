@@ -184,7 +184,9 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             {
                 Some(TranscriptLabeledTextSection {
                     label: THINKING_TRACE_LABEL,
-                    duration_ms: None,
+                    duration_ms: app
+                        .uncommitted_reasoning_first_seq(activity)
+                        .and_then(|seq| app.reasoning_duration_at_seq(seq)),
                     text: activity.thinking_text.clone(),
                 })
             } else {

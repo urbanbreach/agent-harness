@@ -15,20 +15,13 @@ pub(super) struct TranscriptToolGroup {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RunStep {
     Member,
-    Thought,
     Transparent,
     Break,
 }
 
 fn context_step(turn: &TranscriptTurnSection, index: usize) -> RunStep {
     match &turn.assistant_parts[index] {
-        TranscriptAssistantPart::Reasoning(_) => {
-            if turn.reasoning_expanded || turn.reasoning_active(index) {
-                RunStep::Transparent
-            } else {
-                RunStep::Thought
-            }
-        }
+        TranscriptAssistantPart::Reasoning(_) => RunStep::Transparent,
         TranscriptAssistantPart::ToolCall(tool)
             if tool.header.presentation.status != ToolCallPresentationStatus::Waiting
                 && TranscriptToolVerb::from_tool_call(tool)
@@ -54,10 +47,7 @@ pub(super) fn scan(turn: &TranscriptTurnSection) -> Vec<TranscriptToolGroup> {
     let mut groups = Vec::new();
     let mut index = 0;
     while index < len {
-        if !matches!(
-            context_step(turn, index),
-            RunStep::Member | RunStep::Thought
-        ) {
+        if context_step(turn, index) != RunStep::Member {
             index += 1;
             continue;
         }
@@ -69,10 +59,6 @@ pub(super) fn scan(turn: &TranscriptTurnSection) -> Vec<TranscriptToolGroup> {
             match context_step(turn, index) {
                 RunStep::Member => {
                     members.push(index);
-                    participants.push(index);
-                    end = index + 1;
-                }
-                RunStep::Thought => {
                     participants.push(index);
                     end = index + 1;
                 }
@@ -117,7 +103,7 @@ pub(super) fn scan(turn: &TranscriptTurnSection) -> Vec<TranscriptToolGroup> {
         });
     }
 
-    // Context runs have priority. Remaining collapsed tools and thoughts share
+    // Context runs have priority. Remaining collapsed tools share
     // one ten-entry tail budget, even when the tool kinds differ.
     index = 0;
     while index < len {
@@ -174,9 +160,6 @@ fn disclosure(expanded: bool) -> TranscriptToolDisclosureMode {
 
 fn dense_participant(turn: &TranscriptTurnSection, index: usize) -> bool {
     match &turn.assistant_parts[index] {
-        TranscriptAssistantPart::Reasoning(_) => {
-            !turn.reasoning_expanded && !turn.reasoning_active(index)
-        }
         TranscriptAssistantPart::ToolCall(tool) => {
             !tool.expanded
                 && !tool.details_preview_visible

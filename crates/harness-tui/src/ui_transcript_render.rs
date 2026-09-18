@@ -650,7 +650,7 @@ fn pack_wall_clock_on_line(
         .sum::<usize>();
     let clock_width = display_width(clock);
     let target = assistant_clock_target_width(content_width);
-    if clock_width == 0 || used.saturating_add(clock_width) > target {
+    if clock_width == 0 || used.saturating_add(clock_width).saturating_add(2) > target {
         return;
     }
     let pad = target.saturating_sub(used).saturating_sub(clock_width);
@@ -949,7 +949,12 @@ fn resolve_assistant_body_content(
     // Grok reserves a timestamp gutter for every message row and overlays the
     // clock on the first content row. A tool or a new paragraph must not add a
     // timestamp-only row above text that is already on screen.
-    let body_width = content_width.saturating_sub(if wall_clock.is_some() { 10 } else { 0 });
+    let body_width = wall_clock.as_deref().map_or(content_width, |clock| {
+        content_width
+            .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
+            .saturating_sub(u16::try_from(display_width(clock)).unwrap_or(u16::MAX))
+            .saturating_sub(2)
+    });
     let mut lines = Vec::new();
     let mut selection_rows = if *streaming
         && wall_clock.is_none()
