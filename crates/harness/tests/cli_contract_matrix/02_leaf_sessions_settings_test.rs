@@ -261,51 +261,84 @@ fn config_settings_json_includes_typed_surface_and_sensitivity() {
 fn config_explain_nested_provider_path_attributes_to_explicit_config() {
     // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
+    let sentinel = "plain-local-sentinel-4b7e2a91";
     let config = r#"{
         "provider": {
             "myprov": {
                 "type": "openai_compatible",
                 "baseURL": "http://127.0.0.1:9/v1",
-                "apiKey": "DUMMY",
+                "apiKey": "placeholder-api-key",
                 "models": { "m": { "name": "M" } }
             }
         },
         "model": "myprov/m",
         "agent": { "default": { "model": "myprov/m" } },
         "permission": "allow"
-    }"#;
-    let config_path = write_config(temp.path(), config);
-    let deps = CliDeps::real()
-        .with_current_dir(temp.path().to_path_buf())
-        .with_env("HOME", temp.path().to_string_lossy())
-        .with_env(
-            "XDG_CONFIG_HOME",
-            temp.path().join("config").to_string_lossy(),
+    }"#
+    .replace("placeholder-api-key", sentinel);
+    let config_path = write_config(temp.path(), &config);
+
+    let cases: &[(&str, Option<&str>)] = &[
+        ("provider.myprov.type", Some("openai_compatible")),
+        ("provider.myprov.apiKey", Some("[REDACTED_API_KEY]")),
+        ("provider.myprov", None),
+    ];
+
+    for (explain_path, expected_source_value) in cases {
+        let deps = CliDeps::real()
+            .with_current_dir(temp.path().to_path_buf())
+            .with_env("HOME", temp.path().to_string_lossy())
+            .with_env(
+                "XDG_CONFIG_HOME",
+                temp.path().join("config").to_string_lossy(),
+            );
+
+        // act
+        let (code, stdout, stderr) = run_cli(
+            &[
+                "--config",
+                config_path.to_str().unwrap_or_abort(),
+                "config",
+                "explain",
+                explain_path,
+            ],
+            deps,
         );
 
-    // act
-    let (code, stdout, stderr) = run_cli(
-        &[
-            "--config",
-            config_path.to_str().unwrap_or_abort(),
-            "config",
-            "explain",
-            "provider.myprov.type",
-        ],
-        deps,
-    );
-
-    // assert
-    assert_eq!(code, 0, "stderr: {stderr}");
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_abort();
-    assert!(parsed.is_object());
-    assert_eq!(parsed["source_value"], "openai_compatible");
-    assert!(
-        parsed["source_path"]
-            .as_str()
-            .is_some_and(|s| s.contains("harness.jsonc")),
-        "attribution must point to the explicit config path"
-    );
+        // assert
+        assert_eq!(code, 0, "explain {explain_path} stderr: {stderr}");
+        let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_abort();
+        assert!(parsed.is_object());
+        assert_eq!(parsed["found"], true, "explain {explain_path} must find the path");
+        assert!(
+            parsed["source_path"]
+                .as_str()
+                .is_some_and(|s| s.contains("harness.jsonc")),
+            "attribution must point to the explicit config path for {explain_path}"
+        );
+        let defining_layer = parsed["layers"]
+            .as_array()
+            .unwrap_or_abort()
+            .iter()
+            .find(|row| row["defines_path"] == true)
+            .unwrap_or_abort();
+        assert!(
+            defining_layer["path"]
+                .as_str()
+                .is_some_and(|s| s.contains("harness.jsonc")),
+            "the defining layer row must reference the explicit config for {explain_path}"
+        );
+        if let Some(expected) = expected_source_value {
+            assert_eq!(
+                parsed["source_value"], *expected,
+                "source_value for {explain_path}"
+            );
+        }
+        assert!(
+            !stdout.contains(sentinel) && !stderr.contains(sentinel),
+            "synthetic credential must stay absent from all explain output for {explain_path}; stdout: {stdout}stderr: {stderr}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
