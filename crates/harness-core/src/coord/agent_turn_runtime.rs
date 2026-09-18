@@ -146,7 +146,7 @@ impl Coordinator {
         }
 
         if actor.kind == ActorKind::User {
-            self.ensure_harness_session_title(&request.prompt).await;
+            self.ensure_harness_session_title(&request.prompt);
         }
 
         let run_state = self
@@ -188,7 +188,7 @@ impl Coordinator {
         Ok(request_id)
     }
 
-    async fn ensure_harness_session_title(&mut self, prompt: &str) {
+    fn ensure_harness_session_title(&self, prompt: &str) {
         let Some(run_state) = self.run_state.as_ref() else {
             return;
         };
@@ -209,43 +209,34 @@ impl Coordinator {
         let operation = SessionTitleOperationSpec::for_model(title_model_ref);
         let provider = Arc::clone(&self.config.provider);
 
-        let title = match execute_session_title_operation(provider, operation, prompt).await {
-            Ok(Some(title)) => title,
-            Ok(None) => return,
-            Err(reason) => {
-                tracing::warn!(reason, "failed to generate session title");
-                return;
+        let run_id = run_state.info.run_id.to_string();
+        let expected_title = run_state.info.run_name.to_string();
+        let shutdown = run_state.shutdown_token.clone();
+        let job_tx = self.job_tx.clone();
+        let prompt = prompt.to_string();
+        tokio::spawn(async move {
+            let result = tokio::select! {
+                () = shutdown.cancelled() => return,
+                result = tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    execute_session_title_operation(provider, operation, &prompt),
+                ) => result,
+            };
+            match result {
+                Ok(Ok(Some(title))) => {
+                    let _ = job_tx
+                        .send(Command::GeneratedSessionTitle {
+                            run_id,
+                            expected_title,
+                            title,
+                        })
+                        .await;
+                }
+                Ok(Ok(None)) => {}
+                Ok(Err(reason)) => tracing::warn!(reason, "failed to generate session title"),
+                Err(_) => tracing::warn!("session title generation timed out"),
             }
-        };
-
-        let Some(run_state) = self.run_state.as_mut() else {
-            return;
-        };
-        if !is_parent_default_title(run_state.info.run_name.as_str())
-            || run_state.next_provider_request_id != 2
-        {
-            return;
-        }
-
-        let run_stream_key = format!("run:{}", run_state.info.run_id);
-        let title_event = EventV1::SessionTitleUpdated(crate::event::SessionTitleUpdatedEvent {
-            title: title.clone(),
         });
-        let persist_result = append_payload_event(
-            self.clock.as_ref(),
-            self.redactor.as_ref(),
-            run_state,
-            system_actor(),
-            Some(run_stream_key),
-            title_event,
-        )
-        .map(|_| {
-            run_state.info.run_name = title.into();
-        })
-        .and_then(|_| write_run_metadata(run_state, &self.config, self.clock.as_ref()));
-        if let Err(err) = persist_result {
-            tracing::warn!(error = %err, "failed to persist generated session title");
-        }
     }
 
     pub(in crate::coord) fn allocate_provider_request_id_internal(
