@@ -5,7 +5,8 @@ use super::discovery::{
     resolve_tui_config_layer_paths_with_context, ConfigDiscoveryContext,
 };
 use super::public::{
-    translate_public_runtime_root, validate_public_root_config_object, PublicTuiConfig,
+    canonicalize_public_layer_for_merge, public_config_instructions, translate_public_runtime_root,
+    validate_public_root_config_object, PublicTuiConfig,
 };
 use super::*;
 
@@ -272,23 +273,21 @@ fn load_resolved_config_from_paths(
             path: path.display().to_string(),
             source,
         })?;
-        let root = parse_public_config_value_from_str(&raw, path.parent())?;
-        let (fragment, instructions) = translate_public_runtime_root(root)?;
-        configured_instructions.extend(instructions);
-        match &mut merged {
-            Some(existing) => merge_config_value(existing, fragment),
-            None => merged = Some(fragment),
-        }
+        merge_public_config_layer(
+            &raw,
+            path.parent(),
+            &mut merged,
+            &mut configured_instructions,
+        )?;
     }
 
     if let Some(runtime_content) = runtime_content {
-        let root = parse_public_config_value_from_str(runtime_content, None)?;
-        let (fragment, instructions) = translate_public_runtime_root(root)?;
-        configured_instructions.extend(instructions);
-        match &mut merged {
-            Some(existing) => merge_config_value(existing, fragment),
-            None => merged = Some(fragment),
-        }
+        merge_public_config_layer(
+            runtime_content,
+            None,
+            &mut merged,
+            &mut configured_instructions,
+        )?;
     }
 
     let merged = merged.ok_or_else(|| ConfigError::ReadFile {
@@ -296,7 +295,8 @@ fn load_resolved_config_from_paths(
         source: std::io::Error::new(std::io::ErrorKind::NotFound, "no config files resolved"),
     })?;
     let primary_path = runtime_paths.last().map(PathBuf::as_path);
-    let mut parsed = parse_internal_config_from_value(merged)?;
+    let (translated, _) = translate_public_runtime_root(merged)?;
+    let mut parsed = parse_internal_config_from_value(translated)?;
     if !tui_paths.is_empty() {
         let tui = load_merged_tui_config_from_files(tui_paths)?;
         apply_public_tui_config(&mut parsed, tui);
@@ -307,6 +307,22 @@ fn load_resolved_config_from_paths(
         configured_instructions,
         current_dir,
     )
+}
+
+fn merge_public_config_layer(
+    raw: &str,
+    base_dir: Option<&Path>,
+    merged: &mut Option<serde_json::Value>,
+    configured_instructions: &mut Vec<String>,
+) -> Result<(), ConfigError> {
+    let root = parse_public_config_value_from_str(raw, base_dir)?;
+    configured_instructions.extend(public_config_instructions(root.get("instructions"))?);
+    let fragment = canonicalize_public_layer_for_merge(root)?;
+    match merged {
+        Some(existing) => merge_config_value(existing, fragment),
+        None => *merged = Some(fragment),
+    }
+    Ok(())
 }
 
 fn parse_public_config_value_from_str(

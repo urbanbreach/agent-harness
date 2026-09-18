@@ -192,6 +192,7 @@ mod discovery_merge_test;
 mod discovery_schema_test;
 mod env_assets_test;
 mod formatter_config_test;
+mod layer_permissions_test;
 mod permissions_models_part2_test;
 mod public_basics_test;
 mod settings_registry_test;

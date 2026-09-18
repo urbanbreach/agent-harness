@@ -322,24 +322,30 @@ pub(super) fn normalize_public_lsp_config(value: &serde_json::Value) -> Option<s
 }
 
 pub(super) fn normalize_public_skills_config(value: &serde_json::Value) -> serde_json::Value {
+    let sparse = sparse_public_skills_config(value);
+    let mut normalized =
+        serde_json::to_value(SkillsConfig::default()).unwrap_or_else(|_| serde_json::json!({}));
+    merge_config_value(&mut normalized, sparse);
+    normalized
+}
+
+/// Sparse per-layer skills form: aliases folded, `urls` dropped, defaults
+/// deferred so later layers inherit earlier roots.
+pub(super) fn sparse_public_skills_config(value: &serde_json::Value) -> serde_json::Value {
     let mut overlay = value.clone();
     let Some(object) = overlay.as_object_mut() else {
         return overlay;
     };
     object.remove("urls");
-    canonicalize_skill_alias(object, "projectRoots", "project_roots");
-    canonicalize_skill_alias(object, "paths", "project_roots");
-    canonicalize_skill_alias(object, "globalRoots", "global_roots");
-    canonicalize_skill_alias(object, "disabledIds", "disabled");
-    canonicalize_skill_alias(object, "walkToGitRoot", "walk_to_git_root");
-
-    let mut normalized =
-        serde_json::to_value(SkillsConfig::default()).unwrap_or_else(|_| serde_json::json!({}));
-    merge_config_value(&mut normalized, overlay);
-    normalized
+    or_insert_alias(object, "projectRoots", "project_roots");
+    or_insert_alias(object, "paths", "project_roots");
+    or_insert_alias(object, "globalRoots", "global_roots");
+    or_insert_alias(object, "disabledIds", "disabled");
+    or_insert_alias(object, "walkToGitRoot", "walk_to_git_root");
+    overlay
 }
 
-fn canonicalize_skill_alias(
+fn or_insert_alias(
     object: &mut serde_json::Map<String, serde_json::Value>,
     alias: &str,
     canonical: &str,
@@ -348,4 +354,338 @@ fn canonicalize_skill_alias(
         return;
     };
     object.entry(canonical.to_string()).or_insert(value);
+}
+
+pub(in crate::config) fn canonicalize_public_layer_for_merge(
+    root: Value,
+) -> Result<Value, ConfigError> {
+    let mut object = match root {
+        Value::Object(object) => object,
+        root => return Ok(root),
+    };
+    let mut out = serde_json::Map::new();
+
+    if object.contains_key("providers") || object.contains_key("provider") {
+        let mut providers = json!({});
+        if let Some(value) = object.remove("providers") {
+            merge_config_value(&mut providers, value);
+        }
+        if let Some(value) = object.remove("provider") {
+            merge_config_value(&mut providers, value);
+        }
+        out.insert("providers".to_string(), providers);
+    }
+
+    if let Some(model) = object.remove("model") {
+        out.insert("model".to_string(), model);
+    }
+
+    or_insert_alias(&mut object, "smallModel", "small_model");
+    or_insert_alias(&mut object, "hashlineEdit", "hashline_edit");
+
+    let had_model_profile = ["model_profile", "modelProfile", "model_profiles"]
+        .iter()
+        .any(|key| object.contains_key(*key));
+    if had_model_profile {
+        let mut model_profile = json!({});
+        for key in ["model_profile", "modelProfile", "model_profiles"] {
+            if let Some(value) = object.remove(key) {
+                merge_config_value(&mut model_profile, value);
+            }
+        }
+        out.insert("model_profile".to_string(), model_profile);
+    }
+
+    if object.contains_key("permissions") || object.contains_key("permission") {
+        canonicalize_permission_section(&mut object, &mut out)?;
+    }
+
+    if let Some(agent) = object.remove("agent") {
+        out.insert("agent".to_string(), canonicalize_agent_section(agent));
+    }
+
+    let had_runtime = ["runtime", "backgroundTask", "deterministic", "paths"]
+        .iter()
+        .any(|key| object.contains_key(*key));
+    if had_runtime {
+        canonicalize_runtime_section(&mut object, &mut out);
+    }
+
+    if let Some(value) = object.remove("mcp") {
+        out.insert("mcp".to_string(), normalize_public_mcp_servers(value));
+    }
+
+    if let Some(value) = object.remove("lsp") {
+        if let Some(mut normalized) = normalize_public_lsp_config(&value) {
+            if let Some(normalized_object) = normalized.as_object_mut() {
+                normalized_object
+                    .entry("servers".to_string())
+                    .or_insert(json!({}));
+            }
+            out.insert("lsp".to_string(), normalized);
+        }
+    }
+
+    if let Some(value) = object.remove("skills") {
+        out.insert("skills".to_string(), sparse_public_skills_config(&value));
+    }
+
+    if let Some(mut formatter) = object.remove("formatter") {
+        if let Some(formatter_object) = formatter.as_object_mut() {
+            or_insert_alias(formatter_object, "uvformat", "uv");
+            or_insert_alias(formatter_object, "experimentalOxfmt", "experimental_oxfmt");
+        }
+        out.insert("formatter".to_string(), formatter);
+    }
+
+    object.remove("instructions");
+
+    for (key, value) in object {
+        out.insert(key, value);
+    }
+
+    Ok(Value::Object(out))
+}
+
+fn canonicalize_permission_section(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+    out: &mut serde_json::Map<String, serde_json::Value>,
+) -> Result<(), ConfigError> {
+    let mut permissions = json!({});
+    if let Some(value) = object.remove("permissions") {
+        merge_config_value(
+            &mut permissions,
+            canonicalize_internal_permission_aliases(value),
+        );
+    }
+    if let Some(value) = object.remove("permission") {
+        merge_config_value(&mut permissions, canonicalize_singular_permission(value)?);
+    }
+    out.insert("permissions".to_string(), permissions);
+    Ok(())
+}
+
+fn canonicalize_runtime_section(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+    out: &mut serde_json::Map<String, serde_json::Value>,
+) {
+    let background_task = object.remove("backgroundTask");
+    let deterministic = object.remove("deterministic");
+    let session_dir = object.remove("paths").and_then(|paths| {
+        paths.as_object().and_then(|paths| {
+            paths
+                .get("session_dir")
+                .or_else(|| paths.get("sessionDir"))
+                .cloned()
+        })
+    });
+    let mut compat_layer = serde_json::Map::new();
+    if let Some(value) = background_task {
+        compat_layer.insert("background_tasks".to_string(), value);
+    }
+    if let Some(value) = deterministic {
+        compat_layer.insert("deterministic".to_string(), value);
+    }
+    if let Some(value) = session_dir {
+        compat_layer.insert("session_dir".to_string(), value);
+    }
+    match object.remove("runtime") {
+        Some(Value::Object(mut runtime)) => {
+            for (key, value) in compat_layer {
+                runtime.insert(key, value);
+            }
+            let mut runtime = Value::Object(runtime);
+            canonicalize_runtime_aliases(&mut runtime);
+            out.insert("runtime".to_string(), runtime);
+        }
+        Some(other) => {
+            out.insert("runtime".to_string(), other);
+        }
+        None => {
+            let mut runtime = Value::Object(compat_layer);
+            canonicalize_runtime_aliases(&mut runtime);
+            out.insert("runtime".to_string(), runtime);
+        }
+    }
+}
+
+fn canonicalize_internal_permission_aliases(value: Value) -> Value {
+    let mut value = value;
+    let Some(object) = value.as_object_mut() else {
+        return value;
+    };
+    canonicalize_object_aliases(object, &[("shellAllowlist", "shell_allowlist")]);
+    if let Some(defaults) = object.get_mut("defaults").and_then(Value::as_object_mut) {
+        canonicalize_object_aliases(
+            defaults,
+            &[
+                ("webFetch", "webfetch"),
+                ("webSearch", "websearch"),
+                ("codeSearch", "codesearch"),
+                ("codeLsp", "lsp"),
+            ],
+        );
+    }
+    value
+}
+
+fn canonicalize_singular_permission(value: Value) -> Result<Value, ConfigError> {
+    if value
+        .as_object()
+        .map(|object| object.contains_key("defaults"))
+        .unwrap_or(false)
+    {
+        return Ok(canonicalize_internal_permission_aliases(value));
+    }
+    if !value.is_object() {
+        return translate_public_permission_value(value);
+    }
+
+    let mut folded = value.clone();
+    if let Some(object) = folded.as_object_mut() {
+        canonicalize_object_aliases(
+            object,
+            &[
+                ("shell", "bash"),
+                ("webFetch", "webfetch"),
+                ("webSearch", "websearch"),
+                ("codeSearch", "codesearch"),
+                ("codeLsp", "lsp"),
+                ("shellAllowlist", "shell_allowlist"),
+            ],
+        );
+    }
+    let parsed: PublicPermissionValue =
+        serde_json::from_value(folded).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+    match parsed {
+        PublicPermissionValue::Mode(_) => translate_public_permission_value(value),
+        PublicPermissionValue::Config(config) => sparse_public_permission_object(config),
+    }
+}
+
+fn sparse_public_permission_object(parsed: PublicPermissionConfig) -> Result<Value, ConfigError> {
+    let global = parsed.fallback.clone();
+    let mut defaults = serde_json::Map::new();
+
+    let rule_modes = [
+        ("edit", public_rule_mode(&parsed.edit)),
+        ("shell", public_rule_mode(&parsed.bash)),
+        ("task", public_rule_mode(&parsed.task)),
+        ("read", public_rule_mode(&parsed.read)),
+        (
+            "external_directory",
+            public_rule_mode(&parsed.external_directory),
+        ),
+    ];
+    for (key, mode) in rule_modes {
+        if let Some(mode) = mode.or_else(|| global.clone()) {
+            defaults.insert(key.to_string(), permission_mode_value(&mode)?);
+        }
+    }
+
+    let scalar_modes = [
+        ("question", parsed.question.clone()),
+        ("network", parsed.network.clone()),
+        ("webfetch", parsed.webfetch.clone()),
+        ("websearch", parsed.websearch.clone()),
+        ("codesearch", parsed.codesearch.clone()),
+        ("lsp", parsed.lsp.clone()),
+        ("doom_loop", parsed.doom_loop.clone()),
+    ];
+    for (key, mode) in scalar_modes {
+        if let Some(mode) = mode.or_else(|| global.clone()) {
+            defaults.insert(key.to_string(), permission_mode_value(&mode)?);
+        }
+    }
+
+    let mut rules = serde_json::Map::new();
+    rules.insert(
+        "shell".to_string(),
+        permission_rule_set_value("bash", parsed.bash)?,
+    );
+    rules.insert(
+        "edit".to_string(),
+        permission_rule_set_value("edit", parsed.edit)?,
+    );
+    rules.insert(
+        "task".to_string(),
+        permission_rule_set_value("task", parsed.task)?,
+    );
+    rules.insert(
+        "read".to_string(),
+        permission_rule_set_value("read", parsed.read)?,
+    );
+    rules.insert(
+        "external_directory".to_string(),
+        permission_rule_set_value("external_directory", parsed.external_directory)?,
+    );
+
+    let mut sparse = serde_json::Map::new();
+    sparse.insert("defaults".to_string(), Value::Object(defaults));
+    if let Some(fallback) = parsed.fallback {
+        sparse.insert("*".to_string(), permission_mode_value(&fallback)?);
+    }
+    sparse.insert("rules".to_string(), Value::Object(rules));
+    if let Some(shell_allowlist) = parsed.shell_allowlist {
+        sparse.insert(
+            "shell_allowlist".to_string(),
+            serde_json::to_value(shell_allowlist)
+                .map_err(|err| ConfigError::ParseJson5(err.to_string()))?,
+        );
+    }
+    Ok(Value::Object(sparse))
+}
+
+fn permission_mode_value(mode: &PermissionMode) -> Result<Value, ConfigError> {
+    serde_json::to_value(mode).map_err(|err| ConfigError::ParseJson5(err.to_string()))
+}
+
+fn permission_rule_set_value(
+    kind: &str,
+    value: Option<PublicRulePermissionValue>,
+) -> Result<Value, ConfigError> {
+    serde_json::to_value(public_selector_rules(kind, value)?)
+        .map_err(|err| ConfigError::ParseJson5(err.to_string()))
+}
+
+fn canonicalize_agent_section(agent: Value) -> Value {
+    let mut agent = agent;
+    let Some(entries) = agent.as_object_mut() else {
+        return agent;
+    };
+    for (_name, entry) in entries.iter_mut() {
+        let Some(entry_object) = entry.as_object_mut() else {
+            continue;
+        };
+        canonicalize_object_aliases(
+            entry_object,
+            &[
+                ("systemPrompt", "system_prompt"),
+                ("prompt", "system_prompt"),
+                ("model_ref", "model"),
+                ("modelRef", "model"),
+                ("topP", "top_p"),
+                ("permissions", "permission"),
+                ("maxIters", "max_iters"),
+                ("steps", "max_iters"),
+                ("maxSteps", "max_iters"),
+                ("toolFailureMode", "tool_failure_mode"),
+            ],
+        );
+        if let Some(permission) = entry_object.get_mut("permission") {
+            if let Some(permission_object) = permission.as_object_mut() {
+                canonicalize_object_aliases(
+                    permission_object,
+                    &[
+                        ("shell", "bash"),
+                        ("webFetch", "webfetch"),
+                        ("webSearch", "websearch"),
+                        ("codeSearch", "codesearch"),
+                        ("codeLsp", "lsp"),
+                    ],
+                );
+            }
+        }
+    }
+    agent
 }
