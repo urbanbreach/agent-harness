@@ -44,7 +44,7 @@ pub(crate) use live_turn_phase::LiveTurnPhase;
 use live_turn_phase::ProviderPhase;
 
 use self::background_notification::{
-    activity_is_background_notification_reminder, background_task_notification_text,
+    background_notification_for_request, background_task_notification_text,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

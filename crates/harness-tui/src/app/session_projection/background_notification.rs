@@ -1,23 +1,11 @@
 use harness_core::event::BackgroundTaskNotificationEvent;
 
-use super::ActivityEntry;
+use harness_core::event::{EventEnvelopeV1, EventV1};
 
 pub(super) fn background_task_notification_text(data: &BackgroundTaskNotificationEvent) -> String {
     let status = data.status.as_str();
     let task_id = background_notification_safe_field(data.task_id.as_str());
-    let child_request_id = background_notification_safe_field(&data.child_request_id);
-    let child_session_id = background_notification_safe_field(data.child_session_id.as_str());
-
-    format!(
-        "<system-reminder>\n[BACKGROUND TASK {}]\nID: {}\nRequest ID: {}\nStatus: {}\n\nBackground task {}. Use background_output(request_id=\"{}\") for full details or task(session_id=\"{}\") to continue analysis from the child session.\n</system-reminder>",
-        status.to_ascii_uppercase(),
-        task_id,
-        child_request_id,
-        status,
-        status.replace('_', " "),
-        child_request_id,
-        child_session_id,
-    )
+    format!("Background task {} · {}", status.replace('_', " "), task_id)
 }
 
 fn background_notification_safe_field(value: &str) -> String {
@@ -48,9 +36,20 @@ fn background_notification_safe_field(value: &str) -> String {
     capped
 }
 
-pub(super) fn activity_is_background_notification_reminder(activity: &ActivityEntry) -> bool {
-    activity
-        .user_message
-        .as_ref()
-        .is_some_and(|message| message.text.contains("[BACKGROUND TASK "))
+pub(super) fn background_notification_for_request<'a>(
+    events: &'a [EventEnvelopeV1],
+    request_id: &str,
+) -> Option<&'a BackgroundTaskNotificationEvent> {
+    events.iter().rev().find_map(|event| match &event.payload {
+        EventV1::BackgroundTaskNotification(data)
+            if data
+                .delivered_turn_request_id
+                .as_deref()
+                .unwrap_or(&data.child_request_id)
+                == request_id =>
+        {
+            Some(data)
+        }
+        _ => None,
+    })
 }
