@@ -2,6 +2,10 @@ use super::*;
 
 pub(super) fn terminal_panel_is_hidden_by_default_and_toggles_from_keybinding() {
     let mut app = AppState::new_live(None, false, None);
+    for character in "a4b44c".chars() {
+        app.handle_key(key(KeyCode::Char(character)));
+    }
+    assert_eq!(app.composer.prompt_buffer, "a4b44c");
     assert!(!app.terminal_panel_visible());
     assert!(
         crate::layout::FrameLayoutPlan::for_app(&app, TEST_FRAME_AREA)
@@ -9,13 +13,14 @@ pub(super) fn terminal_panel_is_hidden_by_default_and_toggles_from_keybinding() 
             .is_none()
     );
 
+    app.focus = Focus::Details;
     app.handle_key(key(KeyCode::Char('4')));
 
     assert!(app.terminal_panel_visible());
     assert_eq!(
         app.focus,
-        Focus::Prompt,
-        "toggle should not steal composer focus"
+        Focus::Details,
+        "toggle should preserve transcript focus"
     );
     assert!(
         crate::layout::FrameLayoutPlan::for_app(&app, TEST_FRAME_AREA)
@@ -23,6 +28,7 @@ pub(super) fn terminal_panel_is_hidden_by_default_and_toggles_from_keybinding() 
             .is_some()
     );
 
+    app.focus = Focus::Details;
     app.handle_key(key(KeyCode::Char('4')));
 
     assert!(!app.terminal_panel_visible());
@@ -57,9 +63,11 @@ pub(super) fn terminal_panel_stays_hidden_for_live_bash_until_explicit_toggle() 
         "live shell commands should not create a duplicate terminal panel above the composer"
     );
 
+    app.focus = Focus::Details;
     app.handle_key(key(KeyCode::Char('4')));
     assert!(app.terminal_panel_visible());
 
+    app.focus = Focus::Details;
     app.handle_key(key(KeyCode::Char('4')));
     assert!(!app.terminal_panel_visible());
 
@@ -105,6 +113,7 @@ pub(super) fn terminal_panel_ignores_non_interactive_bash_output() {
     assert!(app.terminal_panel_entries().is_empty());
 
     assert!(!app.terminal_panel_visible());
+    app.focus = Focus::Details;
     app.handle_key(key(KeyCode::Char('4')));
     assert!(app.terminal_panel_visible());
     let debug = render_debug(&app, 140, 40);
@@ -140,7 +149,7 @@ pub(super) fn terminal_panel_extracts_explicit_interactive_pty_output() {
 pub(super) fn terminal_panel_renders_failed_command_stderr_and_exit_status() {
     let mut app = AppState::new_live(None, false, None);
     for event in shell_test_events(
-        ToolCallStatus::Failed,
+        ToolCallStatus::Succeeded,
         serde_json::json!({
             "command": "cargo test -p harness-tui",
             "status": 101,
@@ -228,6 +237,7 @@ pub(super) fn terminal_panel_replay_reconstructs_from_events_without_execution()
 
 pub(super) fn terminal_panel_focus_scrolls_independently_from_transcript() {
     let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Details;
     app.handle_key(key(KeyCode::Char('4')));
     app.focus = Focus::Terminal;
     app.terminal_panel.last_max_scroll.set(20);

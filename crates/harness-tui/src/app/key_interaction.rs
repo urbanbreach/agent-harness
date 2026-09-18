@@ -341,7 +341,10 @@ impl AppState {
 
         if self.focus == Focus::Prompt {
             if mapped_action.is_some_and(|action| {
-                action != Action::TogglePromptFocus && action_preempts_text_input(action, key)
+                !matches!(
+                    action,
+                    Action::TogglePromptFocus | Action::ToggleTerminalPanel
+                ) && action_preempts_text_input(action, key)
             }) {
                 self.execute_action_from_key(mapped_action.unwrap_or_abort(), key);
             } else if c == '!'
@@ -1271,7 +1274,10 @@ impl AppState {
                 self.copy_selected_message();
             }
             Action::ExportSession => {
-                self.emit_ui_intent(UiIntent::ExportSession);
+                self.show_toast(
+                    "Export from the CLI: harness sessions export <session-id> --output <path>",
+                    ToastVariant::Info,
+                );
             }
             Action::OpenErrorDetails => {
                 self.error_details_visible = true;
@@ -1687,22 +1693,6 @@ impl AppState {
             }
         }
 
-        if let KeyCode::Char(character) = key.code {
-            if !key
-                .modifiers
-                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
-            {
-                if !self.composer.vim_mode && !self.replay_mode && character.is_alphabetic() {
-                    self.insert_transcript_typed_character(character);
-                    return true;
-                }
-                if self.composer.vim_mode && character == 'i' {
-                    self.focus = Focus::Prompt;
-                    return true;
-                }
-            }
-        }
-
         if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('f') {
             return self.open_selected_transcript_viewer();
         }
@@ -1731,7 +1721,9 @@ impl AppState {
 
         // Shift+Left/Right: turn nav on transcript focus only (composer uses same
         // keys for selection while Focus::Prompt).
-        if key.modifiers == KeyModifiers::SHIFT {
+        if key.modifiers == KeyModifiers::SHIFT
+            && matches!(key.code, KeyCode::Left | KeyCode::Right)
+        {
             return match key.code {
                 KeyCode::Left => {
                     self.execute_action(Action::PreviousMessage);
@@ -1756,7 +1748,10 @@ impl AppState {
             return true;
         }
 
-        if key.modifiers != KeyModifiers::NONE {
+        if key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        {
             return false;
         }
 
@@ -1791,6 +1786,16 @@ impl AppState {
             }
             KeyCode::End => {
                 self.scroll_goto_bottom();
+                true
+            }
+            KeyCode::Char('i') if self.composer.vim_mode => {
+                self.focus = Focus::Prompt;
+                true
+            }
+            KeyCode::Char(character)
+                if !self.composer.vim_mode && !self.replay_mode && character.is_alphabetic() =>
+            {
+                self.insert_transcript_typed_character(character);
                 true
             }
             _ => false,

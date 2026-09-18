@@ -399,14 +399,17 @@ pub(super) fn render_footer(
     }
 }
 
-fn composer_footer_binding(app: &AppState, action: crate::keybindings::Action) -> String {
+pub(super) fn composer_footer_binding(
+    app: &AppState,
+    action: crate::keybindings::Action,
+) -> String {
     if app.composer.composer_multiline_mode() && action == crate::keybindings::Action::InsertNewline
     {
         return "Enter".to_string();
     }
     let preferred = if app.composer.composer_multiline_mode() {
         match action {
-            crate::keybindings::Action::SubmitPrompt => Some("Alt+s"),
+            crate::keybindings::Action::SubmitPrompt => return "Alt+Enter".to_string(),
             crate::keybindings::Action::InterjectPrompt => Some("Alt+i"),
             crate::keybindings::Action::CancelAndReplacePrompt => Some("Alt+r"),
             _ => None,
@@ -697,7 +700,10 @@ fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> Strin
         };
     }
 
-    if let Some(surface) = app.review_surface() {
+    if let Some(surface) = app
+        .review_surface()
+        .filter(|_| app.active_permission().is_none())
+    {
         return format!("{} · {run_id}", surface.status_label());
     }
 
