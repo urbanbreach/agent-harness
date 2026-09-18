@@ -86,8 +86,8 @@ impl AppState {
     pub(in crate::app) fn confirm_worktree_switch(&mut self) {
         if let Some(entry) = self.worktree_picker.selected_entry().cloned() {
             let worktree_path = entry.path.clone();
-            self.emit_ui_intent(UiIntent::SwitchWorktree { worktree_path });
             self.close_worktree_picker();
+            self.apply_fresh_session_launcher_selection(UiIntent::SwitchWorktree { worktree_path });
         }
     }
 
