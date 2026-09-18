@@ -1063,6 +1063,11 @@ impl AppState {
             let cleared = self.clear_blocked_pointer_state();
             return changed || cleared;
         }
+        if self.overlay_stack().top() == Some(OverlayKind::PermissionModal) {
+            let handled = self.handle_permission_prompt_mouse(mouse, frame_area);
+            let cleared = self.clear_blocked_pointer_state();
+            return handled || cleared;
+        }
         if self.handle_transcript_viewer_mouse(mouse, frame_area) {
             return true;
         }
@@ -1093,12 +1098,6 @@ impl AppState {
 
         if self.overlay_stack().top() == Some(OverlayKind::StatusDialog) {
             return self.handle_status_dashboard_mouse(mouse);
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::PermissionModal) {
-            let handled = self.handle_permission_prompt_mouse(mouse, frame_area);
-            let cleared = self.clear_blocked_pointer_state();
-            return handled || cleared;
         }
 
         if self.overlay_stack().blocks_pointer_interaction() {

@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 217
 expression: rendered.as_str()
 ---
                                                                                                     
@@ -22,10 +23,10 @@ expression: rendered.as_str()
   ┃  Allow Edit to demo.txt?                                                                        
   ┃  Apply hashline edit to demo.txt                                                                
   ┃                                                                                                 
-  ┃  1 (●) Yes, and don't ask again for anything (always-approve mode)                              
-  ┃  2 (○) Yes, allow all edits during this session                                                 
+  ┃  1 (●) Yes, enable always-approve mode                                                          
+  ┃  2 (○) Yes, remember this approval for this session                                             
   ┃  3 (○) Yes                                                                                      
   ┃  4 (○) No, reject (type to add feedback)                                                        
   ┃                                                                                                 
                                                                                                     
-  1/4:select  │  Tab:next option  │  Ctrl+o:always-approve  │  Ctrl+c:cancel  │  Esc:scrollback
+  1-4:activate  │  Tab:next option  │  Ctrl+o:always-approve  │  Ctrl+c:cancel  │  Esc:scrollback
