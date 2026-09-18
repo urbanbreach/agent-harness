@@ -181,3 +181,19 @@ fn boxed_table_falls_back_when_minimum_geometry_exceeds_width() {
         .iter()
         .all(|line| display_width(line) == 9));
 }
+
+#[test]
+fn single_column_table_renders_a_box() {
+    let theme = Theme::default();
+    let rows = ["| Term |", "|---|", "| café |", "| 中文 |", "| 👩‍💻 |"];
+    let (lines, consumed, _) =
+        try_render_markdown_table_block(&rows, theme.text.primary, "", &theme, 32)
+            .expect("single column table");
+    let text = rendered_text(&lines);
+    assert_eq!(consumed, 5);
+    assert!(text[0].starts_with('┌'));
+    assert!(text.iter().any(|row| row.contains("👩‍💻")));
+    assert!(text
+        .iter()
+        .all(|row| display_width(row) == display_width(&text[0])));
+}

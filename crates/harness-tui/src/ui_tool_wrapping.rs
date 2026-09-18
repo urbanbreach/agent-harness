@@ -25,6 +25,9 @@ pub(super) fn words(spans: Vec<Span<'static>>, width: usize) -> Vec<Vec<Span<'st
         .iter()
         .map(|span| span.content.as_ref())
         .collect::<String>();
+    if display_width(&text) <= width {
+        return vec![spans];
+    }
     let boundaries = text
         .grapheme_indices(true)
         .map(|(index, _)| index)
@@ -194,4 +197,17 @@ fn slice_spans(spans: &[Span<'static>], range: Range<usize>) -> Vec<Span<'static
                 .map(|text| Span::styled(text.to_string(), span.style))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn fitted_unicode_table_row_does_not_wrap_its_border() {
+        let text = format!("│ 👩‍💻 {} │", "x".repeat(25));
+        assert_eq!(display_width(&text), 32);
+        let rows = words(vec![Span::raw(text.clone())], 32);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(Line::from(rows[0].clone()).to_string(), text);
+    }
 }

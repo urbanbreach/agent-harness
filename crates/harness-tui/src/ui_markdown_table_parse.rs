@@ -7,7 +7,7 @@ pub(super) fn parse_table_row(row: &str) -> Option<Vec<String>> {
         .into_iter()
         .map(|cell| cell.trim().to_string())
         .collect::<Vec<_>>();
-    (cells.len() >= 2).then_some(cells)
+    (!cells.is_empty()).then_some(cells)
 }
 
 pub(super) fn is_table_separator_row(row: &str, column_count: usize) -> bool {
