@@ -141,6 +141,7 @@ mod question_prompt;
 mod recorded_artifacts;
 mod secondary_surfaces;
 pub(crate) mod session_history;
+pub(crate) use session_history::format_relative_age;
 mod session_live_routing;
 pub(crate) mod session_navigation;
 mod session_pins;
@@ -1171,29 +1172,9 @@ impl AppState {
         let mut peek = DashboardPeek::new(8.0).map_err(|error| error.to_string())?;
         peek.sync_dashboard(&model)
             .map_err(|error| error.to_string())?;
-        for session in &registry.sessions {
-            if session.events.is_empty() {
-                continue;
-            }
-            let key = crate::dashboard::SelectionKey::new(&session.catalog.run_id);
-            let mut projection = SessionProjection::default();
-            for event in &session.events {
-                let _ = projection.ingest_event(event.clone(), true);
-            }
-            let events = projection
-                .activities
-                .iter()
-                .enumerate()
-                .flat_map(|(index, activity)| {
-                    transcript_state::transcript_events_for_activity(index, activity)
-                })
-                .collect::<Vec<_>>();
-            let mut transcript =
-                TranscriptComposite::new(viewport).map_err(|error| error.to_string())?;
-            transcript
-                .replace_events(events)
-                .map_err(|error| error.to_string())?;
-            let _ = peek.replace_from_view(&key, transcript.view());
+        if let (Some(run_id), Some(view)) = (self.run_id(), self.transcript_view_model()) {
+            let key = crate::dashboard::SelectionKey::new(run_id);
+            let _ = peek.replace_from_view(&key, view);
         }
         if let Some(key) = selected.as_ref() {
             peek.select(key).map_err(|error| error.to_string())?;

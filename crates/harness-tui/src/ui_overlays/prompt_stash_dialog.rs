@@ -110,7 +110,9 @@ pub(super) fn render_prompt_stash_list_overlay(
             let style = presentation.style;
             frame.render_widget(Block::default().style(style), presentation.layout.content);
 
-            let timestamp = format_timestamp_short(entry.timestamp);
+            let timestamp = crate::app::format_relative_age(
+                i64::try_from(entry.timestamp / 1_000).unwrap_or(i64::MAX),
+            );
             let list_width = usize::from(presentation.layout.content.width);
             let preview = preview_text(
                 &entry.text,
@@ -157,20 +159,4 @@ fn preview_text(text: &str, max_width: usize) -> String {
     let single_line = text.replace('\n', " ");
     let collapsed = single_line.split_whitespace().collect::<Vec<_>>().join(" ");
     truncate_plain_text(&collapsed, max_width)
-}
-
-fn format_timestamp_short(timestamp_millis: u64) -> String {
-    let secs = timestamp_millis / 1000;
-    let days = secs / 86_400;
-    let hours = (secs % 86_400) / 3_600;
-    let minutes = (secs % 3_600) / 60;
-    if days > 0 {
-        format!("{days}d {hours:02}h")
-    } else if hours > 0 {
-        format!("{hours}h {minutes:02}m")
-    } else if minutes > 0 {
-        format!("{minutes}m")
-    } else {
-        "now".to_string()
-    }
 }

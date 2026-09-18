@@ -174,7 +174,7 @@ fn relative_age_label(timestamp: &str) -> String {
     short_time_or_trimmed(timestamp)
 }
 
-fn format_relative_age(ts_seconds: i64) -> String {
+pub(crate) fn format_relative_age(ts_seconds: i64) -> String {
     let now_seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| i64::try_from(d.as_secs()).unwrap_or(0))
