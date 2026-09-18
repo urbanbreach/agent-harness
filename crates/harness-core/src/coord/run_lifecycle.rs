@@ -11,6 +11,22 @@ impl Coordinator {
             .ok_or(CoordinatorError::RunNotStarted)
     }
 
+    pub(in crate::coord) fn apply_generated_session_title(
+        &mut self,
+        run_id: &str,
+        expected_title: &str,
+        title: String,
+    ) {
+        if !self.run_state.as_ref().is_some_and(|state| {
+            state.info.run_id.as_str() == run_id && state.info.run_name.as_str() == expected_title
+        }) {
+            return;
+        }
+        if let Err(error) = self.update_session_title_internal(title) {
+            tracing::warn!(%error, "failed to persist generated session title");
+        }
+    }
+
     pub(in crate::coord) fn update_session_title_internal(
         &mut self,
         title: String,

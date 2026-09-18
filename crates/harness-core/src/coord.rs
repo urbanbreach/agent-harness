@@ -393,6 +393,11 @@ pub enum Command {
     GetRunInfo {
         respond_to: oneshot::Sender<Result<RunInfo, CoordinatorError>>,
     },
+    GeneratedSessionTitle {
+        run_id: String,
+        expected_title: String,
+        title: String,
+    },
     UpdateSessionTitle {
         title: String,
         respond_to: oneshot::Sender<Result<RunInfo, CoordinatorError>>,

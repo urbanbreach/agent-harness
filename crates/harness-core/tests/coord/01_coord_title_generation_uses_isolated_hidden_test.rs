@@ -47,6 +47,9 @@ async fn coord_title_generation_uses_internal_operation_without_title_profile() 
         .await
         .unwrap_or_abort();
 
+    wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
+        events.iter().any(|event| matches!(event.payload, EventV1::SessionTitleUpdated(_)))
+    }).await;
     let requests = provider.requests();
     let title_request = requests.first().unwrap_or_abort();
     assert_eq!(title_request.provider_id.as_deref(), Some("mock"));
@@ -331,4 +334,59 @@ async fn coord_spawn_unknown_profile_returns_error() {
         )),
         "unknown profiles should not emit AgentSpawned events"
     );
+}
+
+struct HeldTitleProvider {
+    release: Arc<Notify>,
+}
+
+#[async_trait]
+impl Provider for HeldTitleProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
+    async fn stream_completion(&self, request: CompletionRequest) -> ProviderEventStream {
+        let title = request.messages.first().is_some_and(|message|
+            message.content == harness_core::session_title::TITLE_OPERATION_SYSTEM_PROMPT);
+        if title {
+            self.release.notified().await;
+        }
+        Box::pin(tokio_stream::iter(vec![
+            ProviderStreamEvent::TextDelta(if title { "Generated title" } else { "Main completed" }.into()),
+            ProviderStreamEvent::Done { usage: None },
+        ]))
+    }
+}
+
+#[tokio::test]
+async fn slow_title_generation_does_not_block_the_main_turn() {
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let release = Arc::new(Notify::new());
+    let mut config = CoordinatorConfig::new(temp.path());
+    config.provider = Arc::new(HeldTitleProvider { release: Arc::clone(&release) });
+    let mut profile = agent_profiles().remove("alpha").unwrap_or_abort();
+    profile.name = "default".into();
+    config.agent_profiles = BTreeMap::from([("default".into(), profile)]);
+    let coordinator = spawn_coordinator(config, Arc::new(FakeClock::new()), Arc::new(DefaultRedactor::default()));
+    let run = coordinator.start_run(
+        harness_core::session_title::create_default_title(&FakeClock::new(), false), temp.path()
+    ).await.unwrap_or_abort();
+    let agent = coordinator.spawn_agent_idle(supervisor_actor(), "default", None).await.unwrap_or_abort();
+    tokio::time::timeout(Duration::from_secs(2), coordinator.request_agent_turn(
+        EventActor::new(ActorKind::User, Some("user".into())), agent, "Please answer"
+    )).await.unwrap_or_abort().unwrap_or_abort();
+    let events = wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
+        events.iter().any(|event| matches!(event.payload, EventV1::TaskCompleted(_)))
+    }).await;
+    assert!(!events.iter().any(|event| matches!(event.payload, EventV1::SessionTitleUpdated(_))));
+    release.notify_one();
+    wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
+        events.iter().any(|event| matches!(&event.payload, EventV1::SessionTitleUpdated(title) if title.title == "Generated title"))
+    }).await;
+    coordinator.stop_run().await.unwrap_or_abort();
 }

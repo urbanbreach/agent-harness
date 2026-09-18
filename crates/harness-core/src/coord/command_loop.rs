@@ -135,6 +135,13 @@ impl Coordinator {
                 let result = self.current_run_info_internal();
                 warn_oneshot_send_failure(respond_to.send(result), "get_run_info");
             }
+            Command::GeneratedSessionTitle {
+                run_id,
+                expected_title,
+                title,
+            } => {
+                self.apply_generated_session_title(&run_id, &expected_title, title);
+            }
             Command::UpdateSessionTitle { title, respond_to } => {
                 let result = self.update_session_title_internal(title);
                 warn_oneshot_send_failure(respond_to.send(result), "update_session_title");

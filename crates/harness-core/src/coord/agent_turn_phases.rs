@@ -291,13 +291,14 @@ pub(in crate::coord) async fn execute_session_title_operation(
         match event {
             ProviderStreamEvent::TextDelta(delta) => text.push_str(&delta),
             ProviderStreamEvent::Error { message, .. } => return Err(message),
+            ProviderStreamEvent::Done { .. } | ProviderStreamEvent::DoneWithMetadata { .. } => {
+                break
+            }
             ProviderStreamEvent::Start
             | ProviderStreamEvent::Started { .. }
             | ProviderStreamEvent::ReasoningDelta(_)
             | ProviderStreamEvent::ToolCallDelta { .. }
-            | ProviderStreamEvent::ToolCallComplete { .. }
-            | ProviderStreamEvent::Done { .. }
-            | ProviderStreamEvent::DoneWithMetadata { .. } => {}
+            | ProviderStreamEvent::ToolCallComplete { .. } => {}
         }
     }
 
