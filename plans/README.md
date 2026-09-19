@@ -14,6 +14,7 @@ terminal QA, and eight full-suite failures reproduced on the pristine baseline.
 |---|---|---|---|---|
 | [001: Give subagents independent role permissions](001-role-scoped-subagents.md) | P1 | M | None | Complete |
 | [004: Evaluate file permissions against effective workspace targets](004-align-file-permissions-with-targets.md) | P1 | M | None | DONE |
+| [005: Redact tool artifacts before writing them to disk](005-redact-persisted-tool-artifacts.md) | P1 | M | None | DONE |
 
 Planned at `062e5ea8` on 2026-09-14 after comparing the local OpenCode and Senpi
 references. The user confirmed independent child-role permissions under shared

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use globset::{Glob, GlobSet, GlobSetBuilder};
+use harness_core::redact::redact_artifact_text;
 use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use harness_core::tool_metadata;
 use harness_core::ToolResultExt;
@@ -803,7 +804,7 @@ fn plan_replacements(
             for edit in edits.iter().rev() {
                 after.replace_range(edit.byte_start..edit.byte_end, &edit.replacement);
             }
-            let diff = TextDiff::from_lines(&before, &after)
+            let diff = TextDiff::from_lines(&redact_artifact_text(&before), &redact_artifact_text(&after))
                 .unified_diff()
                 .to_string();
             Ok(ReplacementFilePlan {

@@ -220,7 +220,8 @@ async fn fs_read_truncates_lines_longer_than_baseline_limit() {
 async fn fs_read_adds_truncation_marker_and_spills_full_output_artifact() {
     // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
-    write_workspace_file(temp.path(), "fixture.txt", "alpha\nbeta\ngamma\ndelta\n");
+    let source = "alpha\nbeta\nsk-synthetic0123456789\n-----BEGIN RSA PRIVATE KEY-----\nsynthetic-key-body\n-----END RSA PRIVATE KEY----- suffix\ndelta -----BEGIN EC PRIVATE KEY-----synthetic-inline-----END EC PRIVATE KEY----- tail\n-----BEGIN PRIVATE KEY-----\nsynthetic-unclosed-key\nsynthetic-key-tail\n";
+    write_workspace_file(temp.path(), "fixture.txt", source);
 
     let context = fs_read_context(temp.path(), "toolcall-truncated");
     let tool = FsReadTool::new(false);
@@ -239,18 +240,48 @@ async fn fs_read_adds_truncation_marker_and_spills_full_output_artifact() {
 
     // assert
     assert!(result.display_text.contains("1: alpha\n2: beta"));
-    assert!(result.display_text.contains("Showing lines 1-2 of 4"));
+    assert!(result.display_text.contains("Showing lines 1-2 of 10"));
     assert!(result.display_text.contains("Use offset=3 to continue"));
     assert!(result.display_text.contains("full output artifact:"));
     assert_eq!(result.artifacts.len(), 1);
 
     let metadata = result.structured_json.unwrap_or_abort();
     assert_eq!(metadata["truncated"], json!(true));
-    assert_eq!(metadata["total_lines"], json!(4));
+    assert_eq!(metadata["total_lines"], json!(10));
 
     let spilled = read_spilled_artifact(&context, &result.artifacts[0].path);
     assert!(spilled.contains("1: alpha"));
-    assert!(spilled.contains("4: delta"));
+    assert!(spilled.contains("6:  suffix"));
+    assert!(spilled.contains("7: delta [REDACTED_PRIVATE_KEY] tail"));
+    assert!(spilled.contains("[REDACTED_API_KEY]"));
+    assert!(spilled.contains("[REDACTED_PRIVATE_KEY]"));
+    assert!(!spilled.contains("synthetic"));
+
+    for (offset, hashline_anchors) in [(1, true), (5, false), (5, true), (9, true)] {
+        let result = tool
+            .call(
+                context.clone(),
+                json!({"path": "fixture.txt", "offset": offset, "limit": 1,
+                    "hashline_anchors": hashline_anchors}),
+            )
+            .await
+            .unwrap_or_abort();
+        let artifact = &result.artifacts[0];
+        let spilled = read_spilled_artifact(&context, &artifact.path);
+        assert!(!spilled.contains("synthetic"));
+        if offset == 1 {
+            assert!(spilled.contains(&format!(
+                "3#{}|[REDACTED_API_KEY]",
+                compute_line_hash("sk-synthetic0123456789")
+            )));
+        } else {
+            assert!(!spilled.contains("alpha"));
+        }
+    }
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("fixture.txt")).unwrap_or_abort(),
+        source
+    );
 }
 
 #[tokio::test]

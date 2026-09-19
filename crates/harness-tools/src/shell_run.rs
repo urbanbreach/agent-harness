@@ -1033,7 +1033,7 @@ mod tests {
             .call(
                 context.clone(),
                 json!({
-                    "command": "yes alpha | tr -d '\\n' | head -c 55000",
+                    "command": "yes 'alpha sk-synthetic0123456789' | head -n 2000",
                     "description": "emit many lines"
                 }),
             )
@@ -1047,11 +1047,14 @@ mod tests {
         assert_eq!(metadata["truncated"], json!(true));
         assert!(metadata.get("stdout").is_none());
         assert!(metadata.get("stderr").is_none());
-        assert_eq!(metadata["total_output_bytes"], json!(55_000));
+        assert_eq!(metadata["total_output_bytes"], json!(58_000));
 
         let spilled = read_spilled_artifact(&context, &result.artifacts[0].path);
-        assert_eq!(spilled.len(), 55_000);
-        assert!(spilled.starts_with("alphaalphaalpha"));
+        assert_eq!(spilled, "alpha [REDACTED_API_KEY]\n".repeat(2000));
+        assert_eq!(
+            result.artifacts[0].digest.as_deref(),
+            Some(blake3::hash(spilled.as_bytes()).to_hex().as_str())
+        );
     }
     #[tokio::test]
     async fn bash_direct_exec_allows_find_in_permission_patterns() {
