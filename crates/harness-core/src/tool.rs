@@ -449,6 +449,7 @@ impl ArtifactStore {
     ) -> Result<ArtifactRef, ArtifactStoreError> {
         let relative = validate_artifact_name(name)?;
         let target = self.artifacts_dir.join(&relative);
+        let contents = crate::redact::redact_artifact_text(contents);
 
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).map_err(|source| ArtifactStoreError::CreateDirectory {
@@ -842,18 +843,35 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let store = ArtifactStore::new(temp_dir.path().join("artifacts")).unwrap_or_abort();
 
-        let artifact = store
-            .write_text("notes/output.txt", "hello artifact")
-            .unwrap_or_abort();
-
-        assert_eq!(artifact.path, "artifacts/notes/output.txt");
-        assert_eq!(
-            artifact.digest.as_deref(),
-            Some(blake3::hash(b"hello artifact").to_hex().as_str())
-        );
-        let written = fs::read_to_string(temp_dir.path().join("artifacts/notes/output.txt"))
-            .unwrap_or_abort();
-        assert_eq!(written, "hello artifact");
+        for (input, expected) in [
+            ("hello artifact\r\n", "hello artifact\r\n"),
+            ("{ status: 'ok', }\n", "{ status: 'ok', }\n"),
+            ("key=sk-synthetic0123456789", "key=[REDACTED_API_KEY]"),
+            (
+                "-----BEGIN PRIVATE KEY-----\nsynthetic-private-material\n-----END PRIVATE KEY-----",
+                "[REDACTED_PRIVATE_KEY]",
+            ),
+            (
+                "{ password: 'opaque-synthetic-value', status: 'ok' }",
+                r#"{"password":"[REDACTED_SECRET]","status":"ok"}"#,
+            ),
+            (
+                r#"{"message":"Cookie: synthetic-session","status":"ok"}"#,
+                r#"{"message":"Cookie: [REDACTED_COOKIE]","status":"ok"}"#,
+            ),
+        ] {
+            // Previously redacted callers must remain safe under repeated writes.
+            for contents in [input, expected] {
+                let artifact = store.write_text("notes/output.txt", contents).unwrap_or_abort();
+                assert_eq!(artifact.path, "artifacts/notes/output.txt");
+                let written = fs::read(temp_dir.path().join(&artifact.path)).unwrap_or_abort();
+                assert_eq!(written, expected.as_bytes());
+                assert_eq!(
+                    artifact.digest.as_deref(),
+                    Some(blake3::hash(&written).to_hex().as_str())
+                );
+            }
+        }
     }
 
     #[test]

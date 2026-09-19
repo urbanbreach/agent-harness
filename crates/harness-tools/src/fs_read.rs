@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use harness_core::edit::hashline::LineAnchor;
+use harness_core::redact::LineRedactor;
 use harness_core::tool::{
     ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult, ToolResultContent,
 };
@@ -343,9 +344,14 @@ fn write_fs_read_artifact_streaming(
     let artifact =
         std::fs::File::create(&target.file_path).tool_err("failed to write fs.read artifact")?;
     let mut artifact_writer = FsReadArtifactWriter::new(artifact);
+    let mut redactor = LineRedactor::default();
 
-    visit_fs_read_lines(&mut reader, start_line_index, |line_number, line| {
-        let visible_line = truncate_fs_read_line(&line);
+    visit_fs_read_lines(&mut reader, 0, |line_number, line| {
+        let redacted = redactor.redact_line(&line);
+        if line_number <= start_line_index {
+            return Ok(());
+        }
+        let visible_line = truncate_fs_read_line(&redacted);
         let rendered = if render.hashline_anchors {
             let anchor = build_fs_read_line_anchor(line_number, &line);
             format_fs_read_hashline_line(&anchor, &visible_line)

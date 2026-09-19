@@ -24,11 +24,11 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
     let workspace = setup_workspace_fixture();
 
     let file_path = workspace.workspace().join("demo.txt");
-    let original = "alpha\nbeta\ngamma\n";
+    let original = "alpha\nbeta\ngamma\nsk-synthetic0123456789\n-----BEGIN PRIVATE KEY-----\nsynthetic-private-material\n-----END PRIVATE KEY-----\n";
     fs::write(&file_path, original).unwrap_or_abort();
 
     let patch = replace_line_patch("edit-success", "demo.txt", original, 2, "BETA");
-    let expected_content = "alpha\nBETA\ngamma\n";
+    let expected_content = original.replacen("beta", "BETA", 1);
     let expected_digest = blake3::hash(expected_content.as_bytes())
         .to_hex()
         .to_string();
@@ -84,6 +84,22 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
         })
         .unwrap_or_abort();
     assert_eq!(applied_event.new_file_digest, expected_digest);
+
+    let diff =
+        fs::read_to_string(run.artifacts_dir.join("edit-edit-success.diff")).unwrap_or_abort();
+    let before =
+        fs::read_to_string(run.artifacts_dir.join("edit-edit-success.before")).unwrap_or_abort();
+    for artifact in [&diff, &before] {
+        assert!(!artifact.contains("synthetic"));
+        assert!(artifact.contains("[REDACTED_API_KEY]"));
+        assert!(artifact.contains("[REDACTED_PRIVATE_KEY]"));
+    }
+    assert!(diff.contains("-beta"));
+    assert!(diff.contains("+BETA"));
+    assert_eq!(
+        applied_event.diff_digest.as_deref(),
+        Some(blake3::hash(diff.as_bytes()).to_hex().as_str())
+    );
 
     assert!(events.iter().any(|event| {
         matches!(

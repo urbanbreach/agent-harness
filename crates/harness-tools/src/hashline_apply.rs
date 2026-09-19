@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use harness_core::edit::hashline::{
     apply_hashline_patch, ChangedLineRange, HashlinePatch, HashlineWorkspaceOp,
 };
+use harness_core::redact::redact_artifact_text;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use harness_core::tool_metadata;
 use harness_core::ToolResultExt;
@@ -521,7 +522,7 @@ fn move_file_diff(from_path: &str, to_path: &str, source: &str) -> String {
 }
 
 fn unified_diff(before: &str, after: &str) -> String {
-    TextDiff::from_lines(before, after)
+    TextDiff::from_lines(&redact_artifact_text(before), &redact_artifact_text(after))
         .unified_diff()
         .to_string()
 }
@@ -550,6 +551,7 @@ fn write_before_artifact(
     edit_id: &str,
     before: &str,
 ) -> Result<harness_core::tool::ArtifactRef, ToolError> {
+    // Diagnostic input for formatter diffs and display; never a workspace restore image.
     ctx.artifact_store()
         .tool_err("failed to access artifact store")?
         .write_text(&format!("edit-{edit_id}.before"), before)

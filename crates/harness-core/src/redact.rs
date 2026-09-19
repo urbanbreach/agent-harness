@@ -38,6 +38,9 @@ static COOKIE_HEADER_RE: LazyLock<Result<Regex, regex::Error>> =
 static PEM_PRIVATE_KEY_RE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
     Regex::new(r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----")
 });
+static PEM_PRIVATE_KEY_BOUNDARY_RE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"-----(?:BEGIN|END) [A-Z ]*PRIVATE KEY-----"));
+const PRIVATE_KEY_MARKER: &str = "[REDACTED_PRIVATE_KEY]";
 static URL_USERINFO_RE: LazyLock<Result<Regex, regex::Error>> =
     LazyLock::new(|| Regex::new(r"(?i)(https?://)[^/@\s]+@"));
 static SENSITIVE_QUERY_RE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
@@ -105,9 +108,7 @@ fn is_redacted_match_without_raw_prefix(text: &str) -> bool {
 
 impl Redactor for DefaultRedactor {
     fn redact_text(&self, s: &str) -> String {
-        let without_pems = self
-            .pem_private_key_re
-            .replace_all(s, "[REDACTED_PRIVATE_KEY]");
+        let without_pems = self.pem_private_key_re.replace_all(s, PRIVATE_KEY_MARKER);
         let without_cookies = self
             .cookie_header_re
             .replace_all(without_pems.as_ref(), "Cookie: [REDACTED_COOKIE]");
@@ -135,6 +136,66 @@ impl Redactor for DefaultRedactor {
         self.sensitive_query_re
             .replace_all(without_userinfo.as_ref(), "${1}[REDACTED]")
             .into_owned()
+    }
+}
+
+/// Redact diagnostic text, preserving sensitive-key context in complete JSON/JSON5 bodies.
+/// Non-sensitive bodies retain their original bytes, including whitespace and comments.
+pub fn redact_artifact_text(contents: &str) -> String {
+    let redactor = DefaultRedactor::default();
+    let text = redactor.redact_text(contents);
+    if let Ok(value) = json5::from_str::<Value>(contents) {
+        let redacted = redact_value(&redactor, &value);
+        if redacted != value || text != contents {
+            // Serialize the structured result: text regexes can consume JSON delimiters.
+            return redacted.to_string();
+        }
+    }
+    text
+}
+
+/// Redact raw lines in order without buffering private-key blocks. Feed skipped
+/// lines too: an offset may begin inside a block, including an unterminated one.
+pub struct LineRedactor {
+    redactor: DefaultRedactor,
+    boundary_re: Regex,
+    in_private_key: bool,
+}
+
+impl Default for LineRedactor {
+    fn default() -> Self {
+        Self {
+            redactor: DefaultRedactor::default(),
+            boundary_re: regex_or_fallback(PEM_PRIVATE_KEY_BOUNDARY_RE.clone()),
+            in_private_key: false,
+        }
+    }
+}
+
+impl LineRedactor {
+    pub fn redact_line(&mut self, line: &str) -> String {
+        let mut visible = String::new();
+        let mut cursor = 0;
+        for boundary in self.boundary_re.find_iter(line) {
+            if self.in_private_key {
+                if boundary.as_str().starts_with("-----END ") {
+                    self.in_private_key = false;
+                }
+            } else {
+                visible.push_str(&line[cursor..boundary.start()]);
+                if boundary.as_str().starts_with("-----BEGIN ") {
+                    visible.push_str(PRIVATE_KEY_MARKER);
+                    self.in_private_key = true;
+                } else {
+                    visible.push_str(boundary.as_str());
+                }
+            }
+            cursor = boundary.end();
+        }
+        if !self.in_private_key {
+            visible.push_str(&line[cursor..]);
+        }
+        self.redactor.redact_text(&visible)
     }
 }
 

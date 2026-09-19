@@ -948,10 +948,11 @@ async fn refresh_formatted_diffs(
     workspace_root: &Path,
     artifacts_dir: &Path,
 ) {
-    // Regenerate diff artifacts to reflect post-format content,
-    // re-reading the file after
-    // formatting and regenerating the diff from the original
-    // pre-edit content vs the formatted file.
+    // Before-images are redacted diagnostics. Compare them with the same
+    // representation of formatted content, leaving workspace bytes untouched.
+    let Ok(store) = crate::tool::ArtifactStore::new(artifacts_dir) else {
+        return;
+    };
     for applied_edit in applied_edits {
         if applied_edit.deleted {
             continue;
@@ -982,8 +983,10 @@ async fn refresh_formatted_diffs(
             Err(_) => continue,
         };
 
-        let before_normalized = normalize_for_diff(&before_content);
-        let formatted_normalized = normalize_for_diff(&formatted_content);
+        let before_normalized =
+            normalize_for_diff(&crate::redact::redact_artifact_text(&before_content));
+        let formatted_normalized =
+            normalize_for_diff(&crate::redact::redact_artifact_text(&formatted_content));
 
         if before_normalized == formatted_normalized {
             continue;
@@ -997,9 +1000,8 @@ async fn refresh_formatted_diffs(
         let diff_name = Path::new(diff_rel_path)
             .strip_prefix(crate::session_paths::ARTIFACTS_DIR_NAME)
             .unwrap_or(Path::new(diff_rel_path));
-        let diff_full_path = artifacts_dir.join(diff_name);
-        if std::fs::write(&diff_full_path, new_diff.as_bytes()).is_ok() {
-            applied_edit.diff_digest = Some(blake3::hash(new_diff.as_bytes()).to_hex().to_string());
+        if let Ok(artifact) = store.write_text(&diff_name.to_string_lossy(), &new_diff) {
+            applied_edit.diff_digest = artifact.digest;
         }
     }
 }
@@ -1007,6 +1009,46 @@ async fn refresh_formatted_diffs(
 #[cfg(test)]
 mod diff_helper_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn refresh_formatted_diffs_redacts_source_and_hashes_saved_bytes() {
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let artifacts_dir = temp.path().join("artifacts");
+        let store = crate::tool::ArtifactStore::new(&artifacts_dir).unwrap_or_abort();
+        let before = "{ password: 'synthetic-before', value: 1 }\n";
+        let after = "{ password: 'synthetic-after', value: 2 }\n";
+        let before_artifact = store.write_text("edit.before", before).unwrap_or_abort();
+        let diff_artifact = store.write_text("edit.diff", "old diff").unwrap_or_abort();
+        std::fs::write(temp.path().join("source.json5"), after).unwrap_or_abort();
+        let mut edits = [AppliedToolEditMetadata {
+            metadata: HashlineEditMetadata {
+                edit_id: "edit".to_string(),
+                path: "source.json5".to_string(),
+                summary: String::new(),
+                patch_digest: String::new(),
+            },
+            diff_rel_path: Some(diff_artifact.path),
+            diff_digest: diff_artifact.digest,
+            before_rel_path: Some(before_artifact.path),
+            deleted: false,
+        }];
+
+        refresh_formatted_diffs(&mut edits, temp.path(), &artifacts_dir).await;
+
+        let diff = std::fs::read_to_string(artifacts_dir.join("edit.diff")).unwrap_or_abort();
+        assert!(!diff.contains("synthetic"));
+        assert!(diff.contains("[REDACTED_SECRET]"));
+        assert!(diff.contains("\"value\":1"));
+        assert!(diff.contains("\"value\":2"));
+        assert_eq!(
+            edits[0].diff_digest.as_deref(),
+            Some(blake3::hash(diff.as_bytes()).to_hex().as_str())
+        );
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join("source.json5")).unwrap_or_abort(),
+            after
+        );
+    }
 
     #[test]
     fn strip_bom_removes_bom_prefix() {
