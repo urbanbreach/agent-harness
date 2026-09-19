@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::config::HookLifecycleEvent;
 use crate::digest::digest12;
 use crate::event::PermissionDecision as EventPermissionDecision;
-use crate::path_selector::workspace_relative_path_from_maybe_absolute;
+use crate::path_selector::effective_workspace_target;
 use crate::perm::shell::{direct_shell_command_request, scan_shell_command, ShellCommandRequest};
 use crate::perm::{
     always_external_path_prefix, PermissionDecision, PermissionGrant, PermissionGrantMatcher,
@@ -95,15 +95,45 @@ pub(super) fn permission_grant_request(
     tool_id: &str,
     args_json: &Value,
     request_digest: &str,
-) -> PermissionGrantRequest {
-    PermissionGrantRequest {
+) -> Result<PermissionGrantRequest, CoordinatorError> {
+    let paths = if matches!(
+        kind,
+        PermissionKind::Read
+            | PermissionKind::EditFs
+            | PermissionKind::ExternalDirectory
+            | PermissionKind::DoomLoop
+    ) {
+        Some(workspace_path_targets(workspace_root, args_json)?)
+    } else {
+        None
+    };
+    let bound_digest = paths
+        .as_ref()
+        .filter(|paths| !paths.targets.is_empty())
+        .map(|paths| {
+            let mut bytes = request_digest.as_bytes().to_vec();
+            for target in &paths.targets {
+                bytes.push(0);
+                bytes.extend_from_slice(target.as_os_str().as_encoded_bytes());
+            }
+            digest12(&bytes)
+        });
+    let request_digest = bound_digest.as_deref().unwrap_or(request_digest);
+    Ok(PermissionGrantRequest {
         kind,
         tool: permission_tool_selector(tool_id, args_json),
-        matcher: permission_grant_matcher(workspace_root, kind, args_json, request_digest),
-    }
+        matcher: permission_grant_matcher(
+            workspace_root,
+            kind,
+            args_json,
+            request_digest,
+            paths.as_ref(),
+        ),
+    })
 }
 
 pub(super) fn always_approve_can_bypass(
+    workspace_root: &Path,
     request: &PermissionGrantRequest,
     args_json: &Value,
 ) -> bool {
@@ -111,7 +141,16 @@ pub(super) fn always_approve_can_bypass(
         PermissionKind::Question | PermissionKind::ExternalDirectory | PermissionKind::DoomLoop => {
             false
         }
-        PermissionKind::Read => !request_contains_sensitive_dotenv_path(args_json),
+        PermissionKind::Read => {
+            workspace_path_targets(workspace_root, args_json).is_ok_and(|paths| {
+                !paths
+                    .selectors
+                    .iter()
+                    .map(Path::new)
+                    .chain(paths.targets.iter().map(PathBuf::as_path))
+                    .any(sensitive_dotenv_path)
+            })
+        }
         PermissionKind::EditFs
         | PermissionKind::Shell
         | PermissionKind::Network
@@ -123,20 +162,12 @@ pub(super) fn always_approve_can_bypass(
     }
 }
 
-fn request_contains_sensitive_dotenv_path(args_json: &Value) -> bool {
-    let mut paths = BTreeSet::new();
-    for key in WORKSPACE_PATH_SELECTOR_KEYS {
-        collect_raw_path_strings(args_json.get(key), &mut paths);
-    }
-    paths.iter().any(|path| {
-        Path::new(path)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|file_name| {
-                file_name.ends_with(".env")
-                    || file_name.contains(".env.") && !file_name.ends_with(".env.example")
-            })
-    })
+fn sensitive_dotenv_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.ends_with(".env") || name.contains(".env.") && !name.ends_with(".env.example")
+        })
 }
 
 fn permission_tool_selector(tool_id: &str, args_json: &Value) -> PermissionToolSelector {
@@ -158,19 +189,18 @@ fn permission_grant_matcher(
     kind: PermissionKind,
     args_json: &Value,
     request_digest: &str,
+    paths: Option<&WorkspacePathTargets>,
 ) -> PermissionGrantMatcher {
     match kind {
         PermissionKind::Shell => shell_command_selector(args_json, request_digest)
             .unwrap_or_else(|| request_digest_selector(request_digest)),
         PermissionKind::EditFs | PermissionKind::Read => {
-            let paths = workspace_path_selector_paths(workspace_root, args_json);
-            if paths.len() == 1 {
-                PermissionGrantMatcher::WorkspacePath {
-                    path: paths.into_iter().next().unwrap_or_default(),
+            match paths.filter(|paths| !paths.aliased && paths.selectors.len() == 1) {
+                Some(paths) => PermissionGrantMatcher::WorkspacePath {
+                    path: paths.selectors[0].clone(),
                     request_digest: request_digest.to_string(),
-                }
-            } else {
-                request_digest_selector(request_digest)
+                },
+                None => request_digest_selector(request_digest),
             }
         }
         PermissionKind::ExternalDirectory => {
@@ -272,10 +302,7 @@ fn collect_apply_patch_raw_paths(args_json: &Value, paths: &mut BTreeSet<String>
     for line in patch_text.lines() {
         for prefix in APPLY_PATCH_PATH_PREFIXES {
             if let Some(path) = line.strip_prefix(prefix) {
-                let trimmed = path.trim();
-                if !trimmed.is_empty() {
-                    paths.insert(trimmed.to_string());
-                }
+                paths.insert(path.trim().to_string());
             }
         }
     }
@@ -423,13 +450,15 @@ pub(super) fn external_directory_grants_authorize(
     if external_paths.is_empty() {
         return true;
     }
-    let grant_request = permission_grant_request(
+    let Ok(grant_request) = permission_grant_request(
         workspace_root,
         PermissionKind::ExternalDirectory,
         tool_id,
         args_json,
         request_digest,
-    );
+    ) else {
+        return false;
+    };
     if run_state.permission_grant_authorizes(&grant_request) {
         return true;
     }
@@ -570,14 +599,14 @@ pub(super) fn permission_rule_request_selectors(
     workspace_root: &Path,
     kind: PermissionKind,
     args_json: &Value,
-) -> Vec<PermissionRuleRequest> {
-    match kind {
+) -> Result<Vec<PermissionRuleRequest>, CoordinatorError> {
+    Ok(match kind {
         PermissionKind::Shell => shell_command_rule_selector(args_json),
         PermissionKind::EditFs | PermissionKind::Read => {
-            workspace_path_rule_selectors(workspace_root, args_json)
+            workspace_path_rule_selectors(workspace_root, args_json)?
         }
         PermissionKind::ExternalDirectory => {
-            workspace_path_rule_selectors(workspace_root, args_json)
+            workspace_path_rule_selectors(workspace_root, args_json)?
         }
         PermissionKind::Task => task_agent_rule_selectors(args_json),
         PermissionKind::Network
@@ -587,7 +616,7 @@ pub(super) fn permission_rule_request_selectors(
         | PermissionKind::CodeSearch
         | PermissionKind::Lsp
         | PermissionKind::DoomLoop => Vec::new(),
-    }
+    })
 }
 
 fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
@@ -659,11 +688,12 @@ fn shell_command_rule_selector(args_json: &Value) -> Vec<PermissionRuleRequest> 
 fn workspace_path_rule_selectors(
     workspace_root: &Path,
     args_json: &Value,
-) -> Vec<PermissionRuleRequest> {
-    workspace_path_selector_paths(workspace_root, args_json)
+) -> Result<Vec<PermissionRuleRequest>, CoordinatorError> {
+    Ok(workspace_path_targets(workspace_root, args_json)?
+        .selectors
         .into_iter()
         .map(PermissionRuleRequest::WorkspacePath)
-        .collect()
+        .collect())
 }
 
 fn request_digest_selector(request_digest: &str) -> PermissionGrantMatcher {
@@ -714,13 +744,49 @@ fn shell_request_from_args(args_json: &Value) -> Option<ShellCommandRequest> {
     Some(direct_shell_command_request(cmd, &args))
 }
 
-fn workspace_path_selector_paths(workspace_root: &Path, args_json: &Value) -> Vec<String> {
-    let mut paths = BTreeSet::new();
+struct WorkspacePathTargets {
+    selectors: Vec<String>,
+    targets: BTreeSet<PathBuf>,
+    aliased: bool,
+}
+
+fn workspace_path_targets(
+    workspace: &Path,
+    args: &Value,
+) -> Result<WorkspacePathTargets, CoordinatorError> {
+    let invalid = || CoordinatorError::PolicyViolation("invalid file path argument".into());
+    let mut raw = BTreeSet::new();
     for key in WORKSPACE_PATH_SELECTOR_KEYS {
-        collect_workspace_path_selector(workspace_root, args_json.get(key), &mut paths);
+        match args.get(key) {
+            None => {}
+            Some(Value::String(path)) => {
+                raw.insert(path.clone());
+            }
+            Some(Value::Array(paths)) => {
+                for path in paths {
+                    raw.insert(path.as_str().ok_or_else(invalid)?.to_string());
+                }
+            }
+            Some(_) => return Err(invalid()),
+        }
     }
-    collect_apply_patch_path_selectors(workspace_root, args_json, &mut paths);
-    paths.into_iter().collect()
+    collect_apply_patch_raw_paths(args, &mut raw);
+    let mut selectors = BTreeSet::new();
+    let mut targets = BTreeSet::new();
+    let mut aliased = false;
+    for path in raw {
+        let resolved = effective_workspace_target(workspace, Path::new(&path))
+            .map_err(|error| CoordinatorError::PolicyViolation(error.to_string()))?;
+        aliased |= resolved.requested != resolved.relative || resolved.relative.is_none();
+        selectors.extend(resolved.requested);
+        selectors.extend(resolved.relative);
+        targets.insert(resolved.target);
+    }
+    Ok(WorkspacePathTargets {
+        selectors: selectors.into_iter().collect(),
+        targets,
+        aliased,
+    })
 }
 
 const WORKSPACE_PATH_SELECTOR_KEYS: &[&str] = &[
@@ -734,58 +800,6 @@ const WORKSPACE_PATH_SELECTOR_KEYS: &[&str] = &[
     "to_path",
     "toPath",
 ];
-
-fn collect_workspace_path_selector(
-    workspace_root: &Path,
-    value: Option<&Value>,
-    paths: &mut BTreeSet<String>,
-) {
-    match value {
-        Some(Value::String(raw_path)) => {
-            insert_workspace_path_selector(workspace_root, raw_path, paths);
-        }
-        Some(Value::Array(raw_paths)) => {
-            for raw_path in raw_paths.iter().filter_map(Value::as_str) {
-                insert_workspace_path_selector(workspace_root, raw_path, paths);
-            }
-        }
-        Some(_) | None => {}
-    }
-}
-
-fn insert_workspace_path_selector(
-    workspace_root: &Path,
-    raw_path: &str,
-    paths: &mut BTreeSet<String>,
-) {
-    if let Some(path) =
-        workspace_relative_path_from_maybe_absolute(workspace_root, Path::new(raw_path))
-    {
-        paths.insert(path);
-    }
-}
-
-fn collect_apply_patch_path_selectors(
-    workspace_root: &Path,
-    args_json: &Value,
-    paths: &mut BTreeSet<String>,
-) {
-    let Some(patch_text) = args_json
-        .get("patchText")
-        .or_else(|| args_json.get("patch_text"))
-        .and_then(Value::as_str)
-    else {
-        return;
-    };
-
-    for line in patch_text.lines() {
-        for prefix in APPLY_PATCH_PATH_PREFIXES {
-            if let Some(path) = line.strip_prefix(prefix) {
-                insert_workspace_path_selector(workspace_root, path.trim(), paths);
-            }
-        }
-    }
-}
 
 const APPLY_PATCH_PATH_PREFIXES: &[&str] = &[
     "*** Add File:",
@@ -814,10 +828,13 @@ impl super::Coordinator {
                     else {
                         return false;
                     };
-                    pending
-                        .grant_request
-                        .as_ref()
-                        .is_some_and(|request| always_approve_can_bypass(request, args_json))
+                    pending.grant_request.as_ref().is_some_and(|request| {
+                        always_approve_can_bypass(
+                            &run_state.info.workspace_root,
+                            request,
+                            args_json,
+                        )
+                    })
                 })
                 .map(|(permission_id, _)| permission_id.clone())
                 .collect::<Vec<_>>()
@@ -966,9 +983,20 @@ impl super::Coordinator {
                 ..
             } => {
                 let caller_cancelled = respond_to.as_ref().is_some_and(|sender| sender.is_closed());
+                let targets_unchanged = grant_request.as_ref().is_none_or(|original| {
+                    permission_grant_request(
+                        &run_state.info.workspace_root,
+                        original.kind,
+                        &tool_id,
+                        &args_json,
+                        &permission_request_digest(&tool_id, &args_json),
+                    )
+                    .is_ok_and(|current| current == *original)
+                });
                 if decision == PermissionDecision::Allow
                     && permission_hook_failure.is_none()
                     && !caller_cancelled
+                    && targets_unchanged
                 {
                     record_resolved_permission_grant(
                         clock.as_ref(),
@@ -1078,25 +1106,31 @@ impl super::Coordinator {
                         }
                     }
                 } else {
-                    let (rejection_reason, response_message) =
-                        if let Some(hook_reason) = permission_hook_failure.as_ref() {
-                            (
-                                format!("permission denied by lifecycle hook: {hook_reason}"),
-                                format!(
+                    let (rejection_reason, response_message) = if let Some(hook_reason) =
+                        permission_hook_failure.as_ref()
+                    {
+                        (
+                            format!("permission denied by lifecycle hook: {hook_reason}"),
+                            format!(
                                 "tool call denied: critical lifecycle hook failed: {hook_reason}"
                             ),
-                            )
-                        } else if caller_cancelled {
-                            (
-                                "tool caller cancelled before permission resolution".to_string(),
-                                "tool call cancelled before permission resolution".to_string(),
-                            )
-                        } else {
-                            (
-                                "permission denied".to_string(),
-                                permission_policy_denied_response_message(&tool_id),
-                            )
-                        };
+                        )
+                    } else if !targets_unchanged {
+                        (
+                            "file targets changed while awaiting permission".into(),
+                            "tool call denied: file targets changed; request approval again".into(),
+                        )
+                    } else if caller_cancelled {
+                        (
+                            "tool caller cancelled before permission resolution".to_string(),
+                            "tool call cancelled before permission resolution".to_string(),
+                        )
+                    } else {
+                        (
+                            "permission denied".to_string(),
+                            permission_policy_denied_response_message(&tool_id),
+                        )
+                    };
                     reject_pending_permission(
                         self.clock.as_ref(),
                         self.redactor.as_ref(),

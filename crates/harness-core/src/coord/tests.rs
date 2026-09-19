@@ -341,7 +341,8 @@ fn permission_rule_request_selectors_extract_edit_file_alias() {
         temp_dir.path(),
         PermissionKind::EditFs,
         &json!({ "file": "src/lib.rs" }),
-    );
+    )
+    .unwrap_or_abort();
 
     // assert
     assert_eq!(
@@ -645,6 +646,15 @@ mod append_permission_tests;
 #[cfg(test)]
 #[path = "tests/permission_flow_tests.rs"]
 mod permission_flow_tests;
+
+#[path = "tests/permission_path_tests.rs"]
+mod permission_path_tests;
+delegate_tokio_test!(permission_path_equivalents => permission_path_tests::permission_path_equivalents);
+delegate_tokio_test!(permission_path_invalid_arguments_fail_closed => permission_path_tests::permission_path_invalid_arguments_fail_closed);
+#[cfg(unix)]
+delegate_tokio_test!(permission_path_sensitive_alias_grants_and_pending_approval => permission_path_tests::permission_path_sensitive_alias_grants_and_pending_approval);
+#[cfg(unix)]
+delegate_tokio_test!(permission_path_secondary_prompts_revalidate_targets => permission_path_tests::permission_path_secondary_prompts_revalidate_targets);
 
 delegate_tokio_test!(permission_rule_bash_selector_is_enforced_at_tool_call_site => permission_flow_tests::rule_permission_rule_bash_selector_is_enforced_at_tool_call_site);
 delegate_test!(task_permission_rule_selector_uses_only_subagent_type => permission_flow_tests::rule_task_permission_rule_selector_uses_only_subagent_type);
@@ -1672,7 +1682,8 @@ async fn child_shared_denies_precede_grants_at_all_execution_gates() {
             "shell.run",
             &args,
             &digest,
-        );
+        )
+        .unwrap_or_abort();
         let state = coordinator.run_state.as_mut().unwrap_or_abort();
         state.record_permission_grant(PermissionGrant {
             grant_id: "grant_000001".into(),

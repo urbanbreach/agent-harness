@@ -477,6 +477,7 @@ pub(super) async fn always_approve_mode_keeps_questions_promptable() {
 }
 
 pub(super) fn always_approve_mode_preserves_sensitive_permission_kinds() {
+    let workspace = tempfile::tempdir().unwrap_or_abort();
     let read_request = |path: &str| PermissionGrantRequest {
         kind: PermissionKind::Read,
         tool: PermissionToolSelector {
@@ -497,13 +498,21 @@ pub(super) fn always_approve_mode_preserves_sensitive_permission_kinds() {
         "/tmp/.env",
     ] {
         assert!(
-            !always_approve_can_bypass(&read_request(path), &json!({"path": path})),
+            !always_approve_can_bypass(
+                workspace.path(),
+                &read_request(path),
+                &json!({"path": path})
+            ),
             "sensitive dotenv read must remain promptable: {path}"
         );
     }
     for path in ["README.md", ".env.example", "local.env.example"] {
         assert!(
-            always_approve_can_bypass(&read_request(path), &json!({"path": path})),
+            always_approve_can_bypass(
+                workspace.path(),
+                &read_request(path),
+                &json!({"path": path})
+            ),
             "non-sensitive read should be bypassed: {path}"
         );
     }
@@ -524,7 +533,7 @@ pub(super) fn always_approve_mode_preserves_sensitive_permission_kinds() {
             },
         };
         assert!(
-            !always_approve_can_bypass(&request, &json!(null)),
+            !always_approve_can_bypass(workspace.path(), &request, &json!(null)),
             "{kind:?} must remain promptable"
         );
     }
