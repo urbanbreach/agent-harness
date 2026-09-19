@@ -36,6 +36,10 @@ Scalar `ask`/`deny` paint every canonical public kind. Scalar `allow` (and the o
 
 This is intentionally not a full OpenCode PermissionNext engine. Harness uses a dual Policy plus ruleset seam: permission resolution returns allow/ask/deny, and the runtime still applies tool-level capability checks and tool-specific safety gates afterward. A permission allow does not bypass workspace path validation, shell safety parsing, or the doom-loop streak counter.
 
+File permission rules check both the normalized requested workspace name and its effective target, including symlink targets and creation paths beneath existing directories. A deny on either name wins; otherwise an ask on either name remains an ask. Invalid or unresolvable supplied paths fail closed. The pure configuration-selector syntax is unchanged.
+
+Sensitive-file asks also check effective targets, so an innocuous alias cannot bypass them in always-approve mode. Reusable grants for aliases bind to their resolved targets, and pending approvals revalidate those targets before execution. Supported external access retains the separate `external_directory` gate. These checks do not provide a race-free filesystem sandbox or change per-file filtering inside broad directory searches.
+
 ## Mutable surfaces
 
 Approving `edit` can change workspace files. Approving `bash` can run host commands inside the configured workspace and can indirectly mutate files; bash approvals may be scoped to reusable command patterns such as `cargo nextest run *`. Approving `task` can spawn child agents or control background work. Network permissions (`webfetch`, `websearch`, `codesearch`) can send request data to configured services. `question` can interrupt the operator flow. `lsp` can inspect code and, through rename-capable routes, may require edit permission for mutations.

@@ -173,6 +173,7 @@ impl Coordinator {
             .map(|kind| {
                 permission_rule_request_selectors(&run_state.info.workspace_root, kind, &args_json)
             })
+            .transpose()?
             .unwrap_or_default();
         let effective_permission_ruleset = if actor.kind == ActorKind::Worker {
             actor
@@ -300,11 +301,15 @@ impl Coordinator {
                     &tool_id,
                     &args_json,
                     &digest,
-                );
+                )?;
 
                 if run_state.permission_grant_authorizes(&grant_request)
                     || run_state.always_approve_mode
-                        && super::permission::always_approve_can_bypass(&grant_request, &args_json)
+                        && super::permission::always_approve_can_bypass(
+                            &run_state.info.workspace_root,
+                            &grant_request,
+                            &args_json,
+                        )
                 {
                     gate_doom_loop_and_start(
                         clock.as_ref(),
@@ -702,7 +707,7 @@ where
         &args.tool_id,
         &args.args_json,
         &digest,
-    );
+    )?;
 
     if (!is_child || decision != PolicyDecision::Deny)
         && (run_state.doom_loop_always_granted
@@ -918,7 +923,7 @@ where
                 &args.tool_id,
                 &args.args_json,
                 &digest,
-            );
+            )?;
             request_tool_permission(
                 clock,
                 redactor,

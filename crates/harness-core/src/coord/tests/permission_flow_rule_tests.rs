@@ -112,7 +112,8 @@ pub(crate) fn task_permission_rule_selector_uses_only_subagent_type() {
             Path::new("/workspace"),
             PermissionKind::Task,
             &json!({"subagent_type": "explore"}),
-        ),
+        )
+        .unwrap_or_abort(),
         vec![PermissionRuleRequest::TaskAgent("explore".to_string())]
     );
     assert_eq!(
@@ -120,7 +121,8 @@ pub(crate) fn task_permission_rule_selector_uses_only_subagent_type() {
             Path::new("/workspace"),
             PermissionKind::Task,
             &json!({"profileName": "reviewer"}),
-        ),
+        )
+        .unwrap_or_abort(),
         Vec::<PermissionRuleRequest>::new()
     );
     assert_eq!(
@@ -128,7 +130,8 @@ pub(crate) fn task_permission_rule_selector_uses_only_subagent_type() {
             Path::new("/workspace"),
             PermissionKind::Task,
             &json!({"subagent_type": "  ", "agent": " general "}),
-        ),
+        )
+        .unwrap_or_abort(),
         Vec::<PermissionRuleRequest>::new()
     );
     assert_eq!(
@@ -136,7 +139,8 @@ pub(crate) fn task_permission_rule_selector_uses_only_subagent_type() {
             Path::new("/workspace"),
             PermissionKind::Task,
             &json!({"category": "quick"}),
-        ),
+        )
+        .unwrap_or_abort(),
         Vec::<PermissionRuleRequest>::new()
     );
 }
