@@ -25,6 +25,7 @@ terminal QA, and eight full-suite failures reproduced on the pristine baseline.
 | [013: Remap retained-history IDs when forking a compacted session](013-remap-fork-history-references.md) | P1 | M | None | DONE |
 | [014: Preserve original bytes when a rewind operation fails](014-make-rewind-rollback-transactional.md) | P1 | M | 006 (DONE) | DONE ([#237](https://github.com/urbanbreach/agent-harness/issues/237)) |
 | [015: Terminate MCP processes when initialization fails or is cancelled](015-clean-up-failed-mcp-startup.md) | P2 | S | None | DONE ([#238](https://github.com/urbanbreach/agent-harness/issues/238)) |
+| [016: Cancel the HTTP reader when a provider stream is dropped](016-cancel-dropped-provider-streams.md) | P2 | S | None | DONE ([#239](https://github.com/urbanbreach/agent-harness/issues/239)) |
 
 Planned at `062e5ea8` on 2026-09-14 after comparing the local OpenCode and Senpi
 references. The user confirmed independent child-role permissions under shared
