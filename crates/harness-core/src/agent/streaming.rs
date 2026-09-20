@@ -377,20 +377,11 @@ pub struct AssistantResponse {
     pub model_id: String,
     pub text: String,
     pub reasoning: String,
-    pub reasoning_deltas: Vec<String>,
-    pub tool_call_deltas: Vec<AssistantToolCallDelta>,
     pub tool_intents: Vec<AssistantToolIntent>,
     pub stop_reason: String,
     pub usage: Option<CompletionUsage>,
     pub started_metadata: ProviderRequestStartedMetadata,
     pub finished_metadata: ProviderRequestFinishedMetadata,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AssistantToolCallDelta {
-    pub tool_call_id: crate::ids::ToolCallId,
-    pub function_name: Option<String>,
-    pub arguments_delta: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -550,8 +541,6 @@ where
 
     let mut output = String::new();
     let mut reasoning = String::new();
-    let mut reasoning_deltas = Vec::new();
-    let mut tool_call_deltas = Vec::new();
     let mut tool_calls = Vec::new();
     let mut stop_reason = "stream_ended".to_string();
     let mut usage = None;
@@ -580,7 +569,6 @@ where
             ProviderStreamEvent::ReasoningDelta(delta) => {
                 if !delta.is_empty() {
                     reasoning.push_str(&delta);
-                    reasoning_deltas.push(delta.clone());
                     emit(AgentRuntimeEvent::ProviderReasoningDelta {
                         request_id: provider_request_id.clone(),
                         delta,
@@ -590,15 +578,10 @@ where
             }
             ProviderStreamEvent::ToolCallDelta {
                 tool_call_id,
-                function_name,
                 arguments_delta,
+                ..
             } => {
                 let tool_call_id = crate::ids::ToolCallId::from(tool_call_id);
-                tool_call_deltas.push(AssistantToolCallDelta {
-                    tool_call_id: tool_call_id.clone(),
-                    function_name,
-                    arguments_delta: arguments_delta.clone(),
-                });
                 if !arguments_delta.is_empty() {
                     emit(AgentRuntimeEvent::ProviderToolInputDelta {
                         request_id: provider_request_id.clone(),
@@ -697,8 +680,6 @@ where
         model_id: model.model_id,
         text: output,
         reasoning,
-        reasoning_deltas,
-        tool_call_deltas,
         tool_intents,
         stop_reason,
         usage,
