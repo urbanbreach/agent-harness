@@ -30,7 +30,7 @@ Tool execution still goes through the coordinator permission path before the too
 | `session_read` | none | read-only | Replay-derived JSON; large output spills | Bounded redacted event/message windows. Supports `include_todos` and `from_end` params. |
 | `session_search` | none | read-only | Replay-derived JSON; large output spills | Redacted search over safe replay-derived session text. |
 | `shell.run` | `bash` | host command | Captured output and artifacts when large | Lower-level shell id kept canonical for compatibility tests. |
-| `skill` | `task` | prompt/control-plane read | Summary plus loaded skill content | Loads configured markdown skills under skill permission rules. |
+| `skill` | `read` | prompt/control-plane read | Summary plus loaded skill content | Loads configured markdown skills under read permission rules. |
 | `task` | `task` | child scheduling | Child session events and structured runtime metadata | Named subagent delegation. New tasks require `subagent_type`, `prompt`, `run_in_background`, and `load_skills`; `description` and `command` are optional, while `task_id`/`session_id` continue a direct child. There is no category selector. |
 | `todoread` | `task` | read-only | Control-plane state output | Reads the run-local todo state. |
 | `todowrite` | `task` | control-plane mutation | Run-local state output | Writes validated todo state. |
