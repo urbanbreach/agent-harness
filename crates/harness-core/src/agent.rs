@@ -37,9 +37,8 @@ pub(crate) use streaming::{
 pub use streaming::{
     default_model_settings_for_profile, default_provider, run_multi_turn_streaming,
     stream_assistant_response_once, AgentModelRef, AgentRuntimeEvent, AgentTurnFailure,
-    AgentTurnOutcome, AssistantResponse, AssistantToolCallDelta, AssistantToolIntent,
-    MultiTurnStreamingRequest, ProviderRequestFinished, ProviderRequestStarted,
-    StreamAssistantResponseOnceRequest,
+    AgentTurnOutcome, AssistantResponse, AssistantToolIntent, MultiTurnStreamingRequest,
+    ProviderRequestFinished, ProviderRequestStarted, StreamAssistantResponseOnceRequest,
 };
 
 use crate::config::ToolFailureMode;

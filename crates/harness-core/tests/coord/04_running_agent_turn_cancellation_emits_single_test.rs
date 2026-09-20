@@ -288,7 +288,6 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
     assert_eq!(response.text, "I will call tools");
     assert_eq!(response.reasoning, "thinking");
     assert_eq!(response.stop_reason, "done");
-    assert_eq!(response.tool_call_deltas.len(), 1);
     assert_eq!(
         response
             .tool_intents
