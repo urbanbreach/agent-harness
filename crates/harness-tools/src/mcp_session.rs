@@ -951,92 +951,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn http_response_limits_cover_success_errors_and_sse() {
-        use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-
-        const LIMIT: usize = 16 * 1024 * 1024;
-        for (status, content_type, extra) in [
-            ("200 OK", "application/json", 0),
-            ("200 OK", "application/json", 1),
-            ("500 Internal Server Error", "text/plain", 1),
-            ("200 OK", "text/event-stream", 0),
-            ("200 OK", "text/event-stream", 1),
-        ] {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .unwrap_or_abort();
-            let endpoint = format!("http://{}", listener.local_addr().unwrap_or_abort());
-            let server = tokio::spawn(async move {
-                let (stream, _) = listener.accept().await.unwrap_or_abort();
-                let mut stream = tokio::io::BufReader::new(stream);
-                let mut body_length = 0;
-                loop {
-                    let mut line = String::new();
-                    stream.read_line(&mut line).await.unwrap_or_abort();
-                    if line == "\r\n" {
-                        break;
-                    }
-                    if let Some(length) = line.to_ascii_lowercase().strip_prefix("content-length:")
-                    {
-                        body_length = length.trim().parse::<usize>().unwrap_or_abort();
-                    }
-                }
-                stream
-                    .read_exact(&mut vec![0; body_length])
-                    .await
-                    .unwrap_or_abort();
-                let mut stream = stream.into_inner();
-                stream.write_all(format!("HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nConnection: close\r\n\r\n").as_bytes()).await.unwrap_or_abort();
-                let (prefix, suffix, padding) = if content_type == "text/event-stream" {
-                    ("data: {\"id\":\"1\",\"result\":\"", "\"}\n\n", b'x')
-                } else {
-                    ("{}", "", b' ')
-                };
-                stream.write_all(prefix.as_bytes()).await.unwrap_or_abort();
-                let mut remaining = LIMIT + extra - prefix.len() - suffix.len();
-                let chunk = [padding; 8192];
-                while remaining > 0 {
-                    let count = remaining.min(chunk.len());
-                    if stream.write_all(&chunk[..count]).await.is_err() {
-                        return;
-                    }
-                    remaining -= count;
-                }
-                let _ = stream.write_all(suffix.as_bytes()).await;
-            });
-            let mut session = super::HttpMcpSession {
-                client: reqwest::Client::new(),
-                endpoint,
-                headers: BTreeMap::new(),
-                timeout: std::time::Duration::from_secs(10),
-                next_id: 1,
-                session_id: None,
-                metadata: super::McpSessionMetadata::default(),
-            };
-            let result = session
-                .post_jsonrpc(Some("1".into()), serde_json::json!({"id":"1"}))
-                .await;
-            server.await.unwrap_or_abort();
-            if extra == 0 {
-                assert!(
-                    result.is_ok(),
-                    "at-limit {content_type}: {:?}",
-                    result.err()
-                );
-            } else {
-                assert!(
-                    matches!(result, Err(harness_core::tool::ToolError::Execution(message))
-                    if message == "MCP response exceeded 16777216-byte limit")
-                );
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn sse_frames_preserve_utf8_delimiter_order_and_require_complete_responses() {
-        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-
+    #[test]
+    fn sse_frames_preserve_utf8_and_delimiter_order() {
         let expected = serde_json::json!({"id":"1", "result":"sécond 😀"});
         for (first, second) in [("\r\n", "\n"), ("\n", "\r\n")] {
             let input = format!(
@@ -1058,58 +974,6 @@ mod tests {
                 }
                 assert_eq!(message, Some(expected.clone()), "chunk size {chunk_size}");
             }
-        }
-
-        // Exercise the HTTP reader's EOF path as well as strict frame decoding.
-        for (body, expected_error) in [
-            (
-                &b"data: <html>private-payload</html>\n\n"[..],
-                "failed to parse MCP SSE data: invalid JSON",
-            ),
-            (
-                &b"data: {\"id\":\"1\",\"result\":\"private-\xff\"}\n\n"[..],
-                "MCP SSE frame is not valid UTF-8",
-            ),
-            (
-                &b"data: {\"id\":\"1\",\"result\":\"private-\xc3"[..],
-                "MCP SSE stream ended before the request response arrived",
-            ),
-            (
-                &b"data: {\"method\":\"notifications/progress\"}\n\n"[..],
-                "MCP SSE stream ended before the request response arrived",
-            ),
-        ] {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .unwrap_or_abort();
-            let endpoint = format!("http://{}", listener.local_addr().unwrap_or_abort());
-            let server = tokio::spawn(async move {
-                let (stream, _) = listener.accept().await.unwrap_or_abort();
-                let mut stream = tokio::io::BufReader::new(stream);
-                loop {
-                    let mut line = String::new();
-                    stream.read_line(&mut line).await.unwrap_or_abort();
-                    if line == "\r\n" {
-                        break;
-                    }
-                }
-                let mut stream = stream.into_inner();
-                stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n").await.unwrap_or_abort();
-                stream.write_all(body).await.unwrap_or_abort();
-            });
-            let response = reqwest::Client::new()
-                .get(endpoint)
-                .timeout(std::time::Duration::from_secs(2))
-                .send()
-                .await
-                .unwrap_or_abort();
-            let error = super::read_sse_response(response, Some("1"))
-                .await
-                .expect_err("malformed or unmatched SSE");
-            server.await.unwrap_or_abort();
-            assert!(
-                matches!(error, harness_core::tool::ToolError::Execution(message) if message == expected_error)
-            );
         }
     }
 

@@ -107,12 +107,15 @@ Run from the repository root with the existing stable Rust toolchain and locked 
 | Rust formatting | `cargo fmt --all -- --check` | Exit 0; check mode only. |
 | Scoped lint | `cargo clippy -p harness-tools --all-targets --all-features --locked --offline -- -D warnings` | Exit 0; report independent baseline failures separately. |
 | MCP integration | `cargo nextest run --profile ci --locked --offline -p harness-tools --test mcp_generic_test` | All selected tests pass. |
+| Recorded HTTP evidence | `cargo nextest run --profile ci --locked --offline -p harness-tools --test mcp_http_recorded` | Both recorded loopback cases pass. |
 | Whitespace | `git diff --check` | Exit 0. |
 | Scope | `git status --short` | Only the explicitly allowed implementation files and plan records are changed by this work. |
 
 ## Scope
 
 **In scope — only these implementation files may change:**
+
+- `crates/harness-tools/tests/mcp_http_recorded.rs` (operator-authorized follow-up: explicit recorded HTTP evidence owner)
 
 - `crates/harness-tools/src/mcp_session.rs`
 
@@ -208,3 +211,36 @@ plan and plan 021 must therefore be confirmed by the independent agent using a
 fresh private target. Compile/clippy, that fresh complete verification, the index
 row, publication, and issue closure remain with the operator. No visual behavior
 changed and no xterm.js verification is needed for this transport-only fix.
+
+
+## Static-gate follow-up — 2026-09-20
+
+Integrated gates identified a new embedded Python sleep and two loopback HTTP
+fixtures in the deterministic library test owner. The operator authorized the
+minimal scope expansion to correct the test ownership without weakening gates.
+
+- Moved the real HTTP response-limit and malformed/EOF SSE evidence into
+  `tests/mcp_http_recorded.rs`. Both tests now enter through the public MCP
+  registry, including real discovery/initialize/notification handshakes. The
+  five size/status rows and four invalid/EOF rows remain covered.
+- The network-free every-chunk Unicode/mixed-delimiter test stays in
+  `mcp_session::tests::sse_frames_preserve_utf8_and_delimiter_order`.
+- The shell producer waits on an explicit control socket with a deadline. The
+  fixture installs the listener before starting the tool and checks control EOF
+  after process cleanup; it no longer sleeps to remain alive.
+- No production behavior or test-gate exemption was changed.
+
+Fresh author verification used the new private target
+`CARGO_TARGET_DIR=/home/urbanbreach/Projects/agent-harness/target/fix-capture-private`
+with `CARGO_BUILD_JOBS=2`, `CARGO_PROFILE_DEV_DEBUG=0`, and
+`CARGO_PROFILE_TEST_DEBUG=0`:
+
+- `cargo nextest run --profile ci --locked --offline -p harness-tools --lib --test mcp_http_recorded --test mcp_generic_test --test shell_timeout_boundary_test --test integrations_matrix_test -E 'test(mcp_session::tests) | test(shell_run::tests) | binary(mcp_http_recorded) | binary(mcp_generic_test) | binary(shell_timeout_boundary_test) | binary(integrations_matrix_test)'`: **51 selected tests across five binaries passed**, 139 unrelated
+  library tests skipped; execution took 4.53 seconds after a fresh build. This
+  supersedes the shared-target caveat for the author coverage of plans 021/022.
+- `python3 scripts/check-test-suite-gates.py --gate no-sleeps --gate no-real-world-deps`:
+  passed with no violations.
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+
+The independent verifier was given the new recorded owner and exact selection.
+Independent review and integrated compile/lint/closure remain operator-owned.
