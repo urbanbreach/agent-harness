@@ -21,6 +21,14 @@ PROMPTS = [{
         "required": False
     }]
 }]
+MEDIA_CONTENT = [
+    {"type": "text", "text": "neighboring text", "data": "application-data", "blob": "application-blob"},
+    {"type": "image", "mimeType": "image/png", "data": "aW1hZ2UtcHJpdmF0ZQ=="},
+    {"type": "audio", "mimeType": "audio/wav", "data": "YXVkaW8tcHJpdmF0ZQ=="},
+    {"type": "resource", "resource": {
+        "uri": "fixture://media", "mimeType": "application/octet-stream", "blob": "cmVzb3VyY2UtcHJpdmF0ZQ=="
+    }},
+]
 
 
 def send(payload):
@@ -65,7 +73,13 @@ for raw in sys.stdin:
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
         known_tool_names = {tool["name"] for tool in TOOLS}
-        if tool_name in known_tool_names:
+        if arguments.get("media"):
+            send({"jsonrpc": "2.0", "id": message_id, "result": {
+                "content": MEDIA_CONTENT,
+                "structuredContent": {"type": "image", "data": "application-image-data", "blob": "application-blob"},
+                "isError": arguments.get("fail", False)
+            }})
+        elif tool_name in known_tool_names:
             send({
                 "jsonrpc": "2.0",
                 "id": message_id,
@@ -87,6 +101,12 @@ for raw in sys.stdin:
         send({"jsonrpc": "2.0", "id": message_id, "result": {"resources": RESOURCES}})
     elif method == "resources/read":
         uri = params.get("uri", "fixture://missing")
+        if uri == "fixture://media":
+            send({"jsonrpc": "2.0", "id": message_id, "result": {"contents": [
+                {"uri": uri, "text": "neighboring text", "metadata": {"data": "application-data", "blob": "application-blob"}},
+                MEDIA_CONTENT[3]["resource"]
+            ]}})
+            continue
         send({
             "jsonrpc": "2.0",
             "id": message_id,
@@ -103,6 +123,12 @@ for raw in sys.stdin:
     elif method == "prompts/get":
         arguments = params.get("arguments", {})
         topic = arguments.get("topic", "unknown")
+        if params.get("name") in ("media", "media_single"):
+            messages = [{"role": "user", "content": MEDIA_CONTENT}]
+            if params.get("name") == "media_single":
+                messages = [{"role": "user", "content": entry} for entry in MEDIA_CONTENT]
+            send({"jsonrpc": "2.0", "id": message_id, "result": {"messages": messages}})
+            continue
         send({
             "jsonrpc": "2.0",
             "id": message_id,

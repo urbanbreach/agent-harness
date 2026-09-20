@@ -248,6 +248,67 @@ async fn generic_mcp_stdio_server_supports_tools_resources_and_prompts() {
 }
 
 #[tokio::test]
+async fn generic_mcp_omits_media_from_display_and_serialized_results() {
+    let temp_dir = setup_workspace();
+    let workspace = temp_dir.path().join("workspace");
+    let script_path = temp_dir.path().join("fake_mcp_server.py");
+    install_fake_mcp_server(&script_path);
+    let registry =
+        coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
+
+    for (tool_id, args) in [
+        ("mcp.fixture.echo", json!({"media": true})),
+        (
+            "mcp.fixture.tool.call",
+            json!({"tool": "echo", "arguments": {"media": true}}),
+        ),
+        (
+            "mcp.fixture.resource.read",
+            json!({"uri": "fixture://media"}),
+        ),
+        ("mcp.fixture.prompt.get", json!({"name": "media"})),
+        ("mcp.fixture.prompt.get", json!({"name": "media_single"})),
+    ] {
+        let result = registry
+            .get(tool_id)
+            .unwrap_or_abort()
+            .call(test_context(&workspace, tool_id), args)
+            .await
+            .unwrap_or_abort();
+        let serialized = serde_json::to_string(&result).unwrap_or_abort();
+        for encoded in [
+            "aW1hZ2UtcHJpdmF0ZQ==",
+            "YXVkaW8tcHJpdmF0ZQ==",
+            "cmVzb3VyY2UtcHJpdmF0ZQ==",
+        ] {
+            assert!(!serialized.contains(encoded), "media leaked from {tool_id}");
+        }
+        assert!(result.display_text.contains("neighboring text"));
+        assert!(result.display_text.contains("media omitted"));
+        assert!(serialized.contains("application-data"));
+        assert!(serialized.contains("application-blob"));
+        assert!(serialized.contains("application/octet-stream"));
+        if tool_id == "mcp.fixture.echo" || tool_id == "mcp.fixture.tool.call" {
+            assert!(serialized.contains("application-image-data"));
+        }
+    }
+
+    let failure = registry
+        .get("mcp.fixture.echo")
+        .unwrap_or_abort()
+        .call(
+            test_context(&workspace, "mcp-media-failure"),
+            json!({"media": true, "fail": true}),
+        )
+        .await
+        .expect_err("the remote failure must remain a tool error")
+        .to_string();
+    assert!(failure.contains("neighboring text"));
+    assert!(failure.contains("media omitted"));
+    assert!(!failure.contains("YXVkaW8tcHJpdmF0ZQ=="));
+}
+
+#[tokio::test]
 async fn generic_mcp_registry_reserves_wrapper_ids_for_colliding_first_class_tools() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
