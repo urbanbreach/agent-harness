@@ -183,12 +183,23 @@ All future artifacts and validators must target staging. Keep publication as the
 - The canonical caller uses a dedicated `simulation/stages/simulation_evidence/artifacts` bundle directory; lane command/status receipts live in its parent. Staging only this bundle preserves the caller's layout.
 - Implemented private sibling `TempDir` generation, destination checks before generation and publication, and final same-filesystem directory rename. Existing nonempty destinations and symlinks are refused; an empty directory is replaced only where the platform's rename supports it. No pre-existing output is removed.
 - All existing scan, schema, determinism, and invariant gates still execute against staged artifacts. The staged matrix is scanned before matrix validation because its validation diagnostics may include input values.
-- Added one command-boundary table covering secret-bearing raw events, secret-bearing invalid matrix metadata, malformed JSON, schema failures, invariant failures, same-seed mismatch, and valid inputs across absent, empty, and populated destinations. It verifies cleanup, prior bytes, safe diagnostics, the complete artifact set, and relative index references.
+- Added one command-boundary table covering secret-bearing raw events, secret-bearing invalid matrix metadata (literal and JSON-escaped), malformed JSON, schema failures, invariant failures, same-seed mismatch, and valid inputs across absent, empty, and populated destinations. It verifies cleanup, prior bytes, safe diagnostics, the complete artifact set, and relative index references.
 - Baseline focused nextest command: 28 existing tests passed; the new regression failed as intended with `secret published rejected data`. A separate local binary reproducer confirmed matrix validation echoed a runtime-generated synthetic secret (reported only as a boolean).
-- Final focused nextest run including all 21 table cases and the matrix-secret rejection: 29 tests passed, 0 failed, 0 skipped (run ID `a4aca91a-6761-49c9-97ef-1c1029bc24e7`). The earlier staging-only run also passed 29 tests.
+- Initial focused nextest run including all 21 original table cases and the matrix-secret rejection: 29 tests passed, 0 failed, 0 skipped (run ID `a4aca91a-6761-49c9-97ef-1c1029bc24e7`). The earlier staging-only run also passed 29 tests.
 - `cargo fmt --all -- --check`: exit 0.
 - `git diff --check`: exit 0.
 - Additional `python3 scripts/check-test-suite-gates.py`: two pre-existing file-focus failures (`crates/harness-core/tests/coord/17_tool_task_lifecycle_events_preserve_owner_test.rs`, 1355 > 800 lines; `crates/harness-tui/tests/tool_order_capture_test.rs`, 823 > 800). No added-file gate failure.
 - Cargo environment for focused runs: `CARGO_TARGET_DIR=/home/urbanbreach/Projects/agent-harness/target/issue-closure CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`.
 - Exact focused command: `cargo nextest run --profile ci --locked --offline -p harness-testkit --test simulation_evidence_recorded --test simulation_validator_test --test secretscan_test`.
 - The coordinating agent owns integrated `cargo check`, Clippy, and the canonical `scripts/test-lanes.sh simulation` run, plus plan-index consolidation and independent verification. Those gates are pending and are not claimed as passed here; this avoids redundant broad builds queued on the shared Cargo target.
+
+
+### Independent-review correction: decoded validation diagnostics
+
+- The independent reviewer reproduced a credential leak when invalid matrix metadata encoded its first marker character as a JSON Unicode escape. Raw scanning did not recognize the encoded marker; matrix validation decoded it and the shared failure formatter printed the value.
+- The binary's shared `format_failures` boundary now emits only the validation-failure count. Matrix, event, artifact-index, report, and same-seed comparison failures retain their rejection behavior without printing decoded paths, expected/observed values, or identifiers from input.
+- Extended the existing table with escaped invalid matrix metadata across all three destination states (24 table cases total). Assertions report only booleans when checking synthetic values.
+- Fresh private build baseline: `CARGO_TARGET_DIR=/home/urbanbreach/Projects/agent-harness/target/fix-evidence-private CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 cargo nextest run --profile ci --locked --offline -p harness-testkit --test simulation_evidence_recorded --test simulation_validator_test --test secretscan_test` failed as intended: 28 passed, 1 failed with `stderr exposed a secret` (run `9b392254-fa92-43b4-9c0b-4df2daface94`). No shared workspace artifacts were reused.
+- The same private-target command after the correction passed: 29 tests, 0 failed, 0 skipped (run `48a44648-57b4-4830-9f5f-40aee761a44e`).
+- `cargo fmt --all -- --check` and `git diff --check`: exit 0.
+- Follow-up independent review and integration remain owned by the coordinating agent; no issue was closed or pushed from this executor checkout.
