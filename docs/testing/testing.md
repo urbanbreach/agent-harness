@@ -525,9 +525,9 @@ TUI signoff runs `live_proxy_preflight_requires_live_env` and
 
 Current stage commands:
 
-- `cargo nextest run -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact`
-- `cargo nextest run -p harness-testkit live_proxy_prompt_signoff -- --ignored --exact`
-- `cargo nextest run -p harness-testkit live_proxy_e2e_tui_signoff -- --ignored --exact`
+- `cargo nextest run -p harness-testkit --test live_proxy_e2e --ignore-default-filter --run-ignored only -E 'test(=live_proxy_preflight_requires_live_env)'`
+- `cargo nextest run -p harness-testkit --test live_proxy_e2e --ignore-default-filter --run-ignored only -E 'test(=live_proxy_prompt_signoff)'`
+- `cargo nextest run -p harness-testkit --test live_proxy_e2e --ignore-default-filter --run-ignored only -E 'test(=live_proxy_e2e_tui_signoff)'`
 
 Use the live README for exact preflight details, optional live vars, artifacts, retention, and
 agent iteration order instead of duplicating that contract here.
@@ -577,7 +577,7 @@ for deterministic UI signoff.
 
 Current stage command:
 
-- `cargo nextest run -p harness-testkit --test native_visual_e2e --test-threads 1 -- --ignored`
+- `cargo nextest run -p harness-testkit --test native_visual_e2e --ignore-default-filter --run-ignored only --test-threads 1`
 
 ## Stress lanes
 

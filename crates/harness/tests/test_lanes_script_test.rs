@@ -71,6 +71,68 @@ fn test_lanes_declares_core_evidence_modes() {
 }
 
 #[test]
+fn signoff_opt_in_lanes_select_ignored_targets_and_fail_closed() {
+    let root = repo_root();
+    let script = root.join("scripts/test-lanes.sh");
+    for (lane, target, stages) in [
+        (
+            "signoff-live",
+            "live_proxy_e2e",
+            &[
+                "live_proxy_preflight_requires_live_env",
+                "live_proxy_prompt_signoff",
+                "live_proxy_e2e_tui_signoff",
+            ][..],
+        ),
+        (
+            "signoff-native",
+            "native_visual_e2e",
+            &["native_visual_e2e_ignored"][..],
+        ),
+    ] {
+        let artifacts = tempfile::tempdir().unwrap_or_abort();
+        let mut command = std::process::Command::new("bash");
+        command
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+            .arg(&script)
+            .arg(lane)
+            .arg("--artifact-dir")
+            .arg(artifacts.path())
+            .current_dir(&root);
+
+        // Missing prerequisites must fail before any test command runs.
+        let output = command.output().unwrap_or_abort();
+        assert!(!output.status.success());
+        for stage in stages {
+            assert!(!artifacts
+                .path()
+                .join(format!("{lane}/stages/{stage}"))
+                .exists());
+        }
+
+        let output = command.arg("--dry-run").output().unwrap_or_abort();
+        assert!(output.status.success(), "dry run failed: {output:?}");
+        for stage in stages {
+            let command = fs::read_to_string(
+                artifacts
+                    .path()
+                    .join(format!("{lane}/stages/{stage}/command.txt")),
+            )
+            .unwrap_or_abort();
+            assert!(command.contains(&format!("--test {target}")));
+            assert!(command.contains("--ignore-default-filter"));
+            assert!(command.contains("--run-ignored only"));
+            if lane == "signoff-live" {
+                assert!(command.contains(&format!(r"-E test\(={stage}\)")));
+            } else {
+                assert!(command.contains("--test-threads 1"));
+            }
+        }
+    }
+}
+
+#[test]
 fn test_lanes_runs_perf_artifact_freshness_gate() {
     // arrange
     let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
