@@ -2,7 +2,7 @@
 
 Scope: all 33 issues open at intake, #228–#260. Issues #228–#240 already had local implementations; each was independently reviewed again. Remaining implementations and review corrections are committed on `codex/close-open-issues`.
 
-Status: 32 independent issue reviews pass. The canonical release performance run for #251 remains in progress. The complete selected CI suite, compilation, formatting, static suite gates and Clippy pass. The 32 verified issues are ready for closure; #251 remains open pending its real performance evidence.
+Status: all 33 independent issue reviews PASS. Integrated tests, compilation, formatting, static suite gates, Clippy, canonical simulation, canonical performance and final-code performance checks pass.
 
 | Issue | Implementation and follow-up commits | Independent reviewer | Result |
 |---|---|---|---|
@@ -29,7 +29,7 @@ Status: 32 independent issue reviews pass. The canonical release performance run
 | [#248: Return failure for CLI commands that have no implementation](https://github.com/urbanbreach/agent-harness/issues/248) | [136632ad](https://github.com/urbanbreach/agent-harness/commit/136632ad5d30597d6c8b601c1c2f1f04db83c3e5) | `fix_provider_sessions` | PASS |
 | [#249: Make live and native lanes select their opt-in test binaries](https://github.com/urbanbreach/agent-harness/issues/249) | [a774ba07](https://github.com/urbanbreach/agent-harness/commit/a774ba07ba41093d836d55c0b8a6ada047e49bd5) | `verify_existing_core` | PASS |
 | [#250: Write nextest JUnit reports where CI collects them](https://github.com/urbanbreach/agent-harness/issues/250) | [8ff6a127](https://github.com/urbanbreach/agent-harness/commit/8ff6a127d91ba5f0470e3185cefe5d6d4fe70586) | `verify_ci_perf` | PASS |
-| [#251: Run the canonical performance evidence lane in GitLab CI](https://github.com/urbanbreach/agent-harness/issues/251) | [abeff5ce](https://github.com/urbanbreach/agent-harness/commit/abeff5ce0e4761b596afacca2c2e3cc3faeb7efa), [2802f58d](https://github.com/urbanbreach/agent-harness/commit/2802f58dbee7b3c9a02c9b7204678e03e142b9c5) | `verify_ci_perf` | PENDING: real performance lane |
+| [#251: Run the canonical performance evidence lane in GitLab CI](https://github.com/urbanbreach/agent-harness/issues/251) | [abeff5ce](https://github.com/urbanbreach/agent-harness/commit/abeff5ce0e4761b596afacca2c2e3cc3faeb7efa), [2802f58d](https://github.com/urbanbreach/agent-harness/commit/2802f58dbee7b3c9a02c9b7204678e03e142b9c5) | `verify_ci_perf` | PASS |
 | [#252: Keep the mock TUI model picker offline](https://github.com/urbanbreach/agent-harness/issues/252) | [bd8cb29a](https://github.com/urbanbreach/agent-harness/commit/bd8cb29a827612e6e5e7640a27edb73fd6af8a4a) | `fix_provider_sessions` | PASS |
 | [#253: Keep child-task events from completing or hiding parent dashboard rows](https://github.com/urbanbreach/agent-harness/issues/253) | [a4ba3ab8](https://github.com/urbanbreach/agent-harness/commit/a4ba3ab80edac9248a77567d1f99a13433b7fb2a), [93ae47f2](https://github.com/urbanbreach/agent-harness/commit/93ae47f23c43f9767607ae521365bb14bffad784) | `verify_tui` | PASS |
 | [#254: Enable advertised transcript review while a permission prompt is parked](https://github.com/urbanbreach/agent-harness/issues/254) | [75389c33](https://github.com/urbanbreach/agent-harness/commit/75389c337850ec120e09c6818b32356026aafb1f), [9ea97012](https://github.com/urbanbreach/agent-harness/commit/9ea97012432ead0e5a90180b330168740999a73d), [93ae47f2](https://github.com/urbanbreach/agent-harness/commit/93ae47f23c43f9767607ae521365bb14bffad784) | `verify_tui` | PASS |
@@ -62,11 +62,20 @@ Each reviewer is a separate agent from the author of the issue it verified. Rust
 | #246, #248, #252, #260 | `fix_provider_sessions` | 42 tests covering configured selection, unsupported commands, offline mock startup and documented runtime contracts; direct source/document review. |
 | #247, #249 | `verify_existing_core` | All 11 script cases, exact ignored live/native discovery and default-filter exclusion; existing evidence remains byte-identical during dry runs. |
 | #250 | `verify_ci_perf` | Fresh parsed ci/perf JUnit files at GitLab collection paths, checked against run-start timestamps; all 11 script cases. |
+| #251 | `verify_ci_perf` | Real canonical lane: seven release cases and freshness stage PASS. Final code: seven release cases and fresh artifact validation PASS. Exact committed GitLab YAML lint and four heartbeat/exit wrapper checks PASS. |
 | #253, #254, #256 | `verify_tui` | 101 tests, reviewer input-boundary/live-lineage regressions, and xterm.js inspection at 120×40 and 60×20. Final test refactors preserve captured ANSI and PNG bytes. |
 | #258 | `fix_recovery_archives` | 80 provider tests plus an independent loopback HTTP test proving delivery before EOF and body release on completion/drop; 21 Anthropic cases after the final Boolean refactor. |
 | #259 | `verify_existing_edges` | All seven canonical simulation stages, 27 validator cases, a 24-case publication-boundary regression, and public escaped-metadata reproduction. Twelve clean indexed artifacts, four invariant receipts and 17 existing relative references were checked. |
 
 Independent review found additional defects in nested QA receipts (#241), historical batch media copies (#242), live history lineage fallback (#256), escaped simulation diagnostics (#259), and CI runner selection/timeout (#251). The attached follow-up commits fix those findings; earlier failing evidence is retained separately from final passing runs.
+
+## Performance evidence
+
+The unchanged canonical performance lane completed at `abeff5ce0e4761b596afacca2c2e3cc3faeb7efa`: both `nextest_perf` and `perf_artifact_freshness` passed. Run `d259f5b1-b510-47d9-852c-cd999bbd3c1f` passed all seven selected tests across 202 release binaries. Its final uninterrupted build took 64m12s; interrupted prior attempts are excluded from passing evidence.
+
+The same seven cases were independently checked against final code `76050bfccd5ed0f13ccaad8b3d08ada119831d91`, using four freshly prebuilt targets and native nextest metadata reuse. The two CLI/script, four TUI and one core cases all passed, followed by the unchanged artifact freshness validator. These are selected final-code checks, not a second full canonical-lane execution. Every JUnit report and artifact was checked for freshness; the artifact records 120 sessions and 3,960 events with matching directory provenance. Final list/reopen/search measurements were 48/1/18 ms. Competing compilation was paused or completed before benchmark execution; no benchmark budget or release setting was relaxed.
+
+CI configuration at `2802f58d` passed project GitLab lint and independent wrapper exit/heartbeat checks. The job now matches an available Docker runner and permits the measured build duration. Local nextest was 0.9.143; CI pins 0.9.98. Hosted pipeline execution is not claimed.
 
 ## xterm.js evidence
 

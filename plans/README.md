@@ -37,7 +37,7 @@ terminal QA, and eight full-suite failures reproduced on the pristine baseline.
 | [025: Return failure for CLI commands that have no implementation](025-fail-unsupported-cli-commands.md) | P2 | S | None | DONE ([#248](https://github.com/urbanbreach/agent-harness/issues/248)) |
 | [026: Make live and native lanes select their opt-in test binaries](026-select-opt-in-test-lanes.md) | P2 | S | plan 024 | DONE ([#249](https://github.com/urbanbreach/agent-harness/issues/249)) |
 | [027: Write nextest JUnit reports where CI collects them](027-align-nextest-junit-paths.md) | P2 | S | None | DONE ([#250](https://github.com/urbanbreach/agent-harness/issues/250)) |
-| [028: Run the canonical performance evidence lane in GitLab CI](028-run-canonical-perf-ci-lane.md) | P2 | S | plan 027 | IMPLEMENTED; release verification pending ([#251](https://github.com/urbanbreach/agent-harness/issues/251)) |
+| [028: Run the canonical performance evidence lane in GitLab CI](028-run-canonical-perf-ci-lane.md) | P2 | S | plan 027 | DONE ([#251](https://github.com/urbanbreach/agent-harness/issues/251)) |
 | [029: Keep the mock TUI model picker offline](029-keep-mock-model-picker-offline.md) | P2 | S | None | DONE ([#252](https://github.com/urbanbreach/agent-harness/issues/252)) |
 | [030: Keep child-task events from completing or hiding parent dashboard rows](030-isolate-dashboard-row-lifecycle.md) | P2 | M | None | DONE ([#253](https://github.com/urbanbreach/agent-harness/issues/253)) |
 | [031: Enable advertised transcript review while a permission prompt is parked](031-enable-parked-permission-review.md) | P2 | M | None | DONE ([#254](https://github.com/urbanbreach/agent-harness/issues/254)) |
