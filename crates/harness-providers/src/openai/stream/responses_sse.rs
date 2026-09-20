@@ -66,12 +66,9 @@ pub(super) async fn consume_responses_sse_stream(
 
         let parsed: OpenAiResponsesEvent = match serde_json::from_str(data) {
             Ok(parsed) => parsed,
-            Err(err) => {
-                let message = format!(
-                    "openai_compatible returned invalid SSE JSON chunk: {err}; sample={}",
-                    summarize_sse_data(data)
-                );
-                warn_stream_processing_failure("responses.invalid_json", &message);
+            Err(_) => {
+                let message = "openai_compatible returned invalid SSE JSON chunk";
+                warn_stream_processing_failure("responses.invalid_json", message);
                 let _ = tx.send(malformed_stream_error(message)).await;
                 return;
             }
@@ -185,17 +182,4 @@ fn apply_response_completion(
     if let Some(completion_usage) = response.usage.map(|usage| usage.completion_usage()) {
         *usage = Some(completion_usage);
     }
-}
-
-fn summarize_sse_data(data: &str) -> String {
-    let mut snippet = data
-        .chars()
-        .take(160)
-        .collect::<String>()
-        .replace('\n', "\\n")
-        .replace('\r', "\\r");
-    if data.chars().count() > 160 {
-        snippet.push('…');
-    }
-    snippet
 }
