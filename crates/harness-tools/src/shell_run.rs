@@ -16,6 +16,7 @@ use harness_core::ToolResultExt;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
+use tokio::io::AsyncReadExt;
 
 #[cfg(unix)]
 use rustix::process::{kill_process_group, Pid, Signal};
@@ -28,6 +29,8 @@ use crate::{
 
 const SHELL_OUTPUT_INLINE_LINE_LIMIT: usize = 2_000;
 const SHELL_OUTPUT_INLINE_BYTE_LIMIT: usize = 51_200;
+// Bound combined raw capture before preview/redaction/artifact processing allocates.
+const SHELL_OUTPUT_CAPTURE_BYTE_LIMIT: usize = 16 * 1024 * 1024;
 const SHELL_OUTPUT_PREVIEW_LIMITS: ShellOutputPreviewLimits = ShellOutputPreviewLimits {
     max_lines: SHELL_OUTPUT_INLINE_LINE_LIMIT,
     max_bytes: SHELL_OUTPUT_INLINE_BYTE_LIMIT,
@@ -497,17 +500,65 @@ fn configure_shell_process_group(command: &mut tokio::process::Command) {
 }
 
 async fn await_child_output(
-    child: tokio::process::Child,
+    mut child: tokio::process::Child,
     timeout_ms: u64,
 ) -> Result<ShellProcessOutput, ToolError> {
     let mut process_group = ShellProcessGroupGuard::new(&child)?;
-    let output = tokio::time::timeout(Duration::from_millis(timeout_ms), child.wait_with_output())
+    let capture = async {
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| ToolError::Execution("command stdout unavailable".to_string()))?;
+        let mut stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| ToolError::Execution("command stderr unavailable".to_string()))?;
+        let (mut stdout_bytes, mut stderr_bytes) = (Vec::new(), Vec::new());
+        let (mut stdout_chunk, mut stderr_chunk) = ([0_u8; 8192], [0_u8; 8192]);
+        let (mut stdout_done, mut stderr_done) = (false, false);
+        while !stdout_done || !stderr_done {
+            let (read, is_stderr) = tokio::select! {
+                read = stdout.read(&mut stdout_chunk), if !stdout_done => (read, false),
+                read = stderr.read(&mut stderr_chunk), if !stderr_done => (read, true),
+            };
+            let read = read.tool_err("failed to read command output")?;
+            if read > SHELL_OUTPUT_CAPTURE_BYTE_LIMIT - stdout_bytes.len() - stderr_bytes.len() {
+                return Err(ToolError::Execution(format!(
+                    "command output exceeded {SHELL_OUTPUT_CAPTURE_BYTE_LIMIT}-byte capture limit"
+                )));
+            }
+            if is_stderr {
+                stderr_done = read == 0;
+                stderr_bytes.extend_from_slice(&stderr_chunk[..read]);
+            } else {
+                stdout_done = read == 0;
+                stdout_bytes.extend_from_slice(&stdout_chunk[..read]);
+            }
+        }
+        Ok(std::process::Output {
+            status: child.wait().await.tool_err("failed to execute command")?,
+            stdout: stdout_bytes,
+            stderr: stderr_bytes,
+        })
+    };
+    let output = tokio::time::timeout(Duration::from_millis(timeout_ms), capture)
         .await
-        .map_err(|_| ToolError::Execution(format!("command timed out after {timeout_ms} ms")))?
-        .tool_err("failed to execute command")?;
-    process_group.disarm();
-
-    Ok(output.into())
+        .unwrap_or_else(|_| {
+            Err(ToolError::Execution(format!(
+                "command timed out after {timeout_ms} ms"
+            )))
+        });
+    match output {
+        Ok(output) => {
+            process_group.disarm();
+            Ok(output.into())
+        }
+        Err(error) => {
+            drop(process_group);
+            let _ = child.kill().await;
+            Err(error)
+        }
+    }
 }
 
 struct ShellProcessGroupGuard {
