@@ -807,14 +807,14 @@ run_signoff_pty() {
 
 run_signoff_live() {
   require_live_env signoff-live || return 0
-  run_stage signoff-live live_proxy_preflight_requires_live_env "$repo_root" cargo nextest run -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact || true
-  run_stage signoff-live live_proxy_prompt_signoff "$repo_root" cargo nextest run -p harness-testkit live_proxy_prompt_signoff -- --ignored --exact || true
-  run_stage signoff-live live_proxy_e2e_tui_signoff "$repo_root" cargo nextest run -p harness-testkit live_proxy_e2e_tui_signoff -- --ignored --exact || true
+  run_stage signoff-live live_proxy_preflight_requires_live_env "$repo_root" cargo nextest run -p harness-testkit --test live_proxy_e2e --ignore-default-filter --run-ignored only -E 'test(=live_proxy_preflight_requires_live_env)' || true
+  run_stage signoff-live live_proxy_prompt_signoff "$repo_root" cargo nextest run -p harness-testkit --test live_proxy_e2e --ignore-default-filter --run-ignored only -E 'test(=live_proxy_prompt_signoff)' || true
+  run_stage signoff-live live_proxy_e2e_tui_signoff "$repo_root" cargo nextest run -p harness-testkit --test live_proxy_e2e --ignore-default-filter --run-ignored only -E 'test(=live_proxy_e2e_tui_signoff)' || true
 }
 
 run_signoff_native() {
   require_native_env signoff-native || return 0
-  run_stage signoff-native native_visual_e2e_ignored "$repo_root" cargo nextest run -p harness-testkit --test native_visual_e2e --test-threads 1 -- --ignored || true
+  run_stage signoff-native native_visual_e2e_ignored "$repo_root" cargo nextest run -p harness-testkit --test native_visual_e2e --ignore-default-filter --run-ignored only --test-threads 1 || true
 }
 
 run_stress_offline() {
