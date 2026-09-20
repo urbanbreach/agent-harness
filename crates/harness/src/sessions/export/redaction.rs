@@ -94,24 +94,15 @@ fn remove_legacy_mcp_media(value: &mut Value) {
         let Some(output) = event.pointer_mut("/payload/data/output_json") else {
             continue;
         };
-        if output
-            .pointer("/server/id")
-            .and_then(Value::as_str)
-            .is_none()
-            || output
-                .get("protocolVersion")
-                .and_then(Value::as_str)
-                .is_none()
-        {
-            continue;
-        }
-        if let Some(payload) = output.get_mut("payload") {
-            let result = if payload.get("result").is_some() {
-                &mut payload["result"]
-            } else {
-                payload
-            };
-            omitted.extend(omit_mcp_result_media(result));
+        omit_mcp_wrapped_media(output, &mut omitted);
+        if let Some(details) = batch_output_details(event) {
+            for detail in details {
+                for pointer in ["/structured_output", "/result/structured_output"] {
+                    if let Some(output) = detail.pointer_mut(pointer) {
+                        omit_mcp_wrapped_media(output, &mut omitted);
+                    }
+                }
+            }
         }
     }
     omitted
@@ -132,7 +123,53 @@ fn remove_legacy_mcp_media(value: &mut Value) {
                 }
             }
         }
+        if let Some(details) = batch_output_details(event) {
+            for detail in details {
+                for pointer in ["/summary", "/result/summary"] {
+                    if let Some(Value::String(summary)) = detail.pointer_mut(pointer) {
+                        for encoded in &omitted {
+                            *summary = summary.replace(encoded, MCP_MEDIA_OMITTED);
+                        }
+                    }
+                }
+            }
+        }
     }
+}
+
+fn omit_mcp_wrapped_media(output: &mut Value, omitted: &mut Vec<String>) {
+    if output
+        .pointer("/server/id")
+        .and_then(Value::as_str)
+        .is_none()
+        || output
+            .get("protocolVersion")
+            .and_then(Value::as_str)
+            .is_none()
+    {
+        return;
+    }
+    if let Some(payload) = output.get_mut("payload") {
+        let result = if payload.get("result").is_some() {
+            &mut payload["result"]
+        } else {
+            payload
+        };
+        omitted.extend(omit_mcp_result_media(result));
+    }
+}
+
+fn batch_output_details(event: &mut Value) -> Option<&mut Vec<Value>> {
+    if event
+        .pointer("/payload/data/metadata/canonical_tool_id")
+        .and_then(Value::as_str)
+        != Some("batch")
+    {
+        return None;
+    }
+    event
+        .pointer_mut("/payload/data/output_json/details")
+        .and_then(Value::as_array_mut)
 }
 
 fn remove_provider_reasoning_delta_events(value: &mut Value) -> u64 {
