@@ -17,6 +17,7 @@ use harness_tools::{coordinator_registry, UnwrapOrAbort};
 use rustix::io::Errno;
 use rustix::process::{test_kill_process, Pid};
 use serde_json::json;
+use tokio::io::AsyncReadExt;
 
 mod common;
 
@@ -159,12 +160,16 @@ async fn shell_capture_bounds_combined_pipes_and_terminates_overflow() {
     const LIMIT: usize = 16 * 1024 * 1024;
     for extra in [0, 1] {
         let temp = tempfile::tempdir().unwrap_or_abort();
+        let listener =
+            tokio::net::UnixListener::bind(temp.path().join("capture.sock")).unwrap_or_abort();
         let bash = coordinator_registry(ShellAllowlist::default())
             .get("bash")
             .unwrap_or_abort();
         // Both writers must make progress; sequential pipe reads deadlock here.
         let command = format!(
-            "python3 -c 'import os,pathlib,sys,threading; \
+            "python3 -c 'import os,pathlib,socket,sys,threading; \
+             control=socket.socket(socket.AF_UNIX); control.settimeout(5); \
+             control.connect(\"capture.sock\"); \
              pathlib.Path(\"shell-process.pid\").write_text(str(os.getpid())); \
              t=threading.Thread(target=lambda: sys.stderr.write(\"e\"*{})); \
              t.start(); sys.stdout.write(\"o\"*{}); sys.stdout.flush(); t.join(); \
@@ -174,15 +179,19 @@ async fn shell_capture_bounds_combined_pipes_and_terminates_overflow() {
             if extra == 0 {
                 "pass"
             } else {
-                "import time; time.sleep(60); pathlib.Path(\"late-marker.txt\").touch()"
+                "control.recv(1); pathlib.Path(\"late-marker.txt\").touch()"
             },
         );
-        let result = bash
-            .call(
-                test_context(temp.path(), "run-shell-capture", "toolcall-shell-capture"),
-                json!({"command": command, "timeout": 5_000}),
-            )
-            .await;
+        let context = test_context(temp.path(), "run-shell-capture", "toolcall-shell-capture");
+        let call = tokio::spawn(async move {
+            bash.call(context, json!({"command": command, "timeout": 5_000}))
+                .await
+        });
+        let (mut control, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
+            .await
+            .unwrap_or_abort()
+            .unwrap_or_abort();
+        let result = call.await.unwrap_or_abort();
         let process = started_process(&temp.path().join("shell-process.pid")).await;
         if extra == 0 {
             let result = result.unwrap_or_abort();
@@ -200,5 +209,13 @@ async fn shell_capture_bounds_combined_pipes_and_terminates_overflow() {
             assert!(!temp.path().join("late-marker.txt").exists());
         }
         assert_process_exited(process).await;
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), control.read(&mut [0]))
+                .await
+                .unwrap_or_abort()
+                .unwrap_or_abort(),
+            0,
+            "completed or killed producer must close the control connection"
+        );
     }
 }
