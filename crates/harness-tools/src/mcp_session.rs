@@ -14,8 +14,7 @@ use tokio::process::{Child, Command};
 use tokio::time::timeout;
 
 use crate::mcp_render::{
-    describe_upstream_non_json_response, jsonrpc_error_message, render_mcp_http_parse_error,
-    render_mcp_http_status_error,
+    jsonrpc_error_message, render_mcp_http_parse_error, render_mcp_http_status_error,
 };
 use crate::text::has_trimmed_content;
 
@@ -663,9 +662,8 @@ async fn read_sse_response(
     mut response: reqwest::Response,
     request_id: Option<&str>,
 ) -> Result<Value, ToolError> {
-    let mut buffer = String::new();
+    let mut buffer = Vec::new();
     let mut response_bytes = 0;
-    let mut scan_offset = 0;
     while let Some(chunk) = response
         .chunk()
         .await
@@ -675,31 +673,11 @@ async fn read_sse_response(
             return Err(response_limit_error());
         }
         response_bytes += chunk.len();
-        let text = String::from_utf8_lossy(&chunk);
-        if text.len() > MCP_RESPONSE_BYTE_LIMIT - buffer.len() {
-            return Err(response_limit_error());
-        }
-        buffer.push_str(&text);
-        while let Some(index) = find_sse_event_boundary(&buffer[scan_offset..]) {
-            let index = scan_offset + index;
-            let event = buffer[..index].to_string();
-            let remainder = buffer[index..].trim_start_matches(['\r', '\n']).to_string();
-            buffer = remainder;
-            scan_offset = 0;
-            if let Some(message) = parse_sse_event(&event)? {
-                if request_id.is_none() {
-                    return Ok(message);
-                }
-                let response_id = message.get("id").and_then(Value::as_str);
-                if response_id == request_id {
-                    return Ok(message);
-                }
-            }
-        }
         // Recheck only the suffix that could begin a delimiter split across chunks.
-        scan_offset = buffer.len().saturating_sub(3);
-        while !buffer.is_char_boundary(scan_offset) {
-            scan_offset -= 1;
+        let scan_offset = buffer.len().saturating_sub(3);
+        buffer.extend_from_slice(&chunk);
+        if let Some(message) = parse_sse_buffer(&mut buffer, scan_offset, request_id)? {
+            return Ok(message);
         }
     }
     Err(ToolError::Execution(
@@ -707,17 +685,36 @@ async fn read_sse_response(
     ))
 }
 
-fn find_sse_event_boundary(buffer: &str) -> Option<usize> {
-    buffer
-        .find("\n\n")
-        .or_else(|| buffer.find("\r\n\r\n"))
-        .map(|index| {
-            if buffer[index..].starts_with("\r\n\r\n") {
-                index + 4
-            } else {
-                index + 2
+fn parse_sse_buffer(
+    buffer: &mut Vec<u8>,
+    mut scan_offset: usize,
+    request_id: Option<&str>,
+) -> Result<Option<Value>, ToolError> {
+    while let Some(relative_end) = find_sse_event_boundary(&buffer[scan_offset..]) {
+        let end = scan_offset + relative_end;
+        let event = std::str::from_utf8(&buffer[..end])
+            .map_err(|_| ToolError::Execution("MCP SSE frame is not valid UTF-8".to_string()))?;
+        let message = parse_sse_event(event)?;
+        buffer.drain(..end);
+        scan_offset = 0;
+        if let Some(message) = message {
+            if request_id.is_none() || message.get("id").and_then(Value::as_str) == request_id {
+                return Ok(Some(message));
             }
-        })
+        }
+    }
+    Ok(None)
+}
+
+fn find_sse_event_boundary(buffer: &[u8]) -> Option<usize> {
+    for index in 0..buffer.len() {
+        match buffer[index..] {
+            [b'\r', b'\n', b'\r', b'\n', ..] => return Some(index + 4),
+            [b'\n', b'\n', ..] => return Some(index + 2),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn parse_sse_event(event: &str) -> Result<Option<Value>, ToolError> {
@@ -735,12 +732,9 @@ fn parse_sse_event(event: &str) -> Result<Option<Value>, ToolError> {
         return Ok(None);
     }
     let joined = data_lines.join("\n");
-    serde_json::from_str(&joined).map(Some).map_err(|err| {
-        ToolError::Execution(format!(
-            "failed to parse MCP SSE data: {}",
-            describe_upstream_non_json_response(&joined).unwrap_or_else(|| err.to_string())
-        ))
-    })
+    serde_json::from_str(&joined)
+        .map(Some)
+        .map_err(|_| ToolError::Execution("failed to parse MCP SSE data: invalid JSON".to_string()))
 }
 
 fn extract_jsonrpc_result(message: Value, method: &str) -> Result<Value, ToolError> {
@@ -1036,6 +1030,86 @@ mod tests {
                     if message == "MCP response exceeded 16777216-byte limit")
                 );
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn sse_frames_preserve_utf8_delimiter_order_and_require_complete_responses() {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
+        let expected = serde_json::json!({"id":"1", "result":"sécond 😀"});
+        for (first, second) in [("\r\n", "\n"), ("\n", "\r\n")] {
+            let input = format!(
+                ": heartbeat{first}{first}data: {{\"method\":\"notifications/progress\"}}{first}{first}\
+                 data: {{\"id\":\"other\",\"result\":0}}{second}{second}\
+                 data: {{\"id\":\"1\",{second}data: \"result\":\"sécond 😀\"}}{second}{second}"
+            );
+            for chunk_size in 1..=input.len() {
+                let mut buffer = Vec::new();
+                let mut message = None;
+                for chunk in input.as_bytes().chunks(chunk_size) {
+                    let scan_offset = buffer.len().saturating_sub(3);
+                    buffer.extend_from_slice(chunk);
+                    message = super::parse_sse_buffer(&mut buffer, scan_offset, Some("1"))
+                        .unwrap_or_abort();
+                    if message.is_some() {
+                        break;
+                    }
+                }
+                assert_eq!(message, Some(expected.clone()), "chunk size {chunk_size}");
+            }
+        }
+
+        // Exercise the HTTP reader's EOF path as well as strict frame decoding.
+        for (body, expected_error) in [
+            (
+                &b"data: <html>private-payload</html>\n\n"[..],
+                "failed to parse MCP SSE data: invalid JSON",
+            ),
+            (
+                &b"data: {\"id\":\"1\",\"result\":\"private-\xff\"}\n\n"[..],
+                "MCP SSE frame is not valid UTF-8",
+            ),
+            (
+                &b"data: {\"id\":\"1\",\"result\":\"private-\xc3"[..],
+                "MCP SSE stream ended before the request response arrived",
+            ),
+            (
+                &b"data: {\"method\":\"notifications/progress\"}\n\n"[..],
+                "MCP SSE stream ended before the request response arrived",
+            ),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .unwrap_or_abort();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap_or_abort());
+            let server = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap_or_abort();
+                let mut stream = tokio::io::BufReader::new(stream);
+                loop {
+                    let mut line = String::new();
+                    stream.read_line(&mut line).await.unwrap_or_abort();
+                    if line == "\r\n" {
+                        break;
+                    }
+                }
+                let mut stream = stream.into_inner();
+                stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n").await.unwrap_or_abort();
+                stream.write_all(body).await.unwrap_or_abort();
+            });
+            let response = reqwest::Client::new()
+                .get(endpoint)
+                .timeout(std::time::Duration::from_secs(2))
+                .send()
+                .await
+                .unwrap_or_abort();
+            let error = super::read_sse_response(response, Some("1"))
+                .await
+                .expect_err("malformed or unmatched SSE");
+            server.await.unwrap_or_abort();
+            assert!(
+                matches!(error, harness_core::tool::ToolError::Execution(message) if message == expected_error)
+            );
         }
     }
 
