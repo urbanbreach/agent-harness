@@ -581,6 +581,17 @@ fn question_compact_footer_names_active_row_walk_park_and_cancel_actions() {
     assert!(rendered.contains("Tab:next answer"), "{rendered}");
     assert!(rendered.contains("Shift+x:dismiss"), "{rendered}");
     assert!(!rendered.contains("Esc:back"), "{rendered}");
+    app.handle_key(key(KeyCode::Esc));
+    let parked = render_text(&app, 60, 20);
+    assert!(parked.contains("Tab/Space:question"), "{parked}");
+    assert!(parked.contains("Ctrl+e:collapse thinking"), "{parked}");
+    assert!(!parked.contains("shortcuts"), "{parked}");
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('e'),
+        KeyModifiers::CONTROL,
+    ));
+    assert!(!app.transcript_thinking_visible());
+    assert!(app.active_permission().is_some());
 }
 
 #[test]

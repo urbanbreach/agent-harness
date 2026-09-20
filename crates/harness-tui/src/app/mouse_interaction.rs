@@ -1016,6 +1016,12 @@ impl AppState {
                 true
             }
             MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
+                if self.focus != Focus::Prompt
+                    && ui::hovered_wheel_target(self, frame_area, mouse.column, mouse.row)
+                        == Some(WheelTarget::Transcript)
+                {
+                    return self.handle_surface_mouse_scroll(mouse, Some(WheelTarget::Transcript));
+                }
                 let regions = permission_prompt_hit_regions(self, frame_area);
                 let inside = regions.iter().any(|region| {
                     matches!(

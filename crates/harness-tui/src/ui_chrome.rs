@@ -890,7 +890,6 @@ fn render_permission_with_shell_footer(
                     ":expand thinking"
                 },
             ),
-            ("Ctrl+x", ":shortcuts"),
         ]
     } else if permission.question_prompts.is_none() {
         permission_shell_hints(app, permission, footer_area.width, frame.area().height)
