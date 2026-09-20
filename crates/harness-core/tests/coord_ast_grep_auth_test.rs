@@ -1,5 +1,5 @@
 use harness_core::UnwrapOrAbort;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -59,10 +59,7 @@ async fn ast_grep_replace_list_paths_are_permission_checked_before_tool_executio
     );
 
     let run = coordinator
-        .start_run(
-            "ast_grep_replace_path_permission",
-            PathBuf::from("/workspace/project"),
-        )
+        .start_run("ast_grep_replace_path_permission", temp_dir.path())
         .await
         .unwrap_or_abort();
 
@@ -125,10 +122,7 @@ async fn ast_grep_replace_allowed_list_paths_execute_normally() {
     );
 
     let run = coordinator
-        .start_run(
-            "ast_grep_replace_allowed_path_permission",
-            PathBuf::from("/workspace/project"),
-        )
+        .start_run("ast_grep_replace_allowed_path_permission", temp_dir.path())
         .await
         .unwrap_or_abort();
 

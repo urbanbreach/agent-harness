@@ -75,8 +75,8 @@ async fn runtime_state_after_reopen() -> (
     harness_core::event::SessionCompactionEvent,
     harness_core::session::CompactionPreservedState,
 ) {
-    let shared_path = "/workspace/shared.rs";
-    let read_only_path = "/workspace/read_only.rs";
+    let shared_path = "shared.rs";
+    let read_only_path = "read_only.rs";
     let provider = SequentialScriptedProvider::new(vec![
         tool_events("read-shared", "read", shared_path),
         provider_text_events("shared read complete"),
@@ -106,7 +106,7 @@ async fn runtime_state_after_reopen() -> (
         },
     );
     let run = coordinator
-        .start_run("compaction-v2-durable-state", PathBuf::from("/workspace"))
+        .start_run("compaction-v2-durable-state", temp_dir.path())
         .await
         .unwrap_or_abort();
     let agent_id = coordinator
@@ -156,10 +156,12 @@ async fn runtime_state_after_reopen() -> (
     let reopened = LegacyEventLogAdapter::new()
         .project(&events)
         .unwrap_or_abort();
+    // Entry IDs are hashes; the active path supplies chronological order.
     let preserved = reopened
         .session
-        .entries()
-        .values()
+        .active_path()
+        .unwrap_or_abort()
+        .into_iter()
         .filter_map(|entry| match &entry.payload {
             SessionEntryPayload::CompactionSummary {
                 preserved_state: Some(state),
@@ -188,8 +190,8 @@ async fn compaction_v2_current_intent_survives_summary() {
 #[tokio::test]
 async fn compaction_v2_file_state_survives_summary() {
     let (written, reopened) = runtime_state_after_reopen().await;
-    assert_eq!(written.read_files, ["/workspace/read_only.rs"]);
-    assert_eq!(written.modified_files, ["/workspace/shared.rs"]);
+    assert_eq!(written.read_files, ["read_only.rs"]);
+    assert_eq!(written.modified_files, ["shared.rs"]);
     assert_eq!(reopened.read_files, written.read_files);
     assert_eq!(reopened.modified_files, written.modified_files);
 }
