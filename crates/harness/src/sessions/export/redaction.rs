@@ -95,12 +95,13 @@ fn remove_legacy_mcp_media(value: &mut Value) {
             continue;
         };
         omit_mcp_wrapped_media(output, &mut omitted);
-        if let Some(details) = batch_output_details(event) {
-            for detail in details {
-                for pointer in ["/structured_output", "/result/structured_output"] {
-                    if let Some(output) = detail.pointer_mut(pointer) {
-                        omit_mcp_wrapped_media(output, &mut omitted);
-                    }
+        let Some(details) = batch_output_details(event) else {
+            continue;
+        };
+        for detail in details {
+            for pointer in ["/structured_output", "/result/structured_output"] {
+                if let Some(output) = detail.pointer_mut(pointer) {
+                    omit_mcp_wrapped_media(output, &mut omitted);
                 }
             }
         }
@@ -123,14 +124,16 @@ fn remove_legacy_mcp_media(value: &mut Value) {
                 }
             }
         }
-        if let Some(details) = batch_output_details(event) {
-            for detail in details {
-                for pointer in ["/summary", "/result/summary"] {
-                    if let Some(Value::String(summary)) = detail.pointer_mut(pointer) {
-                        for encoded in &omitted {
-                            *summary = summary.replace(encoded, MCP_MEDIA_OMITTED);
-                        }
-                    }
+        let Some(details) = batch_output_details(event) else {
+            continue;
+        };
+        for detail in details {
+            for pointer in ["/summary", "/result/summary"] {
+                let Some(Value::String(summary)) = detail.pointer_mut(pointer) else {
+                    continue;
+                };
+                for encoded in &omitted {
+                    *summary = summary.replace(encoded, MCP_MEDIA_OMITTED);
                 }
             }
         }
