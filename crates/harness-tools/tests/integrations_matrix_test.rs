@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::time::Duration;
 
 use harness_core::config::{
     load_config_from_str, LspConfig, LspServerConfig, McpConfig, McpServerConfig, ShellAllowlist,
@@ -14,8 +15,13 @@ use harness_core::config::{
 use harness_core::tool::{ToolError, ToolRegistry};
 use harness_tools::coordinator_registry_with_mcp;
 use harness_tools::UnwrapOrAbort;
+use rustix::io::Errno;
+use rustix::process::{test_kill_process, Pid};
 use serde_json::json;
 use tempfile::tempdir;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixListener;
+use tokio::time::timeout;
 
 mod common;
 
@@ -48,15 +54,19 @@ fn install_crashing_mcp_server(script_path: &Path) {
     fs::set_permissions(script_path, permissions).unwrap_or_abort();
 }
 
-fn install_slow_mcp_server(script_path: &Path) {
+fn install_controlled_mcp_server(script_path: &Path) {
     let script = r#"#!/usr/bin/env python3
 import json
+import os
+import pathlib
+import socket
 import sys
 
 def send(payload):
     sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
     sys.stdout.flush()
 
+calls = 0
 for raw in sys.stdin:
     raw = raw.strip()
     if not raw:
@@ -65,27 +75,33 @@ for raw in sys.stdin:
     method = message.get("method")
     message_id = message.get("id")
     if method == "initialize" and message_id is not None:
+        control = socket.socket(socket.AF_UNIX)
+        control.connect(str(pathlib.Path(__file__).with_suffix(".sock")))
+        control.sendall(os.getpid().to_bytes(4, "big"))
+        mode = control.recv(1)
+        control.sendall(b"!")
+        if mode == b"r":
+            send({"jsonrpc": "2.0", "id": message_id,
+                  "error": {"code": -32603, "message": "fixture rejected initialization"}})
+        if mode in (b"r", b"c"):
+            # Stay alive after stdin closes; EOF on the control socket cleans up a failing test.
+            control.recv(1)
+            sys.exit(0)
         send({
             "jsonrpc": "2.0",
             "id": message_id,
             "result": {
                 "protocolVersion": "2025-06-18",
-                "serverInfo": {"name": "slow-fixture", "version": "1.0.0"},
+                "serverInfo": {"name": "controlled-fixture", "version": "1.0.0"},
                 "capabilities": {"tools": {"listChanged": False}}
             }
         })
     elif method == "notifications/initialized":
         continue
-    elif method == "tools/list" and message_id is not None:
-        send({"jsonrpc": "2.0", "id": message_id, "result": {"tools": [
-            {"name": "slow_echo", "description": "Echoes after delay",
-             "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}}}
-        ]}})
     elif method == "tools/call" and message_id is not None:
-        params = message.get("params", {})
-        text = params.get("arguments", {}).get("text", "recovered")
+        calls += 1
         send({"jsonrpc": "2.0", "id": message_id, "result": {
-            "content": [{"type": "text", "text": text}], "isError": False
+            "content": [{"type": "text", "text": str(calls)}], "isError": False
         }})
 "#;
     fs::write(script_path, script).unwrap_or_abort();
@@ -221,31 +237,90 @@ async fn mcp_process_failure_crashing_server_returns_tool_error() {
 }
 
 #[tokio::test]
-async fn mcp_cancellation_restart_slow_server_succeeds_after_initialization() {
-    // arrange
-    // Given: a workspace with a slow MCP server that initializes successfully
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
-    let script_path = temp_dir.path().join("slow_mcp_server.py");
-    install_slow_mcp_server(&script_path);
-    let registry =
-        coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
+async fn mcp_startup_failure_and_cancellation_terminate_processes_and_preserve_reuse() {
+    let mut survivors = Vec::new();
+    for mode in *b"rch" {
+        let temp_dir = setup_workspace();
+        let workspace = temp_dir.path().join("workspace");
+        let script_path = temp_dir.path().join("controlled_mcp_server.py");
+        // Discovery uses an ephemeral session; control the next startup through the public tool.
+        install_fake_mcp_server(&script_path);
+        let registry =
+            coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
+        install_controlled_mcp_server(&script_path);
+        let listener = UnixListener::bind(script_path.with_extension("sock")).unwrap_or_abort();
+        let tool = registry.get("mcp.fixture.echo").unwrap_or_abort();
+        let context = test_context(&workspace, "mcp-startup");
+        let call = tokio::spawn(async move { tool.call(context, json!({})).await });
+        let (mut control, process) = timeout(Duration::from_secs(5), async {
+            let (mut control, _) = listener.accept().await.unwrap_or_abort();
+            let pid = i32::try_from(control.read_u32().await.unwrap_or_abort()).unwrap_or_abort();
+            control.write_all(&[mode]).await.unwrap_or_abort();
+            assert_eq!(control.read_u8().await.unwrap_or_abort(), b'!');
+            (control, Pid::from_raw(pid).unwrap_or_abort())
+        })
+        .await
+        .unwrap_or_abort();
+        match mode {
+            b'r' => {
+                let error = call
+                    .await
+                    .unwrap_or_abort()
+                    .expect_err("initialize must fail");
+                assert!(matches!(error, ToolError::Execution(message)
+                    if message == "MCP `initialize` failed: fixture rejected initialization (code -32603)"));
+            }
+            b'c' => {
+                call.abort();
+                assert!(call
+                    .await
+                    .expect_err("startup must be cancelled")
+                    .is_cancelled());
+            }
+            _ => {
+                assert_eq!(
+                    call.await.unwrap_or_abort().unwrap_or_abort().display_text,
+                    "1"
+                );
+                let tool = registry.get("mcp.fixture.echo").unwrap_or_abort();
+                let result = timeout(
+                    Duration::from_secs(5),
+                    tool.call(test_context(&workspace, "mcp-reuse"), json!({})),
+                )
+                .await
+                .unwrap_or_abort()
+                .unwrap_or_abort();
+                assert_eq!(result.display_text, "2", "healthy session must be reused");
+            }
+        }
+        let reaped_on_return = mode != b'r' || test_kill_process(process) == Err(Errno::SRCH);
+        drop(registry);
 
-    // act
-    // When: the slow_echo tool is called (server was slow to start but recovered)
-    let tool = registry.get("mcp.fixture.slow_echo").unwrap_or_abort();
-    let result = tool
-        .call(
-            test_context(&workspace, "mcp-cancellation-restart"),
-            json!({"text": "recovered"}),
-        )
-        .await;
-
-    // assert
-    // Then: the tool call succeeds (server recovered after slow start)
-    assert!(result.is_ok(), "slow MCP server must eventually succeed");
-    let output = result.unwrap_or_abort();
-    assert!(output.display_text.contains("recovered"));
+        let mut byte = [0];
+        if !matches!(
+            timeout(Duration::from_secs(2), control.read(&mut byte)).await,
+            Ok(Ok(0))
+        ) || !reaped_on_return
+        {
+            survivors.push(char::from(mode));
+        }
+        // Release any baseline survivor before asserting, then verify that it is reaped.
+        drop(control);
+        timeout(Duration::from_secs(2), async {
+            let mut result = test_kill_process(process);
+            while result.is_ok() {
+                tokio::task::yield_now().await;
+                result = test_kill_process(process);
+            }
+            assert_eq!(result, Err(Errno::SRCH), "failed to inspect MCP process");
+        })
+        .await
+        .unwrap_or_abort();
+    }
+    assert!(
+        survivors.is_empty(),
+        "MCP startup left children alive: {survivors:?}"
+    );
 }
 
 #[tokio::test]
