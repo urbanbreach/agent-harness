@@ -214,6 +214,7 @@ pub(in crate::coord) struct RunState {
         BTreeMap<String, Vec<ProviderConversationTurn>>,
     pub(in crate::coord) explicit_runtime_selection_request_ids: BTreeSet<String>,
     pub(in crate::coord) tasks: BTreeMap<String, TaskState>,
+    pub(in crate::coord) queued_tool_calls: BTreeMap<String, QueuedToolCall>,
     pub(in crate::coord) task_hook_state: BTreeMap<String, TaskHookState>,
     pub(in crate::coord) agent_hook_state: BTreeMap<String, Vec<HookExecutionMetadata>>,
     pub(in crate::coord) subagent_parent_by_id: BTreeMap<String, String>,
@@ -480,6 +481,23 @@ impl RunState {
         grant_request: &PermissionGrantRequest,
     ) -> bool {
         self.active_permission_grants.authorizes(grant_request)
+    }
+
+    pub(in crate::coord) fn refresh_parent_tool_progress(
+        &mut self,
+        child: Option<&ChildTaskTurnState>,
+        now_mono_ms: u64,
+    ) {
+        if let Some(child) = child.filter(|child| !child.run_in_background) {
+            if let Some(parent) = self
+                .tasks
+                .values_mut()
+                .find(|task| task.tool_call_id == child.parent_tool_call_id)
+            {
+                parent.last_progress_mono_ms = now_mono_ms;
+                parent.last_progress_kind = JobProgressKind::Heartbeat;
+            }
+        }
     }
 
     pub(in crate::coord) fn note_identical_tool_call(
@@ -776,6 +794,12 @@ pub(in crate::coord) struct AgentProviderRequestFinishedArgs {
     pub(in crate::coord) output_digest: Option<String>,
     pub(in crate::coord) usage: Option<harness_providers::CompletionUsage>,
     pub(in crate::coord) metadata: Option<ProviderRequestFinishedMetadata>,
+}
+
+pub(in crate::coord) struct QueuedToolCall {
+    pub(in crate::coord) task_id: String,
+    pub(in crate::coord) queue_key: ConcurrencyKey,
+    pub(in crate::coord) args: ToolCallExecutionArgs,
 }
 
 pub(in crate::coord) struct ToolCallExecutionArgs {

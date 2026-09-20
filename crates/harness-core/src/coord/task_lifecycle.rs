@@ -219,8 +219,22 @@ impl Coordinator {
         };
 
         run_state.cancel_pending_compaction_for_task(&task_id, &reason);
+        if run_state.cancelled_running_tasks.contains(&task_id) {
+            return Ok(());
+        }
+        if run_state.queued_tool_calls.contains_key(&task_id) {
+            return tool_execution::cancel_queued_tool_call(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                &task_id,
+                &reason,
+            );
+        }
 
         if let Some(queued) = run_state.queued_agent_turns.remove(&task_id) {
+            run_state
+                .refresh_parent_tool_progress(queued.child_task.as_ref(), self.clock.mono_ms());
             if queued.scheduler_queued {
                 let _ = run_state.scheduler.cancel_queued(&task_id);
             }
@@ -268,6 +282,8 @@ impl Coordinator {
         }
 
         if let Some(running) = run_state.running_agent_turns.get(&task_id).cloned() {
+            run_state
+                .refresh_parent_tool_progress(running.child_task.as_ref(), self.clock.mono_ms());
             running.cancellation_token.cancel();
             run_state.cancelled_running_tasks.insert(task_id.clone());
             if let Some(memory) = cancelled_failure_memory_from_running(&running, &reason) {
@@ -283,10 +299,31 @@ impl Coordinator {
                 .map(|(child_task_id, _)| child_task_id.clone())
                 .collect::<Vec<_>>();
             for child_task_id in child_tool_task_ids {
-                if let Some(child_task) = run_state.tasks.get(&child_task_id) {
-                    child_task.cancellation_token.cancel();
-                }
-                run_state.cancelled_running_tasks.insert(child_task_id);
+                cancel_running_tool_call(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    &child_task_id,
+                    &reason,
+                )?;
+            }
+            let queued_tool_ids = run_state
+                .queued_tool_calls
+                .iter()
+                .filter(|(_, queued)| {
+                    queued.args.request_correlation_id.as_deref()
+                        == Some(running.request_id.as_str())
+                })
+                .map(|(task_id, _)| task_id.clone())
+                .collect::<Vec<_>>();
+            for queued_id in queued_tool_ids {
+                tool_execution::cancel_queued_tool_call(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    &queued_id,
+                    &reason,
+                )?;
             }
             let terminal_event = append_payload_event_with_correlation(
                 self.clock.as_ref(),
@@ -323,30 +360,13 @@ impl Coordinator {
             return Ok(());
         }
 
-        let Some(task) = run_state.tasks.get(&task_id) else {
-            return Ok(());
-        };
-        let owner_actor = task.owner_actor.clone();
-        let request_correlation_id = task.request_correlation_id.clone();
-
-        task.cancellation_token.cancel();
-        run_state.cancelled_running_tasks.insert(task_id.clone());
-
-        append_payload_event_with_correlation(
+        cancel_running_tool_call(
             self.clock.as_ref(),
             self.redactor.as_ref(),
             run_state,
-            owner_actor,
-            Some(format!("task:{task_id}")),
-            request_correlation_id,
-            EventV1::TaskCancelled(TaskCancelledEvent {
-                task_id: task_id.into(),
-                reason,
-                task_scope: Some(TaskTerminalScope::ToolCall),
-            }),
-        )?;
-
-        Ok(())
+            &task_id,
+            &reason,
+        )
     }
 
     pub(in crate::coord) fn watchdog_tick_internal(&mut self) -> Result<(), CoordinatorError> {
@@ -355,14 +375,40 @@ impl Coordinator {
         };
 
         let now = self.clock.mono_ms();
+        let foreground_waits = run_state
+            .running_agent_turns
+            .iter()
+            .filter(|(task_id, turn)| {
+                !run_state.cancelled_running_tasks.contains(*task_id)
+                    && !turn.cancellation_token.is_cancelled()
+            })
+            .filter_map(|(_, turn)| turn.child_task.as_ref())
+            .chain(
+                run_state
+                    .queued_agent_turns
+                    .values()
+                    .filter_map(|turn| turn.child_task.as_ref()),
+            )
+            .filter(|child| !child.run_in_background)
+            .map(|child| child.parent_tool_call_id.as_str())
+            .collect::<BTreeSet<_>>();
         let snapshots = run_state
             .tasks
             .iter()
             .filter_map(|(task_id, task)| {
-                if task.state != TaskExecutionState::Running {
+                if task.state != TaskExecutionState::Running
+                    || run_state.cancelled_running_tasks.contains(task_id)
+                {
                     return None;
                 }
 
+                if matches!(&task.queue_key,
+                    ConcurrencyKey::Tool { tool_id } | ConcurrencyKey::NestedTool { tool_id, .. }
+                        if matches!(tool_id.as_str(), "task" | "agent.spawn"))
+                    && foreground_waits.contains(task.tool_call_id.as_str())
+                {
+                    return None;
+                }
                 Some(TaskProgressSnapshot {
                     task_id: task_id.clone().into(),
                     key: task.queue_key.clone(),
@@ -402,12 +448,13 @@ impl Coordinator {
                 }),
             )?;
 
-            if let Some(task) = run_state.tasks.get(task_id.as_str()) {
-                task.cancellation_token.cancel();
-            }
-            run_state
-                .cancelled_running_tasks
-                .insert(task_id.to_string());
+            cancel_running_tool_call(
+                self.clock.as_ref(),
+                self.redactor.as_ref(),
+                run_state,
+                task_id.as_str(),
+                "stale tool task",
+            )?;
         }
 
         Ok(())
@@ -431,7 +478,7 @@ impl Coordinator {
             return Ok(());
         };
 
-        let Some(task) = run_state.tasks.remove(&task_id) else {
+        let Some(mut task) = run_state.tasks.remove(&task_id) else {
             return Ok(());
         };
         let task_hook_state = run_state
@@ -439,31 +486,88 @@ impl Coordinator {
             .remove(&task_id)
             .unwrap_or_else(|| TaskHookState {
                 tool_id: match &task.queue_key {
-                    ConcurrencyKey::Tool { tool_id } => tool_id.clone(),
+                    ConcurrencyKey::Tool { tool_id }
+                    | ConcurrencyKey::NestedTool { tool_id, .. } => tool_id.clone(),
                     _ => String::new(),
                 },
                 profile: None,
                 hook_executions: Vec::new(),
             });
-
-        if run_state.cancelled_running_tasks.remove(&task_id) {
-            let _ = run_state.scheduler.complete(&task.queue_key);
-            append_payload_event_with_correlation(
+        let result = if run_state.cancelled_running_tasks.remove(&task_id) {
+            append_failed_tool_call_finished_event(
                 self.clock.as_ref(),
                 self.redactor.as_ref(),
                 run_state,
-                task.owner_actor,
-                Some(format!("task:{task_id}")),
-                task.request_correlation_id,
-                EventV1::TaskResultLate(TaskResultLateEvent {
-                    task_id: task_id.into(),
-                    result_digest: digest12(format!("{:?}", outcome).as_bytes()),
-                }),
-            )?;
-            return Ok(());
-        }
+                &task.tool_call_id,
+                "tool call cancelled",
+                task.request_correlation_id.as_deref(),
+                tool_call_metadata(
+                    task.tool_metadata.as_ref(),
+                    None,
+                    Vec::new(),
+                    Some(execution_timing_metadata(
+                        task.started_mono_ms,
+                        self.clock.mono_ms(),
+                    )),
+                    task_hook_state.hook_executions.clone(),
+                ),
+                &task_hook_state.hook_executions,
+            )
+            .and_then(|_| {
+                append_payload_event_with_correlation(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    task.owner_actor.clone(),
+                    Some(format!("task:{task_id}")),
+                    task.request_correlation_id.clone(),
+                    EventV1::TaskResultLate(TaskResultLateEvent {
+                        task_id: task_id.into(),
+                        result_digest: digest12(format!("{:?}", outcome).as_bytes()),
+                    }),
+                )
+            })
+            .map(|_| ())
+        } else {
+            self.finish_tool_call_internal(task_id, &mut task, task_hook_state, outcome)
+                .await
+        };
 
-        let _ = run_state.scheduler.complete(&task.queue_key);
+        if let Some(respond_to) = task.respond_to.take() {
+            let message = result
+                .as_ref()
+                .err()
+                .map_or_else(|| "tool call cancelled".to_string(), ToString::to_string);
+            let _ = respond_to.send(Err(message));
+        }
+        let Some(run_state) = self.run_state.as_mut() else {
+            return result;
+        };
+        let dequeued = run_state.scheduler.complete(&task.queue_key);
+        let dispatch = tool_execution::start_dequeued_tool_calls(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            Arc::clone(&self.config.hook_command_executor),
+            self.job_tx.clone(),
+            run_state,
+            self.config.hook_runtime_config.clone(),
+            dequeued,
+        )
+        .await;
+        result.and(dispatch)
+    }
+
+    async fn finish_tool_call_internal(
+        &mut self,
+        task_id: String,
+        task: &mut TaskState,
+        task_hook_state: TaskHookState,
+        outcome: JobOutcome,
+    ) -> Result<(), CoordinatorError> {
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Ok(());
+        };
+
         let request_correlation_id = task.request_correlation_id.clone();
         let finished_mono_ms = self.clock.mono_ms();
         let timing = execution_timing_metadata(task.started_mono_ms, finished_mono_ms);
@@ -559,10 +663,8 @@ impl Coordinator {
                 let mut result_summary = result.display_text.clone();
                 if !formatter_warnings.is_empty() {
                     result_summary.push_str("\n\nFormatter warnings:\n");
-                    for warning in formatter_warnings {
-                        result_summary.push_str(&warning);
-                        result_summary.push('\n');
-                    }
+                    result_summary.push_str(&formatter_warnings.join("\n"));
+                    result_summary.push('\n');
                 }
                 let artifact_refs = event_artifact_refs(&result.artifacts);
                 let lineage = tool_task_lineage_metadata(
@@ -642,7 +744,7 @@ impl Coordinator {
                         ),
                         &hook_executions,
                     )?;
-                    if let Some(respond_to) = task.respond_to {
+                    if let Some(respond_to) = task.respond_to.take() {
                         let _ = respond_to.send(Err(reason.clone()));
                     }
                     return Ok(());
@@ -696,7 +798,7 @@ impl Coordinator {
                         causation_id: None,
                     },
                 )?;
-                if let Some(respond_to) = task.respond_to {
+                if let Some(respond_to) = task.respond_to.take() {
                     let _ = respond_to.send(Ok(result_for_response));
                 }
             }
@@ -786,7 +888,7 @@ impl Coordinator {
                     ),
                     &hook_executions,
                 )?;
-                if let Some(respond_to) = task.respond_to {
+                if let Some(respond_to) = task.respond_to.take() {
                     let _ = respond_to.send(Err(format!("{response_prefix}: {final_reason}")));
                 }
             }
@@ -794,6 +896,41 @@ impl Coordinator {
 
         Ok(())
     }
+}
+
+fn cancel_running_tool_call<C: Clock + ?Sized, R: Redactor + ?Sized>(
+    clock: &C,
+    redactor: &R,
+    run_state: &mut RunState,
+    task_id: &str,
+    reason: &str,
+) -> Result<(), CoordinatorError> {
+    let Some(task) = run_state.tasks.get(task_id) else {
+        return Ok(());
+    };
+    if !run_state
+        .cancelled_running_tasks
+        .insert(task_id.to_string())
+    {
+        return Ok(());
+    }
+    task.cancellation_token.cancel();
+    let actor = task.owner_actor.clone();
+    let correlation = task.request_correlation_id.clone();
+    append_payload_event_with_correlation(
+        clock,
+        redactor,
+        run_state,
+        actor,
+        Some(format!("task:{task_id}")),
+        correlation,
+        EventV1::TaskCancelled(TaskCancelledEvent {
+            task_id: task_id.into(),
+            reason: reason.to_string(),
+            task_scope: Some(TaskTerminalScope::ToolCall),
+        }),
+    )?;
+    Ok(())
 }
 
 fn foreground_child_tasks(

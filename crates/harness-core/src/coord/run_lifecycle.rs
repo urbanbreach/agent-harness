@@ -136,6 +136,7 @@ impl Coordinator {
             live_incomplete_provider_turns_by_agent: BTreeMap::new(),
             explicit_runtime_selection_request_ids: BTreeSet::new(),
             tasks: BTreeMap::new(),
+            queued_tool_calls: BTreeMap::new(),
             task_hook_state: BTreeMap::new(),
             agent_hook_state: BTreeMap::new(),
             subagent_parent_by_id: BTreeMap::new(),
@@ -467,6 +468,7 @@ impl Coordinator {
             live_incomplete_provider_turns_by_agent: BTreeMap::new(),
             explicit_runtime_selection_request_ids: BTreeSet::new(),
             tasks: BTreeMap::new(),
+            queued_tool_calls: BTreeMap::new(),
             task_hook_state: BTreeMap::new(),
             agent_hook_state: BTreeMap::new(),
             subagent_parent_by_id: restored_subagent_parent_by_id,
@@ -567,6 +569,12 @@ impl Coordinator {
 
         run_state.cancel_all_pending_compactions(&summary);
         run_state.shutdown_token.cancel();
+        cancel_run_tool_calls(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            &mut run_state,
+            &summary,
+        )?;
         for task in run_state.tasks.values() {
             task.cancellation_token.cancel();
         }
@@ -637,6 +645,12 @@ impl Coordinator {
 
         run_state.cancel_all_pending_compactions(&error);
         run_state.shutdown_token.cancel();
+        cancel_run_tool_calls(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            &mut run_state,
+            &error,
+        )?;
         for task in run_state.tasks.values() {
             task.cancellation_token.cancel();
         }
@@ -1027,4 +1041,31 @@ fn prepare_agent_profile(
         })
     });
     profile
+}
+
+fn cancel_run_tool_calls<C: Clock + ?Sized, R: Redactor + ?Sized>(
+    clock: &C,
+    redactor: &R,
+    run_state: &mut RunState,
+    reason: &str,
+) -> Result<(), CoordinatorError> {
+    let queued_ids = run_state
+        .queued_tool_calls
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut first_error = None;
+    for task_id in queued_ids {
+        if let Err(error) =
+            tool_execution::cancel_queued_tool_call(clock, redactor, run_state, &task_id, reason)
+        {
+            first_error.get_or_insert(error);
+        }
+    }
+    for task in run_state.tasks.values_mut() {
+        if let Some(respond_to) = task.respond_to.take() {
+            let _ = respond_to.send(Err(reason.to_string()));
+        }
+    }
+    first_error.map_or(Ok(()), Err)
 }
