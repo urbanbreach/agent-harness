@@ -1,4 +1,5 @@
 // allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
+use super::state::QueuedToolCall;
 use super::*;
 use crate::UnwrapOrAbort;
 
@@ -971,34 +972,24 @@ pub(in crate::coord) async fn start_tool_call_execution<C, R>(
     job_tx: mpsc::Sender<Command>,
     run_state: &mut RunState,
     hook_runtime_config: HookRuntimeConfig,
-    args: ToolCallExecutionArgs,
+    mut args: ToolCallExecutionArgs,
 ) -> Result<(), CoordinatorError>
 where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
-    let ToolCallExecutionArgs {
-        tool_call_id,
-        tool_id,
-        args_json,
-        actor,
-        profile,
-        permission_ruleset: _,
-        hook_executions,
-        tool_registry,
-        request_correlation_id,
-        respond_to,
-        external_directory_allow_prefixes,
-    } = args;
-    let mut respond_to = respond_to;
-    let tool_metadata = tool_identity_metadata(&tool_id, &args_json);
-
-    let Some(tool) = tool_registry.get(&tool_id) else {
+    let tool_id = &args.tool_id;
+    let tool_call_id = &args.tool_call_id;
+    let args_json = &args.args_json;
+    let actor = &args.actor;
+    let request_correlation_id = &args.request_correlation_id;
+    let tool_registry = &args.tool_registry;
+    let Some(tool) = tool_registry.get(tool_id) else {
         append_payload_event(
             clock,
             redactor,
             run_state,
-            actor,
+            actor.clone(),
             Some(format!("tool_call:{tool_call_id}")),
             EventV1::PolicyViolationDetected(PolicyViolationDetectedEvent {
                 policy: "unknown_tool_id".to_string(),
@@ -1010,12 +1001,15 @@ where
             clock,
             redactor,
             run_state,
-            &tool_call_id,
+            tool_call_id,
             "unknown tool",
             request_correlation_id.as_deref(),
-            requested_tool_call_metadata(&tool_id, &args_json),
+            requested_tool_call_metadata(tool_id, args_json),
             &[],
         )?;
+        if let Some(respond_to) = args.respond_to.take() {
+            let _ = respond_to.send(Err("unknown tool".to_string()));
+        }
         return Err(CoordinatorError::PolicyViolation(format!(
             "tool `{tool_id}` is not registered"
         )));
@@ -1027,7 +1021,7 @@ where
             clock,
             redactor,
             run_state,
-            actor,
+            actor.clone(),
             Some(format!("tool_call:{tool_call_id}")),
             EventV1::PolicyViolationDetected(PolicyViolationDetectedEvent {
                 policy: "tool_capability_forbidden".to_string(),
@@ -1044,18 +1038,252 @@ where
             clock,
             redactor,
             run_state,
-            &tool_call_id,
+            tool_call_id,
             "capability forbidden",
             request_correlation_id.as_deref(),
-            requested_tool_call_metadata(&tool_id, &args_json),
+            requested_tool_call_metadata(tool_id, args_json),
             &[],
         )?;
+        if let Some(respond_to) = args.respond_to.take() {
+            let _ = respond_to.send(Err("capability forbidden".to_string()));
+        }
         return Err(CoordinatorError::PolicyViolation(
             "tool capability forbidden for actor".to_string(),
         ));
     }
 
-    let hashline_edit = hashline_edit_metadata(&tool_id, &args_json, &tool_call_id);
+    let task_id = format!("task_{:06}", run_state.next_task_id);
+    run_state.next_task_id += 1;
+    let queue_key = tool_concurrency_key(run_state, &args);
+    let decision = run_state
+        .scheduler
+        .schedule(task_id.clone(), queue_key.clone());
+    let queued = QueuedToolCall {
+        task_id: task_id.clone(),
+        queue_key,
+        args,
+    };
+    let task = match decision {
+        ScheduleDecision::Queued(_) => {
+            if let Err(error) = append_tool_task_scheduled_event(
+                clock,
+                redactor,
+                run_state,
+                &queued,
+                TaskScheduleState::Queued,
+            ) {
+                let _ = run_state.scheduler.cancel_queued(&task_id);
+                if let Some(respond_to) = queued.args.respond_to {
+                    let _ = respond_to.send(Err(error.to_string()));
+                }
+                return Err(error);
+            }
+            run_state.queued_tool_calls.insert(task_id, queued);
+            return Ok(());
+        }
+        ScheduleDecision::Started(task) => task,
+    };
+    run_state.queued_tool_calls.insert(task_id, queued);
+    start_dequeued_tool_calls(
+        clock,
+        redactor,
+        hook_command_executor,
+        job_tx,
+        run_state,
+        hook_runtime_config,
+        vec![task],
+    )
+    .await
+}
+
+fn tool_concurrency_key(run_state: &RunState, args: &ToolCallExecutionArgs) -> ConcurrencyKey {
+    // A foreground parent keeps its slot while waiting. Its child's orchestration
+    // calls share a bounded nested gate; leaf tools retain their ordinary limits.
+    let parent_tool_call_id = args.actor.agent_id.as_deref().and_then(|agent_id| {
+        run_state
+            .running_agent_turns
+            .iter()
+            .find(|(task_id, turn)| {
+                turn.agent_id == agent_id
+                    && args.request_correlation_id.as_deref() == Some(turn.request_id.as_str())
+                    && !run_state.cancelled_running_tasks.contains(*task_id)
+            })
+            .and_then(|(_, turn)| turn.child_task.as_ref())
+            .filter(|child| !child.run_in_background)
+            .map(|child| &child.parent_tool_call_id)
+    });
+    if matches!(args.tool_id.as_str(), "task" | "agent.spawn" | "batch") {
+        if let Some(parent_tool_call_id) = parent_tool_call_id {
+            let parent_is_running = run_state.tasks.iter().any(|(task_id, task)| {
+                task.tool_call_id == *parent_tool_call_id
+                    && !task.cancellation_token.is_cancelled()
+                    && !run_state.cancelled_running_tasks.contains(task_id)
+                    && run_state
+                        .task_hook_state
+                        .get(task_id)
+                        .is_some_and(|hook| matches!(hook.tool_id.as_str(), "task" | "agent.spawn"))
+            });
+            if parent_is_running {
+                return ConcurrencyKey::NestedTool {
+                    tool_id: args.tool_id.clone(),
+                    parent_tool_call_id: parent_tool_call_id.clone(),
+                };
+            }
+        }
+    }
+    ConcurrencyKey::Tool {
+        tool_id: args.tool_id.clone(),
+    }
+}
+
+fn append_tool_task_scheduled_event<C: Clock + ?Sized, R: Redactor + ?Sized>(
+    clock: &C,
+    redactor: &R,
+    run_state: &mut RunState,
+    queued: &QueuedToolCall,
+    state: TaskScheduleState,
+) -> Result<(), CoordinatorError> {
+    let args = &queued.args;
+    append_payload_event_with_correlation(
+        clock,
+        redactor,
+        run_state,
+        args.actor.clone(),
+        Some(format!("task:{}", queued.task_id)),
+        args.request_correlation_id.clone(),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: queued.task_id.clone().into(),
+            state,
+            queue_key: Some(queued.queue_key.queue_key()),
+            metadata: matches!(args.tool_id.as_str(), "task" | "agent.spawn").then(|| {
+                TaskScheduleMetadata {
+                    lineage: Some(tool_task_lineage_metadata(
+                        &args.tool_call_id,
+                        args.request_correlation_id.as_deref(),
+                        None,
+                    )),
+                }
+            }),
+        }),
+    )?;
+    Ok(())
+}
+
+pub(in crate::coord) async fn start_dequeued_tool_calls<C: Clock + ?Sized, R: Redactor + ?Sized>(
+    clock: &C,
+    redactor: &R,
+    hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
+    job_tx: mpsc::Sender<Command>,
+    run_state: &mut RunState,
+    hook_runtime_config: HookRuntimeConfig,
+    dequeued: Vec<crate::sched::TaskSpec>,
+) -> Result<(), CoordinatorError> {
+    let mut dequeued = std::collections::VecDeque::from(dequeued);
+    let mut first_error = None;
+    while let Some(task) = dequeued.pop_front() {
+        let Some(mut queued) = run_state.queued_tool_calls.remove(task.task_id.as_str()) else {
+            continue;
+        };
+        let result = start_admitted_tool_call(
+            clock,
+            redactor,
+            Arc::clone(&hook_command_executor),
+            job_tx.clone(),
+            run_state,
+            hook_runtime_config.clone(),
+            &mut queued,
+        )
+        .await;
+        if let Err(error) = result {
+            dequeued.extend(run_state.scheduler.complete(&queued.queue_key));
+            let terminal =
+                finish_unstarted_tool_call(clock, redactor, run_state, queued, &error.to_string());
+            first_error.get_or_insert(terminal.err().unwrap_or(error));
+        }
+    }
+    first_error.map_or(Ok(()), Err)
+}
+
+pub(in crate::coord) fn cancel_queued_tool_call<C: Clock + ?Sized, R: Redactor + ?Sized>(
+    clock: &C,
+    redactor: &R,
+    run_state: &mut RunState,
+    task_id: &str,
+    reason: &str,
+) -> Result<(), CoordinatorError> {
+    if let Some(queued) = run_state.queued_tool_calls.remove(task_id) {
+        let _ = run_state.scheduler.cancel_queued(task_id);
+        finish_unstarted_tool_call(clock, redactor, run_state, queued, reason)?;
+    }
+    Ok(())
+}
+
+fn finish_unstarted_tool_call<C: Clock + ?Sized, R: Redactor + ?Sized>(
+    clock: &C,
+    redactor: &R,
+    run_state: &mut RunState,
+    queued: QueuedToolCall,
+    reason: &str,
+) -> Result<(), CoordinatorError> {
+    let args = queued.args;
+    if let Some(respond_to) = args.respond_to {
+        let _ = respond_to.send(Err(reason.to_string()));
+    }
+    append_payload_event_with_correlation(
+        clock,
+        redactor,
+        run_state,
+        args.actor,
+        Some(format!("task:{}", queued.task_id)),
+        args.request_correlation_id.clone(),
+        EventV1::TaskCancelled(TaskCancelledEvent {
+            task_id: queued.task_id.into(),
+            reason: reason.to_string(),
+            task_scope: Some(TaskTerminalScope::ToolCall),
+        }),
+    )?;
+    append_failed_tool_call_finished_event(
+        clock,
+        redactor,
+        run_state,
+        &args.tool_call_id,
+        reason,
+        args.request_correlation_id.as_deref(),
+        requested_tool_call_metadata(&args.tool_id, &args.args_json),
+        &args.hook_executions,
+    )?;
+    Ok(())
+}
+
+async fn start_admitted_tool_call<C: Clock + ?Sized, R: Redactor + ?Sized>(
+    clock: &C,
+    redactor: &R,
+    hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
+    job_tx: mpsc::Sender<Command>,
+    run_state: &mut RunState,
+    hook_runtime_config: HookRuntimeConfig,
+    queued: &mut QueuedToolCall,
+) -> Result<(), CoordinatorError> {
+    append_tool_task_scheduled_event(
+        clock,
+        redactor,
+        run_state,
+        queued,
+        TaskScheduleState::Started,
+    )?;
+    let task_id = queued.task_id.clone();
+    let queue_key = queued.queue_key.clone();
+    let args = &mut queued.args;
+    let tool_call_id = args.tool_call_id.clone();
+    let tool_id = args.tool_id.clone();
+    let actor = args.actor.clone();
+    let profile = args.profile.clone();
+    let request_correlation_id = args.request_correlation_id.clone();
+    let tool = args.tool_registry.get(&tool_id).ok_or_else(|| {
+        CoordinatorError::PolicyViolation(format!("tool `{tool_id}` is not registered"))
+    })?;
+    let tool_metadata = tool_identity_metadata(&tool_id, &args.args_json);
+    let hashline_edit = hashline_edit_metadata(&tool_id, &args.args_json, &tool_call_id);
 
     append_tool_call_started_event(
         clock,
@@ -1102,60 +1330,16 @@ where
         },
     )
     .await;
-    let mut initial_hook_executions = hook_executions;
-    initial_hook_executions.extend(started_hook_batch.hook_executions.clone());
-    if let Some(reason) = started_hook_batch.critical_failure.clone() {
-        append_failed_tool_call_finished_event(
-            clock,
-            redactor,
-            run_state,
-            &tool_call_id,
-            &reason,
-            request_correlation_id.as_deref(),
-            tool_call_metadata(
-                tool_metadata.as_ref(),
-                None,
-                Vec::new(),
-                None,
-                initial_hook_executions.clone(),
-            ),
-            &initial_hook_executions,
-        )?;
-        if let Some(respond_to) = respond_to.take() {
-            let _ = respond_to.send(Err(reason.clone()));
-        }
-        return Err(CoordinatorError::LifecycleHookFailed(reason.to_string()));
+    args.hook_executions
+        .extend(started_hook_batch.hook_executions);
+    if let Some(reason) = started_hook_batch.critical_failure {
+        return Err(CoordinatorError::LifecycleHookFailed(reason));
     }
-
-    let task_id = format!("task_{:06}", run_state.next_task_id);
-    run_state.next_task_id += 1;
-
-    let queue_key = ConcurrencyKey::Tool {
-        tool_id: tool_id.clone(),
-    };
-    let schedule_metadata =
-        matches!(tool_id.as_str(), "task" | "agent.spawn").then(|| TaskScheduleMetadata {
-            lineage: Some(tool_task_lineage_metadata(
-                &tool_call_id,
-                request_correlation_id.as_deref(),
-                None,
-            )),
-        });
-
-    append_payload_event_with_correlation(
-        clock,
-        redactor,
-        run_state,
-        actor.clone(),
-        Some(format!("task:{task_id}")),
-        request_correlation_id.clone(),
-        EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: task_id.clone().into(),
-            state: TaskScheduleState::Started,
-            queue_key: Some(queue_key.queue_key()),
-            metadata: schedule_metadata,
-        }),
-    )?;
+    let initial_hook_executions = std::mem::take(&mut args.hook_executions);
+    let respond_to = args.respond_to.take();
+    let args_json = std::mem::take(&mut args.args_json);
+    let external_directory_allow_prefixes =
+        std::mem::take(&mut args.external_directory_allow_prefixes);
 
     let cancellation_token = run_state.shutdown_token.child_token();
     let tool_state = run_state.tool_state.clone();

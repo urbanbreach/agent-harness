@@ -16,6 +16,10 @@ pub enum ConcurrencyKey {
     Tool {
         tool_id: String,
     },
+    NestedTool {
+        tool_id: String,
+        parent_tool_call_id: String,
+    },
 }
 
 impl ConcurrencyKey {
@@ -32,7 +36,7 @@ impl ConcurrencyKey {
             } => {
                 format!("provider_model:{provider_id}:{model_id}")
             }
-            Self::Tool { tool_id } => format!("tool:{tool_id}"),
+            Self::Tool { tool_id } | Self::NestedTool { tool_id, .. } => format!("tool:{tool_id}"),
         }
     }
 }
@@ -215,7 +219,9 @@ impl Scheduler {
             ConcurrencyKey::ProviderModel { .. } | ConcurrencyKey::NestedProviderModel { .. } => {
                 self.limits.provider_model.max(1)
             }
-            ConcurrencyKey::Tool { .. } => self.limits.tool.max(1),
+            ConcurrencyKey::Tool { .. } | ConcurrencyKey::NestedTool { .. } => {
+                self.limits.tool.max(1)
+            }
         }
     }
 

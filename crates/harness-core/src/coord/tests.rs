@@ -1416,6 +1416,7 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         live_incomplete_provider_turns_by_agent: std::collections::BTreeMap::new(),
         explicit_runtime_selection_request_ids: std::collections::BTreeSet::new(),
         tasks: std::collections::BTreeMap::new(),
+        queued_tool_calls: std::collections::BTreeMap::new(),
         task_hook_state: std::collections::BTreeMap::new(),
         agent_hook_state: std::collections::BTreeMap::new(),
         subagent_parent_by_id: std::collections::BTreeMap::new(),
@@ -1733,7 +1734,8 @@ async fn child_shared_denies_precede_grants_at_all_execution_gates() {
         assert_eq!(
             events
                 .iter()
-                .filter(|event| matches!(event.payload, EventV1::ToolCallStarted(_)))
+                // This fixture does not drain job completions; the second allowed call queues.
+                .filter(|event| matches!(event.payload, EventV1::TaskScheduled(_)))
                 .count(),
             permitted_calls
         );
