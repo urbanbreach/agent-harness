@@ -60,6 +60,7 @@ events_path="${evidence_dir}/events.jsonl"
 commands_log="${evidence_dir}/commands.log"
 isolation_receipt="${evidence_dir}/isolation-receipt.txt"
 events_excerpt="${evidence_dir}/events-excerpt.jsonl"
+secret_scan_path="${evidence_dir}/secret-scan.txt"
 summary_path="${evidence_dir}/lane-or-run-summary.txt"
 readme_path="${evidence_dir}/README.md"
 excerpt_lines=40
@@ -70,6 +71,28 @@ fi
 mkdir -p "${session_dir}"
 
 : >"${commands_log}"
+
+scan_evidence() {
+  local secret_hits scan_exit=0
+  secret_hits="$(grep -RIohE --exclude=secret-scan.txt 'sk-|Bearer |BEGIN PRIVATE KEY' "${evidence_dir}" 2>/dev/null)" || scan_exit=$?
+  case "${scan_exit}" in
+    0)
+      local match_count
+      match_count="$(printf '%s\n' "${secret_hits}" | wc -l)"
+      printf 'FAIL\nreason=secret_markers\nmatches=%s\n' "${match_count}" >"${secret_scan_path}"
+      printf 'Secret scan failed (fail-closed): %s secret markers found\n' "${match_count}" >&2
+      ;;
+    1)
+      printf 'PASS\npatterns=sk-|Bearer |BEGIN PRIVATE KEY\n' >"${secret_scan_path}"
+      return 0
+      ;;
+    *)
+      printf 'FAIL\nreason=scanner_error\n' >"${secret_scan_path}"
+      printf 'Secret scan failed (fail-closed): scanner error (exit %s)\n' "${scan_exit}" >&2
+      ;;
+  esac
+  return 1
+}
 
 log_cmd() {
   local exit_code="$1"
@@ -336,12 +359,7 @@ EOF
     printf 'qa_env=0\n'
   } >"${evidence_dir}/cleanup.txt"
 
-  local secret_hits
-  secret_hits="$(grep -RInE 'sk-|Bearer |BEGIN PRIVATE KEY' "${evidence_dir}" 2>/dev/null || true)"
-  if [[ -n "${secret_hits}" ]]; then
-    printf 'Secret scan failed (fail-closed):\n%s\n' "${secret_hits}" >&2
-    return 1
-  fi
+  scan_evidence
 
   printf 'harness-qa dogfood OK\nevidence_dir=%s\n' "${evidence_dir}"
 }
@@ -401,7 +419,7 @@ printf '%s\n' "${run_output}" >>"${commands_log}"
 
 if [[ "${run_exit}" -ne 0 ]]; then
   printf 'Dogfood run failed with exit %s\n' "${run_exit}" >&2
-  printf '%s\n' "${run_output}" >&2
+  scan_evidence || exit 1
   exit "${run_exit}"
 fi
 
@@ -458,14 +476,7 @@ Evidence root is gitignored (\`artifacts/\`). Do not commit secrets.
 EOF
 
 # Secret fail-closed scan over the evidence tree.
-secret_hits="$(
-  # shellcheck disable=SC2016
-  grep -RInE 'sk-|Bearer |BEGIN PRIVATE KEY' "${evidence_dir}" 2>/dev/null || true
-)"
-if [[ -n "${secret_hits}" ]]; then
-  printf 'Secret scan failed (fail-closed):\n%s\n' "${secret_hits}" >&2
-  exit 1
-fi
+scan_evidence
 
 printf 'harness-qa dogfood OK\nevidence_dir=%s\n' "${evidence_dir}"
 exit 0
