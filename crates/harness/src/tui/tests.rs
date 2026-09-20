@@ -267,3 +267,21 @@ fn connect_provider_options_seed_from_models_dev_catalog() {
         .iter()
         .any(|provider| provider.id.as_str() == "openai"));
 }
+
+#[test]
+fn mock_model_picker_uses_embedded_catalog_without_invoking_live_loader() {
+    for demo_mode in [true, false] {
+        let mut live_calls = 0;
+        let providers = connect_provider_options_for_mode(None, demo_mode, || {
+            live_calls += 1;
+            None
+        });
+        assert_eq!(live_calls, usize::from(!demo_mode));
+        assert_eq!(providers.is_empty(), !demo_mode);
+        if demo_mode {
+            assert!(providers
+                .iter()
+                .any(|provider| provider.id.as_str() == "anthropic"));
+        }
+    }
+}

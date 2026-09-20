@@ -158,19 +158,37 @@ use harness_tui::app::ConnectProviderOption;
 #[cfg(test)]
 use harness_tui::app::ToggleEntryKind;
 
-fn set_pending_connect_providers_from_config(config: Option<&harness_core::config::HarnessConfig>) {
-    use harness_tui::app::set_pending_connect_providers;
-
-    let registry = AuthPluginRegistry::with_builtins();
-    let catalog = std::thread::spawn(harness_core::provider_catalog::ProviderCatalog::from_env)
-        .join()
-        .ok()
-        .and_then(Result::ok);
-    set_pending_connect_providers(connect_provider_options(
+fn set_pending_connect_providers_from_config(
+    config: Option<&harness_core::config::HarnessConfig>,
+    demo_mode: bool,
+) {
+    harness_tui::app::set_pending_connect_providers(connect_provider_options_for_mode(
         config,
-        &registry,
-        catalog.as_ref(),
+        demo_mode,
+        || {
+            std::thread::spawn(harness_core::provider_catalog::ProviderCatalog::from_env)
+                .join()
+                .ok()
+                .and_then(Result::ok)
+        },
     ));
+}
+
+fn connect_provider_options_for_mode(
+    config: Option<&harness_core::config::HarnessConfig>,
+    demo_mode: bool,
+    load_live: impl FnOnce() -> Option<harness_core::provider_catalog::ProviderCatalog>,
+) -> Vec<ConnectProviderOption> {
+    let catalog = if demo_mode {
+        harness_core::provider_catalog::ProviderCatalog::from_embedded().ok()
+    } else {
+        load_live()
+    };
+    connect_provider_options(
+        config,
+        &AuthPluginRegistry::with_builtins(),
+        catalog.as_ref(),
+    )
 }
 
 fn connect_provider_options(
@@ -385,7 +403,7 @@ async fn run_interactive_mode(
     fs::create_dir_all(&settings.session_dir)
         .map_err(|err| format!("failed to create session dir: {err}"))?;
 
-    set_pending_connect_providers_from_config(settings.config.as_ref());
+    set_pending_connect_providers_from_config(settings.config.as_ref(), demo_mode);
     let launch_selection = Arc::new(Mutex::new(
         settings.launch_metadata.clone().without_mode_label(),
     ));
