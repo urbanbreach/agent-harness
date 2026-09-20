@@ -195,3 +195,36 @@ the required `toolcall_` numeric IDs; all 11 export cases pass on rerun.
 
 The operator owns the `plans/README.md` row update and independent agent review
 after integration. This commit does not claim that review or issue closure.
+
+## Independent-review follow-up — historical batch copies
+
+Independent reviewer `verify_mcp_capture` found that native batch results duplicate
+MCP data in `details[].structured_output` and `details[].result.structured_output`,
+with encoded fallback-rendering text duplicated in both `summary` fields.
+The original direct-result sanitizer did not visit those known harness paths.
+
+The follow-up recognizes native batches by their recorded canonical tool metadata,
+applies the same MCP-envelope normalization to both result copies, and scrubs both
+summary copies. It does not recurse into arbitrary child application data. The
+existing export regression now includes all four MCP result shapes inside a batch
+and preserves ordinary data that resembles batch/MCP envelopes, both inside
+`structuredContent` and as ordinary tool results. Original journal bytes remain
+unchanged.
+
+Verification uses the private target
+`/home/urbanbreach/Projects/agent-harness-fix-media/target/issue-242-batch` with
+`CARGO_BUILD_JOBS=2`, `CARGO_PROFILE_DEV_DEBUG=0`, and `CARGO_PROFILE_TEST_DEBUG=0`.
+Dependencies were copied from the existing target, then only this private target
+was cleaned with `cargo clean -p harness -p harness-core -p harness-providers -p
+harness-tools -p harness-tui -p harness-testkit`; all workspace packages rebuilt
+from this checkout based on `f2f2a393`.
+
+| Follow-up verification | Result |
+|---|---|
+| Extended export regression before correction, `cargo nextest run --profile ci --locked --offline -p harness --test replay_sessions_cli_test -E 'test(sessions_export)'` | Expected FAIL: 10 passed, 1 failed on leaked batch media, exit 100 |
+| Same export command after correction | PASS, 11 tests (54 unrelated tests skipped), exit 0 |
+| `cargo build --locked --offline -p harness --bin harness` | PASS, exit 0 |
+| `python3 /tmp/agent-harness-open-issues/verify-242-batch-repro.py /home/urbanbreach/Projects/agent-harness-fix-media/target/issue-242-batch/debug/harness` | PASS, no remaining encoded media paths; journal SHA-256 unchanged, exit 0 |
+| `rustfmt --edition 2021 --check crates/harness/src/sessions/export/redaction.rs` and `git diff --check` | PASS, exit 0 |
+
+Independent re-verification and closure remain with the operator/reviewer.
