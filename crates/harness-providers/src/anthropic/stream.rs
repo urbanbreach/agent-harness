@@ -123,14 +123,14 @@ fn parse_frame(frame: &[u8]) -> Result<Option<AnthropicSseEvent>, &'static str> 
     // Anthropic allows future event and content types; malformed supported events
     // still fail closed instead of silently dropping output.
     let supported = match event_type {
-        "content_block_start" => !value
+        "content_block_start" => value
             .pointer("/content_block/type")
             .and_then(serde_json::Value::as_str)
-            .is_some_and(|kind| !matches!(kind, "text" | "tool_use")),
-        "content_block_delta" => !value
+            .is_none_or(|kind| matches!(kind, "text" | "tool_use")),
+        "content_block_delta" => value
             .pointer("/delta/type")
             .and_then(serde_json::Value::as_str)
-            .is_some_and(|kind| !matches!(kind, "text_delta" | "input_json_delta")),
+            .is_none_or(|kind| matches!(kind, "text_delta" | "input_json_delta")),
         "message_start" | "content_block_stop" | "message_delta" | "message_stop" | "ping"
         | "error" => true,
         _ => false,
