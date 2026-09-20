@@ -517,6 +517,8 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 for event in historical_events {
                     app.ingest_historical_event(event);
                 }
+                // History can supply parent lineage when session metadata is unavailable.
+                app.load_session_lineage();
                 if let Some(message) = crash_report.recovery_message {
                     let banner = match crash_report.recovery_action {
                         Some(action) => {
