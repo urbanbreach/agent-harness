@@ -25,7 +25,7 @@ impl CompactionV2Harness {
         let run = coordinator
             .start_run(
                 "compaction-v2-red",
-                PathBuf::from("/workspace/compaction-v2"),
+                temp_dir.path(),
             )
             .await
             .unwrap_or_abort();
@@ -84,7 +84,7 @@ impl CompactionV2Harness {
         let run = coordinator
             .start_run(
                 "compaction-v2-red",
-                PathBuf::from("/workspace/compaction-v2"),
+                temp_dir.path(),
             )
             .await
             .unwrap_or_abort();
