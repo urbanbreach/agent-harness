@@ -13,7 +13,14 @@ fn sessions_export_cli_omits_legacy_mcp_media_without_changing_journal() {
             "uri": "fixture://media", "mimeType": "application/octet-stream", "blob": "cmVzb3VyY2UtcHJpdmF0ZQ=="
         }}
     ]);
-    let application = serde_json::json!({"type": "image", "data": "application-image-data", "blob": "application-blob"});
+    let application = serde_json::json!({
+        "type": "image", "data": "application-image-data", "blob": "application-blob",
+        "details": [{"structured_output": {
+            "server": {"id": "application"}, "protocolVersion": "2025-06-18",
+            "payload": {"result": {"content": [{"type": "image", "data": "application-envelope-data"}]}}
+        }}]
+    });
+    let mut batch_details = Vec::new();
     let mut events = vec![envelope(
         "run_export_media",
         1,
@@ -33,6 +40,21 @@ fn sessions_export_cli_omits_legacy_mcp_media_without_changing_journal() {
     ].into_iter().enumerate() {
         // Legacy fallback rendering copied encoded content into summary fields.
         let summary = format!("neighboring text: {payload}");
+        let mut output = serde_json::json!({
+            "server": {"id": "fixture", "transport": "stdio"},
+            "protocolVersion": "2025-06-18",
+            "payload": payload,
+        });
+        let batch_result = serde_json::json!({
+            "success": true, "status": "succeeded", "summary": summary,
+            "structured_output": output, "artifacts": [],
+        });
+        batch_details.push(serde_json::json!({
+            "index": index, "tool_id": "mcp.fixture.media",
+            "success": true, "status": "succeeded", "summary": summary,
+            "structured_output": output, "result": batch_result,
+        }));
+        output["_harness"] = serde_json::json!({"output_summary": summary});
         events.push(envelope("run_export_media", u64::try_from(events.len() + 1).unwrap_or_abort(),
             EventV1::TaskCompleted(TaskCompletedEvent {
                 task_id: format!("task_{index}").into(),
@@ -46,15 +68,25 @@ fn sessions_export_cli_omits_legacy_mcp_media_without_changing_journal() {
                 status: ToolCallStatus::Succeeded,
                 output_summary: Some(summary.clone()),
                 output_digest: Some("legacy-digest".to_string()),
-                output_json: Some(serde_json::json!({
-                    "server": {"id": "fixture", "transport": "stdio"},
-                    "protocolVersion": "2025-06-18",
-                    "payload": payload,
-                    "_harness": {"output_summary": summary},
-                })),
+                output_json: Some(output),
                 metadata: None,
             })));
     }
+    batch_details.push(serde_json::json!({
+        "tool_id": "ordinary", "summary": "ordinary summary", "structured_output": application,
+    }));
+    events.push(envelope(
+        "run_export_media",
+        u64::try_from(events.len() + 1).unwrap_or_abort(),
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "toolcall_999998".into(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("All tools executed successfully.".to_string()),
+            output_digest: None,
+            output_json: Some(serde_json::json!({"details": batch_details})),
+            metadata: Some(ToolCallMetadata { canonical_tool_id: Some("batch".to_string()), ..Default::default() }),
+        }),
+    ));
     // An application object using the same field names is not an MCP envelope.
     events.push(envelope(
         "run_export_media",
@@ -64,7 +96,7 @@ fn sessions_export_cli_omits_legacy_mcp_media_without_changing_journal() {
             status: ToolCallStatus::Succeeded,
             output_summary: None,
             output_digest: None,
-            output_json: Some(serde_json::json!({"content": [application]})),
+            output_json: Some(application.clone()),
             metadata: None,
         }),
     ));
@@ -118,9 +150,13 @@ fn sessions_export_cli_omits_legacy_mcp_media_without_changing_journal() {
         application
     );
     assert_eq!(
-        bundle["events"][9]["payload"]["data"]["output_json"]["content"][0],
+        bundle["events"][10]["payload"]["data"]["output_json"],
         application
     );
+    let details = &bundle["events"][9]["payload"]["data"]["output_json"]["details"];
+    assert_eq!(details[0]["structured_output"]["payload"]["result"]["structuredContent"], application);
+    assert_eq!(details[0]["result"]["structured_output"]["payload"]["result"]["structuredContent"], application);
+    assert_eq!(details[4]["structured_output"], application);
     assert_eq!(
         bundle["support"]["secret_scan_status"]["secret_finding_count"],
         0
