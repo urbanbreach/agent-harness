@@ -99,6 +99,7 @@ Run from the repository root with the existing stable Rust toolchain and locked 
 - `crates/harness-tui/src/app/lifecycle.rs`
 - `crates/harness-tui/src/app/session_stack.rs`
 - `crates/harness-tui/src/app/session_navigation.rs`
+- `crates/harness-tui/src/runtime.rs` — authorized follow-up for the live-history load boundary identified by independent review.
 
 Administrative updates to `plans/033-keep-session-layout-free-of-io.md` and `plans/README.md` are also allowed.
 
@@ -171,3 +172,12 @@ Every new internal session transition must populate, snapshot or clear lineage. 
 - The caller audit also found parent event-file reads in `current_subagent_session_info` and `focused_demote_handle_id` (used by status rendering); these now use retained display context. Layout, parent, subagent, and demotion predicates no longer read files. Remaining reads occur only at explicit load/navigation boundaries.
 - Regression coverage changes/removes metadata and parent events after loading, repeatedly checks layout and display stability, refreshes through a new replay load, restores the old snapshot, and exercises both reset paths plus missing/malformed metadata.
 - Inspected `subagent-retained-lineage-{120x40,60x20}-motion-0ms.png` after deleting source metadata and parent events: the Explore subagent footer/navigation remains stable and the composer stays hidden.
+
+### Independent-review follow-up — live historical lineage
+
+- Independent review found that live construction precedes historical event ingestion. Missing or malformed `meta.json` left the cached parent task and sibling context empty even though the historical lineage correctly identified the parent; replay already loaded in the correct order.
+- The live `app_for_mode` path in `runtime.rs` now refreshes retained lineage once after the complete historical event batch. This scope extension was explicitly authorized by the integrating agent under the user's issue-completion request. The refresh adds no per-event file I/O; display, layout, and navigation predicates remain pure.
+- Audited every `ingest_historical_event` caller across the workspace: `runtime.rs` is the only real history-load batch; `app.rs` uses it once for a synthetic diagnostic `RunFinished` event; the remaining callers are lifecycle, plan, context-budget, startup, and session-lineage test fixtures. Live constructor wrappers share the canonical constructor. Replay loads events before lineage, disk navigation constructs replay state, and snapshot restoration restores the cached context.
+- Extended `subagent_display_retains_parent_context_after_files_are_removed` with a sibling and a table covering missing and malformed metadata. The live ingest-then-refresh sequence and replay both retain the task title, sibling count, and demotion handle; repeated layout remains stable after both metadata and the parent event journal are removed.
+- `cargo nextest run --profile ci --locked --offline -p harness-tui --lib -E 'test(session_stack::tests) | test(session_navigation::tests) | test(render_purity)'` passed **19/19** using the private target and existing debug/job settings above. Log: `/tmp/tui-lineage-refresh-check.log`. `cargo fmt --all -- --check` and `git diff --check` passed.
+- Fresh ANSI captures were generated with `HARNESS_TOOL_RUNTIME_HARNESS_DIR=/tmp/agent-harness-tui-lineage-refresh-frames`; xterm.js rendering uses `/tmp/harness-xterm-tui-lineage-refresh/manifest.json`. Inspected both 120×40 and 60×20 captures: the event-derived live session shows Explore (1 of 2), parent/previous/next navigation, and no composer after its source files were removed. Independent follow-up verification remains with the reviewing agent.
