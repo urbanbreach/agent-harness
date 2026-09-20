@@ -1,7 +1,7 @@
 use tokio::sync::mpsc;
 
 use crate::{
-    CompletionUsage, ProviderStreamEvent, ProviderStreamFinishedMetadata,
+    CompletionUsage, ProviderErrorCategory, ProviderStreamEvent, ProviderStreamFinishedMetadata,
     ProviderStreamStartMetadata,
 };
 
@@ -38,15 +38,21 @@ pub(super) async fn consume_chat_sse_stream(
 
     let mut usage: Option<CompletionUsage> = None;
     let mut finished_metadata = provider_stream_finished_metadata_from_start(start_metadata);
-    let mut done_emitted = false;
+    let mut finish_seen = false;
     let mut tool_call_state = ChatToolCallState::default();
     let mut body = response.body;
     let mut sse_buffer = Vec::new();
 
-    loop {
+    let done_context = loop {
         let event = match next_sse_event(&mut body, &mut sse_buffer).await {
             Ok(Some(event)) => event,
-            Ok(None) => break,
+            Ok(None) if finish_seen => break "chat.done_after_stream_end",
+            Ok(None) => {
+                let message = "openai_compatible chat stream ended before a terminal outcome";
+                warn_stream_processing_failure("chat.premature_eof", message);
+                let _ = tx.send(malformed_stream_error(message)).await;
+                return;
+            }
             Err(_) => {
                 warn_stream_processing_failure(
                     "chat.transport",
@@ -63,19 +69,7 @@ pub(super) async fn consume_chat_sse_stream(
 
         let data = event.data.trim();
         if data == "[DONE]" {
-            if !emit_tool_call_completions(&tx, &mut tool_call_state).await {
-                return;
-            }
-            send_stream_event(
-                &tx,
-                ProviderStreamEvent::DoneWithMetadata {
-                    usage,
-                    metadata: non_empty_finished_metadata(finished_metadata),
-                },
-                "chat.done",
-            )
-            .await;
-            return;
+            break "chat.done";
         }
 
         let chunk: OpenAiChatCompletionsChunk = match serde_json::from_str(data) {
@@ -94,7 +88,19 @@ pub(super) async fn consume_chat_sse_stream(
             }
         };
 
-        let Some(finish_seen) = apply_chat_chunk(
+        if chunk.error.is_some() {
+            let message = "openai_compatible chat stream returned an error";
+            warn_stream_processing_failure("chat.error_event", message);
+            let _ = tx
+                .send(ProviderStreamEvent::categorized_error(
+                    message,
+                    ProviderErrorCategory::Other,
+                ))
+                .await;
+            return;
+        }
+
+        let Some(chunk_finished) = apply_chat_chunk(
             &tx,
             chunk,
             &mut usage,
@@ -106,14 +112,8 @@ pub(super) async fn consume_chat_sse_stream(
             return;
         };
 
-        if finish_seen && !done_emitted {
-            if !emit_tool_call_completions(&tx, &mut tool_call_state).await {
-                return;
-            }
-
-            done_emitted = true;
-        }
-    }
+        finish_seen |= chunk_finished;
+    };
 
     if !emit_tool_call_completions(&tx, &mut tool_call_state).await {
         return;
@@ -125,7 +125,7 @@ pub(super) async fn consume_chat_sse_stream(
             usage,
             metadata: non_empty_finished_metadata(finished_metadata),
         },
-        "chat.done_after_stream_end",
+        done_context,
     )
     .await;
 }
@@ -178,12 +178,16 @@ async fn apply_chat_chunk(
         {
             return None;
         }
-        if matches!(choice.finish_reason.as_deref(), Some("tool_calls"))
-            && !emit_tool_call_completions(tx, tool_call_state).await
-        {
-            return None;
-        }
         if let Some(finish_reason) = choice.finish_reason {
+            if !matches!(
+                finish_reason.as_str(),
+                "stop" | "length" | "content_filter" | "tool_calls" | "function_call"
+            ) {
+                let message = "openai_compatible chat stream returned an unknown finish reason";
+                warn_stream_processing_failure("chat.invalid_finish_reason", message);
+                let _ = tx.send(malformed_stream_error(message)).await;
+                return None;
+            }
             finished_metadata.provider_stop_reason = Some(finish_reason);
             finish_seen = true;
         }

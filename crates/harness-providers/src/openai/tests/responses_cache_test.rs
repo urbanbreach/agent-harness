@@ -100,10 +100,62 @@ async fn openai_responses_sse_parser_handles_multibyte_utf8_split_across_chunks(
     let events = collect_events(&provider, basic_request("gpt-5.5")).await;
 
     assert!(events.contains(&ProviderStreamEvent::TextDelta("hi €".to_string())));
-    assert!(matches!(
+    assert_eq!(
         events.last(),
-        Some(ProviderStreamEvent::DoneWithMetadata { .. })
-    ));
+        Some(&ProviderStreamEvent::DoneWithMetadata {
+            usage: Some(CompletionUsage {
+                prompt_tokens: 1,
+                completion_tokens: 1,
+                total_tokens: 2,
+            }),
+            metadata: Some(ProviderStreamFinishedMetadata {
+                provider_stop_reason: Some("response.completed".to_string()),
+                ..ProviderStreamFinishedMetadata::default()
+            }),
+        })
+    );
+}
+
+#[tokio::test]
+async fn openai_responses_stream_terminal_completes_pending_empty_arguments_once() {
+    for (terminal, stop_reason) in [
+        (
+            r#"{"type":"response.completed","response":{"status":"completed"}}"#,
+            Some("completed"),
+        ),
+        (r#"{"type":"response.done"}"#, Some("response.done")),
+        ("[DONE]", None),
+    ] {
+        let transcript = format!(
+            "data: {{\"type\":\"response.output_item.added\",\"item\":{{\"type\":\"function_call\",\"id\":\"item_1\",\"call_id\":\"call_1\",\"name\":\"no_args\",\"arguments\":\"\"}}}}\n\ndata: {terminal}\n\n"
+        );
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(transcript)]);
+        let provider = provider_for_transport_with_mode(
+            transport,
+            "test-secret-key",
+            OpenAiApiMode::Responses,
+        );
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::ToolCallComplete {
+                    tool_call_id: "call_1".to_string(),
+                    function_name: "no_args".to_string(),
+                    arguments_json: "{}".to_string(),
+                },
+                ProviderStreamEvent::DoneWithMetadata {
+                    usage: None,
+                    metadata: stop_reason.map(|reason| ProviderStreamFinishedMetadata {
+                        provider_stop_reason: Some(reason.to_string()),
+                        ..ProviderStreamFinishedMetadata::default()
+                    }),
+                },
+            ]
+        );
+    }
 }
 
 #[tokio::test]

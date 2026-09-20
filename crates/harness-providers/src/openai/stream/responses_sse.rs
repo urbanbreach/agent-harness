@@ -1,7 +1,7 @@
 use tokio::sync::mpsc;
 
 use crate::{
-    CompletionUsage, ProviderStreamEvent, ProviderStreamFinishedMetadata,
+    CompletionUsage, ProviderErrorCategory, ProviderStreamEvent, ProviderStreamFinishedMetadata,
     ProviderStreamStartMetadata,
 };
 
@@ -43,11 +43,18 @@ pub(super) async fn consume_responses_sse_stream(
     let mut tool_calls = ResponsesToolCallState::default();
     let mut reasoning_summary_key: Option<(Option<String>, usize)> = None;
     let mut reasoning_trailing_newlines = 0usize;
+    let mut completion_seen = false;
 
     let done_context = loop {
         let event = match next_sse_event(&mut body, &mut sse_buffer).await {
             Ok(Some(event)) => event,
-            Ok(None) => break "responses.done_after_stream_end",
+            Ok(None) if completion_seen => break "responses.done_after_stream_end",
+            Ok(None) => {
+                let message = "openai_compatible responses stream ended before a terminal outcome";
+                warn_stream_processing_failure("responses.premature_eof", message);
+                let _ = tx.send(malformed_stream_error(message)).await;
+                return;
+            }
             Err(message) => {
                 let message = format!("openai_compatible SSE stream transport error: {message}");
                 warn_stream_processing_failure("responses.transport", &message);
@@ -64,12 +71,13 @@ pub(super) async fn consume_responses_sse_stream(
             break "responses.done";
         }
 
-        let parsed: OpenAiResponsesEvent = match serde_json::from_str(data) {
+        let parsed = match parse_responses_event(data) {
             Ok(parsed) => parsed,
-            Err(_) => {
-                let message = "openai_compatible returned invalid SSE JSON chunk";
-                warn_stream_processing_failure("responses.invalid_json", message);
-                let _ = tx.send(malformed_stream_error(message)).await;
+            Err((message, category)) => {
+                warn_stream_processing_failure("responses.invalid_event", message);
+                let _ = tx
+                    .send(ProviderStreamEvent::categorized_error(message, category))
+                    .await;
                 return;
             }
         };
@@ -95,21 +103,10 @@ pub(super) async fn consume_responses_sse_stream(
             "response.output_item.done" => {
                 handle_responses_tool_item_done(&tx, &mut tool_calls, parsed).await
             }
-            "response.completed" | "response.done" | "response.incomplete" => {
+            "response.completed" | "response.done" => {
                 apply_response_completion(parsed, &mut usage, &mut finished_metadata);
+                completion_seen = true;
                 true
-            }
-            "response.error" => {
-                warn_stream_processing_failure(
-                    "responses.error_event",
-                    "openai_compatible responses stream returned error event",
-                );
-                let _ = tx
-                    .send(malformed_stream_error(
-                        "openai_compatible responses stream returned error event",
-                    ))
-                    .await;
-                return;
             }
             _ => true,
         };
@@ -132,6 +129,42 @@ pub(super) async fn consume_responses_sse_stream(
         done_context,
     )
     .await;
+}
+
+fn parse_responses_event(
+    data: &str,
+) -> Result<OpenAiResponsesEvent, (&'static str, ProviderErrorCategory)> {
+    let event: OpenAiResponsesEvent = serde_json::from_str(data).map_err(|_| {
+        (
+            "openai_compatible returned invalid SSE JSON chunk",
+            ProviderErrorCategory::MalformedStream,
+        )
+    })?;
+    let status = event
+        .response
+        .as_ref()
+        .and_then(|response| response.status.as_deref());
+    if matches!(
+        event.event_type.as_str(),
+        "error" | "response.error" | "response.failed" | "response.incomplete"
+    ) || matches!(status, Some("failed" | "cancelled" | "incomplete"))
+    {
+        return Err((
+            "openai_compatible responses stream failed or was incomplete",
+            ProviderErrorCategory::Other,
+        ));
+    }
+    if matches!(
+        event.event_type.as_str(),
+        "response.completed" | "response.done"
+    ) && status.is_some_and(|status| status != "completed")
+    {
+        return Err((
+            "openai_compatible responses completion has inconsistent status",
+            ProviderErrorCategory::MalformedStream,
+        ));
+    }
+    Ok(event)
 }
 
 fn format_reasoning_delta(
