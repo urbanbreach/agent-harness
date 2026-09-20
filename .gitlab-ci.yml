@@ -48,6 +48,7 @@ variables:
       - target/nextest/perf/junit.xml
   paths:
     - target/nextest/perf/
+    - target/ci-perf/
 
 .coverage_artifacts: &coverage_artifacts
   when: always
@@ -118,9 +119,11 @@ rust:perf:
   stage: test
   image: rust:latest
   cache: *rust_cache
-  before_script: *rust_nextest_before_script
+  before_script:
+    - *rust_nextest_before_script
+    - apt-get update && apt-get install -y --no-install-recommends python3
   script:
-    - cargo nextest run --profile perf --workspace --all-features
+    - scripts/test-lanes.sh perf --artifact-dir "target/ci-perf/${CI_JOB_ID}"
   artifacts: *perf_junit_artifacts
 
 rust:coverage:
