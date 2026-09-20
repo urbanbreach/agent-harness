@@ -1,10 +1,14 @@
 # Privacy and local data
 
-Harness is local-first. It writes local sessions, artifacts, config, prompts, and skills, and it sends data out only through explicitly configured provider or MCP calls.
+Harness is local-first. It writes sessions, artifacts, config, prompts, and skills locally. Configured provider/MCP calls, explicit network tools, and automatic model-catalog downloads can generate outgoing traffic.
 
 ## Data egress
 
-The only routine data egress paths are configured provider requests and enabled MCP server calls. `webfetch`, `websearch`, and `codesearch` are also explicit tool calls under permission policy. Replay, session inspection, doctor, and support export are local/offline unless an operator runs a live provider lane.
+Configured provider requests and enabled MCP server calls can send data out. `webfetch`, `websearch`, and `codesearch` are explicit tool calls under permission policy.
+
+Ordinary live catalog initialization can download model metadata from `https://models.dev/api.json`. A valid cache is reused for five minutes; a valid stale cache is served immediately while refreshing in the background. Without a usable cache, initialization attempts a download and falls back to bundled metadata on failure. `HARNESS_MODELS_URL` and `HARNESS_MODELS_PATH` override the source and cache location; `HARNESS_DISABLE_MODELS_FETCH=1` selects only the embedded catalog. Mock TUI model-picker initialization always uses the embedded catalog without invoking this environment-backed loader.
+
+Replay, session inspection, doctor, and support export remain local/offline; live provider checks require a separate operator action.
 
 ## Storage paths
 
