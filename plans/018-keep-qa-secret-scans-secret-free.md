@@ -165,11 +165,11 @@ Every new QA error path must avoid printing captured output before scanning. Kee
 ## Execution evidence — issue #241
 
 - Baseline drift check: no differences in the three scoped implementation files from the planning baseline to `3d8e3d4f`.
-- Added one table-driven command-boundary regression with nine isolated cases: both scripts' marker findings, command failures, scanner errors, clean reruns with a prior receipt, and the live optional-tool failure path. All commands are local fakes; no provider or credentials are used.
+- Added one table-driven command-boundary regression with eleven isolated cases: both scripts' marker findings (including a nested file named `secret-scan.txt`), command failures, scanner errors, clean reruns with a prior receipt, and the live optional-tool failure path. All commands are local fakes; no provider or credentials are used.
 - Baseline `node --test scripts/qa/security-hardening.test.mjs`: failed as intended in all nine new cases (12 pre-existing checks passed). Diagnostics from the regression do not reproduce the synthetic values.
-- Final `node --test scripts/qa/security-hardening.test.mjs`: 22 checks passed, 0 failed, 0 skipped.
+- Final `node --test scripts/qa/security-hardening.test.mjs`: 24 checks passed, 0 failed, 0 skipped.
 - `bash -n scripts/harness-qa-live-smoke.sh scripts/harness-qa-dogfood.sh`: exit 0.
 - `git diff --check`: exit 0.
 - Scope: only the two scripts, their existing Node regression suite, and this plan were committed. The coordinating agent owns the shared plan index.
-- The original command captures remain original evidence. Derived diagnostics and the owned scan receipt report only fixed status metadata and match counts; grep errors fail closed. Both normal dogfood paths reuse the same scanner, and unsuccessful smoke/tool captures are never echoed raw to stderr.
+- The original command captures remain original evidence. Derived diagnostics and the owned scan receipt report only fixed status metadata and match counts; grep errors fail closed. Only the owned root scan receipt is excluded; nested files with the same basename are still scanned. Both normal dogfood paths reuse the same scanner, and unsuccessful smoke/tool captures are never echoed raw to stderr.
 - Independent verification and issue closure remain the coordinating agent's final gates.
