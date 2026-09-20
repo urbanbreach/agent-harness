@@ -150,6 +150,7 @@ impl StdioMcpProcessStarter for RealStdioMcpProcessStarter {
 
         let mut process = Command::new(&command[0]);
         process
+            .kill_on_drop(true)
             .args(command.iter().skip(1))
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -208,32 +209,37 @@ impl StdioMcpSession {
         starter: &dyn StdioMcpProcessStarter,
     ) -> Result<Self, ToolError> {
         let process = starter.start(server_id, command, env, cwd)?;
-        let timeout = Duration::from_secs(timeout_secs.max(1));
         let mut session = Self {
             child: process.child,
             stdin: process.stdin,
             stdout: BufReader::new(process.stdout),
             next_id: 1,
-            timeout,
+            timeout: Duration::from_secs(timeout_secs.max(1)),
             metadata: McpSessionMetadata::default(),
         };
-        let initialize = session
-            .request(
-                "initialize",
-                json!({
-                    "protocolVersion": MCP_PROTOCOL_VERSION,
-                    "capabilities": {},
-                    "clientInfo": {
-                        "name": "agent-harness",
-                        "version": env!("CARGO_PKG_VERSION"),
-                    },
-                }),
-            )
-            .await?;
-        session.metadata = parse_session_metadata(&initialize);
-        session
-            .notify("notifications/initialized", json!({}))
-            .await?;
+        let initialized = async {
+            let initialize = session
+                .request(
+                    "initialize",
+                    json!({
+                        "protocolVersion": MCP_PROTOCOL_VERSION,
+                        "capabilities": {},
+                        "clientInfo": {
+                            "name": "agent-harness",
+                            "version": env!("CARGO_PKG_VERSION"),
+                        },
+                    }),
+                )
+                .await?;
+            session.metadata = parse_session_metadata(&initialize);
+            session.notify("notifications/initialized", json!({})).await
+        }
+        .await;
+        if let Err(err) = initialized {
+            // Tokio's kill also waits; bound cleanup and preserve the startup error.
+            let _ = timeout(session.timeout, session.child.kill()).await;
+            return Err(err);
+        }
         Ok(session)
     }
 
