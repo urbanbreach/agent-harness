@@ -2,21 +2,21 @@
 
 Implemented the research's A–G presentation and interaction changes with Harness
 branding, coordinator authority, and recorded-data replay intact. Verification
-completed on 8 September 2026 (Europe/Helsinki). The research folder is preserved.
+completed on 8 September 2026 (Europe/Helsinki). The research folder is a local artifact.
 
 The [11 September chat/tool follow-up](chat-tool-render-parity.md) supersedes
 the chat palette, grouping, disclosure, syntax, and queued-tool projection
 results below. It includes a new 504-frame xterm matrix, exact chat-cell
 comparisons, and real edit/search/viewer terminal journeys.
 
-Scope: [research synthesis](../20260906-192230/SYNTHESIS.md), compared against
+Scope: local research synthesis (`20260906-192230/SYNTHESIS.md`), compared against
 `inspirations/grok-build` at `bc7f02eddd3d84085849dc19ed216f11c23b0571`
 (upstream `SOURCE_REV`: `d5a0335a47221e8c9519936cb693e9b6450227ec`).
 Harness implementation baseline: `60282c31862bb34e4565b7574d1ef7dbebf1f126`.
 
-Open the [comparison gallery](../.omo/evidence/grok-parity-final/index.html)
+Open the comparison gallery (`.omo/evidence/grok-parity-final/index.html`)
 for actual xterm.js screenshots and selectable animation samples. The
-[evidence index](../.omo/evidence/grok-parity-final/README.md) links the raw
+evidence index (`.omo/evidence/grok-parity-final/README.md`) links the raw
 frames, source receipts, interaction journals, cleanup receipts, and check logs.
 Evidence is local and ignored by Git; the implementation and capture drivers
 remain reviewable in the working tree.
@@ -105,7 +105,7 @@ Native color-cell analysis confirms that the Unicode H changes at 120×40 and
 160×50 while text and controls remain stationary. The measured 80×24 layout has
 no H; monochrome ASCII is static. All six native reduced-motion variants have
 identical first and settled cells. See
-[motion verification](../.omo/evidence/grok-parity-final/native-motion/motion-verification.json).
+motion verification (`.omo/evidence/grok-parity-final/native-motion/motion-verification.json`).
 Exact injected-clock frames and real elapsed-time native/reference frames are
 separate evidence sets; actual timings are retained in their manifests.
 

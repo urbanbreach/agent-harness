@@ -2,12 +2,15 @@ use harness::UnwrapOrAbort;
 #[test]
 fn doctor_cli_json_reports_formatter_status() {
     // arrange
+    let session_temp = tempdir().unwrap_or_abort();
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
     // act
     let output = harness_command()
         .current_dir(&repo_root)
+        .arg("--session-dir")
+        .arg(session_temp.path().join("sessions"))
         .env("OPENAI_API_KEY", "doctor-formatter-status-test-key")
         .args([
             "--config",

@@ -843,8 +843,8 @@ mod tests {
               model: "default/gpt-5.4-mini",
               permission: {
                 task: {
-                  general: "deny",
                   "*": "allow",
+                  general: "deny",
                 },
               },
               tools: ["task"],
