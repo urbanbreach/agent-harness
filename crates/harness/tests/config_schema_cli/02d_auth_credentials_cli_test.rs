@@ -285,6 +285,8 @@ fn auth_list_and_doctor_report_malformed_stored_credentials_as_error() {
     // act: doctor surfaces the same error as a warning, not a healthy fallback.
     let doctor_output = harness_command()
         .current_dir(temp.path())
+        .arg("--session-dir")
+        .arg(temp.path().join("sessions"))
         .env("HARNESS_DATA_HOME", data_home.as_os_str())
         .env("HARNESS_AUTH_FALLBACK_KEY", "fallback-secret-value")
         .args([
@@ -378,6 +380,8 @@ fn doctor_cli_json_reports_redacted_per_provider_auth_status() {
     // act
     let output = harness_command()
         .current_dir(temp.path())
+        .arg("--session-dir")
+        .arg(temp.path().join("sessions"))
         .env("HARNESS_DATA_HOME", data_home.as_os_str())
         .args([
             "--config",

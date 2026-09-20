@@ -86,6 +86,8 @@ fn doctor_cli_reports_model_profile_fallback_targets() {
 
     let output = harness_command()
         .current_dir(temp.path())
+        .arg("--session-dir")
+        .arg(temp.path().join("sessions"))
         .args([
             "--config",
             config_path.to_str().unwrap_or_abort(),
@@ -145,6 +147,8 @@ fn doctor_cli_warns_when_provider_credentials_are_missing() {
 
     let output = harness_command()
         .current_dir(temp.path())
+        .arg("--session-dir")
+        .arg(temp.path().join("sessions"))
         .args([
             "--config",
             config_path.to_str().unwrap_or_abort(),
@@ -199,6 +203,8 @@ fn doctor_cli_reports_env_provider_credentials_without_revealing_values() {
 
             let output = command
                 .current_dir(temp.path())
+                .arg("--session-dir")
+                .arg(temp.path().join("sessions"))
                 .args([
                     "--config",
                     config_path.to_str().unwrap_or_abort(),

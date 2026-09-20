@@ -3,6 +3,7 @@ use harness::UnwrapOrAbort;
 #[test]
 fn doctor_cli_redacts_provider_credentials_in_output() {
     // arrange — a distinctive secret supplied through the environment
+    let session_temp = tempdir().unwrap_or_abort();
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
     let secret = "doctor-redaction-probe-sk-9f8e7d6c5b4a";
@@ -10,6 +11,8 @@ fn doctor_cli_redacts_provider_credentials_in_output() {
     // act
     let output = harness_command()
         .current_dir(&repo_root)
+        .arg("--session-dir")
+        .arg(session_temp.path().join("sessions"))
         .env("OPENAI_API_KEY", secret)
         .args(["--config", config_path.to_str().unwrap_or_abort(), "doctor"])
         .output()
