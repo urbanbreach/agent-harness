@@ -14,6 +14,7 @@ use thiserror::Error;
 use crate::conversation::ConversationProjection;
 use crate::digest::digest12;
 use crate::event::EventEnvelopeV1;
+use crate::path_selector::{recheck_restore_target, resolve_restore_target};
 use crate::session::CanonicalSessionProjection;
 
 /// Failures planning a prompt-level rewind.
@@ -129,8 +130,8 @@ pub enum AtomicPromptRewindError {
 ///
 /// Fail-closed contract:
 /// 1. Plan conversation first; on failure return without touching files.
-/// 2. Apply file restores with pre-backup; on any failure roll back all
-///    file changes and return error (conversation plan is discarded).
+/// 2. Validate every target, then apply restores with pre-backup; on failure roll
+///    back all file changes and return error (conversation plan is discarded).
 /// 3. Events stay append-only; this function never mutates the event log.
 pub fn atomic_prompt_rewind(
     events: &[EventEnvelopeV1],
@@ -148,17 +149,24 @@ pub fn atomic_prompt_rewind(
         });
     }
 
+    let workspace_root = workspace_root
+        .canonicalize()
+        .map_err(|err| AtomicPromptRewindError::FileRestore(format!("resolve workspace: {err}")))?;
+    let workspace_root = workspace_root.as_path();
+    let targets = file_snapshot
+        .iter()
+        .map(|entry| {
+            resolve_restore_target(workspace_root, Path::new(&entry.path))
+                .map_err(|err| AtomicPromptRewindError::FileRestore(err.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let mut backups: BTreeMap<PathBuf, Option<String>> = BTreeMap::new();
     let mut files_restored = 0usize;
     let mut files_unchanged = 0usize;
 
-    for entry in file_snapshot {
-        let relative = normalize_relative_path(&entry.path);
-        if relative.is_empty() || relative.contains("..") {
-            let err = format!("invalid snapshot path `{relative}`");
-            return Err(rollback_or_escalate(workspace_root, &backups, err));
-        }
-        let target = workspace_root.join(&relative);
+    for (entry, target) in file_snapshot.iter().zip(targets) {
+        recheck_restore_target(workspace_root, &target)
+            .map_err(|err| rollback_or_escalate(workspace_root, &backups, err.to_string()))?;
         let previous = if target.is_file() {
             match fs::read_to_string(&target) {
                 Ok(content) => Some(content),
@@ -179,6 +187,8 @@ pub fn atomic_prompt_rewind(
             continue;
         }
 
+        recheck_restore_target(workspace_root, &target)
+            .map_err(|err| rollback_or_escalate(workspace_root, &backups, err.to_string()))?;
         if let Some(parent) = target.parent() {
             if let Err(err) = fs::create_dir_all(parent) {
                 return Err(rollback_or_escalate(
@@ -188,6 +198,8 @@ pub fn atomic_prompt_rewind(
                 ));
             }
         }
+        recheck_restore_target(workspace_root, &target)
+            .map_err(|err| rollback_or_escalate(workspace_root, &backups, err.to_string()))?;
         if let Err(err) = fs::write(&target, &entry.content) {
             return Err(rollback_or_escalate(
                 workspace_root,
@@ -212,11 +224,8 @@ fn rollback_or_escalate(
     backups: &BTreeMap<PathBuf, Option<String>>,
     file_error: String,
 ) -> AtomicPromptRewindError {
-    match rollback_file_changes(backups) {
-        Ok(()) => {
-            let _ = workspace_root;
-            AtomicPromptRewindError::FileRestoreRolledBack { file_error }
-        }
+    match rollback_file_changes(workspace_root, backups) {
+        Ok(()) => AtomicPromptRewindError::FileRestoreRolledBack { file_error },
         Err(rollback_error) => AtomicPromptRewindError::FileRestoreRollbackFailed {
             file_error,
             rollback_error,
@@ -224,14 +233,19 @@ fn rollback_or_escalate(
     }
 }
 
-fn rollback_file_changes(backups: &BTreeMap<PathBuf, Option<String>>) -> Result<(), String> {
+fn rollback_file_changes(
+    workspace_root: &Path,
+    backups: &BTreeMap<PathBuf, Option<String>>,
+) -> Result<(), String> {
     for (path, previous) in backups.iter().rev() {
+        recheck_restore_target(workspace_root, path).map_err(|err| err.to_string())?;
         match previous {
             Some(content) => {
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent)
                         .map_err(|err| format!("rollback create {}: {err}", path.display()))?;
                 }
+                recheck_restore_target(workspace_root, path).map_err(|err| err.to_string())?;
                 fs::write(path, content)
                     .map_err(|err| format!("rollback write {}: {err}", path.display()))?;
             }
@@ -244,10 +258,6 @@ fn rollback_file_changes(backups: &BTreeMap<PathBuf, Option<String>>) -> Result<
         }
     }
     Ok(())
-}
-
-fn normalize_relative_path(path: &str) -> String {
-    path.trim().trim_start_matches("./").replace('\\', "/")
 }
 
 fn ensure_contiguous_from_one(events: &[EventEnvelopeV1]) -> Result<(), PromptRewindError> {
@@ -422,6 +432,25 @@ mod tests {
         assert_eq!(result.conversation.retained_event_count, 2);
         assert_eq!(result.files_restored, 1);
         assert_eq!(fs::read_to_string(&target).unwrap_or_abort(), "before");
+
+        // Ordinary write failures still roll back previously restored files.
+        fs::create_dir(workspace.join("blocked")).unwrap_or_abort();
+        let snapshot = [
+            FileSnapshotEntry {
+                path: "notes.txt".into(),
+                content: "changed-again".into(),
+            },
+            FileSnapshotEntry {
+                path: "blocked".into(),
+                content: "cannot-replace-directory".into(),
+            },
+        ];
+        let result = atomic_prompt_rewind(&events, 2, &workspace, &snapshot);
+        assert!(matches!(
+            result,
+            Err(AtomicPromptRewindError::FileRestoreRolledBack { .. })
+        ));
+        assert_eq!(fs::read_to_string(&target).unwrap_or_abort(), "before");
     }
 
     #[test]
@@ -484,34 +513,89 @@ mod tests {
     }
 
     #[test]
-    fn atomic_prompt_rewind_rolls_back_files_on_invalid_path() {
-        // Given: valid first file restore then invalid path
+    fn atomic_prompt_rewind_preflights_all_paths_before_mutation() {
         let temp = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp.path().join("ws");
         fs::create_dir_all(&workspace).unwrap_or_abort();
         let target = workspace.join("ok.txt");
         fs::write(&target, "original").unwrap_or_abort();
         let events = vec![user_message(1, "a")];
-        let snapshot = [
-            FileSnapshotEntry {
-                path: "ok.txt".into(),
-                content: "mutated".into(),
-            },
-            FileSnapshotEntry {
-                path: "../escape.txt".into(),
-                content: "nope".into(),
-            },
+        let events_path = workspace.join("events.jsonl");
+        let journal = format!("{}\n", serde_json::to_string(&events[0]).unwrap_or_abort());
+        fs::write(&events_path, &journal).unwrap_or_abort();
+        let outside = temp.path().join("outside");
+        fs::create_dir(&outside).unwrap_or_abort();
+        let sentinel = outside.join("sentinel.txt");
+        fs::write(&sentinel, "external-original").unwrap_or_abort();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            symlink(&outside, workspace.join("link")).unwrap_or_abort();
+            symlink(outside.join("absent"), workspace.join("dangling")).unwrap_or_abort();
+        }
+        let absolute_inside = target.to_string_lossy();
+        let absolute_outside = sentinel.to_string_lossy();
+        let cases = [
+            ("", false),
+            (".", false),
+            ("../outside/sentinel.txt", false),
+            ("./../outside/sentinel.txt", false),
+            ("nested/../ok.txt", false),
+            (absolute_inside.as_ref(), false),
+            (absolute_outside.as_ref(), false),
+            ("ok.txt/child", false),
+            #[cfg(unix)]
+            ("link/missing.txt", false),
+            #[cfg(unix)]
+            ("link/sentinel.txt", false),
+            #[cfg(unix)]
+            ("dangling", false),
+            #[cfg(unix)]
+            ("dangling/child", false),
+            ("notes..txt", true),
         ];
 
-        // When
-        let err =
-            atomic_prompt_rewind(&events, 1, &workspace, &snapshot).expect_err("invalid path");
-
-        // Then: fail-closed rollback restores original content
-        assert!(matches!(
-            err,
-            AtomicPromptRewindError::FileRestoreRolledBack { .. }
-        ));
-        assert_eq!(fs::read_to_string(&target).unwrap_or_abort(), "original");
+        for (path, valid) in cases {
+            let snapshot = [
+                FileSnapshotEntry {
+                    path: "ok.txt".into(),
+                    content: "mutated".into(),
+                },
+                FileSnapshotEntry {
+                    path: "new/leaf.txt".into(),
+                    content: "new".into(),
+                },
+                FileSnapshotEntry {
+                    path: path.into(),
+                    content: "restored".into(),
+                },
+            ];
+            let result = atomic_prompt_rewind(&events, 1, &workspace, &snapshot);
+            if valid {
+                assert_eq!(result.unwrap_or_abort().files_restored, 3);
+                assert_eq!(
+                    fs::read_to_string(workspace.join(path)).unwrap_or_abort(),
+                    "restored"
+                );
+            } else {
+                assert!(
+                    matches!(result, Err(AtomicPromptRewindError::FileRestore(_))),
+                    "{path}: {result:?}"
+                );
+                assert_eq!(
+                    fs::read_to_string(&target).unwrap_or_abort(),
+                    "original",
+                    "{path}"
+                );
+                assert!(
+                    !workspace.join("new").exists(),
+                    "preflight created a directory: {path}"
+                );
+            }
+            assert_eq!(fs::read(&sentinel).unwrap_or_abort(), b"external-original");
+            assert!(!outside.join("missing.txt").exists());
+            assert!(!outside.join("absent").exists());
+            assert_eq!(fs::read(&events_path).unwrap_or_abort(), journal.as_bytes());
+        }
     }
 }

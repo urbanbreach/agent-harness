@@ -103,6 +103,36 @@ pub(crate) fn normalize_workspace_relative_path(path: &Path) -> Option<String> {
     normalize_relative_components(path)
 }
 
+/// Restore inputs must name workspace-relative files and cannot grant external access.
+pub(crate) fn resolve_restore_target(workspace: &Path, input: &Path) -> Result<PathBuf, ToolError> {
+    if normalize_workspace_relative_path(input).is_none() {
+        return Err(ToolError::InvalidArguments(format!(
+            "invalid snapshot path `{}`",
+            input.display()
+        )));
+    }
+    let resolved = effective_workspace_target(workspace, input)?;
+    if resolved.relative.is_none() {
+        return Err(ToolError::PathEscapesWorkspace {
+            workspace_root: workspace.display().to_string(),
+            path: input.display().to_string(),
+        });
+    }
+    Ok(resolved.target)
+}
+
+/// Recheck the pinned target before I/O; a changed link must not redirect a restore.
+pub(crate) fn recheck_restore_target(workspace: &Path, target: &Path) -> Result<(), ToolError> {
+    let resolved = effective_workspace_target(workspace, target)?;
+    if resolved.relative.is_none() || resolved.target != target {
+        return Err(ToolError::PathEscapesWorkspace {
+            workspace_root: workspace.display().to_string(),
+            path: target.display().to_string(),
+        });
+    }
+    Ok(())
+}
+
 pub(crate) fn workspace_relative_path_from_maybe_absolute(
     workspace_root: &Path,
     path: &Path,
