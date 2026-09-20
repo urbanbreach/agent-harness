@@ -134,12 +134,20 @@ impl DashboardReadModel {
         left.cmp(right)
     }
 
-    pub(crate) fn event_parent_id(events: &[&EventEnvelopeV1]) -> Option<String> {
-        events.iter().find_map(|event| match &event.payload {
-            EventV1::BackgroundTaskNotification(notification) => {
-                Some(notification.parent_session_id.to_string())
-            }
-            _ => event.lineage_parent_session_id().map(str::to_string),
+    pub(crate) fn event_parent_id(run_id: &str, events: &[&EventEnvelopeV1]) -> Option<String> {
+        events.iter().find_map(|event| {
+            let parent = match &event.payload {
+                EventV1::BackgroundTaskNotification(notification)
+                    if notification.child_session_id.as_str() == run_id =>
+                {
+                    Some(notification.parent_session_id.as_str())
+                }
+                EventV1::BackgroundTaskNotification(_) => None,
+                _ => event.lineage_parent_session_id(),
+            };
+            parent
+                .filter(|parent| *parent != run_id)
+                .map(str::to_string)
         })
     }
 

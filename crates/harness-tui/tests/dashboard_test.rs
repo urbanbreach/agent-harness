@@ -324,3 +324,226 @@ fn completed_live_turn_uses_updated_title_and_leaves_working_roster() {
     assert_eq!(row.title.as_deref(), Some("Renamed live session"));
     assert_eq!(row.status, DashboardStatus::Completed);
 }
+
+#[test]
+fn shared_child_events_preserve_parent_status_and_root_visibility() {
+    use harness_core::event::{
+        AgentSpawnedEvent, AgentStoppedEvent, BackgroundTaskNotificationEvent,
+        BackgroundTaskNotificationStatus, PermissionDecision, PermissionRequestedEvent,
+        ProviderRequestStartedEvent, TaskCompletedEvent, TaskCompletionMetadata,
+        TaskLineageMetadata, TaskScheduleMetadata, TaskTerminalScope,
+    };
+    let root = event(
+        "parent",
+        2,
+        EventV1::AgentSpawned(AgentSpawnedEvent {
+            agent_id: "owner-agent".into(),
+            profile: "build".into(),
+            parent_agent_id: None,
+        }),
+    );
+    let mut events = vec![
+        started("parent", 1),
+        root,
+        event(
+            "parent",
+            3,
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "child-agent".into(),
+                profile: "build".into(),
+                parent_agent_id: Some("owner-agent".into()),
+            }),
+        ),
+    ];
+    let terminal = EventV1::TaskCompleted(TaskCompletedEvent {
+        task_id: "child-turn".into(),
+        result_summary: "done".into(),
+        result_digest: "digest".into(),
+        metadata: Some(TaskCompletionMetadata {
+            task_scope: Some(TaskTerminalScope::AgentTurn),
+            lineage: Some(TaskLineageMetadata {
+                parent_session_id: Some("parent".into()),
+                child_session_id: Some("child".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+    });
+    let notification = EventV1::BackgroundTaskNotification(BackgroundTaskNotificationEvent {
+        parent_session_id: "parent".into(),
+        parent_agent_id: Some("owner-agent".into()),
+        child_session_id: "child".into(),
+        child_request_id: "child-request".into(),
+        task_id: "child-turn".into(),
+        description: "child task".into(),
+        status: BackgroundTaskNotificationStatus::Completed,
+        summary: "done".into(),
+        terminal_event_id: "terminal-child".into(),
+        terminal_task_id: "child-turn".into(),
+        delivered_turn_request_id: None,
+    });
+    for blocked in [false, true] {
+        if blocked {
+            events.push(event(
+                "parent",
+                4,
+                EventV1::PermissionRequested(PermissionRequestedEvent {
+                    permission_id: "permission".into(),
+                    kind: "edit_fs".into(),
+                    tool_call_id: None,
+                    summary: "Review edit".into(),
+                    request_digest: "digest".into(),
+                    timeout_ms: 30000,
+                    default_decision: PermissionDecision::Deny,
+                }),
+            ));
+        }
+        let expected = if blocked {
+            DashboardStatus::AwaitingInput
+        } else {
+            DashboardStatus::Running
+        };
+        let mut journal = events.clone();
+        for (index, payload) in [
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "child-turn".into(),
+                state: TaskScheduleState::Queued,
+                queue_key: None,
+                metadata: Some(TaskScheduleMetadata {
+                    lineage: Some(TaskLineageMetadata {
+                        parent_session_id: Some("parent".into()),
+                        child_session_id: Some("child".into()),
+                        ..Default::default()
+                    }),
+                }),
+            }),
+            terminal.clone(),
+            EventV1::TaskCancelled(TaskCancelledEvent {
+                task_id: "child-turn".into(),
+                reason: "stop".into(),
+                task_scope: Some(TaskTerminalScope::AgentTurn),
+            }),
+            EventV1::AgentStopped(AgentStoppedEvent {
+                agent_id: "child-agent".into(),
+                reason: "done".into(),
+            }),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "child-request".into(),
+                provider_id: "mock".into(),
+                model_id: "mock".into(),
+                prompt_summary: "child".into(),
+                request_digest: "digest".into(),
+                metadata: None,
+            }),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: "child-request".into(),
+                delta: "reply".into(),
+            }),
+            notification.clone(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut child_event = event("parent", 10 + index as u64, payload);
+            child_event.correlation_id = Some("child-request".into());
+            if !matches!(
+                child_event.payload,
+                EventV1::ProviderStreamDelta(_)
+                    | EventV1::ProviderRequestStarted(_)
+                    | EventV1::TaskCancelled(_)
+                    | EventV1::AgentStopped(_)
+                    | EventV1::BackgroundTaskNotification(_)
+            ) {
+                child_event.actor = EventActor::new(ActorKind::Worker, Some("child-agent".into()));
+            }
+            journal.push(child_event);
+            let model = project(
+                &DashboardReplayRegistry::from_sessions(vec![
+                    session(
+                        "parent",
+                        Some("parent"),
+                        SessionModeSource::InteractiveLive,
+                        journal.clone(),
+                    ),
+                    session(
+                        "child",
+                        None,
+                        SessionModeSource::InteractiveLive,
+                        vec![started("child", 1), event("child", 2, notification.clone())],
+                    ),
+                ]),
+                &DashboardEligibilityRules::default(),
+            );
+            let parent = model.row("parent").unwrap_or_abort();
+            assert_eq!(parent.status, expected, "child event {index}");
+            assert!(parent.relationship.parent.is_none());
+            assert!(!parent.relationship.is_background);
+            assert_eq!(
+                parent.relationship.children,
+                vec![SelectionKey::new("child")]
+            );
+            assert_eq!(
+                model.row("child").unwrap_or_abort().status,
+                DashboardStatus::Completed
+            );
+        }
+        if !blocked {
+            if let Some(directory) = std::env::var_os("HARNESS_TOOL_RUNTIME_HARNESS_DIR") {
+                use ratatui::{
+                    backend::CrosstermBackend, layout::Rect, Terminal, TerminalOptions, Viewport,
+                };
+                let directory = std::path::PathBuf::from(directory);
+                std::fs::create_dir_all(&directory).unwrap_or_abort();
+                let mut app = harness_tui::app::AppState::new_replay(
+                    directory.join("parent"),
+                    journal.clone(),
+                );
+                for (width, height) in [(120, 40), (60, 20)] {
+                    let area = Rect::new(0, 0, width, height);
+                    app.open_status_dashboard_at(area);
+                    let mut bytes = Vec::new();
+                    {
+                        let mut terminal = Terminal::with_options(
+                            CrosstermBackend::new(&mut bytes),
+                            TerminalOptions {
+                                viewport: Viewport::Fixed(area),
+                            },
+                        )
+                        .unwrap_or_abort();
+                        terminal
+                            .draw(|frame| harness_tui::ui::render_app(frame, &app))
+                            .unwrap_or_abort();
+                    }
+                    std::fs::write(
+                        directory.join(format!(
+                            "dashboard-parent-running-{width}x{height}-motion-0ms.ansi"
+                        )),
+                        bytes,
+                    )
+                    .unwrap_or_abort();
+                }
+            }
+        }
+        let mut own_terminal = terminal.clone();
+        if let EventV1::TaskCompleted(task) = &mut own_terminal {
+            task.task_id = "owner-turn".into();
+            task.metadata.as_mut().unwrap_or_abort().lineage = None;
+        }
+        let mut own_event = event("parent", 20, own_terminal);
+        own_event.actor = EventActor::new(ActorKind::Worker, Some("owner-agent".into()));
+        journal.push(own_event);
+        let model = project(
+            &DashboardReplayRegistry::from_sessions(vec![session(
+                "parent",
+                None,
+                SessionModeSource::InteractiveLive,
+                journal,
+            )]),
+            &DashboardEligibilityRules::default(),
+        );
+        assert_eq!(
+            model.row("parent").unwrap_or_abort().status,
+            DashboardStatus::Completed
+        );
+    }
+}
