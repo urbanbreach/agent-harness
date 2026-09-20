@@ -590,6 +590,11 @@ pub(crate) fn write_atomic(path: &Path, content: &str) -> Result<(), ToolError> 
             path.display()
         ))
     })?;
+    let permissions = match std::fs::metadata(path) {
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => return Err(err).tool_err("failed to read target metadata"),
+    };
 
     let mut temp = tempfile::Builder::new()
         .prefix(".hashline-")
@@ -600,6 +605,11 @@ pub(crate) fn write_atomic(path: &Path, content: &str) -> Result<(), ToolError> 
     temp.write_all(content.as_bytes())
         .tool_err("failed to write temp file")?;
     temp.flush().tool_err("failed to flush temp file")?;
+    if let Some(permissions) = permissions {
+        temp.as_file()
+            .set_permissions(permissions)
+            .tool_err("failed to set temp file permissions")?;
+    }
     temp.as_file()
         .sync_data()
         .tool_err("failed to sync temp file")?;

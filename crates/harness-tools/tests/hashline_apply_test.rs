@@ -1,5 +1,7 @@
 use harness_tools::UnwrapOrAbort;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -26,6 +28,8 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
     let file_path = workspace.workspace().join("demo.txt");
     let original = "alpha\nbeta\ngamma\nsk-synthetic0123456789\n-----BEGIN PRIVATE KEY-----\nsynthetic-private-material\n-----END PRIVATE KEY-----\n";
     fs::write(&file_path, original).unwrap_or_abort();
+    #[cfg(unix)]
+    fs::set_permissions(&file_path, fs::Permissions::from_mode(0o751)).unwrap_or_abort();
 
     let patch = replace_line_patch("edit-success", "demo.txt", original, 2, "BETA");
     let expected_content = original.replacen("beta", "BETA", 1);
@@ -60,6 +64,15 @@ async fn hashline_apply_success_writes_file_and_emits_applied_event() {
 
     let updated = fs::read_to_string(&file_path).unwrap_or_abort();
     assert_eq!(updated, expected_content);
+    #[cfg(unix)]
+    assert_eq!(
+        fs::metadata(&file_path)
+            .unwrap_or_abort()
+            .permissions()
+            .mode()
+            & 0o7777,
+        0o751
+    );
 
     let events = read_events(&run.events_path);
     assert!(events.iter().any(|event| {
