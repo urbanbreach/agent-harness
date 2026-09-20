@@ -46,7 +46,7 @@ fn run() -> Result<(), String> {
         &args.matrix,
         &args.artifact_root.join("simulation-matrix.json"),
     )?;
-    // Matrix validation can include input values in diagnostics; scan its staged copy first.
+    // Reject literal markers early; decoded validator values never reach diagnostics.
     scan_evidence(&args.artifact_root)?;
     let matrix = validate_matrix_file(&args.artifact_root.join("simulation-matrix.json"))
         .map_err(format_failures)?;
@@ -392,9 +392,8 @@ fn read_jsonl(path: &Path) -> Result<Vec<Value>, String> {
 }
 
 fn format_failures(failures: Vec<harness_testkit::simulation::SimulationFailure>) -> String {
-    failures
-        .into_iter()
-        .map(|failure| failure.to_string())
-        .collect::<Vec<_>>()
-        .join("\n")
+    format!(
+        "simulation validation failed (failure_count={})",
+        failures.len()
+    )
 }
