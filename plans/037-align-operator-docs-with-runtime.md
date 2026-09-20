@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — source and whitespace checks pass; independent review pending.
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#260](https://github.com/urbanbreach/agent-harness/issues/260)
 - **Priority:** P2
 - **Effort:** S
@@ -180,3 +180,7 @@ Permission mappings, new backend dispatch branches and catalog network-policy ch
   No new tests or builds are needed for these prose corrections.
 - Independent review and the index update in `plans/README.md` are delegated to
   the integrating operator before issue closure.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `fix_provider_sessions` verified issue #260: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

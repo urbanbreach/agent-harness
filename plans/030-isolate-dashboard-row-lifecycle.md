@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — focused tests and xterm.js verified; independent integrated review pending.
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#253](https://github.com/urbanbreach/agent-harness/issues/253)
 - **Priority:** P2
 - **Effort:** M
@@ -152,9 +152,9 @@ All must hold:
 - [x] Mixed child completion/cancellation/notification events cannot finish or hide the parent row.
 - [x] The row's own lifecycle still changes status, and valid child links remain visible.
 - [x] No inferred parent ID equals its own row ID.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
 - [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -181,3 +181,7 @@ Shared journals contain multiple actors. New terminal event types must specify w
 - Lifecycle ownership uses recorded root/child agent bindings, task lineage, and request/task correlations; run IDs are never treated as agent IDs. Child notifications preserve parent status and only mark their child row as background. Self-parent candidates are rejected for catalog, journal, child-link, and AppState inputs.
 - The shared-journal table protects running and permission-blocked parents against child scheduling/completion/cancellation/stopping/provider fragments/notifications, with an owned parent completion control. Existing dashboard compatibility tests pass.
 - Inspected `dashboard-parent-running-{120x40,60x20}-motion-0ms.png`: the parent remains in the working root roster after all child terminal signals.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_tui` verified issue #253: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

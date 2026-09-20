@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** Implemented; awaiting integrated checks and independent verification
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#259](https://github.com/urbanbreach/agent-harness/issues/259)
 - **Priority:** P1
 - **Effort:** M
@@ -158,8 +158,8 @@ All must hold:
 
 - [x] Secret/schema/invariant failures publish no new bundle and preserve all pre-existing destination files.
 - [x] Successful output becomes visible only as a fully validated bundle; PASS appears only after installation.
-- [ ] The existing deterministic simulation lane still produces valid receipts and relative artifact references.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] The existing deterministic simulation lane still produces valid receipts and relative artifact references.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
 - [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
 - [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
@@ -203,3 +203,7 @@ All future artifacts and validators must target staging. Keep publication as the
 - The same private-target command after the correction passed: 29 tests, 0 failed, 0 skipped (run `48a44648-57b4-4830-9f5f-40aee761a44e`).
 - `cargo fmt --all -- --check` and `git diff --check`: exit 0.
 - Follow-up independent review and integration remain owned by the coordinating agent; no issue was closed or pushed from this executor checkout.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_existing_edges` verified issue #259: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

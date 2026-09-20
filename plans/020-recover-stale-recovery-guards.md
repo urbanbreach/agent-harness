@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED; independent review and integrated compatibility checks pending
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#243](https://github.com/urbanbreach/agent-harness/issues/243)
 - **Priority:** P1
 - **Effort:** M
@@ -172,9 +172,9 @@ All must hold:
 - [x] A valid journal with dead writer and recovery markers can be opened and recovered.
 - [x] Concurrent reclamation admits exactly one live writer and preserves live guards.
 - [x] Read-only inspection creates no lock artifacts and existing tail-repair tests pass.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
 - [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -208,3 +208,7 @@ The mutex pathname must never be deleted during cleanup; replacing its inode def
 - Per-worktree `cargo check -p harness-core --locked --offline`, `cargo check --workspace --locked --offline`, and `cargo clippy -p harness-core --all-targets --all-features --locked --offline -- -D warnings` were queued on the shared Cargo lock, then canceled at the integrating coordinator's request. Workspace check/Clippy will run once on the integrated changes; these unrun checks are not claimed as passing here.
 
 - `cargo nextest run --profile ci --locked --offline -p harness --lib -E 'test(reopen_session_applies_crash_recovery_for_marker_then_summarizes)'`: **1 passed**, 293 skipped; the corrected CLI recovery fixture reports successful cleanup through the public reopen command.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_existing_core` verified issue #243: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

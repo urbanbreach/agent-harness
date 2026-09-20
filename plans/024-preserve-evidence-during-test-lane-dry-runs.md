@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — independent verification pending
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#247](https://github.com/urbanbreach/agent-harness/issues/247)
 - **Priority:** P1
 - **Effort:** S
@@ -148,11 +148,11 @@ Run `cargo nextest run --profile ci --locked --offline -p harness --test test_la
 
 All must hold:
 
-- [ ] The existing dry-run behavior test compares unchanged bytes in all four capture families.
-- [ ] Actual execution still performs stale-evidence cleanup; dry-run stage metadata remains valid.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
-- [ ] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] The existing dry-run behavior test compares unchanged bytes in all four capture families.
+- [x] Actual execution still performs stale-evidence cleanup; dry-run stage metadata remains valid.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -176,3 +176,7 @@ Preparation outside run_stage must honor dry_run itself. Plans 026–028 share t
 - `bash -n scripts/test-lanes.sh` and `git diff --check`: passed.
 - An additional direct script run preserved all four binary sentinels and sibling files.
 - Cargo used the shared `target/issue-closure` directory with build jobs 2 and dev/test debug info disabled. Integrated checks and independent review are recorded in the issue closeout.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_existing_core` verified issue #247: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

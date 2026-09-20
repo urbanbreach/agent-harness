@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — focused tests and xterm.js verified; independent integrated review pending.
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#254](https://github.com/urbanbreach/agent-harness/issues/254)
 - **Priority:** P2
 - **Effort:** M
@@ -143,9 +143,9 @@ All must hold:
 - [x] Parked Ctrl+e and transcript scroll actions change only review state.
 - [x] Tab/Space restores permission focus; focused question wheel/paste behavior remains covered.
 - [x] No review action submits text or a permission decision, and no hidden shortcuts surface is advertised.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
 - [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -179,3 +179,7 @@ Any new parked-review hint must have an explicit safe dispatch path and preserve
 - Moved `permission_modal_escape_parks_and_tab_restores_without_answering` unchanged into the existing included `permission_modal_tests_part6_test.rs`. The delegated test name and capture behavior are unchanged; the two files now contain 720 and 273 lines.
 - The private-target nextest selection for that test passed 1/1 (`/tmp/tui-permission-move-check.log`); `git diff --check` passed.
 - `python3 scripts/check-test-suite-gates.py --gate file-focus` no longer reports this owner. It still reports the pre-existing 1,355-line core task-lifecycle target and 823-line TUI tool-order capture target (`/tmp/tui-permission-file-focus.log`).
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_tui` verified issue #254: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

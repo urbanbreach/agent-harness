@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — focused checks passed; independent review and centralized lint pending.
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#257](https://github.com/urbanbreach/agent-harness/issues/257)
 - **Priority:** P2
 - **Effort:** M
@@ -163,9 +163,9 @@ All must hold:
 - [x] Public session-tool contract tests preserve counts, ordering, redaction, limits and ambiguity errors.
 - [x] List/search release each parsed history before loading the next; read/info retain only the chosen history.
 - [x] No persistent index or journal mutation is introduced.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
 - [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -206,3 +206,7 @@ All Cargo commands used `CARGO_TARGET_DIR=/home/urbanbreach/Projects/agent-harne
 Memory remains proportional to the largest individual journal plus lightweight catalog
 rows/paths and requested matches, not O(limit). Exact corpus-wide counts still require
 reading all candidate journals; no index, truncation-before-sorting, or mutation was added.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_existing_core` verified issue #257: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

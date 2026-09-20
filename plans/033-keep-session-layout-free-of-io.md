@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — focused tests and xterm.js verified; independent integrated review pending.
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#256](https://github.com/urbanbreach/agent-harness/issues/256)
 - **Priority:** P2
 - **Effort:** M
@@ -142,9 +142,9 @@ All must hold:
 - [x] Layout/lineage predicates contain no filesystem read and remain stable after metadata changes on disk.
 - [x] Explicit session loads refresh retained lineage, navigation restores it and resets clear it.
 - [x] Existing fork/subagent composer visibility and render-purity cases pass.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
 - [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -181,3 +181,7 @@ Every new internal session transition must populate, snapshot or clear lineage. 
 - Extended `subagent_display_retains_parent_context_after_files_are_removed` with a sibling and a table covering missing and malformed metadata. The live ingest-then-refresh sequence and replay both retain the task title, sibling count, and demotion handle; repeated layout remains stable after both metadata and the parent event journal are removed.
 - `cargo nextest run --profile ci --locked --offline -p harness-tui --lib -E 'test(session_stack::tests) | test(session_navigation::tests) | test(render_purity)'` passed **19/19** using the private target and existing debug/job settings above. Log: `/tmp/tui-lineage-refresh-check.log`. `cargo fmt --all -- --check` and `git diff --check` passed.
 - Fresh ANSI captures were generated with `HARNESS_TOOL_RUNTIME_HARNESS_DIR=/tmp/agent-harness-tui-lineage-refresh-frames`; xterm.js rendering uses `/tmp/harness-xterm-tui-lineage-refresh/manifest.json`. Inspected both 120×40 and 60×20 captures: the event-derived live session shows Explore (1 of 2), parent/previous/next navigation, and no composer after its source files were removed. Independent follow-up verification remains with the reviewing agent.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_tui` verified issue #256: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

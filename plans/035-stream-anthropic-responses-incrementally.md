@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — focused/provider compatibility checks passed; independent review and centralized lint pending.
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#258](https://github.com/urbanbreach/agent-harness/issues/258)
 - **Priority:** P2
 - **Effort:** M
@@ -171,9 +171,9 @@ All must hold:
 - [x] Failure after partial output preserves that output, emits one categorized error and never emits Done.
 - [x] UTF-8/framing splits and terminal usage remain correct; receiver drop releases the body.
 - [x] Streaming mode no longer awaits response.bytes() or retains a whole-response event vector.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
 - [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -226,3 +226,7 @@ The 16 MiB ceiling applies to retained undecoded frame bytes; assembled tool arg
 the bounded output queue, and the current transport chunk are separate existing costs.
 There is no new dependency, shared transport framework, durable payload storage, or
 provider/schema/coordinator change.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `fix_recovery_archives` verified issue #258: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

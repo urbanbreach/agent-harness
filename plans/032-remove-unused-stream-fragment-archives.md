@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED; independent review and integrated compatibility checks pending
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#255](https://github.com/urbanbreach/agent-harness/issues/255)
 - **Priority:** P2
 - **Effort:** S
@@ -174,10 +174,10 @@ Run `cargo nextest run --profile ci --locked --offline -p harness-core --test co
 All must hold:
 
 - [x] No archive field, accumulator or delta-only export remains in crates/.
-- [ ] Existing final-content/tool-intent and live-event assertions pass, and workspace consumers compile.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] Existing final-content/tool-intent and live-event assertions pass, and workspace consumers compile.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
 - [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -205,3 +205,7 @@ Keep transient fragments transient. A future consumer needing history must estab
 - Independent review and the index update are handled by the integrating coordinator; no issue has been closed from this worktree.
 
 - Per-worktree `cargo check -p harness-core --locked --offline`, `cargo check --workspace --locked --offline`, and `cargo clippy -p harness-core --all-targets --all-features --locked --offline -- -D warnings` were queued on the shared Cargo lock, then canceled at the integrating coordinator's request. Workspace check/Clippy will run once on the integrated changes; these unrun checks are not claimed as passing here.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_existing_core` verified issue #255: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — focused verification PASS; integrated gates/review pending (2026-09-20)
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#242](https://github.com/urbanbreach/agent-harness/issues/242)
 - **Priority:** P1
 - **Effort:** M
@@ -139,9 +139,9 @@ All must hold:
 - [x] Serialized tool results and displays from all three MCP entry points omit recognized encoded media.
 - [x] Historical support-export copies omit the same media without changing source journals.
 - [x] Ordinary text and unrelated data/blob fields survive; existing redaction and reasoning removal tests pass.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
 - [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -228,3 +228,7 @@ from this checkout based on `f2f2a393`.
 | `rustfmt --edition 2021 --check crates/harness/src/sessions/export/redaction.rs` and `git diff --check` | PASS, exit 0 |
 
 Independent re-verification and closure remain with the operator/reviewer.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_mcp_capture` verified issue #242: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

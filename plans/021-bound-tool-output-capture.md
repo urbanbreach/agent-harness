@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — scoped verification passed; integrated checks and independent review pending
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#244](https://github.com/urbanbreach/agent-harness/issues/244)
 - **Priority:** P2
 - **Effort:** M
@@ -166,9 +166,9 @@ All must hold:
 - [x] At-limit output succeeds and one-byte-over input fails before retained capture exceeds its budget.
 - [x] Both shell pipes are drained concurrently and overflow terminates/reaps the process.
 - [x] MCP declared lengths, headers, HTTP bodies and pending frames are bounded before allocation/growth.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
 - [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -256,3 +256,7 @@ with `CARGO_BUILD_JOBS=2`, `CARGO_PROFILE_DEV_DEBUG=0`, and
 
 The independent verifier was given the new recorded owner and exact selection.
 Independent review and integrated compile/lint/closure remain operator-owned.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_mcp_capture` verified issue #244: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

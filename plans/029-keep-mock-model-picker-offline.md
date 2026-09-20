@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — targeted checks pass; integrated lint/check and independent review pending.
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#252](https://github.com/urbanbreach/agent-harness/issues/252)
 - **Priority:** P2
 - **Effort:** S
@@ -157,7 +157,7 @@ All must hold:
 
 - [x] Mock model-picker initialization populates embedded options without invoking the environment-backed loader.
 - [x] The live control still invokes the existing loader and model/provider selection tests pass.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
 - [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
 - [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
@@ -204,3 +204,7 @@ Choose offline data sources before task/thread creation. Plan 037 documents the 
   execution at the integrating operator's request. Integrated workspace checks
   and independent review remain the closure gate, and `plans/README.md` is left
   to that operator. Neither deferred check is claimed as passed here.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `fix_provider_sessions` verified issue #252: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.
