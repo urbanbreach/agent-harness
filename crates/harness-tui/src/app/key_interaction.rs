@@ -1623,7 +1623,7 @@ impl AppState {
         }
     }
 
-    fn handle_prompt_transcript_scroll_key(&mut self, key: KeyEvent) -> bool {
+    pub(super) fn handle_prompt_transcript_scroll_key(&mut self, key: KeyEvent) -> bool {
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::PageUp) => {
                 self.scroll_page_up(usize::from(self.transcript_page_scroll_rows()));
