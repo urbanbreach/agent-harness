@@ -1,6 +1,6 @@
 # Provider support
 
-Harness V1 executes through the OpenAI-compatible provider path. Larger provider catalogs are metadata/reference unless the configured provider is an implemented OpenAI-compatible transport.
+Harness executes through implemented OpenAI-compatible and Anthropic backends, selected by the configured provider type. Catalog entries describe provider/model metadata; their presence does not establish executable transport support, working credentials, or live verification for every listed service.
 
 ## Execution path
 
@@ -46,7 +46,7 @@ Availability still depends on the account and endpoint;
 
 ## Known limits
 
-The runtime does not implement new provider protocols in this slice. Doctor validates local configuration and credential presence but does not prove authentication because it makes no provider call.
+Provider execution requires one of the implemented backend families above. Doctor validates local configuration and credential presence but does not prove authentication because it makes no provider call.
 
 Optional local free live targets (for example Ollama) are **deferred** as a non-CI residual path.
 They are not a CI default, not part of `signoff-live`, and not required for quality gates.
@@ -62,7 +62,7 @@ Use config/env-backed provider credentials. Missing credentials are reported wit
 
 ## Model catalog refresh
 
-The bundled model catalog is refreshed from `https://models.dev/api.json` using a five-minute cache. Harness accepts both the direct models.dev provider map and the generated catalog shape, serves a valid stale cache immediately, and refreshes stale data in the background with an atomic, mode-`0600` cache write. Set `HARNESS_DISABLE_MODELS_FETCH=1` to keep the embedded catalog only; `HARNESS_MODELS_URL` and `HARNESS_MODELS_PATH` override the source and cache location.
+Ordinary live catalog initialization refreshes model metadata from `https://models.dev/api.json` using a five-minute cache. Harness accepts both the direct models.dev provider map and the generated catalog shape, serves a valid stale cache immediately, and refreshes stale data in the background with an atomic, mode-`0600` cache write. Set `HARNESS_DISABLE_MODELS_FETCH=1` to keep the embedded catalog only; `HARNESS_MODELS_URL` and `HARNESS_MODELS_PATH` override the source and cache location. Without a usable cache, initialization attempts a download and falls back to embedded metadata on failure. Mock TUI model-picker initialization uses the embedded catalog directly and never invokes the environment-backed cache/refresh loader.
 
 For the built-in `openai-codex` provider, refreshed OpenAI model metadata is merged into the configured Codex model list without replacing explicit entries. This lets newly published GPT models appear in `/model` while preserving local variants and provider settings. Unknown live entries receive conservative metadata and the existing Codex model-id reasoning policy; a provider-specific model endpoint is not required for this catalog path.
 
