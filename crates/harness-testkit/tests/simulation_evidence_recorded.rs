@@ -15,6 +15,7 @@ fn evidence_publishes_only_validated_bundles_and_preserves_existing_output() {
     for scenario in [
         "secret",
         "matrix-secret",
+        "escaped-matrix-secret",
         "malformed",
         "schema",
         "invariant",
@@ -49,7 +50,9 @@ fn evidence_publishes_only_validated_bundles_and_preserves_existing_output() {
                 build_normalized_summary(&matrix(), std::slice::from_ref(&event), &replay, "0");
             match scenario {
                 "secret" => event["payload"]["data"]["run_name"] = json!(secret),
-                "matrix-secret" => matrix_value["schema_version"] = json!(secret),
+                "matrix-secret" | "escaped-matrix-secret" => {
+                    matrix_value["schema_version"] = json!(secret);
+                }
                 "schema" => event["seq"] = json!(3),
                 "invariant" => {
                     matrix_value["scenarios"][0]["expected_predicates"]["event_kind_counts"] =
@@ -67,7 +70,11 @@ fn evidence_publishes_only_validated_bundles_and_preserves_existing_output() {
                 },
             )
             .unwrap_or_abort();
-            write_json_pretty(&inputs.join("matrix.json"), &matrix_value).unwrap_or_abort();
+            let mut matrix_text = serde_json::to_string_pretty(&matrix_value).unwrap_or_abort();
+            if scenario == "escaped-matrix-secret" {
+                matrix_text = matrix_text.replace("sk-", r"\u0073k-");
+            }
+            fs::write(inputs.join("matrix.json"), matrix_text).unwrap_or_abort();
             write_json_pretty(&inputs.join("baseline.json"), &replay).unwrap_or_abort();
             write_json_pretty(&inputs.join("repeat.json"), &repeat_replay).unwrap_or_abort();
 
