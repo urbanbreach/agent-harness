@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::session_paths::{EVENTS_FILE_NAME, WRITER_LOCK_FILE_NAME};
-use crate::store::{unborn_run_dir, EventStoreError, JsonlFileEventStore};
+use crate::store::{unborn_run_dir, EventStoreError, JsonlFileEventStore, WriterLockRecoveryGuard};
 
 const WRITER_LOCK_RECOVERY_FILE_NAME: &str = ".writer.lock.recovering";
 
@@ -389,7 +389,9 @@ fn clear_orphan_recovery_marker(run_dir: &Path) {
             }
         }
     }
-    let _ = fs::remove_file(recovery_path);
+    // Acquisition rechecks the marker owner under the stable recovery mutex.
+    // Live/unknown owners or a busy/unavailable mutex leave the marker intact.
+    let _recovery_guard = WriterLockRecoveryGuard::acquire(run_dir, &lock_path);
 }
 
 fn parse_writer_lock_pid(contents: &str) -> Option<u32> {
@@ -483,6 +485,7 @@ mod tests {
         assert!(report.recovery_marker_present);
         let message = report.recovery_message.expect("recovery message");
         assert!(message.contains("Recovery marker present"));
+        assert_eq!(fs::read_dir(&run_dir).unwrap_or_abort().count(), 1);
     }
 
     #[test]
@@ -561,6 +564,7 @@ mod tests {
         assert_eq!(contents.lines().count(), 2);
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn apply_crash_recovery_clears_recovery_marker_and_reports_outcome() {
         // Given: run with events + recovery marker (previous crash)
@@ -573,7 +577,11 @@ mod tests {
             let store = JsonlFileEventStore::open(&sessions, run_id, false).unwrap_or_abort();
             store.append(run_started_draft(run_id, 1)).unwrap_or_abort();
         }
-        fs::write(run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME), "pid=1\n").unwrap_or_abort();
+        fs::write(
+            run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME),
+            "pid=999999999\n",
+        )
+        .unwrap_or_abort();
         assert!(inspect_previous_crash(&run_dir).previous_crash_detected);
 
         // When: operator apply path runs exclusive open recovery
@@ -592,13 +600,92 @@ mod tests {
         assert!(!run_dir.join(WRITER_LOCK_FILE_NAME).exists());
     }
 
+    #[test]
+    fn apply_crash_recovery_preserves_live_or_unknown_marker() {
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let run_id = "run_apply_owned_marker";
+        let run_dir = temp.path().join(run_id);
+        drop(JsonlFileEventStore::open(temp.path(), run_id, false).unwrap_or_abort());
+
+        for marker in [
+            format!("pid={}\ntoken=1\n", std::process::id()),
+            "locked".into(),
+        ] {
+            fs::write(run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME), &marker).unwrap_or_abort();
+            let result = apply_crash_recovery(temp.path(), run_id, false).unwrap_or_abort();
+            assert!(!result.recovered);
+            assert!(result.after.recovery_marker_present);
+            assert_eq!(
+                fs::read_to_string(run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME)).unwrap_or_abort(),
+                marker
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn recovery_mutex_excludes_cleanup_and_writer_acquisition() {
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let run_id = "run_busy_recovery_mutex";
+        let run_dir = temp.path().join(run_id);
+        drop(JsonlFileEventStore::open(temp.path(), run_id, false).unwrap_or_abort());
+        let marker_path = run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME);
+        let dead_owner = "pid=999999999\ntoken=1\n";
+        fs::write(&marker_path, dead_owner).unwrap_or_abort();
+        let mutex_path = run_dir.join(".writer.lock.recovery-mutex");
+        let mutex = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&mutex_path)
+            .unwrap_or_abort();
+        mutex.try_lock().unwrap_or_abort();
+
+        let result = apply_crash_recovery(temp.path(), run_id, false).unwrap_or_abort();
+        assert!(!result.recovered);
+        assert_eq!(
+            fs::read_to_string(&marker_path).unwrap_or_abort(),
+            dead_owner
+        );
+
+        fs::write(run_dir.join(WRITER_LOCK_FILE_NAME), dead_owner).unwrap_or_abort();
+        assert!(matches!(
+            apply_crash_recovery(temp.path(), run_id, false),
+            Err(EventStoreError::AcquireWriterLock { .. })
+        ));
+        assert_eq!(
+            fs::read_to_string(&marker_path).unwrap_or_abort(),
+            dead_owner
+        );
+
+        mutex.unlock().unwrap_or_abort();
+        let result = apply_crash_recovery(temp.path(), run_id, false).unwrap_or_abort();
+        assert!(result.recovered);
+        assert!(result.recovery_marker_cleared);
+        assert!(result.stale_lock_cleared);
+        assert!(!result.after.previous_crash_detected);
+
+        let next_mutex = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&mutex_path)
+            .unwrap_or_abort();
+        next_mutex.try_lock().unwrap_or_abort();
+        assert!(matches!(
+            mutex.try_lock(),
+            Err(fs::TryLockError::WouldBlock)
+        ));
+        drop(next_mutex);
+        mutex.try_lock().unwrap_or_abort();
+    }
+
     #[tokio::test]
-    async fn apply_crash_recovery_repairs_truncated_tail_and_clears_marker() {
-        // Given: truncated events tail + recovery marker
+    async fn apply_crash_recovery_repairs_truncated_tail() {
+        // Given: a truncated events tail without a legacy recovery owner.
         let temp = tempfile::tempdir().unwrap_or_abort();
         let sessions = temp.path().join("sessions");
         let run_id = "run_apply_tail";
-        let run_dir = sessions.join(run_id);
         let file_path = {
             let store = JsonlFileEventStore::open(&sessions, run_id, false).unwrap_or_abort();
             store.append(run_started_draft(run_id, 1)).unwrap_or_abort();
@@ -612,14 +699,12 @@ mod tests {
                 .unwrap_or_abort();
             file.write_all(b"{").unwrap_or_abort();
         }
-        fs::write(run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME), "pid=1\n").unwrap_or_abort();
 
         // When
         let result = apply_crash_recovery(&sessions, run_id, false).unwrap_or_abort();
 
-        // Then: recovered + complete lines only
-        assert!(result.recovered);
-        assert!(result.recovery_marker_cleared);
+        // Then: complete lines only, on every supported platform.
+        assert!(result.applied);
         let contents = fs::read_to_string(&file_path).unwrap_or_abort();
         assert!(!contents.ends_with('{'));
         assert_eq!(contents.lines().count(), 2);
