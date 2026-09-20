@@ -27,12 +27,6 @@ fn run_cli(args: &[&str], deps: CliDeps) -> (i32, String, String) {
     )
 }
 
-fn run_cli_in_temp(args: &[&str]) -> (i32, String, String) {
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let deps = CliDeps::real().with_filesystem_root(temp.path().to_path_buf());
-    run_cli(args, deps)
-}
-
 fn run_cli_in_workspace(args: &[&str]) -> (i32, String, String) {
     run_cli(args, CliDeps::real())
 }
@@ -329,39 +323,50 @@ fn wrap_command_returns_error_when_output_path_is_invalid() {
 }
 
 #[test]
-fn mcp_list_command_emits_server_list_when_config_loads_successfully() {
-    // arrange
-    // act
-    let (code, stdout, _stderr) = run_cli_in_workspace(&["mcp", "list"]);
-    // assert
-    assert_eq!(code, 0);
-    let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
-    assert!(json["servers"].is_array());
-}
-
-#[test]
-fn mcp_list_command_emits_server_list_without_config_in_temp_dir() {
-    // arrange
-    // act
-    let (code, stdout, _stderr) = run_cli_in_temp(&["mcp", "list"]);
-    // assert
-    assert_eq!(code, 0);
-    let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
-    assert!(json["servers"].is_array());
-}
-
-#[test]
-fn mcp_health_command_reports_not_configured_without_server_configuration() {
-    // arrange
-    // act
-    let (code, stdout, _stderr) = run_cli_in_workspace(&["mcp", "health", "test-server"]);
-    // assert
-    assert_eq!(code, 0);
-    let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
-    assert_eq!(json["server_id"].as_str().unwrap(), "test-server");
-    assert_eq!(json["configured"].as_bool(), Some(false));
-    assert_eq!(json["enabled"].as_bool(), Some(false));
-    assert_eq!(json["status"].as_str(), Some("not_configured"));
+fn unimplemented_commands_fail_without_output_or_side_effects() {
+    let dir = tempfile::tempdir().unwrap_or_abort();
+    let config_path = dir.path().join("harness.jsonc");
+    let config = r#"{
+        "provider": {"default": {
+            "type": "openai_compatible",
+            "options": {"baseURL": "https://fixture.test/v1", "apiKey": "DUMMY"},
+            "models": {"mock-model": {"name": "Mock Model"}}
+        }},
+        "model": "default/mock-model",
+        "agent": {"default": {}},
+        "mcp": {"test-server": {
+            "transport": "stdio", "command": ["must-not-run"], "enabled": true
+        }}
+    }"#;
+    let loaded = harness_core::config::load_config_from_str(config).unwrap_or_abort();
+    assert!(loaded.integrations.mcp.servers["test-server"].enabled());
+    std::fs::write(&config_path, config).unwrap_or_abort();
+    for (args, operation) in [
+        (
+            vec!["share", "session", "--no-copy", "--expires", "7d"],
+            "share",
+        ),
+        (vec!["setup", "--force"], "setup"),
+        (vec!["setup", "--non-interactive"], "setup"),
+        (vec!["mcp", "list"], "mcp list"),
+        (vec!["mcp", "stdio", "must-not-run", "arg"], "mcp stdio"),
+        (vec!["mcp", "health", "test-server"], "mcp health"),
+    ] {
+        let mut configured_args = vec!["--config", config_path.to_str().unwrap_or_abort()];
+        configured_args.extend(args);
+        let (code, stdout, stderr) = run_cli_in_dir(&configured_args, dir.path());
+        assert_eq!(code, 2, "{operation}: {stderr}");
+        assert!(stdout.is_empty(), "{operation}: {stdout}");
+        assert!(
+            stderr.contains(&format!("{operation} is unsupported")),
+            "{stderr}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&config_path).unwrap_or_abort(),
+            config
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap_or_abort().count(), 1);
+    }
 }
 
 #[test]

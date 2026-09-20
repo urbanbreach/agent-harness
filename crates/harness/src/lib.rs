@@ -256,13 +256,13 @@ enum Commands {
         #[command(subcommand)]
         command: agent_stdio_cmd::AgentSubcommand,
     },
-    /// Share a session or artifact via a public link.
+    /// Share a session or artifact via a public link (currently unavailable).
     Share(ShareCommand),
-    /// Run first-time setup wizard for harness configuration.
+    /// Run first-time setup wizard for harness configuration (currently unavailable).
     Setup(SetupCommand),
     /// Wrap the current workspace into a distributable package.
     Wrap(WrapCommand),
-    /// Manage MCP servers and connections.
+    /// Manage MCP servers and connections (CLI operations currently unavailable).
     Mcp {
         #[command(subcommand)]
         command: McpCommand,
@@ -340,9 +340,9 @@ struct WrapCommand {
 
 #[derive(Debug, Subcommand)]
 enum McpCommand {
-    /// List configured MCP servers.
+    /// List configured MCP servers (currently unavailable).
     List,
-    /// Start an MCP stdio server proxy.
+    /// Start an MCP stdio server proxy (currently unavailable).
     Stdio {
         /// Server command to spawn.
         command: String,
@@ -350,7 +350,7 @@ enum McpCommand {
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
-    /// Check health of an MCP server.
+    /// Check health of an MCP server (currently unavailable).
     Health {
         /// Server identifier.
         server_id: String,
@@ -1120,47 +1120,20 @@ fn execute_trace(
     0
 }
 
-fn execute_share(command: ShareCommand, io: &mut CliIo<'_>) -> i32 {
-    let link = format!("https://share.harness.local/{}", command.target);
-    if command.no_copy {
-        let _ = writeln!(io.stdout, "{link}");
-    } else {
-        let _ = writeln!(
-            io.stderr,
-            "shareable link generated (clipboard copy not implemented)"
-        );
-        let _ = writeln!(io.stdout, "{link}");
-    }
-    if let Some(expires) = command.expires {
-        let _ = writeln!(io.stderr, "link expires in: {expires}");
-    }
-    0
-}
-
-fn execute_setup(command: SetupCommand, io: &mut CliIo<'_>) -> i32 {
-    if command.non_interactive {
-        let _ = writeln!(
-            io.stderr,
-            "running setup in non-interactive mode with defaults..."
-        );
-        let _ = writeln!(
-            io.stdout,
-            "{{\"status\": \"setup_complete\", \"mode\": \"non_interactive\"}}"
-        );
-        return 0;
-    }
-    if command.force {
-        let _ = writeln!(io.stderr, "forcing setup wizard re-run...");
-    }
+fn execute_share(_command: ShareCommand, io: &mut CliIo<'_>) -> i32 {
     let _ = writeln!(
         io.stderr,
-        "setup wizard: interactive mode not yet implemented"
+        "share is unsupported: hosted sharing is not implemented"
     );
+    2
+}
+
+fn execute_setup(_command: SetupCommand, io: &mut CliIo<'_>) -> i32 {
     let _ = writeln!(
-        io.stdout,
-        "{{\"status\": \"setup_skipped\", \"reason\": \"interactive_mode_not_implemented\"}}"
+        io.stderr,
+        "setup is unsupported: the setup wizard is not implemented; edit harness.jsonc directly"
     );
-    0
+    2
 }
 
 fn execute_wrap(
@@ -1241,36 +1214,22 @@ fn execute_wrap(
 }
 
 fn execute_mcp(command: McpCommand, io: &mut CliIo<'_>) -> i32 {
-    match command {
-        McpCommand::List => {
-            let _ = writeln!(io.stdout, "{{\"servers\": []}}");
-            0
-        }
-        McpCommand::Stdio { command, args } => {
-            let args_display = args.join(" ");
-            let _ = writeln!(
-                io.stderr,
-                "starting MCP stdio server proxy: {command} {args_display}"
-            );
-            let _ = writeln!(io.stdout, "{{\"status\": \"stdio_proxy_started\"}}");
-            0
-        }
+    let operation = match command {
+        McpCommand::List => "list",
+        McpCommand::Stdio { .. } => "stdio",
         McpCommand::Health { server_id } => {
             if server_id.trim().is_empty() {
                 let _ = writeln!(io.stderr, "server_id must not be empty");
                 return 2;
             }
-            let _ = writeln!(io.stderr, "checking health of MCP server: {server_id}");
-            let result = serde_json::json!({
-                "server_id": server_id,
-                "configured": false,
-                "enabled": false,
-                "status": "not_configured",
-            });
-            let _ = writeln!(io.stdout, "{result}");
-            0
+            "health"
         }
-    }
+    };
+    let _ = writeln!(
+        io.stderr,
+        "mcp {operation} is unsupported: this CLI operation is not implemented"
+    );
+    2
 }
 
 // Resolve missing exclusion paths through their existing parents without creating them.
