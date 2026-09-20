@@ -178,8 +178,39 @@ pub(super) fn permission_modal_escape_parks_and_tab_restores_without_answering()
     };
 
     let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.composer.prompt_buffer = "preserved draft".to_string();
+    app.ingest_event(provider_started(1, "review", "mock", "mock"));
     app.ingest_event(envelope(
-        1,
+        2,
+        "review",
+        EventV1::ProviderReasoningDelta(harness_core::event::ProviderReasoningDeltaEvent {
+            request_id: "review".into(),
+            delta: "Review the proposed change carefully.".into(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "review",
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "review".into(),
+            delta: (0..80)
+                .map(|row| format!("Transcript review line {row}\n\n"))
+                .collect(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "review",
+        EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
+            request_id: "review".into(),
+            finish_reason: "stop".into(),
+            output_digest: None,
+            usage: None,
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        5,
         "req_modal_escape",
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_modal_escape".to_string(),
@@ -198,6 +229,69 @@ pub(super) fn permission_modal_escape_parks_and_tab_restores_without_answering()
     assert!(app.active_permission().is_some());
     assert_eq!(app.focus, Focus::List);
 
+    let area = Rect::new(0, 0, 120, 40);
+    app.set_frame_area(area);
+    let screen = render_text(&app, area.width, area.height);
+    assert!(screen.contains("Ctrl+e:collapse thinking"), "{screen}");
+    assert!(!screen.contains("Ctrl+x:shortcuts"), "{screen}");
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('e'),
+        KeyModifiers::CONTROL,
+    ));
+    assert!(!app.transcript_thinking_visible());
+    app.handle_key(key(KeyCode::PageUp));
+    assert!(app.transcript_scroll_offset() > 0);
+    assert!(!app.transcript_view.follow_mode);
+    app.handle_key(key(KeyCode::End));
+    assert_eq!(app.transcript_scroll_offset(), 0);
+    let transcript = crate::layout::FrameLayoutPlan::for_app(&app, area)
+        .transcript
+        .unwrap_or_abort();
+    assert!(app.handle_mouse(
+        mouse_event(MouseEventKind::ScrollUp, transcript),
+        area,
+        None,
+        None,
+        None
+    ));
+    assert!(app.transcript_scroll_offset() > 0);
+    let parked_scroll = app.transcript_scroll_offset();
+    for key_event in [
+        key(KeyCode::Enter),
+        key(KeyCode::Char('a')),
+        key_with_modifiers(KeyCode::Char('x'), KeyModifiers::CONTROL),
+        key_with_modifiers(KeyCode::Char('p'), KeyModifiers::CONTROL),
+    ] {
+        app.handle_key(key_event);
+    }
+    assert_eq!(app.composer.prompt_buffer, "preserved draft");
+    assert_eq!(app.transcript_scroll_offset(), parked_scroll);
+    assert!(app.active_permission().is_some());
+    assert!(!app.palette_visible);
+    assert!(app.active_review_surface.is_none());
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+    if let Some(directory) = std::env::var_os("HARNESS_TOOL_RUNTIME_HARNESS_DIR") {
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap_or_abort();
+        for (width, height) in [(120, 40), (60, 20)] {
+            let (bytes, _) =
+                super::tool_runtime_capture_tests::draw(&mut app, Rect::new(0, 0, width, height))
+                    .unwrap_or_abort();
+            std::fs::write(
+                directory.join(format!(
+                    "permission-parked-review-{width}x{height}-motion-0ms.ansi"
+                )),
+                bytes,
+            )
+            .unwrap_or_abort();
+        }
+    }
+    for restore_key in [KeyCode::Tab, KeyCode::Char(' ')] {
+        app.handle_key(key(restore_key));
+        assert_eq!(app.focus, Focus::Prompt);
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.focus, Focus::List);
+    }
     app.handle_key(key(KeyCode::Tab));
 
     assert_eq!(app.focus, Focus::Prompt);
