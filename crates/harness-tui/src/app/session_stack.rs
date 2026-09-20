@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use super::child_session::{
     child_agent_info_from_events, child_task_info_from_events, safe_session_id_path_component,
-    session_id_from_path, sibling_session_id, subagent_usage_label,
+    session_id_from_path, sibling_session_id, subagent_usage_label, ChildTaskInfo,
 };
 use super::session_live_routing::{child_request_ids_for_session, event_belongs_to_child_session};
 use super::{
@@ -30,17 +30,18 @@ fn harness_lineage(run_dir: &Path) -> Option<Value> {
     metadata.get("harness_lineage").cloned()
 }
 
-fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
-    harness_lineage(run_dir)?
-        .get("parent_run_id")
-        .and_then(Value::as_str)
-        .and_then(non_empty_trimmed)
-        .map(str::to_string)
+#[derive(Debug, Clone, Default)]
+pub(super) struct SessionLineage {
+    parent_run_id: Option<String>,
+    is_fork: bool,
+    parent_child_session_ids: Vec<String>,
+    parent_task: Option<ChildTaskInfo>,
 }
 
 #[derive(Debug, Clone)]
 pub(super) struct SessionNavigationSnapshot {
     pub(super) session_path: PathBuf,
+    pub(super) lineage: SessionLineage,
     pub(super) events: Vec<EventEnvelopeV1>,
     pub(super) launch_metadata: LaunchMetadata,
     pub(super) child_session_ids: Vec<String>,
@@ -48,6 +49,47 @@ pub(super) struct SessionNavigationSnapshot {
 }
 
 impl AppState {
+    pub(super) fn load_session_lineage(&mut self) {
+        let metadata = self.session_path.as_deref().and_then(harness_lineage);
+        self.session_lineage = SessionLineage {
+            parent_run_id: metadata
+                .as_ref()
+                .and_then(|lineage| lineage.get("parent_run_id"))
+                .and_then(Value::as_str)
+                .and_then(non_empty_trimmed)
+                .map(str::to_string),
+            is_fork: metadata
+                .as_ref()
+                .and_then(|lineage| lineage.get("relationship"))
+                .and_then(Value::as_str)
+                == Some("child_session_materialization"),
+            ..SessionLineage::default()
+        };
+        if self.session_lineage.is_fork {
+            return;
+        }
+        let Some(current_id) = self.current_session_id() else {
+            return;
+        };
+        let Some(parent_id) = self
+            .current_parent_session_id()
+            .filter(|id| id != current_id)
+        else {
+            return;
+        };
+        let Some(events) = self
+            .session_path_for_id(&parent_id)
+            .and_then(|path| crate::session_events::load_session_events(&path).ok())
+        else {
+            return;
+        };
+        self.session_lineage.parent_task = child_task_info_from_events(&events, current_id);
+        // Only retain the display context; do not recursively open the parent's lineage.
+        let mut parent = Self::new();
+        parent.replace_events(events);
+        self.session_lineage.parent_child_session_ids = parent.child_session_ids();
+    }
+
     pub(crate) fn current_session_id(&self) -> Option<&str> {
         self.session_path
             .as_deref()
@@ -57,15 +99,7 @@ impl AppState {
     }
 
     pub(crate) fn current_subagent_session_present(&self) -> bool {
-        if self
-            .session_path
-            .as_deref()
-            .and_then(harness_lineage)
-            .is_some_and(|lineage| {
-                lineage.get("relationship").and_then(Value::as_str)
-                    == Some("child_session_materialization")
-            })
-        {
+        if self.session_lineage.is_fork {
             return false;
         }
         let Some(current_session_id) = self.current_session_id() else {
@@ -102,16 +136,7 @@ impl AppState {
         let parent_snapshot = self.session_navigation_stack.last();
         let task = parent_snapshot
             .and_then(|snapshot| child_task_info_from_events(&snapshot.events, current_session_id))
-            .or_else(|| {
-                let parent_session_id = self.current_parent_session_id()?;
-                self.session_path_for_id(&parent_session_id)
-                    .and_then(|path| {
-                        session_navigation_snapshot_from_path(&path, &self.launch_metadata).ok()
-                    })
-                    .and_then(|snapshot| {
-                        child_task_info_from_events(&snapshot.events, current_session_id)
-                    })
-            })?;
+            .or_else(|| self.session_lineage.parent_task.clone())?;
         task.request_id
             .and_then(|id| non_empty_trimmed(&id).map(str::to_string))
     }
@@ -131,14 +156,7 @@ impl AppState {
 
         let sibling_ids = parent_snapshot
             .map(|snapshot| snapshot.child_session_ids.clone())
-            .or_else(|| {
-                self.session_path_for_id(&parent_session_id)
-                    .and_then(|path| {
-                        session_navigation_snapshot_from_path(&path, &self.launch_metadata).ok()
-                    })
-                    .map(|snapshot| snapshot.child_session_ids)
-            })
-            .unwrap_or_default();
+            .unwrap_or_else(|| self.session_lineage.parent_child_session_ids.clone());
         let total = sibling_ids.len().max(1);
         let index = sibling_ids
             .iter()
@@ -148,15 +166,7 @@ impl AppState {
 
         let task = parent_snapshot
             .and_then(|snapshot| child_task_info_from_events(&snapshot.events, current_session_id))
-            .or_else(|| {
-                self.session_path_for_id(&parent_session_id)
-                    .and_then(|path| {
-                        session_navigation_snapshot_from_path(&path, &self.launch_metadata).ok()
-                    })
-                    .and_then(|snapshot| {
-                        child_task_info_from_events(&snapshot.events, current_session_id)
-                    })
-            });
+            .or_else(|| self.session_lineage.parent_task.clone());
         let child_agent = child_agent_info_from_events(&self.events, current_session_id);
         let label = task
             .as_ref()
@@ -262,15 +272,16 @@ impl AppState {
     }
 
     pub(super) fn current_parent_session_id(&self) -> Option<String> {
-        self.session_path
-            .as_deref()
-            .and_then(harness_lineage_parent_run_id)
+        self.session_lineage
+            .parent_run_id
+            .clone()
             .or_else(|| first_lineage_parent_session_id(&self.events).map(str::to_string))
     }
 
     fn current_session_snapshot(&self) -> Option<SessionNavigationSnapshot> {
         Some(SessionNavigationSnapshot {
             session_path: self.session_path.clone()?,
+            lineage: self.session_lineage.clone(),
             events: self.events.clone(),
             launch_metadata: if self.launch_metadata.model().is_some() {
                 self.launch_metadata.clone()
@@ -285,6 +296,7 @@ impl AppState {
     fn restore_session_snapshot(&mut self, snapshot: SessionNavigationSnapshot) {
         self.replay_mode = snapshot.replay_mode;
         self.session_path = Some(snapshot.session_path);
+        self.session_lineage = snapshot.lineage;
         self.set_launch_metadata(snapshot.launch_metadata);
         self.runtime_context_metadata = Some(self.launch_metadata.clone());
         self.replace_events(snapshot.events);
@@ -420,6 +432,7 @@ impl AppState {
 
         Some(SessionNavigationSnapshot {
             session_path,
+            lineage: SessionLineage::default(),
             launch_metadata: infer_launch_metadata_from_events(&events, &self.launch_metadata),
             events,
             child_session_ids: Vec::new(),
@@ -646,6 +659,7 @@ fn session_navigation_snapshot_from_path(
         events,
         launch_metadata,
         child_session_ids: replay.child_session_ids(),
+        lineage: replay.session_lineage,
         replay_mode: true,
     })
 }
@@ -952,17 +966,119 @@ mod tests {
     #[test]
     fn fork_lineage_keeps_the_live_composer_visible() {
         let run = tempfile::tempdir().unwrap_or_abort();
-        fs::write(run.path().join("meta.json"), r#"{"harness_lineage":{"relationship":"child_session_materialization","parent_run_id":"parent"}}"#).unwrap_or_abort();
-        let app = AppState::new_live(Some(run.path().to_path_buf()), false, None);
+        let metadata = run.path().join("meta.json");
+        fs::write(&metadata, r#"{"harness_lineage":{"relationship":"child_session_materialization","parent_run_id":"parent"}}"#).unwrap_or_abort();
+        let mut app = AppState::new_live(Some(run.path().to_path_buf()), false, None);
+        let snapshot = app.current_session_snapshot().unwrap_or_abort();
+        fs::write(&metadata, r#"{"harness_lineage":{"relationship":"task_child_session","parent_run_id":"replacement"}}"#).unwrap_or_abort();
+        for _ in 0..3 {
+            assert_eq!(app.current_parent_session_id().as_deref(), Some("parent"));
+            assert!(!app.current_subagent_session_present());
+            assert!(app.current_subagent_session_info().is_none());
+            assert!(crate::layout::FrameLayoutPlan::for_app(
+                &app,
+                ratatui::layout::Rect::new(0, 0, 120, 40)
+            )
+            .composer
+            .is_some());
+        }
+        app = AppState::new_replay(run.path().to_path_buf(), Vec::new());
+        assert_eq!(
+            app.current_parent_session_id().as_deref(),
+            Some("replacement")
+        );
+        assert!(app.current_subagent_session_present());
+        fs::remove_file(&metadata).unwrap_or_abort();
+        assert_eq!(
+            app.current_parent_session_id().as_deref(),
+            Some("replacement")
+        );
+        app.restore_session_snapshot(snapshot.clone());
         assert_eq!(app.current_parent_session_id().as_deref(), Some("parent"));
         assert!(!app.current_subagent_session_present());
-        assert!(app.current_subagent_session_info().is_none());
-        assert!(crate::layout::FrameLayoutPlan::for_app(
-            &app,
-            ratatui::layout::Rect::new(0, 0, 120, 40)
-        )
-        .composer
-        .is_some());
+        app.execute_slash_command("new", None);
+        assert!(app.current_parent_session_id().is_none());
+        app.restore_session_snapshot(snapshot);
+        app.apply_new_session_launcher_selection();
+        assert!(app.current_parent_session_id().is_none());
+        assert!(!app.current_subagent_session_present());
+        for body in [
+            None,
+            Some("malformed metadata"),
+            Some(r#"{"harness_lineage":{"parent_run_id":"  "}}"#),
+        ] {
+            if let Some(body) = body {
+                fs::write(&metadata, body).unwrap_or_abort();
+            }
+            let fresh = AppState::new_live(Some(run.path().to_path_buf()), false, None);
+            assert!(fresh.current_parent_session_id().is_none());
+            assert!(!fresh.current_subagent_session_present());
+        }
+    }
+
+    #[test]
+    fn subagent_display_retains_parent_context_after_files_are_removed() {
+        let sessions = tempfile::tempdir().unwrap_or_abort();
+        let parent_dir = sessions.path().join("parent_run");
+        let child_dir = sessions.path().join("agent_worker");
+        fs::create_dir_all(&parent_dir).unwrap_or_abort();
+        fs::create_dir_all(&child_dir).unwrap_or_abort();
+        let mut parent = AppState::new();
+        setup_parent_with_child(&mut parent);
+        let journal = parent
+            .events
+            .iter()
+            .map(|event| serde_json::to_string(event).unwrap_or_abort() + "\n")
+            .collect::<String>();
+        fs::write(parent_dir.join("events.jsonl"), journal).unwrap_or_abort();
+        fs::write(child_dir.join("meta.json"), r#"{"harness_lineage":{"relationship":"task_child_session","parent_run_id":"parent_run"}}"#).unwrap_or_abort();
+        let mut app = AppState::new_live(Some(child_dir.clone()), false, None);
+        let info = app.current_subagent_session_info().unwrap_or_abort();
+        assert_eq!(info.title, "test task");
+        assert_eq!(app.focused_demote_handle_id().as_deref(), Some("req_child"));
+        fs::remove_file(parent_dir.join("events.jsonl")).unwrap_or_abort();
+        fs::remove_file(child_dir.join("meta.json")).unwrap_or_abort();
+        for _ in 0..3 {
+            assert_eq!(app.current_subagent_session_info().unwrap_or_abort(), info);
+            assert_eq!(app.focused_demote_handle_id().as_deref(), Some("req_child"));
+            assert!(crate::layout::FrameLayoutPlan::for_app(
+                &app,
+                ratatui::layout::Rect::new(0, 0, 120, 40)
+            )
+            .composer
+            .is_none_or(|area| area.height == 0));
+        }
+        if let Some(directory) = std::env::var_os("HARNESS_TOOL_RUNTIME_HARNESS_DIR") {
+            use ratatui::{
+                backend::CrosstermBackend, layout::Rect, Terminal, TerminalOptions, Viewport,
+            };
+            let directory = PathBuf::from(directory);
+            fs::create_dir_all(&directory).unwrap_or_abort();
+            for (width, height) in [(120, 40), (60, 20)] {
+                let area = Rect::new(0, 0, width, height);
+                app.set_frame_area(area);
+                let mut bytes = Vec::new();
+                {
+                    let mut terminal = Terminal::with_options(
+                        CrosstermBackend::new(&mut bytes),
+                        TerminalOptions {
+                            viewport: Viewport::Fixed(area),
+                        },
+                    )
+                    .unwrap_or_abort();
+                    terminal
+                        .draw(|frame| crate::ui::render_app(frame, &app))
+                        .unwrap_or_abort();
+                }
+                fs::write(
+                    directory.join(format!(
+                        "subagent-retained-lineage-{width}x{height}-motion-0ms.ansi"
+                    )),
+                    bytes,
+                )
+                .unwrap_or_abort();
+            }
+        }
     }
 
     #[test]
