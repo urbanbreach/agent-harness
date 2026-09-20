@@ -1548,6 +1548,7 @@ mod tests {
         assert_eq!(parsed["reports"].as_array().map(|rows| rows.len()), Some(2));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn reopen_session_applies_crash_recovery_for_marker_then_summarizes() {
         // Given: finished prompt session with recovery marker under sessions root
@@ -1599,7 +1600,7 @@ mod tests {
             body.push('\n');
         }
         std::fs::write(run_dir.join("events.jsonl"), body).unwrap();
-        std::fs::write(run_dir.join(".writer.lock.recovering"), "pid=1\n").unwrap();
+        std::fs::write(run_dir.join(".writer.lock.recovering"), "pid=999999999\n").unwrap();
         assert!(run_dir.join(".writer.lock.recovering").exists());
 
         let mut stdout = Vec::new();

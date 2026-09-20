@@ -20,6 +20,7 @@ use crate::session_paths::{
 
 const SUBSCRIBER_BUFFER: usize = 1024;
 const WRITER_LOCK_RECOVERY_FILE_NAME: &str = ".writer.lock.recovering";
+const WRITER_LOCK_RECOVERY_MUTEX_FILE_NAME: &str = ".writer.lock.recovery-mutex";
 static NEXT_WRITER_LOCK_TOKEN: AtomicU64 = AtomicU64::new(1);
 
 pub type EventStream = Pin<Box<dyn Stream<Item = Result<EventEnvelopeV1, EventStoreError>> + Send>>;
@@ -314,10 +315,11 @@ struct WriterLock {
 }
 
 #[derive(Debug)]
-struct WriterLockRecoveryGuard {
+pub(crate) struct WriterLockRecoveryGuard {
     path: PathBuf,
     contents: String,
     _file: File,
+    _mutex: File,
 }
 
 impl WriterLock {
@@ -360,17 +362,39 @@ impl WriterLock {
 }
 
 impl WriterLockRecoveryGuard {
-    fn acquire(run_dir: &Path, writer_lock_path: &Path) -> Result<Self, EventStoreError> {
+    pub(crate) fn acquire(
+        run_dir: &Path,
+        writer_lock_path: &Path,
+    ) -> Result<Self, EventStoreError> {
+        let lock_error = |source| EventStoreError::AcquireWriterLock {
+            path: display_path(writer_lock_path),
+            source,
+        };
+        // Never unlink this file: every claimant must lock the same inode, including
+        // while the owned recovery marker is removed in Drop.
+        let mutex = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(run_dir.join(WRITER_LOCK_RECOVERY_MUTEX_FILE_NAME))
+            .map_err(lock_error)?;
+        mutex.try_lock().map_err(|err| lock_error(err.into()))?;
+
         let path = run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME);
-        let (file, contents) =
-            create_writer_lock(&path).map_err(|source| EventStoreError::AcquireWriterLock {
-                path: display_path(writer_lock_path),
-                source,
-            })?;
+        if fs::read_to_string(&path)
+            .ok()
+            .and_then(|contents| writer_lock_pid(&contents))
+            .is_some_and(|pid| !process_exists(pid))
+        {
+            fs::remove_file(&path).map_err(lock_error)?;
+        }
+        let (file, contents) = create_writer_lock(&path).map_err(lock_error)?;
         Ok(Self {
             path,
             contents,
             _file: file,
+            _mutex: mutex,
         })
     }
 }
@@ -391,14 +415,18 @@ fn stale_writer_lock(run_dir: &Path, path: &Path) -> bool {
     if contents.trim().is_empty() {
         return unborn_run_dir(run_dir);
     }
-    let Some(pid) = contents.lines().find_map(|line| {
-        line.strip_prefix("pid=")
-            .and_then(|pid| pid.parse::<u32>().ok())
-    }) else {
+    let Some(pid) = writer_lock_pid(&contents) else {
         return unborn_run_dir(run_dir);
     };
 
     !process_exists(pid)
+}
+
+fn writer_lock_pid(contents: &str) -> Option<u32> {
+    contents.lines().find_map(|line| {
+        line.strip_prefix("pid=")
+            .and_then(|pid| pid.parse::<u32>().ok())
+    })
 }
 
 pub(crate) fn unborn_run_dir(run_dir: &Path) -> bool {
@@ -417,7 +445,9 @@ pub(crate) fn unborn_run_dir(run_dir: &Path) -> bool {
             .ok()
             .and_then(|entry| entry.file_name().into_string().ok())
             .is_some_and(|name| {
-                name == WRITER_LOCK_FILE_NAME || name == WRITER_LOCK_RECOVERY_FILE_NAME
+                name == WRITER_LOCK_FILE_NAME
+                    || name == WRITER_LOCK_RECOVERY_FILE_NAME
+                    || name == WRITER_LOCK_RECOVERY_MUTEX_FILE_NAME
             })
     })
 }
