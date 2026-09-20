@@ -363,12 +363,11 @@ impl StdioMcpSession {
                 {
                     byte_limit = byte_limit.min(MCP_HEADER_BYTE_LIMIT);
                 }
+                if read > byte_limit - line.len() && byte_limit <= MCP_HEADER_BYTE_LIMIT {
+                    return Err(header_limit_error());
+                }
                 if read > byte_limit - line.len() {
-                    return Err(if byte_limit <= MCP_HEADER_BYTE_LIMIT {
-                        header_limit_error()
-                    } else {
-                        response_limit_error()
-                    });
+                    return Err(response_limit_error());
                 }
                 line.extend_from_slice(&available[..read]);
                 self.stdout.consume(read);
@@ -962,16 +961,11 @@ mod tests {
             );
             for chunk_size in 1..=input.len() {
                 let mut buffer = Vec::new();
-                let mut message = None;
-                for chunk in input.as_bytes().chunks(chunk_size) {
+                let message = input.as_bytes().chunks(chunk_size).find_map(|chunk| {
                     let scan_offset = buffer.len().saturating_sub(3);
                     buffer.extend_from_slice(chunk);
-                    message = super::parse_sse_buffer(&mut buffer, scan_offset, Some("1"))
-                        .unwrap_or_abort();
-                    if message.is_some() {
-                        break;
-                    }
-                }
+                    super::parse_sse_buffer(&mut buffer, scan_offset, Some("1")).unwrap_or_abort()
+                });
                 assert_eq!(message, Some(expected.clone()), "chunk size {chunk_size}");
             }
         }
