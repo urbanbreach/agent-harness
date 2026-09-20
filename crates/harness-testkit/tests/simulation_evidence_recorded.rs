@@ -62,47 +62,7 @@ fn evidence_publishes_only_validated_bundles_and_preserves_existing_output() {
             assert!(!stdout.contains(&secret), "stdout exposed a secret");
             assert!(!stderr.contains(&secret), "stderr exposed a secret");
 
-            // Then: only a successful fresh destination contains a complete bundle.
-            if scenario == "valid" && destination != "populated" {
-                assert!(
-                    output.status.success(),
-                    "{scenario}/{destination}: {stderr}"
-                );
-                assert!(stdout.contains("simulation evidence PASS"));
-                assert!(stdout.contains(&format!("artifact_root={}", artifact_root.display())));
-                for artifact in REQUIRED_ARTIFACTS {
-                    assert!(artifact_root.join(artifact).is_file(), "missing {artifact}");
-                }
-                let index = fs::read_to_string(artifact_root.join("artifact-index.jsonl"))
-                    .unwrap_or_abort();
-                assert!(!index.contains(".simulation-evidence-"));
-                assert!(artifact_root
-                    .join("raw-evidence/baseline/events.jsonl")
-                    .is_file());
-            } else {
-                assert!(
-                    !output.status.success(),
-                    "{scenario}/{destination} unexpectedly passed"
-                );
-                assert!(!stdout.contains("PASS"));
-                match destination {
-                    "absent" => assert!(
-                        !artifact_root.exists(),
-                        "{scenario} published rejected data"
-                    ),
-                    "empty" => {
-                        assert_eq!(fs::read_dir(&artifact_root).unwrap_or_abort().count(), 0)
-                    }
-                    _ => {
-                        assert_eq!(fs::read_dir(&artifact_root).unwrap_or_abort().count(), 1);
-                        assert_eq!(
-                            fs::read_to_string(artifact_root.join("simulation-summary.txt"))
-                                .unwrap_or_abort(),
-                            "prior evidence\n"
-                        );
-                    }
-                }
-            }
+            assert_evidence_outcome(scenario, destination, &artifact_root, &output);
             assert!(
                 fs::read_dir(root.path()).unwrap_or_abort().all(|entry| {
                     !entry
@@ -156,4 +116,55 @@ fn write_evidence_inputs(inputs: &std::path::Path, scenario: &str, secret: &str)
     fs::write(inputs.join("matrix.json"), matrix_text).unwrap_or_abort();
     write_json_pretty(&inputs.join("baseline.json"), &replay).unwrap_or_abort();
     write_json_pretty(&inputs.join("repeat.json"), &repeat_replay).unwrap_or_abort();
+}
+
+fn assert_evidence_outcome(
+    scenario: &str,
+    destination: &str,
+    artifact_root: &std::path::Path,
+    output: &std::process::Output,
+) {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Then: only a successful fresh destination contains a complete bundle.
+    if scenario == "valid" && destination != "populated" {
+        assert!(
+            output.status.success(),
+            "{scenario}/{destination}: {stderr}"
+        );
+        assert!(stdout.contains("simulation evidence PASS"));
+        assert!(stdout.contains(&format!("artifact_root={}", artifact_root.display())));
+        for artifact in REQUIRED_ARTIFACTS {
+            assert!(artifact_root.join(artifact).is_file(), "missing {artifact}");
+        }
+        let index =
+            fs::read_to_string(artifact_root.join("artifact-index.jsonl")).unwrap_or_abort();
+        assert!(!index.contains(".simulation-evidence-"));
+        assert!(artifact_root
+            .join("raw-evidence/baseline/events.jsonl")
+            .is_file());
+    } else {
+        assert!(
+            !output.status.success(),
+            "{scenario}/{destination} unexpectedly passed"
+        );
+        assert!(!stdout.contains("PASS"));
+        match destination {
+            "absent" => assert!(
+                !artifact_root.exists(),
+                "{scenario} published rejected data"
+            ),
+            "empty" => {
+                assert_eq!(fs::read_dir(&artifact_root).unwrap_or_abort().count(), 0)
+            }
+            _ => {
+                assert_eq!(fs::read_dir(&artifact_root).unwrap_or_abort().count(), 1);
+                assert_eq!(
+                    fs::read_to_string(artifact_root.join("simulation-summary.txt"))
+                        .unwrap_or_abort(),
+                    "prior evidence\n"
+                );
+            }
+        }
+    }
 }
