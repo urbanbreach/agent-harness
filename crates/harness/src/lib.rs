@@ -898,7 +898,7 @@ fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
         Commands::Agent { command } => agent_stdio_cmd::execute_with_io(command, io),
         Commands::Share(command) => execute_share(command, io),
         Commands::Setup(command) => execute_setup(command, io),
-        Commands::Wrap(command) => execute_wrap(command, io, &deps),
+        Commands::Wrap(command) => execute_wrap(command, config, session_dir, io, &deps),
         Commands::Mcp { command } => execute_mcp(command, io),
     }
 }
@@ -1074,18 +1074,16 @@ fn execute_trace(
         let _ = writeln!(io.stderr, "building session trace archive...");
     }
 
-    let archive = match build_session_tar(&run_dir) {
+    let output_path = command
+        .output
+        .unwrap_or_else(|| run_dir.join(format!("{}.tar.gz", command.session_id)));
+    let archive = match build_session_tar(&run_dir, &[&output_path]) {
         Ok(data) => data,
         Err(err) => {
             let _ = writeln!(io.stderr, "failed to build archive: {err}");
             return 1;
         }
     };
-
-    let output_path = command
-        .output
-        .clone()
-        .unwrap_or_else(|| run_dir.join(format!("{}.tar.gz", command.session_id)));
 
     if let Some(parent) = output_path.parent() {
         if let Err(err) = std::fs::create_dir_all(parent) {
@@ -1165,10 +1163,13 @@ fn execute_setup(command: SetupCommand, io: &mut CliIo<'_>) -> i32 {
     0
 }
 
-fn execute_wrap(command: WrapCommand, io: &mut CliIo<'_>, deps: &CliDeps) -> i32 {
-    let output = command
-        .output
-        .unwrap_or_else(|| PathBuf::from("workspace.wrap.tar.gz"));
+fn execute_wrap(
+    command: WrapCommand,
+    config: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) -> i32 {
     let workspace = match deps.current_dir() {
         Ok(path) => path,
         Err(err) => {
@@ -1176,13 +1177,47 @@ fn execute_wrap(command: WrapCommand, io: &mut CliIo<'_>, deps: &CliDeps) -> i32
             return 2;
         }
     };
+    let output = workspace.join(
+        command
+            .output
+            .unwrap_or_else(|| PathBuf::from("workspace.wrap.tar.gz")),
+    );
     if let Some(parent) = output.parent() {
         if let Err(err) = std::fs::create_dir_all(parent) {
             let _ = writeln!(io.stderr, "failed to create {}: {err}", parent.display());
             return 2;
         }
     }
-    let archive = match build_session_tar(&workspace) {
+    let archive = (|| {
+        let session_dir = match session_dir {
+            Some(path) => path,
+            None => {
+                let context = deps
+                    .config_load_context()
+                    .map_err(|err| format!("failed to resolve config context: {err}"))?;
+                load_resolved_config_with_context(config.as_deref(), &context)
+                    .map_err(|err| err.to_string())?
+                    .map_or_else(
+                        || PathBuf::from(crate::defaults::DEFAULT_SESSION_DIR),
+                        |loaded| loaded.config.paths.session_dir,
+                    )
+            }
+        };
+        let session_dir = resolve_archive_path(&workspace.join(session_dir))?;
+        let workspace_root = resolve_archive_path(&workspace)?;
+        if command.with_sessions && !session_dir.starts_with(&workspace_root) {
+            return Err(
+                "--with-sessions is unsupported for a session directory outside the workspace"
+                    .to_string(),
+            );
+        }
+        let mut excluded = vec![output.as_path()];
+        if !command.with_sessions {
+            excluded.push(&session_dir);
+        }
+        build_session_tar(&workspace, &excluded)
+    })();
+    let archive = match archive {
         Ok(archive) => archive,
         Err(err) => {
             let _ = writeln!(io.stderr, "failed to build workspace archive: {err}");
@@ -1238,16 +1273,47 @@ fn execute_mcp(command: McpCommand, io: &mut CliIo<'_>) -> i32 {
     }
 }
 
-fn build_session_tar(session_dir: &Path) -> Result<Vec<u8>, String> {
+// Resolve missing exclusion paths through their existing parents without creating them.
+fn resolve_archive_path(path: &Path) -> Result<PathBuf, String> {
+    match path.canonicalize() {
+        Ok(path) => Ok(path),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            let name = path
+                .file_name()
+                .ok_or_else(|| format!("failed to resolve {}: {err}", path.display()))?;
+            let parent = path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            Ok(resolve_archive_path(parent)?.join(name))
+        }
+        Err(err) => Err(format!("failed to resolve {}: {err}", path.display())),
+    }
+}
+
+fn build_session_tar(session_dir: &Path, excluded: &[&Path]) -> Result<Vec<u8>, String> {
     use flate2::write::GzEncoder;
     use flate2::Compression;
     use std::io::Write as _;
 
+    let metadata = std::fs::symlink_metadata(session_dir)
+        .map_err(|err| format!("failed to inspect {}: {err}", session_dir.display()))?;
+    if metadata.is_symlink() {
+        return Err(format!(
+            "refusing to archive symlink {}",
+            session_dir.display()
+        ));
+    }
+    let session_dir = resolve_archive_path(session_dir)?;
+    let excluded = excluded
+        .iter()
+        .map(|path| resolve_archive_path(path))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut archive_data = Vec::new();
     let encoder = GzEncoder::new(&mut archive_data, Compression::default());
     let mut archive = tar::Builder::new(encoder);
 
-    add_directory_to_tar(&mut archive, session_dir, "")?;
+    add_directory_to_tar(&mut archive, &session_dir, Path::new(""), &excluded)?;
 
     archive
         .into_inner()
@@ -1261,24 +1327,32 @@ fn build_session_tar(session_dir: &Path) -> Result<Vec<u8>, String> {
 fn add_directory_to_tar<W: std::io::Write>(
     archive: &mut tar::Builder<W>,
     dir: &Path,
-    prefix: &str,
+    prefix: &Path,
+    excluded: &[PathBuf],
 ) -> Result<(), String> {
-    let entries =
-        std::fs::read_dir(dir).map_err(|e| format!("failed to read {}: {e}", dir.display()))?;
+    if excluded.iter().any(|path| dir.starts_with(path)) {
+        return Ok(());
+    }
+    let mut entries = std::fs::read_dir(dir)
+        .map_err(|e| format!("failed to read {}: {e}", dir.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("failed to read entry in {}: {e}", dir.display()))?;
+    entries.sort_by_key(std::fs::DirEntry::file_name);
 
-    for entry in entries.flatten() {
+    for entry in entries {
         let path = entry.path();
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        let archive_path = if prefix.is_empty() {
-            name_str.to_string()
-        } else {
-            format!("{prefix}/{name_str}")
-        };
-
-        if path.is_dir() {
-            add_directory_to_tar(archive, &path, &archive_path)?;
-        } else if path.is_file() {
+        let metadata = std::fs::symlink_metadata(&path)
+            .map_err(|e| format!("failed to inspect {}: {e}", path.display()))?;
+        if metadata.is_symlink() {
+            return Err(format!("refusing to archive symlink {}", path.display()));
+        }
+        if excluded.iter().any(|excluded| path.starts_with(excluded)) {
+            continue;
+        }
+        let archive_path = prefix.join(entry.file_name());
+        if metadata.is_dir() {
+            add_directory_to_tar(archive, &path, &archive_path, excluded)?;
+        } else if metadata.is_file() {
             let data = std::fs::read(&path)
                 .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
             let mut header = tar::Header::new_gnu();
@@ -1292,7 +1366,9 @@ fn add_directory_to_tar<W: std::io::Write>(
             );
             archive
                 .append_data(&mut header, &archive_path, &data[..])
-                .map_err(|e| format!("failed to add {archive_path}: {e}"))?;
+                .map_err(|e| format!("failed to add {}: {e}", archive_path.display()))?;
+        } else {
+            return Err(format!("unsupported archive entry {}", path.display()));
         }
     }
     Ok(())
