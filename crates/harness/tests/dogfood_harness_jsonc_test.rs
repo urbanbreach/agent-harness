@@ -61,10 +61,19 @@ fn config_validate_passes_with_real_harness_jsonc() {
 #[test]
 fn doctor_json_passes_with_real_harness_jsonc() {
     // arrange
-    let (_config_temp, config_path) = copy_harness_jsonc_to_temp();
+    let (config_temp, config_path) = copy_harness_jsonc_to_temp();
+    let session_dir = config_temp.path().join("sessions");
 
     // act
-    let output = run_with_real_config(&config_path, &["doctor", "--json"]);
+    let output = run_with_real_config(
+        &config_path,
+        &[
+            "--session-dir",
+            session_dir.to_str().unwrap_or_abort(),
+            "doctor",
+            "--json",
+        ],
+    );
 
     // assert
     assert!(

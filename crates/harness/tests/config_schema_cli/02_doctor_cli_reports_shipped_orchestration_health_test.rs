@@ -1,11 +1,14 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn doctor_cli_reports_shipped_orchestration_health() {
+    let session_temp = tempdir().unwrap_or_abort();
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
     let output = harness_command()
         .current_dir(&repo_root)
+        .arg("--session-dir")
+        .arg(session_temp.path().join("sessions"))
         .env("OPENAI_API_KEY", "doctor-shipped-example-test-key")
         .args([
             "--config",
@@ -34,11 +37,14 @@ fn doctor_cli_reports_shipped_orchestration_health() {
 }
 #[test]
 fn doctor_cli_emits_json_report() {
+    let session_temp = tempdir().unwrap_or_abort();
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
     let output = harness_command()
         .current_dir(&repo_root)
+        .arg("--session-dir")
+        .arg(session_temp.path().join("sessions"))
         .env("OPENAI_API_KEY", "doctor-shipped-example-test-key")
         .args([
             "--config",
@@ -88,12 +94,15 @@ fn doctor_cli_emits_json_report() {
 #[test]
 fn doctor_cli_json_reports_extension_roadmap_readiness_separately() {
     // arrange
+    let session_temp = tempdir().unwrap_or_abort();
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
     // act
     let output = harness_command()
         .current_dir(&repo_root)
+        .arg("--session-dir")
+        .arg(session_temp.path().join("sessions"))
         .args([
             "--config",
             config_path.to_str().unwrap_or_abort(),
@@ -146,12 +155,15 @@ fn doctor_cli_json_reports_extension_roadmap_readiness_separately() {
 #[test]
 fn doctor_cli_json_reports_resolved_route_metadata() {
     // arrange
+    let session_temp = tempdir().unwrap_or_abort();
     let repo_root = repo_root();
     let config_path = repo_root.join("configs").join("harness.example.jsonc");
 
     // act
     let output = harness_command()
         .current_dir(&repo_root)
+        .arg("--session-dir")
+        .arg(session_temp.path().join("sessions"))
         .args([
             "--config",
             config_path.to_str().unwrap_or_abort(),
@@ -295,6 +307,8 @@ fn doctor_cli_json_reports_bundled_prompt_family_without_workspace_asset() {
 
     let output = harness_command()
         .current_dir(temp.path())
+        .arg("--session-dir")
+        .arg(temp.path().join("sessions"))
         .args([
             "--config",
             config_path.to_str().unwrap_or_abort(),
@@ -370,6 +384,8 @@ fn doctor_cli_json_reports_stable_id_disabled_skill_metadata() {
 
     let output = harness_command()
         .current_dir(temp.path())
+        .arg("--session-dir")
+        .arg(temp.path().join("sessions"))
         .args([
             "--config",
             config_path.to_str().unwrap_or_abort(),
@@ -448,6 +464,8 @@ fn doctor_cli_json_reports_disabled_builtin_skill_metadata() {
     // act
     let output = harness_command()
         .current_dir(&repo_root)
+        .arg("--session-dir")
+        .arg(temp.path().join("sessions"))
         .args([
             "--config",
             config_path.to_str().unwrap_or_abort(),

@@ -58,7 +58,7 @@ when validation failed before a child was created. Such calls now display
 
 ## Verification and reproduction
 
-The [local evidence index](../.omo/evidence/alignment-20260911/README.md) links
+The local evidence index (`.omo/evidence/alignment-20260911/README.md`) links
 the xterm.js comparisons, screenshots and real CLI journey. Evidence is ignored
 by Git. The fixture and comparison programs are maintained source files.
 

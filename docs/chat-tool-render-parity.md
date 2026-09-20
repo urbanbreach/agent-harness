@@ -10,8 +10,8 @@ This follow-up builds on [the earlier implementation](grok-build-parity-implemen
 The subsequent [alignment and task-argument follow-up](chat-alignment-tool-arguments.md)
 fixes the task/todo offsets and extends the lifecycle evidence to all tool families.
 
-Open the [xterm comparison gallery](../.omo/evidence/chat-parity-20260910/index.html)
-or [evidence index](../.omo/evidence/chat-parity-20260910/README.md). Evidence is
+Open the xterm comparison gallery (`.omo/evidence/chat-parity-20260910/index.html`)
+or evidence index (`.omo/evidence/chat-parity-20260910/README.md`). Evidence is
 local and ignored by Git; the fixtures and comparison scripts are source files.
 
 ## Differences fixed
@@ -73,7 +73,7 @@ content share `crates/harness-tui/src/layout/permission.rs`.
 - Production renderer matrix: **504 xterm.js screenshots**, 252 per renderer.
   Fourteen scenes × three sizes (40×24, 80×24, 120×40) × three exact times
   (0, 330, 660 ms) × normal/reduced motion.
-- [Automated comparison](../.omo/evidence/chat-parity-20260910/cell-comparison.json):
+- Automated comparison (`.omo/evidence/chat-parity-20260910/cell-comparison.json`):
   **42 paired normal-motion frames / 4,098 identical nonblank chat cells** at
   120×40. Checks include characters, width, position, foreground/background
   values and color modes, plus the presence of RGB SGR. Reduced-motion stability
@@ -82,7 +82,7 @@ content share `crates/harness-tui/src/layout/permission.rs`.
   and resize; two chat turns, search, block viewer and raw mode; and the formerly
   failing pre-response queued-edit scenario. Every journey binds a freshly built
   binary to a clean verification checkout and records cleanup.
-- [Offline dogfood](../artifacts/qa-evidence/20260910-grok-chat-parity-settlement/README.md)
+- Offline dogfood (`artifacts/qa-evidence/20260910-grok-chat-parity-settlement/README.md`)
   passed through the real binary with isolated sessions and inspectable durable
   events. Its receipt confirms the user's Harness configuration was untouched.
 
