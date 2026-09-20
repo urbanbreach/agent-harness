@@ -428,6 +428,7 @@ impl Coordinator {
             }
         }
 
+        run_state.refresh_parent_tool_progress(running.child_task.as_ref(), self.clock.mono_ms());
         run_state
             .explicit_runtime_selection_request_ids
             .remove(&request_id);
