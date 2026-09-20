@@ -519,6 +519,24 @@ impl AppState {
                 || key.code == KeyCode::Char(' ') && key.modifiers.is_empty()
             {
                 self.focus = super::Focus::Prompt;
+            } else if !self.handle_prompt_transcript_scroll_key(key) {
+                // The permission still owns input: only transcript review is safe here.
+                match (key.modifiers, key.code) {
+                    (KeyModifiers::CONTROL, KeyCode::Char('e' | 'E')) => {
+                        self.transcript_view.show_transcript_thinking =
+                            !self.transcript_view.show_transcript_thinking;
+                        self.transcript_view.expanded_tool_groups.clear();
+                    }
+                    (KeyModifiers::NONE, KeyCode::Up) => {
+                        self.move_transcript_entry(false);
+                    }
+                    (KeyModifiers::NONE, KeyCode::Down) => {
+                        self.move_transcript_entry(true);
+                    }
+                    (KeyModifiers::NONE, KeyCode::Home) => self.scroll_goto_top(),
+                    (KeyModifiers::NONE, KeyCode::End) => self.scroll_goto_bottom(),
+                    _ => {}
+                }
             }
             return;
         }
