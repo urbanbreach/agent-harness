@@ -30,8 +30,8 @@ fn render_content_entry(entry: &Value) -> Option<String> {
             .get("text")
             .and_then(Value::as_str)
             .map(ToString::to_string),
-        Some("image") => Some(format!(
-            "[image {}]",
+        Some(kind @ ("image" | "audio")) => Some(format!(
+            "[{kind} {}: media omitted]",
             entry
                 .get("mimeType")
                 .and_then(Value::as_str)
@@ -61,7 +61,7 @@ fn render_resource_entry(entry: &Value) -> Option<String> {
     if let Some(text) = entry.get("text").and_then(Value::as_str) {
         return Some(text.to_string());
     }
-    if let Some(blob) = entry.get("blob").and_then(Value::as_str) {
+    if entry.get("blob").and_then(Value::as_str).is_some() {
         let uri = entry
             .get("uri")
             .and_then(Value::as_str)
@@ -70,10 +70,7 @@ fn render_resource_entry(entry: &Value) -> Option<String> {
             .get("mimeType")
             .and_then(Value::as_str)
             .unwrap_or("application/octet-stream");
-        return Some(format!(
-            "[binary resource {uri} ({mime}, {} base64 chars)]",
-            blob.len()
-        ));
+        return Some(format!("[binary resource {uri} ({mime}): media omitted]"));
     }
     entry
         .get("uri")
@@ -95,8 +92,10 @@ pub(crate) fn render_prompt_messages(messages: &[Value]) -> String {
                 .unwrap_or("message");
             let content = message
                 .get("content")
-                .and_then(Value::as_array)
-                .map(|entries| render_content_entries(Some(entries)).join("\n"))
+                .and_then(|content| match content {
+                    Value::Array(entries) => Some(render_content_entries(Some(entries)).join("\n")),
+                    entry => render_content_entry(entry),
+                })
                 .filter(|text| has_trimmed_content(text))
                 .unwrap_or_else(|| compact_json(message));
             format!("{role}: {content}")

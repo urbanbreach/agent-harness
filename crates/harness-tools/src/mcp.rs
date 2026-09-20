@@ -8,6 +8,7 @@ use harness_core::config::{
     set_registered_mcp_server_connection_states, set_registered_mcp_server_first_class_tool_ids,
     McpConfig, McpServerConfig, McpServerConnectionState,
 };
+use harness_core::redact::omit_mcp_result_media;
 use harness_core::tool::{
     sanitize_mcp_tool_segment, Tool, ToolCapability, ToolContext, ToolError, ToolRegistry,
     ToolResult,
@@ -455,7 +456,7 @@ impl McpServerExecutor {
     ) -> Result<ToolResult, ToolError> {
         let tool_name = tool_name.to_string();
         let arguments = normalize_object_value(arguments);
-        let (result, metadata) = if let Some(cache) = &self.stdio_session {
+        let (mut result, metadata) = if let Some(cache) = &self.stdio_session {
             self.request_via_stdio(
                 cache,
                 "tools/call",
@@ -483,6 +484,7 @@ impl McpServerExecutor {
             (result, metadata)
         };
 
+        let _ = omit_mcp_result_media(&mut result);
         let rendered = render_content_entries(result.get("content").and_then(Value::as_array));
         let display_text = if rendered.is_empty() {
             "MCP tool returned no content".to_string()
@@ -607,7 +609,7 @@ impl McpServerExecutor {
 
     async fn read_resource(&self, args: McpResourceReadArgs) -> Result<ToolResult, ToolError> {
         let uri = args.uri;
-        let (result, metadata) = if let Some(cache) = &self.stdio_session {
+        let (mut result, metadata) = if let Some(cache) = &self.stdio_session {
             self.request_via_stdio(cache, "resources/read", json!({ "uri": uri.clone() }))
                 .await?
         } else {
@@ -622,6 +624,7 @@ impl McpServerExecutor {
             (result, metadata)
         };
 
+        let _ = omit_mcp_result_media(&mut result);
         let contents = result
             .get("contents")
             .and_then(Value::as_array)
@@ -663,7 +666,7 @@ impl McpServerExecutor {
     async fn get_prompt(&self, args: McpPromptGetArgs) -> Result<ToolResult, ToolError> {
         let prompt_name = args.name;
         let arguments = normalize_object_value(args.arguments);
-        let (result, metadata) = if let Some(cache) = &self.stdio_session {
+        let (mut result, metadata) = if let Some(cache) = &self.stdio_session {
             self.request_via_stdio(
                 cache,
                 "prompts/get",
@@ -691,6 +694,7 @@ impl McpServerExecutor {
             (result, metadata)
         };
 
+        let _ = omit_mcp_result_media(&mut result);
         let messages = result
             .get("messages")
             .and_then(Value::as_array)

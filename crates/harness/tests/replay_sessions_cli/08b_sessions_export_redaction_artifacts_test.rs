@@ -1,4 +1,132 @@
 use harness::UnwrapOrAbort;
+
+#[test]
+fn sessions_export_cli_omits_legacy_mcp_media_without_changing_journal() {
+    let session_dir = tempdir().unwrap_or_abort();
+    let run_dir = session_dir.path().join("run_export_media");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
+    let content = serde_json::json!([
+        {"type": "text", "text": "neighboring text", "data": "application-data", "blob": "application-blob"},
+        {"type": "image", "mimeType": "image/png", "data": "aW1hZ2UtcHJpdmF0ZQ=="},
+        {"type": "audio", "mimeType": "audio/wav", "data": "YXVkaW8tcHJpdmF0ZQ=="},
+        {"type": "resource", "resource": {
+            "uri": "fixture://media", "mimeType": "application/octet-stream", "blob": "cmVzb3VyY2UtcHJpdmF0ZQ=="
+        }}
+    ]);
+    let application = serde_json::json!({"type": "image", "data": "application-image-data", "blob": "application-blob"});
+    let mut events = vec![envelope(
+        "run_export_media",
+        1,
+        EventV1::RunStarted(RunStartedEvent {
+            run_name: "export-media".into(),
+            workspace_root: "/tmp/workspace".to_string(),
+        }),
+    )];
+    for (index, payload) in [
+        serde_json::json!({"tool": "media", "result": {"content": content, "structuredContent": application}}),
+        serde_json::json!({"uri": "fixture://media", "contents": [
+            {"uri": "fixture://text", "text": "neighboring text", "metadata": application},
+            content[3]["resource"]
+        ]}),
+        serde_json::json!({"name": "media", "messages": [{"role": "user", "content": content}]}),
+        serde_json::json!({"name": "media", "messages": [{"role": "user", "content": content[2]}]}),
+    ].into_iter().enumerate() {
+        // Legacy fallback rendering copied encoded content into summary fields.
+        let summary = format!("neighboring text: {payload}");
+        events.push(envelope("run_export_media", u64::try_from(events.len() + 1).unwrap_or_abort(),
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: format!("task_{index}").into(),
+                result_summary: summary.clone(),
+                result_digest: "legacy-digest".to_string(),
+                metadata: None,
+            })));
+        events.push(envelope("run_export_media", u64::try_from(events.len() + 1).unwrap_or_abort(),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: format!("toolcall_{index:06}").into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some(summary.clone()),
+                output_digest: Some("legacy-digest".to_string()),
+                output_json: Some(serde_json::json!({
+                    "server": {"id": "fixture", "transport": "stdio"},
+                    "protocolVersion": "2025-06-18",
+                    "payload": payload,
+                    "_harness": {"output_summary": summary},
+                })),
+                metadata: None,
+            })));
+    }
+    // An application object using the same field names is not an MCP envelope.
+    events.push(envelope(
+        "run_export_media",
+        u64::try_from(events.len() + 1).unwrap_or_abort(),
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "toolcall_999999".into(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: None,
+            output_digest: None,
+            output_json: Some(serde_json::json!({"content": [application]})),
+            metadata: None,
+        }),
+    ));
+    events.push(envelope(
+        "run_export_media",
+        u64::try_from(events.len() + 1).unwrap_or_abort(),
+        EventV1::RunFinished(RunFinishedEvent { summary: "done".to_string() }),
+    ));
+    write_events_jsonl(&run_dir, &events);
+    let journal_path = run_dir.join("events.jsonl");
+    let original = std::fs::read(&journal_path).unwrap_or_abort();
+    let output = run_harness([
+        "--session-dir",
+        session_dir.path().to_str().unwrap_or_abort(),
+        "sessions",
+        "export",
+        "run_export_media",
+    ]);
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(std::fs::read(&journal_path).unwrap_or_abort(), original);
+    let export_text = String::from_utf8(output.stdout).unwrap_or_abort();
+    for encoded in [
+        "aW1hZ2UtcHJpdmF0ZQ==",
+        "YXVkaW8tcHJpdmF0ZQ==",
+        "cmVzb3VyY2UtcHJpdmF0ZQ==",
+    ] {
+        assert!(
+            !export_text.contains(encoded),
+            "legacy media leaked into support export"
+        );
+    }
+    assert!(export_text.contains("media omitted"));
+    for ordinary in [
+        "neighboring text",
+        "application-data",
+        "application-blob",
+        "application-image-data",
+        "image/png",
+        "audio/wav",
+        "application/octet-stream",
+    ] {
+        assert!(export_text.contains(ordinary));
+    }
+    let bundle: serde_json::Value = serde_json::from_str(&export_text).unwrap_or_abort();
+    assert_eq!(
+        bundle["events"][2]["payload"]["data"]["output_json"]["payload"]["result"]["structuredContent"],
+        application
+    );
+    assert_eq!(
+        bundle["events"][9]["payload"]["data"]["output_json"]["content"][0],
+        application
+    );
+    assert_eq!(
+        bundle["support"]["secret_scan_status"]["secret_finding_count"],
+        0
+    );
+}
+
 #[test]
 fn sessions_export_cli_redacts_secret_payloads_and_reports_manifest() {
     // arrange
