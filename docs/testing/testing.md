@@ -307,6 +307,13 @@ Current stage commands:
 - `cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root <artifact-root>/simulation/stages/simulation_evidence/artifacts --matrix docs/testing/simulation-matrix.json --baseline-events <baseline.events.jsonl> --baseline-replay <baseline.replay.json> --repeat-events <repeat.events.jsonl> --repeat-replay <repeat.replay.json> --seed 0`
 - `env HARNESS_SECRETS_SCAN_ARTIFACTS=1 HARNESS_SIMULATION_ARTIFACT_DIR=<simulation-artifacts> cargo nextest run -p harness-testkit --test secretscan_test`
 
+`simulation_evidence` builds and validates its bundle in a private sibling staging directory, then
+publishes it with one directory rename. Its `--artifact-root` must be absent or an empty directory
+that the platform can atomically replace. A nonempty destination is rejected without changing prior
+evidence; use a fresh artifact root for each run. Failed scans or validation remove only the staging
+directory, and PASS is printed only after publication. The lane's stage receipts remain outside the
+bundle directory.
+
 The `simulation_evidence` stage writes the standard lane files plus these simulation artifacts under
 `<artifact-root>/simulation/stages/simulation_evidence/artifacts/`:
 

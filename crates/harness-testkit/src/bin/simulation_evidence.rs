@@ -23,19 +23,33 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), String> {
-    let args = Args::parse(env::args().skip(1).collect())?;
-    let matrix = validate_matrix_file(&args.matrix).map_err(format_failures)?;
-    fs::create_dir_all(&args.artifact_root).map_err(|err| {
+    let mut args = Args::parse(env::args().skip(1).collect())?;
+    let destination = args.artifact_root.clone();
+    check_destination(&destination)?;
+    let parent = destination
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(|err| {
         format!(
-            "failed to create artifact root {}: {err}",
-            args.artifact_root.display()
+            "failed to create artifact parent {}: {err}",
+            parent.display()
         )
     })?;
+    let staging = tempfile::Builder::new()
+        .prefix(".simulation-evidence-")
+        .tempdir_in(parent)
+        .map_err(|err| format!("failed to stage simulation evidence: {err}"))?;
+    args.artifact_root = staging.path().to_path_buf();
 
     copy_file(
         &args.matrix,
         &args.artifact_root.join("simulation-matrix.json"),
     )?;
+    // Matrix validation can include input values in diagnostics; scan its staged copy first.
+    scan_evidence(&args.artifact_root)?;
+    let matrix = validate_matrix_file(&args.artifact_root.join("simulation-matrix.json"))
+        .map_err(format_failures)?;
 
     let baseline_events = read_jsonl(&args.baseline_events)?;
     let repeat_events = read_jsonl(&args.repeat_events)?;
@@ -132,14 +146,7 @@ fn run() -> Result<(), String> {
         same_seed_status,
     )?;
 
-    let redaction_summary = scan_simulation_artifact_root(&args.artifact_root)
-        .map_err(|failure| failure.to_string())?;
-    if redaction_summary.secret_finding_count != 0 {
-        return Err(format!(
-            "secret-scan failed: rejected_artifacts={:?}",
-            redaction_summary.rejected_artifacts
-        ));
-    }
+    let redaction_summary = scan_evidence(&args.artifact_root)?;
 
     index_rows = artifact_index_rows(&args.artifact_root, &matrix, &relative_paths);
     write_jsonl(
@@ -192,14 +199,7 @@ fn run() -> Result<(), String> {
         },
     )?;
 
-    let final_redaction_summary = scan_simulation_artifact_root(&args.artifact_root)
-        .map_err(|failure| failure.to_string())?;
-    if final_redaction_summary.secret_finding_count != 0 {
-        return Err(format!(
-            "secret-scan failed: rejected_artifacts={:?}",
-            final_redaction_summary.rejected_artifacts
-        ));
-    }
+    scan_evidence(&args.artifact_root)?;
 
     validate_simulation_events_file(&matrix, &args.artifact_root.join("simulation-events.jsonl"))
         .map_err(format_failures)?;
@@ -222,8 +222,44 @@ fn run() -> Result<(), String> {
         return Err("one or more simulation invariants failed".to_owned());
     }
 
+    check_destination(&destination)?;
+    // Rename refuses nonempty directories even if another writer wins after the check.
+    fs::rename(staging.path(), &destination)
+        .map_err(|err| format!("failed to publish simulation evidence: {err}"))?;
+    let _ = staging.keep();
+
     println!("simulation evidence PASS");
-    println!("artifact_root={}", args.artifact_root.as_path().display());
+    println!("artifact_root={}", destination.display());
+    Ok(())
+}
+
+fn scan_evidence(artifact_root: &Path) -> Result<RedactionSummary, String> {
+    let summary =
+        scan_simulation_artifact_root(artifact_root).map_err(|failure| failure.to_string())?;
+    if summary.secret_finding_count != 0 {
+        return Err(format!(
+            "secret-scan failed: rejected_artifacts={:?}",
+            summary.rejected_artifacts
+        ));
+    }
+    Ok(summary)
+}
+
+fn check_destination(path: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Err("artifact root must be an absent or empty directory".to_owned()),
+        Err(err) => return Err(format!("failed to inspect artifact root: {err}")),
+    }
+    let first_entry = fs::read_dir(path)
+        .map_err(|err| format!("failed to inspect artifact root: {err}"))?
+        .next()
+        .transpose()
+        .map_err(|err| format!("failed to inspect artifact root: {err}"))?;
+    if first_entry.is_some() {
+        return Err("artifact root must be an absent or empty directory".to_owned());
+    }
     Ok(())
 }
 
