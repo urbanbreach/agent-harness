@@ -173,3 +173,9 @@ Any new parked-review hint must have an explicit safe dispatch path and preserve
 - Parked review preserves draft text, active permission, and absence of decision/submission intents. Tab/Space restores permission focus. Both permission and compact-question footer regressions verify the removal of the hidden shortcuts promise.
 - The first combined run passed 95/96; the new scroll fixture used Markdown soft breaks and did not overflow. Distinct paragraphs and a settled response corrected the fixture; the final 96/96 run passed. An earlier compile attempt exposed a missing type import in the concurrently developed lineage change, corrected before the final run.
 - Inspected `permission-parked-review-{120x40,60x20}-motion-0ms.png`: transcript remains scrollable above the parked dock; the footer shows working Tab/Space and Ctrl+e actions without shortcuts.
+
+### File-focus gate follow-up
+
+- Moved `permission_modal_escape_parks_and_tab_restores_without_answering` unchanged into the existing included `permission_modal_tests_part6_test.rs`. The delegated test name and capture behavior are unchanged; the two files now contain 720 and 273 lines.
+- The private-target nextest selection for that test passed 1/1 (`/tmp/tui-permission-move-check.log`); `git diff --check` passed.
+- `python3 scripts/check-test-suite-gates.py --gate file-focus` no longer reports this owner. It still reports the pre-existing 1,355-line core task-lifecycle target and 823-line TUI tool-order capture target (`/tmp/tui-permission-file-focus.log`).
