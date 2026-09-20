@@ -12,7 +12,9 @@ use crate::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision, PermissionResolvedEvent,
     RunFinishedEvent, TaskCancelledEvent, SCHEMA_VERSION,
 };
+use crate::ids::EntryId;
 use crate::path_display::display_path;
+use crate::session::EventIdentityNamespace;
 use crate::session_paths::{ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, WRITER_LOCK_FILE_NAME};
 
 use super::stable_prefix::{
@@ -79,6 +81,8 @@ pub enum ChildSessionMaterializationError {
     StablePrefix(#[from] SessionLineageError),
     #[error("provided stable prefix does not match validation result for cutoff seq {cutoff_seq}")]
     StablePrefixMismatch { cutoff_seq: u64 },
+    #[error("compaction at seq {seq} references entry `{entry_id}` outside the copied prefix")]
+    UnresolvedCompactionBoundary { seq: u64, entry_id: EntryId },
     #[error("source run directory does not exist: {path}")]
     SourceRunDirectoryMissing { path: String },
     #[error("source run directory has no session-directory parent: {path}")]
@@ -314,7 +318,7 @@ where
         source_prefix_events,
         source_run_id.as_deref(),
         &child_run_id,
-    );
+    )?;
     if request.source_kind == ChildSessionMaterializationSourceKind::TuiStableInMemorySnapshot
         && validated.status.is_none()
         && !copied_events.is_empty()
@@ -367,6 +371,7 @@ where
 /// new event id derived from that child identity. `correlation_id` and `causation_id` are cleared so
 /// the child log cannot imply causal links to the parent run's event ids; stream keys are only
 /// rewritten for the run-scoped `run:<source>` key and otherwise preserved.
+/// Typed payload entry references are remapped separately once the whole prefix is rewritten.
 pub fn rewrite_child_event_envelope(
     source: &EventEnvelopeV1,
     source_run_id: Option<&str>,
@@ -388,8 +393,8 @@ fn rewrite_child_event_prefix(
     events: &[EventEnvelopeV1],
     source_run_id: Option<&str>,
     child_run_id: &str,
-) -> Vec<EventEnvelopeV1> {
-    events
+) -> Result<Vec<EventEnvelopeV1>, ChildSessionMaterializationError> {
+    let mut rewritten = events
         .iter()
         .enumerate()
         .map(|(index, event)| {
@@ -400,7 +405,30 @@ fn rewrite_child_event_prefix(
                 u64::try_from(index).unwrap_or(0) + 1,
             )
         })
-        .collect()
+        .collect::<Vec<_>>();
+    let entry_ids = events
+        .iter()
+        .zip(&rewritten)
+        .filter_map(|(source, child)| {
+            Some((
+                EventIdentityNamespace::new(&source.run_id).source_entry_id(source)?,
+                EventIdentityNamespace::new(&child.run_id).source_entry_id(child)?,
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for event in &mut rewritten {
+        if let EventV1::SessionCompaction(compaction) = &mut event.payload {
+            if let Some(entry_id) = &mut compaction.first_kept_entry_id {
+                *entry_id = entry_ids.get(entry_id).cloned().ok_or_else(|| {
+                    ChildSessionMaterializationError::UnresolvedCompactionBoundary {
+                        seq: event.seq,
+                        entry_id: entry_id.clone(),
+                    }
+                })?;
+            }
+        }
+    }
+    Ok(rewritten)
 }
 
 fn append_materialized_terminal_event(events: &mut Vec<EventEnvelopeV1>, child_run_id: &str) {
