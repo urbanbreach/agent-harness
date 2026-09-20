@@ -154,6 +154,62 @@ pub fn redact_artifact_text(contents: &str) -> String {
     text
 }
 
+pub const MCP_MEDIA_OMITTED: &str = "[MCP media omitted]";
+
+/// Omit encoded media in an MCP call/read/prompt result, returning the removed
+/// payloads so support exports can also sanitize historical summary copies.
+/// Application data (including structuredContent) is deliberately not traversed.
+pub fn omit_mcp_result_media(result: &mut Value) -> Vec<String> {
+    let mut omitted = Vec::new();
+    if let Some(content) = result.get_mut("content").and_then(Value::as_array_mut) {
+        for entry in content {
+            omit_mcp_content_media(entry, &mut omitted);
+        }
+    }
+    if let Some(contents) = result.get_mut("contents").and_then(Value::as_array_mut) {
+        for resource in contents {
+            omit_mcp_media_field(resource, "blob", &mut omitted);
+        }
+    }
+    if let Some(messages) = result.get_mut("messages").and_then(Value::as_array_mut) {
+        for message in messages {
+            match message.get_mut("content") {
+                Some(Value::Array(content)) => {
+                    for entry in content {
+                        omit_mcp_content_media(entry, &mut omitted);
+                    }
+                }
+                Some(content) => omit_mcp_content_media(content, &mut omitted),
+                None => {}
+            }
+        }
+    }
+    omitted
+}
+
+fn omit_mcp_content_media(entry: &mut Value, omitted: &mut Vec<String>) {
+    match entry.get("type").and_then(Value::as_str) {
+        Some("image" | "audio") => omit_mcp_media_field(entry, "data", omitted),
+        Some("resource") => {
+            if let Some(resource) = entry.get_mut("resource") {
+                omit_mcp_media_field(resource, "blob", omitted);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn omit_mcp_media_field(entry: &mut Value, field: &str, omitted: &mut Vec<String>) {
+    if let Some(Value::String(data)) = entry.get_mut(field) {
+        if data != MCP_MEDIA_OMITTED {
+            let data = std::mem::replace(data, MCP_MEDIA_OMITTED.to_string());
+            if !data.is_empty() {
+                omitted.push(data);
+            }
+        }
+    }
+}
+
 /// Redact raw lines in order without buffering private-key blocks. Feed skipped
 /// lines too: an offset may begin inside a block, including an unterminated one.
 pub struct LineRedactor {
