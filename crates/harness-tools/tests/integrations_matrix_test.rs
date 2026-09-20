@@ -83,7 +83,13 @@ for raw in sys.stdin:
         if mode == b"r":
             send({"jsonrpc": "2.0", "id": message_id,
                   "error": {"code": -32603, "message": "fixture rejected initialization"}})
-        if mode in (b"r", b"c"):
+        if mode == b"L":
+            sys.stdout.write("Content-Length: 16777217\r\n")
+            sys.stdout.flush()
+        if mode == b"H":
+            sys.stdout.write("Content-Length: 2\r\nX-Fixture: " + "x" * 8192)
+            sys.stdout.flush()
+        if mode in (b"r", b"c", b"L", b"H"):
             # Stay alive after stdin closes; EOF on the control socket cleans up a failing test.
             control.recv(1)
             sys.exit(0)
@@ -99,6 +105,11 @@ for raw in sys.stdin:
     elif method == "notifications/initialized":
         continue
     elif method == "tools/call" and message_id is not None:
+        if mode == b"B":
+            sys.stdout.write("x" * 16777217)
+            sys.stdout.flush()
+            control.recv(1)
+            sys.exit(0)
         calls += 1
         send({"jsonrpc": "2.0", "id": message_id, "result": {
             "content": [{"type": "text", "text": str(calls)}], "isError": False
@@ -239,7 +250,7 @@ async fn mcp_process_failure_crashing_server_returns_tool_error() {
 #[tokio::test]
 async fn mcp_startup_failure_and_cancellation_terminate_processes_and_preserve_reuse() {
     let mut survivors = Vec::new();
-    for mode in *b"rch" {
+    for mode in *b"rchLHB" {
         let temp_dir = setup_workspace();
         let workspace = temp_dir.path().join("workspace");
         let script_path = temp_dir.path().join("controlled_mcp_server.py");
@@ -277,6 +288,18 @@ async fn mcp_startup_failure_and_cancellation_terminate_processes_and_preserve_r
                     .expect_err("startup must be cancelled")
                     .is_cancelled());
             }
+            b'L' | b'H' | b'B' => {
+                let error = call
+                    .await
+                    .unwrap_or_abort()
+                    .expect_err("oversized response");
+                let expected = if mode == b'H' {
+                    "MCP header exceeded 8192-byte limit"
+                } else {
+                    "MCP response exceeded 16777216-byte limit"
+                };
+                assert!(matches!(error, ToolError::Execution(message) if message == expected));
+            }
             _ => {
                 assert_eq!(
                     call.await.unwrap_or_abort().unwrap_or_abort().display_text,
@@ -293,7 +316,8 @@ async fn mcp_startup_failure_and_cancellation_terminate_processes_and_preserve_r
                 assert_eq!(result.display_text, "2", "healthy session must be reused");
             }
         }
-        let reaped_on_return = mode != b'r' || test_kill_process(process) == Err(Errno::SRCH);
+        let reaped_on_return =
+            !b"rLHB".contains(&mode) || test_kill_process(process) == Err(Errno::SRCH);
         drop(registry);
 
         let mut byte = [0];
