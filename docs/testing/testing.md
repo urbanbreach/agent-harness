@@ -136,6 +136,9 @@ stage so missing, stale, or provenance-mismatched perf artifacts fail closed.
 GitLab's `rust:perf` job uses this same runner with a fresh `target/ci-perf/${CI_JOB_ID}`
 artifact root and always collects its receipts and the perf JUnit report. A direct nextest
 invocation alone does not perform the artifact freshness check.
+The job selects the Docker runner and allows six hours for a cold release build. It prints
+progress every minute while the canonical runner captures stage logs, preventing GitLab's
+inactivity timeout. The runner still enforces the same benchmark and freshness checks.
 
 Coverage ratchet evidence is produced with:
 

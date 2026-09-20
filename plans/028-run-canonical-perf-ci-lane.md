@@ -151,3 +151,22 @@ Keep CI as a caller of the canonical lane. New perf stages belong in that runner
 - Parsed the GitLab YAML and confirmed setup alias resolution, the single canonical invocation, always collection and both artifact destinations.
 - Existing performance wiring/freshness cases passed in the 11-case script target run used for plan026.
 - A real canonical performance run and independent verification are still required and will be recorded before closure.
+
+### Independent CI configuration follow-up
+
+Read-only GitLab inspection found a one-hour project timeout and no runners accepting
+untagged jobs. The previous perf job failed with `stuck_pending_no_matching_runners`.
+The perf job now selects the available Docker runner, allows six hours for the measured
+cold release build, and uses Python's child wait timeout to emit content-free progress
+every minute while preserving the canonical command and exit status. This also avoids
+GitLab's one-hour inactivity limit while stage output is captured. Benchmark thresholds,
+release settings, the canonical runner, and its freshness validator are unchanged.
+
+References: [job timeout](https://docs.gitlab.com/ci/yaml/#timeout) and
+[job inactivity limit](https://docs.gitlab.com/ci/pipelines/settings/#set-a-limit-for-how-long-jobs-can-run).
+
+The final YAML passes the project's `glab ci lint`. A runnable stdlib check at
+`/tmp/agent-harness-open-issues/check-perf-ci-wrapper.py` verifies the exact canonical
+arguments, zero/nonzero exit propagation, and repeated progress timeouts without
+running benchmarks or sleeping. Independent review and the real release run remain
+pending; no hosted pipeline execution is claimed.

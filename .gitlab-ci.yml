@@ -118,12 +118,28 @@ rust:test_nextest:
 rust:perf:
   stage: test
   image: rust:latest
+  tags: [docker]
+  timeout: 6h
   cache: *rust_cache
   before_script:
     - *rust_nextest_before_script
     - apt-get update && apt-get install -y --no-install-recommends python3
   script:
-    - scripts/test-lanes.sh perf --artifact-dir "target/ci-perf/${CI_JOB_ID}"
+    - |
+      python3 -u - <<'PY'
+      import os
+      import subprocess
+
+      with subprocess.Popen([
+          "scripts/test-lanes.sh", "perf", "--artifact-dir",
+          "target/ci-perf/" + os.environ["CI_JOB_ID"],
+      ]) as lane:
+          while True:
+              try:
+                  raise SystemExit(lane.wait(timeout=60))
+              except subprocess.TimeoutExpired:
+                  print("Performance lane is running; stage logs will be uploaded as artifacts.")
+      PY
   artifacts: *perf_junit_artifacts
 
 rust:coverage:
