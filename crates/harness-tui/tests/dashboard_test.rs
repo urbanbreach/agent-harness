@@ -502,18 +502,17 @@ fn shared_child_events_preserve_parent_status_and_root_visibility() {
                     let area = Rect::new(0, 0, width, height);
                     app.open_status_dashboard_at(area);
                     let mut bytes = Vec::new();
-                    {
-                        let mut terminal = Terminal::with_options(
-                            CrosstermBackend::new(&mut bytes),
-                            TerminalOptions {
-                                viewport: Viewport::Fixed(area),
-                            },
-                        )
+                    let mut terminal = Terminal::with_options(
+                        CrosstermBackend::new(&mut bytes),
+                        TerminalOptions {
+                            viewport: Viewport::Fixed(area),
+                        },
+                    )
+                    .unwrap_or_abort();
+                    terminal
+                        .draw(|frame| harness_tui::ui::render_app(frame, &app))
                         .unwrap_or_abort();
-                        terminal
-                            .draw(|frame| harness_tui::ui::render_app(frame, &app))
-                            .unwrap_or_abort();
-                    }
+                    drop(terminal);
                     std::fs::write(
                         directory.join(format!(
                             "dashboard-parent-running-{width}x{height}-motion-0ms.ansi"

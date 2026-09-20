@@ -167,9 +167,11 @@ pub(super) fn permission_modal_escape_parks_and_tab_restores_without_answering()
         "review",
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
             request_id: "review".into(),
-            delta: (0..80)
-                .map(|row| format!("Transcript review line {row}\n\n"))
-                .collect(),
+            delta: (0..80).fold(String::new(), |mut text, row| {
+                use std::fmt::Write as _;
+                writeln!(text, "Transcript review line {row}\n").unwrap_or_abort();
+                text
+            }),
         }),
     ));
     app.ingest_event(envelope(
@@ -244,12 +246,30 @@ pub(super) fn permission_modal_escape_parks_and_tab_restores_without_answering()
     assert!(!app.palette_visible);
     assert!(app.active_review_surface.is_none());
     assert!(intents.lock().unwrap_or_abort().is_empty());
+    capture_parked_permission_review(&mut app);
+    assert_parked_permission_focus_restores(&mut app);
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+}
+
+fn assert_parked_permission_focus_restores(app: &mut AppState) {
+    for restore_key in [KeyCode::Tab, KeyCode::Char(' ')] {
+        app.handle_key(key(restore_key));
+        assert_eq!(app.focus, Focus::Prompt);
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.focus, Focus::List);
+    }
+    app.handle_key(key(KeyCode::Tab));
+
+    assert_eq!(app.focus, Focus::Prompt);
+}
+
+fn capture_parked_permission_review(app: &mut AppState) {
     if let Some(directory) = std::env::var_os("HARNESS_TOOL_RUNTIME_HARNESS_DIR") {
         let directory = std::path::PathBuf::from(directory);
         std::fs::create_dir_all(&directory).unwrap_or_abort();
         for (width, height) in [(120, 40), (60, 20)] {
             let (bytes, _) =
-                super::tool_runtime_capture_tests::draw(&mut app, Rect::new(0, 0, width, height))
+                super::tool_runtime_capture_tests::draw(app, Rect::new(0, 0, width, height))
                     .unwrap_or_abort();
             std::fs::write(
                 directory.join(format!(
@@ -260,14 +280,4 @@ pub(super) fn permission_modal_escape_parks_and_tab_restores_without_answering()
             .unwrap_or_abort();
         }
     }
-    for restore_key in [KeyCode::Tab, KeyCode::Char(' ')] {
-        app.handle_key(key(restore_key));
-        assert_eq!(app.focus, Focus::Prompt);
-        app.handle_key(key(KeyCode::Esc));
-        assert_eq!(app.focus, Focus::List);
-    }
-    app.handle_key(key(KeyCode::Tab));
-
-    assert_eq!(app.focus, Focus::Prompt);
-    assert!(intents.lock().unwrap_or_abort().is_empty());
 }
