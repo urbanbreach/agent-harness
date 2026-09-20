@@ -49,7 +49,7 @@ pub(super) struct SessionNavigationSnapshot {
 }
 
 impl AppState {
-    pub(super) fn load_session_lineage(&mut self) {
+    pub(crate) fn load_session_lineage(&mut self) {
         let metadata = self.session_path.as_deref().and_then(harness_lineage);
         self.session_lineage = SessionLineage {
             parent_run_id: metadata
@@ -1025,6 +1025,26 @@ mod tests {
         fs::create_dir_all(&child_dir).unwrap_or_abort();
         let mut parent = AppState::new();
         setup_parent_with_child(&mut parent);
+        parent.ingest_event(event(
+            7,
+            Some("req_parent"),
+            actor(harness_core::event::ActorKind::System, "coordinator"),
+            EventV1::ToolCallRequested(harness_core::event::ToolCallRequestedEvent {
+                tool_call_id: "tc_sibling".into(),
+                tool_id: "task".into(),
+                args_summary: r#"{"description":"sibling task"}"#.into(),
+                args_digest: "digest-sibling".into(),
+                metadata: Some(harness_core::event::ToolCallMetadata {
+                    lineage: Some(harness_core::event::TaskLineageMetadata {
+                        parent_session_id: Some("parent_run".into()),
+                        child_session_id: Some("agent_sibling".into()),
+                        child_request_id: Some("req_sibling".into()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+            }),
+        ));
         let journal = parent
             .events
             .iter()
@@ -1035,7 +1055,45 @@ mod tests {
         let mut app = AppState::new_live(Some(child_dir.clone()), false, None);
         let info = app.current_subagent_session_info().unwrap_or_abort();
         assert_eq!(info.title, "test task");
+        assert_eq!(info.total, 2);
         assert_eq!(app.focused_demote_handle_id().as_deref(), Some("req_child"));
+        fs::remove_file(child_dir.join("meta.json")).unwrap_or_abort();
+        let mut lineage_event = event(
+            1,
+            Some("req_child"),
+            actor(harness_core::event::ActorKind::Worker, "agent_worker"),
+            EventV1::TaskCompleted(harness_core::event::TaskCompletedEvent {
+                task_id: "child-task".into(),
+                result_summary: "done".into(),
+                result_digest: "digest-child-task".into(),
+                metadata: Some(harness_core::event::TaskCompletionMetadata {
+                    lineage: Some(harness_core::event::TaskLineageMetadata {
+                        parent_session_id: Some("parent_run".into()),
+                        child_session_id: Some("agent_worker".into()),
+                        child_request_id: Some("req_child".into()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+            }),
+        );
+        lineage_event.run_id = "agent_worker".into();
+        for metadata in [None, Some("malformed metadata")] {
+            if let Some(metadata) = metadata {
+                fs::write(child_dir.join("meta.json"), metadata).unwrap_or_abort();
+            }
+            let replay = AppState::new_replay(child_dir.clone(), vec![lineage_event.clone()]);
+            assert_eq!(
+                replay.current_subagent_session_info().unwrap_or_abort(),
+                info
+            );
+            app = AppState::new_live(Some(child_dir.clone()), false, None);
+            app.ingest_historical_event(lineage_event.clone());
+            // Match the runtime boundary after the historical event batch is installed.
+            app.load_session_lineage();
+            assert_eq!(app.current_subagent_session_info().unwrap_or_abort(), info);
+            assert_eq!(app.focused_demote_handle_id().as_deref(), Some("req_child"));
+        }
         fs::remove_file(parent_dir.join("events.jsonl")).unwrap_or_abort();
         fs::remove_file(child_dir.join("meta.json")).unwrap_or_abort();
         for _ in 0..3 {
