@@ -133,7 +133,7 @@ Run the focused command under ci, then under perf with --ignore-default-filter t
 
 Run the full test-lanes script target and compare the generated report paths with the existing GitLab reports.junit entries. Do not relabel the cheap perf-profile invocation as performance benchmark evidence.
 
-**Verify:** `cargo nextest run --profile ci --locked --offline -p harness --test test_lanes_script_test` → All script cases pass; both CI artifact paths match actual outputs.
+**Verify:** `cargo nextest run --profile ci --locked --offline -p harness --test test_lanes_script_test --ignore-default-filter` → All script cases pass; both CI artifact paths match actual outputs.
 
 ## Test plan
 

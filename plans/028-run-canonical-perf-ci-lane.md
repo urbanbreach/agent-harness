@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — canonical run and independent verification pending
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#251](https://github.com/urbanbreach/agent-harness/issues/251)
 - **Priority:** P2
 - **Effort:** S
@@ -74,7 +74,7 @@ Run from the repository root with the existing stable Rust toolchain and locked 
 
 | Purpose | Command | Expected result |
 |---|---|---|
-| Focused behavior | `cargo nextest run --profile ci --locked --offline -p harness --test test_lanes_script_test -E 'test(test_lanes_exports_artifact_dir_for_performance_stage) \| test(test_lanes_runs_perf_artifact_freshness_gate)'` | Expected results are specified per step; final run passes with nonzero selection. |
+| Focused behavior | `cargo nextest run --profile ci --locked --offline -p harness --test test_lanes_script_test --ignore-default-filter -E 'test(test_lanes_exports_artifact_dir_for_performance_stage) \| test(test_lanes_runs_perf_artifact_freshness_gate)'` | Expected results are specified per step; final run passes with nonzero selection. |
 | Whitespace | `git diff --check` | Exit 0. |
 | Scope | `git status --short` | Only the explicitly allowed implementation files and plan records are changed by this work. |
 
@@ -99,7 +99,7 @@ Use an isolated executor checkout or a dedicated `codex/plan-028-run-canonical-p
 
 Replace the direct nextest invocation with scripts/test-lanes.sh perf --artifact-dir target/ci-perf/${CI_JOB_ID}. Ensure python3 in this job's setup while preserving the common before_script tasks. Retain JUnit artifacts and add target/ci-perf/ to always-collected artifact paths so failures keep their receipts. Use a job-specific fresh directory, not a reused evidence root.
 
-**Verify:** `cargo nextest run --profile ci --locked --offline -p harness --test test_lanes_script_test -E 'test(test_lanes_exports_artifact_dir_for_performance_stage) | test(test_lanes_runs_perf_artifact_freshness_gate)'` → Existing lane wiring/freshness tests pass; the YAML has one canonical perf invocation.
+**Verify:** `cargo nextest run --profile ci --locked --offline -p harness --test test_lanes_script_test --ignore-default-filter -E 'test(test_lanes_exports_artifact_dir_for_performance_stage) | test(test_lanes_runs_perf_artifact_freshness_gate)'` → Existing lane wiring/freshness tests pass; the YAML has one canonical perf invocation.
 
 ### Step 2: Align the operator command with the same contract
 
@@ -117,18 +117,18 @@ Dry-run the lane into a new owned temporary directory to inspect release selecti
 
 Use the behavioral cases and existing fixture named in the steps; their assertions define the regression being protected. Prefer extending those tests over creating an additional suite. The exemplar above shows the local pattern. Use controlled inputs, temporary owned directories and explicit synchronization; never use live credentials or network responses as fixtures.
 
-Run `cargo nextest run --profile ci --locked --offline -p harness --test test_lanes_script_test -E 'test(test_lanes_exports_artifact_dir_for_performance_stage) | test(test_lanes_runs_perf_artifact_freshness_gate)'` after implementation, followed by the additional compatibility checks in the command table. Preserve the unchanged control cases specified in the steps.
+Run `cargo nextest run --profile ci --locked --offline -p harness --test test_lanes_script_test --ignore-default-filter -E 'test(test_lanes_exports_artifact_dir_for_performance_stage) | test(test_lanes_runs_perf_artifact_freshness_gate)'` after implementation, followed by the additional compatibility checks in the command table. Preserve the unchanged control cases specified in the steps.
 
 ## Done criteria
 
 All must hold:
 
-- [ ] The GitLab job invokes the canonical perf lane with a job-specific artifact root and has python3 available.
-- [ ] A real canonical run passes the release performance tests and freshness validator.
-- [ ] CI always collects lane receipts, large-session evidence and the expected perf JUnit report.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
-- [ ] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] The GitLab job invokes the canonical perf lane with a job-specific artifact root and has python3 available.
+- [x] A real canonical run passes the release performance tests and freshness validator.
+- [x] CI always collects lane receipts, large-session evidence and the expected perf JUnit report.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -150,7 +150,7 @@ Keep CI as a caller of the canonical lane. New perf stages belong in that runner
 - Operator documentation now names the canonical release/freshness contract.
 - Parsed the GitLab YAML and confirmed setup alias resolution, the single canonical invocation, always collection and both artifact destinations.
 - Existing performance wiring/freshness cases passed in the 11-case script target run used for plan026.
-- A real canonical performance run and independent verification are still required and will be recorded before closure.
+- Independent canonical and final integrated performance evidence is recorded below.
 
 ### Independent CI configuration follow-up
 
@@ -168,5 +168,18 @@ References: [job timeout](https://docs.gitlab.com/ci/yaml/#timeout) and
 The final YAML passes the project's `glab ci lint`. A runnable stdlib check at
 `/tmp/agent-harness-open-issues/check-perf-ci-wrapper.py` verifies the exact canonical
 arguments, zero/nonzero exit propagation, and repeated progress timeouts without
-running benchmarks or sleeping. Independent review and the real release run remain
-pending; no hosted pipeline execution is claimed.
+running benchmarks or sleeping. Independent review and release evidence pass as recorded below; no hosted pipeline
+execution is claimed.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_ci_perf` verified the implementation and follow-up CI configuration: **PASS**.
+
+- At `abeff5ce0e4761b596afacca2c2e3cc3faeb7efa`, the unchanged canonical `scripts/test-lanes.sh perf --artifact-dir /tmp/harness-verify-251-eight-jobs-58xfmfsq` completed with both stages PASS: release nextest and artifact freshness. Nextest run `d259f5b1-b510-47d9-852c-cd999bbd3c1f` passed all seven selected tests after compiling 202 release test binaries. The final uninterrupted build took 64m12s; earlier interrupted build attempts are not passing evidence.
+- At final code revision `76050bfccd5ed0f13ccaad8b3d08ada119831d91`, four targets were freshly prebuilt in a separate owned release target. Native nextest binary-metadata reuse ran all seven selected performance cases: two CLI/script, four TUI and one core. This is final-code coverage, not a second full canonical-lane run.
+- Each final JUnit report is fresh and has no selected-case failure, error or skip. The unchanged freshness validator passed on `/tmp/harness-verify-integrated-perf-vu1dpvc2/artifacts`; the timestamp, stage-directory provenance and 120-session/3,960-event corpus were checked. Final list/reopen/search measurements were 48/1/18 ms. No compiler or linker was active when either benchmark execution started.
+- Release optimization, fat LTO, codegen units, test budgets and validator requirements are unchanged. The six-hour CI job allowance only permits the build and evidence stages to complete.
+- Project GitLab CI lint accepted the exact configuration at `2802f58d`; four independent wrapper checks proved canonical argv, one child invocation, 60-second progress intervals and zero/nonzero exit propagation. The available runner tags match the job.
+- The focused script commands explicitly use `--ignore-default-filter`, matching the accepted eleven-case run and including its freshness case.
+
+Detailed receipts are retained in the task artifact directory. The [combined verification record](2026-09-20-issue-closeout.md) maps all issues, commits and reviewers. Local nextest was 0.9.143 while CI pins 0.9.98; a hosted pipeline run is not claimed. Formatting, whitespace, compilation and lint are covered by the integrated checks in that record.
