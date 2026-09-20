@@ -104,13 +104,20 @@ pub async fn stream_completion(
 
     let (tx, rx) = mpsc::channel(64);
     tokio::spawn(async move {
-        match mode {
-            OpenAiApiMode::ChatCompletions => {
-                chat_sse::consume_chat_sse_stream(response, tx, start_metadata).await
-            }
-            OpenAiApiMode::Responses | OpenAiApiMode::Auto => {
-                responses_sse::consume_responses_sse_stream(response, tx, start_metadata).await
-            }
+        let closed_tx = tx.clone();
+        tokio::select! {
+            // Release even an idle HTTP body when the public stream is dropped.
+            _ = closed_tx.closed() => {}
+            _ = async move {
+                match mode {
+                    OpenAiApiMode::ChatCompletions => {
+                        chat_sse::consume_chat_sse_stream(response, tx, start_metadata).await
+                    }
+                    OpenAiApiMode::Responses | OpenAiApiMode::Auto => {
+                        responses_sse::consume_responses_sse_stream(response, tx, start_metadata).await
+                    }
+                }
+            } => {}
         }
     });
 
