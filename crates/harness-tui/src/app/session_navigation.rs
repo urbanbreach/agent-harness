@@ -351,6 +351,7 @@ impl AppState {
         self.composer.prompt_history_draft = None;
         self.replay_mode = false;
         self.session_path = None;
+        self.session_lineage = Default::default();
         self.palette_visible = false;
         self.palette_input.clear();
         self.palette_cursor = 0;
@@ -1047,6 +1048,7 @@ impl AppState {
         self.composer.prompt_history_draft = None;
         self.replay_mode = false;
         self.session_path = None;
+        self.session_lineage = Default::default();
         self.continued_post_run_handoff_active = false;
         self.continued_live_reopen_surface_active = false;
         self.active_tab = Tab::Run;

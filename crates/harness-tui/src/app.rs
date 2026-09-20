@@ -205,7 +205,7 @@ use self::question_prompt::QuestionPromptState;
 pub use self::session_history::SessionHistoryEntry;
 use self::session_projection::SessionProjection;
 pub(crate) use self::session_projection::{LiveTurnPhase, LiveTurnWatchers};
-use self::session_stack::SessionNavigationSnapshot;
+use self::session_stack::{SessionLineage, SessionNavigationSnapshot};
 pub(crate) use self::settings_editor::{human_label as settings_label, SettingsTab};
 use self::terminal_panel::terminal_panel_event_is_shell;
 use self::terminal_panel::TerminalPanelState;
@@ -337,6 +337,7 @@ pub struct AppState {
     pub(crate) quit_confirmation_expires_at: Option<Instant>,
     pub replay_mode: bool,
     pub session_path: Option<PathBuf>,
+    session_lineage: SessionLineage,
     pub status_banner: Option<String>,
     pub(crate) model_prompt_notice: Option<String>,
     pub connect_dialog: ConnectDialogState,
@@ -654,6 +655,7 @@ impl Default for AppState {
             quit_confirmation_expires_at: None,
             replay_mode: false,
             session_path: None,
+            session_lineage: SessionLineage::default(),
             status_banner: None,
             model_prompt_notice: None,
             connect_dialog: ConnectDialogState::default(),
