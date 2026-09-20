@@ -119,11 +119,11 @@ The static suite fails deterministic tests that depend on live-provider environm
 
 ## Perf and coverage lanes
 
-T4 performance budgets run through the perf nextest profile:
+T4 performance evidence uses the canonical runner, which runs the perf nextest profile in
+release mode and validates fresh artifacts:
 
 ```bash
 scripts/test-lanes.sh perf
-cargo nextest run --profile perf --workspace --all-features
 ```
 
 The current budget owners are `crates/harness-core/tests/perf_test.rs`, which asserts the resume-plan
@@ -133,6 +133,9 @@ under the perf stage artifact directory. The large-session artifact records corp
 `sessions list`, `sessions reopen --json`, and `session_search` timings plus provenance.
 After nextest, the lane runs `scripts/check-perf-artifacts.py` in a `perf_artifact_freshness`
 stage so missing, stale, or provenance-mismatched perf artifacts fail closed.
+GitLab's `rust:perf` job uses this same runner with a fresh `target/ci-perf/${CI_JOB_ID}`
+artifact root and always collects its receipts and the perf JUnit report. A direct nextest
+invocation alone does not perform the artifact freshness check.
 
 Coverage ratchet evidence is produced with:
 
