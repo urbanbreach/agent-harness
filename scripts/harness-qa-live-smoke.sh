@@ -144,6 +144,28 @@ readme_path="${evidence_dir}/README.md"
 mkdir -p "${session_dir}"
 : >"${commands_log}"
 
+scan_evidence() {
+  local secret_hits scan_exit=0
+  secret_hits="$(grep -RIohE --exclude=secret-scan.txt 'sk-|Bearer |BEGIN PRIVATE KEY' "${evidence_dir}" 2>/dev/null)" || scan_exit=$?
+  case "${scan_exit}" in
+    0)
+      local match_count
+      match_count="$(printf '%s\n' "${secret_hits}" | wc -l)"
+      printf 'FAIL\nreason=secret_markers\nmatches=%s\n' "${match_count}" >"${secret_scan_path}"
+      printf 'Secret scan failed (fail-closed): %s secret markers found\n' "${match_count}" >&2
+      ;;
+    1)
+      printf 'PASS\npatterns=sk-|Bearer |BEGIN PRIVATE KEY\n' >"${secret_scan_path}"
+      return 0
+      ;;
+    *)
+      printf 'FAIL\nreason=scanner_error\n' >"${secret_scan_path}"
+      printf 'Secret scan failed (fail-closed): scanner error (exit %s)\n' "${scan_exit}" >&2
+      ;;
+  esac
+  return 1
+}
+
 log_cmd() {
   local exit_code="$1"
   shift
@@ -252,7 +274,7 @@ if [[ "${run_exit}" -ne 0 ]]; then
     printf 'wall_clock_s=%s\n' "${wall_clock_s}"
   } >"${summary_path}"
   printf 'Live smoke prompt failed with exit %s (wall_clock_s=%s)\n' "${run_exit}" "${wall_clock_s}" >&2
-  printf '%s\n' "${run_output}" >&2
+  scan_evidence || exit 1
   exit "${run_exit}"
 fi
 
@@ -297,7 +319,7 @@ if [[ "${tool_smoke}" == "1" ]]; then
   else
     tool_status="FAIL"
     printf 'Optional tool smoke failed with exit %s (not matrix ownership)\n' "${tool_exit}" >&2
-    printf '%s\n' "${tool_output}" >&2
+    scan_evidence || exit 1
     exit "${tool_exit}"
   fi
 fi
@@ -362,16 +384,7 @@ Evidence root is gitignored (\`artifacts/\`). Do not commit secrets.
 EOF
 
 # Secret fail-closed scan over the evidence tree.
-secret_hits="$(
-  # shellcheck disable=SC2016
-  grep -RInE 'sk-|Bearer |BEGIN PRIVATE KEY' "${evidence_dir}" 2>/dev/null || true
-)"
-if [[ -n "${secret_hits}" ]]; then
-  printf 'FAIL\n%s\n' "${secret_hits}" >"${secret_scan_path}"
-  printf 'Secret scan failed (fail-closed):\n%s\n' "${secret_hits}" >&2
-  exit 1
-fi
-printf 'PASS\npatterns=sk-|Bearer |BEGIN PRIVATE KEY\n' >"${secret_scan_path}"
+scan_evidence
 
 printf 'harness-qa live-smoke OK\nevidence_dir=%s\n' "${evidence_dir}"
 exit 0
