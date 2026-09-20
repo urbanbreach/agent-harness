@@ -132,16 +132,22 @@ fn jsonl_open_scans_existing_file_to_resume_sequence() {
 #[test]
 fn jsonl_open_recovers_dead_pid_writer_lock() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let run_dir = temp_dir.path().join("run_stale_pid_lock");
-    fs::create_dir_all(&run_dir).unwrap_or_abort();
+    let run_id = "run_stale_pid_lock";
+    let run_dir = temp_dir.path().join(run_id);
+    {
+        let store = JsonlFileEventStore::open(temp_dir.path(), run_id, false).unwrap_or_abort();
+        store.append(run_started_draft(run_id, 1)).unwrap_or_abort();
+    }
     fs::write(run_dir.join(".writer.lock"), "pid=999999999\n").unwrap_or_abort();
+    fs::write(run_dir.join(".writer.lock.recovering"), "pid=999999999\n").unwrap_or_abort();
 
     let store =
-        JsonlFileEventStore::open(temp_dir.path(), "run_stale_pid_lock", false).unwrap_or_abort();
+        JsonlFileEventStore::open_existing(temp_dir.path(), run_id, false).unwrap_or_abort();
 
-    assert!(store.file_path().exists());
+    assert_eq!(store.next_seq().unwrap_or_abort(), 2);
     let lock_contents = fs::read_to_string(run_dir.join(".writer.lock")).unwrap_or_abort();
     assert!(lock_contents.contains(&format!("pid={}", std::process::id())));
+    assert!(!run_dir.join(".writer.lock.recovering").exists());
 }
 
 #[cfg(target_os = "linux")]
@@ -152,8 +158,38 @@ fn jsonl_open_serializes_concurrent_dead_pid_writer_lock_recovery() {
     let run_dir = temp_dir.path().join(run_id);
     fs::create_dir_all(&run_dir).unwrap_or_abort();
     fs::write(run_dir.join(".writer.lock"), "pid=999999999\n").unwrap_or_abort();
+    fs::write(run_dir.join(".writer.lock.recovering"), "pid=999999999\n").unwrap_or_abort();
 
     assert_single_concurrent_writer(temp_dir.path(), run_id);
+}
+
+#[test]
+fn jsonl_open_preserves_live_or_unknown_recovery_marker() {
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let run_id = "run_owned_recovery_marker";
+    let run_dir = temp_dir.path().join(run_id);
+    fs::create_dir_all(&run_dir).unwrap_or_abort();
+    fs::write(run_dir.join(".writer.lock"), "").unwrap_or_abort();
+
+    for marker in [
+        format!("pid={}\ntoken=1\n", std::process::id()),
+        "locked".into(),
+    ] {
+        fs::write(run_dir.join(".writer.lock.recovering"), &marker).unwrap_or_abort();
+        assert!(matches!(
+            JsonlFileEventStore::open(temp_dir.path(), run_id, false),
+            Err(EventStoreError::AcquireWriterLock { .. })
+        ));
+        assert_eq!(
+            fs::read_to_string(run_dir.join(".writer.lock.recovering")).unwrap_or_abort(),
+            marker
+        );
+        assert_eq!(
+            fs::read_to_string(run_dir.join(".writer.lock")).unwrap_or_abort(),
+            ""
+        );
+        assert!(!run_dir.join("events.jsonl").exists());
+    }
 }
 
 #[test]
