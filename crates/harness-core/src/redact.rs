@@ -158,6 +158,7 @@ pub const MCP_MEDIA_OMITTED: &str = "[MCP media omitted]";
 
 /// Omit encoded media in an MCP call/read/prompt result, returning the removed
 /// payloads so support exports can also sanitize historical summary copies.
+///
 /// Application data (including structuredContent) is deliberately not traversed.
 pub fn omit_mcp_result_media(result: &mut Value) -> Vec<String> {
     let mut omitted = Vec::new();
