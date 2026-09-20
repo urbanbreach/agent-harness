@@ -25,8 +25,8 @@ pub(crate) async fn permission_rule_bash_selector_is_enforced_at_tool_call_site(
           },
           permission: {
             bash: {
-              "git status": "deny",
-              "*": "allow"
+              "*": "allow",
+              "git status": "deny"
             },
             edit: "allow",
             question: "allow",
@@ -172,9 +172,9 @@ pub(crate) async fn permission_rule_task_selector_is_enforced_at_tool_call_site(
             edit: "allow",
             question: "allow",
             task: {
+              "*": "allow",
               general: "deny",
-              explore: "allow",
-              "*": "allow"
+              explore: "allow"
             },
             webfetch: "allow",
             websearch: "allow",

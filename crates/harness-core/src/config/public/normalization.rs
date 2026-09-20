@@ -87,6 +87,7 @@ pub(super) fn canonicalize_runtime_aliases(runtime: &mut serde_json::Value) {
 
 pub(super) fn translate_public_permission_value(
     value: serde_json::Value,
+    order: &PermissionOrder,
 ) -> Result<serde_json::Value, ConfigError> {
     if value
         .as_object()
@@ -162,12 +163,16 @@ pub(super) fn translate_public_permission_value(
     let external_directory = public_rule_mode(&parsed.external_directory)
         .or_else(|| global.clone())
         .or(fallback.defaults.external_directory);
-    let edit_rules = public_selector_rules("edit", parsed.edit)?;
-    let shell_rules = public_selector_rules("bash", parsed.bash)?;
-    let task_rules = public_selector_rules("task", parsed.task)?;
-    let read_rules = public_selector_rules("read", parsed.read)?;
-    let external_directory_rules =
-        public_selector_rules("external_directory", parsed.external_directory)?;
+    let edit_rules = public_selector_rules("edit", parsed.edit, order.get("edit"))?;
+    let shell_rules =
+        public_selector_rules("bash", parsed.bash, order.get_or_alias("bash", "shell"))?;
+    let task_rules = public_selector_rules("task", parsed.task, order.get("task"))?;
+    let read_rules = public_selector_rules("read", parsed.read, order.get("read"))?;
+    let external_directory_rules = public_selector_rules(
+        "external_directory",
+        parsed.external_directory,
+        order.get("external_directory"),
+    )?;
 
     serde_json::to_value(PermissionsConfig {
         defaults: PermissionDefaultsConfig {
@@ -358,6 +363,7 @@ fn or_insert_alias(
 
 pub(in crate::config) fn canonicalize_public_layer_for_merge(
     root: Value,
+    order: &mut PermissionOrder,
 ) -> Result<Value, ConfigError> {
     let mut object = match root {
         Value::Object(object) => object,
@@ -397,11 +403,16 @@ pub(in crate::config) fn canonicalize_public_layer_for_merge(
     }
 
     if object.contains_key("permissions") || object.contains_key("permission") {
-        canonicalize_permission_section(&mut object, &mut out)?;
+        canonicalize_permission_section(&mut object, &mut out, order)?;
     }
 
     if let Some(agent) = object.remove("agent") {
-        out.insert("agent".to_string(), canonicalize_agent_section(agent));
+        let mut agent_order = order.take("agent");
+        out.insert(
+            "agent".to_string(),
+            canonicalize_agent_section(agent, &mut agent_order),
+        );
+        order.insert("agent", agent_order);
     }
 
     let had_runtime = ["runtime", "backgroundTask", "deterministic", "paths"]
@@ -450,7 +461,9 @@ pub(in crate::config) fn canonicalize_public_layer_for_merge(
 fn canonicalize_permission_section(
     object: &mut serde_json::Map<String, serde_json::Value>,
     out: &mut serde_json::Map<String, serde_json::Value>,
+    order: &mut PermissionOrder,
 ) -> Result<(), ConfigError> {
+    let mut permission_order = order.take("permissions");
     let mut permissions = json!({});
     if let Some(value) = object.remove("permissions") {
         merge_config_value(
@@ -459,8 +472,14 @@ fn canonicalize_permission_section(
         );
     }
     if let Some(value) = object.remove("permission") {
-        merge_config_value(&mut permissions, canonicalize_singular_permission(value)?);
+        let mut singular_order = order.take("permission");
+        merge_config_value(
+            &mut permissions,
+            canonicalize_singular_permission(value, &mut singular_order)?,
+        );
+        permission_order.merge(singular_order);
     }
+    order.insert("permissions", permission_order);
     out.insert("permissions".to_string(), permissions);
     Ok(())
 }
@@ -529,7 +548,10 @@ fn canonicalize_internal_permission_aliases(value: Value) -> Value {
     value
 }
 
-fn canonicalize_singular_permission(value: Value) -> Result<Value, ConfigError> {
+fn canonicalize_singular_permission(
+    value: Value,
+    order: &mut PermissionOrder,
+) -> Result<Value, ConfigError> {
     if value
         .as_object()
         .map(|object| object.contains_key("defaults"))
@@ -538,9 +560,10 @@ fn canonicalize_singular_permission(value: Value) -> Result<Value, ConfigError> 
         return Ok(canonicalize_internal_permission_aliases(value));
     }
     if !value.is_object() {
-        return translate_public_permission_value(value);
+        return translate_public_permission_value(value, order);
     }
 
+    order.fold_alias("shell", "bash");
     let mut folded = value.clone();
     if let Some(object) = folded.as_object_mut() {
         canonicalize_object_aliases(
@@ -558,12 +581,15 @@ fn canonicalize_singular_permission(value: Value) -> Result<Value, ConfigError> 
     let parsed: PublicPermissionValue =
         serde_json::from_value(folded).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
     match parsed {
-        PublicPermissionValue::Mode(_) => translate_public_permission_value(value),
-        PublicPermissionValue::Config(config) => sparse_public_permission_object(config),
+        PublicPermissionValue::Mode(_) => translate_public_permission_value(value, order),
+        PublicPermissionValue::Config(config) => sparse_public_permission_object(config, order),
     }
 }
 
-fn sparse_public_permission_object(parsed: PublicPermissionConfig) -> Result<Value, ConfigError> {
+fn sparse_public_permission_object(
+    parsed: PublicPermissionConfig,
+    order: &mut PermissionOrder,
+) -> Result<Value, ConfigError> {
     let global = parsed.fallback.clone();
     let mut defaults = serde_json::Map::new();
 
@@ -598,27 +624,39 @@ fn sparse_public_permission_object(parsed: PublicPermissionConfig) -> Result<Val
         }
     }
 
+    // Keep public maps until all layers are merged; legacy arrays still replace.
     let mut rules = serde_json::Map::new();
-    rules.insert(
-        "shell".to_string(),
-        permission_rule_set_value("bash", parsed.bash)?,
-    );
-    rules.insert(
-        "edit".to_string(),
-        permission_rule_set_value("edit", parsed.edit)?,
-    );
-    rules.insert(
-        "task".to_string(),
-        permission_rule_set_value("task", parsed.task)?,
-    );
-    rules.insert(
-        "read".to_string(),
-        permission_rule_set_value("read", parsed.read)?,
-    );
-    rules.insert(
-        "external_directory".to_string(),
-        permission_rule_set_value("external_directory", parsed.external_directory)?,
-    );
+    let mut rule_order = PermissionOrder::Fields(BTreeMap::new());
+    for (kind, public_kind, value) in [
+        ("shell", "bash", parsed.bash),
+        ("edit", "edit", parsed.edit),
+        ("task", "task", parsed.task),
+        ("read", "read", parsed.read),
+        (
+            "external_directory",
+            "external_directory",
+            parsed.external_directory,
+        ),
+    ] {
+        if let Some(value) = value {
+            let keys = order.take(public_kind);
+            let value = match value {
+                PublicRulePermissionValue::Rules(rules) => {
+                    // Validate even rules that a later layer might override.
+                    for selector in rules.keys() {
+                        public_permission_selector(public_kind, selector)?;
+                    }
+                    serde_json::to_value(rules)
+                        .map_err(|err| ConfigError::ParseJson5(err.to_string()))?
+                }
+                PublicRulePermissionValue::Mode(_) => json!([]),
+            };
+            rules.insert(kind.to_string(), value);
+            rule_order.insert(kind, keys);
+        }
+    }
+    *order = PermissionOrder::default();
+    order.insert("rules", rule_order);
 
     let mut sparse = serde_json::Map::new();
     sparse.insert("defaults".to_string(), Value::Object(defaults));
@@ -640,23 +678,51 @@ fn permission_mode_value(mode: &PermissionMode) -> Result<Value, ConfigError> {
     serde_json::to_value(mode).map_err(|err| ConfigError::ParseJson5(err.to_string()))
 }
 
-fn permission_rule_set_value(
-    kind: &str,
-    value: Option<PublicRulePermissionValue>,
-) -> Result<Value, ConfigError> {
-    serde_json::to_value(public_selector_rules(kind, value)?)
-        .map_err(|err| ConfigError::ParseJson5(err.to_string()))
+pub(super) fn expand_layer_permission_rules(
+    permissions: &mut Value,
+    order: &PermissionOrder,
+) -> Result<(), ConfigError> {
+    let Some(rules) = permissions.get_mut("rules").and_then(Value::as_object_mut) else {
+        return Ok(());
+    };
+    for (kind, public_kind) in [
+        ("shell", "bash"),
+        ("edit", "edit"),
+        ("task", "task"),
+        ("read", "read"),
+        ("external_directory", "external_directory"),
+    ] {
+        if let Some(value) = rules.get_mut(kind).filter(|value| value.is_object()) {
+            let parsed = serde_json::from_value(value.take())
+                .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+            *value = serde_json::to_value(public_selector_rules(
+                public_kind,
+                Some(parsed),
+                order.get(kind),
+            )?)
+            .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
+        }
+    }
+    Ok(())
 }
 
-fn canonicalize_agent_section(agent: Value) -> Value {
+fn canonicalize_agent_section(agent: Value, order: &mut PermissionOrder) -> Value {
     let mut agent = agent;
     let Some(entries) = agent.as_object_mut() else {
         return agent;
     };
-    for (_name, entry) in entries.iter_mut() {
+    for (name, entry) in entries.iter_mut() {
         let Some(entry_object) = entry.as_object_mut() else {
             continue;
         };
+        if entry_object.contains_key("permission") || entry_object.contains_key("permissions") {
+            let mut entry_order = order.take(name);
+            entry_order.fold_alias("permissions", "permission");
+            let mut permission_order = entry_order.take("permission");
+            permission_order.fold_alias("shell", "bash");
+            entry_order.insert("permission", permission_order);
+            order.insert(name, entry_order);
+        }
         canonicalize_object_aliases(
             entry_object,
             &[
