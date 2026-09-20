@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** Implemented; awaiting independent verification
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#241](https://github.com/urbanbreach/agent-harness/issues/241)
 - **Priority:** P1
 - **Effort:** S
@@ -173,3 +173,7 @@ Every new QA error path must avoid printing captured output before scanning. Kee
 - Scope: only the two scripts, their existing Node regression suite, and this plan were committed. The coordinating agent owns the shared plan index.
 - The original command captures remain original evidence. Derived diagnostics and the owned scan receipt report only fixed status metadata and match counts; grep errors fail closed. Only the owned root scan receipt is excluded; nested files with the same basename are still scanned. Both normal dogfood paths reuse the same scanner, and unsuccessful smoke/tool captures are never echoed raw to stderr.
 - Independent verification and issue closure remain the coordinating agent's final gates.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_existing_edges` verified issue #241: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

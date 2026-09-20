@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — independent verification pending
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#249](https://github.com/urbanbreach/agent-harness/issues/249)
 - **Priority:** P2
 - **Effort:** S
@@ -140,11 +140,11 @@ Run `cargo nextest run --profile ci --locked --offline -p harness --test test_la
 
 All must hold:
 
-- [ ] Generated commands explicitly override the default filter and select ignored tests in the intended binary.
-- [ ] Both discovery commands list their expected cases; the default deterministic profile still excludes them.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
-- [ ] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] Generated commands explicitly override the default filter and select ignored tests in the intended binary.
+- [x] Both discovery commands list their expected cases; the default deterministic profile still excludes them.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -167,3 +167,7 @@ When renaming opt-in binaries, update the lane, documentation and discovery expe
 - `cargo nextest run --profile ci --locked --offline -p harness --test test_lanes_script_test --ignore-default-filter`: 11 passed, none skipped. This includes the dry-run preservation regression.
 - `cargo nextest list --profile ci --locked --offline -p harness-testkit --test live_proxy_e2e --test native_visual_e2e --ignore-default-filter --run-ignored only --message-format oneline`: listed all three live wrappers and `native_visual_ghostty_smoke`; discovery only, no live/native execution.
 - `bash -n scripts/test-lanes.sh` and whitespace checks passed. Integrated compile/lint and independent review are recorded in the issue closeout.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_existing_core` verified issue #249: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

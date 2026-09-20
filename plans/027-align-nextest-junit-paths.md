@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — independent verification pending
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#250](https://github.com/urbanbreach/agent-harness/issues/250)
 - **Priority:** P2
 - **Effort:** S
@@ -145,11 +145,11 @@ Run `cargo nextest run --profile ci --locked --offline -p harness --test test_la
 
 All must hold:
 
-- [ ] Both profiles configure junit.xml without a repeated target prefix.
-- [ ] A fresh selected run under each profile produces parseable XML at the existing GitLab collection path.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
-- [ ] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
-- [ ] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
+- [x] Both profiles configure junit.xml without a repeated target prefix.
+- [x] A fresh selected run under each profile produces parseable XML at the existing GitLab collection path.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
+- [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
 ## STOP conditions
 
@@ -171,3 +171,7 @@ Keep profile filenames relative to the store directory when adjusting nextest pr
 - Repeated that selected test under `--profile perf`: 1 passed (report-path verification only, not performance evidence).
 - Before each run recorded a start timestamp; parsed the newly written `target/nextest/{ci,perf}/junit.xml`, confirmed modification after start and the selected testcase. Nextest's store remains workspace-relative even with CARGO_TARGET_DIR set.
 - The unchanged GitLab report paths match both fresh XML files. Integrated compile/lint and independent review remain in the issue closeout.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `verify_ci_perf` verified issue #250: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.

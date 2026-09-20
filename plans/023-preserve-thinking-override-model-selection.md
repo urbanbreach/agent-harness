@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Execution:** IMPLEMENTED — targeted checks pass; integrated lint/check and independent review pending.
+- **Execution:** DONE — independent verification PASS (2026-09-20)
 - **Issue:** [#246](https://github.com/urbanbreach/agent-harness/issues/246)
 - **Priority:** P2
 - **Effort:** S
@@ -145,7 +145,7 @@ All must hold:
 
 - [x] Thinking-only and effort-only overrides preserve configured alias/variant resolution.
 - [x] Explicit --model/--variant precedence and invalid-selection errors remain covered and pass.
-- [ ] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
+- [x] Every final verification command above meets its expected result; any deliberately failing baseline regression is documented separately from the passing final run.
 - [x] `git diff --check` exits 0 and the implementation diff is limited to the Scope list.
 - [x] Record actual commands/results and any material limits in this plan; update its execution status and index row. Do not describe an unrun check as passing.
 
@@ -190,3 +190,7 @@ Partial CLI overrides must start from the same resolved selection as a launch wi
   execution at the integrating operator's request to avoid duplicate builds.
   Integrated workspace checks and independent review remain the closure gate;
   neither is claimed as passed here. `plans/README.md` is left to that operator.
+
+## Independent closeout — 2026-09-20
+
+Independent agent `fix_provider_sessions` verified issue #246: **PASS**. The [combined verification record](2026-09-20-issue-closeout.md) records the attached commits, accepted checks, integration follow-ups and remaining global limitations.
