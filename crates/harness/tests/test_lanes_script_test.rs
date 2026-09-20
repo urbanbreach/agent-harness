@@ -40,7 +40,16 @@ fn test_lanes_ci_profile_is_defined_for_fast_and_integration() {
     assert!(ci_profile_is_wired);
     assert!(nextest_config.contains("[profile.default]"));
     assert!(nextest_config.contains("[profile.ci]\ninherits = \"default\""));
-    assert!(nextest_config.contains("junit = { path = \"target/nextest/ci/junit.xml\" }"));
+    for profile in ["ci", "perf"] {
+        let section = nextest_config
+            .split(&format!("[profile.{profile}]"))
+            .nth(1)
+            .unwrap_or_abort()
+            .split("\n[")
+            .next()
+            .unwrap_or_abort();
+        assert!(section.contains("junit = { path = \"junit.xml\" }"));
+    }
 }
 
 #[test]
