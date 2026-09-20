@@ -178,6 +178,17 @@ async fn session_list_filters_status_profile_resumable_text_and_sort_order() {
             "mode_source": "interactive_live"
         }),
     );
+    let sessions = workspace.workspace().join(".agent-harness/sessions");
+    let beta_events = sessions.join("run_beta/events.jsonl");
+    let mut body = fs::read_to_string(&beta_events).unwrap_or_abort();
+    body.push_str("{malformed event\n");
+    fs::write(beta_events, body).unwrap_or_abort();
+    for (run_id, seconds) in [("run_alpha", 300), ("run_beta", 200), ("run_gamma", 100)] {
+        fs::File::open(sessions.join(run_id).join("events.jsonl"))
+            .unwrap_or_abort()
+            .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
+            .unwrap_or_abort();
+    }
 
     let registry = coordinator_registry(ShellAllowlist::default());
     let ctx = test_context(
@@ -200,7 +211,7 @@ async fn session_list_filters_status_profile_resumable_text_and_sort_order() {
         .get("session_list")
         .unwrap_or_abort()
         .call(
-            ctx,
+            ctx.clone(),
             json!({
                 "status": "finished",
                 "profile": "plan",
@@ -252,6 +263,62 @@ async fn session_list_filters_status_profile_resumable_text_and_sort_order() {
             .and_then(serde_json::Value::as_str),
         Some("finished")
     );
+    assert_eq!(beta_json["sessions"][0]["event_count"], 2);
+    assert_eq!(beta_json["sessions"][0]["parse_error_count"], 1);
+
+    for (sort, first) in [("updated_desc", "run_alpha"), ("updated_asc", "run_gamma")] {
+        let listed = registry
+            .get("session_list")
+            .unwrap_or_abort()
+            .call(
+                ctx.clone(),
+                json!({"filter": "workspace session", "sort": sort, "limit": 1}),
+            )
+            .await
+            .unwrap_or_abort()
+            .structured_json
+            .unwrap_or_abort();
+        assert_eq!(listed["total_count"], 2);
+        assert_eq!(listed["returned_count"], 1);
+        assert_eq!(listed["truncated_count"], 1);
+        assert_eq!(listed["sessions"][0]["catalog"]["run_id"], first);
+    }
+
+    let mut all_matches: Option<Vec<serde_json::Value>> = None;
+    for limit in [10, 1] {
+        let searched = registry
+            .get("session_search")
+            .unwrap_or_abort()
+            .call(
+                ctx.clone(),
+                json!({"query": "workspace session", "limit": limit}),
+            )
+            .await
+            .unwrap_or_abort()
+            .structured_json
+            .unwrap_or_abort();
+        assert_eq!(searched["searched_session_count"], 3);
+        assert_eq!(searched["total_count"], 2);
+        assert_eq!(searched["returned_count"], limit.min(2));
+        if let Some(ref matches) = all_matches {
+            assert_eq!(searched["matches"][0], matches[0]);
+        } else {
+            all_matches = Some(searched["matches"].as_array().unwrap_or_abort().clone());
+        }
+    }
+    for tool in ["session_read", "session_info", "session_search"] {
+        let mut args = json!({"session": "run_"});
+        if tool == "session_search" {
+            args["query"] = json!("workspace");
+        }
+        let error = registry
+            .get(tool)
+            .unwrap_or_abort()
+            .call(ctx.clone(), args)
+            .await
+            .expect_err("shared session prefix must remain ambiguous");
+        assert!(error.to_string().contains("multiple sessions matched"));
+    }
 }
 
 #[tokio::test]
