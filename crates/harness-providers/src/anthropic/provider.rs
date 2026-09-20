@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use super::{
     anthropic_messages_url, build_anthropic_request, parse_anthropic_response,
-    parse_anthropic_sse_stream, AnthropicProvider, ANTHROPIC_VERSION,
+    stream::stream_response, AnthropicProvider, ANTHROPIC_VERSION,
 };
 use crate::request_budget::anthropic_request_budget_semantics;
 use crate::{
@@ -47,6 +47,9 @@ impl Provider for AnthropicProvider {
                         ),
                     ]));
                 }
+                if request.stream {
+                    return stream_response(response.bytes_stream());
+                }
                 let bytes = match response.bytes().await {
                     Ok(bytes) => bytes,
                     Err(error) => {
@@ -59,11 +62,7 @@ impl Provider for AnthropicProvider {
                     }
                 };
                 let raw = String::from_utf8_lossy(&bytes);
-                let events = if request.stream {
-                    parse_anthropic_sse_stream(&raw)
-                } else {
-                    parse_anthropic_response(&raw)
-                };
+                let events = parse_anthropic_response(&raw);
                 Box::pin(tokio_stream::iter(events))
             }
             Err(error) => {

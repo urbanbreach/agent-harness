@@ -20,6 +20,7 @@ use crate::{
 };
 
 mod provider;
+mod stream;
 
 /// Anthropic API version header value.
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -203,6 +204,10 @@ pub enum AnthropicDelta {
 /// Expects the `data:` payload (without the `data: ` prefix) as input.
 pub fn parse_anthropic_sse_event(data: &str) -> Option<AnthropicSseEvent> {
     let value: Value = serde_json::from_str(data).ok()?;
+    parse_anthropic_sse_value(&value)
+}
+
+fn parse_anthropic_sse_value(value: &Value) -> Option<AnthropicSseEvent> {
     let event_type = value.get("type")?.as_str()?;
     match event_type {
         "message_start" => {
@@ -369,72 +374,10 @@ pub fn anthropic_sse_to_provider_event(
     }
 }
 
-#[derive(Default)]
-struct AnthropicSseStreamState {
-    tool_state: Vec<(u32, String, String, String)>,
-    input_tokens: Option<u32>,
-    output_tokens: Option<u32>,
-    provider_stop_reason: Option<String>,
-}
-
-fn anthropic_sse_to_provider_event_with_usage(
-    event: &AnthropicSseEvent,
-    state: &mut AnthropicSseStreamState,
-) -> Vec<ProviderStreamEvent> {
-    match event {
-        AnthropicSseEvent::MessageStart { input_tokens, .. } => {
-            state.input_tokens = *input_tokens;
-            vec![ProviderStreamEvent::Started { metadata: None }]
-        }
-        AnthropicSseEvent::MessageDelta {
-            stop_reason,
-            output_tokens,
-        } => {
-            state.provider_stop_reason.clone_from(stop_reason);
-            state.output_tokens = *output_tokens;
-            vec![]
-        }
-        AnthropicSseEvent::MessageStop => {
-            let usage = state.input_tokens.zip(state.output_tokens).map(
-                |(prompt_tokens, completion_tokens)| CompletionUsage {
-                    prompt_tokens,
-                    completion_tokens,
-                    total_tokens: prompt_tokens.saturating_add(completion_tokens),
-                },
-            );
-            vec![ProviderStreamEvent::DoneWithMetadata {
-                usage,
-                metadata: Some(ProviderStreamFinishedMetadata {
-                    provider_stop_reason: state.provider_stop_reason.clone(),
-                    ..Default::default()
-                }),
-            }]
-        }
-        _ => anthropic_sse_to_provider_event(event, &mut state.tool_state),
-    }
-}
-
 /// Parse a complete Anthropic SSE stream (multiple `data:` lines) into
 /// [`ProviderStreamEvent`]s.
 pub fn parse_anthropic_sse_stream(raw: &str) -> Vec<ProviderStreamEvent> {
-    let mut state = AnthropicSseStreamState::default();
-    let mut events = Vec::new();
-    for line in raw.lines() {
-        let trimmed = line.trim();
-        if !trimmed.starts_with("data: ") {
-            continue;
-        }
-        let data = &trimmed[6..];
-        if data == "[DONE]" {
-            break;
-        }
-        if let Some(event) = parse_anthropic_sse_event(data) {
-            events.extend(anthropic_sse_to_provider_event_with_usage(
-                &event, &mut state,
-            ));
-        }
-    }
-    events
+    stream::parse_complete(raw)
 }
 
 /// Parse a non-streaming Anthropic Messages API response into
