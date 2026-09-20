@@ -777,22 +777,22 @@ fn resolve_prompt_model_override(
     let mut model_target = None;
 
     if let Some(config) = settings.logging_config.as_ref() {
-        let (provider, model) = if let Some(model_ref) = cmd.model.as_deref() {
-            parse_cli_model_ref(model_ref)?
+        let (selector, variant) = if let Some(model_ref) = cmd.model.as_deref() {
+            let (provider, model) = parse_cli_model_ref(model_ref)?;
+            (format!("{provider}:{model}"), cmd.variant.as_deref())
         } else {
             let profile = config.agents.get(profile_name).ok_or_else(|| {
                 format!("unknown agent `{profile_name}` while resolving prompt model override")
             })?;
-            parse_cli_model_ref(&profile.model_ref)?
+            (
+                profile.model_ref.clone(),
+                cmd.variant.as_deref().or(profile.variant.as_deref()),
+            )
         };
 
-        let mut resolved = resolve_model_selection(
-            config,
-            &format!("{provider}:{model}"),
-            cmd.variant.as_deref(),
-        )
-        .map_err(|err| err.to_string())?
-        .primary;
+        let mut resolved = resolve_model_selection(config, &selector, variant)
+            .map_err(|err| err.to_string())?
+            .primary;
 
         model_settings.variant = resolved.variant.clone();
         model_settings.reasoning_effort = resolved.reasoning_effort.clone();

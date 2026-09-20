@@ -1,47 +1,122 @@
 use harness::UnwrapOrAbort;
-#[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
+#[allow(
+    clippy::clone_on_ref_ptr,
+    reason = "trait object coercion requires .clone() not Arc::clone"
+)]
 #[tokio::test]
 async fn prompt_cli_model_variant_and_thinking_flags_stream_reasoning_output() {
-    let provider = ScriptedPromptProvider::fixed(reasoning_events());
-
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.reasoning.jsonc");
     let session_dir = temp.path().join("sessions");
-
-    fs::write(
-        &config_path,
-        prompt_cli_config("https://fixture.test/v1", &session_dir, &[]),
-    )
+    let mut config: serde_json::Value = serde_json::from_str(&prompt_cli_config(
+        "https://fixture.test/v1",
+        &session_dir,
+        &[],
+    ))
     .unwrap_or_abort();
-
-    let output = run_harness_in_blocking_with_provider(temp.path(), [
+    config["agent"]["default"]["model"] = serde_json::json!("configured");
+    config["agent"]["default"]["variant"] = serde_json::json!("high");
+    config["model_profile"] = serde_json::json!({"configured": {"model": "default:gpt-4o-mini"}});
+    let model = &mut config["provider"]["default"]["models"]["gpt-4o-mini"];
+    model["limit"] = serde_json::json!({"context": 128000, "output": 8192});
+    model["variants"]["low"]["max_output_tokens"] = serde_json::json!(2048);
+    model["variants"]["high"] = serde_json::json!({
+        "metadata": {"reasoningEffort": "high", "textVerbosity": "high"},
+        "max_output_tokens": 4096,
+    });
+    fs::write(&config_path, config.to_string()).unwrap_or_abort();
+    for (flags, variant, effort, verbosity, max_output) in [
+        (
+            vec![
+                "--model",
+                "default:gpt-4o-mini",
+                "--variant",
+                "low",
+                "--thinking",
+            ],
+            Some("low"),
+            Some("low"),
+            Some("low"),
+            2048,
+        ),
+        (
+            vec!["--thinking"],
+            Some("high"),
+            Some("high"),
+            Some("high"),
+            4096,
+        ),
+        (
+            vec!["--reasoning-effort", "low"],
+            Some("high"),
+            Some("low"),
+            Some("high"),
+            4096,
+        ),
+        (
+            vec!["--model", "default:gpt-4o-mini", "--thinking"],
+            None,
+            None,
+            None,
+            8192,
+        ),
+    ] {
+        let provider = ScriptedPromptProvider::fixed(reasoning_events());
+        let mut args = vec![
             "--config",
             config_path.to_str().unwrap_or_abort(),
             "prompt",
             "--text",
             "Hello",
-            "--model",
-            "default:gpt-4o-mini",
+            "--print-run-dir",
+        ];
+        args.extend(flags.iter().copied());
+        let output =
+            run_harness_in_blocking_with_provider(temp.path(), args, provider.clone()).await;
+        assert!(
+            output.status.success(),
+            "{flags:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if flags.contains(&"--thinking") {
+            assert!(stdout.contains("Thinking: Drafting a careful answer."));
+        }
+        assert!(stdout.contains("Hello world"));
+        let requests = provider.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].model_id, "gpt-4o-mini");
+        assert_eq!(requests[0].variant.as_deref(), variant);
+        assert_eq!(requests[0].reasoning_effort.as_deref(), effort);
+        assert_eq!(requests[0].reasoning_summary.as_deref(), Some("auto"));
+        assert_eq!(requests[0].text_verbosity.as_deref(), verbosity);
+        assert_eq!(requests[0].body["max_tokens"], max_output);
+        let run_dir = stdout.lines().last().unwrap_or_abort();
+        let metadata: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(std::path::Path::new(run_dir).join("meta.json")).unwrap_or_abort(),
+        )
+        .unwrap_or_abort();
+        let context = &metadata["recorded_runtime_context"];
+        assert_eq!(context["model"], "gpt-4o-mini");
+        assert_eq!(context["variant"].as_str(), variant);
+        assert_eq!(context["text_verbosity"].as_str(), verbosity);
+        assert_eq!(context["model_limits"]["max_output"]["tokens"], max_output);
+    }
+    let invalid = run_harness_in_blocking_with_provider(
+        temp.path(),
+        [
+            "--config",
+            config_path.to_str().unwrap_or_abort(),
+            "prompt",
+            "Hello",
             "--variant",
-            "low",
-            "--thinking",
-        ], provider.clone())
-        .await;
-
-    assert!(
-        output.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Thinking: Drafting a careful answer."));
-    assert!(stdout.contains("Hello world"));
-    let requests = provider.requests();
-    assert_eq!(requests[0].reasoning_effort.as_deref(), Some("low"));
-    assert_eq!(requests[0].reasoning_summary.as_deref(), Some("auto"));
-    assert_eq!(requests[0].text_verbosity.as_deref(), Some("low"));
+            "missing",
+        ],
+        ScriptedPromptProvider::fixed(reasoning_events()),
+    )
+    .await;
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("unknown variant `missing`"));
 }
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
