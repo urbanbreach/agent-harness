@@ -138,6 +138,32 @@ async fn openai_compatible_errors_do_not_leak_auth_secrets() {
     assert!(message.contains("status 401"));
     assert!(!message.contains(api_key));
     assert!(!message.to_ascii_lowercase().contains("authorization"));
+
+    let private_payload = "private-response-sentinel";
+    for data in [
+        format!(
+            r#"{{"type":"response.reasoning_summary_text.delta","summary_index":"{private_payload}"}}"#
+        ),
+        format!(r#"{{"type":"response.output_text.delta","delta":"{private_payload}""#),
+    ] {
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(format!(
+            "data: {data}\n\ndata: [DONE]\n\n"
+        ))]);
+        let provider =
+            provider_for_transport_with_mode(transport, api_key, OpenAiApiMode::Responses);
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::Started { metadata: None },
+                ProviderStreamEvent::categorized_error(
+                    "openai_compatible returned invalid SSE JSON chunk",
+                    ProviderErrorCategory::MalformedStream,
+                ),
+            ]
+        );
+    }
 }
 
 #[tokio::test]
