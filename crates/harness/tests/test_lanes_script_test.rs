@@ -163,6 +163,24 @@ fn signoff_pty_dry_run_emits_stage_artifact_and_fail_closed_contract() {
     let root = repo_root();
     let artifact_root = tempfile::tempdir().unwrap_or_abort();
     let script = root.join("scripts/test-lanes.sh");
+    let capture_stages = [
+        "p0_06_xterm_80x24",
+        "p1_02_xterm_80x24",
+        "p1_03_xterm_80x24",
+        "p1_04_xterm_80x24",
+    ];
+    for stage in capture_stages {
+        let stage_dir = artifact_root
+            .path()
+            .join(format!("signoff-pty/stages/{stage}"));
+        fs::create_dir_all(stage_dir.join("artifacts/nested")).unwrap_or_abort();
+        fs::write(
+            stage_dir.join("artifacts/nested/keep.bin"),
+            format!("{stage}\n\0"),
+        )
+        .unwrap_or_abort();
+        fs::write(stage_dir.join("sibling.bin"), b"previous sibling\0").unwrap_or_abort();
+    }
 
     // act
     let output = std::process::Command::new("bash")
@@ -177,6 +195,19 @@ fn signoff_pty_dry_run_emits_stage_artifact_and_fail_closed_contract() {
 
     // assert
     assert!(output.status.success(), "lane failed: {output:?}");
+    for stage in capture_stages {
+        let stage_dir = artifact_root
+            .path()
+            .join(format!("signoff-pty/stages/{stage}"));
+        assert_eq!(
+            fs::read(stage_dir.join("artifacts/nested/keep.bin")).unwrap_or_abort(),
+            format!("{stage}\n\0").as_bytes()
+        );
+        assert_eq!(
+            fs::read(stage_dir.join("sibling.bin")).unwrap_or_abort(),
+            b"previous sibling\0"
+        );
+    }
     let stages = [
         "harness_testkit_pty_e2e",
         "harness_tui_pty_e2e",

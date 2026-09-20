@@ -559,7 +559,9 @@ run_p0_06_xterm_capture() {
   local rows="$4"
   local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
   local temporary_template="${TMPDIR:-/tmp}/harness-xterm-${timestamp}-${cols}x${rows}-XXXXXX"
-  rm -rf "$destination"
+  if [[ "$dry_run" -eq 0 ]]; then
+    rm -rf "$destination"
+  fi
   mkdir -p "$destination"
   run_stage "$mode_name" "$stage_name" "$repo_root" \
     bash -c 'set -euo pipefail
@@ -579,7 +581,9 @@ run_p1_02_xterm_capture() {
   local rows="$4"
   local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
   local temporary_template="${TMPDIR:-/tmp}/harness-xterm-p1-02-${timestamp}-${cols}x${rows}-XXXXXX"
-  rm -rf "$destination"
+  if [[ "$dry_run" -eq 0 ]]; then
+    rm -rf "$destination"
+  fi
   mkdir -p "$destination"
   run_stage "$mode_name" "$stage_name" "$repo_root" \
     bash -c 'set -euo pipefail
@@ -600,7 +604,9 @@ run_p1_04_xterm_capture() {
   local rows="${geometry#*x}"
   local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
   local temporary_template="${TMPDIR:-/tmp}/harness-xterm-p1-04-${timestamp}-${cols}x${rows}-XXXXXX"
-  rm -rf "$destination"
+  if [[ "$dry_run" -eq 0 ]]; then
+    rm -rf "$destination"
+  fi
   mkdir -p "$destination"
   run_stage "$mode_name" "$stage_name" "$repo_root" \
     bash -c 'set -euo pipefail
@@ -626,7 +632,9 @@ run_p1_03_xterm_capture() {
   fi
   local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
   local temporary_template="${TMPDIR:-/tmp}/harness-xterm-p1-03-${timestamp}-${cols}x${rows}-XXXXXX"
-  rm -rf "$destination"
+  if [[ "$dry_run" -eq 0 ]]; then
+    rm -rf "$destination"
+  fi
   mkdir -p "$destination"
   run_stage "$mode_name" "$stage_name" "$repo_root" \
     bash -c 'set -euo pipefail
