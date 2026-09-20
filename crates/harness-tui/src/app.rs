@@ -1129,7 +1129,9 @@ impl AppState {
             });
             let parent_session_id = events
                 .iter()
-                .find_map(|event| event.lineage_parent_session_id().map(str::to_owned));
+                .filter_map(EventEnvelopeV1::lineage_parent_session_id)
+                .find(|parent| *parent != run_id)
+                .map(str::to_owned);
             let last_updated_at = events.iter().rev().find_map(|event| event.ts.clone());
             let catalog = SessionCatalogEntry {
                 run_id: run_id.clone(),

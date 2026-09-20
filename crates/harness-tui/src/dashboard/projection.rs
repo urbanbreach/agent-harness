@@ -101,9 +101,13 @@ pub fn build_dashboard_read_model(
                 .catalog
                 .parent_session_id
                 .clone()
-                .or_else(|| DashboardReadModel::event_parent_id(&events)),
+                .filter(|parent| parent != key.as_str())
+                .or_else(|| DashboardReadModel::event_parent_id(key.as_str(), &events)),
         );
         for (parent, child) in DashboardReadModel::event_child_links(&events) {
+            if parent == child {
+                continue;
+            }
             linked_children.entry(parent).or_default().insert(child);
         }
         rows.push(base_row(session, key, &events));
@@ -207,7 +211,7 @@ fn base_row(
                 _ => None,
             })
             .or_else(|| session.catalog.run_name.clone()),
-        status: derive_status(session.catalog.status, events),
+        status: derive_status(&session.catalog.run_id, session.catalog.status, events),
         activity: DashboardActivity {
             last_event_seq: last_event.map_or(0, |event| event.seq),
             last_event_id: last_event.map(|event| event.event_id.clone()),
@@ -225,9 +229,11 @@ fn base_row(
             is_parent: false,
             is_child: false,
             is_background: session.is_background
-                || events
-                    .iter()
-                    .any(|event| matches!(event.payload, EventV1::BackgroundTaskNotification(_))),
+                || events.iter().any(|event| {
+                    matches!(&event.payload,
+                        EventV1::BackgroundTaskNotification(notification)
+                            if notification.child_session_id.as_str() == session.catalog.run_id)
+                }),
             is_foreign: session.is_foreign,
         },
         eligibility: super::eligibility::DashboardEntryEligibility {
