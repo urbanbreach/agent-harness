@@ -21,6 +21,7 @@ terminal QA, and eight full-suite failures reproduced on the pristine baseline.
 | [009: Keep malformed provider payloads out of errors and logs](009-remove-provider-payloads-from-errors.md) | P1 | S | None | DONE |
 | [010: Reject malformed OAuth callback encoding without panicking](010-decode-oauth-callbacks-without-panics.md) | P1 | S | None | DONE |
 | [011: Require a valid terminal outcome before completing provider streams](011-fail-incomplete-provider-streams.md) | P1 | M | 009 (DONE) | DONE |
+| [013: Remap retained-history IDs when forking a compacted session](013-remap-fork-history-references.md) | P1 | M | None | DONE |
 
 Planned at `062e5ea8` on 2026-09-14 after comparing the local OpenCode and Senpi
 references. The user confirmed independent child-role permissions under shared

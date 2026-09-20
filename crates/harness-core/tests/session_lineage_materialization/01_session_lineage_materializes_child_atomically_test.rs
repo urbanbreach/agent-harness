@@ -1,4 +1,179 @@
 use harness_core::UnwrapOrAbort;
+
+#[test]
+fn session_lineage_compacted_forks_preserve_provider_continuation() {
+    use harness_core::agent::{
+        lower_provider_continuation, profile_tool_shape_digest, AgentProfile,
+        LowerProviderContinuationInput,
+    };
+    use harness_core::ids::RunId;
+    use harness_core::session::{
+        CanonicalRuntimeSelection, CanonicalSessionProjection, EventIdentityNamespace,
+        ProviderViewInput, ProviderViewOwner,
+    };
+
+    let source_run_id = RunId::new("run_parent_compacted");
+    let user_event = |seq, text: &str| {
+        envelope(
+            source_run_id.as_str(),
+            seq,
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: format!("request-{seq}").into(),
+                text: text.to_string(),
+            }),
+        )
+    };
+    let retained = user_event(3, "retained history");
+    let excluded_tail = user_event(7, "excluded source tail");
+    let namespace = EventIdentityNamespace::new(&source_run_id);
+    let profile = AgentProfile::fallback("default");
+    let runtime_selection = CanonicalRuntimeSelection::new(
+        Some(profile.name.clone()),
+        "mock",
+        "model-1",
+        Default::default(),
+        Default::default(),
+        profile_tool_shape_digest(&profile, &[]).unwrap_or_abort(),
+    )
+    .unwrap_or_abort();
+
+    for (case, first_kept_entry_id) in [
+        ("typed", namespace.source_entry_id(&retained)),
+        ("legacy", None),
+        ("unresolved", namespace.source_entry_id(&excluded_tail)),
+    ] {
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
+        let source_run_dir = temp_dir.path().join(source_run_id.as_str());
+        fs::create_dir(&source_run_dir).unwrap_or_abort();
+        let events = vec![
+            envelope(
+                source_run_id.as_str(),
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "compacted parent".into(),
+                    workspace_root: "/workspace/source".to_string(),
+                }),
+            ),
+            user_event(2, "discarded history"),
+            retained.clone(),
+            envelope(
+                source_run_id.as_str(),
+                4,
+                serde_json::from_value(serde_json::json!({
+                    "event_type": "session_compaction",
+                    "data": {
+                        "agent_id": "agent_000001",
+                        "summary": "compacted summary",
+                        "first_kept_event_seq": 3,
+                        "first_kept_request_id": "request-3",
+                        "first_kept_entry_id": first_kept_entry_id,
+                        "tokens_before": 100,
+                        "tokens_after": 37,
+                        "summary_usage": {
+                            "prompt_tokens": 11,
+                            "completion_tokens": 5,
+                            "total_tokens": 16
+                        },
+                        "summary_provider_id": "mock",
+                        "summary_model_id": "model-1",
+                        "read_files": ["src/read.rs"],
+                        "modified_files": ["src/modified.rs"],
+                        "trigger_reason": "manual",
+                        "from_hook": false
+                    }
+                }))
+                .unwrap_or_abort(),
+            ),
+            user_event(5, "continued history"),
+            envelope(
+                source_run_id.as_str(),
+                6,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "finished".to_string(),
+                }),
+            ),
+            excluded_tail.clone(),
+        ];
+        write_source_events(&source_run_dir, &events);
+        let source_bytes = fs::read(source_run_dir.join("events.jsonl")).unwrap_or_abort();
+        let prefix = validate_tui_fork_stable_prefix(&events, 6).unwrap_or_abort();
+        let result = materialize_child_session(ChildSessionMaterializationRequest {
+            source_run_dir: &source_run_dir,
+            events: &events,
+            stable_prefix: &prefix,
+            source_kind: ChildSessionMaterializationSourceKind::TuiStableInMemorySnapshot,
+        });
+        assert_eq!(
+            fs::read(source_run_dir.join("events.jsonl")).unwrap_or_abort(),
+            source_bytes,
+            "{case}: source journal must remain unchanged"
+        );
+        assert_no_unpublished_temp_dirs(temp_dir.path());
+        if case == "unresolved" {
+            assert!(matches!(
+                result,
+                Err(ChildSessionMaterializationError::UnresolvedCompactionBoundary { seq: 4, entry_id })
+                    if Some(&entry_id) == first_kept_entry_id.as_ref()
+            ));
+            assert_eq!(
+                session_dir_entries(temp_dir.path()),
+                vec![source_run_id.as_str()]
+            );
+            continue;
+        }
+
+        let child_events = read_events(&result.unwrap_or_abort().child_run_dir);
+        assert_eq!(child_events.len(), prefix.event_count);
+        let projection =
+            CanonicalSessionProjection::from_event_history(&child_events).unwrap_or_abort();
+        let view = projection
+            .session
+            .provider_view(ProviderViewInput {
+                owner: ProviderViewOwner::root(
+                    "agent_000001",
+                    projection.session.session_id().clone(),
+                ),
+                selected_leaf: None,
+                pending_prompt: None,
+                runtime_selection: runtime_selection.clone(),
+            })
+            .unwrap_or_abort();
+        let messages = lower_provider_continuation(LowerProviderContinuationInput {
+            view: &view,
+            transient_operational_turns: &[],
+            profile: &profile,
+            tools: None,
+            tool_choice: None,
+            fresh_request_id: "request-child",
+        })
+        .unwrap_or_abort()
+        .request
+        .messages;
+        assert!(messages
+            .iter()
+            .any(|message| message.content.contains("compacted summary")));
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|message| message.role == harness_providers::MessageRole::User)
+                .map(|message| message.content.as_str())
+                .collect::<Vec<_>>(),
+            ["retained history", "continued history"],
+            "{case}: retained suffix must follow the summary"
+        );
+
+        let child_namespace = EventIdentityNamespace::new(&child_events[0].run_id);
+        let child_boundary = child_namespace
+            .source_entry_id(&child_events[2])
+            .unwrap_or_abort();
+        let mut expected_compaction = events[3].payload.clone();
+        if let EventV1::SessionCompaction(compaction) = &mut expected_compaction {
+            compaction.first_kept_entry_id = first_kept_entry_id.map(|_| child_boundary);
+        }
+        assert_eq!(child_events[3].payload, expected_compaction);
+    }
+}
+
 #[test]
 fn session_lineage_materializes_child_atomically() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
