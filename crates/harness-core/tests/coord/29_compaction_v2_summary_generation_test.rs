@@ -43,7 +43,7 @@ async fn run_summary_generation(events: Vec<ProviderStreamEvent>) -> SummaryGene
 #[tokio::test]
 async fn compaction_v2_summary_generation_success_captures_usage_and_provenance() {
     // Given: a real file-tool turn and summary usage deliberately unrelated to stored text size.
-    let file_path = "/workspace/accounting.rs".to_string();
+    let file_path = "accounting.rs".to_string();
     let summary_events = vec![
         ProviderStreamEvent::Start,
         ProviderStreamEvent::TextDelta("generated summary".to_string()),

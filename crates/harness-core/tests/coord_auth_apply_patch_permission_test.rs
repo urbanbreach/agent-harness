@@ -71,10 +71,7 @@ async fn apply_patch_requires_permission_for_patch_text_paths() {
     );
 
     let run = coordinator
-        .start_run(
-            "apply_patch_path_permission",
-            temp_dir.path().join("workspace"),
-        )
+        .start_run("apply_patch_path_permission", temp_dir.path())
         .await
         .unwrap_or_abort();
     let worker_agent_id = coordinator

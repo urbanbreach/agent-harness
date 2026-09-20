@@ -362,10 +362,7 @@ async fn edit_rename_requires_permission_for_destination_path() {
     );
 
     let run = coordinator
-        .start_run(
-            "edit_rename_destination_permission",
-            PathBuf::from("/workspace/project"),
-        )
+        .start_run("edit_rename_destination_permission", temp_dir.path())
         .await
         .unwrap_or_abort();
 
@@ -436,6 +433,7 @@ async fn profile_edit_rules_allow_path_prefix_and_deny_outside() {
     );
 
     let workspace = temp_dir.path().join("workspace");
+    std::fs::create_dir(&workspace).unwrap_or_abort();
     let coordinator = test_coordinator(
         temp_dir.path(),
         worker_profile(vec![EDIT_TOOL_ID.to_string()]),
