@@ -405,6 +405,7 @@ impl AppState {
             .as_deref()
             .map(prompt_stash::prompt_stash_path_for_session_dir);
         state.session_path = session_path;
+        state.load_session_lineage();
         state.auto_exit_on_finish = auto_exit_on_finish;
         state.on_ui_intent = on_ui_intent;
         state.set_prompt_history_path(prompt_history_path);
@@ -440,6 +441,7 @@ impl AppState {
         state.replay_mode = true;
         state.session_path = Some(session_path);
         state.replace_events(events);
+        state.load_session_lineage();
         state.replay_mode = true;
         state.focus = Focus::Details;
         state
