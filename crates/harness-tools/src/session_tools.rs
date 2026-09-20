@@ -124,6 +124,14 @@ struct SessionEntry {
     sort_unix_ms: u128,
 }
 
+struct SessionCatalogRow {
+    run_dir: PathBuf,
+    catalog: SessionCatalogEntry,
+    event_count: usize,
+    parse_error_count: usize,
+    sort_unix_ms: u128,
+}
+
 #[async_trait]
 impl Tool for SessionListTool {
     tool_metadata!(
@@ -136,7 +144,7 @@ impl Tool for SessionListTool {
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: SessionListArgs = parse_tool_args(args_json)?;
         let session_root = resolve_session_root(&ctx, args.session_root.as_deref())?;
-        let mut entries = load_session_entries(&session_root)?;
+        let mut entries = load_session_catalog(&session_root)?;
         entries.retain(|entry| {
             status_matches(args.status.as_deref(), entry.catalog.status)
                 && args
@@ -161,8 +169,8 @@ impl Tool for SessionListTool {
                 json!({
                     "run_dir": display_path(&entry.run_dir),
                     "catalog": entry.catalog,
-                    "event_count": entry.events.len(),
-                    "parse_error_count": entry.parse_errors.len(),
+                    "event_count": entry.event_count,
+                    "parse_error_count": entry.parse_error_count,
                     "source": "event_replay",
                 })
             })
@@ -301,10 +309,10 @@ impl Tool for SessionSearchTool {
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: SessionSearchArgs = parse_tool_args(args_json)?;
         let session_root = resolve_session_root(&ctx, args.session_root.as_deref())?;
-        let entries = if let Some(selector) = args.session.as_deref() {
-            vec![resolve_session_entry(&ctx, &session_root, selector)?]
+        let session_dirs = if let Some(selector) = args.session.as_deref() {
+            vec![resolve_session_dir(&ctx, &session_root, selector)?]
         } else {
-            load_session_entries(&session_root)?
+            discover_session_dirs(&session_root)?
         };
         let limit = clamp_limit(args.limit, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
         let context_limit = clamp_limit(
@@ -314,8 +322,9 @@ impl Tool for SessionSearchTool {
         );
         let mut total_count = 0usize;
         let mut matches = Vec::new();
-        for entry in &entries {
-            for document in safe_search_documents(entry) {
+        for run_dir in &session_dirs {
+            let entry = load_session_entry(run_dir)?;
+            for document in safe_search_documents(&entry) {
                 if let Some(excerpt) = search_excerpt(
                     &document.text,
                     &args.query,
@@ -352,7 +361,7 @@ impl Tool for SessionSearchTool {
             "effective_context_limit": context_limit.effective,
             "max_context_limit": MAX_SEARCH_CONTEXT_LIMIT,
             "context_limit_clamped": context_limit.clamped,
-            "searched_session_count": entries.len(),
+            "searched_session_count": session_dirs.len(),
             "total_count": total_count,
             "returned_count": matches.len(),
             "truncated_count": total_count.saturating_sub(matches.len()),
@@ -454,7 +463,7 @@ fn resolve_session_root(ctx: &ToolContext, selector: Option<&str>) -> Result<Pat
     }
 }
 
-fn load_session_entries(session_root: &Path) -> Result<Vec<SessionEntry>, ToolError> {
+fn discover_session_dirs(session_root: &Path) -> Result<Vec<PathBuf>, ToolError> {
     if !session_root.exists() {
         return Ok(Vec::new());
     }
@@ -473,10 +482,26 @@ fn load_session_entries(session_root: &Path) -> Result<Vec<SessionEntry>, ToolEr
                 ))
             })?;
             ensure_within_workspace_path(&canonical_root, &canonical)?;
-            entries.push(load_session_entry(&canonical)?);
+            entries.push(canonical);
         }
     }
     Ok(entries)
+}
+
+fn load_session_catalog(session_root: &Path) -> Result<Vec<SessionCatalogRow>, ToolError> {
+    discover_session_dirs(session_root)?
+        .into_iter()
+        .map(|run_dir| {
+            let entry = load_session_entry(&run_dir)?;
+            Ok(SessionCatalogRow {
+                run_dir,
+                catalog: entry.catalog,
+                event_count: entry.events.len(),
+                parse_error_count: entry.parse_errors.len(),
+                sort_unix_ms: entry.sort_unix_ms,
+            })
+        })
+        .collect()
 }
 
 fn resolve_session_entry(
@@ -484,6 +509,14 @@ fn resolve_session_entry(
     session_root: &Path,
     selector: &str,
 ) -> Result<SessionEntry, ToolError> {
+    load_session_entry(&resolve_session_dir(ctx, session_root, selector)?)
+}
+
+fn resolve_session_dir(
+    ctx: &ToolContext,
+    session_root: &Path,
+    selector: &str,
+) -> Result<PathBuf, ToolError> {
     let selector = selector.trim();
     if selector.is_empty() {
         return Err(ToolError::InvalidArguments(
@@ -520,7 +553,7 @@ fn resolve_session_entry(
                 ensure_within_workspace_path(&canonical_root, &canonical)?;
                 canonical
             } else {
-                let matches = load_session_entries(session_root)?
+                let matches = load_session_catalog(session_root)?
                     .into_iter()
                     .filter(|entry| {
                         entry.catalog.run_id == selector
@@ -532,7 +565,7 @@ fn resolve_session_entry(
                     })
                     .collect::<Vec<_>>();
                 return match matches.len() {
-                    1 => Ok(matches.into_iter().next().unwrap_or_abort()),
+                    1 => Ok(matches.into_iter().next().unwrap_or_abort().run_dir),
                     0 => Err(ToolError::InvalidArguments(format!(
                         "unknown session `{selector}` in {}",
                         session_root.display()
@@ -543,7 +576,7 @@ fn resolve_session_entry(
                 };
             }
         };
-    load_session_entry(&run_dir)
+    Ok(run_dir)
 }
 
 fn load_session_entry(run_dir: &Path) -> Result<SessionEntry, ToolError> {
@@ -749,7 +782,7 @@ fn status_matches(filter: Option<&str>, status: Option<RunStatus>) -> bool {
     )
 }
 
-fn session_filter_matches(entry: &SessionEntry, filter: &str) -> bool {
+fn session_filter_matches(entry: &SessionCatalogRow, filter: &str) -> bool {
     let filter = filter.to_ascii_lowercase();
     [
         entry.catalog.run_id.as_str(),
@@ -761,7 +794,10 @@ fn session_filter_matches(entry: &SessionEntry, filter: &str) -> bool {
     .any(|value| value.to_ascii_lowercase().contains(&filter))
 }
 
-fn sort_session_entries(entries: &mut [SessionEntry], sort: Option<&str>) -> Result<(), ToolError> {
+fn sort_session_entries(
+    entries: &mut [SessionCatalogRow],
+    sort: Option<&str>,
+) -> Result<(), ToolError> {
     match sort.unwrap_or("updated_desc") {
         "updated_desc" => entries.sort_by(|a, b| b.sort_unix_ms.cmp(&a.sort_unix_ms).then_with(|| a.catalog.run_id.cmp(&b.catalog.run_id))),
         "updated_asc" => entries.sort_by(|a, b| a.sort_unix_ms.cmp(&b.sort_unix_ms).then_with(|| a.catalog.run_id.cmp(&b.catalog.run_id))),
