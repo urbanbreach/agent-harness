@@ -1,11 +1,11 @@
-use crate::UnwrapOrAbort;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use tokio::fs;
 
 use crate::digest::digest12;
 use crate::event::{EventV1, WorkspaceRevertFailure, WorkspaceRevertedEvent};
+use crate::path_selector::{recheck_restore_target, resolve_restore_target};
 
 use super::{
     append_payload_event_with_correlation, system_actor, Coordinator, CoordinatorError,
@@ -50,48 +50,65 @@ impl Coordinator {
         let mut removed_paths = Vec::new();
         let mut failed_paths = Vec::new();
 
-        let current_entries = current_workspace_entries(&workspace_root)
-            .await
-            .map_err(|err| CoordinatorError::RevertFailed(format!("scan workspace: {err}")))?;
-
-        let snapshot_paths: BTreeSet<&str> = snapshot
-            .keys()
-            .map(String::as_str)
-            .filter(|path| !should_ignore_path(path))
-            .collect();
-        let current_paths: BTreeSet<&str> = current_entries.keys().map(String::as_str).collect();
-
-        // Paths present in the snapshot must be restored to their captured state.
-        for path in snapshot_paths.iter() {
-            let entry = snapshot.get(*path).unwrap_or_abort();
-            let Some(content) = entry
-                .content
-                .as_deref()
-                .filter(|content| digest12(content.as_bytes()) == entry.digest)
-            else {
-                if current_entries.get(*path) != Some(&entry.digest) {
-                    failed_paths.push((
-                        path.to_string(),
-                        "binary or redacted content cannot be restored; file left unchanged"
-                            .to_string(),
-                    ));
-                }
-                continue;
-            };
-            match apply_restore(&workspace_root, path, Some(content)).await {
-                Ok(true) => restored_paths.push(path.to_string()),
-                Ok(false) => {}
-                Err(reason) => failed_paths.push((path.to_string(), reason)),
-            }
+        let preflight = async {
+            let workspace_root = workspace_root
+                .canonicalize()
+                .map_err(|err| (".".to_string(), format!("resolve workspace: {err}")))?;
+            let targets = snapshot
+                .iter()
+                .filter(|(path, _)| !should_ignore_path(path))
+                .map(|(path, entry)| {
+                    resolve_restore_target(&workspace_root, Path::new(path))
+                        .map(|target| (path, entry, target))
+                        .map_err(|err| (path.clone(), err.to_string()))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let current_entries = current_workspace_entries(&workspace_root).await?;
+            Ok::<_, (String, String)>((workspace_root, targets, current_entries))
         }
+        .await;
 
-        // Paths that exist now but were not present in the snapshot were created after the
-        // snapshot and should be removed.
-        for path in current_paths.difference(&snapshot_paths) {
-            match apply_restore(&workspace_root, path, None).await {
-                Ok(true) => removed_paths.push(path.to_string()),
-                Ok(false) => {}
-                Err(reason) => failed_paths.push((path.to_string(), reason)),
+        match preflight {
+            Err(failure) => failed_paths.push(failure),
+            Ok((workspace_root, targets, current_entries)) => {
+                // No restore or removal starts until the complete target set is valid.
+                for (path, entry, target) in targets {
+                    let content = entry
+                        .content
+                        .as_deref()
+                        .filter(|content| digest12(content.as_bytes()) == entry.digest);
+                    if content.is_none()
+                        && current_entries.get(path).map(|(_, digest)| digest)
+                            == Some(&entry.digest)
+                    {
+                        continue;
+                    }
+                    let Some(content) = content else {
+                        failed_paths.push((
+                            path.to_string(),
+                            "binary or redacted content cannot be restored; file left unchanged"
+                                .to_string(),
+                        ));
+                        continue;
+                    };
+                    match apply_restore(&workspace_root, &target, Some(content)).await {
+                        Ok(true) => restored_paths.push(path.to_string()),
+                        Ok(false) => {}
+                        Err(reason) => failed_paths.push((path.to_string(), reason)),
+                    }
+                }
+
+                // Files created after the snapshot must be removed.
+                for (path, (target, _)) in current_entries {
+                    if snapshot.contains_key(&path) {
+                        continue;
+                    }
+                    match apply_restore(&workspace_root, &target, None).await {
+                        Ok(true) => removed_paths.push(path),
+                        Ok(false) => {}
+                        Err(reason) => failed_paths.push((path, reason)),
+                    }
+                }
             }
         }
 
@@ -134,28 +151,38 @@ impl Coordinator {
 
 async fn current_workspace_entries(
     workspace_root: &Path,
-) -> Result<BTreeMap<String, String>, std::io::Error> {
+) -> Result<BTreeMap<String, (PathBuf, String)>, (String, String)> {
     let mut entries = BTreeMap::new();
-    for path in workspace_files(workspace_root).await? {
-        let relative = normalize_relative_path(path.strip_prefix(workspace_root).unwrap_or(&path));
-        entries.insert(relative, digest12(&fs::read(&path).await?));
+    for path in workspace_files(workspace_root)
+        .await
+        .map_err(|err| (".".to_string(), format!("scan workspace: {err}")))?
+    {
+        let relative = path
+            .strip_prefix(workspace_root)
+            .map_err(|err| (path.display().to_string(), err.to_string()))?;
+        let target = resolve_restore_target(workspace_root, relative)
+            .map_err(|err| (relative.display().to_string(), err.to_string()))?;
+        let relative = normalize_relative_path(relative);
+        let bytes = fs::read(&target)
+            .await
+            .map_err(|err| (relative.clone(), format!("read failed: {err}")))?;
+        entries.insert(relative, (target, digest12(&bytes)));
     }
     Ok(entries)
 }
 
 async fn apply_restore(
     workspace_root: &Path,
-    relative_path: &str,
+    target: &Path,
     content: Option<&str>,
 ) -> Result<bool, String> {
-    let normalized = normalize_relative_path(Path::new(relative_path));
-    let target = resolve_within_workspace(workspace_root, &normalized)?;
+    recheck_restore_target(workspace_root, target).map_err(|err| err.to_string())?;
 
     let exists = target.is_file();
     match content {
         Some(expected) => {
             if exists {
-                let current = fs::read(&target)
+                let current = fs::read(target)
                     .await
                     .map_err(|err| format!("read failed: {err}"))?;
                 if current == expected.as_bytes() {
@@ -163,18 +190,21 @@ async fn apply_restore(
                 }
             }
             if let Some(parent) = target.parent() {
+                recheck_restore_target(workspace_root, target).map_err(|err| err.to_string())?;
                 fs::create_dir_all(parent)
                     .await
                     .map_err(|err| format!("create parent dir failed: {err}"))?;
             }
-            fs::write(&target, expected)
+            recheck_restore_target(workspace_root, target).map_err(|err| err.to_string())?;
+            fs::write(target, expected)
                 .await
                 .map_err(|err| format!("write failed: {err}"))?;
             Ok(true)
         }
         None => {
             if exists {
-                fs::remove_file(&target)
+                recheck_restore_target(workspace_root, target).map_err(|err| err.to_string())?;
+                fs::remove_file(target)
                     .await
                     .map_err(|err| format!("remove failed: {err}"))?;
                 Ok(true)
@@ -183,18 +213,4 @@ async fn apply_restore(
             }
         }
     }
-}
-
-fn resolve_within_workspace(workspace_root: &Path, relative: &str) -> Result<PathBuf, String> {
-    let candidate = workspace_root.join(relative);
-    let canonical = candidate
-        .canonicalize()
-        .unwrap_or_else(|_| candidate.clone());
-    let canonical_root = workspace_root
-        .canonicalize()
-        .unwrap_or_else(|_| workspace_root.to_path_buf());
-    if !canonical.starts_with(&canonical_root) {
-        return Err(format!("path escapes workspace root: {relative}"));
-    }
-    Ok(candidate)
 }

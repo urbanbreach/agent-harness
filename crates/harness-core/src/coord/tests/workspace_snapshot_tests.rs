@@ -1,11 +1,13 @@
 use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::clock::FakeClock;
 use crate::config::{FormatterConfig, FormatterOverride};
 use crate::coord::formatter::run_formatter_for_path;
+use crate::coord::CoordinatorHandle;
 use crate::event::EventV1;
 
 use super::*;
@@ -86,6 +88,7 @@ pub(super) async fn revert_restores_workspace_from_snapshot() {
     fs::write(workspace.join("keep.txt"), "keep-original").unwrap_or_abort();
     fs::write(workspace.join("change.txt"), "change-original").unwrap_or_abort();
     fs::write(workspace.join("remove.txt"), "remove-original").unwrap_or_abort();
+    fs::write(workspace.join("notes..txt"), "two-dots").unwrap_or_abort();
 
     let handle = spawn_coordinator(
         test_config(temp_dir.path()),
@@ -105,6 +108,7 @@ pub(super) async fn revert_restores_workspace_from_snapshot() {
     // Apply changes after the snapshot.
     fs::write(workspace.join("change.txt"), "change-modified").unwrap_or_abort();
     fs::remove_file(workspace.join("remove.txt")).unwrap_or_abort();
+    fs::remove_file(workspace.join("notes..txt")).unwrap_or_abort();
     fs::write(workspace.join("add.txt"), "add-new").unwrap_or_abort();
 
     let summary = handle
@@ -112,8 +116,42 @@ pub(super) async fn revert_restores_workspace_from_snapshot() {
         .await
         .unwrap_or_abort();
 
+    assert_successful_workspace_revert(&workspace, &run.events_path, &summary);
+    fs::write(workspace.join("asset.png"), [0_u8, 254, 2]).unwrap_or_abort();
+    let partial = handle
+        .revert_workspace("req_revert_001")
+        .await
+        .unwrap_or_abort();
+    assert_eq!(partial.failed_paths.len(), 1);
+    assert_eq!(partial.failed_paths[0].0, "asset.png");
+    assert_eq!(
+        fs::read(workspace.join("asset.png")).unwrap_or_abort(),
+        vec![0, 254, 2]
+    );
+
+    let outside = temp_dir.path().join("outside");
+    fs::create_dir(&outside).unwrap_or_abort();
+    fs::write(outside.join("sentinel.txt"), "external-original").unwrap_or_abort();
+    revert_rejects_invalid_snapshot_paths(&handle, &workspace, &run.artifacts_dir, &outside).await;
+    #[cfg(unix)]
+    {
+        revert_rejects_missing_targets_behind_symlinks(&handle, &workspace, &outside).await;
+        revert_rejects_external_current_files(&handle, &workspace, &outside, &run.events_path)
+            .await;
+    }
+}
+
+fn assert_successful_workspace_revert(
+    workspace: &Path,
+    events_path: &Path,
+    summary: &crate::coord::WorkspaceRevertSummary,
+) {
     assert!(summary.restored_paths.contains(&"change.txt".to_string()));
     assert!(summary.restored_paths.contains(&"remove.txt".to_string()));
+    assert_eq!(
+        fs::read_to_string(workspace.join("notes..txt")).unwrap_or_abort(),
+        "two-dots"
+    );
     assert!(summary.removed_paths.contains(&"add.txt".to_string()));
     assert!(summary.failed_paths.is_empty());
 
@@ -131,7 +169,7 @@ pub(super) async fn revert_restores_workspace_from_snapshot() {
     );
     assert!(!workspace.join("add.txt").exists());
 
-    let events = read_events(&run.events_path);
+    let events = read_events(events_path);
     let reverted_event = events
         .iter()
         .find_map(|event| match &event.payload {
@@ -148,17 +186,155 @@ pub(super) async fn revert_restores_workspace_from_snapshot() {
         fs::read(workspace.join("asset.png")).unwrap_or_abort(),
         vec![0, 255, 1]
     );
-    fs::write(workspace.join("asset.png"), [0_u8, 254, 2]).unwrap_or_abort();
-    let partial = handle
+}
+
+async fn revert_rejects_invalid_snapshot_paths(
+    handle: &CoordinatorHandle,
+    workspace: &Path,
+    artifacts_dir: &Path,
+    outside: &Path,
+) {
+    let artifact_path = artifacts_dir.join("snapshots/req_revert_001.json");
+    let original_artifact = fs::read(&artifact_path).unwrap_or_abort();
+    let mut artifact: serde_json::Value =
+        serde_json::from_slice(&original_artifact).unwrap_or_abort();
+    let sentinel = outside.join("sentinel.txt");
+    let absolute_inside = workspace.join("keep.txt").to_string_lossy().into_owned();
+    let absolute_outside = sentinel.to_string_lossy();
+    fs::write(workspace.join("change.txt"), "keep-modified").unwrap_or_abort();
+    fs::write(workspace.join("add.txt"), "keep-added").unwrap_or_abort();
+    fs::remove_file(workspace.join("remove.txt")).unwrap_or_abort();
+    let restore_entry = artifact["keep.txt"].clone();
+    for path in [
+        "",
+        ".",
+        "../outside/sentinel.txt",
+        "nested/../keep.txt",
+        &absolute_inside,
+        &absolute_outside,
+    ] {
+        artifact
+            .as_object_mut()
+            .unwrap_or_abort()
+            .insert(path.to_string(), restore_entry.clone());
+        fs::write(
+            &artifact_path,
+            serde_json::to_vec(&artifact).unwrap_or_abort(),
+        )
+        .unwrap_or_abort();
+        let rejected = handle
+            .revert_workspace("req_revert_001")
+            .await
+            .unwrap_or_abort();
+        assert!(rejected.restored_paths.is_empty(), "{path}");
+        assert!(rejected.removed_paths.is_empty(), "{path}");
+        assert_eq!(rejected.failed_paths.len(), 1, "{path}");
+        assert_eq!(rejected.failed_paths[0].0, path);
+        assert_eq!(
+            fs::read_to_string(workspace.join("change.txt")).unwrap_or_abort(),
+            "keep-modified"
+        );
+        assert_eq!(
+            fs::read_to_string(workspace.join("add.txt")).unwrap_or_abort(),
+            "keep-added"
+        );
+        assert!(!workspace.join("remove.txt").exists());
+        assert_eq!(fs::read(&sentinel).unwrap_or_abort(), b"external-original");
+        artifact.as_object_mut().unwrap_or_abort().remove(path);
+    }
+    fs::write(&artifact_path, original_artifact).unwrap_or_abort();
+}
+
+#[cfg(unix)]
+async fn revert_rejects_missing_targets_behind_symlinks(
+    handle: &CoordinatorHandle,
+    workspace: &Path,
+    outside: &Path,
+) {
+    use std::os::unix::fs::symlink;
+    let sentinel = outside.join("sentinel.txt");
+    let parent = workspace.join("nested");
+    fs::create_dir(&parent).unwrap_or_abort();
+    fs::write(parent.join("deleted.txt"), "restore-me").unwrap_or_abort();
+    handle
+        .snapshot_workspace("req_symlink")
+        .await
+        .unwrap_or_abort();
+    fs::write(workspace.join("change.txt"), "still-modified").unwrap_or_abort();
+    fs::remove_dir_all(&parent).unwrap_or_abort();
+    symlink(&outside, &parent).unwrap_or_abort();
+    let rejected = handle
+        .revert_workspace("req_symlink")
+        .await
+        .unwrap_or_abort();
+    assert!(rejected.restored_paths.is_empty());
+    assert!(rejected.removed_paths.is_empty());
+    assert_eq!(rejected.failed_paths[0].0, "nested/deleted.txt");
+    assert!(!outside.join("deleted.txt").exists());
+    assert_eq!(fs::read(&sentinel).unwrap_or_abort(), b"external-original");
+    assert_eq!(
+        fs::read_to_string(workspace.join("change.txt")).unwrap_or_abort(),
+        "still-modified"
+    );
+}
+
+#[cfg(unix)]
+async fn revert_rejects_external_current_files(
+    handle: &CoordinatorHandle,
+    workspace: &Path,
+    outside: &Path,
+    events_path: &Path,
+) {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+    let parent = workspace.join("nested");
+    let sentinel = outside.join("sentinel.txt");
+    // Git can enumerate a tracked file through a replaced ancestor. Reject it
+    // before reading, even when it would only be removed by the revert.
+    fs::remove_file(&parent).unwrap_or_abort();
+    fs::create_dir(&parent).unwrap_or_abort();
+    fs::write(parent.join("sentinel.txt"), "tracked").unwrap_or_abort();
+    for args in [vec!["init", "--quiet"], vec!["add", "nested/sentinel.txt"]] {
+        assert!(std::process::Command::new("git")
+            .current_dir(&workspace)
+            .args(args)
+            .status()
+            .unwrap_or_abort()
+            .success());
+    }
+    fs::remove_dir_all(&parent).unwrap_or_abort();
+    symlink(&outside, &parent).unwrap_or_abort();
+    fs::set_permissions(&sentinel, fs::Permissions::from_mode(0o000)).unwrap_or_abort();
+    let rejected = handle
         .revert_workspace("req_revert_001")
         .await
         .unwrap_or_abort();
-    assert_eq!(partial.failed_paths.len(), 1);
-    assert_eq!(partial.failed_paths[0].0, "asset.png");
+    fs::set_permissions(&sentinel, fs::Permissions::from_mode(0o600)).unwrap_or_abort();
+    assert!(rejected.restored_paths.is_empty());
+    assert!(rejected.removed_paths.is_empty());
+    assert_eq!(rejected.failed_paths[0].0, "nested/sentinel.txt");
+    assert!(rejected.failed_paths[0].1.contains("escapes workspace"));
+    assert_eq!(fs::read(&sentinel).unwrap_or_abort(), b"external-original");
     assert_eq!(
-        fs::read(workspace.join("asset.png")).unwrap_or_abort(),
-        vec![0, 254, 2]
+        fs::read_to_string(workspace.join("change.txt")).unwrap_or_abort(),
+        "still-modified"
     );
+    assert_eq!(
+        fs::read_to_string(workspace.join("add.txt")).unwrap_or_abort(),
+        "keep-added"
+    );
+    assert!(!workspace.join("remove.txt").exists());
+    let events = read_events(events_path);
+    let payload = events
+        .iter()
+        .rev()
+        .find_map(|event| match &event.payload {
+            EventV1::WorkspaceReverted(payload) => Some(payload),
+            _ => None,
+        })
+        .unwrap_or_abort();
+    assert!(payload.restored_paths.is_empty());
+    assert!(payload.removed_paths.is_empty());
+    assert_eq!(payload.failed_paths[0].path, "nested/sentinel.txt");
 }
 
 pub(super) async fn formatter_runs_configured_command_on_edited_file() {
