@@ -211,7 +211,7 @@ impl CodexOAuthClient {
         callback_url: &str,
         store: &CredentialStore,
     ) -> Result<StoredCredential, CodexOAuthError> {
-        let query = parse_query(callback_url);
+        let query = parse_query(callback_url)?;
         if let Some(error) = query.get("error") {
             return Err(CodexOAuthError::CallbackRejected {
                 message: query
@@ -651,7 +651,7 @@ fn json_headers() -> BTreeMap<String, String> {
     ])
 }
 
-fn parse_query(url: &str) -> BTreeMap<String, String> {
+fn parse_query(url: &str) -> Result<BTreeMap<String, String>, CodexOAuthError> {
     let query = url
         .split_once('?')
         .map(|(_, query)| query)
@@ -662,9 +662,9 @@ fn parse_query(url: &str) -> BTreeMap<String, String> {
     let mut parsed = BTreeMap::new();
     for pair in query.split('&').filter(|pair| !pair.is_empty()) {
         let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-        parsed.insert(percent_decode(key), percent_decode(value));
+        parsed.insert(percent_decode(key)?, percent_decode(value)?);
     }
-    parsed
+    Ok(parsed)
 }
 
 fn form_urlencode(items: &[(&str, &str)]) -> String {
@@ -688,33 +688,32 @@ fn percent_encode(value: &str) -> String {
         .collect()
 }
 
-fn percent_decode(value: &str) -> String {
+fn percent_decode(value: &str) -> Result<String, CodexOAuthError> {
+    let invalid_encoding = || CodexOAuthError::CallbackRejected {
+        message: "invalid callback query encoding".to_string(),
+    };
     let mut output = Vec::new();
-    let bytes = value.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
-            b'+' => {
-                output.push(b' ');
-                index += 1;
-            }
-            b'%' if index + 2 < bytes.len() => {
-                let hex = &value[index + 1..index + 3];
-                if let Ok(byte) = u8::from_str_radix(hex, 16) {
-                    output.push(byte);
-                    index += 3;
-                } else {
-                    output.push(bytes[index]);
-                    index += 1;
+    let mut bytes = value.bytes();
+    while let Some(byte) = bytes.next() {
+        output.push(match byte {
+            b'+' => b' ',
+            b'%' => {
+                let mut decoded = 0;
+                for _ in 0..2 {
+                    let digit = match bytes.next() {
+                        Some(byte @ b'0'..=b'9') => byte - b'0',
+                        Some(byte @ b'a'..=b'f') => byte - b'a' + 10,
+                        Some(byte @ b'A'..=b'F') => byte - b'A' + 10,
+                        _ => return Err(invalid_encoding()),
+                    };
+                    decoded = (decoded << 4) | digit;
                 }
+                decoded
             }
-            byte => {
-                output.push(byte);
-                index += 1;
-            }
-        }
+            other => other,
+        });
     }
-    String::from_utf8_lossy(&output).into_owned()
+    String::from_utf8(output).map_err(|_| invalid_encoding())
 }
 
 fn base64_url_encode(bytes: &[u8]) -> String {

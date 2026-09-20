@@ -96,39 +96,46 @@ fn codex_pkce_verifier_and_challenge_match_s256_base64url() {
 
 #[tokio::test]
 async fn codex_loopback_callback_validates_state_and_stores_tokens() {
-    let http = MockAuthHttpClient::new([response(
-        200,
-        token_body("access-new", "refresh-new", "acct-new"),
-    )]);
-    let client = client(Arc::clone(&http));
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    let session = CodexLoopbackSession::new(
-        PkceCodes {
-            verifier: "verifier-123".to_string(),
-            challenge: "challenge-123".to_string(),
-        },
-        "state-123",
-    );
-
-    let credential = client
-        .complete_loopback_callback(
-            &session,
+    for (callback, encoded_code) in [
+        (
             "http://localhost:1455/auth/callback?code=code-123&state=state-123",
-            &store,
-        )
-        .await
-        .unwrap_or_abort();
+            "code-123",
+        ),
+        (
+            "co%64e=discarded&co%64e=code%2b%2F%26%3d+%20%C3%a9界&st%61te=state%2d123#code=%FF",
+            "code%2B%2F%26%3D++%C3%A9%E7%95%8C",
+        ),
+    ] {
+        let http = MockAuthHttpClient::new([response(
+            200,
+            token_body("access-new", "refresh-new", "acct-new"),
+        )]);
+        let client = client(Arc::clone(&http));
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let store = CredentialStore::new(temp.path());
+        let session = CodexLoopbackSession::new(
+            PkceCodes {
+                verifier: "verifier-123".to_string(),
+                challenge: "challenge-123".to_string(),
+            },
+            "state-123",
+        );
 
-    assert_eq!(credential.access_token.as_deref(), Some("access-new"));
-    assert_eq!(credential.refresh_token.as_deref(), Some("refresh-new"));
-    assert_eq!(credential.account_id.as_deref(), Some("acct-new"));
-    let requests = http.requests();
-    assert_eq!(requests.len(), 1);
-    assert!(requests[0].url.ends_with("/oauth/token"));
-    assert!(requests[0].body.contains("grant_type=authorization_code"));
-    assert!(requests[0].body.contains("code=code-123"));
-    assert!(requests[0].body.contains("code_verifier=verifier-123"));
+        let credential = client
+            .complete_loopback_callback(&session, callback, &store)
+            .await
+            .unwrap_or_abort();
+
+        assert_eq!(credential.access_token.as_deref(), Some("access-new"));
+        assert_eq!(credential.refresh_token.as_deref(), Some("refresh-new"));
+        assert_eq!(credential.account_id.as_deref(), Some("acct-new"));
+        let requests = http.requests();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].url.ends_with("/oauth/token"));
+        assert!(requests[0].body.contains("grant_type=authorization_code"));
+        assert!(requests[0].body.contains(&format!("code={encoded_code}&")));
+        assert!(requests[0].body.contains("code_verifier=verifier-123"));
+    }
 }
 
 #[tokio::test]
@@ -167,6 +174,36 @@ async fn codex_loopback_rejects_bad_state_missing_code_and_timeout_without_stori
         session.timeout_error(),
         CodexOAuthError::CallbackTimeout { .. }
     ));
+
+    for (name, query) in [
+        ("multibyte key", "%界=value"),
+        ("multibyte value", "code=%界"),
+        ("multibyte second hex digit", "code=%Aé"),
+        ("bare percent", "code=%"),
+        ("truncated escape", "code=%A"),
+        ("invalid hex", "code=%GG"),
+        ("invalid UTF-8", "code=%FF"),
+        ("truncated UTF-8", "code=%C3"),
+    ] {
+        let error = client
+            .complete_loopback_callback(
+                &session,
+                &format!("code=code-123&state=state-123&{query}"),
+                &store,
+            )
+            .await
+            .expect_err(name);
+        assert!(
+            matches!(error, CodexOAuthError::CallbackRejected { message }
+                if message == "invalid callback query encoding"),
+            "{name}"
+        );
+        assert_eq!(http.calls.load(Ordering::SeqCst), 0, "{name}");
+        assert!(
+            store.load(&ProviderId::codex()).unwrap_or_abort().is_none(),
+            "{name}"
+        );
+    }
     assert_eq!(http.calls.load(Ordering::SeqCst), 0);
     assert!(store.load(&ProviderId::codex()).unwrap_or_abort().is_none());
 }

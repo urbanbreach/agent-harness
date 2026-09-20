@@ -19,6 +19,7 @@ terminal QA, and eight full-suite failures reproduced on the pristine baseline.
 | [007: Preserve existing file permissions during atomic edits](007-preserve-modes-on-atomic-edits.md) | P1 | S | None | DONE |
 | [008: Preserve authored permission-rule order through configuration loading](008-preserve-authored-permission-order.md) | P1 | M | 002 (DONE) | DONE |
 | [009: Keep malformed provider payloads out of errors and logs](009-remove-provider-payloads-from-errors.md) | P1 | S | None | DONE |
+| [010: Reject malformed OAuth callback encoding without panicking](010-decode-oauth-callbacks-without-panics.md) | P1 | S | None | DONE |
 
 Planned at `062e5ea8` on 2026-09-14 after comparing the local OpenCode and Senpi
 references. The user confirmed independent child-role permissions under shared
