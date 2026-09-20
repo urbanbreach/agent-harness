@@ -74,7 +74,14 @@ mkdir -p "${session_dir}"
 
 scan_evidence() {
   local secret_hits scan_exit=0
-  secret_hits="$(grep -RIohE --exclude=secret-scan.txt 'sk-|Bearer |BEGIN PRIVATE KEY' "${evidence_dir}" 2>/dev/null)" || scan_exit=$?
+  secret_hits="$(
+    shopt -s dotglob nullglob
+    scan_paths=()
+    for path in "${evidence_dir}"/*; do
+      [[ "${path}" == "${secret_scan_path}" ]] || scan_paths+=("${path}")
+    done
+    grep -RIohE 'sk-|Bearer |BEGIN PRIVATE KEY' "${scan_paths[@]}" 2>/dev/null
+  )" || scan_exit=$?
   case "${scan_exit}" in
     0)
       local match_count

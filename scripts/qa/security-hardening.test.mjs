@@ -257,7 +257,7 @@ function passSettings(evidenceDir, secret) {
 test("QA shell scans fail closed without republishing secret values", async (t) => {
   for (const script of ["harness-qa-dogfood.sh", "harness-qa-live-smoke.sh"]) {
     const live = script.includes("live");
-    const cases = ["finding", "command-failure", "scanner-error", "clean-rerun"];
+    const cases = ["finding", "nested-receipt", "command-failure", "scanner-error", "clean-rerun"];
     if (live) cases.push("tool-failure");
     for (const scenario of cases) {
       await t.test(`${script}: ${scenario}`, async () => {
@@ -276,6 +276,10 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 printf '{}\n' >"$events"
+if [[ "$QA_CASE" == nested-receipt ]]; then
+  mkdir -p "$(dirname "$events")/nested"
+  printf '%s\n' "$QA_SYNTHETIC" >"$(dirname "$events")/nested/secret-scan.txt"
+fi
 if [[ "$QA_CASE" == finding || "$QA_CASE" == command-failure ||
       ( "$QA_CASE" == tool-failure && "$events" == *events-tool.jsonl ) ]]; then
   printf '%s\n' "$QA_SYNTHETIC"
