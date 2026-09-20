@@ -6,6 +6,12 @@ async fn chat_sse_stream_reports_usage_for_supported_shapes() {
     let cases = [
         ("no usage chunk", no_usage_sse_transcript(), None),
         (
+            "explicit sentinel without finish reason",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\ndata: [DONE]\n\n"
+                .to_string(),
+            None,
+        ),
+        (
             "final usage chunk",
             deterministic_sse_transcript(),
             Some(CompletionUsage {

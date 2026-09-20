@@ -2,6 +2,203 @@ use super::*;
 use crate::UnwrapOrAbort;
 
 #[tokio::test]
+async fn openai_stream_terminal_failures_discard_pending_tools() {
+    use OpenAiApiMode::{ChatCompletions as Chat, Responses};
+    use ProviderErrorCategory::{MalformedStream, Other};
+
+    let chat_text = r#"{"choices":[{"delta":{"content":"partial answer"}}]}"#;
+    let chat_tool = r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"filesystem_read","arguments":"{}"}}]}}]}"#;
+    let chat_finish = r#"{"choices":[{"finish_reason":"tool_calls"}]}"#;
+    let response_text = r#"{"type":"response.output_text.delta","delta":"partial answer"}"#;
+    let response_tool = r#"{"type":"response.output_item.added","item":{"type":"function_call","id":"item_1","call_id":"call_1","name":"filesystem_read","arguments":""}}"#;
+    let response_item_done = r#"{"type":"response.output_item.done","item":{"type":"function_call","id":"item_1","call_id":"call_1","name":"filesystem_read","arguments":"{}"}}"#;
+    let response_complete = r#"{"type":"response.completed","response":{"status":"completed"}}"#;
+    let response_failed = r#"{"type":"response.failed","response":{"error":{"message":"private-response-sentinel"}}}"#;
+    let cases = [
+        (Chat, vec![chat_text], MalformedStream, 0),
+        (Chat, vec![chat_text, chat_tool], MalformedStream, 0),
+        (
+            Chat,
+            vec![
+                chat_text,
+                r#"{"choices":[{"finish_reason":"private-response-sentinel"}]}"#,
+            ],
+            MalformedStream,
+            0,
+        ),
+        (
+            Chat,
+            vec![
+                chat_text,
+                chat_tool,
+                chat_finish,
+                r#"{"error":{"message":"private-response-sentinel"}}"#,
+                "[DONE]",
+            ],
+            Other,
+            0,
+        ),
+        (Responses, vec![response_text], MalformedStream, 0),
+        (
+            Responses,
+            vec![response_text, response_tool],
+            MalformedStream,
+            0,
+        ),
+        (
+            Responses,
+            vec![
+                response_text,
+                response_tool,
+                r#"{"type":"response.unknown"}"#,
+            ],
+            MalformedStream,
+            0,
+        ),
+        (
+            Responses,
+            vec![
+                response_text,
+                response_tool,
+                r#"{"type":"error","message":"private-response-sentinel"}"#,
+                "[DONE]",
+            ],
+            Other,
+            0,
+        ),
+        (
+            Responses,
+            vec![
+                response_text,
+                response_tool,
+                response_complete,
+                response_failed,
+                "[DONE]",
+            ],
+            Other,
+            0,
+        ),
+        (
+            Responses,
+            vec![
+                response_text,
+                response_tool,
+                r#"{"type":"response.error","error":{"message":"private-response-sentinel"}}"#,
+                "[DONE]",
+            ],
+            Other,
+            0,
+        ),
+        (
+            Responses,
+            vec![
+                response_text,
+                response_tool,
+                r#"{"type":"response.incomplete"}"#,
+                "[DONE]",
+            ],
+            Other,
+            0,
+        ),
+        (
+            Responses,
+            vec![
+                response_text,
+                response_tool,
+                r#"{"type":"response.completed","response":{"status":"failed"}}"#,
+                "[DONE]",
+            ],
+            Other,
+            0,
+        ),
+        (
+            Responses,
+            vec![
+                response_text,
+                response_tool,
+                r#"{"type":"response.done","response":{"status":"incomplete"}}"#,
+                "[DONE]",
+            ],
+            Other,
+            0,
+        ),
+        (
+            Responses,
+            vec![
+                response_text,
+                response_tool,
+                r#"{"type":"response.in_progress","response":{"status":"cancelled"}}"#,
+                "[DONE]",
+            ],
+            Other,
+            0,
+        ),
+        (
+            Responses,
+            vec![
+                response_text,
+                response_tool,
+                r#"{"type":"response.completed","response":{"status":"in_progress"}}"#,
+                "[DONE]",
+            ],
+            MalformedStream,
+            0,
+        ),
+        (
+            Responses,
+            vec![
+                response_text,
+                response_tool,
+                r#"{"type":"response.done","response":{"status":"private-response-sentinel"}}"#,
+                "[DONE]",
+            ],
+            MalformedStream,
+            0,
+        ),
+        (
+            Responses,
+            vec![
+                response_text,
+                response_tool,
+                response_item_done,
+                response_failed,
+                "[DONE]",
+            ],
+            Other,
+            1,
+        ),
+    ];
+
+    for (mode, frames, category, completed_tools) in cases {
+        let transcript = format!("data: {}\n\n", frames.join("\n\ndata: "));
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(transcript)]);
+        let provider = provider_for_transport_with_mode(transport, "test-secret-key", mode);
+        let events = collect_events(&provider, request_with_single_tool("gpt-4o-mini")).await;
+
+        assert_single_error_category(&events, category);
+        assert!(events.contains(&ProviderStreamEvent::TextDelta(
+            "partial answer".to_string()
+        )));
+        assert!(
+            !events.iter().any(|event| matches!(
+                event,
+                ProviderStreamEvent::Done { .. } | ProviderStreamEvent::DoneWithMetadata { .. }
+            )),
+            "{events:?}"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, ProviderStreamEvent::ToolCallComplete { .. }))
+                .count(),
+            completed_tools,
+            "{events:?}"
+        );
+        assert!(!format!("{events:?}").contains("private-response-sentinel"));
+    }
+}
+
+#[tokio::test]
 async fn openai_responses_offline_transport_malformed_args_fail_closed() {
     let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
         responses_malformed_tool_args_sse_transcript(),
@@ -297,4 +494,24 @@ async fn openai_malformed_stream_and_transport_failures_have_stable_categories()
     .unwrap_or_abort();
     let transport_events = collect_events(&transport_provider, basic_request("gpt-4o-mini")).await;
     assert_single_error_category(&transport_events, ProviderErrorCategory::TransportFailure);
+
+    for (mode, terminal) in [
+        (
+            OpenAiApiMode::ChatCompletions,
+            r#"{"choices":[{"finish_reason":"stop"}]}"#,
+        ),
+        (OpenAiApiMode::Responses, r#"{"type":"response.completed"}"#),
+    ] {
+        let mut response = ScriptedOpenAiResponse::sse(format!("data: {terminal}\n\n"));
+        response.chunks.push(Err("body read failed".to_string()));
+        let transport = ScriptedOpenAiTransport::new([response]);
+        let provider = provider_for_transport_with_mode(transport, "test-secret-key", mode);
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+
+        assert_single_error_category(&events, ProviderErrorCategory::TransportFailure);
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            ProviderStreamEvent::Done { .. } | ProviderStreamEvent::DoneWithMetadata { .. }
+        )));
+    }
 }

@@ -6,6 +6,11 @@ async fn failed_turn_context_preserves_provider_error_partial_output() {
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("partial answer".to_string()),
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "discarded_tool".to_string(),
+                function_name: "shell_run".to_string(),
+                arguments_json: "{}".to_string(),
+            },
             ProviderStreamEvent::error("provider exploded"),
         ],
         vec![
@@ -20,8 +25,14 @@ async fn failed_turn_context_preserves_provider_error_partial_output() {
             },
         ],
     ]);
-    let coordinator =
-        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+    let coordinator = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        test_tool_registry(),
+        shell_only_permission_policy(),
+        vec!["shell.run".to_string()],
+        12,
+    );
 
     let run = coordinator
         .start_run(
@@ -38,7 +49,7 @@ async fn failed_turn_context_preserves_provider_error_partial_output() {
         .request_agent_turn(supervisor_actor(), agent_id.clone(), "partial then error")
         .await
         .unwrap_or_abort();
-    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+    let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
         events.iter().any(|event| {
             matches!(
                 &event.payload,
@@ -49,6 +60,14 @@ async fn failed_turn_context_preserves_provider_error_partial_output() {
         })
     })
     .await;
+    assert!(!events.iter().any(|event| matches!(
+        event.payload,
+        EventV1::ToolCallStarted(_) | EventV1::ToolCallFinished(_) | EventV1::TaskCompleted(_)
+    )));
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::ProviderRequestFinished(data) if data.finish_reason == "error"
+    )));
 
     let follow_up_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "continue after failure")
@@ -85,6 +104,11 @@ async fn failed_turn_context_preserves_provider_error_partial_output() {
         .content
         .contains("Reason: provider exploded"));
     assert!(assistant_marker.content.contains("partial answer"));
+    assert!(assistant_marker.assistant_tool_calls.is_none());
+    assert!(!follow_up
+        .messages
+        .iter()
+        .any(|message| message.role == MessageRole::Tool));
     assert!(follow_up.messages.iter().any(|message| {
         message.role == MessageRole::User && message.content == "partial then error"
     }));

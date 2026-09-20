@@ -38,7 +38,7 @@ pub(super) struct OpenAiResponsesResponsePayload {
     #[serde(default)]
     id: Option<String>,
     #[serde(default)]
-    status: Option<String>,
+    pub(super) status: Option<String>,
     #[serde(default, alias = "session_id")]
     provider_session_id: Option<String>,
     #[serde(default, alias = "cache_id")]
@@ -157,6 +157,8 @@ struct OpenAiTokenDetails {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct OpenAiChatCompletionsChunk {
+    #[serde(default)]
+    pub(super) error: Option<serde::de::IgnoredAny>,
     #[serde(default)]
     pub(super) id: Option<String>,
     #[serde(default)]
