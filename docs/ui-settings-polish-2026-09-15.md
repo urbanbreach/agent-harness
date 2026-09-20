@@ -28,7 +28,7 @@ Service-dependent differences remain in the existing
 
 ## Verification
 
-Open the [xterm.js before/after gallery](../.omo/evidence/ui-refinement-20260915/index.html).
+Open the xterm.js before/after gallery (`.omo/evidence/ui-refinement-20260915/index.html`).
 It includes editable states, compact screens, the live journey, animation samples,
 reference revisions, and source/binary receipts. Artifacts are local and ignored.
 
