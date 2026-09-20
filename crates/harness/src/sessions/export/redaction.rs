@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use harness_core::redact::{redact_value, DefaultRedactor, Redactor};
+use harness_core::redact::{
+    omit_mcp_result_media, redact_value, DefaultRedactor, Redactor, MCP_MEDIA_OMITTED,
+};
 use serde_json::{json, Value};
 
 use super::super::write_json_output;
@@ -79,7 +81,58 @@ fn sanitized_support_export_value(export: &SessionExportBundle) -> serde_json::R
     let mut value = serde_json::to_value(export)?;
     let removed = remove_provider_reasoning_delta_events(&mut value);
     remove_provider_reasoning_delta_replay_counts(&mut value, removed);
+    remove_legacy_mcp_media(&mut value);
     Ok(value)
+}
+
+fn remove_legacy_mcp_media(value: &mut Value) {
+    let Some(events) = value.get_mut("events").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let mut omitted = Vec::new();
+    for event in &mut *events {
+        let Some(output) = event.pointer_mut("/payload/data/output_json") else {
+            continue;
+        };
+        if output
+            .pointer("/server/id")
+            .and_then(Value::as_str)
+            .is_none()
+            || output
+                .get("protocolVersion")
+                .and_then(Value::as_str)
+                .is_none()
+        {
+            continue;
+        }
+        if let Some(payload) = output.get_mut("payload") {
+            let result = if payload.get("result").is_some() {
+                &mut payload["result"]
+            } else {
+                payload
+            };
+            omitted.extend(omit_mcp_result_media(result));
+        }
+    }
+    omitted
+        .sort_unstable_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
+    omitted.dedup();
+    // Legacy renderers duplicated media JSON in task/tool summaries. Only scrub
+    // those text copies; arbitrary application data/blob fields remain intact.
+    // ponytail: scan summaries per distinct payload; index by tool/task if media-heavy exports become costly.
+    for event in events {
+        for pointer in [
+            "/payload/data/output_summary",
+            "/payload/data/result_summary",
+            "/payload/data/output_json/_harness/output_summary",
+        ] {
+            if let Some(Value::String(summary)) = event.pointer_mut(pointer) {
+                for encoded in &omitted {
+                    *summary = summary.replace(encoded, MCP_MEDIA_OMITTED);
+                }
+            }
+        }
+    }
 }
 
 fn remove_provider_reasoning_delta_events(value: &mut Value) -> u64 {
