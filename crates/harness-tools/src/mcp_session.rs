@@ -22,6 +22,21 @@ use crate::text::has_trimmed_content;
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const MCP_SESSION_ID_HEADER: &str = "mcp-session-id";
 const MCP_PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
+// Internal read budgets: reject oversized protocol input before retaining it.
+const MCP_RESPONSE_BYTE_LIMIT: usize = 16 * 1024 * 1024;
+const MCP_HEADER_BYTE_LIMIT: usize = 8 * 1024;
+
+fn response_limit_error() -> ToolError {
+    ToolError::Execution(format!(
+        "MCP response exceeded {MCP_RESPONSE_BYTE_LIMIT}-byte limit"
+    ))
+}
+
+fn header_limit_error() -> ToolError {
+    ToolError::Execution(format!(
+        "MCP header exceeded {MCP_HEADER_BYTE_LIMIT}-byte limit"
+    ))
+}
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct McpSessionMetadata {
@@ -258,7 +273,14 @@ impl StdioMcpSession {
         .await?;
 
         loop {
-            let message = self.read_message().await?;
+            let message = match self.read_message().await {
+                Ok(message) => message,
+                Err(error) => {
+                    // A failed read leaves the protocol unusable; terminate and reap now.
+                    let _ = timeout(self.timeout, self.child.kill()).await;
+                    return Err(error);
+                }
+            };
             if let Some(server_method) = message.get("method").and_then(Value::as_str) {
                 if let Some(message_id) = message.get("id").cloned() {
                     self.respond_method_not_found(message_id, server_method)
@@ -317,14 +339,56 @@ impl StdioMcpSession {
         .tool_err("failed to flush MCP message")
     }
 
+    async fn read_line(&mut self, mut byte_limit: usize) -> Result<String, ToolError> {
+        timeout(self.timeout, async {
+            let mut line = Vec::new();
+            loop {
+                let available = self
+                    .stdout
+                    .fill_buf()
+                    .await
+                    .tool_err("failed to read MCP output")?;
+                if available.is_empty() {
+                    break;
+                }
+                let read = available
+                    .iter()
+                    .position(|byte| *byte == b'\n')
+                    .map_or(available.len(), |index| index + 1);
+                if line
+                    .iter()
+                    .chain(available[..read].iter())
+                    .take(b"content-length:".len())
+                    .map(u8::to_ascii_lowercase)
+                    .eq(b"content-length:".iter().copied())
+                {
+                    byte_limit = byte_limit.min(MCP_HEADER_BYTE_LIMIT);
+                }
+                if read > byte_limit - line.len() {
+                    return Err(if byte_limit <= MCP_HEADER_BYTE_LIMIT {
+                        header_limit_error()
+                    } else {
+                        response_limit_error()
+                    });
+                }
+                line.extend_from_slice(&available[..read]);
+                self.stdout.consume(read);
+                if line.last() == Some(&b'\n') {
+                    break;
+                }
+            }
+            String::from_utf8(line).map_err(|_| {
+                ToolError::Execution("MCP stdio output is not valid UTF-8".to_string())
+            })
+        })
+        .await
+        .map_err(|_| ToolError::Execution("MCP stdio read timed out".to_string()))?
+    }
+
     async fn read_message(&mut self) -> Result<Value, ToolError> {
         loop {
-            let mut line = String::new();
-            let read = timeout(self.timeout, self.stdout.read_line(&mut line))
-                .await
-                .map_err(|_| ToolError::Execution("MCP stdio read timed out".to_string()))?
-                .tool_err("failed to read MCP output")?;
-            if read == 0 {
+            let line = self.read_line(MCP_RESPONSE_BYTE_LIMIT).await?;
+            if line.is_empty() {
                 return Err(ToolError::Execution(
                     "MCP stdio server closed the connection".to_string(),
                 ));
@@ -334,9 +398,13 @@ impl StdioMcpSession {
                 continue;
             }
 
-            if line.to_ascii_lowercase().starts_with("content-length:") {
+            if line
+                .as_bytes()
+                .get(..b"content-length:".len())
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"content-length:"))
+            {
                 let length = parse_content_length(&line)?;
-                return self.read_framed_message(length).await;
+                return self.read_framed_message(length, line.len()).await;
             }
 
             return serde_json::from_str(line.trim()).map_err(|err| {
@@ -345,14 +413,18 @@ impl StdioMcpSession {
         }
     }
 
-    async fn read_framed_message(&mut self, length: usize) -> Result<Value, ToolError> {
+    async fn read_framed_message(
+        &mut self,
+        length: usize,
+        mut header_bytes: usize,
+    ) -> Result<Value, ToolError> {
+        if length > MCP_RESPONSE_BYTE_LIMIT {
+            return Err(response_limit_error());
+        }
         loop {
-            let mut header_line = String::new();
-            let header_read = timeout(self.timeout, self.stdout.read_line(&mut header_line))
-                .await
-                .map_err(|_| ToolError::Execution("MCP stdio read timed out".to_string()))?
-                .map_err(|err| ToolError::Execution(format!("failed to read MCP header: {err}")))?;
-            if header_read == 0 {
+            let header_line = self.read_line(MCP_HEADER_BYTE_LIMIT - header_bytes).await?;
+            header_bytes += header_line.len();
+            if header_line.is_empty() {
                 return Err(ToolError::Execution(
                     "MCP stdio server closed before message body".to_string(),
                 ));
@@ -519,7 +591,8 @@ impl HttpMcpSession {
         let status = response.status();
         if !status.is_success() {
             let headers = response.headers().clone();
-            let body = response.text().await.unwrap_or_default();
+            let bytes = read_http_body(response).await?;
+            let body = String::from_utf8_lossy(&bytes);
             return Err(ToolError::Execution(render_mcp_http_status_error(
                 status, &headers, &body,
             )));
@@ -539,9 +612,8 @@ impl HttpMcpSession {
             return read_sse_response(response, request_id.as_deref()).await;
         }
 
-        let body = response.text().await.map_err(|err| {
-            ToolError::Execution(format!("failed to read MCP HTTP response body: {err}"))
-        })?;
+        let bytes = read_http_body(response).await?;
+        let body = String::from_utf8_lossy(&bytes);
         if !has_trimmed_content(&body) {
             return Ok(Value::Null);
         }
@@ -572,21 +644,48 @@ impl HttpMcpSession {
     }
 }
 
+async fn read_http_body(mut response: reqwest::Response) -> Result<Vec<u8>, ToolError> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .tool_err("failed to read MCP HTTP response body")?
+    {
+        if chunk.len() > MCP_RESPONSE_BYTE_LIMIT - body.len() {
+            return Err(response_limit_error());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 async fn read_sse_response(
     mut response: reqwest::Response,
     request_id: Option<&str>,
 ) -> Result<Value, ToolError> {
     let mut buffer = String::new();
+    let mut response_bytes = 0;
+    let mut scan_offset = 0;
     while let Some(chunk) = response
         .chunk()
         .await
         .tool_err("failed to read MCP SSE chunk")?
     {
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-        while let Some(index) = find_sse_event_boundary(&buffer) {
+        if chunk.len() > MCP_RESPONSE_BYTE_LIMIT - response_bytes {
+            return Err(response_limit_error());
+        }
+        response_bytes += chunk.len();
+        let text = String::from_utf8_lossy(&chunk);
+        if text.len() > MCP_RESPONSE_BYTE_LIMIT - buffer.len() {
+            return Err(response_limit_error());
+        }
+        buffer.push_str(&text);
+        while let Some(index) = find_sse_event_boundary(&buffer[scan_offset..]) {
+            let index = scan_offset + index;
             let event = buffer[..index].to_string();
             let remainder = buffer[index..].trim_start_matches(['\r', '\n']).to_string();
             buffer = remainder;
+            scan_offset = 0;
             if let Some(message) = parse_sse_event(&event)? {
                 if request_id.is_none() {
                     return Ok(message);
@@ -596,6 +695,11 @@ async fn read_sse_response(
                     return Ok(message);
                 }
             }
+        }
+        // Recheck only the suffix that could begin a delimiter split across chunks.
+        scan_offset = buffer.len().saturating_sub(3);
+        while !buffer.is_char_boundary(scan_offset) {
+            scan_offset -= 1;
         }
     }
     Err(ToolError::Execution(
@@ -804,6 +908,135 @@ mod tests {
             harness_core::tool::ToolError::Execution(message)
                 if message.starts_with("failed to read MCP message body:")
         ));
+    }
+
+    #[tokio::test]
+    async fn stdio_response_and_header_limits_are_inclusive() {
+        const LIMIT: usize = 16 * 1024 * 1024;
+        let framed = format!(
+            "Content-Length: {LIMIT}\r\n\r\n\"{}\"",
+            "x".repeat(LIMIT - 2)
+        );
+        let line = format!("\"{}\"\n", "x".repeat(LIMIT - 3));
+        let header = "Content-Length: 2\r\nX-Fixture: ";
+        let headers = format!(
+            "{header}{}\r\n\r\n{{}}",
+            "x".repeat(8192 - header.len() - 4)
+        );
+        for input in [framed, line, headers] {
+            session_with_output(&input)
+                .read_message()
+                .await
+                .unwrap_or_abort();
+        }
+        for (input, expected) in [
+            (
+                format!("Content-Length: {}\r\n", LIMIT + 1),
+                "MCP response exceeded 16777216-byte limit",
+            ),
+            (
+                format!("Content-Length: 2{}\n", " ".repeat(8192)),
+                "MCP header exceeded 8192-byte limit",
+            ),
+            (
+                format!("Content-Length: 2\r\nX-Fixture: {}", "x".repeat(8192)),
+                "MCP header exceeded 8192-byte limit",
+            ),
+            (
+                "x".repeat(LIMIT + 1),
+                "MCP response exceeded 16777216-byte limit",
+            ),
+        ] {
+            let error = session_with_output(&input)
+                .read_message()
+                .await
+                .expect_err("oversized input");
+            assert!(
+                matches!(error, harness_core::tool::ToolError::Execution(message) if message == expected)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn http_response_limits_cover_success_errors_and_sse() {
+        use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
+
+        const LIMIT: usize = 16 * 1024 * 1024;
+        for (status, content_type, extra) in [
+            ("200 OK", "application/json", 0),
+            ("200 OK", "application/json", 1),
+            ("500 Internal Server Error", "text/plain", 1),
+            ("200 OK", "text/event-stream", 0),
+            ("200 OK", "text/event-stream", 1),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .unwrap_or_abort();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap_or_abort());
+            let server = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap_or_abort();
+                let mut stream = tokio::io::BufReader::new(stream);
+                let mut body_length = 0;
+                loop {
+                    let mut line = String::new();
+                    stream.read_line(&mut line).await.unwrap_or_abort();
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if let Some(length) = line.to_ascii_lowercase().strip_prefix("content-length:")
+                    {
+                        body_length = length.trim().parse::<usize>().unwrap_or_abort();
+                    }
+                }
+                stream
+                    .read_exact(&mut vec![0; body_length])
+                    .await
+                    .unwrap_or_abort();
+                let mut stream = stream.into_inner();
+                stream.write_all(format!("HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nConnection: close\r\n\r\n").as_bytes()).await.unwrap_or_abort();
+                let (prefix, suffix, padding) = if content_type == "text/event-stream" {
+                    ("data: {\"id\":\"1\",\"result\":\"", "\"}\n\n", b'x')
+                } else {
+                    ("{}", "", b' ')
+                };
+                stream.write_all(prefix.as_bytes()).await.unwrap_or_abort();
+                let mut remaining = LIMIT + extra - prefix.len() - suffix.len();
+                let chunk = [padding; 8192];
+                while remaining > 0 {
+                    let count = remaining.min(chunk.len());
+                    if stream.write_all(&chunk[..count]).await.is_err() {
+                        return;
+                    }
+                    remaining -= count;
+                }
+                let _ = stream.write_all(suffix.as_bytes()).await;
+            });
+            let mut session = super::HttpMcpSession {
+                client: reqwest::Client::new(),
+                endpoint,
+                headers: BTreeMap::new(),
+                timeout: std::time::Duration::from_secs(10),
+                next_id: 1,
+                session_id: None,
+                metadata: super::McpSessionMetadata::default(),
+            };
+            let result = session
+                .post_jsonrpc(Some("1".into()), serde_json::json!({"id":"1"}))
+                .await;
+            server.await.unwrap_or_abort();
+            if extra == 0 {
+                assert!(
+                    result.is_ok(),
+                    "at-limit {content_type}: {:?}",
+                    result.err()
+                );
+            } else {
+                assert!(
+                    matches!(result, Err(harness_core::tool::ToolError::Execution(message))
+                    if message == "MCP response exceeded 16777216-byte limit")
+                );
+            }
+        }
     }
 
     #[tokio::test]

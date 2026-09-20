@@ -153,3 +153,52 @@ async fn shell_cancellation_terminates_command_after_process_start() {
         "cancelled shell must not create its delayed marker"
     );
 }
+
+#[tokio::test]
+async fn shell_capture_bounds_combined_pipes_and_terminates_overflow() {
+    const LIMIT: usize = 16 * 1024 * 1024;
+    for extra in [0, 1] {
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let bash = coordinator_registry(ShellAllowlist::default())
+            .get("bash")
+            .unwrap_or_abort();
+        // Both writers must make progress; sequential pipe reads deadlock here.
+        let command = format!(
+            "python3 -c 'import os,pathlib,sys,threading; \
+             pathlib.Path(\"shell-process.pid\").write_text(str(os.getpid())); \
+             t=threading.Thread(target=lambda: sys.stderr.write(\"e\"*{})); \
+             t.start(); sys.stdout.write(\"o\"*{}); sys.stdout.flush(); t.join(); \
+             {}'",
+            LIMIT / 2,
+            LIMIT / 2 + extra,
+            if extra == 0 {
+                "pass"
+            } else {
+                "import time; time.sleep(60); pathlib.Path(\"late-marker.txt\").touch()"
+            },
+        );
+        let result = bash
+            .call(
+                test_context(temp.path(), "run-shell-capture", "toolcall-shell-capture"),
+                json!({"command": command, "timeout": 5_000}),
+            )
+            .await;
+        let process = started_process(&temp.path().join("shell-process.pid")).await;
+        if extra == 0 {
+            let result = result.unwrap_or_abort();
+            let metadata = result.structured_json.unwrap_or_abort();
+            assert_eq!(metadata["stdout_bytes"], LIMIT / 2);
+            assert_eq!(metadata["stderr_bytes"], LIMIT / 2);
+            assert_eq!(metadata["truncated"], true);
+            assert_eq!(result.artifacts.len(), 1);
+        } else {
+            let error = result.expect_err("one extra byte must fail capture");
+            assert!(
+                matches!(error, harness_core::tool::ToolError::Execution(message)
+                if message == "command output exceeded 16777216-byte capture limit")
+            );
+            assert!(!temp.path().join("late-marker.txt").exists());
+        }
+        assert_process_exited(process).await;
+    }
+}
