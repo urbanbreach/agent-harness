@@ -17,6 +17,7 @@ terminal QA, and eight full-suite failures reproduced on the pristine baseline.
 | [005: Redact tool artifacts before writing them to disk](005-redact-persisted-tool-artifacts.md) | P1 | M | None | DONE |
 | [006: Validate restore targets before changing workspace files](006-contain-workspace-restores.md) | P1 | M | 004 (DONE) | DONE |
 | [007: Preserve existing file permissions during atomic edits](007-preserve-modes-on-atomic-edits.md) | P1 | S | None | DONE |
+| [008: Preserve authored permission-rule order through configuration loading](008-preserve-authored-permission-order.md) | P1 | M | 002 (DONE) | DONE |
 
 Planned at `062e5ea8` on 2026-09-14 after comparing the local OpenCode and Senpi
 references. The user confirmed independent child-role permissions under shared

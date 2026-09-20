@@ -133,6 +133,7 @@ pub(super) fn public_agent_to_profile(
     agent: PublicAgentConfig,
     default_model_ref: Option<&str>,
     base: ProfileConfig,
+    order: &PermissionOrder,
 ) -> Result<ProfileConfig, ConfigError> {
     let model_ref_explicit = agent.model.is_some() || base.model_ref_explicit;
     let model_ref = agent
@@ -161,7 +162,7 @@ pub(super) fn public_agent_to_profile(
         options,
         permissions: agent
             .permission
-            .map(translate_public_profile_permissions)
+            .map(|permissions| translate_public_profile_permissions(permissions, order))
             .transpose()?
             .or(base.permissions),
         max_iters: agent.max_iters.or(base.max_iters),
@@ -314,18 +315,26 @@ fn librarian_permissions() -> ProfilePermissions {
 
 fn translate_public_profile_permissions(
     permissions: PublicProfilePermissions,
+    order: &PermissionOrder,
 ) -> Result<ProfilePermissions, ConfigError> {
     let edit = public_rule_mode(&permissions.edit);
     let shell = public_rule_mode(&permissions.bash);
     let task = public_rule_mode(&permissions.task);
     let read = public_rule_mode(&permissions.read);
     let external_directory = public_rule_mode(&permissions.external_directory);
-    let edit_rules = public_selector_rules("edit", permissions.edit)?;
-    let shell_rules = public_selector_rules("bash", permissions.bash)?;
-    let task_rules = public_selector_rules("task", permissions.task)?;
-    let read_rules = public_selector_rules("read", permissions.read)?;
-    let external_directory_rules =
-        public_selector_rules("external_directory", permissions.external_directory)?;
+    let edit_rules = public_selector_rules("edit", permissions.edit, order.get("edit"))?;
+    let shell_rules = public_selector_rules(
+        "bash",
+        permissions.bash,
+        order.get_or_alias("bash", "shell"),
+    )?;
+    let task_rules = public_selector_rules("task", permissions.task, order.get("task"))?;
+    let read_rules = public_selector_rules("read", permissions.read, order.get("read"))?;
+    let external_directory_rules = public_selector_rules(
+        "external_directory",
+        permissions.external_directory,
+        order.get("external_directory"),
+    )?;
 
     Ok(ProfilePermissions {
         fallback: permissions.fallback,

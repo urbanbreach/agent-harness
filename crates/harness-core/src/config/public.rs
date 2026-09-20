@@ -2,6 +2,7 @@
 use schemars::generate::SchemaSettings;
 use serde_json::Value; // allow: DYNAMIC — type alias for internal JSON processing in helper functions
 
+use super::permission_order::PermissionOrder;
 use super::*;
 
 use self::agents::{public_agent_to_profile, shipped_agent_profiles};
@@ -309,17 +310,31 @@ fn public_rule_mode(value: &Option<PublicRulePermissionValue>) -> Option<Permiss
 fn public_selector_rules(
     kind: &str,
     value: Option<PublicRulePermissionValue>,
+    order: &PermissionOrder,
 ) -> Result<Vec<PermissionSelectorRule>, ConfigError> {
     match value {
-        Some(PublicRulePermissionValue::Rules(rules)) => rules
-            .into_iter()
-            .map(|(selector, mode)| {
-                Ok(PermissionSelectorRule {
-                    selector: public_permission_selector(kind, &selector)?,
-                    mode,
+        Some(PublicRulePermissionValue::Rules(mut rules)) => {
+            let mismatch = || {
+                ConfigError::InvalidReference(format!(
+                    "permission `{kind}` source order does not match validated selectors"
+                ))
+            };
+            let PermissionOrder::Selectors(keys) = order else {
+                return Err(mismatch());
+            };
+            if keys.len() != rules.len() {
+                return Err(mismatch());
+            }
+            keys.iter()
+                .map(|selector| {
+                    let mode = rules.remove(selector).ok_or_else(mismatch)?;
+                    Ok(PermissionSelectorRule {
+                        selector: public_permission_selector(kind, selector)?,
+                        mode,
+                    })
                 })
-            })
-            .collect(),
+                .collect()
+        }
         Some(PublicRulePermissionValue::Mode(_)) | None => Ok(Vec::new()),
     }
 }
@@ -458,6 +473,7 @@ fn default_internal_integrations_config() -> IntegrationsConfig {
 
 pub(super) fn translate_public_runtime_root(
     root: Value,
+    order: &PermissionOrder,
 ) -> Result<(Value, Vec<String>), ConfigError> {
     let object = root.as_object().ok_or(ConfigError::InvalidRootObject)?;
     validate_public_root_config_object(object)?;
@@ -513,7 +529,15 @@ pub(super) fn translate_public_runtime_root(
         })?;
         agents.insert(
             name.to_string(),
-            public_agent_to_profile(public_agent, model.as_deref(), base)?,
+            public_agent_to_profile(
+                public_agent,
+                model.as_deref(),
+                base,
+                order
+                    .get("agent")
+                    .get(name)
+                    .get_or_alias("permission", "permissions"),
+            )?,
         );
     }
 
@@ -532,12 +556,20 @@ pub(super) fn translate_public_runtime_root(
     let mut permissions = serde_json::to_value(default_internal_permissions_config())
         .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
     if let Some(value) = object.get("permissions") {
-        merge_config_value(&mut permissions, value.clone());
+        let mut value = value.clone();
+        normalization::expand_layer_permission_rules(
+            &mut value,
+            order.get("permissions").get("rules"),
+        )?;
+        merge_config_value(&mut permissions, value);
     }
     if let Some(value) = object.get("permission") {
         merge_config_value(
             &mut permissions,
-            normalization::translate_public_permission_value(value.clone())?,
+            normalization::translate_public_permission_value(
+                value.clone(),
+                order.get("permission"),
+            )?,
         );
     }
     translated.insert("permissions".to_string(), permissions);

@@ -24,6 +24,7 @@ mod model_limit_resolution;
 mod model_limits;
 mod model_selection;
 mod model_types;
+mod permission_order;
 mod provider;
 mod public;
 mod registries;

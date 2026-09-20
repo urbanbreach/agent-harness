@@ -97,6 +97,10 @@ Skills supply instructions and cannot grant tools. Worker membership checks also
 
 Rules are ordered; **last match wins**. When no rule matches a permission+pattern pair, the default action is **ask**. Config scalars (`permission.bash: "allow"`) expand to `pattern: "*"`. Pattern maps (`permission.bash: { "git *": "allow", "*": "ask" }`) expand one rule per entry.
 
+Pattern maps follow their authored JSON/JSONC order, including named-agent permissions and the `shell` alias for `bash`. Later configuration layers retain inherited patterns, then append their own patterns in authored order. An overridden pattern moves to its later position. A scalar replaces that kind's pattern map; omitted kinds remain inherited. Legacy rule arrays keep their explicit order and replace earlier arrays.
+
+This corrects older loaders that accidentally sorted pattern keys. Configurations relying on that sorting must put broad rules first and intended exceptions last: use `{ "*": "allow", "git status": "deny" }` to deny `git status`. Reversing those entries allows it.
+
 Selector-capable kinds are `bash`, `edit`, `task`, `read`, and `external_directory`. Scalar-only kinds are `question`, `webfetch`, `websearch`, `codesearch`, `lsp`, and `doom_loop`.
 
 The task tool selects a named `subagent_type` and has no category router. Task permission is evaluated before every child start or continuation.
