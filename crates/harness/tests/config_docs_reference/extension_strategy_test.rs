@@ -56,10 +56,10 @@ fn extension_strategy_documents_command_hook_lifecycle_map() {
 
     // assert: command stance and replay/permission boundaries are explicit.
     for anchor in [
-        "V1 slash commands in the TUI are first-party UI actions",
-        "Markdown command directories, command file\nschemas, `$ARGUMENTS` substitution",
-        "command interpolation are\nintentionally_unsupported for strict V1",
-        "Because markdown command interpolation is unsupported, it\ncannot execute during replay",
+        "TUI slash commands are built-in UI actions",
+        "V1 does not execute markdown command\nfiles, substitute `$ARGUMENTS`",
+        "interpolate commands",
+        "or run during replay",
         "do not append events directly, schedule\ntasks directly, register tools, resolve permissions, or run during replay",
         "Critical hook failure fails closed at the coordinator boundary",
         "Noncritical hook failure records metadata",
@@ -124,7 +124,7 @@ fn extension_strategy_documents_descriptor_only_manifest_seam() {
 
     // assert: docs describe descriptor-only scope and no runtime host behavior.
     for anchor in [
-        "descriptor-only typed extension manifest seam",
+        "A typed extension manifest describes capabilities but does not execute\nplugins",
         "schemaVersion: \"extension.manifest.v1\"",
         "does not discover manifests at runtime,\nregister tools, execute commands, launch MCP servers, invoke provider\ndecorators, load external code, or mutate sessions",
         "Replay support is static metadata rendering",
@@ -149,18 +149,6 @@ fn extension_strategy_documents_descriptor_only_manifest_seam() {
             .contains("Replay never discovers manifests, loads extension code, registers tools"),
         "sessions/replay docs must forbid manifest code loading during replay"
     );
-    for descriptor_only_truth_anchor in [
-        "Extension tool descriptors declare public permission names, but extension-provided\n  tools are not registered or executed in V1 and no runtime permission path\n  exists yet.",
-        "Replay support for extension manifests is limited to static descriptor/config\n  metadata; it does not render extension tool events or load extension code.",
-        "Extension-provided tools are not registered or executed in V1; no runtime permission path exists yet",
-        "Replay support is descriptor/config metadata only and does not render extension tool events",
-    ] {
-        assert!(
-            extension.contains(descriptor_only_truth_anchor),
-            "extension strategy missing descriptor-only truth anchor: {descriptor_only_truth_anchor}"
-        );
-    }
-
     // assert: checked-in schema is the V1 descriptor schema and covers every class.
     assert_eq!(
         schema["title"], "ExtensionManifestV1",

@@ -31,7 +31,7 @@ fn event_variants_from_source(source: &str) -> BTreeSet<String> {
 }
 
 fn documented_event_variants(doc: &str) -> BTreeSet<String> {
-    let mut section = doc.split("### Event Types\n").nth(1).unwrap_or_abort();
+    let mut section = doc.split("### Event types\n").nth(1).unwrap_or_abort();
     if let Some((current, _rest)) = section.split_once("\n## ") {
         section = current;
     }

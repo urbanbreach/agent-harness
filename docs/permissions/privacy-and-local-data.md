@@ -1,31 +1,51 @@
 # Privacy and local data
 
-Harness is local-first. It writes sessions, artifacts, config, prompts, and skills locally. Configured provider/MCP calls, explicit network tools, and automatic model-catalog downloads can generate outgoing traffic.
+Harness stores sessions, artifacts, config, prompts, and skills locally. Live
+provider requests, enabled MCP servers, network tools, and model-catalog refreshes
+can send data over the network.
 
-## Data egress
+## Outgoing requests
 
-Configured provider requests and enabled MCP server calls can send data out. `webfetch`, `websearch`, and `codesearch` are explicit tool calls under permission policy.
+| Action | Network behavior |
+| --- | --- |
+| Live provider turn | Sends the selected context to the configured provider. |
+| MCP tool call | Uses the configured server and transport. |
+| `webfetch`, `websearch`, `codesearch` | Sends a tool request under permission policy. |
+| Live model-catalog initialization | May download metadata from `https://models.dev/api.json`. |
+| Mock TUI model picker | Reads the embedded catalog without a network request. |
+| Replay, session inspection, doctor, support export | Reads local data without provider or MCP requests. |
 
-Ordinary live catalog initialization can download model metadata from `https://models.dev/api.json`. A valid cache is reused for five minutes; a valid stale cache is served immediately while refreshing in the background. Without a usable cache, initialization attempts a download and falls back to bundled metadata on failure. `HARNESS_MODELS_URL` and `HARNESS_MODELS_PATH` override the source and cache location; `HARNESS_DISABLE_MODELS_FETCH=1` selects only the embedded catalog. Mock TUI model-picker initialization always uses the embedded catalog without invoking this environment-backed loader.
+The model catalog uses a five-minute cache. It serves a valid stale cache while
+refreshing in the background. Without a usable cache, it tries a download and
+falls back to bundled metadata on failure.
 
-Replay, session inspection, doctor, and support export remain local/offline; live provider checks require a separate operator action.
+Set `HARNESS_DISABLE_MODELS_FETCH=1` to use only the embedded catalog.
+`HARNESS_MODELS_URL` changes the source; `HARNESS_MODELS_PATH` changes the cache
+location.
 
-## Storage paths
+## Storage
 
-Runtime config lives in `harness.json` / `harness.jsonc` under XDG config or project-local paths. TUI config lives in `tui.json` / `tui.jsonc`. Project prompt assets and skills live under `.agent-harness/agents` and `.agent-harness/skills`. Session logs and artifacts live under the configured session directory and per-run artifact directories.
+| Data | Location |
+| --- | --- |
+| Runtime config | XDG or project `harness.json` and `harness.jsonc` files |
+| Keyboard config | XDG or project `tui.json` and `tui.jsonc` files |
+| Project prompts and skills | `.agent-harness/agents` and `.agent-harness/skills` |
+| Events and artifacts | The configured session directory and its per-run directories |
+| Stored credentials | `credentials/<authProvider>.json` under the platform data directory |
 
-## Redaction
+Use `harness config sources` to find active configuration files. Credential files
+use restrictive permissions. Logout removes stored credentials, but leaves
+configured environment and inline credential fallbacks in place.
 
-Redaction is implemented in `crates/harness-core/src/redact.rs`. Support export includes a support export redaction manifest and scans for API keys, bearer tokens, cookies, PEM blocks, raw provider credentials, and hidden prompt/config instruction values. Share the support bundle instead of raw `events.jsonl` when possible.
+## Redaction and sharing
 
-## No telemetry
+The redactor lives in [`crates/harness-core/src/redact.rs`](../../crates/harness-core/src/redact.rs).
+Support export redacts API keys, bearer tokens, cookies, PEM blocks, provider
+credentials, and hidden prompt or config instruction values. It includes a
+redaction manifest and refuses to write a bundle if the final secret scan fails.
+Use [support export](../architecture/sessions-and-replay.md#cli-inspection)
+instead of sharing raw `events.jsonl`.
 
-There is no telemetry, cloud analytics, billing, web share, or hosted collaboration surface in V1 unless explicitly added later by a new roadmap item and implementation. Doctor does not make provider network calls.
-
-
-## Operator checklist
-
-1. Review provider/MCP config before live calls.
-2. Prefer mocked prompt tests for deterministic evidence.
-3. Export redacted support bundles for debugging.
-4. Treat approved `bash` and `edit` actions as local mutation authority.
+V1 has no telemetry, cloud analytics, billing, web sharing, or hosted
+collaboration. Review provider and MCP settings before live use. An approved
+shell command can perform host I/O; permission approval is not OS confinement.

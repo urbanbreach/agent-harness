@@ -1,14 +1,15 @@
 # Extension strategy
 
-Harness keeps the core small and gives every extension surface explicit
-authority, configuration, and evidence. Current V1 extension paths are
-config-backed MCP servers, markdown skills, coordinator-owned native lifecycle
-hooks, and a descriptor-only typed extension manifest seam. The final-slice
-closeout ships the manifest as schema/validation/replay metadata only; markdown
-command files and extension/plugin command hooks remain intentionally
-unsupported or post-V1 runtime behavior.
+Harness supports config-backed MCP servers, markdown skills, and native lifecycle
+hooks. A typed extension manifest describes capabilities but does not execute
+plugins. Markdown command files and extension command hooks remain unsupported.
 
-## Current safe paths
+| Extension | What it can do | Where to configure it |
+| --- | --- | --- |
+| MCP server | Register concrete tools from an enabled server | `mcp` in runtime config |
+| Markdown skill | Add instructions and declared resources when activated | Configured skill roots |
+| Native lifecycle hook | Run an allowed command at a coordinator lifecycle point | Runtime hook config |
+| Typed extension manifest | Describe capabilities and static replay metadata | `extension.manifest.v1` descriptors |
 
 ## Config-backed MCP
 
@@ -27,8 +28,8 @@ is a comma- or newline-separated list of relative file paths under the skill
 directory. Directories, globs, absolute paths, `..`, and symlink escapes are
 rejected before reading. V1 caps each activation to 5 files, 64 KiB per file, 200
 KiB total loaded bytes, and path depth 4 under the skill root. Loaded resource
-text is redacted and appended to the normal skill activation body, so catalog,
-doctor, and support surfaces still expose compact metadata only.
+text is redacted and appended to the normal skill activation body. The catalog,
+doctor, and support output expose compact metadata only.
 
 Harness-owned skill roots stay first for V1. External editor/assistant/agent
 roots such as `.external-editor/skills`, `.assistant/skills`, and
@@ -39,18 +40,14 @@ listed compatibility roots are imported after Harness-owned and other
 non-compatibility roots, so they cannot silently shadow shipped or Harness-owned
 skills.
 
-## Native lifecycle hooks and V1 command stance
+## Native lifecycle hooks and commands
 
-V1 command/hook stance: V1 slash commands in the TUI are first-party UI actions, not executable
-markdown-defined command files. Markdown command directories, command file
-schemas, `$ARGUMENTS` substitution, rules/context glob injection with
-session-scoped priority or consume semantics, and command interpolation are
-intentionally_unsupported for strict V1 unless a later typed manifest/command
-seam re-scopes them. Because markdown command interpolation is unsupported, it
-cannot execute during replay.
+TUI slash commands are built-in UI actions. V1 does not execute markdown command
+files, substitute `$ARGUMENTS`, interpolate commands, or inject rules by source
+file, glob, priority, or consume policy. These command/hook formats remain
+unsupported.
 
-The shipped hook surface is the coordinator-owned native lifecycle hook list in
-runtime config. Hooks observe lifecycle points through allowlisted commands after
+Runtime config lists the native lifecycle hooks. The coordinator owns their execution. Hooks observe lifecycle points through allowlisted commands after
 the coordinator reaches that point; they do not append events directly, schedule
 tasks directly, register tools, resolve permissions, or run during replay.
 Critical hook failure fails closed at the coordinator boundary for the owning
@@ -72,19 +69,19 @@ execution while preserving hook metadata already in events.
 | `provider_request_started` | native | provider request params | Runs around provider request construction/execution; provider transport remains owned by the coordinator/provider abstraction. |
 | `provider_request_finished` | native | provider request result | Records provider boundary metadata without letting hooks mutate replayed provider output. |
 | `compaction_requested` | native | compaction request | Critical failure cancels compaction; successful output may provide `compaction_summary:` under coordinator validation. |
-| `compaction_written` | native | compaction result | Observes checkpoint artifact write; event log remains append-only. |
-| `compaction_applied` | native | compaction result | Observes active context checkpoint application; replay derives this from recorded events/artifacts. |
-| `compaction_failed` | native | compaction result | Observes failed compaction; no retry loop is created by the hook surface. |
+| `compaction_written` | native | compaction result | Legacy lifecycle name; current compaction commits `SessionCompaction` without a checkpoint artifact. |
+| `compaction_applied` | native | compaction result | Observes context application; replay reads the committed compaction event. |
+| `compaction_failed` | native | compaction result | Observes failed compaction without starting a retry loop. |
 | `subagent_spawned` | native | subagent lifecycle | Coordinator-owned spawn event and permission rules remain authoritative. |
 | `subagent_finished` | native | subagent lifecycle | Coordinator records task/subagent terminal metadata; hooks cannot bypass worker redelegation policy. |
 | `permission_requested` | native | permission preflight | Observes a pending permission; hook output cannot grant permission. |
 | `permission_resolved` | native | permission result | Observes operator/coordinator decision after resolution; hook output cannot change the recorded decision. |
-| `markdown_command_file` | intentionally_unsupported | command seam | No V1 command file schema, `$ARGUMENTS` substitution, or interpolation execution. |
-| `rules_context_injection` | intentionally_unsupported | context transform | No V1 source-file/glob/priority/consume rules injection surface. |
-| `typed_extension_command_hook` | post_v1 | extension manifest seam | Future descriptor/plugin work must route through coordinator permissions, artifacts, and replay-safe metadata first. |
+| `markdown_command_file` | intentionally_unsupported | command loading | No V1 command file schema, `$ARGUMENTS` substitution, or interpolation execution. |
+| `rules_context_injection` | intentionally_unsupported | context transform | No V1 rules injection by source file, glob, priority, or consume policy. |
+| `typed_extension_command_hook` | post_v1 | extension manifest | Future descriptor/plugin work must route through coordinator permissions, artifacts, and replay-safe metadata first. |
 | `fallback_external_plugin_hook` | post_v1 | extension/plugin runtime | Arbitrary executable plugins and upstream command-hook compatibility remain post-V1. |
 
-## Typed extension manifest seam (descriptor-only V1)
+## Typed extension manifest descriptors
 
 `ExtensionManifestV1` is a typed descriptor and schema, not a plugin host. The
 schema lives at `configs/extension-manifest.v1.schema.json` and uses
@@ -108,14 +105,6 @@ extension package or executing extension code. Any future extension-provided
 behavior must enter through the existing native registry, coordinator-owned
 permission checks, artifact/redaction paths, and replay side-effect boundaries.
 
-Extension tool descriptors declare public permission names, but extension-provided
-  tools are not registered or executed in V1 and no runtime permission path
-  exists yet.
-Replay support for extension manifests is limited to static descriptor/config
-  metadata; it does not render extension tool events or load extension code.
-Extension-provided tools are not registered or executed in V1; no runtime permission path exists yet.
-Replay support is descriptor/config metadata only and does not render extension tool events.
-
 ## Core runtime behavior vs disableable built-in capabilities
 
 | Surface | Classification | Stable id | Default state |
@@ -130,21 +119,26 @@ Replay support is descriptor/config metadata only and does not render extension 
 
 ## Built-in capability order and state policy
 
-Order is intentional where it affects runtime behavior: coordinator event append and permission checks own authority before native tool registration, native tool registration owns tool ids before agent prompt assembly advertises tool use, and compaction consumes replay-derived event/tool context after those events exist. Disableable built-in skill rows are sorted by stable id so doctor, docs, and tests stay deterministic; skill activation still respects the operator-requested `load_skills` order.
+The coordinator owns event appends and permission checks. The native registry
+assigns tool IDs before prompt assembly advertises them. Compaction reads event
+and tool context only after those events exist.
+
+Disableable built-in skill rows are sorted by stable id so doctor, docs, and tests
+stay deterministic. Skill activation respects the operator-requested
+`load_skills` order.
 
 V1 disableable built-in skills write no JSONL or artifact state by themselves.
 They can change prompt context only after explicit `skill` or
 `task(load_skills=[...])` activation, and that activity is represented by the
 existing event schema and tool output summaries. Bundled resources follow the
 same activation-only contract and are capped/redacted before they enter the
-skill body. Any future release-blocking built-in that writes JSONL or artifact
-state must document its `schema_version`, migration policy, and replay behavior
-before the roadmap box can stay checked. Existing release evidence artifacts
-document their schemas in the owning surface: event logs in `docs/architecture/architecture.md` and `docs/architecture/sessions-and-replay.md`, native tool artifacts in
+skill body. A built-in that writes JSONL or artifacts must document its `schema_version`,
+migration policy, and replay behavior. Existing release evidence artifacts
+document their schemas in the relevant guide: event logs in `docs/architecture/architecture.md` and `docs/architecture/sessions-and-replay.md`, native tool artifacts in
 `docs/tools/native-tool-catalog.md`, simulation artifacts in `docs/testing/testing.md`, and
 lane-specific perf/PTY artifacts in `docs/testing/budgets.md` and `docs/testing/testing.md`.
 
-## Deferred seams
+## Unsupported extension execution
 
 The typed extension manifest is descriptor-only in V1. Runtime discovery,
 extension package loading, executable command hooks, MCP launch from manifests,
@@ -152,10 +146,15 @@ provider decorator invocation, and extension-provided tool registration remain
 post-V1 until a separate host design proves command mediation, sandboxing,
 permissions, artifacts, redaction, and replay safety.
 
-Markdown slash-command schemas, `$ARGUMENTS` substitution, command interpolation policy, rules/context file injection, and migration of future extension-provided command hooks onto the typed manifest seam remain intentionally unsupported or post-V1 as labeled in the lifecycle map above. Existing coordinator lifecycle hooks are native runtime hooks, not a plugin host and not a markdown command system.
+The lifecycle map lists unsupported markdown commands, interpolation, and rules
+injection. Existing lifecycle hooks run through the coordinator.
 
-Arbitrary executable plugins, upstream plugin compatibility, browser/media automation, OAuth MCP, server/share/enterprise surfaces, and broad cloud/telemetry/billing features remain post-V1.
+Executable plugins, upstream plugin compatibility, browser and media automation,
+OAuth MCP, server hosting, session sharing, enterprise administration, cloud
+services, telemetry, and billing remain post-V1.
 
-## Evidence stance
+## Verification requirements
 
-Every extension surface needs a source of truth, doctor visibility, docs, deterministic tests, and honest failure modes before it can be called release-quality.
+Document each supported extension, its doctor output, its permission checks, and
+its failure behavior. Verify those contracts with deterministic tests before
+claiming release support.

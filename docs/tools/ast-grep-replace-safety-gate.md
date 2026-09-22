@@ -1,10 +1,11 @@
-# ADR: `ast_grep_replace` edit-safety gate
+# Structural replacement safety
 
-Status: accepted for strict V1 closeout G005 (2026-05-30)
+Accepted for G005 on 30 May 2026.
 
 ## Decision
 
-Ship `ast_grep_replace` as a first-party native tool only through the existing edit authority boundary.
+`ast_grep_replace` uses the same edit permission and workspace validation as
+other native file-changing tools.
 
 The tool defaults to `mode: "dry_run"`. The ast-grep CLI is invoked only to produce JSON rewrite matches and replacement byte ranges; Harness never passes an update/apply flag that lets the adapter mutate the live workspace. `mode: "apply"` validates the planned ranges against the current file contents and writes through Harness workspace path checks, atomic writes, and diff artifacts.
 

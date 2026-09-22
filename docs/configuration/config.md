@@ -1,22 +1,22 @@
 # Config reference
 
-The harness public config contract uses harness-centered naming throughout.
-Canonical runtime config discovery uses `harness.json` / `harness.jsonc`; TUI-only
-settings use `tui.json` / `tui.jsonc`.
+Use `harness.json` or `harness.jsonc` for runtime settings. Use `tui.json` or
+`tui.jsonc` for keyboard settings. The generated schemas define the accepted keys:
 
-The generated JSON schemas are the source of truth:
+- [Runtime schema](../../configs/config.json)
+- [TUI schema](../../configs/tui.json)
 
-- runtime: `configs/config.json`
-- tui: `configs/tui.json`
+Start with the [starter](#minimal-starter), then check [config precedence](#discovery-and-precedence).
+The reference tables cover [runtime keys](#runtime-top-level-keys),
+[keybindings](#tui-default-bindings), [permissions](#permission-policy),
+[compaction](#provider-context-compaction-expectations), and [retries](#provider-retry-policy).
 
 ## Minimal starter
 
-Start with `configs/harness.example.jsonc`. It keeps the happy path small: one
-Codex OAuth-backed OpenAI-compatible provider, two GPT-family model entries,
-explicit tool-call capability metadata, one generic parent with bounded named subagents, scalar permission
-mode, and optional MCP. The full file is the canonical example; the excerpt
-below is intentionally abridged but keeps the fields that affect first-run
-behavior.
+Copy [`configs/harness.example.jsonc`](../../configs/harness.example.jsonc).
+It defines a Codex OAuth provider, a default model, the parent and named subagents,
+and an optional disabled MCP server. This shorter example omits extra model and
+formatter entries:
 
 ```jsonc
 {
@@ -75,15 +75,13 @@ behavior.
 }
 ```
 
-Only write the settings you want to own. The generic parent and named subagents
+Only set values you need to override. The generic parent and named subagents
 inherit their shipped prompts, permissions, and tools unless the corresponding
 `agent` entry overrides them. Keep larger model catalogs, tool lists, background-task knobs, and
 compaction defaults out of day-to-day configs unless a project needs a deliberate
 override.
 
-Reasoning-effort presets use the same explicit `variants` shape as the upstream
-local-coding config style.
-Each variant is a named model option preset; for OpenAI-compatible reasoning
+Each `variants` entry is a named model preset; for OpenAI-compatible reasoning
 models, set `metadata.reasoningEffort` so the TUI can display and select variants
 like `low`, `medium`, or `high`. Use additional variant fields only for
 non-standard names or per-variant limits, modalities, or options.
@@ -105,10 +103,9 @@ back to `apiKeyEnv` and inline `apiKey`. Stored credentials live outside
 `credentials/{authProvider}.json`, are atomically replaced, and use restrictive
 file permissions: POSIX `0600`, and on Windows a protected owner-only DACL.
 
-## V1 model prompt tuning stance
+## Model prompts
 
-Provider-family prompt selection is routed through the explicit model-resolution
-seam in `harness_core::model_resolution`, which prefers catalog
+`harness_core::model_resolution` selects a prompt family. It prefers catalog
 `metadata.family` and falls back to a documented heuristic/default family. The
 base prompt is composed through `crates/harness/src/dynamic_prompt.rs`, markdown
 agent assets, and bundled family prompt bodies for `reasoning`, `codex`, `gpt`,
@@ -117,11 +114,9 @@ agent assets, and bundled family prompt bodies for `reasoning`, `codex`, `gpt`,
 empty, or unreadable overrides use the same family's bundled prompt; empty or
 unreadable overrides produce a warning. Unrecognized model families use the
 default prompt. `doctor --json` reports the effective prompt source and any
-warning. Model-specific differences in this slice are explicit catalog metadata
-such as family, modalities, context/output limits, variants, reasoning support,
-and data-backed family prompts, rather than scattered raw `model_id.contains(...)` checks.
-If provider/model prompt presets are added later, they must be named
-presets layered over the base prompt and covered by golden prompt tests.
+warning. Model metadata supplies the family, modalities, context and output limits,
+variants, and reasoning support. See the [prompt assets](../../.agent-harness/prompt-families/README.md)
+for routing and override rules.
 
 The larger provider catalog lives in `configs/provider-catalog.reference.jsonc`.
 That file is a reference and validation fixture for provider and model metadata,
@@ -132,19 +127,17 @@ discovery. Validate it explicitly when you want to check the catalog:
 cargo run -p harness -- --config configs/provider-catalog.reference.jsonc config validate
 ```
 
-You can also update the checked-in generated provider catalog from the public
-models.dev capability dataset, similar to the reference generated model registry:
+You can also update the checked-in generated provider catalog from a saved file or the public models.dev dataset:
 
 ```bash
 cargo run -p harness -- models generate
 ```
 
-`models generate` is an explicit offline-maintenance command, not runtime
-discovery. By default it fetches `https://models.dev/api.json`, filters to
+`models generate` updates the bundled catalog. By default it fetches `https://models.dev/api.json`, filters to
 non-deprecated tool-call-capable models, and writes
 `configs/provider-catalog.generated.json`. The harness binary embeds that file
 with `include_str!`, so `models generated` can print the static registry without
-network access, matching the generate-then-bundle workflow. Use
+network access. Use
 `--input <file>` or `--stdin` for deterministic runs from a saved API response,
 `--provider <id>` to restrict output, `--include-non-tool` /
 `--include-deprecated` to broaden the catalog. `models generate` always emits
@@ -153,13 +146,13 @@ low/medium/high reasoning presets for models that advertise reasoning support;
 scratch output to stdout or `--output`. Committed updates should go through
 `models generate`.
 Review generated provider `baseURL` values before merging; models.dev describes
-many providers, while the harness currently executes only OpenAI-compatible
+many providers, while Harness implements OpenAI-compatible and Anthropic
 transports.
 
 ### First-run provider authentication
 
 The copied `configs/harness.example.jsonc` targets Codex OAuth by default through
-the `openai-codex` provider id. It keeps credential material out of config by
+the `openai-codex` provider id. It keeps credentials out of config by
 using `authProvider: "codex"` plus `apiKeyEnv` fallback. A typical non-OAuth
 OpenAI-compatible setup still uses:
 
@@ -179,7 +172,7 @@ OpenAI-compatible setup still uses:
 ```
 
 For the V1 built-in OAuth-backed providers, add `authProvider` and leave
-credential material out of config:
+credentials out of config:
 
 ```jsonc
 {
@@ -250,7 +243,7 @@ entries, doctor checks stored credential presence before environment or inline f
 | Runtime config file | `harness.json` / `harness.jsonc` | Shared defaults live under the matching XDG harness directory. |
 | TUI config file | `tui.json` / `tui.jsonc` | Runtime and TUI settings are intentionally split. |
 | Core runtime keys | `provider`, `model`, `small_model`, `agent`, `permission`, `mcp`, `skills`, `instructions`, plus Harness runtime extensions | `agent` contains the generic `default` parent and named subagents, never alternate primary roles or category routes. |
-| TUI surface | `keybinds` | Unsupported TUI-only fields fail validation. |
+| TUI settings | `keybinds` | Unsupported TUI-only fields fail validation. |
 | Permission naming | `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`, plus safety kinds `read`, `external_directory`, and `doom_loop` | Legacy `shell` / `network` remain compatibility-only. `external_directory` and `doom_loop` default to ask; `read` defaults to allow with `.env` pattern asks. |
 | Prompt assets | `.agent-harness/agents/{default,explore,general,librarian}.md` | `AGENTS.md` is auto-discovered separately as project context. |
 
@@ -269,7 +262,6 @@ for those settings instead of mixing them into runtime config.
 | `command` | Upstream command configuration; accepted only when empty because the harness does not execute configured commands. |
 | `disabled_providers` | Upstream-compatible provider filter; hides matching configured and authenticated built-in providers from runtime model catalogs. |
 | `enabled_providers` | Upstream-compatible provider allow-list; when non-empty, only matching configured/authenticated built-in providers remain in runtime model catalogs. |
-
 | `formatter` | Formatter registry. `false` disables formatters; `true` enables all 26 built-in formatters (the default when the key is omitted). An object accepts `enabled`, `experimentalOxfmt`, and named formatter entries such as `<name>: { disabled?, command?, environment?, extensions? }`. Built-in formatter names are `gofmt`, `mix`, `prettier`, `oxfmt`, `biome`, `zig`, `clang-format`, `ktlint`, `ruff`, `air`, `uv`, `rubocop`, `standardrb`, `htmlbeautifier`, `dart`, `ocamlformat`, `terraform`, `latexindent`, `gleam`, `shfmt`, `nixfmt`, `rustfmt`, `pint`, `ormolu`, `cljfmt`, `dfmt`. Formatters are selected by name, not by extension; each built-in formatter declares its own extensions, and an `extensions` override replaces the built-in list. `command` overrides discovery entirely; `environment` merges with the built-in environment (override wins). `$FILE` is substituted with the target file path. When several formatters match a file, they run sequentially in built-in registry declaration order, followed by any custom override-only formatters; failures surface as non-fatal warnings. |
 | `instructions` | Optional inline instructions or instruction file paths prepended before agent prompts. |
 | `lsp` | Upstream-compatible LSP setting; `false` disables harness LSP overrides, object values map to harness LSP servers when possible. |
@@ -277,21 +269,16 @@ for those settings instead of mixing them into runtime config.
 | `model` | Default full-capability model reference. |
 | `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback metadata; runtime profile resolution selects the primary target in V1. |
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. Supports scalar `allow`/`ask`/`deny` or per-tool pattern maps. Catch-all deny hides tools from the model; last matching pattern wins. |
-
 | `provider` | Provider definitions keyed by provider id. |
-| `runtime` | Runtime knobs including startup approval mode, provider-context compaction settings, and provider retry policy. |
+| `runtime` | Runtime settings including startup approval mode, provider-context compaction settings, and provider retry policy. |
 | `server` | Upstream server configuration; accepted only when empty because server commands are outside this runtime config. |
-
 | `small_model` | Optional smaller model reference for coordinator-owned internal operations such as title generation. |
 | `skills` | Shared skill discovery roots and permission overrides for skill loading. |
 
 ## Variable substitution
 
-The harness resolves variable references in config values before parsing. A
-single pass is applied to all config values via
-`resolve_config_value_references_with_lookup()`. Nested references (e.g.,
-`${VAR:-${OTHER}}`) are NOT expanded recursively — only one level of
-substitution is performed.
+The harness resolves variable references in config values before parsing. The resolver makes one pass through all values. It does not expand nested
+references such as `${VAR:-${OTHER}}` recursively.
 
 | Syntax | Behavior |
 | --- | --- |
@@ -300,8 +287,8 @@ substitution is performed.
 | `${VAR}` | Shell-style environment variable. If `VAR` is missing from the environment, this produces a config error rather than expanding to an empty string. Use `${VAR:-}` for an explicit empty fallback. |
 | `${VAR:-fallback}` | Environment variable with fallback value. If `VAR` is missing or empty, `fallback` is used. |
 
-Note: `apiKeyEnv` in provider config is a separate mechanism (multi-env
-fallback chain with credential redaction) — it is NOT the same as `{env:VAR}`.
+`apiKeyEnv` tries environment variables as credential fallbacks and redacts their
+values. It is separate from `{env:VAR}` substitution.
 
 ## Effective config inspection
 
@@ -380,11 +367,11 @@ with ordinary tool permissions automatically approved. It defaults to `false`.
 }
 ```
 
-In the TUI, open `/settings` and select **Always approve on startup** on the
+In the TUI, open `/settings` and select Always approve on startup on the
 Runtime tab. Enter toggles the saved preference in the bound runtime config;
 reset restores `false`. Restart the harness to apply the saved preference.
 
-Use **Ctrl+O**, `/always-approve` (alias `/yolo`), or **Always Approve Mode** in the
+Use Ctrl+O, `/always-approve` (alias `/yolo`), or Always Approve Mode in the
 command palette to toggle the current session. `/toggles` also exposes the active
 mode. These session toggles do not change the saved startup preference. The
 composer shows `always-approve` when the coordinator confirms it is enabled.
@@ -393,36 +380,17 @@ checks. Replay does not enable or change approval mode.
 
 ## Config layering
 
-The harness discovers and merges config from multiple sources. Later layers
-override earlier ones, so project-local settings take precedence over global
-defaults.
+Later config layers override earlier ones. See the full
+[discovery order](#discovery-and-precedence) below.
 
-### Discovery order
+JSON objects merge key by key before defaults and required-model validation.
+Omitted sections inherit the earlier value. Arrays replace earlier arrays, except
+`instructions`, which accumulates in layer order. File permission references
+resolve relative to the file that declares them.
 
-1. **XDG global config** (`$XDG_CONFIG_HOME/harness/harness.jsonc`, fallback:
-   `~/.config/harness/harness.jsonc`) — shared defaults across projects.
-2. **Project local config** (`./harness.jsonc` or `./harness.json`) —
-   project-specific overrides.
-3. **Agent markdown files** (`.agent-harness/agents/*.md`) — agent definitions
-   with JSON5 frontmatter. Frontmatter fields take effect when no JSON config
-   override exists for the same field.
-
-### Merge precedence
-
-- Project local config overrides XDG global config.
-- Agent markdown frontmatter overrides the JSON config `agent` section for
-  fields that are not explicitly set in JSON config (empty or default values
-  fall back to markdown).
-- Markdown agent discovery is last-wins: project-level markdown files override
-  shipped agents with the same name.
-
-JSON config layers merge key-by-key before defaults and required-model
-validation apply to the merged result. A section a higher layer omits is
-inherited from the lower layer, so a project config that only sets `model`
-keeps the global `permission`, `formatter`, and `skills` sections. Within a
-merged section, arrays replace lower-layer values instead of concatenating,
-`instructions` lists accumulate in layer order, and `file` permission
-references resolve relative to the directory of the layer that declares them.
+Explicit JSON agent fields take precedence over markdown frontmatter. Empty or
+default fields can fall back to frontmatter. Project markdown overrides a shipped
+agent with the same name.
 
 ## Extension manifest descriptors
 
@@ -430,7 +398,7 @@ Typed extension manifests are not a runtime config key in V1. The descriptor
 schema lives at
 [`configs/extension-manifest.v1.schema.json`](../../configs/extension-manifest.v1.schema.json)
 and is validated by `harness-core::extension_manifest::ExtensionManifestV1`.
-The seam is descriptor-only: parsing a manifest records stable extension ids,
+The parser reads descriptors only. parsing a manifest records stable extension ids,
 capability ids, disablement defaults, optional tool/hook/command/prompt/MCP
 bundle/diagnostic/provider-decorator descriptors, public permission names for
 tool descriptors, and static replay metadata. It does not discover manifests
@@ -509,7 +477,19 @@ unsent drafts stay in the active composer until submitted or discarded.
 
 ## Discovery and precedence
 
-Runtime config discovery uses these layers, merged from lowest precedence to highest:
+Runtime config discovery merges these layers from lowest to highest precedence:
+
+```mermaid
+flowchart LR
+    Global[XDG global files] --> Env[HARNESS_CONFIG]
+    Env --> Project[Project files]
+    Project --> Agent[.agent-harness files]
+    Agent --> Inline[HARNESS_CONFIG_CONTENT]
+    Inline --> Result[Effective configuration]
+```
+
+Later layers override earlier values. Objects merge; most arrays replace the
+earlier array. `instructions` accumulates. The ordered locations are:
 
 1. `$XDG_CONFIG_HOME/harness/harness.jsonc` (fallback `~/.config/harness/harness.jsonc`)
 2. `$XDG_CONFIG_HOME/harness/harness.json` (fallback `~/.config/harness/harness.json`)
@@ -681,8 +661,7 @@ server state. Use `--json` for machine-readable output.
 
 ### Generic agent and child tasks
 
-Harness materializes one interactive profile named `default` with the Pi-style
-generic system prompt. Named `explore`, `general`, and `librarian` subagents keep
+Harness materializes one interactive profile named `default` with the generic coding prompt. Named `explore`, `general`, and `librarian` subagents keep
 bounded prompts and toolsets. There is no alternate primary role, planning role,
 or category router.
 
@@ -715,23 +694,21 @@ per-turn budget. Category routing and alternate primary profiles are rejected.
 
 ## Permission policy
 
-The canonical scalar form is OpenCode-aligned allow-by-default:
+To allow ordinary tools with the default safety exceptions, use:
 
 ```jsonc
 { "permission": "allow" }
 ```
 
 `permission` accepts exactly `"ask"`, `"allow"`, or `"deny"`. Scalar `ask` and
-`deny` paint every canonical public kind. Scalar `allow` is OpenCode-like
-allow-with-safety-exceptions: ordinary tools (`bash`, `edit`, `task`,
+`deny` apply to every public permission kind. Scalar `allow` keeps the safety exceptions: ordinary tools (`bash`, `edit`, `task`,
 `webfetch`, `websearch`, `codesearch`, `lsp`, `read`) become allow, while
 `external_directory` and `doom_loop` stay ask, base `question` stays deny, and
 `read` keeps `.env` pattern asks. When `permission`
 is omitted, the same allow-with-safety-exceptions defaults apply.
 
 The V1 native tool catalog is documented in
-[`docs/tools/native-tool-catalog.md`](../tools/native-tool-catalog.md). New control-plane tools
-`task`; `ast_grep_search` uses `codesearch`; `ast_grep_replace` uses `edit`; `session_list`, `session_read`,
+[`docs/tools/native-tool-catalog.md`](../tools/native-tool-catalog.md). `task` controls delegation; `ast_grep_search` uses `codesearch`; `ast_grep_replace` uses `edit`; `session_list`, `session_read`,
 `session_search`, and `session_info` are read-only replay/session inspectors with
 no additional public permission bucket. Legacy broad `network` remains a
 compatibility input for older network-capability tools; new docs and examples
@@ -750,26 +727,26 @@ Per-tool scalar modes use the same values:
 }
 ```
 
-`bash`, `edit`, and `task` also support bounded selector maps. They are not a general
-policy language:
+`bash`, `edit`, `task`, `read`, and `external_directory` also accept selector maps.
+Put broad rules before exceptions. The last matching rule wins:
 
 ```jsonc
 {
   "permission": {
     "bash": {
+      "*": "deny",
       "git status": "allow",
-      "cargo nextest run*": "ask",
-      "*": "deny"
+      "cargo nextest run*": "ask"
     },
     "edit": {
+      "*": "deny",
       "docs/**": "allow",
-      "crates/harness-core/src/config.rs": "ask",
-      "*": "deny"
+      "crates/harness-core/src/config.rs": "ask"
     },
     "task": {
+      "*": "deny",
       "explore": "allow",
-      "review-*": "ask",
-      "*": "deny"
+      "review-*": "ask"
     }
   }
 }
@@ -777,7 +754,7 @@ policy language:
 
 Bash selectors are either an exact command string, a trailing `*` prefix such as
 `cargo nextest run*`, or the `*` catch-all. Edit selectors are either an exact
-workspace-relative path, a trailing `/**` path prefix such as `docs/**`, or the
+workspace-relative path, a trailing `/` path prefix such as `docs/`, or the
 `*` catch-all. Task selectors match the requested subagent name;
 they accept exact names, `*` catch-all, and simple `*` glob patterns such as
 `review-*`. Regex is not supported.
@@ -790,8 +767,7 @@ It accepts `mode` values `permission_patterns` (the default) and
 `permission_patterns` mode, approved interpreter command modes such as
 `python3 -c` and heredocs execute normally; environment-dump commands remain
 blocked. Outside-workspace `cwd`/`workdir` values go through the
-`external_directory` permission gate. Permission decisions improve operator UX
-by deciding whether a tool call runs, asks, or is denied. They are not a sandbox
+`external_directory` permission gate. Permission decisions allow a call, ask for approval, or deny it. They are not a sandbox
 or security boundary. `legacy_executables` retains the stricter executable and
 interpreter-mode checks for operators who select it explicitly. Approved
 interpreter code can perform host I/O that lexical shell path scanning cannot
@@ -826,7 +802,7 @@ values, config loading rejects the file instead of silently choosing one.
 ## Provider context compaction expectations
 
 Provider-context compaction consumes the same redacted request-budget snapshot
-prepared for provider dispatch. Canonical model limits, the reserved output,
+prepared for provider dispatch. Resolved model limits, the reserved output,
 provider framing, tools, attachments, history, the pending prompt, and the
 configured safety margin are accounted once before the snapshot reaches the
 compaction path. Model variants still override base model limits during model
@@ -839,7 +815,7 @@ enabled. Manual and provider-overflow compaction remain available without known
 capacity. The preserved history allowance is the snapshot threshold minus
 current non-history request components, capped by `keep_recent_tokens`.
 
-Public compaction knobs live under `runtime.compaction`:
+Compaction settings live under `runtime.compaction`:
 
 | Key | Default | Purpose |
 | --- | --- | --- |
@@ -905,13 +881,13 @@ summary is ready. Unknown model capacity still follows the conservative fallback
 setting; an override does not establish an unknown model's true limits. Model and
 agent threshold maps merge by key across config layers.
 
-On successful compaction, the coordinator appends a single `SessionCompaction` event to the event log and updates the in-memory provider context. The event carries the generated summary, token estimate before compaction, the sequence number of the first preserved event, replay-derived read/modified file lists, the trigger reason, and hook provenance. No separate checkpoint artifact is written; the summary lives entirely in the event and the in-memory `ProviderContext`. Resume reconstructs provider context from the latest `SessionCompaction` event for the agent, then replays post-compaction deltas from `events.jsonl`; the event log itself stays append-only.
+On successful compaction, the coordinator appends a single `SessionCompaction` event to the event log and updates the in-memory provider context. The event carries the generated summary, token estimate before compaction, the sequence number of the first preserved event, replay-derived read/modified file lists, the trigger reason, and hook provenance. No separate checkpoint artifact is written; the summary lives entirely in the event and the in-memory `ProviderContext`. Resume reads the latest `SessionCompaction` for the agent and the committed events that follow it. New logs do not persist provider deltas.
 
 Manual `/compact` summarizes older completed turns now, preserves the latest completed turn verbatim, and appends a `SessionCompaction` event. The success notice reports the active-context estimate delta when available, or says the estimate was unchanged. The default summary contract uses the Harness sections for goal, constraints, progress, key decisions, next steps, and critical context, with operational memory and source facts added as replay-derived context; it is still lossy. Sessions with only one completed turn no-op because there is no older turn to summarize.
 
-Lifecycle hooks may use `event = "compaction_requested"` to observe or cancel compaction. A critical hook failure cancels compaction and records `CompactionFailed` (deprecated; replaced by `SessionCompaction`). A successful hook can replace the summary by emitting output prefixed with `compaction_summary:`; hook overrides take precedence over the deterministic structured summary.
+Lifecycle hooks may use `event = "compaction_requested"` to observe or cancel compaction. A critical hook failure cancels compaction. `CompactionFailed` remains a legacy read format, not an active writer. A successful hook can replace the summary by emitting output prefixed with `compaction_summary:`; hook overrides take precedence over the deterministic structured summary.
 
-Overflow retry is related but distinct: if the provider rejects a request for context-window reasons, the coordinator may compact and retry once when the retry can prove it shrank the provider-visible payload. Estimated pre-prompt compaction uses the same `SessionCompaction` path before provider request construction. If a pre-prompt compaction cannot reduce the estimated active context, the coordinator records the failure and does not loop on the same turn.
+If the provider rejects a request because it exceeds the context window, the coordinator may compact and retry once when the retry can prove it shrank the provider-visible payload. Estimated pre-prompt compaction uses the same `SessionCompaction` path before provider request construction. If a pre-prompt compaction cannot reduce the estimated active context, the coordinator records the failure and does not loop on the same turn.
 
 Failed or aborted provider turns can be preserved in active context. Replay/debug projections keep the incomplete marker, failure stage, and redacted reason so a future provider call does not treat partial assistant output as a completed answer.
 
@@ -923,7 +899,7 @@ TUI memory or transcript caps are separate presentation settings. They affect wh
 
 Provider-request retries are bounded and automatic only for transient provider-side failures (`TransportFailure` and `RateLimited`). Retries happen before the provider response is committed to the session as a completed assistant turn. Each retry issues a fresh provider request id and records the attempt in `ProviderRequestStartedMetadata.retry`. To avoid masking cancellation, an operator or coordinator cancellation attempt wins over an in-flight retry and short-circuits the backoff.
 
-Public retry knobs live under `runtime.provider_retry`:
+Retry settings live under `runtime.provider_retry`:
 
 | Key | Default | Purpose |
 | --- | --- | --- |

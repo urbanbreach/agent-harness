@@ -1,10 +1,14 @@
 # Provider support
 
-Harness executes through implemented OpenAI-compatible and Anthropic backends, selected by the configured provider type. Catalog entries describe provider/model metadata; their presence does not establish executable transport support, working credentials, or live verification for every listed service.
+Harness implements OpenAI-compatible and Anthropic transports. The configured
+provider type selects the backend. Catalog entries describe models; a listed
+model still needs a supported transport, valid credentials, and endpoint access.
 
 ## Execution path
 
-Provider requests flow through configured provider/model ids, the coordinator, and the `harness-providers` stream interface. Deterministic tests use mock/faux providers by default; live lanes are env-gated.
+The coordinator sends requests through `harness-providers`, which normalizes
+backend streams into common events. Deterministic tests use mock providers. Live
+tests require explicit environment settings.
 
 ## Codex context profiles
 
@@ -12,23 +16,21 @@ Catalog-derived GPT-5.6 models on the built-in `openai-codex` provider use a 369
 
 ## Codex subscription model availability
 
-The built-in `openai-codex` catalog exposes GPT-5.4 and newer non-Pro models. Pro models are excluded because Codex subscriptions cannot use them. Models older than GPT-5.4 are also excluded, with `gpt-5.3-codex-spark` retained as the sole legacy exception.
+The built-in `openai-codex` catalog exposes GPT-5.4 and newer non-Pro models. The bundled catalog excludes Pro models. Models older than GPT-5.4 are also excluded, with `gpt-5.3-codex-spark` retained as the sole legacy exception.
 
 ## GPT-6 Astra
 
 `gpt-6-astra` is available in the bundled Codex catalog and the shipped example
 configuration. Select `openai-codex/gpt-6-astra` in `/model`, or set it as the
-top-level `model` in `harness.jsonc`. The existing default model is unchanged.
+top-level `model` in `harness.jsonc`. The starter still defaults to `gpt-5.4-mini`.
 The supported reasoning variants are `low`, `medium`, `high`, `xhigh`, and `max`;
 `none`, `minimal`, and Codex's multi-agent `ultra` mode are not offered.
 Codex requests without an explicit reasoning effort default to `low` and retain
 the encrypted reasoning-content request option used by the existing Responses
 transport. Explicit reasoning and verbosity settings take precedence.
 
-The [OpenAI API model profile](https://developers.openai.com/api/docs/models/gpt-6-astra)
-specifies 1,050,000 context tokens, 922,000 maximum input tokens, and 128,000 maximum
-output tokens. Catalog discovery preserves these limits; Astra has no hardcoded
-272k capacity override. The shipped example and workspace configuration instead
+The bundled API model metadata records 1,050,000 context tokens, 922,000 maximum input tokens, and 128,000 maximum
+output tokens. Catalog discovery preserves these limits. The shipped example and workspace configuration instead
 limit the working context through model configuration:
 
 ```jsonc
@@ -48,13 +50,8 @@ Availability still depends on the account and endpoint;
 
 Provider execution requires one of the implemented backend families above. Doctor validates local configuration and credential presence but does not prove authentication because it makes no provider call.
 
-Optional local free live targets (for example Ollama) are **deferred** as a non-CI residual path.
-They are not a CI default, not part of `signoff-live`, and not required for quality gates.
-Document or script them only as maintainer-opt-in dogfood.
-
-## Fallback policy
-
-OpenAI-compatible `auto` mode may fall back from Responses API to Chat Completions when that transport path is unsupported. A configured `model_profile` fallback chain retains each target's resolved variant, reasoning settings, and model limits when a provider failure advances to the next model. Failures remain visible to the operator.
+Local targets such as Ollama are optional manual checks. They are outside
+`signoff-live`, CI defaults, and the quality gates.
 
 ## Credentials
 
@@ -85,9 +82,9 @@ A selectable known model must provide positive context and output values, with o
 | TransportFailure | `transport_failure` | Timeout, DNS, connection, TLS, or socket failure. | Check network/baseURL/proxy. |
 | Other | `other` | Anything not classified above. | Inspect sanitized provider message and support bundle. |
 
-## Surfacing
+## Error reporting
 
-Provider categories are persisted in `ProviderRequestFinished.metadata.provider_error_category` with `provider_error_remediation`. Headless `prompt` failures include the serialized category plus provider message in stderr, and the TUI activity/runtime state shows the category with remediation so the operator can retry without reading raw provider payloads.
+The coordinator stores provider categories in `ProviderRequestFinished.metadata.provider_error_category` with `provider_error_remediation`. Headless `prompt` failures include the serialized category plus provider message in stderr, and the TUI activity/runtime state shows the category with a suggested action.
 
 ## Model fallback policy
 

@@ -1,7 +1,8 @@
 # Engine architecture boundary
 
-The engine keeps one coordinator-owned append and lifecycle authority. Durable semantic history,
-live provider presentation, and compatibility decoding have separate contracts.
+The coordinator appends events and owns lifecycle transitions. This design
+separates durable session history, temporary provider display updates, and legacy
+log decoding. See the [architecture guide](architecture.md) for the current runtime.
 
 ## Durable semantic history
 
@@ -28,7 +29,10 @@ provider-request, and tool-call identity. `LegacyEventLogAdapter` projects borro
 that domain without writing files or executing runtime work. For self-contained assistant commits,
 the committed parts replace any earlier compatibility fragments.
 
-For each journal load or settled durable-event batch, the runtime constructs one authoritative composed `CanonicalSessionProjection` facade per journal load or settlement. The facade composes focused pure reducers; it is neither a monolithic reducer nor a single physical pass. Provider continuation, restart, replay, export, catalog inspection, and settled TUI state consume its typed views. The TUI retains only ephemeral overlays and presentation enrichment; it does not define durable session semantics.
+Each journal load or settled batch constructs one `CanonicalSessionProjection`.
+It combines pure reducers, each with its own error contract. Provider
+continuation, restart, replay, export, catalog inspection, and settled TUI state
+consume its typed views. The TUI adds temporary overlays and formatting.
 
 The facade is the active read boundary, while legacy conversion is deliberately narrow: deprecated
 provider-fragment payloads and compaction details are decoded through helpers owned by the read-only
@@ -51,9 +55,9 @@ The migration work is complete for the shipped boundary described here. Focused 
 intentionally separate so their independent error contracts and tests remain explicit. No
 provider-ready request, raw prompt/tool schema, secret, or hidden reasoning is persisted.
 
-## G006 Compaction V2 boundary
+## G006 compaction V2 boundary
 
-The current target dispositions are explicit and do not claim later milestone work:
+G006 assigned these changes:
 
 | Disposition | G006 contract |
 |---|---|
@@ -70,13 +74,13 @@ provenance, file state, and current intent) are serde-defaulted so old logs rema
 
 ## Runtime data flow
 
-```text
-provider transport
-  -> bounded live fragments -> connected runtime subscribers
-  -> provider finish
-  -> self-contained AssistantMessageFinished
-  -> append-only events.jsonl
-  -> replay-derived read models
+```mermaid
+flowchart LR
+    Provider[Provider transport] -.-> Fragments[Temporary display fragments]
+    Provider --> Finish[Provider finish]
+    Finish --> Commit[AssistantMessageFinished]
+    Commit --> Log[(events.jsonl)]
+    Log --> Views[Session projections]
 ```
 
 | Property | Current responsibility |
@@ -86,7 +90,7 @@ provider transport
 | Live provider presentation | Bounded runtime event broadcast |
 | Old delta history | Decode-only V1 compatibility paths |
 | Canonical typed session reads | `CanonicalSession` through `LegacyEventLogAdapter` |
-| Provider context and product projections | Existing replay-derived V1 consumers, not yet consolidated |
+| Provider context and product projections | `CanonicalSessionProjection` and its focused pure reducers |
 
 ### Interactive TUI flow
 
@@ -96,7 +100,7 @@ provider context; it does not write a checkpoint artifact or append a second suc
 
 ### Headless flow
 
-The headless prompt/run surfaces use the same coordinator, request-budget snapshot, typed active-path
+The headless prompt/run commands use the same coordinator, request-budget snapshot, typed active-path
 cut, and restart reconstruction. Manual, pre-prompt, and bounded overflow compaction therefore share
 the same durable event shape and failure-atomic commit boundary.
 
@@ -117,7 +121,7 @@ and compaction inputs.
 session, conversation, resume plan, run summary, timeline, transcript, tasks, permissions, and
 lineage once at a load or settlement boundary for provider continuation, restart, replay/export,
 catalog inspection, and settled TUI state. Provider text, reasoning, and tool-input fragments are
-an **ephemeral TUI overlay**; the semantic assistant commit replaces those fragments exactly once.
+an ephemeral TUI overlay; the semantic assistant commit replaces those fragments exactly once.
 
 | Surface | Status | Shipped behavior |
 |---|---|---|

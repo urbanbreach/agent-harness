@@ -1,7 +1,8 @@
 # Engine migration
 
-Migration starts from baseline commit `060ee1fd` and is intentionally serial: limits and budget,
-then canonical session semantics, then compaction, consumers, bounded indexing, and deletion.
+The migration started at `060ee1fd`. It changed limits and budgets first, then
+session semantics, compaction, readers, and indexing. Obsolete paths were removed
+after their replacements passed the relevant checks.
 
 | Stage | Baseline | Target | Migration disposition |
 |---|---|---|---|
@@ -48,14 +49,14 @@ The final migration tail uses accepted baseline `2f0b2a9a` and preserves all ear
   settled CLI and TUI reads. Its focused reducers remain pure and separate; live TUI fragments stay
   presentation-only.
 - G009 is recorded by commit `9c3274b5`: `.session-history-index-v1.json` rows update after
-  successful durable commits, pagination uses a run-directory tie-break, and the warm open seam is
-  observable. Continuation still validates source history.
+  successful durable commits, pagination uses a run-directory tie-break, and a counter records
+  warm journal opens. Continuation still validates source history.
 - G010 retains old compaction and stream variants as compatibility-only decode input. Their matching
   remains inside the read-only `session::legacy` boundary; no legacy writer is introduced.
 - G011 keeps the coordinator as the event append, scheduling, permission, and lifecycle authority
   while neutral crash-tail recovery and identity helpers use canonical namespaces.
 - G012 updates the public architecture documents and records current metrics/report evidence. Its
-  final lane, dogfood, PTY/TUI, and independent-review entries are status **PENDING** until they run
+  final lane, dogfood, PTY/TUI, and independent-review entries are status PENDING until they run
   against the final source SHA; earlier artifacts are historical context, not reused final proof.
 
 Removed production paths are the checkpoint artifact writer/loader/copy flow, detached planning

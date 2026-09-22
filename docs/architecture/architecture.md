@@ -1,50 +1,77 @@
 # Architecture
 
-This document describes the high-level architecture of Agent Harness.
+The coordinator owns execution. CLI commands, agents, and the TUI submit intents;
+the coordinator schedules work, checks permissions, and appends durable events.
+Replay derives session state from those events without running tools or providers.
 
-## Crate Boundaries
+```mermaid
+flowchart LR
+    CLI[CLI and agents] -->|Commands| C[Coordinator]
+    UI[Terminal UI] -->|User intents| C
+    C -->|Provider requests| P[Provider transports]
+    C -->|Approved calls| T[Native and MCP tools]
+    P -->|Results| C
+    T -->|Results| C
+    C -->|Durable events| E[(events.jsonl)]
+    E --> R[Pure session projections]
+    R --> UI
+    R --> I[Inspect, export, and resume context]
+    C -.->|Live fragments| UI
+```
 
-### harness (binary crate)
+Solid arrows show commands, results, and durable reads. The dotted arrow carries
+live display updates that do not enter the event log.
 
-The CLI entry point. Contains subcommand implementations:
+## Crate boundaries
 
-- `harness run` - Headless scenario execution
-- `harness tui` - Interactive terminal UI
-- `harness sessions inspect/export` - Replay-derived session inspection and support export
-- `harness schema` - JSON Schema output
-- `harness config validate` - Config validation
-- `harness sessions list` - List recorded sessions
+### CLI
 
-### harness-core (library)
+[`harness`](../../crates/harness/src/lib.rs) parses CLI arguments and dispatches commands:
 
-Core runtime and domain logic:
+| Command | Responsibility |
+| --- | --- |
+| `harness run` | Execute a headless prompt or deterministic scenario |
+| `harness tui` | Open the terminal UI |
+| `harness sessions inspect` / `export` | Inspect recorded events or produce a support bundle |
+| `harness schema` | Print JSON Schema |
+| `harness config validate` | Validate configuration |
+| `harness sessions list` | List recorded sessions |
 
-- **event/** - Event schema v1, envelope types, event builder
-- **store/** - Event store trait, in-memory and JSONL file implementations
-- **coord/** - Coordinator actor (single scheduling authority)
-- **sched/** - Scheduler with concurrency slots and stale detection
-- **cron_schedule** - Cron schedule registry. Its public summary keeps `registered` and
-  `executor_available` separate: registering a schedule never claims execution is available
-  (`executor_available=false` until a product executor loop is wired).
-- **perm/** - Permission engine (allow/deny/ask)
-- **tool/** - Tool framework and capability gating
-- **edit/** - Hashline edit engine
-- **proj/** - Pure projections for run summary, resume planning, and session catalog state
-- **transcript_projection** - Pure replay-derived transcript/session/message/part projection for resume, export, TUI, and debugging surfaces
-- **agent/** - Minimal agent runtime
-- **agent** - Provider-facing execution state for the singleton generic profile
-- **config** - Configuration parsing and validation
-- **clock** - Clock abstraction (real and fake for determinism)
-- **redact** - Secret redaction before persistence
+### Core runtime
+
+[`harness-core`](../../crates/harness-core/src/lib.rs) contains runtime state and policy:
+
+| Module | Responsibility |
+| --- | --- |
+| `event` | Versioned events, envelopes, and event builders |
+| `store` | In-memory and JSONL event stores |
+| `coord` | Coordinator actor and execution authority |
+| `sched` | Concurrency slots and stale-task detection |
+| `cron_schedule` | Schedule registration and executor availability metadata |
+| `perm` | Allow, deny, and ask decisions |
+| `tool` | Tool contracts and capability checks |
+| `edit` | Hashline editing |
+| `proj` | Pure run summaries, resume plans, and session catalog projections |
+| `transcript_projection` | Replay-derived sessions, messages, and message parts |
+| `agent` | Provider-facing execution state for parent and child agents |
+| `config` | Config parsing and validation |
+| `clock` | Real and deterministic clocks |
+| `redact` | Secret redaction before persistence |
+
+The cron registry reports `registered` separately from `executor_available`.
+Registration does not start a schedule. `executor_available=false` until a
+product executor loop is connected.
 
 ### Session read boundary
 
-One journal load or settled durable-event batch builds one authoritative composed
-`CanonicalSessionProjection` facade. Its focused pure reducers derive canonical session state,
-conversation, transcript, resume plan, run summary, timeline, task/permission state, and lineage;
-the facade is not a monolithic reducer or a claim that all projections share one physical pass.
-Provider continuation, restart, replay, export, catalog inspection, and settled TUI views consume
-that facade. The TUI retains ephemeral live-fragment overlays and presentation enrichment only.
+Each journal load or settled batch of durable events builds one
+`CanonicalSessionProjection`. It combines pure reducers for session state,
+conversation, transcript, resume plan, run summary, timeline, tasks, permissions,
+and lineage. Each reducer keeps its own validation and error behavior.
+
+Provider continuation, restart, replay, export, catalog inspection, and settled
+TUI views read that projection. The TUI adds temporary display fragments and
+formatting; it does not reconstruct a separate durable session.
 
 The bounded history index is advisory metadata updated after a successful durable commit. List and
 search validate its fingerprinted rows, rebuild unusable state, and still validate source journals
@@ -57,16 +84,16 @@ uses them as durable truth.
 Interactive agent runtime settings come from structured config, while the prompt body is resolved separately from the shipped asset and project instructions:
 
 - `.agent-harness/agents/default.md` supplies the generic coding prompt.
-- inline `agent.system_prompt` replaces the shipped body.
+- Inline `agent.<name>.system_prompt` replaces that agent's shipped body.
 - `AGENTS.md` is loaded as a separate project-instruction layer and composed into the final runtime system prompt.
 
 This keeps config focused on structured behavior while allowing one prompt to adapt to model, workspace, project-instruction, and skill context.
 
-### Prompt reference seam map
+### Prompt implementation map
 
-Reference prompt-system behavior is adopted only as user-observable Harness behavior, not by copying source architecture, package layout, or brand-specific terminology. Each adopted pattern maps to a concrete Harness seam or an explicit deferred seam:
+The prompt implementation maps each behavior to these files and runtime checks:
 
-| Reference pattern | Harness seam | V1 status |
+| Behavior | Implementation | Status |
 |---|---|---|
 | Generic coding prompt | `.agent-harness/agents/default.md`, `crates/harness/src/bootstrap.rs`, and `crates/harness/src/dynamic_prompt.rs` | Used by interactive execution without primary-role switching |
 | Intent-gate before tool use | `crates/harness/src/dynamic_prompt.rs` (`intent_gate`) | Shipped for ambiguous requests before tool use |
@@ -77,17 +104,18 @@ Reference prompt-system behavior is adopted only as user-observable Harness beha
 | Disableable built-in capabilities | `skills.disabled` config shape, `SkillCatalogStatus::Disabled`, doctor skill catalog metadata, `harness-core::extension_manifest`, `configs/extension-manifest.v1.schema.json`, and `docs/operations/extension-strategy.md` | Skills ship as runtime capabilities; typed extension manifests ship as descriptor-only metadata with runtime hosting post-V1 |
 | Command/hook lifecycle maps | `docs/operations/extension-strategy.md` command/hook seam | Native lifecycle hooks ship; markdown command files and extension command-hook execution remain unsupported/post-V1 |
 
-### harness-providers (library)
+### Providers
 
-Provider abstraction for LLM completions:
+[`harness-providers`](../../crates/harness-providers/src/lib.rs) normalizes backend streams:
 
-- `Provider` trait for streaming completions
-- `MockProvider` - Deterministic offline provider using request digest fixtures
-- `OpenAiCompatibleProvider` - HTTP/SSE streaming to OpenAI-compatible endpoints
+- `Provider` defines streaming completions.
+- `MockProvider` matches requests to deterministic offline fixtures by digest.
+- `OpenAiCompatibleProvider` streams HTTP/SSE responses from compatible endpoints.
+- The Anthropic backend normalizes its messages into the same provider event types.
 
-### harness-tools (library)
+### Tools
 
-Built-in tool implementations:
+[`harness-tools`](../../crates/harness-tools/src/lib.rs) registers and executes native tools:
 
 - `read` / `list` / `glob` / `grep` - Safe workspace discovery and search
 - `edit` - Hashline-first file creation, targeted edits, deletion, and rename
@@ -99,13 +127,13 @@ Built-in tool implementations:
 - `ast_grep_replace` - Edit-permission structural rewrite adapter that defaults to dry-run, uses ast-grep JSON rewrite output only, and applies through Harness path checks, atomic writes, and diff artifacts
 - `webfetch` / `websearch` / `codesearch` / `lsp` - Network and language-intelligence workflows
 
-Hashline editing is the only normal file-changing route. Agent profiles expose `read`
-and `edit`; low-level hashline scan/apply helpers are reserved for internal
-compatibility and focused test lanes.
+Agents can change files through `edit`, `write`, `apply_patch`, and other
+edit-permission tools in their toolset. Low-level hashline scan/apply helpers
+remain internal compatibility and test APIs.
 
-The active registry exposes a single native provider surface. Canonical ids such as
-`read`, `edit`, `bash`, `webfetch`, `websearch`, `codesearch`, `question`, `batch`, `task`,
-executors remain internal implementation details behind those tool ids.
+The registry exposes canonical IDs such as `read`, `edit`, `bash`, and `task`.
+Executors stay behind those IDs. See the [tool catalog](../tools/native-tool-catalog.md)
+for permissions and output behavior.
 
 `harness-tools::tool_catalog` mirrors the active registry as metadata: stable
 canonical id, provider function name, aliases, description summary, capability,
@@ -120,29 +148,27 @@ directly; Harness validates byte ranges against current file contents, rejects
 overlap/truncated apply, writes diff artifacts, and performs atomic workspace
 writes through the same edit authority boundary.
 
-### harness-tui (library)
+### Terminal UI
 
-Ratatui-based terminal interface:
+[`harness-tui`](../../crates/harness-tui/src/lib.rs) renders the Ratatui interface:
 
-- Live mode: subscribe to coordinator events
-- Replay mode: inspect recorded sessions
-- Permission modal: interactive allow/deny
-- Diff viewer: display hashline edit diffs
-- Grouped streams: tool and provider event grouping
+It subscribes to coordinator events in live mode and reads recorded sessions in
+replay mode. Permission dialogs collect decisions, diff views display file
+changes, and the transcript groups related tool and provider output.
 
-### harness-testkit (library)
+### Test support
 
-Test utilities and fixtures:
+[`harness-testkit`](../../crates/harness-testkit/src/lib.rs) supplies test fixtures:
 
-- Mock provider fixtures
-- Test helpers for deterministic runs
-- PTY E2E harness (portable-pty + vt100)
+It provides mock provider fixtures, deterministic run helpers, and PTY checks
+using `portable-pty` and `vt100`.
 
-## Event Schema v1
+## Event schema v1
 
-Events are the source of truth. All state is derived from events.
+Durable events define replayable session state. Live fragments and UI overlays
+remain temporary.
 
-### Envelope Structure
+### Envelope structure
 
 ```json
 {
@@ -177,21 +203,21 @@ on the provider execution path. They are retained so old logs, including interru
 partial assistant output, remain readable. New provider execution publishes corresponding
 fragments only as live events and doesn't append these variants.
 
-### Event Types
+### Event types
 
-**Lifecycle**
+Lifecycle
 - `RunStarted` / `RunFinished` / `RunFailed`
 - `SessionTitleUpdated` - Harness-compatible generated session title persisted after the first real user prompt when a default title is still present
 - `AgentSpawned` / `AgentStopped`
 
-**Task Management**
+Task management
 - `TaskScheduled` - Includes `task_id`, `state` (queued or started), optional `queue_key`, and optional typed `metadata`; child agent turns record parent-tool/child-request lineage in `metadata.lineage` when scheduled so active lifecycle projections do not depend on terminal events
 - `TaskCancelled` - Best-effort cancellation
 - `TaskCompleted` - Normal completion
 - `TaskResultLate` - Result arrived after cancellation
 - `BackgroundTaskNotification` - Durable parent wakeup record for a `task(run_in_background=true)` child request after the child reaches a terminal state; carries parent/child ids, terminal status (`completed`, `cancelled`, `failed`, or `timed_out`), capped summary, terminal event id, and delivered parent turn request id. Replay projects this event only and must not schedule provider work.
 
-**Progress and Staleness**
+Progress and staleness
 - `StaleDetected` - Task exceeded staleness timeout
 - `UserMessageSubmitted` - User prompt accepted into the event stream
 - `PromptAttachmentsSubmitted` - Prompt attachment metadata accepted into the event stream
@@ -211,7 +237,7 @@ children point at `background_output(request_id=...)` for full details and `task
 for deliberate continuation, while non-terminal children also show non-blocking/blocking status
 checks without scheduling work during replay.
 
-**Provider Streaming**
+Provider Streaming
 - `ProviderRequestStarted`
 - `ProviderStreamDelta` - Legacy decode-only text fragment from old logs
 - `ProviderReasoningDelta` - Legacy decode-only reasoning fragment from old logs
@@ -259,32 +285,32 @@ Field decisions:
 | Retry attempt counter and policy | Optional start `metadata.retry` with `{ attempt, max_attempts, delay_ms, category }` | Additive, serde-defaulted counter used for bounded retry before the final provider response is committed. Absent on old logs; the coordinator treats missing retry metadata as the first attempt. |
 | Transient error server hint | Optional `retry_after_ms` in Error event metadata (provider-lifecycle finish events) | Records provider Retry-After header values in milliseconds when present. Advisory; scheduling falls back to exponential backoff when absent. Old logs without the field replay identically. |
 | Thinking or reasoning signatures | Optional finish `metadata.thinking` | Store only summaries, digests, or signature ids. Never store raw hidden thinking text. |
-| Provider payloads and secrets | Never durable | Raw requests, raw responses, auth headers, cookies, keys, and PEM blocks are excluded from event logs. Live event logs may include provider reasoning delta events as local session evidence; provider reasoning metadata stores only summaries, digests, or signature ids. |
+| Provider payloads and secrets | Never durable | Raw requests, raw responses, auth headers, cookies, keys, and PEM blocks are excluded from event logs. New logs omit provider reasoning deltas. Reasoning metadata stores only summaries, digests, or signature IDs. |
 
-**Tool Execution**
+Tool Execution
 - `ToolCallRequested`
 - `ToolCallStarted`
 - `ToolCallFinished`
 
-**Permissions**
+Permissions
 - `PermissionRequested` - User intervention required
 - `PermissionGrantRecorded` - Durable allow-always grant recorded for matching future requests in the event log
 - `PermissionResolved` - Allow or deny decision recorded
 
-**Editing**
+Editing
 - `EditProposed` - Edit prepared for review
 - `EditApplied` - Edit successfully committed
 - `EditRejected` - Edit failed (mismatch, denied, etc.)
 
-**Artifacts and Policy**
+Artifacts and Policy
 - `ArtifactWritten` - File stored to session
 - `PolicyViolationDetected` - Security rule triggered
 
-**Workspace Snapshots**
+Workspace Snapshots
 - `WorkspaceSnapshot` - Captured working-tree state before a tool batch; stores a redacted map of relative paths to file contents and content digests in the artifact store. Dotenv-style secret files are omitted from snapshot artifacts.
 - `WorkspaceReverted` - Restored the workspace from a prior snapshot; records restored paths, removed paths, and any failures without rewriting the event log.
 
-**Team Membership**
+Team Membership
 Team membership events record the team role, dependency edges, and shutdown
 state for child sessions. Members remain ordinary child agents: their
 provider/tool work is represented by the same task and provider lifecycle
@@ -297,53 +323,35 @@ member is shutdown-approved. Duplicate team membership events are rejected by
 the coordinator, and projections keep first-seen state if old logs contain
 duplicates.
 
-**UI Intent**
+UI Intent
 - `UiIntentReceived` - Live UI intent recorded before coordinator handling
 
-## Coordinator Invariants
+## Coordinator invariants
 
 The Coordinator is the single authority for:
 
-1. **Event appending** - Only the Coordinator calls `EventStore::append`
-2. **Task scheduling** - All background work goes through Coordinator commands
-3. **Permission resolution** - Coordinator evaluates policies and emits resolution events
-4. **State transitions** - Run and agent lifecycle managed centrally
+1. Event appending - Only the Coordinator calls `EventStore::append`
+2. Task scheduling - All background work goes through Coordinator commands
+3. Permission resolution - Coordinator evaluates policies and emits resolution events
+4. State transitions - Run and agent lifecycle managed centrally
 
-### Concurrency Model
+### Concurrency model
 
-```
-┌─────────────┐     Command (mpsc)     ┌─────────────┐
-│   Clients   │ ───────────────────────> │ Coordinator │
-│ (Agents/UI) │                        │             │
-└─────────────┘                        │ ┌─────────┐ │
-       │                               │ │  Slot   │ │
-       │                               │ │  Gates  │ │
-       │                               │ └─────────┘ │
-       │                               │ ┌─────────┐ │
-       │                               │ │  Task   │ │
-       │                               │ │  Queue  │ │
-       │                               │ └─────────┘ │
-       │                               └──────┬──────┘
-       │                                      │
-       │  Event (broadcast)                     │ Spawn
-       │<──────────────────────────────────────┘
-       │
-┌──────┴──────┐
-│ EventStore  │
-│ (JSONL)     │
-└─────────────┘
-```
+Clients send commands over an `mpsc` channel. The coordinator owns the queue and
+scheduler slots, starts admitted work, and broadcasts updates. Only the
+coordinator appends durable events to the store.
 
-### Key Behaviors
 
-- **Cancellable tasks**: Every background job has a `CancellationToken`
-- **Late results**: If a task reports after cancellation, record `TaskResultLate` and discard side effects
-- **Slot gates**: Coordinator-managed counters avoid semaphore-in-select cancellation unsafety
-- **Stale watchdog**: Periodic checks for unresponsive tasks based on progress heartbeats
+### Task behavior
 
-## Permission Model
+- Cancellable tasks: Every background job has a `CancellationToken`
+- Late results: If a task reports after cancellation, record `TaskResultLate` and discard side effects
+- Slot gates: Coordinator-managed counters avoid semaphore-in-select cancellation unsafety
+- Stale watchdog: Periodic checks for unresponsive tasks based on progress heartbeats
 
-The native permission taxonomy is capability- and family-aware. The canonical public buckets are:
+## Permission model
+
+Tool capabilities map to public permission names:
 
 | Permission | Tool Capability | Policy Options |
 |------------|-----------------|----------------|
@@ -353,12 +361,16 @@ The native permission taxonomy is capability- and family-aware. The canonical pu
 | `webfetch` | `webfetch` | allow / deny / ask |
 | `websearch` | `websearch` | allow / deny / ask |
 | `codesearch` | `codesearch` | allow / deny / ask |
-| `lsp` | `lsp` / `lsp.rename` | allow / deny / ask |
+| `lsp` | Language queries; rename also requires `edit` | allow / deny / ask |
+| `task` | Child tasks and background controls | allow / deny / ask |
+| `read` | File and skill reads | allow / deny / ask |
+| `external_directory` | Access outside the workspace | allow / deny / ask |
+| `doom_loop` | Repeated identical tool calls | allow / deny / ask |
 
 Legacy `shell` and `network` names remain migration-only compatibility aliases. User-facing configs
 should use the canonical public names above.
 
-### Policy Resolution
+### Policy resolution
 
 1. Check global defaults from config
 2. Check per-agent overrides
@@ -369,39 +381,39 @@ should use the canonical public names above.
 
 Static configured `deny` is final and is checked before durable grants, so a replayed allow-always grant can satisfy future `ask` decisions but never overrides policy denial. Allow-always decisions record run-scoped grants by default, with explicit scope and optional expiry fields for future extension. Grant matchers persist only redacted-safe selectors: canonical/effective tool id, permission kind, a semantic shell command digest or workspace-relative edit path when available, and request-digest fallback for exact matching.
 
-### Headless Mode
+### Headless mode
 
 In headless scenarios, `ask` defaults to `deny` unless the scenario script explicitly sends `ResolvePermission(Allow)`.
 
-### Anti-Footgun: No Redelegation
+### Worker delegation limits
 
 Workers cannot call direct coordinator spawn APIs. Only `ActorKind::Supervisor` may call `SpawnAgent`. Violations emit `PolicyViolationDetected`.
 
-## Coordinator-owned Agent Turn Loop
+## Agent turn loop
 
 Agent turns are coordinator-owned state machines. Provider helpers may transform context and stream
 one assistant response, but they do not decide task scheduling, append events directly, or execute
 tools on the production coordinator path. The turn loop runs through explicit phases:
 
-1. **Turn start** - the coordinator records the running turn, lifecycle hook state, cancellation
+1. Turn start - the coordinator records the running turn, lifecycle hook state, cancellation
    token, scheduler slot, and stable turn/request correlation id.
-2. **Context projection and provider transform** - provider-visible messages are recomputed at
+2. Context projection and provider transform - provider-visible messages are recomputed at
    provider-start time from the canonical event-derived active path plus the latest committed
    `SessionCompaction` state. Queued turns do not carry stale scheduled-time provider input.
-3. **Provider stream** - the coordinator allocates a fresh provider-call id, invokes the single-call
+3. Provider stream - the coordinator allocates a fresh provider-call id, invokes the single-call
    provider primitive, and receives provider output through coordinator commands. Text, reasoning,
    and partial tool input are published only as bounded live runtime fragments.
-4. **Assistant-message barrier** - `ProviderRequestFinished` closes provider transport, then
+4. Assistant-message barrier - `ProviderRequestFinished` closes provider transport, then
    `AssistantMessageFinished` durably commits the final sanitized reasoning, text, completed tool
    intents, and provider provenance before tool execution. Replay settles from this event even when
    no live fragments were observed.
-5. **Tool preflight and execution** - parsed tool intents are mapped back to canonical tool ids and
+5. Tool preflight and execution - parsed tool intents are mapped back to canonical tool ids and
    re-enter the coordinator through `ExecuteAgentToolCall`, so permission checks, scheduler slots,
    artifacts, redaction, cancellation, and late-result handling stay on the same path as native tool
    calls.
-6. **Tool-result projection** - completed tool results are appended to the next provider request as
+6. Tool-result projection - completed tool results are appended to the next provider request as
    tool-role messages in assistant source order.
-7. **Turn end** - the agent turn reaches a terminal task lifecycle event, freeing scheduler slots
+7. Turn end - the agent turn reaches a terminal task lifecycle event, freeing scheduler slots
    for any separately queued turns.
 
 JSONL lifecycle events remain chronological append-time records. A parallel tool batch can therefore
@@ -423,10 +435,9 @@ from the committed compaction event without rewriting `events.jsonl`. Pre-prompt
 same pipeline before provider request construction, with deterministic token estimates and a no-loop
 guard when a compaction cannot reduce active context.
 
-## Tool Surface Policy
+## Tool availability
 
-Provider and tool exposure is selected by the singleton `agent.tools` list. The harness ships
-a single native tool surface, so the generic agent opts in by naming canonical tool ids such as
+Each `agent.<name>.tools` list selects the tools available to that agent. Use canonical IDs such as
 `read`, `edit`, `bash`, `task`, and `background_output` directly. Named subagents have bounded prompt
 and tool configurations; worker capability filtering, task permission checks, and direct-child ownership
 remain coordinator-enforced. By default, `read` emits
@@ -443,11 +454,11 @@ background cancellation path already used by `background_output(cancel=true)`.
 The compatibility form remains supported, but task next-actions prefer
 `background_cancel(request_id=...)` for explicit cancellation.
 
-## Hashline Spec
+## Hashline edits
 
 Hashline provides atomic, content-addressed file edits.
 
-### Line Anchor
+### Line anchor
 
 ```rust
 struct LineAnchor {
@@ -456,7 +467,7 @@ struct LineAnchor {
 }
 ```
 
-### Hash Computation
+### Hash computation
 
 1. Split file on `\n`
 2. For each line: strip trailing `\r`, hash bytes with blake3
@@ -464,7 +475,7 @@ struct LineAnchor {
 
 This normalizes CRLF to LF for hashing while preserving original line endings in output.
 
-### Patch Operations
+### Patch operations
 
 ```rust
 enum HashlineOp {
@@ -475,25 +486,25 @@ enum HashlineOp {
 }
 ```
 
-### Apply Algorithm
+### Apply algorithm
 
-1. **Validate anchors**: All anchors must match current content at specified lines
-2. **Detect overlaps**: Operations must not conflict (no two ops touch the same line)
-3. **Apply bottom-up**: Process in descending line order to avoid index drift
-4. **Atomic write**: Write to temp file, then rename
+1. Validate anchors: All anchors must match current content at specified lines
+2. Detect overlaps: Operations must not conflict (no two ops touch the same line)
+3. Apply bottom-up: Process in descending line order to avoid index drift
+4. Atomic write: Write to temp file, then rename
 
-### Error Types
+### Error types
 
 - `ANCHOR_MISMATCH` - Line content does not match expected hash
 - `OUT_OF_RANGE` - Line number exceeds file bounds
 - `OVERLAP` - Multiple operations conflict
 - `EMPTY_PATCH` - No operations provided
 
-### Diff Artifacts
+### Diff artifacts
 
 On successful apply, a unified diff is written to `artifacts/edit-{edit_id}.diff` and referenced in the `EditApplied` event.
 
-## Tool Output Persistence Policy
+## Tool output storage
 
 Tool results are persisted in two layers:
 
@@ -514,9 +525,9 @@ Already-terminated invalid JSON remains a hard parse error. Recovery never execu
 tools, hooks, MCP servers, shell commands, or replay side effects; it only repairs the event log
 tail so prior complete events remain readable and the next append uses the expected sequence.
 
-## Provider Context Compaction
+## Provider context compaction
 
-The coordinator implements the compaction flow from `inspirations/senpi/packages/coding-agent`:
+The coordinator runs compaction through four phases:
 `prepare -> generate -> validate -> commit`. Manual `/compact [focus]`, pre-prompt pressure,
 background preparation, idle preparation, and overflow recovery share this pipeline. Generation
 runs outside the command loop; only the coordinator can append `SessionCompaction` and install the
@@ -559,11 +570,10 @@ scope, ultimately falling back to the adaptive policy. Fixed overrides also driv
 preparation and retention headroom; hard model budgets and reserves take priority.
 Fractional trigger thresholds round up to the first integer token count that
 meets the percentage.
-Integer arithmetic avoids Senpi's floating-point roundoff, which occasionally
-postpones an integral trigger by one token; numerical behavior is therefore not
-literally identical for every possible window size.
+Integer arithmetic triggers compaction at the first whole token count that meets
+the threshold.
 
-Background preparation starts 8,192–32,768 tokens before the soft threshold. Successful interactive
+Background preparation starts 8,192 to 32,768 tokens before the soft threshold. Successful interactive
 turns can also prepare while idle. A prepared summary is reused only when the original history is
 unchanged, the model matches, and appended growth is bounded. It commits at a later safe boundary;
 it never replaces history merely because background generation completed. Preparation has a
@@ -653,7 +663,7 @@ facade composes focused reducers rather than a new monolithic pass; the TUI owns
 overlays and presentation enrichment. Provider-ready requests, raw tool schemas, raw prompts,
 secrets, and hidden reasoning remain outside durable event metadata.
 
-## Replay Contract
+## Replay contract
 
 Replay is side-effect free. It:
 
@@ -662,10 +672,8 @@ Replay is side-effect free. It:
 3. Does not execute tools or make network calls
 4. Produces the same final state as the live run
 
-This enables:
-- Post-hoc analysis of runs
-- Deterministic test fixtures
-- Session sharing without code execution
+Use replay to inspect completed runs, build deterministic fixtures, and review
+shared sessions without executing their recorded actions.
 
 ## Input-first TUI runtime scheduling
 
@@ -674,7 +682,7 @@ runtime arbiter orders fatal writer failure, frame acknowledgement, quit/cancel,
 pacer and animation deadlines, then live provider updates. An input quantum is bounded to 16
 terminal envelopes or 2 ms; fairness permits live progress without reordering input. Live work
 retains a 16-update / 2 ms budget boundary. Input and provider bursts share a 4 ms default flush
-cadence, configurable through `HARNESS_TUI_MIN_DRAW_MS` (1–100 ms). Resize coalescing also uses
+cadence, configurable through `HARNESS_TUI_MIN_DRAW_MS` (1 to 100 ms). Resize coalescing also uses
 4 ms. Fast visible motion follows the configured cadence; discrete spinner and background
 glyphs retain their slower wall-clock periods. Scroll gesture classification retains its 80 ms
 window. The writer keeps at most one frame in flight, and completed acknowledgements are
@@ -691,21 +699,3 @@ projections. Support export adds local-readiness evidence from doctor plus agent
 catalog, native tool catalog, session-tool readiness, route metadata, artifact
 index, redaction manifest, and secret-scan status so failures can be debugged
 without exposing raw credentials.
-
-## Final session projection and history boundaries
-
-`CanonicalSessionProjection` is the sole durable composition facade for semantic session,
-conversation, resume, run summary, timeline, transcript, task, permission, and lineage state.
-Provider continuation and restart lower that projection through one shared `ProviderContext`
-constructor. The coordinator remains the only event append, compaction, scheduling, permission,
-hook, and lifecycle authority.
-
-Compaction V2 has one success writer: `EventV1::SessionCompaction`. The older
-`CompactionRequested`, `CompactionWritten`, `CompactionApplied`, and `CompactionFailed` variants
-are compatibility-only decode inputs. No production checkpoint artifact loader, writer, or copy
-path remains.
-
-The CLI history index is a rebuildable bounded read accelerator, not event truth. It supports
-cursor pages, indexed metadata search, and explicit rebuild while inspect/replay/export/continue
-still read the selected journal. TUI live fragments remain ephemeral presentation state and are
-replaced by the durable assistant commit at settlement.

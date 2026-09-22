@@ -3,14 +3,18 @@
 The repository ships a small starter skill pack under `.agent-harness/skills/`.
 
 ## Included skills
-- `rust-best-practices` — Rust-focused contribution and verification guidance for this workspace.
-- `issue-delivery` — issue closeout checklist for docs, verification, and commit/issue hygiene.
-- `git-master` — safe git commit, rebase, and history-search workflows.
-- `review-work` — post-implementation review orchestration using shipped Harness categories.
-- `frontend-ui-ux` — visual engineering guidance for UI/UX polish with deterministic evidence.
-- `harness-qa` — offline agent dogfood via `scripts/harness-qa-dogfood.sh` plus opt-in live smoke via `scripts/harness-qa-live-smoke.sh` and gitignored QA evidence (`artifacts/qa-evidence/`; live uses `*-live-*` slugs).
+
+| Skill | Purpose |
+| --- | --- |
+| `rust-best-practices` | Rust contribution and verification guidance |
+| `issue-delivery` | Issue completion, documentation, and commit checks |
+| `git-master` | Git commits, rebases, and history searches |
+| `review-work` | Review of completed changes |
+| `frontend-ui-ux` | UI design and visual verification |
+| `harness-qa` | Offline checks through `scripts/harness-qa-dogfood.sh` and optional live smoke through `scripts/harness-qa-live-smoke.sh` |
 
 ## Discovery order
+
 By default the harness searches these Harness-owned project roots, in order at
 each workspace ancestor:
 
@@ -25,7 +29,8 @@ as `shadowed` in the compact catalog. If a config lists extra project roots, the
 Harness-owned roots at that ancestor still run before other non-compatibility
 roots in the same class; roots in the same class keep their configured order.
 
-That means the bundled starter pack is the canonical project-local location. To override a shipped skill, replace the matching directory under `.agent-harness/skills` (for example `.agent-harness/skills/rust-best-practices/SKILL.md`).
+To override a shipped skill, replace its directory under `.agent-harness/skills`,
+such as `.agent-harness/skills/rust-best-practices/SKILL.md`.
 
 Compatibility roots from other editors or assistants are deliberately not part
 of default V1 discovery. `.external-editor/skills`, `.assistant/skills`,
@@ -64,24 +69,20 @@ the config reference are also accepted. Unsupported public fields make the skill
 catalog entry `malformed` rather than silently changing behavior.
 
 ## Extending the pack
-- Add new project-local skills under any configured project root.
-- Keep frontmatter minimal unless the extra metadata is useful before activation.
-- Prefer small, task-specific guidance over long policy dumps.
-- Use this body template when adding a durable skill:
-  - purpose
-  - use when
-  - do not use when
-  - execution policy
-  - steps
-  - tool usage
-  - escalation or stop conditions
-  - final checklist
-  - advanced notes or bundled-reference pointers
-- If a new skill is referenced from docs/tests/example configs, ship it in-repo so fresh checkouts stay reproducible.
+
+Add project-local skills under a configured project root. Keep frontmatter to
+the metadata a reader needs before activation.
+
+Describe the purpose, use when, do not use when, and execution policy in plain
+language. Add steps, tool requirements, stop conditions, and a final checklist
+only when they help the person or agent using the skill. Link longer references.
+
+If documentation, tests, or example configs reference a skill, include it in the
+repository so fresh checkouts can load it.
 
 ## Progressive disclosure and governance
 
-Catalog, doctor, and support export surfaces expose compact metadata only:
+Catalog, doctor, and support export output contains compact metadata only:
 stable id, name, description, source scope, root, location, status, permission
 mode, optional V1 metadata, and `body_loaded: false`. Full `SKILL.md` bodies are
 loaded only when the `skill` tool activates a loadable skill or `task(load_skills
@@ -112,14 +113,14 @@ changes a profile toolset, or bypasses coordinator permission checks.
 Disable a built-in with `skills.disabled`, for example `"skill:project:git-master"`.
 
 ## Using the local runtime config
-The repo ships a project-local `./harness.jsonc`, which the CLI auto-discovers
+A project-local `./harness.jsonc` is auto-discovered
 alongside `./harness.json` plus the XDG runtime config paths. TUI-only settings
 live separately in `tui.jsonc` / `tui.json`. When both global and local runtime
 files exist, the XDG file provides shared defaults and the local file overrides
-it. For a fresh checkout, run with:
+it. To try the shipped example, run:
 
 ```bash
-cargo run -p harness -- --config harness.jsonc tui
+cargo run -p harness -- --config configs/harness.example.jsonc tui
 ```
 
 The shipped example remains available at `configs/harness.example.jsonc` for
