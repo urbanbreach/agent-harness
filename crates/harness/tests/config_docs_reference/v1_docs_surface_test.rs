@@ -7,12 +7,12 @@ fn first_run_provider_auth_docs_do_not_assume_loopback_only() {
 
     // act
     let readme_anchors = [
-        "real provider first run",
+        "## Connect a provider",
         "openai-codex",
-        r#"authProvider: "codex""#,
+        "harness auth login codex",
         "OPENAI_API_KEY",
-        "Codex OAuth-backed request\npath",
-        "doctor does not prove live provider authentication or transport health",
+        "The starter uses Codex OAuth",
+        "A live turn checks whether the account and endpoint work",
     ];
     let config_anchors = [
         "### First-run provider authentication",
