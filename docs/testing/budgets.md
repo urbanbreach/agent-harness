@@ -1,6 +1,7 @@
-# V1 budgets
+# Performance budgets
 
-Budgets are local release-readiness gates, not production-class performance claims. Production-class large-corpus ratification remains final-slice work.
+These budgets cover the listed local fixtures. They do not establish performance
+for larger production workloads. Run the performance lane to collect current measurements.
 
 | Budget | Current local threshold | Evidence |
 |---|---:|---|
@@ -8,11 +9,11 @@ Budgets are local release-readiness gates, not production-class performance clai
 | TUI render | warm 10,000-entry resize p95 below 8.333 ms; frame/resource comparisons measured separately | `cargo nextest run -p harness-tui` and the release perf profile |
 | session resume | 200ms default local resume-plan budget | `crates/harness-core/tests/perf/resume_plan_perf.rs` |
 | large-session list/reopen/search | measured local artifact, no fast long-session claim by itself | `crates/harness/tests/perf_sessions_surface_test.rs` |
-| binary size | documented only in this slice | final-slice binary artifact gate |
+| binary size | no enforced threshold | no measurement gate yet |
 
 ## Startup/readiness budget
 
-Startup/readiness covers launching the binary far enough to parse config, initialize local metadata, and render/help/report readiness without provider network calls. The local slice budget is 2s for the smoke path on the Linux dev box. Evidence should come from `signoff-binary` stage artifacts, including `command.txt`, `stdout.txt`, `stderr.txt`, `status.txt`, and `verification.txt`.
+Startup/readiness covers launching the binary far enough to parse config, initialize local metadata, and render/help/report readiness without provider network calls. The local smoke budget is 2 seconds on the Linux development machine. Evidence should come from `signoff-binary` stage artifacts, including `command.txt`, `stdout.txt`, `stderr.txt`, `status.txt`, and `verification.txt`.
 
 ## TUI render budget
 
@@ -26,17 +27,37 @@ workload sizes, commands, and the distinction between PTY throughput and physica
 
 ## Session resume budget
 
-Session resume uses the local `perf_project_resume_plan_large_completed_log_under_budget` test. The default local threshold is 200ms and can be adjusted only through `HARNESS_PERF_RESUME_PLAN_BUDGET_MS` for explicit local experimentation. Release docs must cite the actual command and artifact provenance rather than this prose.
+`perf_project_resume_plan_large_completed_log_under_budget` checks session resume
+against a 200 ms local threshold. Use `HARNESS_PERF_RESUME_PLAN_BUDGET_MS` to
+override it for a local experiment. Release documentation must cite the measured
+command and its artifacts.
 
-Large-session list/reopen/search measurement uses `perf_large_session_list_reopen_and_session_search_write_artifact`. The test generates a local corpus of 120 sessions, 6 turns per session, and 3,960 total events, measures `harness sessions list`, `harness sessions reopen --json`, and the model-visible `session_search` tool, then writes `large-session-surfaces.json` under `HARNESS_PERF_ARTIFACT_DIR`. The artifact records corpus sizes, measured timings, returned counts, searched session count, the reopened run id, command hint, timestamp, and artifact-root provenance. These measurements are local release-readiness evidence only; they do not ratify production-class long-session performance claims.
+`perf_large_session_list_reopen_and_session_search_write_artifact` generates 120
+sessions with 6 turns each, or 3,960 events total. It measures `harness sessions
+list`, `harness sessions reopen --json`, and the model-visible `session_search`
+tool, then writes `large-session-surfaces.json` under `HARNESS_PERF_ARTIFACT_DIR`.
+
+The artifact records corpus sizes, timings, returned counts, searched session
+count, reopened run id, command hint, timestamp, and artifact-root provenance.
+The measurements apply to this fixture.
 
 ## Binary size budget
 
-Binary size is recorded as a documented limitation in this slice. A final-slice gate should measure the built `harness` binary, write the size artifact under the lane root, and fail closed if the artifact is missing or stale. Until that exists, no release claim should state a binary size achievement.
+There is no enforced binary-size gate. Do not claim a size target without a
+measurement of the built binary and an artifact tied to that build.
 
 ## Perf lane
 
-`scripts/test-lanes.sh perf` runs `cargo nextest run --profile perf --workspace --all-features`. The lane exports `HARNESS_PERF_ARTIFACT_DIR` to the perf stage artifact directory so perf tests can write fresh measurement artifacts beside the lane summary. It then runs `scripts/check-perf-artifacts.py --artifact-dir <perf artifacts>` in the `perf_artifact_freshness` stage. The current hard gates include the resume-plan performance test with `HARNESS_PERF_RESUME_PLAN_BUDGET_MS` override, the large-session surface artifact writer, and the freshness checker for `large-session-surfaces.json`. Missing artifacts, stale timestamps, wrong schema versions, missing timings, or provenance that does not point back to `scripts/test-lanes.sh perf` fail closed. Do not freeze a baseline file to make the lane pass.
+`scripts/test-lanes.sh perf` runs
+`cargo nextest run --release --profile perf --workspace --all-features`. It sets
+`HARNESS_PERF_ARTIFACT_DIR` to the stage artifact directory and then runs
+`scripts/check-perf-artifacts.py --artifact-dir <perf artifacts>` in the
+`perf_artifact_freshness` stage.
+
+The lane checks the resume-plan budget, the large-session measurements, and the
+freshness of `large-session-surfaces.json`. Missing artifacts or timings, stale
+timestamps, incorrect schema versions, and provenance that does not identify
+the perf lane all fail the check. Do not freeze a baseline file to make it pass.
 
 ## Evidence policy
 
@@ -53,6 +74,7 @@ marks corpus list/inspect and long-session context rebuild timing `unavailable` 
 surfaces produce a truthful artifact. The supplied baseline facts remain in the JSON; any
 fresh-measurement disagreement is a drift signal, not a replacement baseline.
 
-## Anti-gaming policy
+## Failed budgets
 
-Budgets are checked against current commands and artifacts. Do not add JSON baselines or allowlists that grandfather old measurements. A failing budget means the code or the claim changes, not the gate.
+Budgets are checked against current commands and artifacts. Do not add JSON baselines or allowlists that grandfather old measurements. When a budget fails, investigate the implementation and revise unsupported claims.
+Do not change the threshold merely to accept the result.

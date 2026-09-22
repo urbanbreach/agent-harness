@@ -1,23 +1,27 @@
 # Testing and signoff map
 
-`scripts/test-lanes.sh` is the canonical lane runner. Use the narrowest lane that proves a
-change, keep the generated artifacts with the review evidence, and run broader lanes only when
-the change touches the contracts they cover.
+Use [`scripts/test-lanes.sh`](../../scripts/test-lanes.sh) to run test groups and
+collect their command logs, results, and artifacts. Choose the smallest group that
+covers the change. Rust tests use nextest.
+
+| Change or check | Lane |
+| --- | --- |
+| Documentation, fixtures, or public output | `quality-gates` |
+| Ordinary Rust changes | `fast` |
+| Deterministic CI partitioning | `integration` |
+| Performance measurements | `perf` |
+| Line coverage | `coverage` |
+| Repeated offline scenario and replay | `simulation` |
+| Compiled CLI entry point | `signoff-binary` |
+| Terminal behavior | `signoff-pty` |
+| Live provider prerequisites | `signoff-live` |
+| Local desktop capture | `signoff-native` |
+| Stress workloads | `stress-offline` or `stress-live` |
+| Combined deterministic checks | `all-deterministic` |
 
 ```bash
 scripts/test-lanes.sh quality-gates
 scripts/test-lanes.sh fast
-scripts/test-lanes.sh integration
-scripts/test-lanes.sh perf
-scripts/test-lanes.sh coverage
-scripts/test-lanes.sh simulation
-scripts/test-lanes.sh signoff-binary
-scripts/test-lanes.sh signoff-pty
-scripts/test-lanes.sh signoff-live
-scripts/test-lanes.sh signoff-native
-scripts/test-lanes.sh stress-offline
-scripts/test-lanes.sh stress-live
-scripts/test-lanes.sh all-deterministic
 ```
 
 Use `--dry-run` to write the same command, status, stdout, stderr, and verification artifact
@@ -43,10 +47,9 @@ The deterministic suite is configured in `.config/nextest.toml`:
 The `ci` profile excludes T5 PTY/live/native visual binaries and perf tests. Ignored live/native
 signoff tests remain opt-in through explicit signoff lanes.
 
-## Test-suite overhaul gates
+## Static test gates
 
-`scripts/check-test-suite-gates.py` is the static gate runner for the test-suite overhaul tracked
-by this testing map:
+`scripts/check-test-suite-gates.py` checks the suite without running Rust tests:
 
 ```bash
 python3 scripts/check-test-suite-gates.py
@@ -86,8 +89,7 @@ all workspace crates.
 
 ## Integration CI partition lane
 
-Run this to prove the deterministic profile can be partitioned without returning to dozens of
-bespoke Cargo invocations:
+Run the deterministic suite in two partitions:
 
 ```bash
 scripts/test-lanes.sh integration
@@ -140,7 +142,7 @@ The job selects the Docker runner and allows six hours for a cold release build.
 progress every minute while the canonical runner captures stage logs, preventing GitLab's
 inactivity timeout. The runner still enforces the same benchmark and freshness checks.
 
-Coverage ratchet evidence is produced with:
+Measure coverage and compare it with the recorded minimum:
 
 ```bash
 scripts/test-lanes.sh coverage
@@ -211,7 +213,7 @@ cargo nextest run -p harness --test event_docs_reference_test
 
 These deterministic owners don't assert PTY, live-provider, native visual, or dogfood evidence.
 
-## G006 Compaction V2 owner checks
+## G006 compaction V2 owner checks
 
 Compaction V2 has one active coordinator pipeline for manual, pre-prompt, and overflow triggers.
 The exact twenty scenario owners are distributed across the coordinator, conversation-projection,
@@ -338,12 +340,12 @@ artifact roots, and lane timestamps. Provider cassette determinism is post-MVP f
 the admitted scenario uses the mock provider, not recorded cassettes. PTY/live/native signoff lanes
 remain provenance-only and must not own simulation behavioral invariants.
 
-The simulation matrix currently admits **`golden_path` only** as
+The simulation matrix currently admits `golden_path` only as
 `offline-deterministic` (INV-001…004). Additional offline themes are owned by
 focused nextest (see agent dogfood / theme table below), not by expanding the
 simulation lane multi-scenario runner in this PRD V1.
 
-## Offline agent dogfood channel
+## Offline runtime smoke checks
 
 Product-touching runtime, CLI, tool, scenario, or session-path changes should
 leave offline mock dogfood evidence in addition to owner nextest:
@@ -365,7 +367,7 @@ bash scripts/harness-qa-dogfood.sh --self-test
 Owner tests: `cargo nextest run -p harness-tools --test skill_load_discovery_test`
 (includes harness-qa quality contract) and the script `--self-test` itself.
 
-### Offline theme owners (WS-P1 disposition)
+### Offline behavior tests
 
 | Theme | Owner surface |
 |-------|----------------|
@@ -385,7 +387,7 @@ anything that needs the deterministic headless UI oracle:
 scripts/test-lanes.sh signoff-pty
 ```
 
-`signoff-pty` is a **strict fail-closed** lane (no soft `|| true` stages). Missing owners,
+`signoff-pty` is a strict fail-closed lane (no soft `|| true` stages). Missing owners,
 missing `cargo`, stage failures, or dual-binary journey failures fail the run and write
 `pty-lane-verdict.txt`. Silent skip is forbidden.
 
@@ -434,7 +436,7 @@ node --test scripts/qa/p1-02-modal-chrome.test.mjs
 cargo build -p harness
 node scripts/qa/web-terminal-visual-qa.mjs \
   --scenario p1-02-modal-chrome \
-  --evidence-dir target/artifacts/p1-02-modal-chrome-120x40 \
+  --evidence-dir .omo/evidence/p1-02-modal-chrome-120x40 \
   --cols 120 --rows 40
 ```
 
@@ -456,14 +458,14 @@ For a combined deterministic closeout, use:
 - `node --test scripts/qa/p1-02-modal-chrome.test.mjs`
 - `node --test scripts/qa/p1-03-startup-reveal.test.mjs`
 - `node --test scripts/qa/p1-04-responsive-feedback.test.mjs`
-- `env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR=<dir> cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit`
+- `env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR=<dir> cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 --ignore-default-filter --run-ignored only -E 'test(=scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit)'`
 
 
 Snapshot reconciliation note: the `command_palette_renders_without_pty` and
 `tool_lifecycle_rows_stay_ordered_without_pty` snapshots were reconciled to
 match current render behavior (live composer placeholder line and ordered tool
-lifecycle rows). The verdict was fixture drift — the committed snapshots
-predated the current render output; no behavior change was introduced.
+lifecycle rows). The committed snapshots predated the current output. Updating them did not change
+runtime behavior.
 
 ```bash
 scripts/test-lanes.sh all-deterministic
@@ -477,12 +479,12 @@ pass. Its PTY gate requires `cargo` on `PATH`, both PTY test files to exist, and
 
 Live signoff is opt-in and env-gated. After T5 slimming, `signoff-live` remains a **preflight +
 signoff** lane: env/config/provider-model tuple checks and the retained prompt/TUI signoff
-wrappers. It does **not** own the offline native tool behavioral matrix (that stays with
+wrappers. It does not own the offline native tool behavioral matrix (that stays with
 deterministic provider cassette, harness-tools, and harness-tui owner tests).
 
-### Live smoke pack (residual PRD WS-L1 / WS-L2)
+### Live smoke pack
 
-A **budgeted live smoke pack** is available as an opt-in agent channel (not CI default):
+Run the optional live smoke script to check authentication and short provider turns:
 
 ```bash
 # Fail-closed without live env (must exit non-zero):
@@ -501,17 +503,17 @@ bash scripts/harness-qa-live-smoke.sh --slug <short-slug>
   isolation-receipt, budget-receipt, events-excerpt, secret-scan, lane-or-run-summary).
 - Fixed smoke list: preflight env/config/provider/model; one short non-tool prompt; optional
   one env-safe tool path only if `HARNESS_LIVE_SMOKE_TOOL=1` (never documented as matrix ownership).
-- Budgets: short prompts, max turns 1–3, wall-clock cap, cost if available else unmetered, secret
+- Budgets: short prompts, max turns 1 to 3, wall-clock cap, cost if available else unmetered, secret
   hard-fail.
-- **T5 non-ownership:** live smoke proves transport/auth/fixed smoke only; it does **not** re-own
+- T5 non-ownership: live smoke proves transport/auth/fixed smoke only; it does not re-own
   the native tool behavioral matrix.
 - Non-claims: not freestyle quality; not multi-provider matrix; not PTY/native; not offline dogfood
   substitute; not CI default.
 
-Slim `live_proxy_e2e` wrappers still write **no** live artifact trees by design; the smoke pack
+Slim `live_proxy_e2e` wrappers still write no live artifact trees by design; the smoke pack
 script is the budgeted evidence path.
 
-### signoff-live lane
+### Live prerequisite lane
 
 ```bash
 HARNESS_LIVE_PROXY=1 \
@@ -545,12 +547,12 @@ Current stage commands:
 Use the live README for exact preflight details, optional live vars, artifacts, retention, and
 agent iteration order instead of duplicating that contract here.
 
-Optional local free live targets (for example Ollama) are **deferred non-CI residual (WS-L4)** and
+Optional local free live targets (for example Ollama) are deferred non-CI residual (WS-L4) and
 are not part of `signoff-live` or default quality gates. See
 [`docs/configuration/provider-support.md`](../configuration/provider-support.md).
 
 Open-ended live freestyle eval missions (for example benchmark sweeps or open-ended agent
-missions) are **rejected as CI or release proof** for V1. Local human experimentation is fine, but
+missions) are rejected as CI or release proof for V1. Local human experimentation is fine, but
 it is not evidence for release readiness.
 
 
@@ -564,7 +566,7 @@ scripts/test-lanes.sh signoff-binary
 ```
 
 `signoff-binary` sets `HARNESS_BINARY_SMOKE=1` plus `HARNESS_BINARY_SMOKE_ARTIFACT_DIR` and runs the ignored
-`cargo nextest run -p harness --test binary_smoke -- --ignored --exact` stage through the canonical
+`cargo nextest run -p harness --test binary_smoke --ignore-default-filter --run-ignored only` stage through the canonical
 artifact-recording lane runner. The smoke runs `harness --help`, `harness --version`, outside-repository
 `harness config validate`, text/JSON `harness doctor`, and a deterministic `harness prompt --mock`
 first prompt against a copied canonical config through `CARGO_BIN_EXE_harness`. It also records a
