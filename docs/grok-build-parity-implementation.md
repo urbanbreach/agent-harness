@@ -1,6 +1,6 @@
 # Grok Build presentation parity implementation
 
-Implemented the research's A–G presentation and interaction changes with Harness
+Implemented the research's A through G presentation and interaction changes with Harness
 branding, coordinator authority, and recorded-data replay intact. Verification
 completed on 8 September 2026 (Europe/Helsinki). The research folder is a local artifact.
 
@@ -23,57 +23,73 @@ remain reviewable in the working tree.
 
 ## Completed implementation
 
-- [x] **A — Transcript and viewer.** Stable visual-entry selection independently
-  navigates prompts, reasoning, tools and answers. The selected block opens a
-  fullscreen viewer with paging, find, selection, copy, and raw/Markdown modes.
-  Transcript-wide search, historical sticky prompts with progressive push-off,
-  final-answer jumps, and stable singleton context groups are implemented.
-  Simple-mode letter input still belongs to the composer; overlays own input.
-- [x] **B — Dashboard.** Awaiting/Working/status groups contain multirow parents
-  and their children; counts include parents once. A measured bottom peek renders
-  Markdown and a real per-session reply editor. Recorded permission/question
-  requests and resolutions drive actual controls and group changes. Compact
-  views open full review before decisions. Resize/refresh preserve drafts and
-  selection; Escape restores the exact transcript anchor, follow state and focus.
-  Diagnostic details remain available through `d`.
-- [x] **C — Composer and completion.** Ctrl+Enter sends now through one cancel
-  followed by one replacement; an empty draft selects the correct queued item.
-  Multiline Alt+Enter submits, Bash Enter runs, Ctrl+S/Alt+S stash and restore,
-  and running Escape preserves the draft while requesting cancellation.
-  Empty Up selects queue/history. Large paste chips expand without sending and
-  retain grouped undo. Slash dismissal keeps the query; Shift+Enter does not
-  execute, Tab accepts, all ranked results remain reachable, model/effort choices
-  dispatch once, and wrapped hit maps separate hover from keyboard selection.
-  File completion supports drilldown, paging and line-range selection.
-- [x] **D — Secondary surfaces.** Modal chrome is centered, viewport-contained
-  and undimmed. Memory supports filtering, value previews, fullscreen and copy.
-  Settings supports human labels, Boolean/integer/string/enum editing, complete
-  validation before persistence, and cancellation with exact palette return.
-  Usage and Extensions have dedicated views over actual recorded/configured data.
-- [x] **E — Tools.** Read, skill, empty-file, image and PDF displays use supplied
-  metadata. Recorded code preserves indentation, tabs, numbering and 5+3 preview
-  geometry. Typed search/web/MCP layouts retain modes, caps and full-view access.
-  Diff syntax uses recorded pre-edit context, including scopes outside the hunk.
-  A bounded recorded-artifact cache keeps filesystem reads out of painting.
-  Command bytes become safe styled cells with SGR and carriage-return overwrite;
-  empty output still reveals the command. Subagents retain one-line lifecycle
-  rows and child navigation, including singleton context-group behavior.
-- [x] **F — Startup and chrome.** Welcome fit measures actual Harness H artwork,
-  notes, notices and actions. Controls appear immediately; the visible H uses
-  the reference shimmer cadence, with bounded demand-driven scheduling and a
-  static reduced-motion profile. Height selects the stacked H where it fits.
-  Structured branch/detached/worktree facts avoid reverse-parsing display text.
-  Compact density restores on growth. Harness identity appears once and notes
-  describe actual Harness functionality.
-- [x] **G — Markdown.** Shared preformatted wrapping preserves code indentation
-  and tabs with matching source-aware selection. Structural semantics cover
-  nested emphasis/links, CommonMark fences, tables/alignment, quotes and math;
-  the baseline's missing parser dependency is declared. Open fences stay styled,
-  prose supports soft breaks and hyphen wrapping, citation fences resolve syntax
-  by extension, and syntax follows Harness theme roles.
-- [x] **Verification.** Behavioral tests, full workspace checks, production
-  renderer captures, native PTY owners, browser interactions, motion samples,
-  reference captures and the release resize benchmark passed.
+### A. Transcript and viewer
+
+Stable visual-entry selection independently
+navigates prompts, reasoning, tools and answers. The selected block opens a
+fullscreen viewer with paging, find, selection, copy, and raw/Markdown modes.
+Transcript-wide search, historical sticky prompts with progressive push-off,
+final-answer jumps, and stable singleton context groups are implemented.
+Simple-mode letter input still belongs to the composer; overlays own input.
+### B. Dashboard
+
+Awaiting/Working/status groups contain multirow parents
+and their children; counts include parents once. A measured bottom peek renders
+Markdown and a real per-session reply editor. Recorded permission/question
+requests and resolutions drive actual controls and group changes. Compact
+views open full review before decisions. Resize/refresh preserve drafts and
+selection; Escape restores the exact transcript anchor, follow state and focus.
+Diagnostic details remain available through `d`.
+### C. Composer and completion
+
+Ctrl+Enter sends now through one cancel
+followed by one replacement; an empty draft selects the correct queued item.
+Multiline Alt+Enter submits, Bash Enter runs, Ctrl+S/Alt+S stash and restore,
+and running Escape preserves the draft while requesting cancellation.
+Empty Up selects queue/history. Large paste chips expand without sending and
+retain grouped undo. Slash dismissal keeps the query; Shift+Enter does not
+execute, Tab accepts, all ranked results remain reachable, model/effort choices
+dispatch once, and wrapped hit maps separate hover from keyboard selection.
+File completion supports drilldown, paging and line-range selection.
+### D. Secondary surfaces
+
+Modal chrome is centered, viewport-contained
+and undimmed. Memory supports filtering, value previews, fullscreen and copy.
+Settings supports human labels, Boolean/integer/string/enum editing, complete
+validation before persistence, and cancellation with exact palette return.
+Usage and Extensions have dedicated views over actual recorded/configured data.
+### E. Tools
+
+Read, skill, empty-file, image and PDF displays use supplied
+metadata. Recorded code preserves indentation, tabs, numbering and 5+3 preview
+geometry. Typed search/web/MCP layouts retain modes, caps and full-view access.
+Diff syntax uses recorded pre-edit context, including scopes outside the hunk.
+A bounded recorded-artifact cache keeps filesystem reads out of painting.
+Command bytes become safe styled cells with SGR and carriage-return overwrite;
+empty output still reveals the command. Subagents retain one-line lifecycle
+rows and child navigation, including singleton context-group behavior.
+### F. Startup and chrome
+
+Welcome fit measures actual Harness H artwork,
+notes, notices and actions. Controls appear immediately; the visible H uses
+the reference shimmer cadence, with bounded demand-driven scheduling and a
+static reduced-motion profile. Height selects the stacked H where it fits.
+Structured branch/detached/worktree facts avoid reverse-parsing display text.
+Compact density restores on growth. Harness identity appears once and notes
+describe actual Harness functionality.
+### G. Markdown
+
+Shared preformatted wrapping preserves code indentation
+and tabs with matching source-aware selection. Structural semantics cover
+nested emphasis/links, CommonMark fences, tables/alignment, quotes and math;
+the baseline's missing parser dependency is declared. Open fences stay styled,
+prose supports soft breaks and hyphen wrapping, citation fences resolve syntax
+by extension, and syntax follows Harness theme roles.
+### Verification
+
+Behavioral tests, full workspace checks, production
+renderer captures, native PTY owners, browser interactions, motion samples,
+reference captures and the release resize benchmark passed.
 
 ## Verification results
 
@@ -89,10 +105,10 @@ remain reviewable in the working tree.
 | Native startup PTY owner | Passed; 18 real-runtime sessions across 80×24, 120×40 and 160×50, Unicode/ASCII/reduced-motion variants |
 | Native composer PTY owner | Passed, including actual Ctrl+Enter input |
 | xterm.js browser journeys | 14 passed: startup ×4, resize ×4, modal interaction ×3, composer, slash happy and slash edge |
-| Release 10,000-entry resize benchmark | 100 measured resizes after 10 warmups; p95 **1.279 ms**, below 33 ms; detached anchor preserved |
+| Release 10,000-entry resize benchmark | 100 measured resizes after 10 warmups; p95 1.279 ms, below 33 ms; detached anchor preserved |
 | Grok reference render crate tests | 1,143 passed; 1 ignored |
 
-The selected emulator bundle contains **496 PNG/ANSI pairs**, all checked against
+The selected emulator bundle contains 496 PNG/ANSI pairs, all checked against
 SHA-256 receipts: 320 Harness welcome frames, 44 final Harness surface frames,
 42 native-runtime samples replayed through xterm.js, 40 Grok welcome frames and
 50 Grok Markdown/streaming/tool/dashboard/settings frames. Welcome fixtures cover
@@ -177,18 +193,18 @@ profile, then replay the ANSI files through the bundled xterm.js driver:
 
 ```bash
 env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor \
-  HARNESS_TUI_TEST_WORKSPACE=1 HARNESS_PARITY_RENDER_ARTIFACT_DIR=/tmp/harness-frames \
-  cargo nextest run --profile ci -p harness-tui --test grok_parity_render_test
+HARNESS_TUI_TEST_WORKSPACE=1 HARNESS_PARITY_RENDER_ARTIFACT_DIR=/tmp/harness-frames \
+cargo nextest run --profile ci -p harness-tui --test grok_parity_render_test
 env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor \
-  HARNESS_TUI_TEST_WORKSPACE=1 HARNESS_PARITY_RENDER_ARTIFACT_DIR=/tmp/harness-frames \
-  cargo nextest run --profile ci -p harness-tui --lib -E 'test(grok_parity_surfaces)'
+HARNESS_TUI_TEST_WORKSPACE=1 HARNESS_PARITY_RENDER_ARTIFACT_DIR=/tmp/harness-frames \
+cargo nextest run --profile ci -p harness-tui --lib -E 'test(grok_parity_surfaces)'
 node scripts/qa/render-recorded-frames.mjs /tmp/harness-frames .omo/evidence/parity-render
 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_P1_03_ARTIFACT_DIR=/tmp/harness-native \
-  cargo nextest run --profile ci -p harness-tui --test p1_03_pty_recorded \
-  --ignore-default-filter --run-ignored all \
-  -E 'test(p1_03_native_pty_owner_records_startup_reveal_terminal_states)'
+cargo nextest run --profile ci -p harness-tui --test p1_03_pty_recorded \
+--ignore-default-filter --run-ignored all \
+-E 'test(p1_03_native_pty_owner_records_startup_reveal_terminal_states)'
 node scripts/qa/web-terminal-visual-qa.mjs --scenario slash-completion-edge \
-  --cols 80 --rows 24 --evidence-dir .omo/evidence/parity-slash
+--cols 80 --rows 24 --evidence-dir .omo/evidence/parity-slash
 ```
 
 Use a clean checkout for browser QA's fail-closed source/executable provenance.

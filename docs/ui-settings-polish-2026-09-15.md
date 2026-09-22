@@ -1,8 +1,8 @@
 # Settings and modal polish against Grok Build
 
-This follow-up preserves Harness's themes, semantic colors, name, and artwork.
-It builds on the [earlier UI pass](ui-polish-2026-09-15.md), using existing
-editors, modal geometry, glyphs, and validation. No dependencies were added.
+This update makes settings choices visible, adds text-editing feedback, and keeps
+paste inside the active modal. It uses the editors and layout from the
+[earlier UI pass](ui-polish-2026-09-15.md). No dependencies were added.
 
 The comparison covered startup, composer, settings, dashboard, tool disclosure,
 and activity animations. The remaining actionable gaps were concentrated in

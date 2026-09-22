@@ -66,8 +66,8 @@ The lifecycle fixture exercises thirteen tool families through public event
 ingestion and input handling at 40×24, 80×24 and 120×40. It checks streaming,
 queued, permission waits, running animation, successful/failed completion,
 selection, expansion and collapse. Durable fixture sequences are contiguous,
-and projection errors fail the test. This matters: gaps can prevent tool results
-from settling, which would otherwise leave a misleading header-only capture.
+and projection errors fail the test. Sequence gaps can prevent tool results from settling and leave a misleading
+header-only capture.
 
 ```bash
 env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor \

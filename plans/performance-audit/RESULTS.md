@@ -26,12 +26,12 @@ projection rewrite. The remaining dirty-frame semantic build still scans history
 
 ## Changes and protected contracts
 
-1. **Transcript semantics:** on a measured-layout miss, reuse sections from the
+1. Transcript semantics: on a measured-layout miss, reuse sections from the
    existing four-entry cache when app identity, render key, theme, and surface match.
    Width still keys geometry. The actual-render regression checks semantic build
    counts, both scrollbar widths, cold-render cell equality, selection rows, links,
    and wide/combining characters after dirty content changes.
-2. **Breadcrumb Git:** store a separate current-directory label at construction,
+2. Breadcrumb Git: store a separate current-directory label at construction,
    not a recorded run-workspace label. Rendering only borrows it. Runtime refreshes
    outside rendering every five seconds, including while idle, and redraws only
    on a changed label. Supplied-clock tests cover deadlines and replay suppression;
@@ -39,23 +39,23 @@ projection rewrite. The remaining dirty-frame semantic build still scans history
    and an explicit refresh changes both displayed branches. Initial construction
    still discovers the current directory, including when constructing replay state.
    The interval bounds probe frequency, not subprocess duration under a blocked OS.
-3. **Glob:** use stable `sort_by_cached_key(Reverse(mtime))`; metadata fallback,
+3. Glob: use stable `sort_by_cached_key(Reverse(mtime))`; metadata fallback,
    exclusions, containment, sort-before-limit, and exact counts are unchanged.
    Existing ordering coverage now also checks tied mtimes and missing-file ties.
-4. **History index:** use compact JSON only. Schema, row ordering, per-commit
+4. History index: use compact JSON only. Schema, row ordering, per-commit
    updates, cross-process locking, atomic replacement, mode 0600, and file/directory
    syncs are unchanged.
-5. **Grep:** share entry collection but render the overflow artifact's lines only,
+5. Grep: share entry collection but render the overflow artifact's lines only,
    without constructing the discarded human display. Inline limits, context,
    exact counts, exclusions, artifact formatting and digests are preserved. Existing
    integration tests now compare complete artifacts for match-limit and byte-limit
    overflow. The second scan and full-artifact materialization remain.
-6. **SSE:** scan only appended bytes plus a three-byte overlap after unsuccessful
+6. SSE: scan only appended bytes plus a three-byte overlap after unsuccessful
    delimiter search; reset after every drained frame, including ignored frames.
    Tests exercise mixed delimiters, chunk splits, ignored frames, UTF-8 splits,
    unterminated EOF data, and allocation reuse. No live payloads were collected;
    the large-frame result establishes synthetic scaling, not typical provider gain.
-7. **Settlement:** pass the staged owned vector through construction using `Cow`,
+7. Settlement: pass the staged owned vector through construction using `Cow`,
    eliminating the second clone. The initial staging clone and assignment only
    after successful projection preserve failure atomicity. Tests compare each
    provider-finish, assistant-finish, and task-completion boundary with a fresh
@@ -64,7 +64,7 @@ projection rewrite. The remaining dirty-frame semantic build still scans history
 
 ## Reproducible A/B method
 
-- Baseline: a pristine detached checkout of **`9abbd54f`**, freshly compiled.
+- Baseline: a pristine detached checkout of `9abbd54f`, freshly compiled.
   The old audit executable was retained, but its rlib dependency set could no
   longer be relinked reliably; it is not used for the tables in this report.
 - Both sides use the same updated probe, including the new 1%-matching-file grep
@@ -75,7 +75,7 @@ projection rewrite. The remaining dirty-frame semantic build still scans history
 - Linux x86_64, Intel i7-12800H, 20 logical CPUs; rustc 1.98.0
   (`88d9e12ae`, LLVM 22.1.8). CPU affinity, clocks, thermal state and unrelated host
   load are not controlled. No instrumentation tools were installed.
-- **180 JSON records:** 30 workload/size combinations, two versions, three rounds.
+- 180 JSON records: 30 workload/size combinations, two versions, three rounds.
   Workloads run serially without our builds/tests alongside them. Each workload is
   paired before/after; the second round reverses version order. This reduces, but
   does not eliminate, drift and is not fully randomized benchmarking.
@@ -117,7 +117,7 @@ raw:    ab2951296b63a278a6e91b71a458d6b0484f398f8024311050c9ecb38dc43bb6
 
 ### TUI
 
-All values are milliseconds; each pair is **baseline / modified**.
+All values are milliseconds; each pair is baseline / modified.
 
 | Turns | Cold render | Hot render | Dirty ingest + render | Three settlements total |
 |---|---:|---:|---:|---:|
@@ -126,14 +126,14 @@ All values are milliseconds; each pair is **baseline / modified**.
 | 1,000 | 123.530 / 115.119 | 2.376 / 0.146 | 20.720 / 9.123 | 106.524 / 103.427 |
 | 2,000 | 141.551 / 123.614 | 2.327 / 0.152 | 36.259 / 16.456 | 237.569 / 225.707 |
 
-Direct workspace discovery is essentially unchanged: **1.865 / 1.867 ms**.
+Direct workspace discovery is essentially unchanged: 1.865 / 1.867 ms.
 It was removed from repeated rendering, not globally cached or made faster.
 Cold/load costs should not be inferred from hot-frame improvements; initialization
 now owns the initial breadcrumb discovery.
 
 ### Filesystem tools
 
-Whole-call medians in milliseconds, **baseline / modified**. Broad grep has
+Whole-call medians in milliseconds, baseline / modified. Broad grep has
 50 matches per file; sparse grep has the same file sizes but only every 100th file
 matches. Inline match limit is 100. Artifacts remain in the excluded sessions tree.
 
@@ -158,7 +158,7 @@ standard-library at-most-once key extraction with its relative-path join preserv
 | 1,000 | 954,720 / 678,708 | 5.764 / 5.086 |
 | 2,000 | 1,912,720 / 1,360,708 | 9.909 / 8.411 |
 
-Compact index size is about **29% lower**, independent of latency noise.
+Compact index size is about 29% lower, independent of latency noise.
 The raw `serialize` field continues to measure pretty serialization deliberately;
 `compact.serialize` measures compact serialization. Neither replaces the measured
 whole append/persist result.
@@ -180,7 +180,7 @@ changed batching policy is claimed.
 
 ### SSE
 
-Milliseconds, **baseline / modified**. Zero below means less than one microsecond.
+Milliseconds, baseline / modified. Zero below means less than one microsecond.
 
 | Frame data bytes | 64-byte chunks | 4,096-byte chunks |
 |---|---:|---:|
@@ -224,7 +224,7 @@ reopen identity checks passed. Artifacts: `target/perf-artifacts/session-{before
   (68 versus 80 operator probes), and the motion wake assertion (None versus 133ms).
   No failing test was removed, weakened, or snapshot-updated. Logs:
   `target/perf-artifacts/audit-nextest.log` and `audit-baseline-failures.log`.
-- `scripts/test-lanes.sh perf`: **six tests passed**, artifact freshness passed.
+- `scripts/test-lanes.sh perf`: six tests passed, artifact freshness passed.
   The first build exceeded the command's 20-minute timeout; resuming with a larger
   timeout completed successfully. Canonical artifacts are under
   `target/perf-artifacts/audit-perf-lane`.
