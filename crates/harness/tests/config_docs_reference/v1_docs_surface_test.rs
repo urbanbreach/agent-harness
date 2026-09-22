@@ -46,12 +46,12 @@ fn model_prompt_tuning_stance_is_documented_for_v1() {
 
     // act
     let expected_anchors = [
-        "## V1 model prompt tuning stance",
-        "Provider-family prompt selection is routed through the explicit model-resolution\nseam",
+        "## Model prompts",
+        "`harness_core::model_resolution` selects a prompt family",
         "`harness_core::model_resolution`",
         "`crates/harness/src/dynamic_prompt.rs`",
-        "rather than scattered raw `model_id.contains(...)` checks",
-        "golden prompt tests",
+        "Model metadata supplies the family",
+        "for routing and override rules",
     ];
 
     // assert
@@ -68,7 +68,7 @@ fn reference_prompt_patterns_map_to_harness_seams() {
     // arrange
     let architecture = read_doc("docs/architecture/architecture.md");
     let mut section = architecture
-        .split("### Prompt reference seam map\n")
+        .split("### Prompt implementation map\n")
         .nth(1)
         .unwrap_or_abort();
     if let Some((current, _rest)) = section.split_once("\n### ") {
@@ -82,15 +82,6 @@ fn reference_prompt_patterns_map_to_harness_seams() {
     let rows = markdown_table_rows(section);
 
     // assert
-    assert!(
-        section.contains("user-observable Harness behavior"),
-        "seam map must state reference behavior is copied as product behavior"
-    );
-    assert!(
-        section.contains("not by copying source architecture"),
-        "seam map must reject copying source architecture"
-    );
-
     for (pattern, seam_anchor, status_anchor) in [
         (
             "Intent-gate before tool use",
@@ -190,11 +181,10 @@ fn built_in_capability_order_and_state_policy_are_documented_and_guarded() {
     }
 
     for anchor in [
-        "Order is intentional where it affects runtime behavior",
-        "permission checks own authority before native tool registration",
-        "native tool registration owns tool ids before agent prompt assembly",
-        "compaction consumes replay-derived event/tool context",
-        "skill activation still respects the operator-requested `load_skills` order",
+        "The coordinator owns event appends and permission checks",
+        "assigns tool IDs before prompt assembly advertises them",
+        "Compaction reads event\nand tool context only after those events exist",
+        "Skill activation respects the operator-requested\n`load_skills` order",
         "V1 disableable built-in skills write no JSONL or artifact state by themselves",
         "schema_version",
         "migration policy",
@@ -229,13 +219,13 @@ fn thin_v1_docs_cover_their_source_surfaces() {
         );
     }
     for field in [
-        "context",
-        "goal",
-        "downstream use",
-        "request",
-        "required tools",
-        "must-do",
-        "must-not-do",
+        "Context",
+        "Goal",
+        "Downstream use",
+        "Request",
+        "Required tools",
+        "Required checks",
+        "Scope limits",
     ] {
         assert!(
             agents.contains(field),
@@ -256,7 +246,7 @@ fn thin_v1_docs_cover_their_source_surfaces() {
         "fork",
         "clone",
         "source cutoff",
-        "meaningful title",
+        "`UpdateSessionTitle` records renames",
     ] {
         assert!(
             sessions.contains(lineage),
@@ -277,13 +267,13 @@ fn thin_v1_docs_cover_their_source_surfaces() {
         );
     }
     for topic in [
-        "Missing credentials",
-        "Invalid credentials",
-        "rate limits",
-        "Base URL",
-        "Missing MCP",
+        "Credentials are missing",
+        "provider rejects credentials",
+        "rate-limits",
+        "baseURL",
+        "MCP server is unavailable",
         "resume",
-        "terminal rendering",
+        "TUI renders incorrectly",
         "permission",
     ] {
         assert!(

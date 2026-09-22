@@ -1,7 +1,8 @@
 # Engine inventory
 
-This inventory freezes the `060ee1fd` starting point for the engine simplification.
-It distinguishes observed source structure from the future target; it is not a release claim.
+This inventory records baseline `060ee1fd` and the later migration measurements.
+The tables distinguish measured source structure from planned changes. They do
+not certify a release. See [architecture](architecture.md) for the current runtime.
 
 ## Measured contract
 
@@ -77,7 +78,7 @@ claim is inferred from it.
 ## Phase 0 backend subsystem matrix
 
 `I`/`H` mean normal interactive/headless reachability. `Unit` and `integration/PTY` name the
-owner surface when present; `none recorded` is deliberate, not an implied pass.
+responsible tests when present. `none recorded` means no evidence was recorded.
 
 | Subsystem | Owning files/modules; runtime entry | I/H | Unit; integration/PTY | Runtime evidence | Status; disposition |
 |---|---|---|---|---|---|
@@ -90,7 +91,7 @@ owner surface when present; `none recorded` is deliberate, not an implied pass.
 | provider request construction | `agent/provider_boundary.rs::build_provider_context_messages`, providers request modules | yes/yes | provider boundary owners; no PTY | golden mock request | canonical boundary; Keep |
 | prompt/system-context construction | `dynamic_prompt.rs`, `agent/provider_boundary.rs` | yes/yes | prompt owners; no PTY | golden mock request | duplicated context assembly; Consolidate |
 | session persistence | `store.rs::JsonlFileEventStore::append` | yes/yes | store owners; no PTY | golden `events.jsonl` | canonical journal; Keep |
-| session listing | `harness/src/{replay/history_index.rs,sessions/list.rs}` | yes/yes | indexed replay/session owners; no PTY | counted cold/warm open seam | supported advisory index; Keep |
+| session listing | `harness/src/{replay/history_index.rs,sessions/list.rs}` | yes/yes | indexed replay/session owners; no PTY | cold and warm journal-open counters | supported advisory index; Keep |
 | session continuation | `run.rs`, `coord/handle.rs::resume_run` | yes/yes | resume owners; TUI replay owner | canonical resume owner | supported canonical view; Keep |
 | replay | `harness/src/replay.rs::LoadedSessionRun` | yes/yes | replay owners; no PTY | golden log is inspectable | canonical settled read boundary; Keep |
 | conversation projection | `session/projection.rs` composes `conversation.rs::project_conversation` | yes/yes | conversation projection owners; no PTY | canonical facade owner | focused pure reducer; Keep |
@@ -124,9 +125,9 @@ and deletion of those mirrors remain assigned to M03.
 `CompactionFailed` as compatibility-only decode variants. `SessionCompaction` is the sole active
 Compaction V2 success event; `BranchSummary` remains a separate branch-summary event. One
 authoritative composed `CanonicalSessionProjection` facade is built at each journal load or
-settlement. It composes focused pure reducers rather than becoming a single monolithic pass;
-provider/restart/replay/export/catalog/settled-TUI consumers no longer select independent durable
-truth. TUI-only overlays and presentation enrichment remain non-durable.
+settlement. It composes focused pure reducers, each with its own validation.
+Provider continuation, restart, replay, export, the catalog, and the settled TUI
+read the same projection. TUI overlays and formatting remain non-durable.
 
 The corrected accepted-tree comparison uses baseline `2f0b2a9a75b368cf94ac20a26f2321a398cb19cd`.
 The current G012 measurement preserves that baseline and is net-negative: production LOC is
@@ -135,10 +136,10 @@ harness-core is 67,861 to 66,116 (-1,745), and SIZE_OK markers are 191 to 187. T
 also records baseline-contract drift instead of silently rebasing it. Event variants remain 39 so
 shipped legacy journals still deserialize.
 
-The persistent bounded history surface is `.session-history-index-v1.json`. Each successful durable
+The history index is `.session-history-index-v1.json`. Each successful durable
 commit updates its row under the index lock. Warm reads compare directory entries and journal
-metadata, reuse unchanged rows without opening each `events.jsonl`, and the counted seam reports
+metadata, reuse unchanged rows without opening each `events.jsonl`, and the counter reports
 zero warm journal opens. Cursors carry timestamp, run id, and run-directory bytes; invalid or stale
 cursors fail closed. Missing, stale, unsupported-version, truncated, and corrupt index states
 rebuild from journals; malformed journals produce unavailable rows without poisoning healthy
-sessions. The index remains advisory and never carries continuation truth.
+sessions. The index remains advisory; continuation always validates the journal.

@@ -1,120 +1,154 @@
-# Permissions guide and V1 threat model
+# Permissions
 
-Harness permissions are an operator approval layer, not a sandbox. They decide whether the coordinator may run a requested tool action; they do not confine the operating system, container, shell, provider, or editor once an operator approves a dangerous action.
+Harness permissions are an operator approval layer, not a sandbox. They decide
+whether the coordinator may run a tool. An approved shell command can still
+perform host I/O beyond what the shell path scanner can identify.
 
 ## Permission names
 
-The public V1 permission names are:
+| Permission | Controls |
+| --- | --- |
+| `bash` | Shell commands and stdio MCP capabilities |
+| `edit` | Native file changes, including LSP rename |
+| `question` | Questions sent to the operator |
+| `task` | Child tasks and background task controls |
+| `webfetch` | Fetching remote content |
+| `websearch` | Web search |
+| `codesearch` | Code search and native AST search |
+| `lsp` | Language server queries |
+| `read` | File and skill reads |
+| `external_directory` | Access outside the configured workspace |
+| `doom_loop` | Repeated identical calls |
 
-- `bash`
-- `edit`
-- `question`
-- `task`
-- `webfetch`
-- `websearch`
-- `codesearch`
-- `lsp`
-- `read`
-- `external_directory`
-- `doom_loop`
-
-Legacy internal names such as shell/network may appear in compatibility code, but docs, prompts, and public config should use the V1 names above.
+Use these names in new configs. `shell` and broad `network` names remain
+compatibility inputs.
 
 ## Allow, ask, deny
 
-`allow` lets the coordinator run the tool without another prompt. `ask` records a permission request and waits for operator approval. `deny` blocks the tool before execution and records the denial. Profile overrides, defaults, and selector rules are resolved by the coordinator before any native tool code runs.
+The coordinator resolves defaults, role overrides, and selector rules before
+tool execution. `allow` proceeds without another prompt. `ask` records a request
+and waits for approval. `deny` records a denial and stops the call.
 
-## Allow-by-default product model
+A grant can satisfy an ask but cannot override a deny. An allowed call still has
+to pass tool availability, workspace path checks, shell parsing, and any
+tool-specific validation.
 
-The canonical scalar form is OpenCode-aligned allow-by-default:
+## Defaults
 
 ```jsonc
 { "permission": "allow" }
 ```
 
-Scalar `ask`/`deny` paint every canonical public kind. Scalar `allow` (and the omitted-permission default) is allow-with-safety-exceptions: ordinary tools default to allow while safety kinds stay guarded — `external_directory` and `doom_loop` stay ask, base `question` stays deny until a named profile explicitly allows it, and `read` defaults to allow with targeted `.env` pattern asks.
+Scalar `allow`, or omitting `permission`, allows ordinary tools with safety
+exceptions. `external_directory` and `doom_loop` stay at ask. `read` asks for
+sensitive `.env` patterns. Base `question` stays denied until a named profile
+allows it. Scalar `ask` and `deny` apply to every public kind.
 
-This is intentionally not a full OpenCode PermissionNext engine. Harness uses a dual Policy plus ruleset seam: permission resolution returns allow/ask/deny, and the runtime still applies tool-level capability checks and tool-specific safety gates afterward. A permission allow does not bypass workspace path validation, shell safety parsing, or the doom-loop streak counter.
+| Extra check | Trigger | Behavior |
+| --- | --- | --- |
+| Sensitive file read | The effective basename matches `*.env` or `*.env.*` | Ask; `*.env.example` is allowed. External paths use the external-directory check. |
+| External directory | A tool argument resolves outside the workspace, including bash `cwd`, `workdir`, or path-like `--option=value` arguments | Ask; an approval can grant a path prefix for later calls in the current run. |
+| Repeated call | A third consecutive call has the same tool ID and permission-request digest | Ask; allowing once resets the streak, while allowing always suppresses later asks for the run. A child deny still wins. |
 
-File permission rules check both the normalized requested workspace name and its effective target, including symlink targets and creation paths beneath existing directories. A deny on either name wins; otherwise an ask on either name remains an ask. Invalid or unresolvable supplied paths fail closed. The pure configuration-selector syntax is unchanged.
-
-Sensitive-file asks also check effective targets, so an innocuous alias cannot bypass them in always-approve mode. Reusable grants for aliases bind to their resolved targets, and pending approvals revalidate those targets before execution. Supported external access retains the separate `external_directory` gate. These checks do not provide a race-free filesystem sandbox or change per-file filtering inside broad directory searches.
-
-## Mutable surfaces
-
-Approving `edit` can change workspace files. Approving `bash` can run host commands inside the configured workspace and can indirectly mutate files; bash approvals may be scoped to reusable command patterns such as `cargo nextest run *`. Approving `task` can spawn child agents or control background work. Network permissions (`webfetch`, `websearch`, `codesearch`) can send request data to configured services. `question` can interrupt the operator flow. `lsp` can inspect code and, through rename-capable routes, may require edit permission for mutations.
-
-## Targeted safety asks
-
-Three mechanisms ask for extra operator confirmation even when the base permission is allow:
-
-| Kind | Trigger | Default | Notes |
-|---|---|---|---|
-| `read` `.env` patterns | Reading a file whose basename matches `*.env` or `*.env.*` | ask | `*.env.example` is explicitly allowed. Paths outside the workspace raise `external_directory` instead. |
-| `external_directory` | Any tool argument, including bash `cwd`/`workdir` and path-like `--option=value` values, that resolves outside the configured workspace | ask | Grant-gated: an approved ask can record a call-scoped prefix so later calls under the same path do not re-ask until the run ends. Bash path-like tokens that the shell scanner misses are denied, not allowed. |
-| `doom_loop` | The third identical call to the same tool with the same arguments | ask | Streak is counted per `(tool_id, permission_request_digest)` on the run. `allow` with mode `once` resets the streak; `always` marks the run as always-granted so the kind no longer asks; a child deny still wins. |
-
-There is no OpenCode-style temporary-directory whitelist. Workspace-relative paths and explicit call-scoped grants are the only supported escape gates.
-
-## Runtime-enforced vs behavioral promises
-
-The runtime-enforced vs behavioral split is explicit:
-
-| Promise | Enforced by runtime? | Notes |
-|---|---|---|
-| Tool availability for the generic agent | yes | Coordinator checks the registered actor's own toolset before execution. |
-| Catch-all deny hides tools from the model | yes | Provider tool lists omit tools whose last matching permission rule is `pattern: "*"` + `action: deny` (Harness `disabled` / `visibleTools`). Partial path/command allows keep the tool visible. |
-| Permission decision before execution | yes | Permission policy returns allow/ask/deny before tool code runs. |
-| Bash globs and `/dev/null` | yes (permission-patterns mode) | Shell globs and safe device redirects are not hard-blocked as workspace escapes; true out-of-workspace paths still fail closed. |
-| Ask one question / keep responses concise | behavioral | Prompt guidance only; not a sandbox. |
-| Prefer small changes and manual QA | behavioral | Verified by review/tests, not by permission policy. |
-
-## Generic agent summary
-
-The generic agent uses the configured top-level permission policy plus its optional `agent.default.permission` overlay:
-
-| Execution | Notable allow | Notable ask | Notable deny |
-|---|---|---|---|
-| `default` | configured ordinary tools, including `task` when enabled | `external_directory`, `doom_loop`, and any operator-configured asks | any capability denied by the effective policy |
-
-The generic parent and each named subagent have independent toolsets and role permissions. Parent tool membership and `task` permission gate child starts and continuations. A parent's role edit deny does not restrict a child whose own role allows editing.
-
-For every child action, combine the child's role decision with shared policy (without the parent's role overlay): **deny wins; otherwise ask wins; otherwise allow**. This applies to ordinary tools, external-directory checks, and threshold-triggered doom-loop checks. Remembered grants and always-approve shortcuts cannot override a child deny. Selector exceptions keep partially permitted tools visible; the coordinator checks the actual arguments before execution. Primary-agent precedence is unchanged.
-
-| Role | Default capability posture |
-|---|---|
-| `explore` | Read/search, native AST search, web research, session inspection, batch, bash, LSP, skills, and discovered MCP; no native edits, questions, tasks, or todo mutation |
-| `librarian` | Explore's tools plus external `codesearch` |
-| `general` | Librarian's native tools except skill loading, plus editing; no redelegation by default |
-
-Research prompts prohibit implementation work, but bash and MCP remain capable of mutation. Native editing and `lsp.rename` stay unavailable. Skill loading uses read permission plus the existing per-skill policy; task denial does not block it. See the [exact role tool lists](../operations/generic-agent-and-tasks.md#permission-and-toolset-boundaries).
-
-Discovered concrete MCP tools are automatic for the primary agent and both research roles. General requires exact registered IDs in its tool list. Both policy layers must permit their existing capabilities: stdio MCP uses `bash`; HTTP MCP uses network policy. Neither transport nor read-only hints prove safety. Generic MCP gateways are not added by discovery.
-
-Skills supply instructions and cannot grant tools. Worker membership checks also apply to batch inner calls. Runtime metadata describes the child's own scope even when parent and child use the same profile name; available tools may still ask or deny for specific arguments. Resume uses current configuration and the same child preparation as fresh spawn, without rewriting historical metadata.
+External-directory grants are run-local path prefixes, not global or persisted
+session grants. There is no automatic temporary-directory whitelist. Unrecognized
+path-like shell tokens are denied.
 
 ## Pattern-rule evaluation
 
-Rules are ordered; **last match wins**. When no rule matches a permission+pattern pair, the default action is **ask**. Config scalars (`permission.bash: "allow"`) expand to `pattern: "*"`. Pattern maps (`permission.bash: { "git *": "allow", "*": "ask" }`) expand one rule per entry.
+Rules keep their authored JSON/JSONC order. The last matching rule wins. A
+permission and pattern pair with no matching rule defaults to ask.
 
-Pattern maps follow their authored JSON/JSONC order, including named-agent permissions and the `shell` alias for `bash`. Later configuration layers retain inherited patterns, then append their own patterns in authored order. An overridden pattern moves to its later position. A scalar replaces that kind's pattern map; omitted kinds remain inherited. Legacy rule arrays keep their explicit order and replace earlier arrays.
+```jsonc
+{
+  "permission": {
+    "bash": {
+      "*": "deny",
+      "git status*": "allow",
+      "cargo nextest run*": "ask"
+    },
+    "edit": {
+      "*": "ask",
+      "docs/**": "allow"
+    }
+  }
+}
+```
 
-This corrects older loaders that accidentally sorted pattern keys. Configurations relying on that sorting must put broad rules first and intended exceptions last: use `{ "*": "allow", "git status": "deny" }` to deny `git status`. Reversing those entries allows it.
+Per-kind scalars such as `"bash": "allow"` expand to a catch-all rule. Selector
+maps are supported for `bash`, `edit`, `task`, `read`, and `external_directory`.
+The other kinds accept scalars only.
 
-Selector-capable kinds are `bash`, `edit`, `task`, `read`, and `external_directory`. Scalar-only kinds are `question`, `webfetch`, `websearch`, `codesearch`, `lsp`, and `doom_loop`.
+Later config layers retain inherited patterns, then append their own in authored
+order. An overridden pattern moves to the later position. A scalar replaces that
+kind's pattern map; omitted kinds inherit it. Legacy rule arrays replace earlier
+arrays and preserve their explicit order. Named-agent rules and the `shell`
+alias follow the same ordering.
 
-The task tool selects a named `subagent_type` and has no category router. Task permission is evaluated before every child start or continuation.
+Older loaders sorted pattern keys. If a config relied on that behavior, reorder
+it explicitly. `{ "*": "allow", "git status": "deny" }` denies `git status`;
+reversing the entries allows it.
+
+## File targets and grants
+
+File rules check both the normalized requested path and its effective target,
+including symlinks and creation paths beneath existing directories. A deny on
+either wins. Otherwise, an ask on either remains an ask. Invalid or unresolvable
+paths fail closed.
+
+Sensitive-file checks also follow effective targets, including in always-approve
+mode. Reusable grants bind aliases to those targets. Pending approvals revalidate
+them before execution. External paths retain their separate check. These checks
+do not provide race-free filesystem confinement or per-file filtering inside a
+broad directory search.
+
+## Parent and child agents
+
+The parent uses shared policy plus `agent.default.permission`. Each child has
+its own toolset and role policy. Parent tool membership and `task` permission
+control starts and continuations. A parent's edit deny does not transfer to a
+child whose role permits editing.
+
+For every child action, combine shared policy with the child's role policy,
+without the parent's overlay. Deny wins, then ask, then allow. Remembered grants
+and always-approve cannot override a child deny. Batch inner calls use the same
+membership and permission checks.
+
+`explore` and `librarian` have research tools, bash, LSP, skills, and discovered
+MCP tools. They lack native editing, `lsp.rename`, questions, tasks, and todo
+mutation. `general` adds editing and receives skills through `load_skills`.
+Research prompts prohibit implementation, but bash and MCP can still mutate files.
+
+Discovery adds concrete MCP tools to the parent and research roles. General
+requires exact registered IDs in its tool list. Stdio MCP uses `bash`; HTTP MCP
+uses network policy. Transport type and read-only hints do not establish safety.
+Discovery does not add generic MCP gateways.
+
+Skills supply instructions and cannot grant tools or permissions. Loading uses
+read permission and the per-skill policy. Resume uses current configuration and
+the same preparation checks as a new child, without rewriting history. See the
+[role tool lists and delegation diagram](../operations/generic-agent-and-tasks.md#permission-and-toolset-boundaries).
+
+## Runtime checks and prompt guidance
+
+The runtime-enforced vs behavioral distinction matters when evaluating a policy:
+
+| Rule | Enforcement |
+| --- | --- |
+| Tool membership and permission decisions | The coordinator checks them before execution. |
+| Catch-all deny hides a tool | Provider tool lists omit it. Partial selector allowances keep it visible and trigger argument checks. |
+| Workspace paths and shell syntax | Tool validation checks them after permission resolution. Permission-patterns mode accepts globs and safe `/dev/null` redirects. |
+| Concise answers, research-only work, small changes | Prompts guide the model. Review and tests check the result. |
 
 ## Residual risks
 
-Permission policy improves operator UX by deciding whether a tool call runs, asks, or is denied. It is not a sandbox or security boundary.
+Approving `edit` permits file changes. Approving `bash` permits commands that can
+change files indirectly. Network tools can send data to configured services.
+Use OS-enforced isolation when approved commands must remain confined.
 
-- A `bash` command that contains a path-like token the shell safety scanner does not recognize is denied, not allowed.
-- `external_directory` grants are call-scoped prefixes on the run; they are not persisted session grants or a global whitelist.
-- Harness does not implement an OpenCode temporary-directory whitelist.
-- Approved interpreter code (`python3 -c`, heredocs, and equivalent forms) can perform host I/O that lexical shell path scanning cannot enumerate; use an enforced OS sandbox when shell approval must remain filesystem-confined.
-- **Folder trust** (workspace allow/deny for repository-local executables) and **OS sandbox policy** (process confinement intent + availability) are separate runtime layers from permission allow/ask/deny. Approving `bash` does not grant folder trust or claim OS sandbox success when enforcement is unavailable.
+Folder trust separately controls repository-local executables. OS sandbox policy
+separately describes confinement and whether enforcement is available. A bash
+approval grants neither folder trust nor proof of a working sandbox.
 
-## Fixture cross-link
-
-Permission-policy tests couple these promises to runtime behavior: denied task calls never spawn children, worker restrictions remain enforced, and provider tool lists omit catch-all-denied tools.
+Permission tests check that denied tasks never spawn, worker restrictions hold,
+and catch-all-denied tools disappear from provider tool lists.

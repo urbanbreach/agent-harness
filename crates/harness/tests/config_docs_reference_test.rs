@@ -179,19 +179,19 @@ fn config_docs_document_variable_substitution_and_config_layering() {
         "docs/config.md must document config layering"
     );
     assert!(
-        doc.contains("XDG global config"),
+        doc.contains("XDG global files"),
         "docs/config.md must document XDG global config discovery"
     );
     assert!(
-        doc.contains("Project local config"),
+        doc.contains("Project files"),
         "docs/config.md must document project local config discovery"
     );
     assert!(
-        doc.contains("Agent markdown files"),
+        doc.contains("markdown frontmatter"),
         "docs/config.md must document agent markdown file discovery"
     );
     assert!(
-        doc.contains("last-wins"),
+        doc.contains("Later config layers override earlier ones"),
         "docs/config.md must document last-wins discovery order"
     );
 }
@@ -210,7 +210,7 @@ fn config_contract_semantic_metadata_matches_docs() {
         .find(|key| key.name == "runtime")
         .unwrap_or_abort();
     assert_eq!(runtime_key.status, PublicConfigKeyStatus::Canonical);
-    assert!(doc.contains("| `runtime` | Runtime knobs"));
+    assert!(doc.contains("| `runtime` | Runtime settings"));
 
     let small_model_alias = contract
         .runtime_top_level_keys
@@ -276,7 +276,7 @@ fn config_docs_capture_v1_skill_contract_and_authoring_guide() {
     let doc = std::fs::read_to_string(root.join("docs/configuration/config.md")).unwrap_or_abort();
     let starter = std::fs::read_to_string(root.join("docs/configuration/starter-skills.md"))
         .unwrap_or_abort();
-    let readme = std::fs::read_to_string(root.join("README.md")).unwrap_or_abort();
+    let agents = read_doc("docs/operations/generic-agent-and-tasks.md");
     let runtime_schema = harness_schema_pretty_json().unwrap_or_abort();
     let runtime_schema: serde_json::Value =
         // act
@@ -335,13 +335,13 @@ fn config_docs_capture_v1_skill_contract_and_authoring_guide() {
     }
 
     for expected in [
-        "duplicate names load once at their first occurrence",
-        "malformed, or symlink-unsafe skills fail the task call before child spawn",
+        "Duplicate `load_skills` names load once, at their first occurrence",
+        "denied, disabled, malformed, or unsafe symlinked skills fail the call before the",
         "`body_loaded: false`",
     ] {
         assert!(
-            readme.contains(expected),
-            "README.md missing task/skill anchor: {expected}"
+            agents.contains(expected),
+            "agents guide missing task/skill anchor: {expected}"
         );
     }
 }
@@ -463,7 +463,7 @@ fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_su
     for seam in [
         "typed extension manifest",
         "command/hook",
-        "final-slice",
+        "V1",
         "post-V1",
         "config-backed MCP",
         "markdown skills",
@@ -476,10 +476,10 @@ fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_su
 
     let privacy = read_doc("docs/permissions/privacy-and-local-data.md");
     for topic in [
-        "Data egress",
-        "Storage paths",
+        "Outgoing requests",
+        "## Storage",
         "Redaction",
-        "No telemetry",
+        "V1 has no telemetry",
         "redact.rs",
         "support export",
     ] {

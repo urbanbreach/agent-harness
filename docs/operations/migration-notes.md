@@ -1,29 +1,32 @@
 # Migration notes
 
-Harness borrows lessons from source-inspiration projects while intentionally not shipping several product areas for V1.
+V1 supports local coding through the CLI and TUI. The table lists product areas
+that are unavailable, followed by changes to internal prototype APIs.
 
 ## Unsupported by design for V1
 
 | Area | V1 stance |
 |---|---|
-| HTTP server | Explicitly post-V1; no hosted API/server mode ships here. |
-| web share | Explicitly post-V1; local support export is the V1 path. |
+| HTTP server | Unavailable in V1; no hosted API/server mode ships here. |
+| web share | Unavailable in V1; local support export is the V1 path. |
 | plugin host | Typed extension manifest descriptors ship for V1; runtime plugin hosting remains post-V1. |
-| autoupdate | Explicitly post-V1; builds are operator-controlled. |
+| autoupdate | Unavailable in V1; builds are operator-controlled. |
 | enterprise | Explicitly post-V1. |
-| desktop/mobile/PWA | Non-goal for V1. |
-| browser/media automation | Non-goal for V1. |
-| OAuth MCP | Post-V1; config-backed MCP is the current safe seam. |
-| remote collaboration bots | Non-goal for V1. |
+| desktop/mobile/PWA | Outside V1. |
+| browser/media automation | Outside V1. |
+| OAuth MCP | Unavailable in V1; configure supported MCP transports directly. |
+| remote collaboration bots | Outside V1. |
 | Ralph/continuation loops | Autonomous continuation loops are not a V1 runtime feature. |
 
 ## Supported migration path
 
-Move local-coding workflows onto the Harness CLI/TUI, event store, provider config, markdown skills, and native tool registry. Keep unsupported upstream product areas inactive in config. Where compatibility keys are accepted, they are inert unless the V1 config reference states otherwise.
+Move local-coding workflows onto the Harness CLI/TUI, event store, provider config, markdown skills, and native tool registry. Keep unsupported upstream product areas inactive in config. Check the [config reference](../configuration/config.md) before carrying over
+compatibility keys. Some accepted keys have no runtime effect.
 
 ## Evidence rule
 
-Do not claim upstream compatibility unless the behavior is implemented, documented, and covered by deterministic or live-gated evidence.
+A compatibility claim needs an implementation, documentation, and a passing
+deterministic or explicitly enabled live check.
 
 ## Prototype API cleanup
 

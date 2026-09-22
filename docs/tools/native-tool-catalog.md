@@ -1,8 +1,11 @@
 # Native tool catalog
 
-Harness exposes one built-in native tool surface through `harness-tools`. The runtime registry is the source of truth; this document is its human-readable mirror.
+The `harness-tools` registry defines the native tools available to agents. This
+table lists their IDs, permissions, side effects, and stored output.
 
-Tool execution still goes through the coordinator permission path before the tool runs. `none` below means the tool is read-only local inspection or control-plane reporting and does not have its own public permission bucket; it still must be present in the active agent toolset.
+The coordinator checks tool membership and permissions before execution. `none`
+in the permission column means the tool has no separate public permission kind.
+It still needs to be in the agent's toolset; nested calls keep their own checks.
 
 | Tool id | Permission | Mutation | Replay / artifact behavior | Notes |
 |---|---|---|---|---|
@@ -38,7 +41,7 @@ Tool execution still goes through the coordinator permission path before the too
 | `websearch` | `websearch` | network/read-only | External I/O when called | Searches web content under permission policy. |
 | `write` | `edit` | workspace mutation | Full-file write plus diff artifacts | Writes or creates exactly one file through Harness workspace path checks and atomic edit writes. |
 
-## V1 control-plane additions
+## Tasks and session inspection
 
 - `session_list`, `session_read`, `session_search`, and `session_info` are model-visible, redacted by default, capped, and side-effect free. They read existing session directories and event logs; they do not shell out to `harness sessions`, run providers, run tools, start MCP servers, or make network calls.
 - `background_cancel` is the canonical cancellation id for a background child request. `background_output(cancel=true)` remains documented compatibility.

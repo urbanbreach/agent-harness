@@ -1,52 +1,103 @@
-# Generic agent and tasks
+# Agents and tasks
 
-Harness uses one generic coding prompt for interactive turns. There is no selectable primary role, category router, or planning agent. Named subagents remain as bounded extension-style profiles: `explore` for local codebase research, `general` for focused implementation or research, and `librarian` for external documentation and repository research.
+Harness uses one generic parent agent for interactive turns. It can delegate
+bounded work to `explore`, `general`, or `librarian`. There is no primary-role
+picker, category router, or separate planning agent.
 
-Session title generation and provider-context compaction are coordinator-owned internal operations. Their dedicated prompts are not agents, are not configurable through `agent`, do not receive tools, and do not appear in the interactive runtime catalog.
+Title generation and context compaction are internal coordinator operations.
+Their prompts receive no tools and do not appear in the agent catalog.
 
 ## Generic execution configuration
 
-The top-level `model` selects the model for the generic parent. The `agent.default` object can tune its prompt, variant, sampling, toolset, permission overlay, iteration budget, and tool-failure behavior. Named subagent entries can tune their own bounded prompts and tools. Categories and alternate primary profiles are rejected.
+The top-level `model` selects the parent's model. `agent.default` can override
+its prompt, variant, sampling, tools, permissions, iteration budget, and tool
+failure behavior. Named subagent entries configure their own prompts and tools.
 
-Harness materializes the interactive configuration as `default` so persisted events and coordinator APIs retain a stable execution-profile field. Child tasks record the selected subagent id. Historical event profile strings remain replay data and are never rewritten.
+Events identify the parent as `default` and children by their selected subagent
+ID. Configuration changes do not rewrite historical profile strings.
 
 ## Permission and toolset boundaries
 
-The coordinator owns tool availability and permission decisions. Each child uses its own configured `agent.<name>.tools` and `agent.<name>.permission`. A parent's toolset and `task` permission control whether it can start or continue the selected child; the parent's other role restrictions are not inherited. A parent with `edit: "deny"` can delegate implementation to `general` when shared policy permits editing.
+The coordinator checks each agent's own toolset and permissions. A parent's
+`task` permission controls whether it can start or continue a child. Its other
+role restrictions do not transfer to that child. For example, a parent denied
+native editing can delegate implementation to `general` if shared policy allows
+it.
 
-For child actions, shared top-level policy is a ceiling: combine the child's role decision with shared policy using **deny first, then ask, then allow**. Existing approvals can satisfy an ask, but cannot override a deny. Primary-agent permission precedence is unchanged. Tools absent from the child's list remain unavailable, including calls inside `batch`.
+For child actions, the coordinator combines shared project policy with the
+child's role policy. Deny wins, then ask, then allow. An existing grant can
+satisfy an ask but cannot override a deny. Calls inside `batch` follow the same
+checks. Primary-agent permission precedence is unchanged.
+
+```mermaid
+flowchart TD
+    Parent[Parent requests a task] --> Gate{Parent has task access?}
+    Gate -->|No| Block[Reject the task]
+    Gate -->|Yes| Child[Prepare the selected child]
+    Child --> Action[Child requests a tool]
+    Action --> Tools{Tool in the child's toolset?}
+    Tools -->|No| Reject[Reject the call]
+    Tools -->|Yes| Policy[Combine shared and child policy]
+    Policy -->|Deny| Reject
+    Policy -->|Ask| Approval[Wait for approval]
+    Policy -->|Allow| Execute[Coordinator executes the tool]
+    Approval -->|Approved| Execute
+    Approval -->|Denied| Reject
+```
 
 | Role | Default tools |
-|---|---|
+| --- | --- |
 | `explore` | `read`, `glob`, `grep`, `list`, `ast_grep_search`, `webfetch`, `websearch`, `session_list`, `session_read`, `session_search`, `session_info`, `batch`, `bash`, `lsp`, `skill` |
 | `librarian` | Explore's tools plus `codesearch` |
 | `general` | Librarian's native tools except `skill`, plus `edit`, `write`, `apply_patch` |
-| `default` | Existing primary tools, including task delegation and skill loading |
+| `default` | Parent tools, including task delegation and skill loading |
 
-Research roles deny native editing, questions, delegation, and todo mutation. Both can run bash commands, use LSP queries, and load skills. Their prompts direct them to research rather than implementation; bash and MCP can still mutate files, so an edit deny is not filesystem confinement. The explicit `lsp.rename` editing tool remains unavailable. Explore has native AST search; Librarian additionally has external `codesearch`.
+Research roles deny native editing, questions, delegation, and todo mutation.
+They can use bash, LSP queries, and skills. Their prompts require research, but
+bash and MCP can still mutate files. An edit deny therefore does not confine the
+filesystem. `lsp.rename` remains unavailable to research roles.
 
-MCP discovery automatically adds concrete tools from configured servers to `default`, `explore`, and `librarian`, including when the native tool list is customized. General still requires exact MCP IDs in its tool list. Both role and shared policy constrain MCP execution: stdio MCP uses the `bash` capability; HTTP MCP uses network policy. Discovery does not add the generic MCP gateway tools.
+MCP discovery adds concrete configured tools to `default`, `explore`, and
+`librarian`, even with customized native tool lists. General requires exact MCP
+IDs in its tool list. Stdio MCP uses the `bash` capability; HTTP MCP uses network
+policy. Both shared and role policy apply. Discovery does not add generic MCP
+gateway tools.
 
-The `skill` tool uses read permission and the existing per-skill load policy, independently of task delegation permission. Skills supply instructions; an `allowed_tools` declaration cannot grant tools or permissions. General continues to receive skills through the parent's `load_skills`. Task results report the prepared child's actual toolset, with available tools still subject to argument-specific permission checks. Resume prepares children from current configuration using the same rules as fresh spawn; historical policy snapshots are not restored or rewritten.
+Skills provide instructions and cannot grant tools. The `skill` tool uses read
+permission and the per-skill load policy. General receives skills through the
+parent's `load_skills` argument. Task results report the child's prepared toolset;
+individual arguments can still trigger an ask or deny.
 
-Permissions are policy checks, not operating-system confinement. See the [permissions threat model](../permissions/permissions.md).
+Resume prepares children from current configuration, using the same checks as a
+new spawn. It does not restore old policy snapshots. See the
+[permission guide](../permissions/permissions.md) for the limits of these checks.
 
 ## Structured delegation body
 
-The `task` tool starts or continues a named subagent. New tasks require `subagent_type`, `prompt`, `run_in_background`, and `load_skills`; continuations use `task_id` or `session_id`. Include these fields in the prompt text when delegating non-trivial work:
+New `task` calls require `subagent_type`, `prompt`, `run_in_background`, and
+`load_skills`. Continuations identify the child with `task_id` or `session_id`.
+For work that needs context, include these details in the prompt:
 
-| Field | Purpose |
-|---|---|
-| `context` | What task, files, modules, and constraints the child should know. |
-| `goal` | The decision or artifact the child must produce. |
-| `downstream use` | How the parent will use the result. |
-| `request` | The exact work to perform and output format. |
-| `required tools` | Tool classes the child is expected or forbidden to use. |
-| `must-do` | Non-negotiable checks or evidence. |
-| `must-not-do` | Scope boundaries, forbidden edits, or unavailable capabilities. |
+| Detail | What to tell the child |
+| --- | --- |
+| Context | Relevant files, modules, constraints, and prior work |
+| Goal | The decision or artifact to produce |
+| Downstream use | How the parent will use the result |
+| Request | The work and expected output format |
+| Required tools | Tools to use or avoid |
+| Required checks | Tests or other evidence the task needs |
+| Scope limits | Files, actions, and capabilities outside the task |
 
-Parent-visible child summaries are capped before they are returned through `task(run_in_background = false)` or `background_output`. The runtime surfaces redacted summary text plus structured truncation metadata, while the child session id and next actions allow explicit continuation or result retrieval.
+Duplicate `load_skills` names load once, at their first occurrence. Missing,
+denied, disabled, malformed, or unsafe symlinked skills fail the call before the
+child starts. The skill catalog reports `body_loaded: false` until activation.
+
+The runtime caps and redacts summaries returned by synchronous `task` calls or
+`background_output`. Truncation metadata, the child session ID, and next actions
+let the parent retrieve more output or continue the child.
 
 ## Enforcement boundary
 
-The coordinator remains the only authority for event appends, scheduling, permission checks, child ownership, task lifecycle, cancellation, and tool execution. Changing prompt text, docs, or TUI labels cannot grant a capability or bypass policy.
+The coordinator owns event appends, scheduling, child ownership, cancellation,
+permissions, and tool execution. Prompt text and TUI labels cannot grant access
+or bypass those checks.
