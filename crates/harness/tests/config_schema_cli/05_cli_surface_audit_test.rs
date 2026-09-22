@@ -165,12 +165,18 @@ fn cli_help_lists_non_placeholder_command_descriptions() {
 }
 
 #[test]
-fn readme_command_audit_resolves_to_real_subcommands() {
+fn readme_and_reference_commands_resolve_to_real_subcommands() {
     // arrange
-    let readme = fs::read_to_string(repo_root().join("README.md")).unwrap_or_abort();
+    let documentation = [
+        "README.md",
+        "docs/configuration/config.md",
+        "docs/architecture/sessions-and-replay.md",
+    ]
+    .map(|path| fs::read_to_string(repo_root().join(path)).unwrap_or_abort())
+    .join("\n");
 
     // act
-    let documented = extract_harness_command_paths(&readme);
+    let documented = extract_harness_command_paths(&documentation);
 
     // assert
     let required = [
@@ -191,7 +197,7 @@ fn readme_command_audit_resolves_to_real_subcommands() {
         let path = path.into_iter().map(str::to_string).collect::<Vec<_>>();
         assert!(
             documented.contains(&path),
-            "README.md no longer documents required harness command `{}`",
+            "README and references no longer document required harness command `{}`",
             path.join(" ")
         );
     }

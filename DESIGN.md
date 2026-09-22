@@ -1,192 +1,197 @@
-# Harness Terminal Design System
+# Terminal design
 
-## 1. Atmosphere & Identity
+Keep the transcript readable and the next action visible. The shell shows the
+active model, work status, permission requests, and controls without displacing
+the conversation. Use Harness's name, theme roles, and event-derived state.
 
-Harness is a quiet, terminal-native command center: dense enough for active agent work, calm enough for long sessions, and explicit about what the runtime is doing. Its signature is stateful chrome: the transcript remains primary while compact shell rows reveal focus, progress, safety state, and the next useful action. Harness keeps its own name, neutral surfaces, blue system accent, and event-sourced operator language. Grok Build is a reference for compact keyboard-first hierarchy and status legibility only; Harness does not adopt its name, logo, copy, or palette.
+The [README recording](docs/assets/harness-demo.gif) shows the current TUI. The
+[UI implementation records](docs/README.md#design-and-audit-records) document
+comparisons with Grok Build and the revisions used.
 
-## 2. Color
+## Color
 
-The canonical implementation is `crates/harness-tui/src/theme_tokens.rs`; theme families resolve these roles rather than introducing screen-local colors.
+[`theme_tokens.rs`](crates/harness-tui/src/theme_tokens.rs) defines the color roles.
+Renderers use these roles; theme families resolve them to colors.
 
-| Role | Token | Usage |
-|---|---|---|
+| Role | Token | Use |
+| --- | --- | --- |
 | Canvas | `ColorRole::Canvas` | Transcript and footer background |
-| Shell | `ColorRole::Shell` | Fixed shell chrome |
-| Panel | `ColorRole::Panel` | Secondary surfaces |
+| Shell | `ColorRole::Shell` | Fixed shell rows |
+| Panel | `ColorRole::Panel` | Secondary panels |
 | Elevated panel | `ColorRole::PanelElevated` | Composer and overlays |
-| Primary text | `ColorRole::TextPrimary` | User content and active labels |
+| Primary text | `ColorRole::TextPrimary` | Content and active labels |
 | Secondary text | `ColorRole::TextSecondary` | Metadata and ordinary status |
-| Tertiary text | `ColorRole::TextTertiary` | Low-priority chrome |
-| Accent | `ColorRole::TextAccent` | Focus, selected state, primary interaction |
-| Success | `ColorRole::StatusSuccess` | Healthy execution and low context pressure |
+| Tertiary text | `ColorRole::TextTertiary` | Optional hints |
+| Accent | `ColorRole::TextAccent` | Focus and selection |
+| Success | `ColorRole::StatusSuccess` | Successful work and low context pressure |
 | Warning | `ColorRole::StatusWarning` | Recoverable risk and high context pressure |
-| Error | `ColorRole::StatusError` | Failure, destructive hover, critical context pressure |
-| Info | `ColorRole::StatusInfo` | Background activity and neutral progress |
+| Error | `ColorRole::StatusError` | Failures and destructive actions |
+| Info | `ColorRole::StatusInfo` | Background work and progress |
 
-Rules:
+Pair status colors with text or a glyph. Use accent for interaction and focus.
+Add new colors through a semantic role, not a renderer-local RGB value. Check
+contrast in high-contrast and terminal-native themes.
 
-- Accent color communicates interaction or focus, never decoration.
-- Status colors always pair with text or a glyph; color alone never carries meaning.
-- New colors must enter through a semantic `ColorRole`, not a renderer-local RGB value.
-- Harness branding and theme-family contrast take precedence over external visual references.
+## Text and spacing
 
-## 3. Typography
+The user chooses the terminal font. Build hierarchy with spacing, semantic
+colors, and normal, bold, or dim text. Use sentence case and direct status labels.
+Preserve complete key labels at 80 columns.
 
-Terminal font choice belongs to the operator. Harness creates hierarchy with semantic color, modifiers, spacing, and concise copy.
+The base unit is one terminal cell. `layout.rs`, `responsive.rs`,
+`shell_geometry/`, and theme spacing tokens own geometry. Measure grapheme display
+width; byte length and character count do not determine terminal width.
 
-| Level | Treatment | Usage |
-|---|---|---|
-| Primary | normal or bold, primary text | Prompt, transcript, selected actions |
-| Secondary | normal, secondary text | Status labels and metadata |
-| Tertiary | dim, tertiary text | Optional hints and inactive chrome |
-| Accent | bold, accent text | Focus marker and active choice |
-| Error | error text, optional bold | Blocking failures and destructive action |
+| Spacing | Contract |
+| --- | --- |
+| Related inline items | One cell |
+| Independent footer actions | `  │  ` |
+| Composer padding | `SPACING.composer_padding_x` |
+| Footer height | `SPACING.footer_rows` |
+| Prompt height | `SPACING.prompt_input_rows` |
 
-Rules:
+## Shell layout
 
-- Sentence case is canonical; avoid title case in transient status copy.
-- Numeric status uses compact, stable-width notation where practical.
-- Labels describe the current activity directly: `Thinking…`, `Run bash`, `Waiting on subagent…`.
-- Keep status fragments short enough to degrade cleanly at 80 columns.
+```text
+┌──────────────────────────────────────────────────────────┐
+│ Workspace and session context                            │
+│                                                          │
+│ Transcript                                               │
+│ User messages, assistant replies, tools, and diffs        │
+│ This region owns vertical scrolling.                     │
+│                                                          │
+│               ▼ Return to the latest output              │
+│ Live activity and stop/background controls                │
+│ Prompt composer                                          │
+│ Keyboard hints                         Model and context │
+└──────────────────────────────────────────────────────────┘
+```
 
-## 4. Spacing & Layout
+This diagram shows ownership, not exact dimensions. The header, live status,
+composer, and footer stay fixed. The transcript uses the shell width. On narrow
+terminals, drop optional descriptions and metadata before essential controls.
+Test empty content, long unbroken text, CJK, combining characters, and resizing.
 
-The base unit is one terminal cell. Geometry is owned by `layout.rs`, `responsive.rs`, `shell_geometry/`, and theme spacing tokens.
-
-| Token / contract | Value | Usage |
-|---|---:|---|
-| Base unit | 1 cell | All terminal spacing |
-| Inline item gap | 1 cell | Closely related status fragments |
-| Section separator | `  │  ` | Independent footer actions |
-| Composer horizontal padding | `SPACING.composer_padding_x` | Prompt dock |
-| Footer height | `SPACING.footer_rows` | Contextual shortcuts/status |
-| Prompt input height | `SPACING.prompt_input_rows` | Standard composer |
-
-Shell contract:
-
-- Header, status, composer, and footer remain fixed; transcript owns vertical scrolling.
-- The live transcript spans the shell width; operator details stay in secondary surfaces.
-- Width-dependent content degrades by priority: descriptive detail, compact metadata, then essential controls.
-- At narrow widths, complete high-priority hints survive; never render partial key labels.
-- Empty, long, unbroken, CJK, and resized content must not overflow or misalign borders.
-
-## 5. Components
+## Components
 
 ### Session shell
 
-- **Structure**: header, transcript scroll body, optional live-turn status, composer, contextual footer.
-- **Variants**: startup, live, replay, post-run; replay is read-only.
-- **States**: ready, sending, streaming, recovering, disconnected, blocked, completed.
-- **Accessibility**: keyboard-complete; focus remains visible; no status relies on color alone.
-- **Layout**: scroll-body shell; transcript is the sole primary scroll owner.
+Startup, live, replay, and completed sessions share the shell. Replay is read-only.
+Show ready, sending, streaming, recovering, disconnected, blocked, and completed
+states explicitly. Every control needs a keyboard path and visible focus.
 
-### Live empty state
+### Empty state
 
-- **Structure**: compact centered Harness identity, one direct value statement, and up to three static prompt examples introduced by a tertiary label and the canonical prompt glyph above the composer.
-- **Variants**: full examples when the transcript region has room; title and value statement only in compact geometry.
-- **States**: visible only before the first activity and while the composer is empty; disappears as soon as work or drafting begins.
-- **Interaction**: examples are inspiration, not controls; they never imply mouse-only actions or steal composer focus.
-- **Layout**: chromeless and width-capped by the existing empty-state geometry so the composer remains the primary action.
+Show the Harness identity, a short explanation, and up to three static prompt
+examples above the composer. Compact layouts show only the identity and
+explanation. Hide the empty state as soon as drafting or work begins. Examples
+are text, not clickable controls, and must not take composer focus.
 
 ### Composer
 
-- **Structure**: focus rail/border, document input, model and mode metadata, contextual hints.
-- **Variants**: focused, unfocused, shell mode, multiline, disabled, permission-blocked.
-- **States**: empty, drafting, queued, submitting, clear-confirmation pending.
-- **Interaction**: destructive clearing uses a two-step confirmation; while pending, the footer replaces ordinary hints with the exact next action.
-- **Accessibility**: explicit key labels and visible mode/focus treatment; no hidden mouse-only action.
-- **Empty guidance**: an enabled empty composer names the primary action in muted text; mode-specific guidance replaces it in shell mode, and typing removes it immediately.
+Show focus, the input document, model and mode metadata, and current keyboard
+hints. Support focused, unfocused, shell, multiline, disabled, and permission-blocked
+states. Empty guidance disappears when typing starts. Shell mode has its own guidance.
+
+Clearing a draft requires two steps. While confirmation is pending, replace
+ordinary footer hints with `Esc:press again to clear`. Keep queued, submitting,
+and clear-confirmation states distinct.
 
 ### Question card
 
-- **Reference contract**: Grok Build `xai-grok-pager` question cards define the option anatomy, per-question progression, sticky freeform row, compact counter, and keyboard grammar; Harness retains its own semantic theme roles and permission/event boundary.
-- **Structure**: left accent rail, question label, scrollable options, sticky `z` freeform choice, `[n/N]` navigation footer when multiple questions are present, and a separate shell shortcut row.
-- **Options**: shortcuts are `1` through `9`, then `a` through `f`; multi-select markers are `[ ]`/`[x]`, single-select markers are `(○)`/`(●)`; the focused option expands its description while every other option remains one ellipsized row.
-- **Interaction**: arrows or `j`/`k` navigate, Tab/Shift+Tab wrap choices, Left/Right or `h`/`l` change question, Space toggles, Enter selects and advances or submits on the final question, `z` opens the freeform choice, `y` copies the focused option, Ctrl+F toggles fullscreen, Ctrl+C submits an existing selection or dismisses an unanswered card, Ctrl+Y and `X` dismiss, and Esc clears the current answer before parking focus in scrollback.
-- **Accessibility**: marker shape and shortcut text carry selection and action state without relying on color; unfocused cards remain visible but dimmed; narrow layouts preserve complete high-priority hints.
+Use an accent rail, question text, scrollable choices, a fixed `z` freeform choice,
+and an `[n/N]` footer for multiple questions. The focused choice expands its
+description; other choices occupy one ellipsized row. Keep shell shortcuts on a
+separate row. Dim an unfocused card without hiding it.
 
-### Live-turn status
+Choices use `1` through `9`, then `a` through `f`. Multi-select uses `[ ]` and
+`[x]`; single-select uses `(○)` and `(●)`. These markers must carry selection
+state without color.
 
-- **Structure**: activity glyph, direct activity label, phase timing, context budget, optional controls.
-- **Variants**: foreground, parked, background-only, recovering, reconnecting, cancelling.
-- **States**: thinking, responding, running a tool, waiting on user/task, stopped.
-- **Interaction**: `[stop]` and background controls remain the highest-priority right-side items.
-- **Layout**: fixed one-row cluster; optional metadata yields before controls.
+| Input | Action |
+| --- | --- |
+| Arrows or `j` / `k` | Move between choices |
+| Tab / Shift+Tab | Wrap through choices |
+| Left / Right or `h` / `l` | Change question |
+| Space | Toggle a choice |
+| Enter | Select and advance, or submit the final question |
+| `z` | Open the freeform choice |
+| `y` | Copy the focused choice |
+| Ctrl+F | Toggle fullscreen |
+| Ctrl+C | Submit an existing selection or dismiss an unanswered card |
+| Ctrl+Y or `X` | Dismiss the card |
+| Esc | Clear the answer before moving focus to scrollback |
 
-### Context budget segment
+### Live status and context
 
-- **Structure**: `ctx used/limit` compact label and a six-cell fill meter with percentage when width permits.
-- **Variants**: normal, warning, critical, compacted-pending-refresh, unknown.
-- **States**: normal below 75%, warning from 75%, critical from 90%.
-- **Accessibility**: numeric percentage accompanies the meter; semantic status color is supplementary.
-- **Layout**: appears in live-turn chrome during work and in idle footer status when known; disappears before essential controls on narrow terminals.
+Keep activity, phase timing, and optional context metadata on one row. Stop and
+background controls take priority over metadata. Distinguish foreground, parked,
+background-only, recovery, reconnection, and cancellation states.
 
-### Contextual footer
+The context segment shows `ctx used/limit`. When width permits, add a six-cell
+meter and a percentage. Warn at 75% and use critical styling at 90%. Unknown and
+compacted-pending-refresh states must not claim a known budget. Show context in
+the live status during work and the footer while idle; hide it before controls
+when space runs out.
 
-- **Structure**: key/action hints on the left, compact runtime facts on the right.
-- **Variants**: standard, reduced, minimal, confirmation takeover.
-- **States**: idle, drafting, queued, replay, disabled, clear-confirmation pending.
-- **Interaction**: pending confirmation replaces unrelated hints with `Esc:press again to clear` until completed or expired.
-- **Accessibility**: only currently valid actions are advertised; complete help access survives compact modes.
-- **Idle priority**: derive all labels from the active keymap and advertise send, mode, and shortcuts; compact modes preserve send and shortcuts first.
+### Footer
 
-### Tool activity marker
+Derive hints from the active keymap and show only valid actions. Put actions on
+the left and runtime facts on the right. Compact layouts preserve send and help
+access. Confirmation temporarily replaces unrelated hints.
 
-- **Structure**: one fixed-width semantic glyph plus the existing title, path metadata, subtitle, and disclosure state.
-- **States**: queued, running, waiting, succeeded, failed, and cancelled each use an explicit lifecycle glyph; color and motion remain supplementary.
-- **Accessibility**: state must remain distinguishable in reduced-color terminals and ASCII glyph mode.
-- **Motion**: only the running marker pulses, not its label, path, or output. Cached layouts repaint the marker at the 33 ms active cadence. Waiting and queued markers remain static; reduced motion and replay settle immediately.
+### Tools and diffs
 
-### Tool transcript presentation
+Use distinct glyphs for queued, running, waiting, succeeded, failed, and cancelled
+tools. Preserve the distinction in ASCII and reduced-color modes. Pulse only the
+running marker, not the label, path, or output. Cached layouts repaint the marker
+at the 33 ms active cadence. Waiting and queued markers stay still; replay and
+reduced motion settle immediately.
 
-- **Reference**: local Grok Build `SOURCE_REV d5a0335a47221e8c9519936cb693e9b6450227ec`; reuse Harness's typed sections, semantic colors, and recorded metadata.
-- **Headers**: distinct label, argument/path, and summary styling; grouped rows retain file identity. Lists count entries, not directories. Shell descriptions own the header when supplied, with the command available in disclosed output.
-- **Grouping**: read/search context may fold eagerly. Shell commands remain individual until a dense run exceeds eleven entries; then an older-prefix disclosure leaves ten recent commands visible.
-- **Previews**: select head/tail rows after cell-aware wrapping (read: five/three; shell: two/three). Explicit full-stored-output expansion remains available and never claims to retrieve truncated artifacts.
-- **Edits**: compact trusted diffstats belong to collapsed headers. Open diffs have a header/body spacer, syntax-highlighted numbered content, and semantic change bands on content rather than the number gutter.
-- **Permission controls**: numbered choices and arrow/vim navigation use the same authoritative decision path. Reject feedback is permission-scoped and never edits the composer draft; always-approve still requires confirmation.
-- **Completion**: open tool content may show a 400 ms completion rail without changing geometry. This transient UI state is never recorded or replayed and must schedule its own expiry repaint.
+Separate the header label, arguments or path, and summary. Grouped rows keep file
+identity. Listings count entries. A supplied shell description becomes the header;
+the command remains in expanded output.
 
-### Detached transcript return
+Read and search calls can fold into groups. Shell calls stay separate until a
+run exceeds eleven entries, then fold the older prefix and leave ten recent
+commands visible. Choose preview rows after display-cell wrapping. Reads show
+five head rows and three tail rows; shell output shows two and three. Expansion
+shows stored output and must not imply that truncated data can be retrieved.
 
-- **Reference contract**: Grok Build `xai-grok-pager` renders a centered `▼` in the dedicated row after scrollback whenever follow mode is detached and content remains below; one cell is painted inside a centered three-cell pointer target, muted at rest and brighter on hover.
-- **Structure**: one `▼` painted at `x + width / 2` in the transcript viewport's reserved final row, with a three-cell horizontal hit target centered on the glyph.
-- **States**: hidden while following, at the bottom, or without overflow; secondary text at rest; primary text on hover.
-- **Interaction**: pointer activation jumps to the transcript bottom and restores follow mode for live and settled turns alike; keyboard scroll-to-bottom remains the authoritative equivalent.
-- **Accessibility**: hover changes color only as supplementary feedback; the glyph and keyboard path remain available without color or pointer input.
-- **Layout**: transcript-owned post-scrollback gap row; it does not reserve composer space or change transcript measurement.
+Collapsed edits show trusted diff counts. Expanded diffs separate header and body,
+number the lines, apply syntax colors, and put change backgrounds on content
+rather than the number gutter. Numbered permission choices and keyboard navigation
+use the same coordinator decision. A rejection does not alter the composer draft;
+always-approve still needs confirmation.
 
-## 6. Motion & Interaction
+Open tool content can show a 400 ms completion rail without changing layout.
+Schedule its expiry repaint. This state is temporary and never enters replay.
 
-- Motion is frame-based and meaningful: spinners indicate foreground work; pulse glyphs indicate monitored/background work.
-- No decorative animation. Every changing glyph maps to activity, waiting, focus, or confirmation state.
-- Confirmation and transient states must remain readable without relying on animation timing.
-- Reduced-motion mode uses stable glyphs while preserving labels and state colors.
-- Keyboard interaction is authoritative; mouse hover may enrich feedback but never reveal the only path.
-- Detached transcript return feedback is immediate: the centered `▼` brightens on hover and activation restores follow mode in one action.
+### Return to the latest output
 
-## 7. Depth & Surface
+When follow mode is detached and content remains below, paint `▼` in the
+transcript's reserved final row at `x + width / 2`. Center a three-cell click target
+on it. Use secondary text at rest and primary text on hover. Activation scrolls to
+the bottom and restores follow mode; the keyboard equivalent remains available.
+Hide the control while following, at the bottom, or without overflow. It must not
+consume composer space or change transcript measurement.
 
-Harness uses a mixed terminal strategy: tonal surface shifts establish shell layers, while borders and rails mark focus or containment. Shadows and raster effects are not part of the terminal surface.
+## Motion, focus, and borders
 
-- Canvas and shell may share a base tone when hierarchy is carried by spacing and text.
-- Elevated composer and overlay surfaces use semantic panel roles.
-- Focus uses `BorderRole::Focus`; ordinary separation uses subtle borders.
-- Avoid boxing every transcript item. Borders exist only when they clarify hierarchy or interaction.
+Animate work and state changes only. Spinners, pulses, and completion feedback
+must remain understandable with motion disabled. Do not rely on timing for
+confirmation. A mouse hover can clarify a control, but cannot reveal its only
+access path.
 
-## 8. Accessibility Constraints & Accepted Debt
+Use panel tones to distinguish layers and `BorderRole::Focus` for focus. Add
+borders only where they clarify grouping or interaction. Do not box every
+transcript item or add raster shadows to terminal output.
 
-Constraints:
+## Accessibility checks
 
-- Support full keyboard operation and visible focus across startup, live, replay, overlays, and composer states.
-- Preserve high-contrast and terminal-native theme families.
-- Provide ASCII glyph fallbacks for semantic icons.
-- Treat wide characters as terminal cells, not bytes or scalar counts, in width-sensitive rendering.
-- Never truncate the only available action label or hide stop/cancel controls behind optional metadata.
-- Status language must remain understandable without color or animation.
-
-Accepted debt:
-
-| Item | Location | Why accepted | Owner / Exit |
-|---|---|---|---|
-| None | N/A | No new accessibility debt accepted for this design update. | N/A |
+- Every startup, live, replay, overlay, and composer action works from the keyboard.
+- Focus and status remain readable without color or animation.
+- Semantic glyphs have ASCII fallbacks.
+- Wrapping and truncation preserve whole graphemes and display-cell alignment.
+- Optional metadata never hides stop, cancel, or the only action hint.
+- Overlays receive their own input; background components do not consume it.
