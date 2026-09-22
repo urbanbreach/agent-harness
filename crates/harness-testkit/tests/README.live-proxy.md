@@ -1,168 +1,86 @@
-# Live proxy E2E lane
+# Live proxy checks
 
-This lane retains env-gated live proxy signoff entrypoint names after T5 slimming. The current
-wrappers verify live prerequisites and documented provider/model selection; provider/tool-flow
-behavior is owned by deterministic tests listed in `docs/testing/testing.md` unless a human explicitly runs
-and records separate live evidence.
+The `live_proxy_e2e` target checks the environment, config path, and selected
+provider/model tuple. Its retained prompt and TUI signoff wrappers do not run a
+full provider/tool journey or produce live artifact trees.
+
+Use [`scripts/harness-qa-live-smoke.sh`](../../../scripts/harness-qa-live-smoke.sh)
+for a budgeted live authentication and transport check. Native tool behavior is
+covered by the deterministic tests in the [testing guide](../../../docs/testing/testing.md).
 
 ## Preflight
 
-Run this first when validating local setup:
+Set the config path and IDs to values present in your configuration. This example
+uses the Umans tuple used by the test helpers:
 
 ```bash
 HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
 HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
-cargo nextest run -p harness-testkit --test live_proxy_e2e --ignore-default-filter --run-ignored only -E 'test(=live_proxy_preflight_requires_live_env)'
+cargo nextest run -p harness-testkit --test live_proxy_e2e \
+  --ignore-default-filter --run-ignored only \
+  -E 'test(=live_proxy_preflight_requires_live_env)'
 ```
 
-The preflight verifies:
+Preflight checks explicit opt-in, the config path, and provider/model selection.
+It does not require KDE, Konsole, Spectacle, or a desktop session. The helpers
+accept `HARNESS_LIVE_PROXY_PROVIDER`, `HARNESS_LIVE_PROXY_MODEL`, and optional
+`HARNESS_LIVE_PROXY_VARIANT` overrides. Do not infer the current interactive
+model from the helper defaults; inspect your effective config.
 
-- live config path resolves
-- live env gating is explicit
-- the documented default provider/model tuple is visible in the test target
+## Signoff wrappers
 
-The live proxy smoke lane does **not** require KDE, `konsole`, `spectacle`, a desktop session, or a
-local POSIX shell. `live_proxy_preflight_requires_live_env` and the retained prompt/TUI signoff
-names verify only the slim env/config prerequisites now retained in T5.
-
-When the workspace `harness.jsonc` is the active live config, the interactive `build` profile
-defaults to `umans-ai-coding-plan/umans-kimi-k2.7` so live TUI runs dogfood the Umans coding model.
-The signoff helpers use the documented Umans provider/model tuple unless `HARNESS_LIVE_PROXY_PROVIDER`,
-`HARNESS_LIVE_PROXY_MODEL`, or `HARNESS_LIVE_PROXY_VARIANT` override it.
-
-Minimal portable baseline:
-
-- a reachable configured live proxy/provider
-- the workspace `harness.jsonc` provider/model tuple, unless overridden by env
-
-## Live signoff
-
-For an explicit live-provider check, use the slim signoff entrypoints:
+With the same environment, run preflight before either wrapper:
 
 ```bash
-HARNESS_LIVE_PROXY=1 \
-HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
-HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
-HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
 cargo nextest run -p harness-testkit --test live_proxy_e2e --ignore-default-filter --run-ignored only -E 'test(=live_proxy_prompt_signoff)'
-
-HARNESS_LIVE_PROXY=1 \
-HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
-HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
-HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
-HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts \
 cargo nextest run -p harness-testkit --test live_proxy_e2e --ignore-default-filter --run-ignored only -E 'test(=live_proxy_e2e_tui_signoff)'
 ```
 
-These wrappers are the shipped slim live signoff entrypoints:
+These wrappers check prerequisites for the selected tuple. A passing result does
+not establish live provider-turn behavior. The old full prompt, native-tool, and
+TUI matrix was removed during the T5 test reduction.
 
-- CLI: `live_proxy_preflight_requires_live_env` → `live_proxy_prompt_signoff`
-- TUI: `live_proxy_preflight_requires_live_env` → `live_proxy_e2e_tui_signoff`
+## Live smoke evidence
 
-Live signoff is scoped to the selected `HARNESS_LIVE_PROXY_PROVIDER` / model /
-variant tuple. After T5 slimming, these wrappers only assert the prerequisite tuple and config path;
-they do not write live manifests or summarize provider-turn behavior.
+The separate smoke script writes redacted evidence under the ignored directory
+`artifacts/qa-evidence/<YYYYMMDD>-live-<slug>/`. It records commands, isolation and
+budget receipts, event excerpts, a secret scan, and a run summary.
 
-## Retired full live tool-flow tests
+```bash
+# This check must fail when live prerequisites are absent.
+bash scripts/harness-qa-live-smoke.sh --self-test-fail-closed
 
-The previous prompt chat/native-tool/TUI tool-flow matrix was retired during T5 slimming. Its
-behavioral assertions are now owned by deterministic provider cassette, harness-tools native parity,
-and harness-tui render/view-model tests listed in `docs/testing/testing.md`. T5 retains only the explicit
-env-gated live signoff names above.
+# Supply the live environment before running this command.
+bash scripts/harness-qa-live-smoke.sh --slug provider-check
+```
 
-## Artifact layout
+The smoke checks authentication, transport, and fixed short prompts. Optional
+`HARNESS_LIVE_SMOKE_TOOL=1` adds one tool check; it does not replace the native
+tool suite. The `harness-qa` skill also provides this live workflow.
 
-The slim live proxy wrappers (`live_proxy_preflight_requires_live_env`,
-`live_proxy_prompt_signoff`, `live_proxy_e2e_tui_signoff`) do **not** produce live
-artifact trees (no `run-*` directories, no `manifest.json` / `run_summary.*` from T5 preflight
-wrappers). That is intentional: this lane is slim signoff names only and does **not** own the
-native tool behavioral matrix.
+## Historical visual artifacts
 
-A **budgeted live smoke pack** with redacted evidence is available separately via
-`scripts/harness-qa-live-smoke.sh` (residual PRD WS-L1) and the `harness-qa` skill live channel
-(WS-L2). Evidence lands under gitignored
-`artifacts/qa-evidence/<YYYYMMDD>-live-<slug>/` (README, commands.log, isolation-receipt,
-budget-receipt, events-excerpt, secret-scan, lane-or-run-summary). Fail-closed without live env:
-`bash scripts/harness-qa-live-smoke.sh --self-test-fail-closed` exits non-zero. Live smoke proves
-transport/auth/fixed short prompts only; optional tool smoke (`HARNESS_LIVE_SMOKE_TOOL=1`) is not
-matrix ownership.
-
-The layout below is retained for historic full live visual runs and lane-stage artifacts under
-`target/test-lanes/` / `target/pty-visual-artifacts/`.
-
-Artifacts are written under:
+Older full visual runs used:
 
 ```text
 <artifact-root>/live-proxy/<test-name>/<run-id>/
 ```
 
-Recommended local root for native screenshot, offline PTY, and live manifest inspection:
+Those runs could include startup, draft, edit, scan, and completion screenshots,
+`manifest.json`, `manifest.jsonl`, `run_summary.json`, and `run_summary.txt`.
+The current prerequisite wrappers do not create these files.
 
-```text
-target/pty-visual-artifacts/
-```
+Local PTY and native captures use `target/pty-visual-artifacts/`. Native runs use
+`native-visual/native_visual_ghostty_smoke/<run-id>/` and can add
+`native_visual_summary.json` and `.txt` alongside the manifest.
 
-The native screenshot lane writes sibling runs under:
+Historical retention keeps five screenshot runs per test by default.
+`HARNESS_LIVE_VISUAL_KEEP_RUNS` overrides the count. Pruning affects only
+manifest-backed `run-*` directories and leaves sidecars alone.
+`HARNESS_LIVE_VISUAL_VIEWPORT` selects `desktop`, `laptop`, or `compact`.
 
-```text
-target/pty-visual-artifacts/native-visual/native_visual_ghostty_smoke/<run-id>/
-```
-
-Those runs use the same manifest filenames plus `native_visual_summary.json` / `.txt` so capture
-provenance and cleanup state stay reviewable next to the screenshots.
-
-Example run id:
-
-```text
-run-20260307-081508-190134Z
-```
-
-Historic full visual runs included:
-
-- `live_proxy_startup.png`
-- `live_proxy_draft_visible.png`
-- `live_proxy_file_write_finished.png`
-- `live_proxy_hashline_scan_finished.png`
-- `live_proxy_run_finished.png`
-- `manifest.json`
-- `manifest.jsonl`
-- `run_summary.json`
-- `run_summary.txt`
-
-## Retention
-
-- default: keep the latest **5** screenshot runs per test
-- override with `HARNESS_LIVE_VISUAL_KEEP_RUNS=<n>`
-- pruning only applies to manifest-backed `run-*` evidence directories; sidecars stay untouched
-
-## Viewport presets
-
-The live screenshot viewport is configurable:
-
-- `desktop` (default)
-- `laptop`
-- `compact`
-
-Set with:
-
-```bash
-HARNESS_LIVE_VISUAL_VIEWPORT=desktop
-```
-
-## Notes for agents
-
-Agents can run this lane if the required env vars are present and the local proxy is reachable.
-Use this order while iterating:
-
-1. `live_proxy_preflight_requires_live_env`
-2. `live_proxy_prompt_signoff` when you want the CLI live signoff name
-3. `live_proxy_e2e_tui_signoff` when you want the TUI live signoff name
-
-The tests are live-model dependent and intentionally opt-in. Deterministic behavior assertions live
-outside this T5 lane.
-
-When provider behavior differs, record it under the selected provider name in the live summary
-evidence and, when it becomes part of signoff, in provider cassette expectations instead of
-loosening assertions globally.
+Keep any provider-specific failure attached to the selected provider and the
+recorded run. Do not loosen deterministic expectations to accept a different
+live response.
