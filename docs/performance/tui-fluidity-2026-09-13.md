@@ -1,16 +1,16 @@
-# TUI fluidity and resource measurements — 2026-09-13
+# TUI fluidity measurements, 13 September 2026
 
 This experiment compares the original Harness implementation at
-`fd541a07eba60ef6556c095cd79c05c00fc808f6` with the changes in this working tree.
+`fd541a07eba60ef6556c095cd79c05c00fc808f6` with the modified builds identified in the evidence file.
 It measures the terminal UI, including projection, layout, Unicode wrapping,
 selection, syntax highlighting, terminal diffing, ANSI encoding, scheduling, and
 output backpressure. Provider/network latency is outside the experiment.
 
 ## Measured results
 
-The final build presents **227 frames/s while typing** and **257 frames/s during
+The final build presents 227 frames/s while typing and **257 frames/s during
 live-update bursts** through the real PTY. All 14 compared warm-render workloads
-fit the **8.333 ms budget for 120 Hz at p95**. These are separate processing and
+fit the 8.333 ms budget for 120 Hz at p95. These are separate processing and
 runtime measurements, subject to the scope below.
 
 The [machine-readable evidence](tui-fluidity-2026-09-13.json) contains every raw
@@ -42,15 +42,15 @@ additional 120-update final run also passed the processing target (p95 7.245 ms)
 | code-500-lines | 20.881 → 4.261 | 11.440 → 2.520 | 44.2 → 32.5 |
 
 
-The largest reductions are event-history update latency (**99.0%**), selection
-latency (**98.4%**), and 500-line code-stream latency (**79.6%**). Large-history
-steady RSS falls from **351.0 to 219.6 MiB**; selection falls from **448.1 to
-232.7 MiB**. Resize peak RSS falls from **614.2 to 418.4 MiB**. The 10,000-entry
+The largest reductions are event-history update latency (99.0%), selection
+latency (98.4%), and 500-line code-stream latency (79.6%). Large-history
+steady RSS falls from 351.0 to 219.6 MiB; selection falls from **448.1 to
+232.7 MiB. Resize peak RSS falls from 614.2 to 418.4 MiB**. The 10,000-entry
 stress corpus exceeds the normal text-eviction limit by design.
 
-Cold first-frame time for 10,000 settled entries improves from **511 to 262 ms**;
+Cold first-frame time for 10,000 settled entries improves from 511 to 262 ms;
 it remains a one-time layout cost, not a 120 Hz frame. Terminal bytes fall by
-**95.5% during scrolling** and **95.1% during resizing**. Static and hover-only
+95.5% during scrolling and 95.1% during resizing. Static and hover-only
 workloads emit no changed terminal bytes in this fixture.
 
 ### Production runtime and resource use
@@ -65,13 +65,13 @@ workloads emit no changed terminal bytes in this fixture.
 
 
 The previous burst path repainted almost every incoming update. Coalescing keeps
-current state visible while cutting burst CPU by **61.5%** and emitted bytes by
-**74.7%**. Typing presents **2.8×** as many frames: total CPU rises from 7% to
-8.25% of one core, while CPU per presented frame falls by about **58%**. The
+current state visible while cutting burst CPU by 61.5% and emitted bytes by
+74.7%. Typing presents 2.8× as many frames: total CPU rises from 7% to
+8.25% of one core, while CPU per presented frame falls by about 58%. The
 higher refresh rate has a measurable cost; idle still parks.
 
-Default-cadence received frame intervals have p95 **5.07 ms for typing** and
-**5.82 ms for bursts**. The slow-reader case intentionally cannot sustain 120 Hz;
+Default-cadence received frame intervals have p95 5.07 ms for typing and
+5.82 ms for bursts. The slow-reader case intentionally cannot sustain 120 Hz;
 it verifies bounded output under backpressure. Its final-run RSS grows by only
 about 8 KiB during the measured interval. Startup's discrete decorative state
 changes remain slow and do not cap input presentation.
@@ -99,8 +99,8 @@ scheduling; the JSON records input counts and individual runs.
 
 With telemetry disabled, the original runtime retained **100,000 completed frame
 acknowledgements**. The isolated retention test grew from 6,012 to 34,292 KiB RSS
-(**27.6 MiB growth**). The final code retains **zero** acknowledgements after the
-same run and grows from 6,008 to 6,712 KiB (**0.69 MiB growth**). This fixes the
+(27.6 MiB growth). The final code retains zero acknowledgements after the
+same run and grows from 6,008 to 6,712 KiB (0.69 MiB growth). This fixes the
 specific accumulating frame-history defect; it does not claim that process RSS
 never changes.
 
@@ -146,7 +146,7 @@ Grok Build itself was not benchmarked; these are Harness before/after results.
 
 | Boundary | Result |
 |---|---|
-| Input and live updates | Shared 4 ms default flush; existing 1–100 ms environment control retained |
+| Input and live updates | Shared 4 ms default flush; existing 1 to 100 ms environment control retained |
 | Live-update processing | At most 16 updates or 2 ms per batch; input keeps scheduling priority |
 | Resize coalescing | 4 ms window, independent of the slower gesture classifier |
 | Continuous motion and fades | Configured fast cadence; wall-clock speed and long-session phase period preserved |
@@ -170,7 +170,7 @@ frames. Results report the median of the three per-process measurements.
 The render benchmark includes state updates, production rendering, Ratatui
 diffing, the production ANSI backend, and a synchronous output sink at 160×48
 cells. Large-history cases retain 10,000 synthetic activities by disabling the
-normal transcript text eviction limit **inside the fixture only**. This keeps
+normal transcript text eviction limit inside the fixture only. This keeps
 the stress corpus equal before and after; its RSS is not typical-session RAM.
 The event-history case also supplies 10,000 durable events and uses 30 measured
 frames for the matched comparison. The long-code case appends 500 function lines
@@ -208,7 +208,7 @@ python3 scripts/measure-tui-runtime.py --binary target/release/examples/resource
 HARNESS_PERF_ACK_FRAMES=100000 cargo nextest run --release --profile ci -p harness-tui --lib -E 'test(frame_acknowledgements_are_retired_without_telemetry)' --success-output immediate
 ```
 
-`HARNESS_TUI_MIN_DRAW_MS` remains the existing calibration control (1–100 ms,
+`HARNESS_TUI_MIN_DRAW_MS` remains the existing calibration control (1 to 100 ms,
 default 4). An 8 ms interval allows nominal 125 Hz, 6 ms allows 167 Hz, and 4 ms
 allows 250 Hz before processing and output costs. Idle sessions park instead of
 continuously drawing at those rates.
@@ -224,14 +224,14 @@ here differs only in the benchmark file and its opt-in timeout setting.
 
 ## Validation
 
-- Workspace Nextest run: **4,611 passed**, 14 skipped after excluding three
+- Workspace Nextest run: 4,611 passed, 14 skipped after excluding three
   configuration-example expectations described below.
-- Release performance gates: **3 passed**; the existing 10,000-entry resize/anchor
-  contract measured p95 **0.464 ms**, below its tightened 8.333 ms gate. This
+- Release performance gates: 3 passed; the existing 10,000-entry resize/anchor
+  contract measured p95 0.464 ms, below its tightened 8.333 ms gate. This
   TestBackend-only gate is distinct from the full ANSI resize workload above.
 - 100,000-frame acknowledgement regression: passed.
-- Final TUI Nextest run: **1,866 passed**, 5 skipped.
-- Native PTY checks: **7 passed**, including production startup/input/resize/exit
+- Final TUI Nextest run: 1,866 passed, 5 skipped.
+- Native PTY checks: 7 passed, including production startup/input/resize/exit
   and emulator captures at 80×24, 120×40, and 160×50. All captured children exited
   and PTYs closed.
 - Workspace Clippy with all targets/features and `-D warnings`: passed.
@@ -248,7 +248,7 @@ Umans provider/model entries. The working tree already had user edits to
 `adding_anthropic_auth_provider_to_real_config_works`, and
 `umans_provider_has_api_key_env_without_auth_provider`. Their code was unchanged.
 
-## Stopping point
+## Remaining limits
 
 The first improvements still left event-heavy histories and long code streams
 outside the target. The additional event-range and wrapping changes brought every

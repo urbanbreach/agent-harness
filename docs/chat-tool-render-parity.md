@@ -66,15 +66,15 @@ content share `crates/harness-tui/src/layout/permission.rs`.
 
 ## Verification
 
-- Full workspace nextest: **4,588 passed**, with ten configured skips.
+- Full workspace nextest: 4,588 passed, with ten configured skips.
 - Full workspace/all-target/all-feature Clippy with warnings denied, formatting,
   workspace checking, and the canonical quality gates passed.
-- Browser QA driver tests: **51 passed**.
-- Production renderer matrix: **504 xterm.js screenshots**, 252 per renderer.
+- Browser QA driver tests: 51 passed.
+- Production renderer matrix: 504 xterm.js screenshots, 252 per renderer.
   Fourteen scenes × three sizes (40×24, 80×24, 120×40) × three exact times
   (0, 330, 660 ms) × normal/reduced motion.
 - Automated comparison (`.omo/evidence/chat-parity-20260910/cell-comparison.json`):
-  **42 paired normal-motion frames / 4,098 identical nonblank chat cells** at
+  42 paired normal-motion frames / 4,098 identical nonblank chat cells at
   120×40. Checks include characters, width, position, foreground/background
   values and color modes, plus the presence of RGB SGR. Reduced-motion stability
   is checked independently in all 42 scene/size combinations.
