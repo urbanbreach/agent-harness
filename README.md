@@ -31,7 +31,8 @@ without repeating its tool calls or contacting a provider.
 ## Get started
 
 Build with Git and the stable Rust toolchain selected by
-[`rust-toolchain.toml`](rust-toolchain.toml):
+[`rust-toolchain.toml`](rust-toolchain.toml). On x86-64 GNU/Linux, install Clang
+and [Wild 0.10.0](docs/testing/build-performance.md) before building:
 
 ```bash
 git clone https://github.com/urbanbreach/agent-harness.git
@@ -51,6 +52,9 @@ To use `harness` outside this checkout, install the binary:
 ```bash
 cargo install --path crates/harness --locked
 ```
+
+Builds and nextest use Wild by default on x86-64 GNU/Linux. See the
+[measured build settings](docs/testing/build-performance.md) for results and the LLD fallback.
 
 ## Connect a provider
 

@@ -27,7 +27,26 @@ variables:
     - .cargo/registry/
     - .cargo/git/
 
+.rust_linker_before_script: &rust_linker_before_script
+  - |
+    if [ "$(uname -m)" = x86_64 ]; then (
+      set -eu
+      apt-get update
+      apt-get install -y --no-install-recommends clang curl ca-certificates
+      wild_tmp="$(mktemp -d)"
+      trap 'rm -rf -- "$wild_tmp"' EXIT
+      curl --fail --location --retry 3 --output "$wild_tmp/wild.tar.gz" \
+        https://github.com/wild-linker/wild/releases/download/0.10.0/wild-linker-0.10.0-x86_64-unknown-linux-gnu.tar.gz
+      printf '%s  %s\n' \
+        641265506a7c06cfb03181b8916ab663ec8407855db6d4db7f8450667d105283 \
+        "$wild_tmp/wild.tar.gz" | sha256sum --check
+      tar -xzf "$wild_tmp/wild.tar.gz" -C "$wild_tmp"
+      install -m 755 "$wild_tmp/wild-linker-0.10.0-x86_64-unknown-linux-gnu/wild" /usr/local/bin/wild
+      wild --version
+    ); fi
+
 .rust_nextest_before_script: &rust_nextest_before_script
+  - *rust_linker_before_script
   - rustup component add rustfmt clippy
   - cargo install cargo-nextest --version "${CARGO_NEXTEST_VERSION}" --locked
 
@@ -90,6 +109,7 @@ rust:clippy:
   image: rust:latest
   cache: *rust_cache
   before_script:
+    - *rust_linker_before_script
     - rustup component add clippy
   script:
     - cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -98,6 +118,7 @@ rust:build_harness:
   stage: test
   image: rust:latest
   cache: *rust_cache
+  before_script: *rust_linker_before_script
   script:
     - cargo build -p harness --locked
   artifacts:
@@ -147,6 +168,7 @@ rust:coverage:
   image: rust:latest
   cache: *rust_cache
   before_script:
+    - *rust_linker_before_script
     - rustup component add llvm-tools-preview
     - cargo install cargo-nextest --version "${CARGO_NEXTEST_VERSION}" --locked
     - cargo install cargo-llvm-cov --version "${CARGO_LLVM_COV_VERSION}" --locked
@@ -158,24 +180,26 @@ rust:pty_e2e:
   stage: test
   image: rust:latest
   cache: *rust_cache
+  before_script: *rust_nextest_before_script
   needs:
     - job: rust:build_harness
       artifacts: true
   script:
     - export HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts
-    - env RUST_TEST_THREADS=1 cargo test -p harness-testkit --test pty_e2e
-    - env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo test -p harness-tui --test pty_e2e
+    - env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1 --ignore-default-filter
+    - env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1 --ignore-default-filter
   artifacts: *pty_visual_artifacts_always
 
 rust:binary_smoke:
   stage: test
   image: rust:latest
   cache: *rust_cache
+  before_script: *rust_nextest_before_script
   needs:
     - job: rust:build_harness
       artifacts: true
   script:
-    - env HARNESS_BINARY_SMOKE=1 cargo test -p harness --test binary_smoke -- --ignored --exact
+    - env HARNESS_BINARY_SMOKE=1 cargo nextest run -p harness --test binary_smoke --ignore-default-filter --run-ignored only
 
 pages:
   tags:

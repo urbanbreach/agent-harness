@@ -318,6 +318,9 @@ needless_raw_string_hashes = "allow"
 # allow: single_match_else — 1+ instances; match is clearer than if let in some contexts
 single_match_else = "allow"
 
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.release]
 opt-level = 3
 lto = "fat"
