@@ -81,42 +81,58 @@ fn root_runtime_example_uses_canonical_public_keys() {
     let parsed: PublicRuntimeConfig =
         json5::from_str(&root_example).unwrap_or_abort();
 
-    assert_eq!(parsed.model.as_deref(), Some("openai-codex/gpt-5.6-luna"));
-    assert_eq!(parsed.small_model.as_deref(), Some("umans-ai-coding-plan/umans-flash"));
-    assert!(parsed.provider.contains_key("umans-ai-coding-plan"));
+    assert_eq!(parsed.model.as_deref(), Some("openai-codex/gpt-6-sol"));
+    assert_eq!(parsed.small_model.as_deref(), Some("openai-codex/gpt-6-luna"));
+    assert!(parsed.provider.contains_key("openai-codex"));
     assert_eq!(
         parsed.agent.default.model.as_deref(),
-        Some("openai-codex/gpt-5.6-luna")
+        Some("openai-codex/gpt-6-sol")
     );
     assert_eq!(
         parsed.agent.explore.model.as_deref(),
-        Some("openai-codex/gpt-5.6-luna")
+        Some("openai-codex/gpt-6-luna")
     );
     assert_eq!(
         parsed.agent.general.model.as_deref(),
-        Some("openai-codex/gpt-5.6-luna")
+        Some("openai-codex/gpt-6-luna")
     );
     assert_eq!(
         parsed.agent.librarian.model.as_deref(),
-        Some("openai-codex/gpt-5.6-luna")
+        Some("openai-codex/gpt-6-luna")
     );
+    let Some(ProviderConfig::OpenAiCompatible(mistral)) = parsed.provider.get("mistral") else {
+        panic!("expected Mistral config to use existing compatible provider");
+    };
+    assert_eq!(mistral.models.len(), 1);
+    let glm = mistral.models.get("zai-glm-5-3").unwrap_or_abort();
+    assert_eq!(
+        glm.variants.keys().map(String::as_str).collect::<Vec<_>>(),
+        vec!["high", "low", "max"]
+    );
+    for (name, variant) in &glm.variants {
+        assert_eq!(
+            serde_json::to_value(variant.metadata.reasoning_effort).unwrap_or_abort(),
+            *name
+        );
+    }
+    assert!(!parsed.provider.contains_key("mistral-openai"));
     assert!(!root_example.contains("\"base_url\""));
     assert!(!root_example.contains("\"api_key\""));
     assert!(!root_example.contains("\"api_mode\""));
     assert!(!root_example.contains("\"timeout_ms\""));
     assert!(!root_example.contains("\"model_backed\""));
 
-    let provider = parsed.provider.get("default").unwrap_or_abort();
+    let provider = parsed.provider.get("openai-codex").unwrap_or_abort();
     let ProviderConfig::OpenAiCompatible(provider) = provider else {
-        panic!("expected default provider to be OpenAiCompatible")
+        panic!("expected openai-codex provider to be OpenAiCompatible")
     };
     let mini = provider
         .models
-        .get("gpt-5.4-mini")
+        .get("gpt-6-luna")
         .unwrap_or_abort();
     let mut variants = mini.variants.keys().map(String::as_str).collect::<Vec<_>>();
     variants.sort_unstable();
-    assert_eq!(variants, vec!["high", "low", "medium", "xhigh"]);
+    assert_eq!(variants, vec!["high", "low", "max", "medium", "xhigh"]);
     assert!(mini
         .variants
         .values()
