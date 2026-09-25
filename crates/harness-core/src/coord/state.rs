@@ -416,6 +416,26 @@ impl RunState {
         }
     }
 
+    pub(in crate::coord) fn finish_file_checkpoint(
+        &self,
+        agent: &str,
+        redactor: &dyn crate::redact::Redactor,
+    ) {
+        if let Ok(checkpoints) = self
+            .tool_state
+            .resource::<crate::file_checkpoint::FileCheckpoints>()
+        {
+            if let Err(error) = checkpoints.finish(
+                agent,
+                &self.info.workspace_root,
+                &self.info.artifacts_dir,
+                redactor,
+            ) {
+                tracing::debug!(%error, "file checkpoint persistence failed");
+            }
+        }
+    }
+
     pub(in crate::coord) fn begin_running_agent_turn<C>(
         &mut self,
         clock: &C,
@@ -425,6 +445,12 @@ impl RunState {
     ) where
         C: Clock + ?Sized,
     {
+        if let Ok(checkpoints) = self
+            .tool_state
+            .resource::<crate::file_checkpoint::FileCheckpoints>()
+        {
+            checkpoints.begin(&task.agent_id, &task.request_id);
+        }
         self.running_agent_turns.insert(
             task.task_id.clone(),
             RunningAgentTurn {

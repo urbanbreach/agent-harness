@@ -47,6 +47,8 @@ fn restore_legacy_request_ids(
     events: &[crate::event::EventEnvelopeV1],
     agent_id: &str,
 ) {
+    let active_events = crate::conversation_rewind::active_events(events);
+    let events = active_events.as_ref();
     let stream_key = format!("agent:{agent_id}");
     let mut request_ids = events
         .iter()

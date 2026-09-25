@@ -109,6 +109,7 @@ pub(in crate::coord) fn event_belongs_to_agent(
     matches!(
         &event.payload,
         EventV1::SessionCompaction(compaction) if compaction.agent_id == agent_id
-    ) || event.actor.agent_id.as_deref() == Some(agent_id)
+    ) || matches!(event.payload, EventV1::ConversationRewound(_))
+        || event.actor.agent_id.as_deref() == Some(agent_id)
         || event.stream_key.as_deref() == Some(stream_key)
 }

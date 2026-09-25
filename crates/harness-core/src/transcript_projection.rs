@@ -25,6 +25,8 @@ pub fn project_transcript(
     events: &[EventEnvelopeV1],
 ) -> Result<TranscriptProjection, TranscriptProjectionError> {
     ensure_strict_seq_order(events)?;
+    let active_events = crate::conversation_rewind::active_events(events);
+    let events = active_events.as_ref();
 
     let mut projection = TranscriptProjection::default();
     let mut request_locations = BTreeMap::<String, RequestLocations>::new();

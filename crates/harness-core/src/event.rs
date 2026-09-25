@@ -225,6 +225,7 @@ pub enum EventV1 {
     ArtifactWritten(ArtifactWrittenEvent),
     PolicyViolationDetected(PolicyViolationDetectedEvent),
     UiIntentReceived(UiIntentReceivedEvent),
+    ConversationRewound(crate::conversation_rewind::ConversationRewoundEvent),
     WorkspaceSnapshot(WorkspaceSnapshotEvent),
     WorkspaceReverted(WorkspaceRevertedEvent),
 }
@@ -1031,6 +1032,8 @@ pub struct WorkspaceRevertedEvent {
     pub restored_paths: Vec<String>,
     pub removed_paths: Vec<String>,
     pub failed_paths: Vec<WorkspaceRevertFailure>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conflicts: Vec<WorkspaceRevertFailure>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

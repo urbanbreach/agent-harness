@@ -31,11 +31,15 @@ impl LegacyEventLogAdapter {
                 _ => None,
             })
             .collect();
+        let excluded = crate::conversation_rewind::excluded_ranges(events);
         let mut boundary = LegacyBoundary::new(user_request_ids);
         let facts = events
             .iter()
             .enumerate()
             .map(|(index, event)| {
+                if crate::conversation_rewind::is_excluded(&excluded, event.seq) {
+                    return Ok(LegacyBoundary::fact(event, LegacyFactKind::Noop));
+                }
                 boundary.classify(event).map(|mut fact| {
                     if is_intermediate_terminal(events, index) {
                         fact.kind = LegacyFactKind::Noop;
@@ -80,12 +84,15 @@ impl LegacyEventLogAdapter {
                 _ => None,
             })
             .collect();
+        let excluded = crate::conversation_rewind::excluded_ranges(events);
         let mut boundary = LegacyBoundary::new(user_request_ids);
         let facts = events
             .iter()
             .enumerate()
             .map(|(index, event)| {
-                if !ownership.event_belongs_to(event, agent_id) {
+                if crate::conversation_rewind::is_excluded(&excluded, event.seq)
+                    || !ownership.event_belongs_to(event, agent_id)
+                {
                     return Ok(LegacyBoundary::fact(event, LegacyFactKind::Noop));
                 }
                 let mut fact = boundary.classify(event)?;
