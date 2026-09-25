@@ -62,6 +62,15 @@ pub fn resolve_runtime_catalog(
         merge_live_codex_models(&mut config, &catalog);
     }
     apply_provider_filters(&mut config);
+    for provider in config.providers.values_mut() {
+        if let ProviderConfig::OpenAiCompatible(provider) = provider {
+            if provider.auth_provider == Some(AuthProviderId::codex()) {
+                provider
+                    .models
+                    .retain(|model, _| codex_oauth_model_allowed(model));
+            }
+        }
+    }
 
     if base_digest.is_none() {
         let primary = connected
@@ -70,7 +79,12 @@ pub fn resolve_runtime_catalog(
             .or_else(|| connected.first())
             .cloned()
             .unwrap_or_else(|| BUILTIN_CODEX_PROVIDER_ID.to_string());
-        retarget_default_model_refs(&mut config, &primary, DEFAULT_BUILTIN_MODEL);
+        let default_model = if primary == BUILTIN_CODEX_PROVIDER_ID {
+            "gpt-6-astra"
+        } else {
+            DEFAULT_BUILTIN_MODEL
+        };
+        retarget_default_model_refs(&mut config, &primary, default_model);
         normalize_builtin_default_variants(&mut config);
     }
 
@@ -262,7 +276,7 @@ fn builtin_codex_provider() -> Result<ProviderConfig, String> {
 }
 
 fn codex_catalog_model_allowed(model_id: &str) -> bool {
-    model_id != "gpt-5.6" && codex_oauth_model_allowed(model_id)
+    codex_oauth_model_allowed(model_id)
 }
 
 fn normalize_codex_model_variants(model_id: &str, mut cfg: ModelConfig) -> ModelConfig {
@@ -282,7 +296,12 @@ fn normalize_codex_model_variants(model_id: &str, mut cfg: ModelConfig) -> Model
 fn codex_reasoning_efforts(model_id: &str) -> Option<&'static [ModelVariantReasoningEffort]> {
     if matches!(
         model_id,
-        "gpt-6-astra" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-5.6-sol"
+        "gpt-6-astra"
+            | "gpt-6-sol"
+            | "gpt-6-luna"
+            | "gpt-5.6-luna"
+            | "gpt-5.6-terra"
+            | "gpt-5.6-sol"
     ) {
         return Some(&LOW_TO_MAX_EFFORTS);
     }
@@ -641,11 +660,41 @@ mod tests {
             .contains(&BUILTIN_CODEX_PROVIDER_ID.to_string()));
         let entries = configured_model_catalog(&resolved.config);
         assert!(entries.iter().any(|entry| {
-            entry.provider == BUILTIN_CODEX_PROVIDER_ID && entry.model == DEFAULT_BUILTIN_MODEL
+            entry.provider == BUILTIN_CODEX_PROVIDER_ID && entry.model == "gpt-6-astra"
         }));
         assert!(!entries.iter().any(|entry| {
             entry.provider == BUILTIN_CODEX_PROVIDER_ID && entry.model == "gpt-4.1"
         }));
+    }
+
+    #[test]
+    fn configured_codex_alias_filters_retired_models_but_api_provider_keeps_them() {
+        let config = load_config_from_str(
+            r#"{
+            "provider": {
+                "subscription": {"type":"openai_compatible", "options":{"authProvider":"codex", "baseURL":"https://api.openai.com/v1"},
+                    "models":{"gpt-5.4-mini":{"name":"Mini"}, "gpt-6-luna":{"name":"Luna"}}},
+                "api": {"type":"openai_compatible", "options":{"baseURL":"https://api.openai.com/v1"}, "models":{"gpt-5.4-mini":{"name":"Mini"}}}
+            },
+            "model":"subscription/gpt-6-luna"
+        }"#,
+        )
+        .unwrap_or_abort();
+        let resolved =
+            resolve_runtime_catalog(Some(config), Some("test".to_string()), None, None, &|_| {
+                None
+            })
+            .unwrap_or_abort();
+        let entries = configured_model_catalog(&resolved.config);
+        assert!(!entries
+            .iter()
+            .any(|e| e.provider == "subscription" && e.model == "gpt-5.4-mini"));
+        assert!(entries
+            .iter()
+            .any(|e| e.provider == "subscription" && e.model == "gpt-6-luna"));
+        assert!(entries
+            .iter()
+            .any(|e| e.provider == "api" && e.model == "gpt-5.4-mini"));
     }
 
     #[test]
@@ -994,43 +1043,10 @@ mod tests {
             resolve_runtime_catalog(None, None, None, Some(&store), &|_| None).unwrap_or_abort();
         let entries = configured_model_catalog(&resolved.config);
 
-        let gpt54_entries: Vec<_> = entries
+        assert!(entries
             .iter()
-            .filter(|e| e.provider == BUILTIN_CODEX_PROVIDER_ID && e.model == "gpt-5.4")
-            .collect();
-        assert!(
-            gpt54_entries.iter().any(|e| {
-                e.variant.as_deref() == Some("none")
-                    && e.reasoning_effort.as_deref() == Some("none")
-            }),
-            "gpt-5.4 should have 'none' variant with reasoning_effort=none"
-        );
-        assert!(
-            gpt54_entries.iter().any(|e| {
-                e.variant.as_deref() == Some("xhigh")
-                    && e.reasoning_effort.as_deref() == Some("xhigh")
-            }),
-            "gpt-5.4 should have 'xhigh' variant with reasoning_effort=xhigh"
-        );
-
-        let spark_entries: Vec<_> = entries
-            .iter()
-            .filter(|e| e.provider == BUILTIN_CODEX_PROVIDER_ID && e.model == "gpt-5.3-codex-spark")
-            .collect();
-        assert!(
-            spark_entries.iter().any(|e| {
-                e.variant.as_deref() == Some("xhigh")
-                    && e.reasoning_effort.as_deref() == Some("xhigh")
-            }),
-            "gpt-5.3-codex-spark should have 'xhigh' variant"
-        );
-        assert!(
-            spark_entries.iter().any(|e| {
-                e.variant.as_deref() == Some("none")
-                    && e.reasoning_effort.as_deref() == Some("none")
-            }),
-            "gpt-5.3-codex-spark should have 'none' variant with reasoning_effort=none"
-        );
+            .filter(|e| e.provider == BUILTIN_CODEX_PROVIDER_ID)
+            .all(|e| codex_oauth_model_allowed(&e.model)));
 
         let gpt55 = entries
             .iter()

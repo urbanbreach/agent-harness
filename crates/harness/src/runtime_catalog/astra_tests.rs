@@ -79,13 +79,19 @@ fn astra_is_selectable_in_the_offline_builtin_codex_catalog() {
 }
 
 #[test]
-fn astra_discovery_preserves_api_limits_and_explicit_codex_overrides() {
+fn gpt6_discovery_preserves_api_limits_and_explicit_codex_overrides() {
     let dir = tempfile::tempdir().unwrap_or_abort();
     let path = dir.path().join("models.json");
     std::fs::write(
         &path,
         r#"{"openai":{"name":"OpenAI","models":{"gpt-6-astra":{
             "id":"gpt-6-astra","name":"GPT 6 Astra","tool_call":true,
+            "limit":{"context":1050000,"input":922000,"output":128000}
+        },"gpt-6-sol":{
+            "id":"gpt-6-sol","name":"GPT 6 Sol","tool_call":true,
+            "limit":{"context":1050000,"input":922000,"output":128000}
+        },"gpt-6-luna":{
+            "id":"gpt-6-luna","name":"GPT 6 Luna","tool_call":true,
             "limit":{"context":1050000,"input":922000,"output":128000}
         }}}}"#,
     )
@@ -104,6 +110,15 @@ fn astra_discovery_preserves_api_limits_and_explicit_codex_overrides() {
     .unwrap_or_abort();
 
     merge_live_codex_models(&mut config, &catalog);
+
+    for model in ["gpt-6-sol", "gpt-6-luna"] {
+        let entry = configured_model_catalog(&config)
+            .into_iter()
+            .find(|entry| entry.model == model && entry.variant.as_deref() == Some("max"))
+            .unwrap_or_abort();
+        assert_eq!(entry.limits.context_window_tokens(), Some(1_050_000));
+        assert_eq!(entry.limits.max_input_tokens(), Some(922_000));
+    }
 
     let astra = configured_model_catalog(&config)
         .into_iter()

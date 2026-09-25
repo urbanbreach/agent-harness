@@ -492,10 +492,10 @@ fn config_validate_cli_accepts_shipped_example_config() {
         .unwrap_or_abort() else {
         panic!("expected openai-codex provider to be OpenAiCompatible")
     };
-    assert_eq!(provider.models.len(), 3);
+    assert_eq!(provider.models.len(), 2);
     assert!(provider.models.contains_key("gpt-6-astra"));
     assert!(provider.models.contains_key("gpt-5.5"));
-    assert!(provider.models.contains_key("gpt-5.4-mini"));
+    assert!(!provider.models.contains_key("gpt-5.4-mini"));
     assert!(parsed.agents.contains_key("default"));
     for subagent in ["explore", "general", "librarian"] {
         let agent = parsed

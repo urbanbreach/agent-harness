@@ -288,7 +288,7 @@ fn codex_account_id_extracts_claim_precedence() {
 
 #[test]
 fn codex_oauth_model_filter_allows_current_gpt5_family() {
-    assert!(codex_oauth_model_allowed("gpt-5.4"));
+    assert!(!codex_oauth_model_allowed("gpt-5.4"));
     assert!(codex_oauth_model_allowed("gpt-5.5"));
     assert!(codex_oauth_model_allowed("gpt-5.6-luna"));
     assert!(!codex_oauth_model_allowed("gpt-4.1"));
@@ -310,18 +310,34 @@ fn codex_oauth_model_filter_rejects_pre_5_4_models() {
 }
 
 #[test]
-fn codex_oauth_model_filter_keeps_5_3_spark_exception() {
-    assert!(codex_oauth_model_allowed("gpt-5.3-codex-spark"));
+fn codex_oauth_model_filter_rejects_retired_and_unlisted_models() {
+    for model in [
+        "gpt-5.3-codex-spark",
+        "gpt-5.4-mini",
+        "gpt-5.4-1m",
+        "gpt-5.7",
+        "gpt-5.6-unknown",
+        "gpt-7.0",
+    ] {
+        assert!(!codex_oauth_model_allowed(model), "{model}");
+    }
 }
 
 #[test]
-fn codex_oauth_model_filter_allows_astra_without_a_minor_version() {
-    assert!(codex_oauth_model_allowed("gpt-6-astra"));
+fn codex_oauth_model_filter_allows_gpt6_family_without_a_minor_version() {
+    for model in ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"] {
+        assert!(codex_oauth_model_allowed(model), "{model}");
+    }
 }
 
 #[test]
-fn codex_oauth_model_filter_rejects_unlisted_astra_aliases() {
-    for model in ["gpt-6", "gpt-6-astra-pro", "gpt-6-astra-unknown"] {
+fn codex_oauth_model_filter_rejects_unlisted_gpt6_aliases() {
+    for model in [
+        "gpt-6",
+        "gpt-6-astra-pro",
+        "gpt-6-astra-unknown",
+        "gpt-6-sol-pro",
+    ] {
         assert!(!codex_oauth_model_allowed(model), "{model}");
     }
 }

@@ -231,14 +231,32 @@ async fn codex_gpt_request_defaults_match_reference_matrix() {
     let mut explicit_gpt = basic_request("gpt-5.5");
     explicit_gpt.reasoning_effort = Some("xhigh".to_string());
     explicit_gpt.reasoning_summary = Some("auto".to_string());
-    let codex_gpt = basic_request("gpt-5.3-codex");
-    let pro_gpt = basic_request("gpt-5.5-pro");
+    let sol = basic_request("gpt-5.6-sol");
+    let luna = basic_request("gpt-5.6-luna");
 
-    for request in [default_gpt, explicit_gpt, codex_gpt, pro_gpt] {
+    for request in [default_gpt, explicit_gpt, sol, luna] {
         let events = collect_events(&provider, request).await;
         assert!(matches!(
             events.last(),
             Some(ProviderStreamEvent::DoneWithMetadata { .. })
+        ));
+    }
+
+    for model in [
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.3-codex-spark",
+        "gpt-5.5-pro",
+        "gpt-5.7",
+        "gpt-6-unknown",
+    ] {
+        let events = collect_events(&provider, basic_request(model)).await;
+        assert!(matches!(
+            events.as_slice(),
+            [ProviderStreamEvent::Error {
+                category: Some(ProviderErrorCategory::Other),
+                ..
+            }]
         ));
     }
 
@@ -274,7 +292,7 @@ async fn codex_gpt_request_defaults_match_reference_matrix() {
         requests[2].body.get("include"),
         Some(&serde_json::json!(["reasoning.encrypted_content"]))
     );
-    assert!(requests[2].body.get("text").is_none());
+    assert!(requests[2].body.get("text").is_some());
     assert_eq!(
         requests[3].body.get("reasoning"),
         Some(&serde_json::json!({ "effort": "medium", "summary": "auto" }))

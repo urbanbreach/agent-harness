@@ -14,6 +14,12 @@ pub async fn stream_completion(
     provider: &super::provider::OpenAiCompatibleProvider,
     req: crate::CompletionRequest,
 ) -> crate::ProviderEventStream {
+    if provider.is_codex_profile() && !super::codex_oauth_model_allowed(&req.model_id) {
+        return Box::pin(stream::iter(vec![ProviderStreamEvent::categorized_error(
+            "Model is not supported by Codex subscriptions; select a supported Codex model or configure a separate API-key provider.",
+            ProviderErrorCategory::Other,
+        )]));
+    }
     let credential = match provider.provider_credential().await {
         Ok(credential) => credential,
         Err(event) => return Box::pin(stream::iter(vec![*event])),

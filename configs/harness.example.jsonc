@@ -43,22 +43,12 @@
             "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
           }
         },
-        "gpt-5.4-mini": {
-          "name": "GPT 5.4 Mini",
-          "metadata": { "supportsToolCalls": true },
-          "limit": { "context": 272000, "input": 272000, "output": 128000 },
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } }
-          }
-        }
       }
     }
   },
 
   // Active default model. Use provider/model, optionally provider/model/variant.
-  "model": "openai-codex/gpt-5.4-mini",
+  "model": "openai-codex/gpt-6-astra",
 
   // The generic default handles interactive turns. Named subagents remain
   // available for bounded delegation through task(subagent_type=...).
