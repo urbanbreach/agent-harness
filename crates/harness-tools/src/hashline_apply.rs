@@ -172,6 +172,7 @@ pub(crate) fn apply_hashline_patch_to_workspace(
     let applied = apply_hashline_patch(&source, &patch)
         .map_err(|err| ToolError::Execution(format_hashline_apply_rejection(&err)))?;
 
+    ctx.checkpoint_file(&resolved_path);
     write_atomic(&resolved_path, &applied.content)?;
     let diff = unified_diff(&source, &applied.content);
 
@@ -367,6 +368,7 @@ fn rewrite_workspace_file(
     let source =
         read_optional_existing_file(&resolved_path, "failed to read target file for rewrite")?;
 
+    ctx.checkpoint_file(&resolved_path);
     create_parent_dir(&resolved_path)?;
     write_atomic(&resolved_path, content)?;
     build_full_file_change_result(ctx, edit_id, &resolved_path, &source, content)
@@ -380,6 +382,7 @@ fn delete_workspace_file(
     let resolved_path = resolve_workspace_target_path(ctx, file_path)?;
     let source = read_existing_file(&resolved_path, "failed to read file for delete")?;
 
+    ctx.checkpoint_file(&resolved_path);
     std::fs::remove_file(&resolved_path).tool_err("failed to delete file")?;
 
     build_full_file_change_result(ctx, edit_id, &resolved_path, &source, "")
@@ -396,6 +399,8 @@ fn move_workspace_file(
     validate_resolved_workspace_move_target(&from_resolved_path, &to_resolved_path)?;
 
     let source = read_existing_file(&from_resolved_path, "failed to read file for move")?;
+    ctx.checkpoint_file(&from_resolved_path);
+    ctx.checkpoint_file(&to_resolved_path);
     create_parent_dir(&to_resolved_path)?;
     std::fs::rename(&from_resolved_path, &to_resolved_path).tool_err("failed to move file")?;
 
