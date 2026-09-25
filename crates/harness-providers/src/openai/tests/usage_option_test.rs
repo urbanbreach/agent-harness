@@ -102,3 +102,25 @@ fn usage_after_finish_no_done_sse_transcript() -> String {
     )
     .to_string()
 }
+
+#[tokio::test]
+async fn chat_sse_content_blocks_keep_reasoning_separate_from_text() {
+    let chunk = json!({
+        "choices": [{"delta": {"content": [
+            {"type": "thinking", "thinking": [{"type": "text", "text": "synthetic reasoning"}]},
+            {"type": "text", "text": "OK"}
+        ]}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6}
+    });
+    let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(format!(
+        "data: {chunk}\n\ndata: [DONE]\n\n"
+    ))]);
+    let provider = provider_for_transport(transport, "test-secret-key");
+    let events = collect_events(&provider, basic_request("zai-glm-5-3")).await;
+    assert!(matches!(events.as_slice(), [
+        ProviderStreamEvent::Started { .. },
+        ProviderStreamEvent::ReasoningDelta(reasoning),
+        ProviderStreamEvent::TextDelta(text),
+        ProviderStreamEvent::DoneWithMetadata { usage: Some(usage), .. }
+    ] if reasoning == "synthetic reasoning" && text == "OK" && usage.total_tokens == 6));
+}
