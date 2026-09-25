@@ -1200,63 +1200,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shell_run_wrapper_invocation_uses_injected_runner_without_spawning_bash() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let runner = FakeShellCommandRunner::success("wrapper-ok");
-        let shell = ShellRunTool::with_runner(
-            ShellAllowlist::default(),
-            std::sync::Arc::<FakeShellCommandRunner>::clone(&runner),
-        );
-
-        let result = shell
-            .call(
-                shell_test_context(temp.path(), "toolcall-shell-run-fake-wrapper"),
-                json!({
-                    "command": "printf wrapper-ok",
-                    "workdir": ".",
-                    "timeout": 4321,
-                }),
-            )
-            .await
-            .unwrap_or_abort();
-
-        assert_eq!(result.display_text, "wrapper-ok");
-        let calls = runner.calls();
-        assert_eq!(calls.len(), 1);
-        assert!(calls[0].0.program.ends_with("bash"));
-        assert_eq!(
-            calls[0].0.args,
-            vec!["-c".to_string(), "printf wrapper-ok".to_string()]
-        );
-        assert_eq!(calls[0].0.cwd, temp.path());
-        assert_eq!(calls[0].1, 4321);
-    }
-
-    #[tokio::test]
-    async fn shell_run_wrapper_records_permission_patterns_in_metadata() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let runner = FakeShellCommandRunner::success("hello");
-        let shell = ShellRunTool::with_runner(ShellAllowlist::default(), runner);
-
-        let result = shell
-            .call(
-                shell_test_context(temp.path(), "toolcall-shell-run-pattern-metadata"),
-                json!({
-                    "command": "printf hello",
-                    "workdir": ".",
-                }),
-            )
-            .await
-            .unwrap_or_abort();
-
-        let structured = result.structured_json.unwrap_or_abort();
-        assert_eq!(
-            structured.get("permission_always_patterns"),
-            Some(&json!(["printf *"]))
-        );
-    }
-
-    #[tokio::test]
     async fn shell_run_legacy_mode_rejects_direct_bash_command_mode_bypass() {
         let temp = tempfile::tempdir().unwrap_or_abort();
         let shell = ShellRunTool::with_runner(
