@@ -388,6 +388,18 @@ const SETTINGS_REGISTRY: &[SettingDefinition] = &[
         Some("true"),
     ),
     def(
+        "confirm_before_rewind",
+        "harness.tui.confirm_before_rewind",
+        SettingSurface::Tui,
+        SettingScope::Project,
+        SettingSensitivity::Public,
+        None,
+        false,
+        Some("true"),
+        SettingMergeStrategy::Replace,
+        SettingMutability::Editable,
+    ),
+    def(
         "keybinds",
         "harness.tui.keybinds",
         SettingSurface::Tui,

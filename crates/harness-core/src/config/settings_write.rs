@@ -475,3 +475,75 @@ pub fn write_project_setting_value(
     write_root_object(path, &root)?;
     Ok(input.to_string())
 }
+
+/// Read the same TUI layers as configuration loading and choose the effective write path.
+pub fn rewind_confirmation_settings(
+    explicit_runtime: Option<&Path>,
+    context: &super::ConfigDiscoveryContext,
+) -> Result<(bool, std::path::PathBuf), SettingWriteError> {
+    let paths =
+        super::discovery::resolve_tui_config_layer_paths_with_context(explicit_runtime, context);
+    let mut enabled = true;
+    for path in &paths {
+        let root = parse_root_object(path)?;
+        let config: super::PublicTuiConfig =
+            serde_json::from_value(serde_json::Value::Object(root))
+                .map_err(|error| SettingWriteError::Parse(error.to_string()))?;
+        if let Some(value) = config.confirm_before_rewind {
+            enabled = value;
+        }
+    }
+    let path = paths
+        .last()
+        .cloned()
+        .or_else(|| context.tui_config_path.clone())
+        .or_else(|| {
+            context
+                .xdg_config_home
+                .clone()
+                .or_else(|| context.home.as_ref().map(|home| home.join(".config")))
+                .map(|base| base.join("harness/tui.json"))
+        })
+        .ok_or_else(|| {
+            SettingWriteError::UnsupportedWrite("confirm_before_rewind: no config directory".into())
+        })?;
+    Ok((enabled, path))
+}
+
+pub fn write_rewind_confirmation(path: &Path, enabled: bool) -> Result<(), SettingWriteError> {
+    let mut root = match fs::read_to_string(path) {
+        Ok(raw) => json5::from_str::<serde_json::Value>(&raw)
+            .map_err(|error| SettingWriteError::Parse(error.to_string()))?
+            .as_object()
+            .cloned()
+            .ok_or(SettingWriteError::InvalidRoot)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => serde_json::Map::new(),
+        Err(source) => {
+            return Err(SettingWriteError::ReadFile {
+                path: path.display().to_string(),
+                source,
+            })
+        }
+    };
+    root.insert(
+        "confirm_before_rewind".into(),
+        serde_json::Value::Bool(enabled),
+    );
+    let value = serde_json::Value::Object(root);
+    let _: super::PublicTuiConfig = serde_json::from_value(value.clone())
+        .map_err(|error| SettingWriteError::Parse(error.to_string()))?;
+    let body = serde_json::to_vec_pretty(&value)
+        .map_err(|error| SettingWriteError::Parse(error.to_string()))?;
+    let parent = path.parent().ok_or(SettingWriteError::InvalidRoot)?;
+    fs::create_dir_all(parent).map_err(|source| SettingWriteError::WriteFile {
+        path: parent.display().to_string(),
+        source,
+    })?;
+    let temp = path.with_extension("json.tmp");
+    fs::write(&temp, body)
+        .and_then(|()| fs::rename(&temp, path))
+        .map_err(|source| SettingWriteError::WriteFile {
+            path: path.display().to_string(),
+            source,
+        })
+}

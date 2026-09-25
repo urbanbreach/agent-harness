@@ -243,13 +243,13 @@ entries, doctor checks stored credential presence before environment or inline f
 | Runtime config file | `harness.json` / `harness.jsonc` | Shared defaults live under the matching XDG harness directory. |
 | TUI config file | `tui.json` / `tui.jsonc` | Runtime and TUI settings are intentionally split. |
 | Core runtime keys | `provider`, `model`, `small_model`, `agent`, `permission`, `mcp`, `skills`, `instructions`, plus Harness runtime extensions | `agent` contains the generic `default` parent and named subagents, never alternate primary roles or category routes. |
-| TUI settings | `keybinds` | Unsupported TUI-only fields fail validation. |
+| TUI settings | `keybinds`, `confirm_before_rewind` | Unsupported TUI-only fields fail validation. |
 | Permission naming | `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`, plus safety kinds `read`, `external_directory`, and `doom_loop` | Legacy `shell` / `network` remain compatibility-only. `external_directory` and `doom_loop` default to ask; `read` defaults to allow with `.env` pattern asks. |
 | Prompt assets | `.agent-harness/agents/{default,explore,general,librarian}.md` | `AGENTS.md` is auto-discovered separately as project context. |
 
 Runtime and TUI config stay separate. Runtime config controls providers,
 models, the generic agent, permissions, MCP, skills, instructions, and compaction. TUI
-config stays limited to `$schema` plus `keybinds`; use `tui.json` or `tui.jsonc`
+config accepts `$schema`, `keybinds`, and `confirm_before_rewind`; use `tui.json` or `tui.jsonc`
 for those settings instead of mixing them into runtime config.
 
 ## Runtime top-level keys
@@ -414,6 +414,7 @@ metadata.
 | --- | --- |
 | `$schema` | Optional schema URI for editor integration. |
 | `keybinds` | Supported TUI keybinding overrides. |
+| `confirm_before_rewind` | Ask before rewinding a conversation (default `true`). The rewind panel’s “Yes, and don’t ask again” choice saves `false`. |
 
 ## TUI default bindings
 

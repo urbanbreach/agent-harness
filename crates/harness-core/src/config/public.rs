@@ -221,6 +221,8 @@ pub(super) fn public_config_instructions(
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PublicTuiConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirm_before_rewind: Option<bool>,
     #[serde(rename = "$schema", default)]
     pub schema: Option<String>,
     #[serde(rename = "keybinds", alias = "keybindings", default)]

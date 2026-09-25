@@ -347,6 +347,15 @@ const PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
 
 const PUBLIC_TUI_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
     PublicConfigTopLevelKey {
+        name: "confirm_before_rewind",
+        surface: PublicConfigSurface::Tui,
+        status: PublicConfigKeyStatus::Canonical,
+        schema_property: true,
+        docs_table_row: true,
+        canonical_name: None,
+        inactive_value: None,
+    },
+    PublicConfigTopLevelKey {
         name: "$schema",
         surface: PublicConfigSurface::Tui,
         status: PublicConfigKeyStatus::Canonical,
