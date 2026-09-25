@@ -15,7 +15,8 @@ mod transport;
 mod tests;
 
 pub use self::config::{
-    OpenAiApiMode, OpenAiAuthProfile, OpenAiCompatibleProviderConfig, OpenAiCompatibleProviderError,
+    codex_oauth_model_allowed, OpenAiApiMode, OpenAiAuthProfile, OpenAiCompatibleProviderConfig,
+    OpenAiCompatibleProviderError,
 };
 pub use self::endpoint::{CODEX_API_ENDPOINT, COPILOT_API_BASE};
 pub use self::provider::OpenAiCompatibleProvider;

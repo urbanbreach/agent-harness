@@ -16,13 +16,15 @@ Catalog-derived GPT-5.6 models on the built-in `openai-codex` provider use a 369
 
 ## Codex subscription model availability
 
-The built-in `openai-codex` catalog exposes GPT-5.4 and newer non-Pro models. The bundled catalog excludes Pro models. Models older than GPT-5.4 are also excluded, with `gpt-5.3-codex-spark` retained as the sole legacy exception.
+Codex authentication accepts only the verified subscription models: `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, and `gpt-5.5` (verified September 25, 2026). GPT-5.5 remains available until October 14, 2026. Retired models, Pro models, and unknown aliases are filtered from runtime catalogs and rejected before requests reach the network, including for custom provider IDs using `authProvider: "codex"`. Separate API-key providers are unaffected. Account and workspace access can further restrict this list.
+
+Sources: [model availability](https://learn.chatgpt.com/docs/models#deprecated-codex-models), [Spark retirement](https://learn.chatgpt.com/docs/changelog).
 
 ## GPT-6 Astra
 
 `gpt-6-astra` is available in the bundled Codex catalog and the shipped example
 configuration. Select `openai-codex/gpt-6-astra` in `/model`, or set it as the
-top-level `model` in `harness.jsonc`. The starter still defaults to `gpt-5.4-mini`.
+top-level `model` in `harness.jsonc`. The starter defaults to `gpt-6-astra`.
 The supported reasoning variants are `low`, `medium`, `high`, `xhigh`, and `max`;
 `none`, `minimal`, and Codex's multi-agent `ultra` mode are not offered.
 Codex requests without an explicit reasoning effort default to `low` and retain
@@ -61,7 +63,7 @@ Use config/env-backed provider credentials. Missing credentials are reported wit
 
 Ordinary live catalog initialization refreshes model metadata from `https://models.dev/api.json` using a five-minute cache. Harness accepts both the direct models.dev provider map and the generated catalog shape, serves a valid stale cache immediately, and refreshes stale data in the background with an atomic, mode-`0600` cache write. Set `HARNESS_DISABLE_MODELS_FETCH=1` to keep the embedded catalog only; `HARNESS_MODELS_URL` and `HARNESS_MODELS_PATH` override the source and cache location. Without a usable cache, initialization attempts a download and falls back to embedded metadata on failure. Mock TUI model-picker initialization uses the embedded catalog directly and never invokes the environment-backed cache/refresh loader.
 
-For the built-in `openai-codex` provider, refreshed OpenAI model metadata is merged into the configured Codex model list without replacing explicit entries. This lets newly published GPT models appear in `/model` while preserving local variants and provider settings. Unknown live entries receive conservative metadata and the existing Codex model-id reasoning policy; a provider-specific model endpoint is not required for this catalog path.
+For the built-in `openai-codex` provider, refreshed OpenAI model metadata is merged into the configured Codex model list without replacing explicit entries. This lets newly published GPT models appear in `/model` while preserving local variants and provider settings. Only models on the verified subscription allowlist are added; unknown live entries are not assumed to be supported.
 
 ## Resolved model limits
 

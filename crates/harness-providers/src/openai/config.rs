@@ -44,3 +44,18 @@ pub enum OpenAiCompatibleProviderError {
         source: reqwest::header::InvalidHeaderValue,
     },
 }
+
+/// Models supported by Codex ChatGPT sign-in, verified 2026-09-25.
+/// https://learn.chatgpt.com/docs/models#deprecated-codex-models
+pub fn codex_oauth_model_allowed(model_id: &str) -> bool {
+    matches!(
+        model_id,
+        "gpt-6-astra"
+            | "gpt-6-sol"
+            | "gpt-6-luna"
+            | "gpt-5.6-sol"
+            | "gpt-5.6-terra"
+            | "gpt-5.6-luna"
+            | "gpt-5.5"
+    )
+}

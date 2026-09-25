@@ -22,14 +22,6 @@ pub const CODEX_DEVICE_VERIFICATION_URL: &str = "https://auth.openai.com/codex/d
 
 const PKCE_VERIFIER_LEN: usize = 43;
 const PKCE_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
-const CODEX_ALLOWED_MODELS: &[&str] = &[
-    "gpt-6-astra",
-    "gpt-5.5",
-    "gpt-5.3-codex-spark",
-    "gpt-5.4",
-    "gpt-5.4-mini",
-];
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PkceCodes {
     pub verifier: String,
@@ -61,29 +53,7 @@ pub fn pkce_challenge(verifier: &str) -> String {
     base64_url_encode(&digest)
 }
 
-pub fn codex_oauth_model_allowed(model_id: &str) -> bool {
-    if model_id == "gpt-5.6" || model_id.ends_with("-pro") {
-        return false;
-    }
-    if CODEX_ALLOWED_MODELS.contains(&model_id) {
-        return true;
-    }
-    let Some(version) = model_id
-        .strip_prefix("gpt-")
-        .and_then(|rest| rest.split_once('.'))
-        .and_then(|(major, rest)| {
-            let minor = rest
-                .chars()
-                .take_while(|ch| ch.is_ascii_digit())
-                .collect::<String>();
-            (!minor.is_empty()).then(|| format!("{major}.{minor}"))
-        })
-        .and_then(|version| version.parse::<f32>().ok())
-    else {
-        return false;
-    };
-    version > 5.4
-}
+pub use harness_providers::openai::codex_oauth_model_allowed;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodexLoopbackSession {

@@ -374,7 +374,7 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     let parsed: PublicRuntimeConfig =
         json5::from_str(&shipped).unwrap_or_abort();
 
-    assert_eq!(parsed.model.as_deref(), Some("openai-codex/gpt-5.4-mini"));
+    assert_eq!(parsed.model.as_deref(), Some("openai-codex/gpt-6-astra"));
     assert_eq!(parsed.small_model.as_deref(), None);
     assert_eq!(parsed.provider.len(), 1);
     assert!(parsed.provider.contains_key("openai-codex"));
@@ -384,21 +384,21 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
         .unwrap_or_abort() else {
         panic!("expected openai-codex provider to be OpenAiCompatible")
     };
-    assert_eq!(provider.models.len(), 3);
+    assert_eq!(provider.models.len(), 2);
     assert!(provider.models.contains_key("gpt-6-astra"));
     assert!(provider.models.contains_key("gpt-5.5"));
-    assert!(provider.models.contains_key("gpt-5.4-mini"));
+    assert!(!provider.models.contains_key("gpt-5.4-mini"));
     assert_eq!(parsed.agent.default.variant.as_deref(), Some("high"));
     assert!(parsed.agent.explore.model.is_none());
     assert!(parsed.agent.general.model.is_none());
     assert!(parsed.agent.librarian.model.is_none());
-    let mut variants = provider.models["gpt-5.4-mini"]
+    let mut variants = provider.models["gpt-6-astra"]
         .variants
         .keys()
         .map(String::as_str)
         .collect::<Vec<_>>();
     variants.sort_unstable();
-    assert_eq!(variants, vec!["high", "low", "medium"]);
+    assert_eq!(variants, vec!["high", "low", "max", "medium", "xhigh"]);
     assert!(!parsed.provider.contains_key("providers"));
     for removed in ["\"base_url\"", "\"api_key\"", "sk-zerolimit", "\"api_mode\"", "\"timeout_ms\"", "\"model_backed\"", "\"split_oversized_turns\"", "\"auto_retry_overflow\"", "\"modelBacked\"", "\"splitOversizedTurns\"", "\"autoRetryOverflow\""] {
         assert!(!shipped.contains(removed), "unexpected legacy setting {removed}");
