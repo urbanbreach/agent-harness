@@ -57,6 +57,7 @@ impl PromptFamily {
                 include_str!("../../../../.agent-harness/prompt-families/reasoning.md")
             }
             Self::Codex => include_str!("../../../../.agent-harness/prompt-families/codex.md"),
+            Self::Gpt6 => include_str!("../../../../.agent-harness/prompt-families/gpt-6.md"),
             Self::Gpt => include_str!("../../../../.agent-harness/prompt-families/gpt.md"),
             Self::Meta => include_str!("../../../../.agent-harness/prompt-families/meta.md"),
             Self::Anthropic => {

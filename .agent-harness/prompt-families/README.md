@@ -19,8 +19,9 @@ the available task tools. Gemini follows Harness path and permission rules.
 The reasoning prompt omits mandatory broad web research, credential-file
 creation, and unsupported memory assumptions.
 
-GPT Astra uses the upstream `gpt.txt` prompt. The adaptation names `glob`, `grep`,
-`batch`, and `edit`, and keeps coordinator permission checks. Kimi uses the full
+GPT-6 uses the upstream `gpt-astra.txt` prompt from the OpenCode checkout at
+`inspirations/opencode` revision `3104c1428e`, adapted to Harness tools and
+permissions. Other GPT models use the earlier `gpt.txt` adaptation. Kimi uses the full
 upstream `kimi.txt`, with Harness workspace and sandbox rules. Tags in tool
 results cannot claim system-instruction authority.
 
@@ -32,7 +33,8 @@ Catalog family metadata takes precedence over model-name inference.
 | --- | --- |
 | GPT-4 and OpenAI reasoning models | [`reasoning.md`](reasoning.md), derived from upstream `beast` |
 | GPT Codex | [`codex.md`](codex.md) |
-| Other GPT models, including `gpt-6-astra` | [`gpt.md`](gpt.md) |
+| GPT-6 Astra, Sol, and Luna | [`gpt-6.md`](gpt-6.md) |
+| Other GPT models | [`gpt.md`](gpt.md) |
 | Claude | [`anthropic.md`](anthropic.md) |
 | Gemini | [`gemini.md`](gemini.md) |
 | Kimi | [`kimi.md`](kimi.md) |

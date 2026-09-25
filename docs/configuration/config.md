@@ -108,7 +108,7 @@ file permissions: POSIX `0600`, and on Windows a protected owner-only DACL.
 `harness_core::model_resolution` selects a prompt family. It prefers catalog
 `metadata.family` and falls back to a documented heuristic/default family. The
 base prompt is composed through `crates/harness/src/dynamic_prompt.rs`, markdown
-agent assets, and bundled family prompt bodies for `reasoning`, `codex`, `gpt`,
+agent assets, and bundled family prompt bodies for `reasoning`, `codex`, `gpt-6`, `gpt`,
 `meta`, `anthropic`, `gemini`, `kimi`, and `default`. Nonempty workspace files at
 `.agent-harness/prompt-families/{family}.md` can override those bundles. Missing,
 empty, or unreadable overrides use the same family's bundled prompt; empty or

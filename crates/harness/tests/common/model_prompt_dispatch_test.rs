@@ -67,6 +67,8 @@ fn fixture() -> HarnessConfig {
     let mut config = load_config_from_str(r#"{
         provider: { local: { type: "openai_compatible", baseURL: "http://127.0.0.1:1/v1", apiKey: "fixture", models: {
             "gpt-6-astra": { name: "GPT", limit: { context: 128000, output: 4096 } },
+            "gpt-6-sol": { name: "GPT", limit: { context: 128000, output: 4096 } },
+            "gpt-6-luna": { name: "GPT", limit: { context: 128000, output: 4096 } },
             "llama-4": { name: "Meta", limit: { context: 128000, output: 4096 } },
             "claude-sonnet-4": { name: "Claude", limit: { context: 128000, output: 4096 } },
             "gemini-2.5-pro": { name: "Gemini", limit: { context: 128000, output: 4096 } },
@@ -118,6 +120,8 @@ async fn actual_dispatch_recomposes_base_for_fallback_and_live_model_switches() 
     let selections = [
         None,
         Some("gpt-6-astra"),
+        Some("gpt-6-sol"),
+        Some("gpt-6-luna"),
         Some("llama-4"),
         Some("gemini-2.5-pro"),
         Some("unknown-model"),
@@ -160,9 +164,11 @@ async fn actual_dispatch_recomposes_base_for_fallback_and_live_model_switches() 
 
     let requests = provider.0.lock().unwrap_or_abort();
     let expected = [
-        ("gpt-6-astra", PromptFamily::Gpt),
+        ("gpt-6-astra", PromptFamily::Gpt6),
         ("claude-sonnet-4", PromptFamily::Anthropic),
-        ("gpt-6-astra", PromptFamily::Gpt),
+        ("gpt-6-astra", PromptFamily::Gpt6),
+        ("gpt-6-sol", PromptFamily::Gpt6),
+        ("gpt-6-luna", PromptFamily::Gpt6),
         ("llama-4", PromptFamily::Meta),
         ("gemini-2.5-pro", PromptFamily::Gemini),
         ("unknown-model", PromptFamily::Default),
