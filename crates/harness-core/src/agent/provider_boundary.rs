@@ -175,7 +175,8 @@ pub fn transform_context_for_provider(input: ProviderBoundaryInput<'_>) -> Provi
                     }
                 })
                 .to_string(),
-                name: Some("runtime_model_identity".to_string()),
+                // The identity is in the content; named system messages are not portable.
+                name: None,
                 tool_call_id: None,
                 assistant_tool_calls: None,
             },
