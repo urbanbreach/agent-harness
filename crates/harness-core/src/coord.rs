@@ -101,6 +101,7 @@ mod provider_context;
 mod provider_lifecycle;
 mod question;
 mod revert;
+mod rewind;
 mod run_lifecycle;
 mod semantic_history;
 mod snapshot;
@@ -329,6 +330,7 @@ pub struct WorkspaceRevertSummary {
     pub restored_paths: Vec<String>,
     pub removed_paths: Vec<String>,
     pub failed_paths: Vec<(String, String)>,
+    pub conflicts: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -603,6 +605,16 @@ pub enum Command {
         agent_id: String,
         request_id: String,
         outcome: AgentTurnTaskOutcome,
+    },
+    GetRewindPoints {
+        respond_to: oneshot::Sender<
+            Result<Option<Vec<crate::conversation_rewind::RewindPoint>>, CoordinatorError>,
+        >,
+    },
+    RewindConversation {
+        request_id: String,
+        respond_to:
+            oneshot::Sender<Result<crate::conversation_rewind::RewindPoint, CoordinatorError>>,
     },
     SnapshotWorkspace {
         request_id: String,

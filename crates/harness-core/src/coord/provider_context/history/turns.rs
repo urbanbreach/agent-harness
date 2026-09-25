@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use crate::event::{EventArtifactRef, EventV1, TaskCompletedEvent, TaskTerminalScope};
@@ -9,7 +8,7 @@ use crate::session::{
 use crate::text::non_empty_trimmed;
 
 use super::super::super::CoordinatorError;
-use super::journal::{open_history, parse_event_line, validate_event_seq};
+use super::journal::read_historical_events_until;
 
 pub(in crate::coord::provider_context) fn collect_historical_agent_turns_until(
     run_id: &str,
@@ -18,33 +17,24 @@ pub(in crate::coord::provider_context) fn collect_historical_agent_turns_until(
     lower_bound_seq: u64,
     through_seq: u64,
 ) -> Result<Vec<HistoricalCompletedAgentTurn>, CoordinatorError> {
-    let file = open_history(run_id, events_path)?;
-    let mut expected_seq = 1_u64;
+    let history = read_historical_events_until(run_id, events_path, through_seq)?;
     let mut requests: BTreeMap<String, HistoricalRequestState> = BTreeMap::new();
     let mut request_turn_task_ids: BTreeMap<String, String> = BTreeMap::new();
     let mut historical_task_scopes: BTreeMap<String, TaskTerminalScope> = BTreeMap::new();
     let mut request_artifacts: BTreeMap<String, Vec<EventArtifactRef>> = BTreeMap::new();
     let mut turns = Vec::new();
 
-    for (line_number, line) in BufReader::new(file).lines().enumerate() {
-        let Some(event) = parse_event_line(run_id, events_path, line_number, line)? else {
-            continue;
-        };
-        validate_event_seq(run_id, events_path, &event, expected_seq)?;
-        expected_seq = expected_seq.saturating_add(1);
-        if event.seq > through_seq {
-            break;
-        }
+    for event in crate::conversation_rewind::active_events(&history).iter() {
         if event.seq <= lower_bound_seq {
             continue;
         }
 
-        if let Some(fragment) = canonical_provider_fragment_for_event(&event) {
+        if let Some(fragment) = canonical_provider_fragment_for_event(event) {
             if fragment.kind == CanonicalProviderFragmentKind::Text
                 && event.actor.agent_id.as_deref() == Some(agent_id)
             {
                 requests
-                    .entry(historical_request_id(&event, fragment.request_id))
+                    .entry(historical_request_id(event, fragment.request_id))
                     .or_default()
                     .assistant_output
                     .push_str(fragment.delta);
@@ -63,7 +53,7 @@ pub(in crate::coord::provider_context) fn collect_historical_agent_turns_until(
                 if event.actor.agent_id.as_deref() == Some(agent_id) =>
             {
                 requests
-                    .entry(historical_request_id(&event, payload.request_id.as_str()))
+                    .entry(historical_request_id(event, payload.request_id.as_str()))
                     .or_default()
                     .prompt_summary = Some(payload.prompt_summary.clone());
             }
@@ -71,7 +61,7 @@ pub(in crate::coord::provider_context) fn collect_historical_agent_turns_until(
                 if event.actor.agent_id.as_deref() == Some(agent_id) =>
             {
                 requests
-                    .entry(historical_request_id(&event, payload.request_id.as_str()))
+                    .entry(historical_request_id(event, payload.request_id.as_str()))
                     .or_default()
                     .apply_semantic_parts(&payload.parts);
             }

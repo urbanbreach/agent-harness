@@ -25,6 +25,8 @@ pub(super) fn durable_compaction_state(
     read_files: Vec<String>,
     modified_files: Vec<String>,
 ) -> DurableCompactionState {
+    let active_events = crate::conversation_rewind::active_events(events);
+    let events = active_events.as_ref();
     let mut current_intent = None;
     let mut reads = BTreeSet::from_iter(read_files);
     let mut modified = BTreeSet::from_iter(modified_files);

@@ -309,6 +309,32 @@ impl Coordinator {
             | Command::CompactionProgress { .. }
             | Command::CancelCompaction { .. }
             | Command::AgentTurnFinished { .. }) => self.handle_provider_command(command).await,
+            Command::GetRewindPoints { respond_to } => {
+                let result = self
+                    .run_state
+                    .as_ref()
+                    .ok_or(CoordinatorError::RunNotStarted)
+                    .map(|state| {
+                        (state.running_agent_turns.is_empty()
+                            && state.queued_agent_turns.is_empty()
+                            && state.pending_compactions.is_empty()
+                            && state.tasks.is_empty()
+                            && state.queued_tool_calls.is_empty())
+                        .then(|| {
+                            crate::conversation_rewind::rewind_points(
+                                &state.canonical_event_history,
+                            )
+                        })
+                    });
+                warn_oneshot_send_failure(respond_to.send(result), "rewind_points");
+            }
+            Command::RewindConversation {
+                request_id,
+                respond_to,
+            } => {
+                let result = self.rewind_conversation_internal(request_id);
+                warn_oneshot_send_failure(respond_to.send(result), "rewind_conversation");
+            }
             Command::SnapshotWorkspace {
                 request_id,
                 respond_to,
@@ -444,9 +470,8 @@ impl Coordinator {
                 response,
                 respond_to,
             } => {
-                let result = self
-                    .agent_assistant_message_finished_internal(task_id, agent_id, response)
-                    .await;
+                let result =
+                    self.agent_assistant_message_finished_internal(task_id, agent_id, response);
                 warn_oneshot_send_failure(
                     respond_to.send(result),
                     "agent_assistant_message_finished",

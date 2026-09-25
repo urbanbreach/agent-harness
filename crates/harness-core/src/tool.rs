@@ -291,6 +291,21 @@ pub struct ToolContext {
 }
 
 impl ToolContext {
+    /// Best-effort checkpointing is silent and never changes tool permission or execution.
+    pub fn checkpoint_file(&self, path: &Path) {
+        let Some(agent) = self.actor.agent_id.as_deref() else {
+            return;
+        };
+        if let Ok(checkpoints) = self
+            .tool_state
+            .resource::<crate::file_checkpoint::FileCheckpoints>()
+        {
+            if let Err(error) = checkpoints.capture(agent, path, &self.workspace_root) {
+                tracing::debug!(%error, "file checkpoint capture failed");
+            }
+        }
+    }
+
     pub fn external_path_authorized(&self, path: &Path) -> bool {
         if self.external_directory_allow_prefixes.is_empty() {
             return false;

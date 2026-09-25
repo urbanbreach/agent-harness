@@ -684,6 +684,24 @@ impl CoordinatorHandle {
         .await
     }
 
+    pub async fn rewind_points(
+        &self,
+    ) -> Result<Option<Vec<crate::conversation_rewind::RewindPoint>>, CoordinatorError> {
+        self.request(|respond_to| Command::GetRewindPoints { respond_to })
+            .await
+    }
+
+    pub async fn rewind_conversation(
+        &self,
+        request_id: impl Into<String>,
+    ) -> Result<crate::conversation_rewind::RewindPoint, CoordinatorError> {
+        self.request(|respond_to| Command::RewindConversation {
+            request_id: request_id.into(),
+            respond_to,
+        })
+        .await
+    }
+
     pub async fn snapshot_workspace(
         &self,
         request_id: impl Into<String>,

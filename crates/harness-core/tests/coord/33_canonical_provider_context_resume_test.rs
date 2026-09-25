@@ -257,3 +257,4 @@ async fn restart_provider_request_matches_live_when_current_config_drifts() {
 
 include!("33_canonical_provider_context_resume_counters_test.rs");
 include!("33_canonical_provider_context_resume_shape_test.rs");
+include!("33_conversation_rewind_test.rs");

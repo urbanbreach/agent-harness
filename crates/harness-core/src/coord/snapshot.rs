@@ -43,10 +43,6 @@ impl Coordinator {
             .await
             .map_err(|err| CoordinatorError::SnapshotFailed(err.to_string()))?;
         let file_count = entries.len();
-        let protected_count = entries
-            .values()
-            .filter(|entry| entry.content.is_none())
-            .count();
         let payload: BTreeMap<String, SnapshotEntry> = entries;
 
         let mut value = serde_json::to_value(&payload)
@@ -84,10 +80,6 @@ impl Coordinator {
                 file_count,
             }),
         )?;
-
-        if protected_count > 0 {
-            self.publish_runtime_warning(format!("Workspace snapshot saved; {protected_count} binary or sensitive files are protected from revert. Revert restores safe text files only."))?;
-        }
 
         Ok(WorkspaceSnapshotSummary {
             request_id: request_id.into(),

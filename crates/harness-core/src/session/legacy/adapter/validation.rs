@@ -8,7 +8,7 @@ pub(super) fn validate_envelopes(events: &[EventEnvelopeV1]) -> Result<RunId, Le
     let mut event_ids = BTreeSet::new();
     let mut previous_sequence = 0_u64;
 
-    for event in events {
+    for (index, event) in events.iter().enumerate() {
         if event.schema_version != SCHEMA_VERSION {
             return Err(LegacyAdapterError::UnsupportedSchema {
                 expected: SCHEMA_VERSION,
@@ -48,6 +48,18 @@ pub(super) fn validate_envelopes(events: &[EventEnvelopeV1]) -> Result<RunId, Le
             || has_foreign_run_stream(event)
         {
             return Err(LegacyBoundary::invalid(event));
+        }
+        if let EventV1::ConversationRewound(rewind) = &event.payload {
+            if rewind.target_seq == 0
+                || rewind.target_seq >= event.seq
+                || !crate::conversation_rewind::rewind_points(&events[..index])
+                    .iter()
+                    .any(|point| {
+                        (point.seq, &point.request_id) == (rewind.target_seq, &rewind.request_id)
+                    })
+            {
+                return Err(LegacyBoundary::invalid(event));
+            }
         }
         previous_sequence = event.seq;
     }

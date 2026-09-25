@@ -162,6 +162,8 @@ pub fn project_conversation(
     checkpoints: &[ConversationCheckpoint],
 ) -> Result<ConversationProjection, ConversationProjectionError> {
     ensure_seq_ordered(events)?;
+    let active_events = crate::conversation_rewind::active_events(events);
+    let events = active_events.as_ref();
 
     let mut projection = ConversationProjection::default();
     let latest_compaction = events.iter().rev().find_map(|event| {

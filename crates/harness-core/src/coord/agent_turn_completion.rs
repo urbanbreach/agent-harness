@@ -175,6 +175,8 @@ impl Coordinator {
             return Ok(());
         };
 
+        run_state.finish_file_checkpoint(&running.agent_id, self.redactor.as_ref());
+
         let finished_agent_id = running.agent_id.clone();
         let was_cancelled = run_state.cancelled_running_tasks.remove(&task_id);
         let dequeued = run_state.scheduler.complete(&running.queue_key);

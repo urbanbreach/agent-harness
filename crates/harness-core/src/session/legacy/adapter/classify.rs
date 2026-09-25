@@ -118,6 +118,7 @@ impl LegacyBoundary {
             | EventV1::PolicyViolationDetected(_)
             | EventV1::WorkspaceSnapshot(_)
             | EventV1::WorkspaceReverted(_) => self.unsupported(event),
+            EventV1::ConversationRewound(_) => Self::fact(event, LegacyFactKind::Noop),
             EventV1::UiIntentReceived(payload) => {
                 if let Some(agent_id) = event.actor.agent_id.as_ref() {
                     self.current_intent_by_agent

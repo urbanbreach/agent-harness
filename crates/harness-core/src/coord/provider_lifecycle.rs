@@ -262,7 +262,7 @@ impl Coordinator {
         Ok(())
     }
 
-    pub(in crate::coord) async fn agent_assistant_message_finished_internal(
+    pub(in crate::coord) fn agent_assistant_message_finished_internal(
         &mut self,
         task_id: String,
         agent_id: String,
@@ -308,14 +308,6 @@ impl Coordinator {
 
         if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
             running.latest_assistant_output = Some(response.text.clone());
-        }
-
-        if !response.tool_intents.is_empty() {
-            let request_id = response.request_id.to_string();
-            if let Err(err) = self.snapshot_workspace_internal(request_id.clone()).await {
-                tracing::warn!(error = %err, request_id, "failed to snapshot workspace before tool batch");
-                self.publish_runtime_warning("Workspace snapshot failed; this tool batch has no new revert point. See the runtime log for details.".to_string())?;
-            }
         }
 
         Ok(tool_call_ids)

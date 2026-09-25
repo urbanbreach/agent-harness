@@ -35,9 +35,7 @@ impl Coordinator {
             .join(SNAPSHOTS_DIR)
             .join(format!("{snapshot_request_id}.json"));
         if !snapshot_path.is_file() {
-            return Err(CoordinatorError::SnapshotNotFound(
-                snapshot_request_id.clone(),
-            ));
+            return self.revert_file_checkpoint(snapshot_request_id).await;
         }
 
         let snapshot_bytes = fs::read(&snapshot_path)
@@ -112,6 +110,101 @@ impl Coordinator {
             }
         }
 
+        self.record_workspace_revert(
+            snapshot_request_id,
+            WorkspaceRevertSummary {
+                request_id: request_id.into(),
+                restored_paths,
+                removed_paths,
+                failed_paths,
+                conflicts: Vec::new(),
+            },
+        )
+    }
+
+    async fn revert_file_checkpoint(
+        &mut self,
+        snapshot_request_id: String,
+    ) -> Result<WorkspaceRevertSummary, CoordinatorError> {
+        let state = self
+            .run_state
+            .as_ref()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        if !state.running_agent_turns.is_empty()
+            || !state.tasks.is_empty()
+            || !state.queued_agent_turns.is_empty()
+            || !state.queued_tool_calls.is_empty()
+        {
+            return Err(CoordinatorError::RevertFailed(
+                "A turn is currently running.".into(),
+            ));
+        }
+        let checkpoint = crate::file_checkpoint::load_restore_checkpoint(
+            &state.info.artifacts_dir,
+            &state.canonical_event_history,
+            &snapshot_request_id,
+        )
+        .map_err(|error| CoordinatorError::RevertFailed(error.to_string()))?
+        .ok_or_else(|| CoordinatorError::SnapshotNotFound(snapshot_request_id.clone()))?;
+        let root = state
+            .info
+            .workspace_root
+            .canonicalize()
+            .map_err(|error| CoordinatorError::RevertFailed(error.to_string()))?;
+        let mut summary = WorkspaceRevertSummary {
+            request_id: format!("rev_{snapshot_request_id}").into(),
+            restored_paths: Vec::new(),
+            removed_paths: Vec::new(),
+            failed_paths: Vec::new(),
+            conflicts: Vec::new(),
+        };
+        // Preflight the entire set before touching any file. Only tracked files are restored.
+        let targets = checkpoint
+            .before
+            .keys()
+            .map(|path| resolve_restore_target(&root, Path::new(path)).map(|target| (path, target)))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| CoordinatorError::RevertFailed(error.to_string()))?;
+        for (path, target) in targets {
+            match restore_checkpoint_file(
+                &root,
+                &target,
+                checkpoint.before.get(path).and_then(Option::as_ref),
+                checkpoint.after.get(path).and_then(Option::as_ref),
+            )
+            .await
+            {
+                Ok((changed, conflict)) => {
+                    if let Some(reason) = conflict {
+                        summary.conflicts.push((path.clone(), reason.into()));
+                    }
+                    match (
+                        changed,
+                        checkpoint.before.get(path).is_some_and(Option::is_some),
+                    ) {
+                        (true, true) => summary.restored_paths.push(path.clone()),
+                        (true, false) => summary.removed_paths.push(path.clone()),
+                        (false, _) => {}
+                    }
+                }
+                Err(reason) => summary.failed_paths.push((path.clone(), reason)),
+            }
+        }
+        self.record_workspace_revert(snapshot_request_id, summary)
+    }
+
+    fn record_workspace_revert(
+        &mut self,
+        snapshot_request_id: String,
+        summary: WorkspaceRevertSummary,
+    ) -> Result<WorkspaceRevertSummary, CoordinatorError> {
+        let WorkspaceRevertSummary {
+            request_id,
+            restored_paths,
+            removed_paths,
+            failed_paths,
+            conflicts,
+        } = &summary;
         let failed_event_failures: Vec<WorkspaceRevertFailure> = failed_paths
             .iter()
             .map(|(path, reason)| WorkspaceRevertFailure {
@@ -130,23 +223,59 @@ impl Coordinator {
             run_state,
             system_actor(),
             Some(format!("revert:{request_id}")),
-            Some(request_id.clone()),
+            Some(request_id.to_string()),
             EventV1::WorkspaceReverted(WorkspaceRevertedEvent {
-                request_id: request_id.clone().into(),
+                request_id: request_id.clone(),
                 snapshot_request_id,
                 restored_paths: restored_paths.clone(),
                 removed_paths: removed_paths.clone(),
                 failed_paths: failed_event_failures,
+                conflicts: conflicts
+                    .iter()
+                    .map(|(path, reason)| WorkspaceRevertFailure {
+                        path: path.clone(),
+                        reason: reason.clone(),
+                    })
+                    .collect(),
             }),
         )?;
 
-        Ok(WorkspaceRevertSummary {
-            request_id: request_id.into(),
-            restored_paths,
-            removed_paths,
-            failed_paths,
-        })
+        Ok(summary)
     }
+}
+
+async fn restore_checkpoint_file(
+    root: &Path,
+    target: &Path,
+    before: Option<&crate::file_checkpoint::SavedFile>,
+    after: Option<&crate::file_checkpoint::SavedFile>,
+) -> Result<(bool, Option<&'static str>), String> {
+    let current_digest = match fs::read(target).await {
+        Ok(bytes) => Some(digest12(&bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("read failed: {error}")),
+    };
+    let conflict = if current_digest.as_deref() == after.map(|file| file.digest.as_str()) {
+        None
+    } else if current_digest.is_none() {
+        Some("deleted externally")
+    } else if after.is_none() {
+        Some("created externally")
+    } else {
+        Some("modified externally")
+    };
+    let content = match before {
+        Some(file) => Some(
+            file.content
+                .as_deref()
+                .filter(|text| digest12(text.as_bytes()) == file.digest)
+                .ok_or("binary or redacted content cannot be restored; file left unchanged")?,
+        ),
+        None => None,
+    };
+    apply_restore(root, target, content)
+        .await
+        .map(|changed| (changed, conflict))
 }
 
 async fn current_workspace_entries(
