@@ -180,7 +180,7 @@ pub(super) struct OpenAiChatChoiceChunk {
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct OpenAiChatDeltaChunk {
     #[serde(default)]
-    pub(super) content: Option<String>,
+    pub(super) content: Option<ChatContent>,
     #[serde(default, alias = "reasoning_content")]
     pub(super) reasoning_text: Option<String>,
     #[serde(default)]
@@ -202,4 +202,23 @@ pub(super) struct OpenAiChatToolFunctionDeltaChunk {
     pub(super) name: Option<String>,
     #[serde(default)]
     pub(super) arguments: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub(super) enum ChatContent {
+    Text(String),
+    Parts(Vec<ChatContentPart>),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(super) enum ChatContentPart {
+    Text { text: String },
+    Thinking { thinking: Vec<ChatThinkingText> },
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ChatThinkingText {
+    pub(super) text: String,
 }

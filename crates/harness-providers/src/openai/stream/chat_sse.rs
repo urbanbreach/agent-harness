@@ -10,7 +10,7 @@ use super::super::stream_event::{
     malformed_stream_error, non_empty_finished_metadata,
     provider_stream_finished_metadata_from_start, transport_failure_error,
 };
-use super::super::stream_payload::OpenAiChatCompletionsChunk;
+use super::super::stream_payload::{ChatContent, ChatContentPart, OpenAiChatCompletionsChunk};
 use super::super::tool_call::{
     consume_tool_call_deltas, emit_tool_call_completions, ChatToolCallState,
 };
@@ -168,7 +168,7 @@ async fn apply_chat_chunk(
             ProviderStreamEvent::ReasoningDelta,
         )
         .await
-            || !send_optional_delta(tx, choice.delta.content, ProviderStreamEvent::TextDelta).await
+            || !send_chat_content(tx, choice.delta.content).await
             || !consume_tool_call_deltas(
                 tx,
                 choice.delta.tool_calls.as_deref().unwrap_or_default(),
@@ -193,4 +193,35 @@ async fn apply_chat_chunk(
         }
     }
     Some(finish_seen)
+}
+
+async fn send_chat_content(
+    tx: &mpsc::Sender<ProviderStreamEvent>,
+    content: Option<ChatContent>,
+) -> bool {
+    let parts = match content {
+        None => return true,
+        Some(ChatContent::Text(text)) => {
+            return send_optional_delta(tx, Some(text), ProviderStreamEvent::TextDelta).await;
+        }
+        Some(ChatContent::Parts(parts)) => parts,
+    };
+    for part in parts {
+        let sent = match part {
+            ChatContentPart::Text { text } => {
+                send_optional_delta(tx, Some(text), ProviderStreamEvent::TextDelta).await
+            }
+            ChatContentPart::Thinking { thinking } => {
+                let text = thinking
+                    .into_iter()
+                    .map(|part| part.text)
+                    .collect::<String>();
+                send_optional_delta(tx, Some(text), ProviderStreamEvent::ReasoningDelta).await
+            }
+        };
+        if !sent {
+            return false;
+        }
+    }
+    true
 }
