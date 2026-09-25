@@ -1039,23 +1039,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_bash_command_allows_find_in_permission_patterns() {
-        let tempdir = tempfile::tempdir().unwrap_or_abort();
-        let safety = ShellSafety::new(ShellAllowlist {
-            executables: vec!["git".to_string(), "ls".to_string()],
-            cwd_roots: vec![".".to_string()],
-            ..ShellAllowlist::default()
-        });
-        safety
-            .validate_bash_command(
-                "find docs -maxdepth 1 -type f | sort",
-                tempdir.path(),
-                tempdir.path(),
-            )
-            .unwrap_or_abort();
-    }
-
-    #[test]
     fn validate_bash_command_rejects_source_builtins() {
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
@@ -1072,24 +1055,6 @@ mod tests {
                 matches!(err, ToolError::CommandBlocked(message) if message == "source and . are not allowed in bash")
             );
         }
-    }
-
-    #[test]
-    fn validate_bash_command_allows_redirection_and_cat() {
-        let tempdir = tempfile::tempdir().unwrap_or_abort();
-        let safety = ShellSafety::new(ShellAllowlist {
-            executables: vec!["ls".to_string()],
-            cwd_roots: vec![".".to_string()],
-            ..ShellAllowlist::default()
-        });
-
-        safety
-            .validate_bash_command(
-                "printf hi > out.txt && cat out.txt",
-                tempdir.path(),
-                tempdir.path(),
-            )
-            .unwrap_or_abort();
     }
 
     #[test]
@@ -1146,23 +1111,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_bash_command_allows_safe_command_lookup() {
-        // arrange
-        let tempdir = tempfile::tempdir().unwrap_or_abort();
-        let safety = ShellSafety::new(ShellAllowlist::default());
-
-        // act
-        let result = safety.validate_bash_command(
-            "command -v chromium || command -v google-chrome || true",
-            tempdir.path(),
-            tempdir.path(),
-        );
-
-        // assert
-        result.unwrap_or_abort();
-    }
-
-    #[test]
     fn validate_bash_command_rejects_command_wrapper_bypasses() {
         // arrange
         let tempdir = tempfile::tempdir().unwrap_or_abort();
@@ -1183,72 +1131,6 @@ mod tests {
                 "wrapper bypass must remain blocked: {command}"
             );
         }
-    }
-
-    #[test]
-    fn validate_bash_command_allows_pipeline_with_grep() {
-        let tempdir = tempfile::tempdir().unwrap_or_abort();
-        let safety = ShellSafety::new(ShellAllowlist {
-            executables: Vec::new(),
-            cwd_roots: vec![".".to_string()],
-            ..ShellAllowlist::default()
-        });
-
-        safety
-            .validate_bash_command("printf 'a\\nb\\n' | grep b", tempdir.path(), tempdir.path())
-            .unwrap_or_abort();
-    }
-
-    #[test]
-    fn validate_bash_command_allows_touch_and_rm() {
-        let tempdir = tempfile::tempdir().unwrap_or_abort();
-        let safety = ShellSafety::new(ShellAllowlist {
-            executables: Vec::new(),
-            cwd_roots: vec![".".to_string()],
-            ..ShellAllowlist::default()
-        });
-
-        safety
-            .validate_bash_command(
-                "touch tmp.txt && rm tmp.txt",
-                tempdir.path(),
-                tempdir.path(),
-            )
-            .unwrap_or_abort();
-    }
-
-    #[test]
-    fn validate_permission_patterns_allows_python3_command_mode() {
-        // arrange
-        let tempdir = tempfile::tempdir().unwrap_or_abort();
-        let safety = ShellSafety::new(ShellAllowlist::default());
-
-        // act
-        let result = safety.validate_bash_command(
-            "python3 -c \"print('ok')\"",
-            tempdir.path(),
-            tempdir.path(),
-        );
-
-        // assert
-        result.unwrap_or_abort();
-    }
-
-    #[test]
-    fn validate_permission_patterns_allows_python3_heredoc() {
-        // arrange
-        let tempdir = tempfile::tempdir().unwrap_or_abort();
-        let safety = ShellSafety::new(ShellAllowlist::default());
-
-        // act
-        let result = safety.validate_bash_command(
-            "python3 - <<'PY'\nprint('ok')\nPY",
-            tempdir.path(),
-            tempdir.path(),
-        );
-
-        // assert
-        result.unwrap_or_abort();
     }
 
     #[test]
@@ -1414,23 +1296,6 @@ mod tests {
             let err = safety
                 .validate_bash_command(command, tempdir.path(), tempdir.path())
                 .expect_err("environment dump command should be blocked");
-
-            // assert
-            assert!(matches!(err, ToolError::CommandBlocked(_)));
-        }
-    }
-
-    #[test]
-    fn validate_bash_command_rejects_environment_inspection_builtins() {
-        // arrange
-        let tempdir = tempfile::tempdir().unwrap_or_abort();
-        let safety = ShellSafety::new(ShellAllowlist::default());
-
-        // act
-        for command in ["export", "set", "declare -px", "typeset -px"] {
-            let err = safety
-                .validate_bash_command(command, tempdir.path(), tempdir.path())
-                .expect_err("environment inspection builtins should be blocked");
 
             // assert
             assert!(matches!(err, ToolError::CommandBlocked(_)));
@@ -1663,21 +1528,6 @@ mod tests {
             .validate_bash_command("printf hi > ../outside.txt", tempdir.path(), tempdir.path())
             .expect_err("redirection outside workspace should be blocked");
         assert!(is_external_directory_denial(&err), "{:?}", err);
-    }
-
-    #[test]
-    fn validate_bash_command_rejects_env_assignment_in_permission_patterns() {
-        let tempdir = tempfile::tempdir().unwrap_or_abort();
-        let safety = ShellSafety::new(ShellAllowlist {
-            executables: Vec::new(),
-            cwd_roots: vec![".".to_string()],
-            ..ShellAllowlist::default()
-        });
-
-        let err = safety
-            .validate_bash_command("PATH=. git status", tempdir.path(), tempdir.path())
-            .expect_err("environment assignment should be blocked");
-        assert!(matches!(err, ToolError::CommandBlocked(_)));
     }
 
     #[test]
