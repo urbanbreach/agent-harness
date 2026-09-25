@@ -54,6 +54,7 @@ fn test_command_palette_channel_visible_fields() {
 #[test]
 fn test_from_state_all_independent() {
     let state = OverlayState {
+        rewind_visible: false,
         details_drawer_open: true,
         slash_visible: true,
         file_mention_visible: true,
@@ -75,6 +76,7 @@ fn test_from_state_all_independent() {
 #[test]
 fn test_from_state_permission_pending_overrides() {
     let state = OverlayState {
+        rewind_visible: false,
         details_drawer_open: true,
         slash_visible: true,
         file_mention_visible: true,
@@ -140,6 +142,7 @@ fn test_from_state_command_palette_hierarchy() {
 #[test]
 fn test_command_palette_channel_emits_single_entry_when_all_set() {
     let state = OverlayState {
+        rewind_visible: false,
         palette_visible: true,
         session_history_visible: true,
         model_switcher_visible: true,
@@ -171,6 +174,7 @@ fn test_command_palette_channel_emits_single_entry_when_all_set() {
 #[test]
 fn test_theme_dialog_and_error_details_are_independent_channels() {
     let state = OverlayState {
+        rewind_visible: false,
         theme_dialog_visible: true,
         error_details_visible: true,
         ..Default::default()
@@ -185,6 +189,7 @@ fn test_theme_dialog_and_error_details_are_independent_channels() {
 #[test]
 fn test_theme_dialog_and_error_details_coexist_with_status_dialog() {
     let state = OverlayState {
+        rewind_visible: false,
         status_dialog_visible: true,
         theme_dialog_visible: true,
         error_details_visible: true,
@@ -204,6 +209,7 @@ fn test_theme_dialog_and_error_details_coexist_with_status_dialog() {
 #[test]
 fn test_permission_pending_preempts_all_other_overlays() {
     let state = OverlayState {
+        rewind_visible: false,
         details_drawer_open: true,
         slash_visible: true,
         file_mention_visible: true,
@@ -240,6 +246,7 @@ fn test_permission_pending_preempts_all_other_overlays() {
 #[test]
 fn test_top_returns_single_focus_owner() {
     let state = OverlayState {
+        rewind_visible: false,
         status_dialog_visible: true,
         theme_dialog_visible: true,
         error_details_visible: true,

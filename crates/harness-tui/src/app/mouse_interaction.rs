@@ -1064,6 +1064,9 @@ impl AppState {
         clicked_operator_sidebar_section: Option<OperatorSidebarSection>,
         transcript_scrollbar_hit: Option<TranscriptScrollbarHit>,
     ) -> bool {
+        if self.overlay_stack().top() == Some(OverlayKind::Rewind) {
+            return self.handle_rewind_mouse(mouse, frame_area);
+        }
         if let Some(changed) = self.handle_top_modal_mouse(mouse, frame_area) {
             self.welcome.take_pointer_press();
             let cleared = self.clear_blocked_pointer_state();

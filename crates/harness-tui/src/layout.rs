@@ -931,6 +931,10 @@ fn live_prompt_block_height(
     _shell: LiveShellLayout,
     terminal_height: u16,
 ) -> u16 {
+    if let Some(state) = app.rewind.state.as_ref() {
+        return crate::rewind_view::rewind_overlay_height(&state.phase, terminal_height)
+            .min(area.height);
+    }
     let max_block_height = area.height;
     let startup_shell = app.startup_shell_visible();
 

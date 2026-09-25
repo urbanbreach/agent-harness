@@ -495,8 +495,8 @@ const INTERNAL_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     PaletteCommandEntry {
         id: "harness.revert_workspace",
         category: PaletteCategory::Session,
-        title: DynamicTitle::Static("Revert workspace"),
-        description: "Revert workspace to the most recent snapshot",
+        title: DynamicTitle::Static("Rewind"),
+        description: "Rewind the conversation to an earlier turn",
         suggested: SuggestedRule::Never,
         dispatch: PaletteDispatch::Action(Action::RevertWorkspace),
     },

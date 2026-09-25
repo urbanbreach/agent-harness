@@ -699,6 +699,9 @@ fn render_measured_transcript_pane(
                 app.transcript_animation_phase(),
                 theme,
             );
+            if let Some(seq) = app.rewind_dim_from_seq() {
+                dim_rewind_transcript(frame, layout, surface_area, transcript_scroll, seq, theme);
+            }
             register_transcript_hyperlinks(layout, surface_area, transcript_scroll);
             if app.focus == Focus::Details && !app.todo_pane_focused() {
                 super::ui_transcript_layout::render_selected_transcript_entry(
@@ -1711,3 +1714,51 @@ mod streaming_tests;
 #[cfg(test)]
 #[path = "ui_transcript_tests.rs"]
 mod tests;
+
+fn dim_rewind_transcript(
+    frame: &mut Frame,
+    layout: &super::ui_transcript_layout::MeasuredTranscriptLayout,
+    surface_area: Rect,
+    transcript_scroll: usize,
+    seq: u64,
+    theme: &Theme,
+) {
+    for index in layout.visible_sections(transcript_scroll, usize::from(surface_area.height)) {
+        let section = &layout.sections[index];
+        if section.activity_first_seq < seq {
+            continue;
+        }
+        for surface_index in 0..section.surfaces.len() {
+            if let Some(placement) =
+                super::ui_transcript_layout::transcript_visual_entry_viewport_placement(
+                    layout,
+                    surface_area,
+                    transcript_scroll,
+                    index,
+                    surface_index,
+                )
+            {
+                dim_rewind_rect(frame.buffer_mut(), placement.rect, theme);
+            }
+        }
+    }
+}
+
+fn dim_rewind_rect(buffer: &mut ratatui::buffer::Buffer, area: Rect, theme: &Theme) {
+    let gray = if theme.is_dark() { 88 } else { 165 };
+    for y in area.y..area.bottom() {
+        for x in area.x..area.right() {
+            if let Some(cell) = buffer.cell_mut((x, y)) {
+                if theme.surface.canvas == ratatui::style::Color::Reset {
+                    cell.modifier.insert(ratatui::style::Modifier::DIM);
+                    cell.modifier.remove(ratatui::style::Modifier::BOLD);
+                } else {
+                    cell.fg = crate::theme::quantize_color(
+                        ratatui::style::Color::Rgb(gray, gray, gray),
+                        theme.color_level(),
+                    );
+                }
+            }
+        }
+    }
+}

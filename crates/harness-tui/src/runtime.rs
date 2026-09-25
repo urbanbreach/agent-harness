@@ -337,6 +337,14 @@ fn take_pending_replay_launch_metadata() -> Option<LaunchMetadata> {
 }
 
 pub enum LiveUpdate {
+    RewindPoints {
+        generation: u64,
+        result: Result<Vec<harness_core::conversation_rewind::RewindPoint>, String>,
+    },
+    RewindComplete {
+        generation: u64,
+        result: Result<harness_core::conversation_rewind::RewindPoint, String>,
+    },
     Event(Box<RuntimeEvent>),
     AlwaysApproveModeChanged {
         enabled: bool,
@@ -543,6 +551,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         app.set_toggles_config(toggles);
     }
 
+    app.configure_rewind();
     app.maybe_set_no_provider_banner();
 
     let mut terminal_session = ProductionTerminalSession::negotiate();

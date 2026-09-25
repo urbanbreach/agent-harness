@@ -123,7 +123,7 @@ impl AppState {
             return;
         }
 
-        if self.close_queued_prompt_navigation(key) {
+        if self.close_queued_prompt_navigation(key) || self.handle_rewind_escape(key) {
             return;
         }
         if key.code == KeyCode::Esc && self.handle_interrupt_escape() {
@@ -218,6 +218,13 @@ impl AppState {
 
     fn handle_top_overlay_key(&mut self, key: KeyEvent) -> bool {
         match self.overlay_stack().top() {
+            Some(OverlayKind::Rewind) => {
+                if key.code == KeyCode::Char('q') && key.modifiers == KeyModifiers::CONTROL {
+                    self.execute_action(Action::Quit);
+                } else {
+                    self.handle_rewind_key(key);
+                }
+            }
             Some(OverlayKind::ReleaseNotes) => {
                 self.handle_release_notes_key(key);
             }
@@ -1246,7 +1253,7 @@ impl AppState {
                 self.cycle_focus_backward();
             }
             Action::RevertWorkspace => {
-                self.request_workspace_revert();
+                self.open_rewind();
             }
             Action::OpenThemeDialog => {
                 self.theme_dialog_visible = true;

@@ -22,6 +22,7 @@ use super::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToastVariant {
+    Rewind,
     Info,
     Error,
     Mode,
@@ -1120,7 +1121,12 @@ impl AppState {
         self.toast = Some(ToastState {
             message: message.into(),
             variant,
-            expires_at: now + Duration::from_secs(2),
+            expires_at: now
+                + Duration::from_secs(if variant == ToastVariant::Rewind {
+                    3
+                } else {
+                    2
+                }),
             paused_remaining: None,
         });
         self.motion_revision = self.motion_revision.wrapping_add(1);

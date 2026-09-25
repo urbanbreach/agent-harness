@@ -1,0 +1,3314 @@
+{
+  "source_sha256": {
+    "inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/theme/tokyonight.rs": "1020561d379eb25581a38cfd075c205266bd3c97337193172707d378d135dcb9",
+    "inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/theme/groknight.rs": "c58f35789fad4a1fec3d978673ba9dfd273e7c9e94fa731f975ca297527b5681",
+    "inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/theme/grokday.rs": "2a4bffc5c6bc49deb1c06761aa7a3e6372cc4b0225a3ffaf434ed77913a4d882",
+    "inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/theme/terminal_default.rs": "3f33cfc793414f34fe31ead0b1e350762c1d7d4f78c6588610f94cd9cab81bca",
+    "inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/render/color.rs": "965fe0ac97bf879508f4e14bfd01fe145a81405d4383725320c695aad183a276",
+    "inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/util.rs": "52083857f7570b1fc27caa30ab02ddbfa4ee95158a01c0299f2900d939ef8159",
+    "inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/rewind.rs": "ef9b91bc04182fe2a1d5f8f85ff895a4d3a36539d5502754bd7451cab6dc72ad",
+    "inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/overlay_list.rs": "cbca089f1434579007076bfb793ef3a9a529197f7d5008e02723b905f9a8c498"
+  },
+  "cases": [
+    {
+      "digest": "b3e93df1eb08977eeaa3361a56215a2603d10b418169437a501e7197ebadae4b",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "63c30cf9fc4c30a1f6feb5ba27658698aab1900bb04f86c6172d6e72384c2e85",
+      "focused": true,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "63c30cf9fc4c30a1f6feb5ba27658698aab1900bb04f86c6172d6e72384c2e85",
+      "focused": true,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 14,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "63c30cf9fc4c30a1f6feb5ba27658698aab1900bb04f86c6172d6e72384c2e85",
+      "focused": true,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 19,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "758e256e6c9ee9e14957a6ae2c6ad13786f7ab233de649da7be499d8c610c355",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "758e256e6c9ee9e14957a6ae2c6ad13786f7ab233de649da7be499d8c610c355",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 6,
+      "selected": 1,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "758e256e6c9ee9e14957a6ae2c6ad13786f7ab233de649da7be499d8c610c355",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "758e256e6c9ee9e14957a6ae2c6ad13786f7ab233de649da7be499d8c610c355",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 1,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "758e256e6c9ee9e14957a6ae2c6ad13786f7ab233de649da7be499d8c610c355",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 2,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "b3e93df1eb08977eeaa3361a56215a2603d10b418169437a501e7197ebadae4b",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "9574714e514df9de7042ab076f7eef716bfc393093843e2658abc6cecb898268",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "b3e93df1eb08977eeaa3361a56215a2603d10b418169437a501e7197ebadae4b",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "63c30cf9fc4c30a1f6feb5ba27658698aab1900bb04f86c6172d6e72384c2e85",
+      "focused": false,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "63c30cf9fc4c30a1f6feb5ba27658698aab1900bb04f86c6172d6e72384c2e85",
+      "focused": false,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 14,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "63c30cf9fc4c30a1f6feb5ba27658698aab1900bb04f86c6172d6e72384c2e85",
+      "focused": false,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 19,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "758e256e6c9ee9e14957a6ae2c6ad13786f7ab233de649da7be499d8c610c355",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "758e256e6c9ee9e14957a6ae2c6ad13786f7ab233de649da7be499d8c610c355",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 6,
+      "selected": 1,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "758e256e6c9ee9e14957a6ae2c6ad13786f7ab233de649da7be499d8c610c355",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "758e256e6c9ee9e14957a6ae2c6ad13786f7ab233de649da7be499d8c610c355",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 1,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "758e256e6c9ee9e14957a6ae2c6ad13786f7ab233de649da7be499d8c610c355",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 2,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "b3e93df1eb08977eeaa3361a56215a2603d10b418169437a501e7197ebadae4b",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "9574714e514df9de7042ab076f7eef716bfc393093843e2658abc6cecb898268",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "dark",
+      "width": 9
+    },
+    {
+      "digest": "e7d1c0f9fb7be6700baad86697ce22cf71aa075615e9de92783f780489ccc014",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "0120f6e5fc482b2485a02ca9692a787967c73269d77dd2a70d350e6c4468f718",
+      "focused": true,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "c80fd70f3a489d253dc73907b2ac670337bbf6e2fce65f1293544572c51e48e3",
+      "focused": true,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 14,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "237d0eeecca26cc0eafbd7f2e7e735d0c4643dd5a557d7011472a78c231d2f14",
+      "focused": true,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 19,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "74e5fde56213281da866fef64ddfefd8ec1c37daa6d917d2c8d46ce05c3e040b",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "1e397487a6f1b3eca118e1bfc460a8ec545f7188859df75eea9cfdc5619fb08b",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 12,
+      "selected": 1,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "2588a30bc20920ab4a35aa17b1e819fc51370e95f110bb3d1d24aef986ad7ab9",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "289362dcce2e5d1504e5c77928dbefbaedec17fa53f9b0b8642475ed2224d2b1",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 1,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "7926c401f331cf03afdae9a893e6577398098d655fc47029ff26f7eb737b30bb",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 2,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "d0176c9a7b4682ab3ec6eed29a1f57583183c75462c01e11f3d15dd5958a239e",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "b29d601af089fb18d2103d99b1270fff400f1d5d603befe60d40a10dbe81cbff",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "deb53a9732c986e673cdb0d89de6bd8f0db299ae2956d786ec7a2ff00bcfee45",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "1bb0467150a8e2e7e62d29b061bb2541d6de3aec527658ff445a903219b39602",
+      "focused": false,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "0c964b626e985f43c019be88f65ddf9250b2062b7a2eb90fb21d90ca2e0b22cd",
+      "focused": false,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 14,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "23fc7dc78c8ac17e280a37b4e303275ecd2ec0e5c783f2bf9452fc3586375b45",
+      "focused": false,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 19,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "4264288da1fbdc9fbf3dc6c59a6cff52c78ec96484d94904548e282d99071c54",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "9eaca28332008ae1e5eefc51ae8a7e4ec80c2aa173aae6028560d08c26faa81a",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 12,
+      "selected": 1,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "416a69005ae157ecf8574942b2a75cb353638fc51bd3d87588b70de2596e69ec",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "cbaa390c6acc3afe18212bf7f71a52722a284a98d34d525469b290c35f36c5a1",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 1,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "9fba696b5f749319d107c149c940da65e71068dfe8a3f57570ee4bfab5fb178d",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 2,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "fa6e52a517c625316661516044564201f818f8f89e06fa1ca283c79455d9614f",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "98735548ccaa2b865612c1d54b1e928f2a57572bad51a3ce586db37ba59846af",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "dark",
+      "width": 20
+    },
+    {
+      "digest": "624b0adb4d1ecb238c3b9ebb333ddf01f2325b41031b6d8f4d05760516092a56",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "3b6ef12ed2e6b422cb7744ffbcc325c14370aac5ae8728d672b4afffeb7002b0",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "785fb042b88efb91e2f8eefc01d09523c7ae68716936adadb282a23b39d5dd53",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 14,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "671dbfcd2bda1dc7d0389cdc4881e902f20a0a91c11de138386f77a5c96102d4",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 19,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "65b6f38139d619880a4ff889c6694a4c7ea8c814a9a2440e9c173d435bc9ba4c",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "14a7aba9a29cb36f7cd00f3f1f2b4585ca86318cd228d1f9ef09e0260df5980d",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "f7ebf8e8c0e9cc5ed2f5fb6788510469957ee09e849adf37bcee098263d5505b",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "57115aeaf34e917abea168ce4acea374c437b95b117d98ee8a316376a971df49",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "6783051c25f2ce252eff23445d522714540e64ec6ef622d48c6f4fe0b97e27c5",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 2,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "e0821bde1e93567226f540f0279a83bc02c3019a32a2bf5c71e51499bcabcdc0",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "4df1425d4e858d9150a040bc4173922238b51571ad109c74ebd98352f3695cce",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "7c04efcc2ee1e923c92efe857cd62c1668e417d8d74de3c55bbee1e9c64d36a9",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "bc6dab837497e737d337f84b35e9f03b242de4d37db032674f86a8a8c23065ed",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "a0d59e2be652ad3d8cbbf4ce0cc0ef05b6c4d1983ce3dbfc2ee6239dc83d9c0a",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 14,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "e74ec945e8b7535d2cdb66acc19f53d236aee379aa4e9868bbb4c1ad79c7e465",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 19,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "b8a755b5846309218c883ac683a41d0d531bc9326e578c4a0490e0a041b5c6b1",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "0ea4dad714ddd1cb7ca13b9133c635fd472e0dada2ad7aaadfb8c77403af02d9",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "a76357ca902939a7af709caf0ff9c2866c062032649b3b293015f1af25d6de31",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "dbd27dd8eeda7233cf8add6c9cc8491d820e5c2b1f76bc67dde0a246df0606c8",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "855bcb46d25f9df18b36781330a5ae08939269f4d413ccddb81ae80b54fe9301",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 2,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "d464f16694bc4812a986aab1edd2fa5e97fa18090de7d85e0f1d82b670156dd6",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "86a2d50552f876a36acd362c794c6ec0acd72835a5374f6c543aa126b4da56dc",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 40
+    },
+    {
+      "digest": "5c1572aba302d8da46739f07b89429ec71b0e935444df2192dccc67088c74370",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "f2714387ea65776f8aef2c633822547e816bb8167848ac2df3873ae2871e3916",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "9152ad2366b86625a2dca2ef383027a67ef9861dcc2d95637b13d660c2f2d064",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 14,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "b34361cd5759643b3bd4ca9eeeab600bcdde72538b6d26411f1b58005b1be8fa",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 19,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "6fef5c37651314b32c74ab4402e7ba17196b88b231ab1b4789791d91449d576d",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "8f1f884d26632963fe0e99e54f7b697a7645aac24f3c7f4d1cf51f0392e01ec3",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "fc17fb7c9c0edb4ec913066894b9142f9e61036fb951db6d37b9ea627ae0a3d4",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "92eafd1a4e4db83fd8c1d8c257873583ff164cd372d429abaffb3024fcafc305",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "0032ac986c0e4fb138a4d35586bd9e35b7119bb7ab904b3b015634b7f7ac38f3",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 2,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "df2add89c1a057ad00a5fcbdf743f8fe664bf0be07984b5e3d8cc05e8d8c5a10",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "d7a2af500365a5ddcfd992145f743b4e8801dae312f80306e9813d17af53f14f",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "ec08f6f3afe0954f775cc5432625a115e4bf908447ff80af02933f9fb78c3a14",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "3f8cb54c5bc454e025092c7c7eabd308bf99106802f54fd1107f803155dc6558",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "b5109002b37952157e574924566147215121726679dc5a42e542e1a9cda7be2e",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 14,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "ec84c8c6762b6fec4939018222ab4eab49a3ab16c6ea189f07dd91415cc1c1ce",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 19,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "2ad731e5916b3c1674ffa6a1a9ac2131c2d5563391feff785a05ba3c88a144bb",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "837c003e5ce1c3b0366b7a21fbca06e1d4086c74a32d0d33ecf89b91207308b9",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "a921eecb62338208f3f4e97d27195d7ee8fecf5cfc94fc6078b35e85e4dd9130",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "8a5815c66932e86aed1f2255ce55a47ea829b7917511408fcf6223a5d7f1cce4",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "f1bfebc5dcc280d2f902777127f9b53b46e3378cbe898197492dd55573da2eff",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 2,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "e3c94b52baf51d51563f564690da52ac9c1bacccecf1805baf328726e7a67ae7",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "edb54731db41c48950bee5cf668136ba4ac1a59cf7e5dde481e010c3a71c122c",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "dark",
+      "width": 80
+    },
+    {
+      "digest": "e907c5c4f9d53f1a30570ebe57bb3cbed909de172cb1c14e327d4077daacbd57",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "c63893a22eae2fe6ed833a96bbe4b138be7ac94008e7cc094590c76d7cd5be2a",
+      "focused": true,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "e28652125670e7731ad0362d5983d314dbdc75af5cbf2064f7f181bad02a15aa",
+      "focused": true,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 14,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "31e10737d5cbbdee661aea5c75f75816a4e93d9c7a6461feb1513f68e46cf504",
+      "focused": true,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 19,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "8f297d3ccf6af1b7a76cf7fddaf8ee70f831016055900fe8d6dd5b6150c47461",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "db64d3aeebd7e7e6cb61b7ffa4b9ef33a43a8002b5887c5fea92477a38a4e888",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 40,
+      "selected": 1,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "cf22206e225ed246f97f084ccc76f542e424508bf9a651b6d3b15cec5f544c79",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "f7854e68c9e49e01674bc268a72e05b48944823ebbccc584d90c46da99b85835",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 1,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "2ff336fbff259d03ad464507dc721cb21b2e1dece6d68057df5ee1a181f5af8f",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 2,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "de0ace8be7c9fd463277fffab2cf58c5ed8d4c02f4c38bc6ed160c9d68d519b7",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "01eba1ae39826630c906cfec83ebaceb60d2cd17686aa6c180c0b26a882bc176",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "b601e117aea2bfdba1a79bd8c1877e84e0ea22409b0c604bbfe4d6f7afdbecd9",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "780928984797c3eacb6a43f41258fda0b018819d5ccd40ecb0fa41feaabca454",
+      "focused": false,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "397c5462ea464077cb38328c75b56e3c31282e25f5fecbc40f1d3d42b3fc689b",
+      "focused": false,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 14,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "70fbfb89e5c0a95d2055b4eff8c3ac0195c1348753b8388ecee1dea1ab655306",
+      "focused": false,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 19,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "28bb4b883e17895a4db23184aca4b5d41fc986bb1f41da068090f0bcc1a6b363",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "e1fe40ad1900300109a0cbb8df947f822c5750025c78a5d6d82a93b4738ea39c",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 40,
+      "selected": 1,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "b81587fb4f78be712ad43a25c6c938746cac33d2ec0967f84c1ff96d24dc213b",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "8d879212fe95c6302c388f55e71762a0067b95260b3396ccb9a5f595b00169bc",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 1,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "d775b5a24b2d8773f678dc14227cc9d8529309a01d1c7d2aed5356cbc668bfb1",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 2,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "504bab51643cc159f6520876da822a42b2c4f2dc5875f0239d68aba014eb5b7d",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "cb9b5ef1b3573599dac2d7fe66a9e303f19e71cfe0bc67934e1b4131ea91f8c2",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "dark",
+      "width": 120
+    },
+    {
+      "digest": "86c67fdd88c4e9e48033da08f3f1b76b832f70124604edafa9235062a8f15891",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "bb45b0bc967e20031b55e31bdaaea528280b961a850ac88dd5f0a893fe93f151",
+      "focused": true,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "bb45b0bc967e20031b55e31bdaaea528280b961a850ac88dd5f0a893fe93f151",
+      "focused": true,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 14,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "bb45b0bc967e20031b55e31bdaaea528280b961a850ac88dd5f0a893fe93f151",
+      "focused": true,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 19,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "11cf1886d618de878ade21569edd9e73acbb9dc15304bb311028148e99986733",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "11cf1886d618de878ade21569edd9e73acbb9dc15304bb311028148e99986733",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 6,
+      "selected": 1,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "11cf1886d618de878ade21569edd9e73acbb9dc15304bb311028148e99986733",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "11cf1886d618de878ade21569edd9e73acbb9dc15304bb311028148e99986733",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 1,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "11cf1886d618de878ade21569edd9e73acbb9dc15304bb311028148e99986733",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 2,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "86c67fdd88c4e9e48033da08f3f1b76b832f70124604edafa9235062a8f15891",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "adc33c637548192dbe4873416c574b3a25ec699657288a60c2e8f7c12e1033fe",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "86c67fdd88c4e9e48033da08f3f1b76b832f70124604edafa9235062a8f15891",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "bb45b0bc967e20031b55e31bdaaea528280b961a850ac88dd5f0a893fe93f151",
+      "focused": false,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "bb45b0bc967e20031b55e31bdaaea528280b961a850ac88dd5f0a893fe93f151",
+      "focused": false,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 14,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "bb45b0bc967e20031b55e31bdaaea528280b961a850ac88dd5f0a893fe93f151",
+      "focused": false,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 19,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "11cf1886d618de878ade21569edd9e73acbb9dc15304bb311028148e99986733",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "11cf1886d618de878ade21569edd9e73acbb9dc15304bb311028148e99986733",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 6,
+      "selected": 1,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "11cf1886d618de878ade21569edd9e73acbb9dc15304bb311028148e99986733",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "11cf1886d618de878ade21569edd9e73acbb9dc15304bb311028148e99986733",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 1,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "11cf1886d618de878ade21569edd9e73acbb9dc15304bb311028148e99986733",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 2,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "86c67fdd88c4e9e48033da08f3f1b76b832f70124604edafa9235062a8f15891",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "adc33c637548192dbe4873416c574b3a25ec699657288a60c2e8f7c12e1033fe",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "light",
+      "width": 9
+    },
+    {
+      "digest": "0d8a7b6a2c4c6dd47856360c8f0e79b1f90b8f37e3aa157afd868c41f27732ba",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "a36f1f11a6d9d94bf3fa666b958c9f270d0b652862778a7f10e539fff710dcb2",
+      "focused": true,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "8f5ec028b858094f9fec0425e38d594435dab43b0e6b3948054f4dc2eef6548d",
+      "focused": true,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 14,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "eabdd77c22fd4ba307b1a3adaee63a4f292b5d1e00eb7c66fc511706fe58d7fe",
+      "focused": true,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 19,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "06ccab811a759398eaf26697a82752242f513c37a9aa69d645e1574e35eea8a9",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "064829cac4e7957e6e6e834bdf6167d5a7020171666e2342019225169211854a",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 12,
+      "selected": 1,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "8ba933b9e86bbb50d77d97c7b80c63bf694181f5c06b1fa9656c5cc4eb4104f1",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "e01891d805fff9efd715d8021aeacba51535f4694cb079f80da144c49a86098b",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 1,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "51f2f15a7ce3a6f1b8d318ae99e7262de0de5838859f2c1ccb9c9a362dbf416d",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 2,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "f28a728a39ed4e363faceb2857e94ad99eefe51e97e335f7feb52dfa8d06f194",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "1d754e38baf8831375646290b367edaec59f0275d3507586c5ffd091be1ceea4",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "edb12663a58842fbef253cf4df06c89a5dfad9d44a20c2b11c4571666b0cb1b3",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "8153d8327f763e7aeada7242175e08f572fe6739e1a24b8d5dc1f3296b4effe1",
+      "focused": false,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "248c47509a081d1f3a2e31188709cc7f1fb7add89cdaa32661aca2d2240430ca",
+      "focused": false,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 14,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "2d864c94e02eac6a4f2604df8a61b7c4e0b67327b0d2e4dc5a08d51bda1dc570",
+      "focused": false,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 19,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "e6292d8132e25f2eba901acee205fd8318318a7e1f97e534fa7f07c96a08fed4",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "52e3f1cb03d58763a2b444ff2fab54d3481851755b8b6998ba4ae68c65f53b29",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 12,
+      "selected": 1,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "7d6bc2d09c2a143aeb97c000d1e614cfed245947c19fbb662a4ef608ef95153e",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "ebdf455f7af4d33dec3f36fcc90c60c4b225b2e43b05e6d650b729ff3b9c9de2",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 1,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "e5d9e1a99a5a458078672bf5b1674b86608c11b20eabcd4d09339edb79157a34",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 2,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "a0416273696d1d32baccaff19e2438524289797a831ce8216d5bfc5b6f942538",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "ba9739b302d938c7f04af307849fe51ff58021b8f1191ec654ced97d7078bf9d",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "light",
+      "width": 20
+    },
+    {
+      "digest": "bfb0654cdc16eb4244e70d1a086aeeb663a104adae6664c1d11e8b7f0e00ecdb",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "28f8a1168f8c566cb68d20491e39d6f21a165fb0bbdb04dc9e77b138fc6d4ddc",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "498bfd2b2e5988d6547a443341ed7a7165d2beb7ea3f11447de4212d1f6d6b9b",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 14,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "9a7f6ae32c5fc1d632db1a64974f2baf19f2f6701e042a46a6bed158aba14810",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 19,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "e7fc8fb60578078ecbc58ef7ae852e3a0c33bf3e179ca112248d4e8271fa436f",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "c67bef43fd6119e90c9bb15f4d5c038949d343e0b45e245367c1a54b8894f6ca",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "4ba1bb05ae077d039e9b7a651247c8bc9db54052dbbcc9514e5390158d9e27c4",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "55108f987a9acadfee060f34843afa9473fc8771c5e54c0f60cdee70e4b0c97a",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "43c59e392375964787b0e3e713534a6c477d3f2eb4e05fd560171587ff444386",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 2,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "d14f646a0b10cc849f0b3f1900a80a2ee3238f2fab5650cce3875407d4697c86",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "f4bd3258c39bf6ed24fc7d9c08f59efcfac4e992aa9f1185ace91983194c9b82",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "f72b4dfb177bb6f8d80a734f08776d9aeca65e4fe2bdd7c3abc806a861aee0cf",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "4b5f1a40118bb4ff5e007e393f9c9971fcd30a12600aac11c5cdb2c80d3920cc",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "6556a11f5f8d80b4f02805b3005858518b8f2c21ddbbfee6838f5a33f1770754",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 14,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "6e2b65b7aa921e10e60d0ad93b92a02beba06443b0abdee9ee18a6e18a9ecad4",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 19,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "d0959940d4808927bf80a44f71453df1be4c83463a58b4695bcf58cbbdfe11eb",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "0c4498059962e40e40a02c23febb187e2cda8e58a807d0212eeaf22fe0322c76",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "0e92facdf627e6e4fd6c80557563adc47bb81b1ca9a5d11bd01c1c6133607e79",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "a2f219115e939914811bb432c123013da721aa1dda0d1fb53fd3e25ce2d71d94",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "b6e071afbdd8fa0a7b83ab2cd5694d751b67687229ded5bf353f021fb9255aa8",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 2,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "f56c6e5a54e268b8fb515a5239770dc7e516906a7ce8e08f95ced7b5477ebaa9",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "cd2625ebc0dc2d979a319697bac1aca116c931ec939afb9e9be4d4ba4cde9a6b",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 40
+    },
+    {
+      "digest": "afcf85731c82483c617a9d936bdce58774e9b2d3c43cec415bf9eecedbf7189e",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "60699c01c6bc1060ae76894f523d1cd688932e68f2ea2ee80e3a07d3b00bff2b",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "a5ce68cba5248abc71bb61d5a3b0a9aaa35bdad8538fc5772c91da4eab25b2ed",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 14,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "7e1c6de58aa9e5eadcd3c6336ed2c634439a5f18c6ba6143f4b425077f8ae8eb",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 19,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "529885e1f967d04a93486cdfbb999c53b5ee0952c9f8b27f053ba2b7e101eed1",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "c458032db5e0f2d133694cc49a6b426e47bcee0d16acf4e60cea5182762924f4",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "7aae371b5336858dd58ddb21734266aaf3193c99d3fc0fc05c585bfb3b12967a",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "7b9708bdc7166bc5d531a65902b3589ba415e891f38ba81bacf41fd9e91283bf",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "60268f61808ca5ef10793d2e611f8c31def7c167944178effe95cd4d557ccac6",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 2,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "38dbf8ba21e532193d04c3600a579c59b504bdd2b83127a18d1230d2f92b1a07",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "055c3e4da40fe1106136c464da8a272e354b23079672f5bd7acb466da5a5b742",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "a6e2d35b0d384457512fe14ac7474e923ffc85506053a04ccc508330d0ac6532",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "330d1ca2ac7e445b5db8ec8fc0ecf38bafe31915dca4fdafd7bc538d7d5ecca2",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "1d74a3a5648b3396c79265d012a7a25d574f25f5f3a55da09413e5b026e9396a",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 14,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "2cf3d3afd7087efdec1634346696f592891759866bcd93fea2a999dcac972277",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 19,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "64f404c38cfe8092ceb92d4b7993c7e1a7da836f32564c73d838da7154a03520",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "3851c80ced2ddb2d48d368d21214593cb2d6b09917729a871f13615192b862dc",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "5f7350fceeb30341f461208435fcff97074bad42929bbd076516d3fc795d0d7e",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "f65d83819584855c1eb22eccfe72535797db93f6ae76540f39c18f6c93528f51",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "3f0a34ea16e24bfe15a49131a385e9a13800f8041e0f473c67f51858a41c7b2d",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 2,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "1d7690c6211a89cf135f205e916f4256766c09dba5de4d5f0372b92ddd3388b4",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "adf09b2d83489b2055781986c3ab67dc98ac540de40524956fa6fa8290cbe645",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "light",
+      "width": 80
+    },
+    {
+      "digest": "fd013469eb2147be7f0995e6f9ac37a5f022b12c68326ab4a19724ec2dde056f",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "1213d37d81b1a1d8716006d41fc080091d5b26fa5e555deeadd8deadfc0336ee",
+      "focused": true,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "451b7266090999f7f8b6a76f9163beb68f85458b960f300f97e3b54841f75fb4",
+      "focused": true,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 14,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "de47e749c4387b39152c6dc3865552be197acd090c90a137a68ba1f1fa59f8fe",
+      "focused": true,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 19,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "531e9444a8d8d0a09aaa2d9853ba58ae9afef5bf5e7687f8a5342bf86ef8ad75",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "5f92aec4264b447d9098e9e79a124cbce75810164506a2f2e6b57f77c464640f",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 40,
+      "selected": 1,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "dce3ff787d2aa93afa2a75cd411c32054e91baef6d506fb97d54a3d437a6b91b",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "2a6ee5520da47da0d7549485b9776dadffe4cb4a8552f479bd9dd7fa1833e8c9",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 1,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "4e8426cc5a38362f717a184885db5094b5a88613fb0c856342e509f41830a190",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 2,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "90e4259b8c7e304abdc789543052904ae4c7e1064b7cd233b8c482bb71b02c24",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "20325e1142dde03d78580795c1fd39f52dac14b7b63dadcfbaf265ab7600238d",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "9ed2df1e6a6e19c37d8db07ca367868fb2e0c52e0b658fff6e502097609f7c5d",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "f77d94be4b48ec1eba25e44d08028f0adffb1f4c363c94ca921abac8fc843b55",
+      "focused": false,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "b7e5d40dfa46f2d5b4e35f4d6440a24551baee79aee81bc4c72da972c1275efa",
+      "focused": false,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 14,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "399fe404984f6ce2cb298d42c4756c4bf60bf4ed99cfa28058ec9681616ca36b",
+      "focused": false,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 19,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "03290300e3b0ec25b3db011b497eaf82b99298d65440677639764884ffd92baa",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "2e8d1ed70fb6994057a684c206c2ad1f552a89a7674e604b56783fe8a0e87a44",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 40,
+      "selected": 1,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "4112aedf04ed5437f215ddf154cc0b25a78ce3fbcc4dcbf0481720e6bfe07388",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "c31e0a2d7f55be9c5442eb88f5838c0648159f02a93d22ff013afee72ae7d233",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 1,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "cbfb2c894346fef2b2e45a9cb1162e9442d5a377c9b4892a917579934e8edec8",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 2,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "511e2065fe2048b064268e0b2ae9fe710c0aee1423f2e26dd7b7fb056fd53a59",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "b3f445766ebae9f0bc59aff90aea6f4dc26044c49f88bfa8afedb50ba33ece24",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "light",
+      "width": 120
+    },
+    {
+      "digest": "ea83bbede4919b2b36d34dfcd74421ff618641ed23486a46d3afedbde7699d53",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "841d04f3b299218bf2eb781c4dc8fa0a98f3cd9a680b4f04782000109efa2ba3",
+      "focused": true,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "841d04f3b299218bf2eb781c4dc8fa0a98f3cd9a680b4f04782000109efa2ba3",
+      "focused": true,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 14,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "841d04f3b299218bf2eb781c4dc8fa0a98f3cd9a680b4f04782000109efa2ba3",
+      "focused": true,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 19,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "0e44fc253500039a9e3012987616249ffc09ce8e342fc7038810363d205e496b",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "0e44fc253500039a9e3012987616249ffc09ce8e342fc7038810363d205e496b",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 6,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "0e44fc253500039a9e3012987616249ffc09ce8e342fc7038810363d205e496b",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "0e44fc253500039a9e3012987616249ffc09ce8e342fc7038810363d205e496b",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "0e44fc253500039a9e3012987616249ffc09ce8e342fc7038810363d205e496b",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 2,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "ea83bbede4919b2b36d34dfcd74421ff618641ed23486a46d3afedbde7699d53",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "e45e3b6ec676824f5a9221489660460db6bc422e5433f7702c3a027f3bd9ad1c",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "ea83bbede4919b2b36d34dfcd74421ff618641ed23486a46d3afedbde7699d53",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "841d04f3b299218bf2eb781c4dc8fa0a98f3cd9a680b4f04782000109efa2ba3",
+      "focused": false,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "841d04f3b299218bf2eb781c4dc8fa0a98f3cd9a680b4f04782000109efa2ba3",
+      "focused": false,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 14,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "841d04f3b299218bf2eb781c4dc8fa0a98f3cd9a680b4f04782000109efa2ba3",
+      "focused": false,
+      "height": 7,
+      "phase": "picker",
+      "screen_height": 6,
+      "selected": 19,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "0e44fc253500039a9e3012987616249ffc09ce8e342fc7038810363d205e496b",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "0e44fc253500039a9e3012987616249ffc09ce8e342fc7038810363d205e496b",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 6,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "0e44fc253500039a9e3012987616249ffc09ce8e342fc7038810363d205e496b",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "0e44fc253500039a9e3012987616249ffc09ce8e342fc7038810363d205e496b",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "0e44fc253500039a9e3012987616249ffc09ce8e342fc7038810363d205e496b",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 6,
+      "selected": 2,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "ea83bbede4919b2b36d34dfcd74421ff618641ed23486a46d3afedbde7699d53",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "e45e3b6ec676824f5a9221489660460db6bc422e5433f7702c3a027f3bd9ad1c",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 6,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 9
+    },
+    {
+      "digest": "767e33ce843337bc10166f23025923045ef861f429ba9651f1191af17b8ccd9d",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "150aad3ec8f8e25cc8b0d367c9fde0c8311843af5e977944233d398b342940a4",
+      "focused": true,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "fdb51328e275b333ba43edff8f8c5654542bdd6a5907127488612018f42d1b6c",
+      "focused": true,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 14,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "fd4c76532077ad80d00f1e041f1e5fb959876a1c68ef77e0dc3831e655e171cd",
+      "focused": true,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 19,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "b5d2b854112c7f04607275cb341b54bebaa6728222e88d820f691741a5cccc1d",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "a8a5fa3edec37799872110a9967ff9aab78806b8461302c0b35ce19d7230aa11",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 12,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "b82e3aaf18bb45b586e2d158495057dac4f92e39e4f610194e43777b8974e44a",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "5b28a17003181986922b901f8432c0e612972427a3f9156020aff8b716f823de",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "06bd2bb1b318f54c77da9ff8354e7ae0b684249a5a03e1800653fe037a798304",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 2,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "59e8b9a17621257bf0b6045d55732052f070a59af7293a304e00429e0b21d61b",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "decf194d35e796a057a9cadf52538874516a1830cf2f8adc64f667a703f75f37",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "6a926e0b1f1ac92014415746aac4689f0b14ce605c7c031106d844eb96dfecf6",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "e07303d96dccb146482038eda0076a4c81f7609afbe162a9b94309292ffeabb0",
+      "focused": false,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "b23d2573767f8b4b83ee556b1a58235919e48d1817bfffc90e35bb7c449fb8ab",
+      "focused": false,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 14,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "32034abf5c7ff15d6a1fff3557c9cd4ea412ab7f2c40f504760927b8c7b75e56",
+      "focused": false,
+      "height": 8,
+      "phase": "picker",
+      "screen_height": 12,
+      "selected": 19,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "972b9dcff48b81d71e63019538f42ed5bd0be08f35691d89f8cbdfa94c5804b2",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "23e57752466173840b39ee3f03843e652a3a320cab053e23de3b45cc09247e6a",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 12,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "1c1352854b9c4b8919090efeb15e40d700731be1af77a012e5003085dc3283d8",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "f9028fc208d8ec3f828473f0ec0d6a4f685473e25cca1384cb9c0162c42ace35",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "9c078310baa1041a829d87015543d687d9e4768ae2a9b513db4eb047691c26d7",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 12,
+      "selected": 2,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "bcca64d9b9a699f80d3a04b4f7094e78fdc06a38e80dee30139ce3481c77f562",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "d3d1804d4cfe91f3bf28ff6e0aff3ae37708c329033a041a329a42141ffbcde8",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 12,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 20
+    },
+    {
+      "digest": "2c61725eb74b80cf63e4a6400d5fe3e1174d1bd8af28c10c00872a0882f32fad",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "248967c738a523204ec680c73db8d3afa7393cd1366f53c3abba6e2d09cb2321",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "f4536fc38041713cbccc3f525403ba32b662678236204203f6830342772c2ffe",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 14,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "72b17aad41f5ea4c444475142ddac84059a41c9ce49819dc1dc675f08e6f5acd",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 19,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "0016ab43572a38ff13fd4362d2da7f568eff93223436594a29daf5118b57f238",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "24a4327a8523103c2001014df98e035875fb42aeff1bfca7e7a1687e418d77ef",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "26fefdd8793233e97c952c0788ad9218006458db6aa1dddb36343b91fdf8f571",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "386bd17abce5de82819106d12ea7fdcce2eea1b817ccee4b999726a47e7c6599",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "a0d291b2ef0fd3495986bda91585b252f5d7748ab4d156e9cbb88b4685004d74",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 2,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "a05d28de91343328cc0ad42e817bc21296d2c522605aea7380cfe63e70b0019d",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "72d4ce2b513ede202f299741e2dee9ba1e63524a391740e080d0766a536a5359",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "c8972f3d4382481a89fd65895efe3dd24d8b85a2554b5c8da19162e9a0ca641e",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "c5e26dc7a712bccd549de9f5b6b6888d098c8e32ca8593dd76ee8db52253c782",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "953f82a8bef55a41f41810d40e92a4d529b77f0865557c1101e32ea2c8bb0304",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 14,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "6bfa264ed2d294a18eb33f7e0b4c211acc1aa9b5d6bc6bffc47da103a248f5dc",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 19,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "3384168e8e4515e121b9e01fd0fe3add8b551c97f5bfddb05618dcf7e6cb9435",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "7e5459546e3327d44f63a69ea0f329e75c3dc7bf640090833e2d784a6c8a85bf",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "56893041bebfe1bd5908917312f9ef843af73a6b8128a380b85a50047af6e3d5",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "5fd5e2ee25ad320af7fe15215d933f861d9a3f293b79b7139efe0e9f3e03ebcf",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "8a3da1f722ffff3a3d71f05cb0ffad84829852496a41ccba7ae62167b129852d",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 2,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "79850e63781667bbea3a580147b077a0113010eff5677cf3766b4f739f9e6ada",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "e9b576bc9cebc4f9d494e4e727df9f71bf01f9cab868b81ab6380cfe170ec72c",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 40
+    },
+    {
+      "digest": "89ca115a4e0c15fd5198f34b5d0d71807dbb4f8848037b52b62eac22af8f9d57",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "04b8dae2bdf1b46d7e14abe7cb30a1692bb5d1e632f6602ab8868524d17193a0",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "87d62ac065febef44a440b9fdedee6909ffcace833e9bbcb2b9df26de0bbed77",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 14,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "f6ab7ec04a24f96990582c6c1e729477ce8d47e21f64ffebfd09d1303588adcf",
+      "focused": true,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 19,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "59166b0908b6355c38efe83bf20fa23c2f188fb3bd4a9df869adce87b03e64b4",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "bdf846812346c186e4d61f9f109bb557057bb5c65f794ce475f44064520b9ba8",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "acaeb0f8e1d83c9a5659f622998a5b939f4bc0bdb6ee40fed4639acc64e4f0af",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "d296906c79e45ec07b3c9ca9fe431a9421563b001ce075f2dcc5ba422bcd6f95",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "8684196287454bb787a9464852b83b0bc619660c1886dce9a8e6c8958ca9a989",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 2,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "61d501962dd8530de04f9d5b818bda0e6d02233e3bfbc08b2dcc5689f76d6eb0",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "4579f8e43d890e37a0ab4a8672d291bef69f54afc79f62bc090a4f0ec6995b0b",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "2cac70e540ab6f82e27e1b1e1dd0320f6994c41af97752b4271b768ae08ba373",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "75904b5ba22e5ab791737addc1dc94cd9be8a9af3c5b5f7816043e6b3c2a6d41",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "5e608d90d7d9c859aecb4b61cb66a814462aeb031f23341cf7bac438b7003d34",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 14,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "46a5fdd366a19706146fbf6b730a14fb27e5f3e4fc8021d50128038b21f6c917",
+      "focused": false,
+      "height": 15,
+      "phase": "picker",
+      "screen_height": 24,
+      "selected": 19,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "b17695ef8178aa0c7dd731271b66e5ad0e1d614e26d4a09e4fa92a911222cdd9",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "8a5f4bbf765d09b158f446e8db28b8f714ec260d9ea85a54fb2dd8e320a3dde9",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "7b07d94d252234ae729432b2fa5561fb105f5a07881bc5ddcbaa195017db54eb",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "ada69d742a9f07650c4ecf2a22e59428ddcf47aef16ce75473dffc85ac694b39",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "e7503d92388588961ec9309f1d5ee3fc4d76671493b0222e3507bc2b0512d56d",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 24,
+      "selected": 2,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "bec46600686b6615a0fd93cece8c0c346fdc0c383dbc3776e019a26457e3c730",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "87024ae883706cdd7bf399c0508d20c022dfb486c96e9fcfed3f7987bf90b590",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 24,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 80
+    },
+    {
+      "digest": "090b8a9e5ef5800c1046dfa7231530a610968f989d9033f91f04ca2fae43f831",
+      "focused": true,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "f6e18e55a08a248c20a490a2368ae931d27e606d3a6bf96598805c8697cea07d",
+      "focused": true,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "cb9f39070e3c7307990fb0662f527f33df883ef2934186e0f9105902df9c8e6b",
+      "focused": true,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 14,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "9b7f4caca03bd4ba5e75d931a39b7945799cae6be665b2e474b47456b8ce13c8",
+      "focused": true,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 19,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "d45e836ee0554fd3d17b333b4334093054ea971d13263c8965b7648fd22c2280",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "cd20d9b13b3ef60a8c6b930d42e063c7c50b55e68b419d922ea2c5a44e401a48",
+      "focused": true,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 40,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "810e469dd9da9d1d276149fb2644ace761fe9205008dcde7d4c91a6dc1e00fe4",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "ac387315254293fd61036f37873537c54ecf7985cc22e4dd7c3a0202789b79ea",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "11325b126d416f6e6c2eddf1dd0a6ceb3ceeec4bfe099893ccdd6f13c06f6ac7",
+      "focused": true,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 2,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "cb6555493906db0f58bcdce02dafacece1500e980ffc0eeac5c0717c2a88bb45",
+      "focused": true,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "3c5c5c9ebe68e6e533062cdf15fbc5f81ac9e51d4c6f96b5d07a4491d6096d3d",
+      "focused": true,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "8502391ed1fd0074b90634e0dcd71312b64eaea7fbdad302edd08336c486ecbb",
+      "focused": false,
+      "height": 3,
+      "phase": "loading",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "ba91f012c8464bf350b363e76303e60b4b57df4b7a42989a24f7329527dd091b",
+      "focused": false,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "ba91f012c8464bf350b363e76303e60b4b57df4b7a42989a24f7329527dd091b",
+      "focused": false,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 14,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "63bd48bc9e52c4e9c43abb7039a227331a0a4a451c9dd378c4162ba4c84466b2",
+      "focused": false,
+      "height": 18,
+      "phase": "picker",
+      "screen_height": 40,
+      "selected": 19,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "2c1a1db8aed487a52f06381d1b15724c65c1b0c24064ebb86ac8f1ee94fd0d84",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "cddfb9e157979ed831b0e4fd9de8ecfd246564e897263722a47b337d93c340f5",
+      "focused": false,
+      "height": 6,
+      "phase": "cancel",
+      "screen_height": 40,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "a06bea2361747c51d87fd13a5d30c6a4d2cf4a06540c806ce086215a26bd2f43",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "b16941a0ae46165c02382dfb15d0c542ef2d13812ce02217439cd6ad25612261",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 1,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "701fe24e65d5fcf2b6d27dfc61084ed980050f88e8b84dbe7433edd3c2eed5ae",
+      "focused": false,
+      "height": 6,
+      "phase": "confirm",
+      "screen_height": 40,
+      "selected": 2,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "8691363c088f8356e9abd9030fa826fce866c68abaa8872dcfa1eb0f2a4ea53f",
+      "focused": false,
+      "height": 3,
+      "phase": "executing",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 120
+    },
+    {
+      "digest": "a46fbd4c56473ae5d42e0a1eef360cf252b61eabbd4caee3e629c698a8177abc",
+      "focused": false,
+      "height": 5,
+      "phase": "error",
+      "screen_height": 40,
+      "selected": 0,
+      "theme": "terminal",
+      "width": 120
+    }
+  ]
+}

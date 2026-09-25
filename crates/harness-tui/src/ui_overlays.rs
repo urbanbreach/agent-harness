@@ -155,6 +155,20 @@ pub(super) fn render_overlays(
 ) {
     for overlay in &app.overlay_stack() {
         match overlay {
+            OverlayKind::Rewind => {
+                if let (Some(state), Some(area)) =
+                    (app.rewind.state.as_ref(), app.rewind_area(plan.root))
+                {
+                    frame.render_widget(Clear, area);
+                    crate::rewind_view::render_rewind_overlay(
+                        frame.buffer_mut(),
+                        area,
+                        &state.phase,
+                        app.focus == Focus::Prompt,
+                        theme,
+                    );
+                }
+            }
             OverlayKind::DetailsDrawer => {}
             OverlayKind::SlashCommands => {
                 render_slash_commands_overlay(frame, app, theme, plan.slash_overlay)

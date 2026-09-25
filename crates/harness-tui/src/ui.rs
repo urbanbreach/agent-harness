@@ -514,6 +514,34 @@ fn render_toast(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let Some(toast) = app.toast() else {
         return;
     };
+    if toast.variant == ToastVariant::Rewind {
+        if let Some(transcript) = FrameLayoutPlan::for_app(app, area).transcript {
+            let available = transcript.width.saturating_sub(4);
+            if available > 0 && transcript.height > 0 {
+                let text = format!(
+                    " {} ",
+                    crate::rewind_list::truncate(&toast.message, usize::from(available))
+                );
+                let width = u16::try_from(display_width(&text)).unwrap_or(u16::MAX);
+                let rect = Rect::new(
+                    transcript.right().saturating_sub(width + 1),
+                    transcript.bottom() - 1,
+                    width,
+                    1,
+                );
+                frame.render_widget(
+                    Paragraph::new(text).style(
+                        Style::default()
+                            .fg(theme.terminal_colors.prompt_accent)
+                            .bg(theme.surface.canvas)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    rect,
+                );
+            }
+        }
+        return;
+    }
     if area.width <= 6 || area.height <= 4 {
         return;
     }
@@ -534,7 +562,7 @@ fn render_toast(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let x = area.right().saturating_sub(width + 2);
     let popup = Rect::new(x, area.y.saturating_add(2), width, height);
     let accent = match toast.variant {
-        ToastVariant::Info => theme.status.info,
+        ToastVariant::Info | ToastVariant::Rewind => theme.status.info,
         ToastVariant::Error => theme.status.error,
         ToastVariant::Mode => theme.text.accent,
     };

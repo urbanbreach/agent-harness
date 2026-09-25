@@ -37,6 +37,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 mod live_compaction_tests;
+#[path = "tests/rewind_tests.rs"]
+mod rewind_tests;
 mod tool_runtime_capture_tests;
 
 const TEST_FRAME_AREA: Rect = Rect::new(0, 0, 140, 40);

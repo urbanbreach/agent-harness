@@ -182,6 +182,14 @@ pub enum UiIntent {
         events: Vec<EventEnvelopeV1>,
         stable_prefix: harness_core::session_lineage::StableSessionPrefix,
     },
+    LoadRewindPoints {
+        generation: u64,
+        cancel_task_ids: Vec<String>,
+    },
+    RewindConversation {
+        generation: u64,
+        request_id: String,
+    },
     RevertWorkspace {
         snapshot_request_id: String,
     },
@@ -809,6 +817,7 @@ impl AppState {
             new_worktree_dialog_visible: self.new_worktree_dialog.visible,
             foreign_import_picker_visible: self.foreign_import_picker.visible,
             trust_folder_prompt_visible: self.trust_folder_prompt_visible,
+            rewind_visible: self.rewind.state.is_some(),
         }
     }
 
@@ -976,17 +985,11 @@ impl AppState {
 
     pub(in crate::app) fn handle_interrupt_escape(&mut self) -> bool {
         self.reset_interrupt_confirmation();
-        if self.active_compaction().is_some() {
-            return self.interrupt_active_turn();
-        }
         if self.composer.vim_mode {
             if self.focus == Focus::Prompt {
                 self.focus = Focus::Details;
             }
             return true;
-        }
-        if !self.replay_mode && self.active_turn_in_progress() {
-            return self.interrupt_active_turn();
         }
         false
     }
@@ -1017,6 +1020,8 @@ impl AppState {
         if let Some(compaction) = self.active_compaction() {
             let agent_id = compaction.agent_id.clone();
             self.emit_ui_intent(UiIntent::CancelCompaction { agent_id });
+            self.rewind.suppress_until = Some(self.now() + Duration::from_millis(1000));
+            self.rewind.last_escape = None;
             return true;
         }
         let task_ids = self.active_interrupt_task_ids();
@@ -1032,6 +1037,8 @@ impl AppState {
             reason: InterruptReason::User,
         });
         self.interrupt_requested_task_ids = task_ids;
+        self.rewind.suppress_until = Some(self.now() + Duration::from_millis(1000));
+        self.rewind.last_escape = None;
         self.reset_interrupt_confirmation();
         true
     }

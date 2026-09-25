@@ -1612,7 +1612,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_and_no
     assert!(summary.crash_or_recovery.is_none());
     assert!(summary.demote_handle.is_none());
     assert!(!summary.settings_bound);
-    assert_eq!(summary.settings_writable_paths, 12);
+    assert_eq!(summary.settings_writable_paths, 13);
     assert!(summary.settings_total >= 38);
 
     let rendered = render_operator_summary_for_test(&summary);
@@ -1629,7 +1629,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_and_no
         "expected empty demote line: {rendered}"
     );
     assert!(
-        rendered.contains("Settings: unbound, 12 write paths"),
+        rendered.contains("Settings: unbound, 13 write paths"),
         "expected unbound settings line: {rendered}"
     );
 }
@@ -1673,10 +1673,10 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_bound_settings_
 
     // Then
     assert!(summary.settings_bound);
-    assert_eq!(summary.settings_writable_paths, 12);
+    assert_eq!(summary.settings_writable_paths, 13);
     assert_eq!(summary.settings_editable, 12);
     assert!(
-        rendered.contains("Settings: bound, 12/12 writable editable"),
+        rendered.contains("Settings: bound, 12/13 writable editable"),
         "expected bound settings line: {rendered}"
     );
 

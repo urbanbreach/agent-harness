@@ -56,6 +56,7 @@ pub(crate) fn modal_surface_model(app: &AppState, frame_area: Rect) -> Option<Mo
             .flatten();
     };
     match overlay {
+        OverlayKind::Rewind => None,
         OverlayKind::CommandPalette if app.session_history_visible => {
             session_history_model(app, plan.palette_overlay?)
         }

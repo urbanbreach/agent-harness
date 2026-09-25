@@ -794,6 +794,10 @@ pub(super) fn render_unified_bottom_dock(
         render_control_dock_disclosure(frame, disclosure_area, app, theme, &dock);
     }
 
+    if app.rewind.state.is_some() && active_permission.is_none() {
+        return;
+    }
+
     let composer_text = app.composer_render_text();
     let composer_lines = if dock.variant == crate::view_model::ControlDockVariant::Startup {
         startup_composer_input_height(
