@@ -47,6 +47,9 @@ pub(crate) struct SettingsValueEdit {
 }
 
 pub(crate) fn human_label(id: &str) -> String {
+    if id == "confirm_before_rewind" {
+        return "Confirm before rewind".into();
+    }
     if id == "runtime.always_approve" {
         return "Always approve on startup".to_string();
     }
@@ -167,6 +170,9 @@ const COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID: &str = "runtime.compaction.estimat
 const DETERMINISTIC_ENABLED_ID: &str = "runtime.deterministic.enabled";
 
 fn is_writable_setting(setting_id: &str) -> bool {
+    if setting_id == "confirm_before_rewind" {
+        return true;
+    }
     setting_editor_kind(setting_id).is_some()
         || matches!(
             setting_id,
@@ -338,9 +344,17 @@ impl AppState {
             .map(|(index, _)| index)
     }
 
+    fn setting_is_bound(&self, id: &str) -> bool {
+        !self.replay_mode
+            && if id == "confirm_before_rewind" {
+                self.rewind.config_path.is_some()
+            } else {
+                self.settings_project_config_path.is_some()
+            }
+    }
+
     pub fn settings_editor_rows(&self) -> Vec<SettingsEditorRow> {
         let selected = self.settings_editor_selected;
-        let bound = self.settings_project_config_path.is_some() && !self.replay_mode;
         settings_registry()
             .iter()
             .enumerate()
@@ -355,7 +369,9 @@ impl AppState {
                     sensitivity: sensitivity_label(def.sensitivity).to_string(),
                     surface: surface_label(def).to_string(),
                     effective_value: self.effective_value_for(id),
-                    editable: def.is_editable() && is_writable_setting(id) && bound,
+                    editable: def.is_editable()
+                        && is_writable_setting(id)
+                        && self.setting_is_bound(id),
                     selected: index == selected,
                 }
             })
@@ -402,7 +418,10 @@ impl AppState {
         };
         for definition in settings_registry() {
             let setting_id = definition.setting_id.as_str();
-            if definition.is_editable() && is_writable_setting(setting_id) && bound {
+            if definition.is_editable()
+                && is_writable_setting(setting_id)
+                && self.setting_is_bound(setting_id)
+            {
                 summary.editable = summary.editable.saturating_add(1);
             } else {
                 summary.read_only = summary.read_only.saturating_add(1);
@@ -441,6 +460,10 @@ impl AppState {
                 format!("setting `{setting_id}` is not editable in this editor yet"),
                 ToastVariant::Info,
             );
+            return;
+        }
+        if setting_id == "confirm_before_rewind" {
+            self.set_rewind_confirmation(!self.rewind.confirm);
             return;
         }
         let Some(path) = self.settings_project_config_path.clone() else {
@@ -587,6 +610,10 @@ impl AppState {
                 format!("reset not supported for `{setting_id}` yet"),
                 ToastVariant::Info,
             );
+            return;
+        }
+        if setting_id == "confirm_before_rewind" {
+            self.set_rewind_confirmation(true);
             return;
         }
         let Some(path) = self.settings_project_config_path.clone() else {
@@ -816,6 +843,9 @@ impl AppState {
     }
 
     fn effective_value_for(&self, setting_id: &str) -> Option<String> {
+        if setting_id == "confirm_before_rewind" {
+            return Some(bool_label(self.rewind.confirm));
+        }
         self.settings_project_config_path.as_ref()?;
         if setting_editor_kind(setting_id).is_some() {
             return self

@@ -162,6 +162,12 @@ fn apply_update(
     update: LiveUpdate,
 ) -> bool {
     match update {
+        LiveUpdate::RewindPoints { generation, result } => {
+            app.apply_rewind_points(generation, result)
+        }
+        LiveUpdate::RewindComplete { generation, result } => {
+            app.apply_rewind_result(generation, result)
+        }
         LiveUpdate::Event(event) => {
             if app
                 .status_banner

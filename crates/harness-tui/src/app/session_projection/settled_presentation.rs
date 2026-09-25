@@ -60,6 +60,8 @@ impl SessionProjection {
                 canonical.run_summary.clone(),
             )
         };
+        let active_events = harness_core::conversation_rewind::active_events(events);
+        let events = active_events.as_ref();
         let legacy_compaction = harness_core::session::legacy::latest_legacy_compaction(events);
         let presentation_enrichment = std::mem::take(&mut self.activities);
         let presentation_orchestration = std::mem::take(&mut self.orchestration_tasks);
@@ -251,8 +253,13 @@ impl SessionProjection {
         }
         self.activities = activities;
         self.latest_request_budget = latest_request_budget;
-        if let Some(context_usage) = provider_context_usage {
-            self.active_context_usage = Some(context_usage);
+        if provider_context_usage.is_some()
+            || self
+                .events
+                .iter()
+                .any(|event| matches!(event.payload, EventV1::ConversationRewound(_)))
+        {
+            self.active_context_usage = provider_context_usage;
         }
         self.pending_permissions = pending_permissions;
         self.orchestration_tasks = orchestration_tasks;

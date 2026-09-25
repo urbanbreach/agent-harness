@@ -1,7 +1,7 @@
 // allow: SIZE_OK — CLI TUI workflow (launch + lineage + auth)
 use std::sync::{Arc, Mutex};
 
-use harness_core::coord::{CoordinatorError, CoordinatorHandle, ManualCompactionOutcome};
+use harness_core::coord::{CoordinatorHandle, ManualCompactionOutcome};
 use harness_core::event::{EventActor, EventEnvelopeV1, EventV1};
 use harness_tui::{LiveUpdate, LiveUpdateSender, OperatorNoticeLevel, UiIntent};
 use tokio::sync::mpsc;
@@ -23,6 +23,42 @@ pub(super) struct LiveAgentTarget {
     pub(super) last_request_id: Option<String>,
 }
 
+async fn load_rewind_points(
+    coordinator: &CoordinatorHandle,
+    cancel_task_ids: Vec<String>,
+) -> Result<Vec<harness_core::conversation_rewind::RewindPoint>, String> {
+    for task_id in cancel_task_ids {
+        coordinator
+            .cancel_task(task_id, "cancel turn before rewind")
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            if let Some(points) = coordinator
+                .rewind_points()
+                .await
+                .map_err(|error| error.to_string())?
+            {
+                return Ok(points);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .map_err(|_| "The running turn did not stop.".to_string())?
+}
+
+async fn send_rewind_points(
+    coordinator: CoordinatorHandle,
+    updates: LiveUpdateSender,
+    generation: u64,
+    cancel_task_ids: Vec<String>,
+) {
+    let result = load_rewind_points(&coordinator, cancel_task_ids).await;
+    let _ = updates.send(LiveUpdate::RewindPoints { generation, result });
+}
+
 pub(super) async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
     mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
@@ -33,6 +69,27 @@ pub(super) async fn handle_ui_intents(
 ) -> Result<(), String> {
     while let Some(intent) = intent_rx.recv().await {
         match intent {
+            UiIntent::LoadRewindPoints {
+                generation,
+                cancel_task_ids,
+            } => {
+                tokio::spawn(send_rewind_points(
+                    coordinator.clone(),
+                    live_update_tx.clone(),
+                    generation,
+                    cancel_task_ids,
+                ));
+            }
+            UiIntent::RewindConversation {
+                generation,
+                request_id,
+            } => {
+                let result = coordinator
+                    .rewind_conversation(request_id)
+                    .await
+                    .map_err(|error| error.to_string());
+                let _ = live_update_tx.send(LiveUpdate::RewindComplete { generation, result });
+            }
             UiIntent::SetAlwaysApproveMode { enabled } => {
                 set_always_approve_mode(&coordinator, &live_update_tx, enabled).await?;
             }
@@ -60,12 +117,13 @@ pub(super) async fn handle_ui_intents(
                 attachments,
                 launch_metadata,
             } => {
-                let agent_id = live_agent_target.as_ref().and_then(|target| {
-                    target
-                        .lock()
-                        .ok()
-                        .and_then(|target| target.agent_id.clone())
-                });
+                let Some(target_state) = live_agent_target.as_ref() else {
+                    continue;
+                };
+                let agent_id = target_state
+                    .lock()
+                    .ok()
+                    .and_then(|target| target.agent_id.clone());
 
                 if let Some(agent_id) = agent_id {
                     let attachment_metadata = prompt_attachment_metadata(&attachments)?;
@@ -100,12 +158,10 @@ pub(super) async fn handle_ui_intents(
                         }
                     };
                     let request_id = request.map_err(|err| err.to_string())?;
-                    if let Some(live_agent_target) = live_agent_target.as_ref() {
-                        let mut target = live_agent_target
-                            .lock()
-                            .map_err(|_| "live agent target lock poisoned".to_string())?;
-                        target.last_request_id = Some(request_id);
-                    }
+                    let mut target = target_state
+                        .lock()
+                        .map_err(|_| "live agent target lock poisoned".to_string())?;
+                    target.last_request_id = Some(request_id);
                 }
             }
             UiIntent::CompactSession {
@@ -186,10 +242,7 @@ pub(super) async fn handle_ui_intents(
             | UiIntent::ReplaySession { .. }
             | UiIntent::ContinueSession { .. } => {}
             UiIntent::QuitRequested => {
-                match coordinator.stop_run().await {
-                    Ok(()) | Err(CoordinatorError::RunNotStarted) => {}
-                    Err(err) => return Err(err.to_string()),
-                }
+                super::stop_live_source_run(&coordinator).await?;
                 break;
             }
             UiIntent::UpdateSessionTitle { title } => {

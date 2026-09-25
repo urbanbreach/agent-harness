@@ -355,7 +355,7 @@ pub(super) fn settings_editor_summary_counts_bound_writable_paths() {
     assert_eq!(unbound.total, settings_registry().len());
     assert!(!unbound.bound);
     assert_eq!(unbound.editable, 0);
-    assert_eq!(unbound.writable_paths, 12);
+    assert_eq!(unbound.writable_paths, 13);
     assert!(unbound.secret > 0);
     assert_eq!(unbound.editable + unbound.read_only, unbound.total);
     assert!(unbound.one_line().starts_with("settings editor: "));
@@ -384,7 +384,7 @@ pub(super) fn settings_editor_summary_counts_bound_writable_paths() {
             bound.editable,
             bound.with_effective_value
         ),
-        (12, 12, 11)
+        (13, 12, 12)
     );
     assert!(bound.has_editable());
     assert!(bound.one_line().contains("bound=true"));
@@ -667,7 +667,7 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::SettingsEditor));
     let summary = app.settings_editor_summary();
     assert!(summary.bound);
-    assert_eq!(summary.writable_paths, 12);
+    assert_eq!(summary.writable_paths, 13);
     assert_eq!(summary.editable, 12);
     assert!(summary.with_effective_value >= 6);
 

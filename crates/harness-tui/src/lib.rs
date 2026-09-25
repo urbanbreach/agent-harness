@@ -176,3 +176,6 @@ pub use runtime_live_updates::{
 pub use theme::{LiveShellLayout, LiveShellTokens, ShellGeometry, ShellGeometryTarget, Theme};
 
 mod release_notes;
+
+mod rewind_list;
+mod rewind_view;

@@ -319,6 +319,7 @@ impl AppState {
             "events" => !self.startup_mode,
             "shell" => self.active_review_surface.is_some(),
             "follow" => !self.replay_mode && !self.startup_mode,
+            "rewind" => !self.replay_mode && !self.startup_shell_visible(),
             "compact" => self.compact_session_supported,
             "rename" => !self.replay_mode && !self.startup_mode,
             "copy" | "export" => !self.startup_mode,
@@ -461,6 +462,10 @@ impl AppState {
                 self.emit_ui_intent(UiIntent::CompactSession {
                     custom_instructions,
                 });
+            }
+            "rewind" => {
+                self.restore_slash_draft(preserved_draft);
+                self.open_rewind();
             }
             "rename" => {
                 let title = self

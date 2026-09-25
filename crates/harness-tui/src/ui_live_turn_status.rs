@@ -55,9 +55,9 @@ fn render_compaction_status(frame: &mut Frame, app: &AppState, area: Rect, theme
         "threshold" | "proactive" | "idle" => "Auto-compacting...",
         _ => "Compacting context...",
     };
-    let full = format!("{spinner} {label} (esc to cancel)");
+    let full = format!("{spinner} {label} (ctrl+c to cancel)");
     let status = if !preview.is_empty() || display_width(&full) > usize::from(area.width) {
-        format!("{spinner} Compacting... (esc to cancel)")
+        format!("{spinner} Compacting... (ctrl+c to cancel)")
     } else {
         full
     };

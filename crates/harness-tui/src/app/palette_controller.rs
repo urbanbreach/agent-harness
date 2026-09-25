@@ -157,11 +157,7 @@ pub fn is_available(app: &AppState, entry: &PaletteCommandEntry) -> bool {
             !app.startup_shell_visible() && app.active_review_surface.is_none()
         }
         "harness.close_review_surface" => app.active_review_surface.is_some(),
-        "harness.revert_workspace" => {
-            !app.replay_mode
-                && !app.startup_shell_visible()
-                && app.most_recent_workspace_snapshot_request_id().is_some()
-        }
+        "harness.revert_workspace" => !app.startup_shell_visible() && !app.replay_mode,
         "harness.open_lineage_browser"
         | "harness.session_child_first"
         | "harness.session_child_cycle"

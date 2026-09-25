@@ -67,7 +67,7 @@ fn compaction_stream_is_one_row_cancellable_and_generation_fenced() {
             "{rows:?}"
         );
         if width >= 48 {
-            assert!(rows.iter().any(|row| row.contains("(esc to cancel)")));
+            assert!(rows.iter().any(|row| row.contains("(ctrl+c to cancel)")));
         }
         assert!(rows.iter().all(|row| !row.contains('\u{1b}')));
         if let Ok(dir) = std::env::var("HARNESS_COMPACTION_CAPTURE_DIR") {
@@ -87,6 +87,21 @@ fn compaction_stream_is_one_row_cancellable_and_generation_fenced() {
         }
     }
     app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(
+        app.toast().unwrap_or_abort().message,
+        "Press Ctrl+c to cancel the turn"
+    );
+    app.handle_key(KeyEvent::new_with_kind(
+        KeyCode::Esc,
+        KeyModifiers::NONE,
+        crossterm::event::KeyEventKind::Release,
+    ));
+    assert!(!intents
+        .lock()
+        .unwrap_or_abort()
+        .iter()
+        .any(|intent| matches!(intent, UiIntent::CancelCompaction { .. })));
+    app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
     assert!(
         matches!(intents.lock().unwrap_or_abort().last(), Some(UiIntent::CancelCompaction { agent_id }) if agent_id == "agent-alpha")
     );

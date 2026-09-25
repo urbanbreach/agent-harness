@@ -160,6 +160,8 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::SwitchModel { .. })
         | Some(UiIntent::UpdateSessionTitle { .. })
         | Some(UiIntent::DeleteSession { .. })
+        | Some(UiIntent::LoadRewindPoints { .. })
+        | Some(UiIntent::RewindConversation { .. })
         | Some(UiIntent::RevertWorkspace { .. })
         | Some(UiIntent::ExportSession)
         | Some(UiIntent::ImportForeignSession { .. })
@@ -226,6 +228,8 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         | UiIntent::SwitchModel { .. }
         | UiIntent::UpdateSessionTitle { .. }
         | UiIntent::DeleteSession { .. }
+        | UiIntent::LoadRewindPoints { .. }
+        | UiIntent::RewindConversation { .. }
         | UiIntent::RevertWorkspace { .. }
         | UiIntent::ExportSession
         | UiIntent::ImportForeignSession { .. }
@@ -251,6 +255,8 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
             | UiIntent::QuitRequested
             | UiIntent::UpdateSessionTitle { .. }
             | UiIntent::DeleteSession { .. }
+            | UiIntent::LoadRewindPoints { .. }
+            | UiIntent::RewindConversation { .. }
             | UiIntent::RevertWorkspace { .. }
             | UiIntent::ImportForeignSession { .. }
             | UiIntent::RunShellCommand { .. }

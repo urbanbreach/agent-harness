@@ -7,6 +7,7 @@ pub enum OverlayKind {
     TogglesMenu,
     LineageBrowser,
     ForkSelector,
+    Rewind,
     StatusDialog,
     SubagentActions,
     PermissionModal,
@@ -39,6 +40,7 @@ pub struct OverlayState {
     pub toggles_menu_visible: bool,
     pub lineage_browser_visible: bool,
     pub fork_selector_visible: bool,
+    pub rewind_visible: bool,
     pub permission_pending: bool,
     pub theme_dialog_visible: bool,
     pub error_details_visible: bool,
@@ -115,6 +117,9 @@ impl OverlayStack {
         if state.prompt_history_visible && !state.permission_pending {
             overlays.push(OverlayKind::PromptHistory);
         }
+        overlays.extend(
+            (state.rewind_visible && !state.permission_pending).then_some(OverlayKind::Rewind),
+        );
         if state.permission_pending {
             overlays.push(OverlayKind::PermissionModal);
         }

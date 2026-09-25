@@ -142,6 +142,7 @@ mod recorded_artifacts;
 mod secondary_surfaces;
 pub(crate) mod session_history;
 pub(crate) use session_history::format_relative_age;
+mod rewind;
 mod session_live_routing;
 pub(crate) mod session_navigation;
 mod session_pins;
@@ -185,7 +186,7 @@ pub use self::activity::{
 };
 pub use self::auth_dialog::{ConnectDialogState, ConnectProviderOption};
 use self::auth_display::auth_status_banner;
-use self::composer::ComposerState;
+pub(crate) use self::composer::ComposerState;
 pub(crate) use self::help_browser::{HelpBrowserState, HelpMode, HelpRow};
 pub use self::lifecycle::{
     default_shell_registry, Focus, InterruptReason, LifecycleShellState, MemoryCaps,
@@ -332,6 +333,7 @@ pub struct AppState {
     pub(crate) live_details_drawer_open: bool,
     projection: SessionProjection,
     pub should_quit: bool,
+    pub(crate) rewind: rewind::RewindUi,
     pub(crate) quit_confirmation_pending: bool,
     pub(crate) quit_confirmation_shortcut: Option<KeyBinding>,
     pub(crate) quit_confirmation_expires_at: Option<Instant>,
@@ -650,6 +652,7 @@ impl Default for AppState {
             live_details_drawer_open: false,
             projection: SessionProjection::default(),
             should_quit: false,
+            rewind: rewind::RewindUi::default(),
             quit_confirmation_pending: false,
             quit_confirmation_shortcut: None,
             quit_confirmation_expires_at: None,
