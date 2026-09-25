@@ -91,16 +91,31 @@ repair is described under [failure boundaries](#failure-boundaries).
 Session lists and resume views use the recorded title when one exists.
 `UpdateSessionTitle` records renames, and replay reads the latest title event.
 
-The runtime captures a workspace snapshot before each assistant tool batch and
-stores it as redacted artifacts. Git workspaces use Git's tracked and
-non-ignored untracked file list. Binary and sensitive files retain a digest
-only. A revert preserves unchanged files and reports changed protected files
-without overwriting them. Capture failures or limitations produce an operator
-notice.
+Native reads and edits silently capture the first observed state of each touched
+workspace file per prompt. Turn completion saves before/after checkpoints under
+`artifacts/rewind/`; binary and sensitive contents retain a digest only, and
+sensitive paths are omitted. Capture failures go to diagnostics, not the transcript.
+Shell and external-directory changes are not tracked by these file hooks.
 
-Dotenv-style secret files are omitted from snapshots and the corresponding
-revert scan. `WorkspaceReverted` records a live workspace restore. Replaying
-that event does not write workspace files or rewrite `events.jsonl`.
+`/rewind` (alias `/undo`, or double Esc on an empty idle prompt within 800 ms)
+opens the Grok-style conversation rewind picker. It lists newest prompts first,
+dims the conversation from the selected prompt, and asks for confirmation by
+default. A running turn must be cancelled first. Rewind removes the selected
+prompt and later conversation from the active projection and provider context,
+restores that prompt’s text to the composer, and shows “Reverted conversation”
+for three seconds. Workspace files stay as they are.
+
+`ConversationRewound` appends a range exclusion to the journal. Resume and replay
+apply the same exclusion; they never truncate `events.jsonl` or perform file I/O.
+The explicit workspace snapshot/revert API remains available separately for
+existing callers and saved snapshots. It also accepts active prompt IDs to restore
+only files tracked by native reads/edits. Like Grok, this explicit file operation
+reports external-edit conflicts while restoring the captured content; protected
+binary or redacted content cannot be restored. Successful restores truncate the
+active file checkpoints. Conversation-only rewind folds removed checkpoints into
+the preceding retained prompt. Both operations recover from saved artifacts and
+journal markers after restart. `WorkspaceReverted` records a live file restore;
+replaying it does not write files.
 
 The V1 resume acceptance scenario is a realistic interrupted coding session, not a
 single empty run. The fixture records multiple user/provider turns. The guarded
