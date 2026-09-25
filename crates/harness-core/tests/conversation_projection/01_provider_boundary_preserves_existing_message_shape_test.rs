@@ -139,9 +139,10 @@ fn provider_request_context_identifies_runtime_model_override() {
     let runtime_identity = boundary
         .request
         .messages
-        .iter()
-        .find(|message| message.name.as_deref() == Some("runtime_model_identity"))
+        .first()
         .unwrap_or_abort();
+    assert_eq!(runtime_identity.role, MessageRole::System);
+    assert!(runtime_identity.name.is_none());
     let identity: serde_json::Value =
         serde_json::from_str(&runtime_identity.content).unwrap_or_abort();
     assert_eq!(

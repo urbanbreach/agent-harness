@@ -7,6 +7,7 @@ async fn coord_title_generation_uses_internal_operation_without_title_profile() 
         "main response",
     ]);
     let mut config = CoordinatorConfig::new(temp_dir.path());
+    config.title_model_ref = Some("openai-codex/gpt-6-luna".to_string());
     config.provider = Arc::new(provider.clone());
     config.agent_profiles = BTreeMap::from([(
         "default".to_string(),
@@ -52,8 +53,9 @@ async fn coord_title_generation_uses_internal_operation_without_title_profile() 
     }).await;
     let requests = provider.requests();
     let title_request = requests.first().unwrap_or_abort();
-    assert_eq!(title_request.provider_id.as_deref(), Some("mock"));
-    assert_eq!(title_request.model_id, "model-1");
+    assert_eq!(title_request.provider_id.as_deref(), Some("openai-codex"));
+    assert_eq!(title_request.model_id, "gpt-6-luna");
+    assert_eq!(title_request.reasoning_effort.as_deref(), Some("low"));
     assert_eq!(
         title_request.temperature,
         Some(harness_core::session_title::TITLE_OPERATION_TEMPERATURE)

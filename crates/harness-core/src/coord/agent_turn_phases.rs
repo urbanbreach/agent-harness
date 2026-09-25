@@ -245,6 +245,7 @@ pub(in crate::coord) async fn execute_session_title_operation(
     prompt: &str,
 ) -> Result<Option<String>, String> {
     let model = AgentModelRef::parse(&operation.model_ref);
+    let reasoning_effort = (model.model_id == "gpt-6-luna").then(|| "low".to_string());
     let mut stream = provider
         .stream_completion(CompletionRequest {
             provider_id: Some(model.provider_id),
@@ -275,7 +276,7 @@ pub(in crate::coord) async fn execute_session_title_operation(
             temperature: Some(operation.temperature),
             max_tokens: None,
             variant: None,
-            reasoning_effort: None,
+            reasoning_effort,
             text_verbosity: None,
             reasoning_summary: None,
             thinking: None,
