@@ -1097,3 +1097,5 @@ fn merge_config_value(base: &mut serde_json::Value, overlay: serde_json::Value) 
 
 #[cfg(test)]
 mod tests;
+
+pub use settings_write::{rewind_confirmation_settings, write_rewind_confirmation};

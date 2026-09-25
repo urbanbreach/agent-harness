@@ -10,6 +10,13 @@
       ],
       "default": null
     },
+    "confirm_before_rewind": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "default": null
+    },
     "keybinds": {
       "type": "object",
       "additionalProperties": {
