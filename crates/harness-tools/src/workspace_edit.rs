@@ -4,6 +4,7 @@ use harness_core::edit::hashline::LineAnchor;
 use harness_core::tool::{ToolContext, ToolError};
 
 pub(crate) fn record_file_read(ctx: &ToolContext, resolved_path: &Path) -> Result<(), ToolError> {
+    ctx.checkpoint_file(resolved_path);
     ctx.tool_state
         .edit_session()
         .record_file_read(resolved_path)
@@ -14,6 +15,7 @@ pub(crate) fn record_file_hashline_read(
     resolved_path: &Path,
     anchors: Vec<LineAnchor>,
 ) -> Result<(), ToolError> {
+    ctx.checkpoint_file(resolved_path);
     ctx.tool_state
         .edit_session()
         .record_file_hashline_read(resolved_path, anchors)
