@@ -38,6 +38,7 @@ pub enum ModelFamilySource {
 pub enum PromptFamily {
     Reasoning,
     Codex,
+    Gpt6,
     Gpt,
     Meta,
     Anthropic,
@@ -51,6 +52,7 @@ impl PromptFamily {
         match self {
             Self::Reasoning => "reasoning",
             Self::Codex => "codex",
+            Self::Gpt6 => "gpt-6",
             Self::Gpt => "gpt",
             Self::Meta => "meta",
             Self::Anthropic => "anthropic",
@@ -64,6 +66,7 @@ impl PromptFamily {
         match self {
             Self::Reasoning => Some("reasoning.md"),
             Self::Codex => Some("codex.md"),
+            Self::Gpt6 => Some("gpt-6.md"),
             Self::Gpt => Some("gpt.md"),
             Self::Meta => Some("meta.md"),
             Self::Anthropic => Some("anthropic.md"),
@@ -77,6 +80,7 @@ impl PromptFamily {
         &[
             Self::Reasoning,
             Self::Codex,
+            Self::Gpt6,
             Self::Gpt,
             Self::Meta,
             Self::Anthropic,
@@ -154,7 +158,12 @@ pub fn resolve_model(input: ModelResolutionInput<'_>) -> ModelResolution {
     ModelResolution {
         family,
         family_source,
-        prompt_family: if family == ModelFamily::GptLegacy
+        prompt_family: if family == ModelFamily::GptAstra
+            || (family == ModelFamily::GptLegacy
+                && input.model.to_ascii_lowercase().contains("gpt-6"))
+        {
+            PromptFamily::Gpt6
+        } else if family == ModelFamily::GptLegacy
             && input
                 .metadata_family
                 .unwrap_or(input.model)
@@ -277,7 +286,8 @@ fn prompt_family_for(family: ModelFamily) -> PromptFamily {
     match family {
         ModelFamily::OpenAiReasoning => PromptFamily::Reasoning,
         ModelFamily::Codex => PromptFamily::Codex,
-        ModelFamily::Gpt5 | ModelFamily::GptAstra | ModelFamily::GptLegacy => PromptFamily::Gpt,
+        ModelFamily::GptAstra => PromptFamily::Gpt6,
+        ModelFamily::Gpt5 | ModelFamily::GptLegacy => PromptFamily::Gpt,
         ModelFamily::ClaudeOpus | ModelFamily::Claude => PromptFamily::Anthropic,
         ModelFamily::Gemini => PromptFamily::Gemini,
         ModelFamily::KimiThinking | ModelFamily::Kimi => PromptFamily::Kimi,
@@ -381,7 +391,9 @@ mod tests {
     #[test]
     fn model_dependent_prompt_routes_cover_upstream_and_meta_extension() {
         for (model, expected) in [
-            ("gpt-6-astra", "gpt"),
+            ("gpt-6-astra", "gpt-6"),
+            ("gpt-6-sol", "gpt-6"),
+            ("gpt-6-luna", "gpt-6"),
             ("kimi-k2", "kimi"),
             ("kimi-thinking", "kimi"),
             ("gpt-4.1", "reasoning"),
@@ -417,7 +429,7 @@ mod tests {
                 supports_reasoning_summaries: None,
             });
 
-            assert_eq!(resolution.prompt_family, PromptFamily::Gpt);
+            assert_eq!(resolution.prompt_family, PromptFamily::Gpt6);
             assert_eq!(
                 resolution.capabilities.reasoning_efforts,
                 variants(&["low", "medium", "high", "xhigh", "max"])

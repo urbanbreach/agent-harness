@@ -330,14 +330,14 @@ mod tests {
     }
 
     #[test]
-    fn provider_prompt_uses_gpt_prompt_for_gpt_models() {
+    fn provider_prompt_uses_gpt6_prompt_for_gpt6_models() {
         let prompt = compose(DynamicPromptContext {
             configured_prompt: None,
             model: &model("gpt-6-astra"),
             instruction_prompt: None,
             skill_tool_enabled: false,
         });
-        assert!(prompt.starts_with(PromptFamily::Gpt.bundled_prompt()));
+        assert!(prompt.starts_with(PromptFamily::Gpt6.bundled_prompt()));
         assert!(prompt.contains("The exact model ID is default/gpt-6-astra"));
     }
 
