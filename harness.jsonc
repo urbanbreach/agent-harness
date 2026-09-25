@@ -3,6 +3,59 @@
 
   // Provider and model catalog for this workspace.
   "provider": {
+    "mistral": {
+      "type": "openai_compatible",
+      "name": "Mistral",
+      "options": {
+        "baseURL": "https://api.mistral.ai/v1",
+        "apiMode": "chat_completions",
+        "cacheRetention": "none",
+        "apiKeyEnv": [
+          "MISTRAL_API_KEY"
+        ],
+        "timeoutMs": 1800000
+      },
+      "models": {
+        "zai-glm-5-3": {
+          "name": "GLM 5.3",
+          "metadata": {
+            "supportsToolCalls": true
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 32768
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "variants": {
+            "low": {
+              "name": "Low",
+              "metadata": {
+                "reasoningEffort": "low"
+              }
+            },
+            "high": {
+              "name": "High",
+              "metadata": {
+                "reasoningEffort": "high"
+              }
+            },
+            "max": {
+              "name": "Max",
+              "metadata": {
+                "reasoningEffort": "max"
+              }
+            }
+          }
+        }
+      }
+    },
     "openai-codex": {
       "type": "openai_compatible",
       "name": "OpenAI Codex",
@@ -48,24 +101,30 @@
             },
           },
         },
-        "gpt-5.3-codex-spark": {
-          "name": "GPT 5.3 Codex Spark",
-          "limit": { "context": 128000, "input": 100000, "output": 32000 },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"],
-          },
-          "options": { "serviceTier": "priority" },
+        "gpt-6-sol": {
+          "name": "GPT 6 Sol",
+          "metadata": { "supportsToolCalls": true, "supportsReasoningSummaries": true },
+          "limit": { "context": 1050000, "input": 288384, "output": 128000 },
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
           "variants": {
             "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": {
-              "name": "Medium",
-              "metadata": { "reasoningEffort": "medium" },
-            },
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } },
+            "max": { "name": "Max", "metadata": { "reasoningEffort": "max" } },
+          },
+        },
+        "gpt-6-luna": {
+          "name": "GPT 6 Luna",
+          "metadata": { "supportsToolCalls": true, "supportsReasoningSummaries": true },
+          "limit": { "context": 1050000, "input": 288384, "output": 128000 },
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } },
+            "max": { "name": "Max", "metadata": { "reasoningEffort": "max" } },
           },
         },
         "gpt-5.5": {
@@ -161,234 +220,30 @@
             },
           },
         },
-        "gpt-5.4": {
-          "name": "GPT 5.4 (272k)",
-          "limit": { "context": 272000, "input": 272000, "output": 128000 },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"],
-          },
-          "options": { "serviceTier": "priority" },
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": {
-              "name": "Medium",
-              "metadata": { "reasoningEffort": "medium" },
-            },
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
-            "xhigh": {
-              "name": "XHigh",
-              "metadata": { "reasoningEffort": "xhigh" },
-            },
-          },
-        },
-        "gpt-5.4-1m": {
-          "name": "GPT 5.4 (1M)",
-          "limit": { "context": 922000, "input": 922000, "output": 128000 },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"],
-          },
-          "options": { "serviceTier": "priority" },
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": {
-              "name": "Medium",
-              "metadata": { "reasoningEffort": "medium" },
-            },
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
-            "xhigh": {
-              "name": "XHigh",
-              "metadata": { "reasoningEffort": "xhigh" },
-            },
-          },
-        },
-        "gpt-5.4-mini": {
-          "name": "GPT 5.4 Mini",
-          "limit": { "context": 272000, "output": 128000 },
-          "options": {
-            "serviceTier": "priority",
-            "reasoningSummary": "auto",
-            "include": ["reasoning.encrypted_content"],
-          },
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": {
-              "name": "Medium",
-              "metadata": { "reasoningEffort": "medium" },
-            },
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
-            "xhigh": {
-              "name": "XHigh",
-              "metadata": { "reasoningEffort": "xhigh" },
-            },
-          },
-        },
-      },
-    },
-    "default": {
-      "type": "openai_compatible",
-      "name": "CLIProxyAPI (OpenAI)",
-      "options": {
-        "baseURL": "http://127.0.0.1:8317/v1",
-        "apiKey": "sk-zerolimit",
-        "timeoutMs": 1800000,
-      },
-      "models": {
-        "gpt-5.3-codex-spark": { "name": "GPT 5.3 Codex Spark" },
-        "gpt-5.5": {
-          "name": "GPT 5.5",
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": {
-              "name": "Medium",
-              "metadata": { "reasoningEffort": "medium" },
-            },
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
-            "xhigh": {
-              "name": "XHigh",
-              "metadata": { "reasoningEffort": "xhigh" },
-            },
-          },
-        },
-        "gpt-5.4": {
-          "name": "GPT 5.4 (272k)",
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": {
-              "name": "Medium",
-              "metadata": { "reasoningEffort": "medium" },
-            },
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
-            "xhigh": {
-              "name": "XHigh",
-              "metadata": { "reasoningEffort": "xhigh" },
-            },
-          },
-        },
-        "gpt-5.4-1m": { "name": "GPT 5.4 (1M)" },
-        "gpt-5.4-mini": {
-          "name": "GPT 5.4 Mini",
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": {
-              "name": "Medium",
-              "metadata": { "reasoningEffort": "medium" },
-            },
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
-            "xhigh": {
-              "name": "XHigh",
-              "metadata": { "reasoningEffort": "xhigh" },
-            },
-          },
-        },
-      },
-    },
-    "umans-ai-coding-plan": {
-      "type": "openai_compatible",
-      "name": "Umans AI Coding Plan",
-      "options": {
-        "apiMode": "chat_completions",
-        "baseURL": "https://api.code.umans.ai/v1",
-        "apiKeyEnv": ["UMANS_AI_CODING_PLAN_API_KEY"],
-        "timeoutMs": 1800000,
-      },
-      "models": {
-        "umans-coder": {
-          "name": "Coder",
-          "limit": { "context": 262144, "input": 262144, "output": 262144 },
-          "modalities": {
-            "input": ["text", "image"],
-            "output": ["text"],
-          },
-        },
-        "umans-flash": {
-          "name": "Flash",
-          "limit": { "context": 262144, "input": 262144, "output": 262144 },
-          "modalities": {
-            "input": ["text", "image"],
-            "output": ["text"],
-          },
-        },
-        "umans-glm-5.2": {
-          "name": "GLM 5.2",
-          "limit": { "context": 405504, "input": 405504, "output": 131072 },
-          "modalities": {
-            "input": ["text"],
-            "output": ["text"],
-          },
-          "variants": {
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
-            "max": {
-              "name": "Max",
-              "metadata": { "reasoningEffort": "max" },
-            },
-          },
-        },
-        "umans-kimi-k2.7": {
-          "name": "Kimi K2.7 Code",
-          "limit": { "context": 262144, "input": 262144, "output": 262144 },
-          "modalities": {
-            "input": ["text", "image"],
-            "output": ["text"],
-          },
-          "options": {
-            "thinking": { "type": "enabled", "budgetTokens": 32000 },
-          },
-        },
-        "umans-qwen3.6-35b-a3b": {
-          "name": "Qwen3.6 35B A3B",
-          "limit": { "context": 262144, "input": 262144, "output": 262144 },
-          "modalities": {
-            "input": ["text", "image"],
-            "output": ["text"],
-          },
-        },
       },
     },
   },
 
   // Default primary model and smaller model used by internal runtime operations.
-  "model": "openai-codex/gpt-5.6-luna",
-  "small_model": "umans-ai-coding-plan/umans-flash",
+  "model": "openai-codex/gpt-6-sol",
+  "small_model": "openai-codex/gpt-6-luna",
 
   // One generic parent plus named subagents for bounded task delegation.
   "agent": {
     "default": {
-      "model": "openai-codex/gpt-5.6-luna",
-      "variant": "max",
+      "model": "openai-codex/gpt-6-sol",
+      "variant": "medium",
     },
     "general": {
-      "model": "openai-codex/gpt-5.6-luna",
+      "model": "openai-codex/gpt-6-luna",
       "variant": "max",
     },
     "explore": {
-      "model": "openai-codex/gpt-5.6-luna",
+      "model": "openai-codex/gpt-6-luna",
       "variant": "low",
     },
     "librarian": {
-      "model": "openai-codex/gpt-5.6-luna",
+      "model": "openai-codex/gpt-6-luna",
       "variant": "low",
     },
   },
