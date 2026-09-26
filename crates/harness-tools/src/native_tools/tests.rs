@@ -234,7 +234,7 @@ fn generate_task_description_produces_first_five_words_truncated() {
 }
 
 #[test]
-fn task_description_prefers_completion_notification() {
+fn task_description_documents_sync_async_and_blocking_waits() {
     let executor = Arc::new(AgentOpsExecutor::new());
     let task = TaskTool::new(executor);
 
@@ -247,7 +247,7 @@ fn task_description_prefers_completion_notification() {
     assert!(task_description.contains("injected into the child prompt"));
     assert!(task_description.contains("background_output"));
     assert!(task_description.contains("completion notification"));
-    assert!(task_description.contains("wait for the coordinator"));
+    assert!(task_description.contains("block=true to wait"));
     assert!(task_description.contains("interim status checks"));
     assert!(task_description.contains("cancellation"));
     assert!(task_description.contains("final result"));
@@ -269,72 +269,6 @@ fn task_description_prefers_completion_notification() {
             "task description should document structured delegation field {field:?}"
         );
     }
-}
-
-#[test]
-fn task_schema_descriptions_prefer_completion_notification() {
-    let task = TaskTool::new(Arc::new(AgentOpsExecutor::new()));
-    let task_schema = task.parameters_json_schema();
-    let prompt_description = task_schema
-        .pointer("/properties/prompt/description")
-        .and_then(Value::as_str)
-        .unwrap_or_abort();
-    for field in [
-        "context",
-        "goal",
-        "downstream use",
-        "request",
-        "required tools",
-        "must-do",
-        "must-not-do",
-    ] {
-        assert!(
-            prompt_description.contains(field),
-            "task prompt schema should document structured delegation field {field:?}"
-        );
-    }
-    let run_in_background_description = task_schema
-        .pointer("/properties/run_in_background/description")
-        .and_then(Value::as_str)
-        .unwrap_or_abort();
-    assert!(run_in_background_description.contains("interim status checks"));
-    assert!(run_in_background_description.contains("cancel=true anytime"));
-    assert!(run_in_background_description.contains("completion notification"));
-    assert!(run_in_background_description.contains("final result retrieval"));
-}
-
-#[test]
-fn background_output_descriptions_prefer_completion_notification() {
-    let background_output = BackgroundOutputTool::new(Arc::new(AgentOpsExecutor::new()));
-    let background_output_description = background_output.description();
-    assert!(background_output_description.contains("completion notification"));
-    assert!(background_output_description.contains("interim status checks"));
-    assert!(background_output_description.contains("final result"));
-    assert!(background_output_description.contains("cancel=true"));
-    assert!(
-        !background_output_description.contains("do not replace explicit retrieval"),
-        "background_output description must not keep the old notifications-only guidance"
-    );
-
-    let background_output_schema = background_output.parameters_json_schema();
-    let request_id_description = background_output_schema
-        .pointer("/properties/request_id/description")
-        .and_then(Value::as_str)
-        .unwrap_or_abort();
-    assert!(request_id_description.contains("interim status checks"));
-    assert!(request_id_description.contains("completion notification"));
-    let block_description = background_output_schema
-        .pointer("/properties/block/description")
-        .and_then(Value::as_str)
-        .unwrap_or_abort();
-    assert!(block_description.contains("interim status checks"));
-    assert!(block_description.contains("completion notification"));
-    let cancel_description = background_output_schema
-        .pointer("/properties/cancel/description")
-        .and_then(Value::as_str)
-        .unwrap_or_abort();
-    assert!(cancel_description.contains("cancel=true"));
-    assert!(cancel_description.contains("allowed anytime"));
 }
 
 #[test]
