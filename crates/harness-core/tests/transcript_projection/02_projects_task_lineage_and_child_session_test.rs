@@ -212,6 +212,7 @@ fn tolerates_old_minimal_metadata_and_projects_incomplete_or_failed_states() {
             system(),
             None,
             EventV1::TaskCancelled(TaskCancelledEvent {
+                failure: false,
                 task_id: "task_legacy".to_string().into(),
                 reason: "cancelled".to_string(),
                 task_scope: None,

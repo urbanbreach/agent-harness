@@ -298,6 +298,7 @@ pub enum ProjectedTaskState {
     Queued,
     Started,
     Cancelled,
+    Failed,
     Completed,
     LateResult,
 }
