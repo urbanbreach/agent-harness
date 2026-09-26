@@ -627,9 +627,7 @@ impl CoordinatorHandle {
 
         while Instant::now() < deadline {
             let remaining = deadline.saturating_duration_since(Instant::now());
-            let next =
-                tokio::time::timeout(remaining.min(Duration::from_millis(250)), stream.next())
-                    .await;
+            let next = tokio::time::timeout(remaining, stream.next()).await;
             match next {
                 Ok(Some(Ok(event))) => {
                     let Some(request_id) = event.correlation_id.as_deref() else {
@@ -662,7 +660,7 @@ impl CoordinatorHandle {
                     }
                 }
                 Ok(Some(Err(err))) => return Err(CoordinatorError::EventStore(err)),
-                Ok(None) | Err(_) => sleep(Duration::from_millis(10)).await,
+                Ok(None) | Err(_) => break,
             }
         }
 

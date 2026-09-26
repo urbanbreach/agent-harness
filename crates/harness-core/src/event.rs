@@ -438,6 +438,9 @@ pub struct TaskCompletionMetadata {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskCancelledEvent {
+    /// Distinguishes execution failure from cancellation; older events default to cancellation.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub failure: bool,
     pub task_id: crate::ids::TaskId,
     pub reason: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -251,6 +251,7 @@ impl Coordinator {
                 Some(format!("task:{task_id}")),
                 Some(queued.request_id),
                 EventV1::TaskCancelled(TaskCancelledEvent {
+                    failure: false,
                     task_id: task_id.into(),
                     reason,
                     task_scope: Some(TaskTerminalScope::AgentTurn),
@@ -269,9 +270,7 @@ impl Coordinator {
                 Arc::clone(&self.config.tool_registry),
                 queued.child_task,
                 &terminal_event,
-                background_notification_status_for_cancel_reason(&terminal_event_summary(
-                    &terminal_event,
-                )),
+                BackgroundTaskNotificationStatus::Cancelled,
                 &terminal_event_summary(&terminal_event),
             )
             .await?;
@@ -333,6 +332,7 @@ impl Coordinator {
                 Some(format!("task:{task_id}")),
                 Some(running.request_id.clone()),
                 EventV1::TaskCancelled(TaskCancelledEvent {
+                    failure: false,
                     task_id: task_id.into(),
                     reason,
                     task_scope: Some(TaskTerminalScope::AgentTurn),
@@ -351,9 +351,7 @@ impl Coordinator {
                 Arc::clone(&self.config.tool_registry),
                 running.child_task,
                 &terminal_event,
-                background_notification_status_for_cancel_reason(&terminal_event_summary(
-                    &terminal_event,
-                )),
+                BackgroundTaskNotificationStatus::Cancelled,
                 &terminal_event_summary(&terminal_event),
             )
             .await?;
@@ -404,9 +402,12 @@ impl Coordinator {
 
                 if matches!(&task.queue_key,
                     ConcurrencyKey::Tool { tool_id } | ConcurrencyKey::NestedTool { tool_id, .. }
-                        if matches!(tool_id.as_str(), "task" | "agent.spawn"))
-                    && foreground_waits.contains(task.tool_call_id.as_str())
+                        if tool_id == "background_output"
+                            || (matches!(tool_id.as_str(), "task" | "agent.spawn")
+                                && foreground_waits.contains(task.tool_call_id.as_str())))
                 {
+                    // Delegation waits have their own completion/cancellation boundary.
+                    // Silence while a child is working is not a stalled tool.
                     return None;
                 }
                 Some(TaskProgressSnapshot {
@@ -723,6 +724,7 @@ impl Coordinator {
                         Some(format!("task:{task_id}")),
                         request_correlation_id.clone(),
                         EventV1::TaskCancelled(TaskCancelledEvent {
+                            failure: true,
                             task_id: task_id.into(),
                             reason: reason.clone(),
                             task_scope: Some(TaskTerminalScope::ToolCall),
@@ -862,6 +864,7 @@ impl Coordinator {
                     Some(format!("task:{task_id}")),
                     request_correlation_id.clone(),
                     EventV1::TaskCancelled(TaskCancelledEvent {
+                        failure: failed,
                         task_id: task_id.into(),
                         reason: final_reason.clone(),
                         task_scope: Some(TaskTerminalScope::ToolCall),
@@ -925,6 +928,7 @@ fn cancel_running_tool_call<C: Clock + ?Sized, R: Redactor + ?Sized>(
         Some(format!("task:{task_id}")),
         correlation,
         EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: task_id.into(),
             reason: reason.to_string(),
             task_scope: Some(TaskTerminalScope::ToolCall),

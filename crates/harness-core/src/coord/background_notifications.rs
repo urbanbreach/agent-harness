@@ -3,17 +3,6 @@ use super::*;
 use crate::event::BackgroundTaskNotificationEvent;
 use crate::proj::BackgroundRequestProjectionError;
 
-pub(in crate::coord) fn background_notification_status_for_cancel_reason(
-    reason: &str,
-) -> BackgroundTaskNotificationStatus {
-    let lower = reason.to_ascii_lowercase();
-    if lower.contains("cancel") || lower.contains("aborted") {
-        BackgroundTaskNotificationStatus::Cancelled
-    } else {
-        BackgroundTaskNotificationStatus::Failed
-    }
-}
-
 pub(in crate::coord) fn terminal_event_summary(event: &EventEnvelopeV1) -> String {
     match &event.payload {
         EventV1::TaskCompleted(payload) => payload.result_summary.clone(),
@@ -213,9 +202,9 @@ where
         return Ok(());
     };
 
-    if !run_state
+    if run_state
         .background_notification_child_requests
-        .insert(child_task.child_request_id.clone())
+        .contains(&child_task.child_request_id)
     {
         return Ok(());
     }
@@ -252,7 +241,11 @@ where
         EventV1::BackgroundTaskNotification(notification),
     )?;
 
-    let (Some(parent_agent_id), Some(parent_profile), Some(delivered_turn_request_id)) =
+    run_state
+        .background_notification_child_requests
+        .insert(child_task.child_request_id);
+
+    let (Some(parent_agent_id), Some(_parent_profile), Some(delivered_turn_request_id)) =
         (parent_agent_id, parent_profile, delivered_turn_request_id)
     else {
         return Ok(());
@@ -271,19 +264,15 @@ where
         }),
     )?;
 
-    if run_state.agent_has_running_turn(&parent_agent_id) {
-        run_state
-            .pending_agent_wakeups
-            .entry(parent_agent_id)
-            .or_default()
-            .push(PendingAgentWakeup {
-                request_id: delivered_turn_request_id,
-                notification_text,
-            });
-        return Ok(());
-    }
-
-    schedule_agent_turn(
+    run_state
+        .pending_agent_wakeups
+        .entry(parent_agent_id.clone())
+        .or_default()
+        .push(PendingAgentWakeup {
+            request_id: delivered_turn_request_id,
+            notification_text,
+        });
+    schedule_pending_agent_wakeups_for_idle_agent(
         clock,
         redactor,
         hook_command_executor,
@@ -292,26 +281,9 @@ where
         hook_runtime_config,
         compaction_config,
         provider_retry_config,
-        ScheduleAgentTurnArgs {
-            provider,
-            tool_registry,
-            profile: parent_profile.clone(),
-            request: AgentRequest {
-                agent_id: parent_agent_id,
-                prompt: notification_text,
-                attachments: Vec::new(),
-                prompt_context: None,
-                selected_file_tags: Vec::new(),
-                selected_agent_tags: Vec::new(),
-                selected_resource_tags: Vec::new(),
-                model_ref: parent_profile.model_ref.clone(),
-                model_target: None,
-                model_settings: default_model_settings_for_profile(&parent_profile.name),
-            },
-            request_id: delivered_turn_request_id,
-            child_task: None,
-            model_fallback_chain: Vec::new(),
-        },
+        provider,
+        tool_registry,
+        &parent_agent_id,
     )
     .await
 }
@@ -337,7 +309,7 @@ where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
-    if run_state.agent_has_running_turn(agent_id) {
+    if run_state.agent_has_active_or_queued_turn(agent_id) {
         return Ok(());
     }
 
@@ -347,6 +319,26 @@ where
     let Some(parent_profile) = run_state.agents.get(agent_id).cloned() else {
         return Ok(());
     };
+
+    // Continue the parent's selected runtime, including after it has become idle
+    // or was restored from disk. Its profile default may be a different provider.
+    let selection = run_state
+        .cached_canonical_provider_view(agent_id)
+        .map(|view| view.runtime_selection.clone());
+    let model_ref = selection
+        .as_ref()
+        .map(|selection| format!("{}:{}", selection.provider_id, selection.model_id))
+        .unwrap_or_else(|| parent_profile.model_ref.clone());
+    let model_settings = selection
+        .as_ref()
+        .map(|selection| AgentModelSettings {
+            variant: selection.variant.clone(),
+            reasoning_effort: selection.reasoning_effort.clone(),
+            text_verbosity: selection.text_verbosity.clone(),
+            reasoning_summary: selection.reasoning_summary.clone(),
+            thinking: selection.thinking.clone(),
+        })
+        .unwrap_or_else(|| default_model_settings_for_profile(&parent_profile.name));
 
     for wakeup in wakeups {
         schedule_agent_turn(
@@ -370,9 +362,9 @@ where
                     selected_file_tags: Vec::new(),
                     selected_agent_tags: Vec::new(),
                     selected_resource_tags: Vec::new(),
-                    model_ref: parent_profile.model_ref.clone(),
+                    model_ref: model_ref.clone(),
                     model_target: None,
-                    model_settings: default_model_settings_for_profile(&parent_profile.name),
+                    model_settings: model_settings.clone(),
                 },
                 request_id: wakeup.request_id,
                 child_task: None,

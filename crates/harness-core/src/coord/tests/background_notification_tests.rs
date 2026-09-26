@@ -277,6 +277,7 @@ pub(super) async fn background_task_completion_cancellation_and_late_terminal_do
         Some("task:task_child_terminal".to_string()),
         Some("req_child".to_string()),
         EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: "task_child_terminal".to_string().into(),
             reason: "provider failed closed".to_string(),
             task_scope: Some(crate::event::TaskTerminalScope::AgentTurn),

@@ -108,7 +108,11 @@ impl Coordinator {
         if let Some(reason) = hook_batch.critical_failure {
             cancellation_token.cancel();
             if run_state.cancelled_running_tasks.insert(task_id.clone()) {
-                append_payload_event_with_correlation(
+                let child_task = run_state
+                    .running_agent_turns
+                    .get(&task_id)
+                    .and_then(|turn| turn.child_task.clone());
+                let terminal_event = append_payload_event_with_correlation(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
                     run_state,
@@ -116,11 +120,29 @@ impl Coordinator {
                     Some(format!("task:{task_id}")),
                     Some(turn_request_id),
                     EventV1::TaskCancelled(TaskCancelledEvent {
+                        failure: true,
                         task_id: task_id.into(),
                         reason,
                         task_scope: Some(TaskTerminalScope::AgentTurn),
                     }),
                 )?;
+                append_background_task_notification_and_schedule(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    Arc::clone(&self.config.hook_command_executor),
+                    self.job_tx.clone(),
+                    run_state,
+                    self.config.hook_runtime_config.clone(),
+                    self.config.compaction.clone(),
+                    self.config.provider_retry,
+                    Arc::clone(&self.config.provider),
+                    Arc::clone(&self.config.tool_registry),
+                    child_task,
+                    &terminal_event,
+                    BackgroundTaskNotificationStatus::Failed,
+                    &terminal_event_summary(&terminal_event),
+                )
+                .await?;
             }
         }
 
@@ -243,7 +265,11 @@ impl Coordinator {
         if let Some(reason) = hook_batch.critical_failure {
             cancellation_token.cancel();
             if run_state.cancelled_running_tasks.insert(task_id.clone()) {
-                append_payload_event_with_correlation(
+                let child_task = run_state
+                    .running_agent_turns
+                    .get(&task_id)
+                    .and_then(|turn| turn.child_task.clone());
+                let terminal_event = append_payload_event_with_correlation(
                     self.clock.as_ref(),
                     self.redactor.as_ref(),
                     run_state,
@@ -251,11 +277,29 @@ impl Coordinator {
                     Some(format!("task:{task_id}")),
                     Some(turn_request_id),
                     EventV1::TaskCancelled(TaskCancelledEvent {
+                        failure: true,
                         task_id: task_id.into(),
                         reason,
                         task_scope: Some(TaskTerminalScope::AgentTurn),
                     }),
                 )?;
+                append_background_task_notification_and_schedule(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    Arc::clone(&self.config.hook_command_executor),
+                    self.job_tx.clone(),
+                    run_state,
+                    self.config.hook_runtime_config.clone(),
+                    self.config.compaction.clone(),
+                    self.config.provider_retry,
+                    Arc::clone(&self.config.provider),
+                    Arc::clone(&self.config.tool_registry),
+                    child_task,
+                    &terminal_event,
+                    BackgroundTaskNotificationStatus::Failed,
+                    &terminal_event_summary(&terminal_event),
+                )
+                .await?;
             }
         }
 

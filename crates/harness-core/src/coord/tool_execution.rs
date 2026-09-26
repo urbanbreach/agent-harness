@@ -1237,6 +1237,7 @@ fn finish_unstarted_tool_call<C: Clock + ?Sized, R: Redactor + ?Sized>(
         Some(format!("task:{}", queued.task_id)),
         args.request_correlation_id.clone(),
         EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: queued.task_id.into(),
             reason: reason.to_string(),
             task_scope: Some(TaskTerminalScope::ToolCall),
