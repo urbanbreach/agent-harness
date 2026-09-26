@@ -186,7 +186,7 @@ async fn session_read_spills_redacted_replay_only_large_sessions() {
 }
 
 #[tokio::test]
-async fn child_task_returns_capped_summary_and_session_next_actions() {
+async fn child_task_returns_full_report_with_capped_preview_and_session_next_actions() {
     // arrange: a foreground child task backed by a deterministic non-live provider.
     let workspace = setup_workspace_fixture();
     let (handle, run, worker_id) = spawn_task_run(workspace.workspace()).await;
@@ -210,7 +210,7 @@ async fn child_task_returns_capped_summary_and_session_next_actions() {
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
     handle.stop_run().await.unwrap_or_abort();
 
-    // assert: parent-visible task output is capped and points to session inspection tools.
+    // assert: parent-visible reports stay complete while previews are capped.
     let finished = find_finished(&read_events(&run.events_path), &tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished.output_json.unwrap_or_abort();
@@ -223,12 +223,19 @@ async fn child_task_returns_capped_summary_and_session_next_actions() {
 fn assert_capped_child_summary(output: &Value) {
     let summary = output["result_summary"].as_str().unwrap_or_abort();
     assert!(summary.starts_with("child-large-summary:"));
-    assert!(summary.ends_with('…'));
-    assert!(!summary.contains("child-summary-tail"));
+    assert!(summary.contains("child-summary-tail"));
     assert_eq!(output["child_summary"]["kind"], json!("result"));
     assert_eq!(output["child_summary"]["truncated"], json!(true));
     assert_eq!(output["child_summary"]["max_chars"], json!(1200));
-    assert_eq!(output["child_summary"]["summary"], json!(summary));
+    let preview = output["child_summary"]["summary"]
+        .as_str()
+        .unwrap_or_abort();
+    assert!(preview.ends_with('…'));
+    assert!(!preview.contains("child-summary-tail"));
+    assert_eq!(
+        output["child_summary"]["original_chars"],
+        json!(summary.chars().count())
+    );
     assert!(output["child_session_id"].as_str().is_some());
 }
 

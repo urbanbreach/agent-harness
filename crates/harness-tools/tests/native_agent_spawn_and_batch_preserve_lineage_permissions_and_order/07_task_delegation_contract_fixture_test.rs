@@ -80,7 +80,7 @@ must-not-do: do not edit files";
         .output_json
         .as_ref()
         .unwrap_or_abort();
-    assert_delegation_output_is_capped(sync_output, "foreground");
+    assert_delegation_result_preserves_full_report(sync_output, "foreground");
     assert_eq!(sync_output["route"]["profile_id"], json!("general"));
     assert_eq!(sync_output["loaded_skills"][0]["name"], json!("ws9-skill"));
     assert_eq!(sync_output["lineage"]["parent_tool_call_id"], json!(sync_tool_call_id));
@@ -125,7 +125,7 @@ must-not-do: do not edit files";
         .output_json
         .as_ref()
         .unwrap_or_abort();
-    assert_delegation_output_is_capped(background_output, "background");
+    assert_delegation_result_preserves_full_report(background_output, "background");
     assert_eq!(background_output["route"]["profile_id"], json!("general"));
     assert_eq!(background_output["source"], json!("event_replay"));
 
@@ -178,23 +178,23 @@ must-not-do: do not edit files";
     }
 }
 
-fn assert_delegation_output_is_capped(output: &Value, expected_mode: &str) {
+fn assert_delegation_result_preserves_full_report(output: &Value, expected_mode: &str) {
     assert_eq!(output["mode"], json!(expected_mode));
     let result_summary = output["result_summary"]
         .as_str()
         .unwrap_or_abort();
     assert!(
-        result_summary.chars().count() <= 1201,
-        "summary should stay within the documented 1200 char cap plus ellipsis"
+        result_summary.chars().count() > 1200,
+        "the full child report must survive sync waits and background notifications"
     );
-    assert!(result_summary.ends_with('…'));
+    assert!(result_summary.ends_with("0123456789abcdef"));
     assert_eq!(output["child_summary"]["kind"], json!("result"));
     assert_eq!(output["child_summary"]["max_chars"], json!(1200));
     assert_eq!(output["child_summary"]["truncated"], json!(true));
-    assert_eq!(
-        output["child_summary"]["summary"],
-        output["result_summary"]
-    );
+    let preview = output["child_summary"]["summary"].as_str().unwrap_or_abort();
+    assert!(preview.chars().count() <= 1201);
+    assert!(preview.ends_with('…'));
+    assert_eq!(output["child_summary"]["original_chars"], json!(result_summary.chars().count()));
     assert!(
         output["child_summary"]["original_chars"]
             .as_u64()
