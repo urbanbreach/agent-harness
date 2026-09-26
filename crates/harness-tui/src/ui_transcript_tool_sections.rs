@@ -39,12 +39,6 @@ pub(super) fn build_tool_call_section(
         stacked_diffs,
         session_path,
     );
-    super::ui_transcript_subagent::refresh_started_status(
-        &mut section,
-        tool_call,
-        task_row.as_ref(),
-        app,
-    );
     section.group.expanded = app.tool_group_expanded(&section.tool_call_id);
     if app.tool_output_previewed(&tool_call.tool_call_id) {
         section.expanded = false;
@@ -169,7 +163,6 @@ pub(super) fn build_transcript_tool_call_section(
     fn initial_tool_row(
         tool_call: &crate::app::ToolCallEntry,
         app: &AppState,
-        task_row: Option<&crate::app::OrchestrationTaskRow>,
         show_generic_tool_output: bool,
         tool_output_expanded: bool,
         stacked_diffs: bool,
@@ -279,9 +272,12 @@ pub(super) fn build_transcript_tool_call_section(
                 TranscriptToolCallVisualStyle::Inline,
                 false,
             ),
-            "agent.spawn" | "task" => {
-                build_agent_spawn_tool_row(tool_call, task_row, &mut detail_blocks)
-            }
+            "agent.spawn" | "task" => (
+                String::new(),
+                None,
+                TranscriptToolCallVisualStyle::TaskInline,
+                false,
+            ),
             "background_output" => (
                 background_output_tool_title(tool_call),
                 Some("↻"),
@@ -592,7 +588,6 @@ pub(super) fn build_transcript_tool_call_section(
     ) = initial_tool_row(
         tool_call,
         app,
-        task_row,
         show_generic_tool_output,
         tool_output_expanded,
         stacked_diffs,
@@ -715,13 +710,13 @@ pub(super) fn build_transcript_tool_call_section(
             None
         }
         "background_output" => background_output_tool_subtitle(tool_call),
-        "agent.spawn" | "task" => agent_spawn_subtitle(tool_call),
+        "agent.spawn" | "task" => Some(agent_spawn_subtitle(tool_call, app)),
         "apply_patch" => None,
         _ => None,
     };
     let rail_motion = tool_rail_motion(tool_call, app, !detail_blocks.is_empty());
 
-    TranscriptToolCallSection {
+    let mut section = TranscriptToolCallSection {
         group: Default::default(),
         hook_executions: tool_call.hook_executions.clone(),
         tool_call_id: tool_call.tool_call_id.clone(),
@@ -771,7 +766,9 @@ pub(super) fn build_transcript_tool_call_section(
         animation_phase,
         expanded,
         rail_motion,
-    }
+    };
+    super::ui_transcript_subagent::refresh_status(&mut section, tool_call, task_row, app);
+    section
 }
 
 fn tool_rail_motion(
@@ -1171,29 +1168,6 @@ fn push_structured_diff_artifact_block(
         show_file_header,
     });
     true
-}
-
-pub(super) fn build_agent_spawn_tool_row(
-    tool_call: &crate::app::ToolCallEntry,
-    task_row: Option<&crate::app::OrchestrationTaskRow>,
-    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
-) -> (
-    String,
-    Option<&'static str>,
-    TranscriptToolCallVisualStyle,
-    bool,
-) {
-    let activity = task_row
-        .filter(|row| !row.state.is_terminal())
-        .and_then(|row| row.current_child_tool_title.as_deref());
-    let title = agent_spawn_title(tool_call, agent_spawn_description(tool_call), activity);
-    detail_blocks.clear();
-    (
-        title,
-        None,
-        TranscriptToolCallVisualStyle::TaskInline,
-        false,
-    )
 }
 
 fn push_running_subagent_detail(

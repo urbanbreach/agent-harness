@@ -21,7 +21,12 @@ pub(super) fn build_tool_header_spans(
         title_style
     };
     let title = collapse_inline_whitespace(&safe_tool_text(&header.title));
-    let (label, argument) = split_tool_header_title(&title, &header.tool_id);
+    let (label, argument) = if header.visual_style == TranscriptToolCallVisualStyle::TaskInline {
+        title.split_once('“').unwrap_or((&title, ""))
+    } else {
+        split_tool_header_title(&title, &header.tool_id)
+    };
+    let label = label.trim_end();
     let mut spans = Vec::new();
     let marker = completed_tool_marker(header.presentation.status, theme);
     spans.push(Span::styled(format!("{marker} "), marker_style));
@@ -52,7 +57,14 @@ pub(super) fn build_tool_header_spans(
         } else {
             title_style
         };
-        spans.push(Span::styled(argument.to_string(), argument_style));
+        spans.push(Span::styled(
+            if header.visual_style == TranscriptToolCallVisualStyle::TaskInline {
+                format!("“{argument}")
+            } else {
+                argument.to_string()
+            },
+            argument_style,
+        ));
     }
     if let Some(path_metadata) = header.path_metadata.as_deref() {
         spans.push(Span::styled(
@@ -99,17 +111,28 @@ pub(super) fn build_tool_header_spans(
             append_tool_subtitle_spans(&mut spans, subtitle, &header.tool_id, theme);
         }
     }
-    if let Some(index) =
-        variable.filter(|_| header.visual_style != TranscriptToolCallVisualStyle::TaskInline)
-    {
+    if let Some(index) = variable {
         let fixed = spans
             .iter()
             .enumerate()
             .filter(|(candidate, _)| *candidate != index)
             .map(|(_, span)| display_width(&span.content))
             .sum::<usize>();
-        spans[index].content =
-            truncate_plain_text(&spans[index].content, width.saturating_sub(fixed)).into();
+        let available = width.saturating_sub(fixed);
+        let truncated = truncate_plain_text(&spans[index].content, available);
+        spans[index].content = if header.visual_style == TranscriptToolCallVisualStyle::TaskInline
+            && available > 1
+            && truncated.starts_with('“')
+            && !truncated.contains('”')
+        {
+            format!(
+                "{}”",
+                truncate_plain_text(&spans[index].content, available - 1)
+            )
+            .into()
+        } else {
+            truncated.into()
+        };
     }
     // EntryRenderer paints a single header row. A long unbreakable tool name
     // or fixed subtitle must not wrap and push following diamonds down.
@@ -584,6 +607,31 @@ fn append_task_inline_tool_section_lines(
         spans,
         transcript_surface_content_width(width, false),
     );
+
+    // Keep the agent and model visible even when they cannot fit beside the task.
+    if let Some(subtitle) = tool_call.header.subtitle.as_deref().filter(|subtitle| {
+        let label = tool_call.header.title.split('“').next().unwrap_or_default();
+        display_width(label.trim_end()) + display_width(subtitle) + 6 >= tool_header_width(width)
+    }) {
+        let text = super::super::ui_tool_output::safe_tool_text(subtitle);
+        for spans in super::super::ui_tool_wrapping::words(
+            vec![Span::styled(
+                collapse_inline_whitespace(&text),
+                muted_meta_style(theme),
+            )],
+            tool_header_width(width).saturating_sub(2),
+        ) {
+            append_surface_row_with_bounded_target(
+                &mut render.lines,
+                &mut render.interaction_rows,
+                target.clone(),
+                &format!("{TRANSCRIPT_ASSISTANT_BODY_PREFIX}  "),
+                surface,
+                spans,
+                transcript_surface_content_width(width, false),
+            );
+        }
+    }
 
     if !tool_call.details_visible() {
         return;

@@ -1,10 +1,10 @@
 use super::*;
-use crate::app::{OrchestrationTaskRow, ToolCallEntry};
+use crate::app::{OrchestrationTaskRow, OrchestrationTaskState, ToolCallEntry};
 use harness_core::event::{
     BackgroundTaskNotificationEvent, BackgroundTaskNotificationStatus, EventEnvelopeV1, EventV1,
 };
 
-pub(super) fn refresh_started_status(
+pub(super) fn refresh_status(
     section: &mut TranscriptToolCallSection,
     tool: &ToolCallEntry,
     task: Option<&OrchestrationTaskRow>,
@@ -13,28 +13,70 @@ pub(super) fn refresh_started_status(
     if section.header.visual_style != TranscriptToolCallVisualStyle::TaskInline {
         return;
     }
-    // A background launch finishing is not the child finishing. Its original
-    // row stays in place, and the recorded terminal notification gets its own row.
-    if section.subagent_background && tool.status != ToolCallDisplayStatus::Failed {
-        if let Some(task) = task {
-            if task.state.is_terminal() {
-                section.header.presentation.status = ToolCallPresentationStatus::Succeeded;
-                section.rail_motion = ToolRailMotion::Settled;
-            } else {
-                section.header.presentation.status = ToolCallPresentationStatus::Running;
-                if app.transcript_motion_enabled() && !app.replay_mode {
-                    section.rail_motion = ToolRailMotion::Running {
-                        elapsed: std::time::Duration::from_millis(
-                            u64::try_from(app.transcript_animation_phase())
-                                .unwrap_or(u64::MAX)
-                                .saturating_mul(crate::scheduling::active_animation_period_ms()),
-                        ),
-                        sampled_phase: app.transcript_animation_phase(),
-                    };
-                }
+    use ToolCallPresentationStatus as Status;
+    let projection = app.subagent_request_projection(tool);
+    let (status, verb) = if let Some(projection) = projection.as_ref() {
+        match projection.status.as_str() {
+            "completed" => (Status::Succeeded, "completed"),
+            "cancelled" => (Status::Cancelled, "cancelled"),
+            "failed" => (Status::Failed, "failed"),
+            "timed_out" => (Status::Failed, "timed out"),
+            "running" => (Status::Running, "running"),
+            _ => (Status::Queued, "queued"),
+        }
+    } else if tool.status == ToolCallDisplayStatus::Failed {
+        (Status::Failed, "failed")
+    } else if tool.status == ToolCallDisplayStatus::PendingPermission {
+        (Status::Waiting, "waiting for approval")
+    } else if let Some(task) = task.filter(|task| {
+        section.subagent_background
+            || tool.status != ToolCallDisplayStatus::Succeeded
+            || task.state.is_terminal()
+    }) {
+        match task.state {
+            OrchestrationTaskState::Queued => (Status::Queued, "queued"),
+            OrchestrationTaskState::Running => (Status::Running, "running"),
+            OrchestrationTaskState::Stale => (Status::Waiting, "stalled"),
+            OrchestrationTaskState::Completed => (Status::Succeeded, "completed"),
+            OrchestrationTaskState::Cancelled => (Status::Cancelled, "cancelled"),
+            OrchestrationTaskState::Failed => (Status::Failed, "failed"),
+            OrchestrationTaskState::TimedOut => (Status::Failed, "timed out"),
+            OrchestrationTaskState::LateResult => (Status::Succeeded, "completed late"),
+        }
+    } else {
+        match tool.status {
+            ToolCallDisplayStatus::Queued => (Status::Queued, "queued"),
+            ToolCallDisplayStatus::PendingPermission => (Status::Waiting, "waiting for approval"),
+            ToolCallDisplayStatus::Running => (Status::Running, "running"),
+            ToolCallDisplayStatus::Succeeded if section.subagent_background => {
+                (Status::Running, "running")
+            }
+            ToolCallDisplayStatus::Succeeded => (Status::Succeeded, "completed"),
+            ToolCallDisplayStatus::Failed => (Status::Failed, "failed"),
+        }
+    };
+    section.header.presentation.status = status;
+    section.header.title = agent_spawn_title(
+        agent_spawn_description(tool),
+        verb,
+        task.filter(|_| status == Status::Running)
+            .and_then(|row| row.current_child_tool_title.as_deref()),
+    );
+    section.rail_motion = match status {
+        Status::Running if app.transcript_motion_enabled() && !app.replay_mode => {
+            ToolRailMotion::Running {
+                elapsed: std::time::Duration::from_millis(
+                    u64::try_from(app.transcript_animation_phase())
+                        .unwrap_or(u64::MAX)
+                        .saturating_mul(crate::scheduling::active_animation_period_ms()),
+                ),
+                sampled_phase: app.transcript_animation_phase(),
             }
         }
-    }
+        Status::Queued => ToolRailMotion::Queued,
+        Status::Waiting => ToolRailMotion::Waiting,
+        _ => ToolRailMotion::Settled,
+    };
 }
 
 pub(super) fn notification_sections(
@@ -68,24 +110,24 @@ fn notification_section(
         .flat_map(|activity| &activity.tool_calls)
         .find(|tool| {
             matches!(tool.effective_tool_id(), "agent.spawn" | "task")
-                && (task_tool_child_session_id(tool) == Some(data.child_session_id.as_str())
-                    || app
-                        .transcript_task_row_for_tool_call(tool)
-                        .is_some_and(|row| row.task_id == data.task_id.as_str()))
+                && app
+                    .subagent_request_projection(tool)
+                    .is_some_and(|projection| {
+                        projection.request_id.as_str() == data.child_request_id
+                    })
         });
     let duration = launch.and_then(|tool| event.mono_ms.checked_sub(tool.first_mono_ms));
     let verb = match data.status {
         BackgroundTaskNotificationStatus::Completed => "completed",
         BackgroundTaskNotificationStatus::Cancelled => "cancelled",
-        BackgroundTaskNotificationStatus::Failed | BackgroundTaskNotificationStatus::TimedOut => {
-            "failed"
-        }
+        BackgroundTaskNotificationStatus::Failed => "failed",
+        BackgroundTaskNotificationStatus::TimedOut => "timed out",
     };
     let elapsed = duration
-        .map(|ms| format!(" in {}", format_duration(ms)))
+        .map(|ms| format!(" · {}", format_duration(ms)))
         .unwrap_or_default();
     let title = format!(
-        "Subagent {verb}{elapsed}: “{}”",
+        "Subagent {verb}: “{}”",
         collapse_inline_whitespace(&data.description)
     );
     let tool_call_id = format!("background-notification:{}", event.event_id);
@@ -117,9 +159,14 @@ fn notification_section(
             hovered_target: app.hovered_transcript_target().cloned(),
             header: TranscriptToolCallHeader {
                 selected,
-                tool_id: "agent.spawn".into(),
+                tool_id: "background.notification".into(),
                 title,
-                subtitle: None,
+                subtitle: Some(format!(
+                    "{}{elapsed}",
+                    launch
+                        .map(|tool| agent_spawn_subtitle(tool, app))
+                        .unwrap_or_default()
+                )),
                 path_metadata: None,
                 icon: None,
                 presentation: ToolCallPresentation {

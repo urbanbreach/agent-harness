@@ -21,7 +21,6 @@ enum RunStep {
 
 fn context_step(turn: &TranscriptTurnSection, index: usize) -> RunStep {
     match &turn.assistant_parts[index] {
-        TranscriptAssistantPart::Reasoning(_) => RunStep::Transparent,
         TranscriptAssistantPart::ToolCall(tool)
             if tool.header.presentation.status != ToolCallPresentationStatus::Waiting
                 && TranscriptToolVerb::from_tool_call(tool)
@@ -81,7 +80,14 @@ pub(super) fn scan(turn: &TranscriptTurnSection) -> Vec<TranscriptToolGroup> {
             anchor_start -= 1;
         }
         let anchor = (anchor_start..end).find_map(|i| tool_at(turn, i));
-        let expanded = anchor.is_some_and(|tool| tool.group.expanded);
+        let expanded = anchor.is_some_and(|tool| tool.group.expanded)
+            || tools.iter().any(|tool| {
+                tool.header.visual_style == TranscriptToolCallVisualStyle::TaskInline
+                    && matches!(
+                        tool.header.presentation.status,
+                        ToolCallPresentationStatus::Queued | ToolCallPresentationStatus::Running
+                    )
+            });
         let target_ids = anchor
             .into_iter()
             .chain(tools.iter().copied().filter(|tool| {

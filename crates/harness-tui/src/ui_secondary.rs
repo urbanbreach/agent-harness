@@ -75,6 +75,7 @@ enum SubagentRailStatus {
     Queued,
     Running,
     Completed,
+    Cancelled,
     Error,
 }
 
@@ -150,9 +151,8 @@ impl SubagentRailStatus {
             OrchestrationTaskState::Completed | OrchestrationTaskState::LateResult => {
                 Self::Completed
             }
-            OrchestrationTaskState::Cancelled
-            | OrchestrationTaskState::Failed
-            | OrchestrationTaskState::TimedOut => Self::Error,
+            OrchestrationTaskState::Cancelled => Self::Cancelled,
+            OrchestrationTaskState::Failed | OrchestrationTaskState::TimedOut => Self::Error,
         }
     }
 
@@ -178,6 +178,7 @@ impl SubagentRailStatus {
                 SUBAGENT_SPINNER_FRAMES[frame % SUBAGENT_SPINNER_FRAMES.len()]
             }
             Self::Completed => "✓",
+            Self::Cancelled => "−",
             Self::Error => "✗",
         }
     }

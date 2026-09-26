@@ -65,20 +65,22 @@ fn app_with_context_budget(tokens: u32) -> AppState {
 }
 
 #[test]
-fn idle_control_dock_renders_context_budget_meter() {
-    // Given: an idle live shell with a known context limit and warning-level usage.
-    let mut app = app_with_context_budget(96_000);
+fn idle_context_budget_renders_in_breadcrumb_without_footer_counter() {
+    // Given: an idle live shell with a known context limit and critical usage.
+    let mut app = app_with_context_budget(116_000);
     app.composer.prompt_buffer = "draft".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
 
-    // When: the full live shell is rendered at a wide viewport.
-    let debug = render_debug(&app, 140, 30);
+    // When: the full live shell is rendered at compact and wide viewports.
+    for width in [80, 140] {
+        let debug = render_debug(&app, width, 30);
 
-    // Then: idle dock chrome shows the used/limit label, percentage, and six-cell meter.
-    assert!(
-        debug.contains("ctx ~96000/128000 75%"),
-        "idle context budget snapshot should remain visible\n{debug}"
-    );
+        // Then: the breadcrumb shows the percentage and the footer has no duplicate.
+        assert!(
+            debug.contains("116K / 128K 91%") && !debug.contains("ctx ~"),
+            "context budget belongs in the breadcrumb at width {width}\n{debug}"
+        );
+    }
 }
 
 #[test]
@@ -95,7 +97,7 @@ fn clear_confirmation_keeps_context_budget_disclosure_stable() {
 
     // assert
     assert!(
-        debug.contains("ctx ~96000/128000 75%") && debug.contains("Esc:press again to clear"),
+        debug.contains("96K / 128K 75%") && debug.contains("Esc:press again to clear"),
         "confirmation must take over only the footer while context remains stable\n{debug}"
     );
 }
