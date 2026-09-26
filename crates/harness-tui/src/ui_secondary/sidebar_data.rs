@@ -148,12 +148,7 @@ fn operator_sidebar_subagent_groups(app: &AppState) -> Vec<SubagentRailGroup> {
             if let Some(child_request_id) = child_request_id.as_ref() {
                 child_request_ids.insert(child_request_id.clone());
             }
-            let status = subagent_status_from_app(
-                app,
-                tool_call,
-                child_session_id.as_deref(),
-                child_request_id.as_deref(),
-            );
+            let status = subagent_status_from_app(app, tool_call);
             if child_session_id.is_none() && child_request_id.is_none() && status.is_active() {
                 *unlinked_active_tool_counts
                     .entry(agent_name.clone())
@@ -340,22 +335,17 @@ fn non_empty_sanitized_operator_sidebar_line(text: &str) -> Option<String> {
 fn subagent_status_from_app(
     app: &AppState,
     tool_call: &crate::app::ToolCallEntry,
-    child_session_id: Option<&str>,
-    child_request_id: Option<&str>,
 ) -> SubagentRailStatus {
-    if let Some(status) =
-        subagent_status_from_background_notification(app, child_session_id, child_request_id)
-    {
-        return status;
+    if let Some(projection) = app.subagent_request_projection(tool_call) {
+        return match projection.status.as_str() {
+            "completed" => SubagentRailStatus::Completed,
+            "cancelled" => SubagentRailStatus::Cancelled,
+            "failed" | "timed_out" => SubagentRailStatus::Error,
+            "running" => SubagentRailStatus::Running,
+            _ => SubagentRailStatus::Queued,
+        };
     }
-
-    if let Some(row) = app.orchestration_visible_rows().into_iter().find(|row| {
-        row.parent_tool_call_id.as_deref() == Some(tool_call.tool_call_id.as_str())
-            || child_session_id.is_some_and(|child| {
-                row.effective_child_session_id() == Some(child) || row.task_id == child
-            })
-            || child_request_id.is_some_and(|child| row.effective_child_request_id() == Some(child))
-    }) {
+    if let Some(row) = app.transcript_task_row_for_tool_call(tool_call) {
         return SubagentRailStatus::from_orchestration_state(row.state);
     }
 
@@ -374,34 +364,10 @@ fn subagent_status_from_output_json(
         "queued" => Some(SubagentRailStatus::Queued),
         "scheduled" | "running" | "in_progress" => Some(SubagentRailStatus::Running),
         "completed" | "succeeded" | "success" => Some(SubagentRailStatus::Completed),
-        "cancelled" | "failed" | "timed_out" | "error" => Some(SubagentRailStatus::Error),
+        "cancelled" => Some(SubagentRailStatus::Cancelled),
+        "failed" | "timed_out" | "error" => Some(SubagentRailStatus::Error),
         _ => None,
     }
-}
-
-fn subagent_status_from_background_notification(
-    app: &AppState,
-    child_session_id: Option<&str>,
-    child_request_id: Option<&str>,
-) -> Option<SubagentRailStatus> {
-    app.events.iter().rev().find_map(|event| {
-        let harness_core::event::EventV1::BackgroundTaskNotification(data) = &event.payload else {
-            return None;
-        };
-        let matches_child = child_request_id == Some(data.child_request_id.as_str())
-            || child_session_id == Some(data.child_session_id.as_str())
-            || child_session_id == Some(data.task_id.as_str());
-        matches_child.then_some(match data.status {
-            harness_core::event::BackgroundTaskNotificationStatus::Completed => {
-                SubagentRailStatus::Completed
-            }
-            harness_core::event::BackgroundTaskNotificationStatus::Cancelled
-            | harness_core::event::BackgroundTaskNotificationStatus::Failed
-            | harness_core::event::BackgroundTaskNotificationStatus::TimedOut => {
-                SubagentRailStatus::Error
-            }
-        })
-    })
 }
 
 fn operator_sidebar_tool_call_is_task_spawn(tool_call: &crate::app::ToolCallEntry) -> bool {

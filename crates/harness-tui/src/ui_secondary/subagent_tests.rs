@@ -618,6 +618,12 @@ pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
             "req_librarian_two",
             harness_core::event::BackgroundTaskNotificationStatus::Failed,
         ),
+        (
+            11,
+            "tool_call_librarian_three",
+            "req_librarian_three",
+            harness_core::event::BackgroundTaskNotificationStatus::Cancelled,
+        ),
     ] {
         app.ingest_event(operator_rail_test_event_with_correlation(
             seq,
@@ -698,11 +704,16 @@ pub(crate) fn exact_test_operator_rail_uses_simple_subagent_task_labels() {
         .iter()
         .find(|group| group.agent_name == "Librarian")
         .unwrap_or_abort();
-    assert_eq!(librarian.items.len(), 2);
+    assert_eq!(librarian.items.len(), 3);
     assert_eq!(librarian.items[0].description, "Librarian Task");
     assert_eq!(librarian.items[0].status, SubagentRailStatus::Completed);
     assert_eq!(librarian.items[1].description, "Librarian Task 2");
     assert_eq!(librarian.items[1].status, SubagentRailStatus::Error);
+    assert_eq!(librarian.items[2].status, SubagentRailStatus::Cancelled);
+    assert_eq!(
+        subagent_group_summary(librarian),
+        "3 tasks · 1 failed · 1 cancelled"
+    );
 
     let sidebar = operator_sidebar_text_for_test(&app).join("\n");
     assert!(!sidebar.contains("Delegation context"));

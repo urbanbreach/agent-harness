@@ -85,9 +85,7 @@ impl TranscriptToolVerb {
             "skill" | "skill.load" => Some(Self::Skill),
             "web.fetch" | "webfetch" => Some(Self::WebFetch),
             "search.web" | "websearch" => Some(Self::WebSearch),
-            "agent.spawn" | "task" | "background_output" | "background_cancel" => {
-                Some(Self::Subagent)
-            }
+            "agent.spawn" | "task" => Some(Self::Subagent),
             _ => Self::from_mcp_context_id(tool_id),
         }
     }
@@ -187,6 +185,8 @@ impl TranscriptToolVerb {
 struct TranscriptToolVerbCount {
     verb: TranscriptToolVerb,
     count: usize,
+    active_count: usize,
+    queued_count: usize,
     sources: std::collections::BTreeSet<String>,
 }
 
@@ -228,10 +228,6 @@ impl TranscriptToolGroupSummary {
         let mut summary = Self::empty(first)?;
 
         for part in parts {
-            if matches!(part, TranscriptAssistantPart::Reasoning(_)) && summary.member_count > 0 {
-                summary.span_len = summary.span_len.saturating_add(1);
-                continue;
-            }
             let Some(tool_call) = part.tool_call() else {
                 break;
             };
@@ -297,6 +293,8 @@ impl TranscriptToolGroupSummary {
             self.verb_counts.push(TranscriptToolVerbCount {
                 verb,
                 count: 1,
+                active_count: 0,
+                queued_count: 0,
                 sources: std::collections::BTreeSet::new(),
             });
         }
@@ -305,6 +303,13 @@ impl TranscriptToolGroupSummary {
             .iter_mut()
             .find(|bucket| bucket.verb == verb)
         {
+            bucket.active_count += usize::from(matches!(
+                tool_call.header.presentation.status,
+                ToolCallPresentationStatus::Queued | ToolCallPresentationStatus::Running
+            ));
+            bucket.queued_count += usize::from(
+                tool_call.header.presentation.status == ToolCallPresentationStatus::Queued,
+            );
             bucket
                 .sources
                 .extend(tool_call.group.sources.iter().cloned());
@@ -356,6 +361,9 @@ impl TranscriptToolGroupSummary {
         if self.failed_count > 0 {
             label.push_str(&format!(" · {} failed", self.failed_count));
         }
+        if self.cancelled_count > 0 && self.verbs.contains(&TranscriptToolVerb::Subagent) {
+            label.push_str(&format!(" · {} cancelled", self.cancelled_count));
+        }
         label
     }
 
@@ -369,6 +377,24 @@ impl TranscriptToolGroupSummary {
                 } else {
                     bucket.sources.len()
                 };
+                if bucket.verb == TranscriptToolVerb::Subagent {
+                    let running = bucket.active_count - bucket.queued_count;
+                    let (verb, active) = if running > 0 {
+                        ("Running", running)
+                    } else if bucket.queued_count > 0 {
+                        ("Queued", bucket.queued_count)
+                    } else {
+                        ("Ran", bucket.count)
+                    };
+                    let mut label = format!("{verb} {active} {}", bucket.verb.noun(active));
+                    if running > 0 && bucket.queued_count > 0 {
+                        label.push_str(&format!(", {} queued", bucket.queued_count));
+                    }
+                    if bucket.active_count > 0 && bucket.active_count < bucket.count {
+                        label.push_str(&format!(", {} done", bucket.count - bucket.active_count));
+                    }
+                    return label;
+                }
                 format!(
                     "{} {} {}",
                     bucket.verb.verb(running),
@@ -1005,39 +1031,6 @@ mod tool_group_tests {
             TranscriptAssistantPart::ToolCall(section)
                 if section.rail_motion == ToolRailMotion::Settled
         ));
-    }
-
-    #[test]
-    fn completed_reasoning_is_transparent_inside_a_tool_group_span() {
-        // arrange
-        let parts = vec![
-            tool_part(
-                "read",
-                "read",
-                ToolCallDisplayStatus::Succeeded,
-                false,
-                false,
-            ),
-            TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
-                label: "Thought",
-                duration_ms: None,
-                text: "checked the result".to_string(),
-            }),
-            tool_part(
-                "search",
-                "grep",
-                ToolCallDisplayStatus::Succeeded,
-                false,
-                false,
-            ),
-        ];
-
-        // act
-        let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
-
-        // assert
-        assert_eq!(summary.member_count, 2);
-        assert_eq!(summary.span_len, 3);
     }
 
     #[test]

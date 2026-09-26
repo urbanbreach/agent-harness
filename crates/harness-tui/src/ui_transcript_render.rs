@@ -1316,10 +1316,18 @@ fn build_context_tool_group_render_surface(
             .fg(theme.text.tertiary)
             .add_modifier(Modifier::BOLD),
     )];
-    if let Some(summary) = label.filter(|summary| summary.failed_count > 0) {
+    if let Some(summary) = label.as_ref().filter(|summary| summary.failed_count > 0) {
         label_spans.push(Span::styled(
             format!(" · {} failed", summary.failed_count),
             Style::default().fg(theme.terminal_colors.error),
+        ));
+    }
+    if let Some(summary) = label.filter(|summary| {
+        summary.cancelled_count > 0 && summary.verbs.contains(&TranscriptToolVerb::Subagent)
+    }) {
+        label_spans.push(Span::styled(
+            format!(" · {} cancelled", summary.cancelled_count),
+            Style::default().fg(theme.text.secondary),
         ));
     }
     let hook_spans = if expanded {

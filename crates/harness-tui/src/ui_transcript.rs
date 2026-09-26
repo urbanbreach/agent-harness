@@ -150,9 +150,7 @@ use ui_transcript_sections::build_transcript_sections;
 #[cfg(test)]
 use ui_transcript_tool_render::append_tool_call_section_lines;
 #[cfg(test)]
-use ui_transcript_tool_sections::{
-    build_agent_spawn_tool_row, build_tool_call_section, build_transcript_tool_call_section,
-};
+use ui_transcript_tool_sections::{build_tool_call_section, build_transcript_tool_call_section};
 pub(crate) use ui_transcript_types::TranscriptRenderSurfaceKind;
 use ui_transcript_types::*;
 pub(super) use ui_transcript_types::{

@@ -247,7 +247,15 @@ fn subagent_group_status(group: &SubagentRailGroup) -> SubagentRailStatus {
         return SubagentRailStatus::Error;
     }
 
-    SubagentRailStatus::Completed
+    if group
+        .items
+        .iter()
+        .any(|item| item.status == SubagentRailStatus::Cancelled)
+    {
+        SubagentRailStatus::Cancelled
+    } else {
+        SubagentRailStatus::Completed
+    }
 }
 
 pub(super) fn subagent_group_summary(group: &SubagentRailGroup) -> String {
@@ -262,15 +270,26 @@ pub(super) fn subagent_group_summary(group: &SubagentRailGroup) -> String {
         .iter()
         .filter(|item| matches!(item.status, SubagentRailStatus::Error))
         .count();
+    let cancelled = group
+        .items
+        .iter()
+        .filter(|item| item.status == SubagentRailStatus::Cancelled)
+        .count();
 
     if active > 0 {
         return format!("{} · {} active", subagent_task_count(total), active);
     }
+    let mut summary = subagent_task_count(total);
     if failed > 0 {
-        return format!("{} · {} failed", subagent_task_count(total), failed);
+        summary.push_str(&format!(" · {failed} failed"));
     }
-
-    format!("{} done", subagent_task_count(total))
+    if cancelled > 0 {
+        summary.push_str(&format!(" · {cancelled} cancelled"));
+    }
+    if failed == 0 && cancelled == 0 {
+        summary.push_str(" done");
+    }
+    summary
 }
 
 fn subagent_task_count(count: usize) -> String {
