@@ -3741,6 +3741,7 @@ impl AppState {
             .iter()
             .filter(|activity| {
                 activity.status == ActivityStatus::Queued
+                    && activity.user_message.is_some()
                     && !hidden_child_request_ids.contains(activity.request_id.as_str())
             })
             .count();

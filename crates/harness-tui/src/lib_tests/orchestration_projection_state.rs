@@ -451,6 +451,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         7,
         None,
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
+            failure: false,
             task_id: "task_terminal_2".to_string().into(),
             reason: "cancelled 2".to_string(),
             task_scope: None,
@@ -516,6 +517,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
         14,
         None,
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
+            failure: false,
             task_id: "task_terminal_5".to_string().into(),
             reason: "cancelled 5".to_string(),
             task_scope: None,

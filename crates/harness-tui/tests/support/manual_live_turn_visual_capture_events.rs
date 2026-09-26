@@ -237,6 +237,7 @@ fn cancelled_events() -> Vec<EventEnvelopeV1> {
         5,
         ACTIVE_REQUEST_ID,
         EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: ACTIVE_TASK_ID.into(),
             reason: "interrupted".to_string(),
             task_scope: Some(TaskTerminalScope::AgentTurn),

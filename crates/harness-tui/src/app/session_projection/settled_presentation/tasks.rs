@@ -134,7 +134,7 @@ pub(super) fn apply_turn_terminals(
                 }
                 completed.insert(request_id.clone());
             }
-            ProjectedTaskState::Cancelled => {
+            ProjectedTaskState::Cancelled | ProjectedTaskState::Failed => {
                 activity.status = ActivityStatus::Error;
                 activity.error_message =
                     match (terminal.reason.as_deref(), activity.error_message.take()) {
@@ -158,6 +158,7 @@ const fn task_state(state: ProjectedTaskState) -> OrchestrationTaskState {
         ProjectedTaskState::Queued => OrchestrationTaskState::Queued,
         ProjectedTaskState::Started => OrchestrationTaskState::Running,
         ProjectedTaskState::Cancelled => OrchestrationTaskState::Cancelled,
+        ProjectedTaskState::Failed => OrchestrationTaskState::Failed,
         ProjectedTaskState::Completed => OrchestrationTaskState::Completed,
         ProjectedTaskState::LateResult => OrchestrationTaskState::LateResult,
     }

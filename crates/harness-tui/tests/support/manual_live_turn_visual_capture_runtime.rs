@@ -64,6 +64,7 @@ pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::er
                         9,
                         ACTIVE_REQUEST_ID,
                         EventV1::TaskCancelled(TaskCancelledEvent {
+                            failure: false,
                             task_id: ACTIVE_TASK_ID.into(),
                             reason: "send_now".to_string(),
                             task_scope: Some(TaskTerminalScope::AgentTurn),

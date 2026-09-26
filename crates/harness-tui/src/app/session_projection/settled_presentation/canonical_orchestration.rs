@@ -19,10 +19,7 @@ pub(super) fn apply_canonical_background_notifications(
             .find(|activity| activity.request_id == request_id)
         {
             if activity.first_seq >= notification.seq {
-                activity.user_message = Some(UserMessageSubmittedEvent {
-                    request_id: request_id.into(),
-                    text: background_task_notification_text(data),
-                });
+                activity.user_message = None;
             }
         } else {
             let mut activity = new_streaming_activity_entry(NewStreamingActivityEntryArgs {
@@ -35,10 +32,7 @@ pub(super) fn apply_canonical_background_notifications(
                 ),
                 model_id: String::new(),
                 provider_id: String::new(),
-                user_message: Some(UserMessageSubmittedEvent {
-                    request_id: request_id.into(),
-                    text: background_task_notification_text(data),
-                }),
+                user_message: None,
                 user_timestamp: notification.ts.clone(),
                 request_data: None,
                 transcript_text: String::new(),

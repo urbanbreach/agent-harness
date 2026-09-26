@@ -197,6 +197,7 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
         2,
         None,
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
+            failure: false,
             task_id: "req_cancel".to_string().into(),
             reason: "operator cancelled".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),

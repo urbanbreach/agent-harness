@@ -41,9 +41,10 @@ impl SessionProjection {
         event: &EventEnvelopeV1,
         data: &UserMessageSubmittedEvent,
     ) {
-        let notification_text =
-            background_notification_for_request(&self.events, data.request_id.as_str())
-                .map(background_task_notification_text);
+        // Coordinator wakeups are system activity, never queued user prompts.
+        if background_notification_for_request(&self.events, data.request_id.as_str()).is_some() {
+            return;
+        }
         if let Some(index) = self.activity_index_for_user_message(data, event.seq) {
             let status =
                 if self.has_other_streaming_activity_in_request_scope(data.request_id.as_str()) {
@@ -52,13 +53,11 @@ impl SessionProjection {
                     ActivityStatus::Streaming
                 };
             if let Some(entry) = self.activities.get_mut(index) {
-                if !matches!(entry.status, ActivityStatus::Done | ActivityStatus::Error)
-                    && notification_text.is_none()
-                {
+                if !matches!(entry.status, ActivityStatus::Done | ActivityStatus::Error) {
                     entry.status = status;
                 }
                 entry.user_message = Some(UserMessageSubmittedEvent {
-                    text: notification_text.unwrap_or_else(|| data.text.clone()),
+                    text: data.text.clone(),
                     ..data.clone()
                 });
                 entry.user_timestamp = event.ts.clone();

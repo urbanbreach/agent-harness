@@ -146,6 +146,7 @@ fn send_now_cancellation_is_silent_and_releases_the_live_row() {
     app.ingest_event(envelope(
         5,
         EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: "task_settled_metadata".into(),
             reason: "send_now".to_string(),
             task_scope: Some(TaskTerminalScope::AgentTurn),
@@ -194,6 +195,7 @@ fn explicit_agent_turn_cancellation_scope_overrides_scheduler_row_inference() {
     app.ingest_event(envelope(
         5,
         EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: "task_settled_metadata".into(),
             reason: "interrupted".to_string(),
             task_scope: Some(TaskTerminalScope::AgentTurn),
