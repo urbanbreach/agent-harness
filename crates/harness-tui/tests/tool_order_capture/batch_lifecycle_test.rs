@@ -96,3 +96,77 @@ fn batch_children_settle_and_batch_output_opens_after_the_response_commit() -> R
     }
     Ok(())
 }
+
+#[test]
+fn context_tools_after_thinking_start_a_new_group() -> Result<()> {
+    let fixture: Value = serde_json::from_str(FIXTURE)?;
+    let mut state = Capture::new(&fixture)?;
+    for (request, ids) in [("provider", ["a", "b"]), ("next", ["web-a", "web-b"])] {
+        if request == "next" {
+            state.parts.clear();
+            state.event(
+                "provider_request_started",
+                json!({"request_id":request,
+                    "provider_id":"fixture", "model_id":"model", "prompt_summary":"Continue",
+                    "request_digest":"synthetic"}),
+            )?;
+        }
+        state.live(
+            "provider_reasoning_delta",
+            json!({"request_id":request,
+                "delta":"Inspect the next sources."}),
+        )?;
+        state
+            .parts
+            .push(json!({"kind":"reasoning", "text":"Inspect the next sources."}));
+        state.action(&json!({"op":"advance", "ms":300}), &fixture)?;
+        for phase in ["request", "start", "finish", "commit"] {
+            if phase == "commit" {
+                state.event(
+                    "provider_request_finished",
+                    json!({"request_id":request, "finish_reason":"tool_calls"}),
+                )?;
+                state.event(
+                    "assistant_message_finished",
+                    json!({"request_id":request,
+                        "parts":state.parts, "tool_call_count":ids.len()}),
+                )?;
+            } else {
+                for id in ids {
+                    state.action(&json!({"op":phase, "id":id}), &fixture)?;
+                }
+            }
+            if request != "next" {
+                continue;
+            }
+            let search_label = if matches!(phase, "request" | "start") {
+                "Searching 2 websites"
+            } else {
+                "Searched 4 websites"
+            };
+            for width in [40, 120] {
+                let buffer = render(&state.app, width, 40)?;
+                let rows = buffer
+                    .content
+                    .chunks(usize::from(width))
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                    .collect::<Vec<_>>();
+                let thought_rows = rows
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(row, text)| text.contains("Thought for").then_some(row))
+                    .collect::<Vec<_>>();
+                let read_row = rows.iter().position(|row| row.contains("Read 2 files"));
+                let search_row = rows.iter().position(|row| row.contains(search_label));
+                assert!(
+                    matches!((thought_rows.as_slice(), read_row, search_row),
+                        ([first, second], Some(read), Some(search))
+                            if *first < read && read < *second && *second < search),
+                    "{width} columns, {phase}\n{}",
+                    rows.join("\n")
+                );
+            }
+        }
+    }
+    Ok(())
+}
