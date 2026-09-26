@@ -153,13 +153,13 @@
     {
       "profile": "general",
       "category": "general",
-      "completion_request_digest": "616ffe7846ee5af3c3c411b0e4d6012de23cf2c6564adc6f3ad8e4ef3eed4a91",
+      "completion_request_digest": "19ae31153c56f0f3ea4260edc48e5450f925d525cc774720f6b75fc0f616a2d2",
       "tools": [
         {
           "canonical_id": "background_output",
           "provider_function_name": "background_output",
-          "description_digest": "98445038fc82b605fcc23ec67ed6931dc1ded4b1fc1a8d065fea4cb53f26798a",
-          "parameters_digest": "fd482877f39e402df4543482b2088853b29bec4e2a3fc2129851dbfc32cebede",
+          "description_digest": "50c244d786c90a5f99e68361dbb35a26759b37d49fa285d2be03d8970047a0bf",
+          "parameters_digest": "ff22630cc243c51e0e80cf5cc3ae757a2b68adf48b20d625f478d4f83e160279",
           "parameters_type": "object"
         },
         {
@@ -172,8 +172,8 @@
         {
           "canonical_id": "task",
           "provider_function_name": "task",
-          "description_digest": "716b0dda2653583dbcfc25434e758a3bbe48501ad70fcc3fdacbd1c4acb0e7bc",
-          "parameters_digest": "a8d8fc2c357bee5ec9cc021413ff042460e2c10f6467609d003ab37c28c38d4e",
+          "description_digest": "08c353a6520fdce833b095e73f0ccf29f62ff637fd625a1ba153936546f32149",
+          "parameters_digest": "ba46f56895e6a08b7df00137dc285425e6b3627671843cd354c4f1bb7e91e70b",
           "parameters_type": "object"
         },
         {
@@ -189,7 +189,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "4a2111f8efbe767a9733cde1b6ec6c080ba7951684cbfcfc1756a6bcc5a39d0c",
+          "request_body_digest": "6a03d388f69442f692574a1adff5ef3a1bc6fbeec4808e0f22e0916cd537b316",
           "tool_function_names": [
             "background_output",
             "skill",
@@ -201,7 +201,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "5dd9826a8542f939c18cb2899cfbb09fc3271e7b8120ee073d4e74a37fa8ad0d",
+          "request_body_digest": "45e33a9ffc535c0877b684f102f907304a50402562bd9f06712b06b70d07353b",
           "tool_function_names": [
             "background_output",
             "skill",

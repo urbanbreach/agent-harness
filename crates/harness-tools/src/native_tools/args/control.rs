@@ -41,7 +41,7 @@ pub(in crate::native_tools) struct TaskArgs {
     )]
     pub(in crate::native_tools) session_id: Option<String>,
     #[schemars(
-        description = "Required execution choice. false waits synchronously; true returns request_id/task_id immediately. Use background_output for interim status checks, or cancel=true anytime, but wait for the coordinator/system completion notification before final result retrieval."
+        description = "Required execution choice. false waits for the child result; true returns request_id/task_id immediately. Use background_output with block=true to await one or more background children, or block=false to check their current status."
     )]
     pub(in crate::native_tools) run_in_background: bool,
     #[schemars(
@@ -86,7 +86,7 @@ pub(in crate::native_tools) struct BackgroundOutputArgs {
     #[serde(default)]
     pub(in crate::native_tools) session_id: Option<String>,
     #[schemars(
-        description = "Canonical background request identifier returned by task(run_in_background=true); use it for interim status checks and final result retrieval after the coordinator/system completion notification."
+        description = "Canonical child request identifier returned by task. Use it to check status or retrieve the completed result."
     )]
     #[serde(default)]
     pub(in crate::native_tools) request_id: Option<String>,
@@ -101,11 +101,13 @@ pub(in crate::native_tools) struct BackgroundOutputArgs {
     #[serde(default)]
     pub(in crate::native_tools) wait_mode: Option<String>,
     #[schemars(
-        description = "When true, wait until the background request reaches a terminal state or timeout expires. Use only for interim status checks unless the coordinator/system completion notification has arrived."
+        description = "When true, wait until the child request reaches a terminal state or the wait timeout expires. A wait timeout leaves the child running."
     )]
     #[serde(default)]
     pub(in crate::native_tools) block: bool,
-    #[schemars(description = "Maximum time to wait in milliseconds when block=true.")]
+    #[schemars(
+        description = "Maximum time to wait in milliseconds when block=true, from 0 to 300000. Larger values are clamped to 300000; expiry does not cancel children."
+    )]
     #[serde(default = "default_background_output_timeout_ms", alias = "timeout_ms")]
     pub(in crate::native_tools) timeout: u64,
     #[schemars(
