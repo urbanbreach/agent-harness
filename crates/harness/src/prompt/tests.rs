@@ -308,6 +308,7 @@ fn parse_wait_timeout_ms_parses_positive_milliseconds() {
 fn evaluate_prompt_completion_reports_cancelled_task_as_error() {
     let events = vec![event_with_correlation(
         EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: "task_000001".to_string().into(),
             reason: "provider denied request".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
@@ -583,6 +584,7 @@ fn evaluate_prompt_completion_ignores_cancelled_child_tool_task() {
         provider_task_scheduled_event("task_000001", "req_000001"),
         event_with_correlation(
             EventV1::TaskCancelled(TaskCancelledEvent {
+                failure: false,
                 task_id: "task_000002".to_string().into(),
                 reason: "tool execution failed: expected audit error".to_string(),
                 task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
