@@ -317,6 +317,7 @@ pub(super) fn ctrl_c_interrupts_current_active_turn_set() {
         2,
         Some("req_old"),
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
+            failure: false,
             task_id: "task_old".to_string().into(),
             reason: "cancelled externally".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),

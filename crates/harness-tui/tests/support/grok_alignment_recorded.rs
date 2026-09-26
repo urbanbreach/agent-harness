@@ -198,6 +198,7 @@ fn verify_lifecycle(tool: &str, args: &Value, width: u16, height: u16, failed: b
             &mut app,
             &mut next_seq,
             EventV1::TaskCancelled(TaskCancelledEvent {
+                failure: false,
                 task_id: "scheduled-tool".into(),
                 reason: "tool argument error: Invalid fixture selector".into(),
                 task_scope: Some(TaskTerminalScope::ToolCall),

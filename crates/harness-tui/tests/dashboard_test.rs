@@ -97,6 +97,7 @@ fn marker(id: &str, seq: u64, kind: Marker) -> EventEnvelopeV1 {
             stale_for_ms: 500,
         }),
         Marker::Cancelled => EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: format!("task_{id}").into(),
             reason: "operator".to_string(),
             task_scope: None,
@@ -419,6 +420,7 @@ fn shared_child_events_preserve_parent_status_and_root_visibility() {
             }),
             terminal.clone(),
             EventV1::TaskCancelled(TaskCancelledEvent {
+                failure: false,
                 task_id: "child-turn".into(),
                 reason: "stop".into(),
                 task_scope: Some(TaskTerminalScope::AgentTurn),

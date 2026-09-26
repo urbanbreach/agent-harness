@@ -347,6 +347,7 @@ pub(super) fn task_cancelled_marks_matching_activity_as_error() {
         4,
         "req_cancelled_turn",
         EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: "task_cancelled_turn".to_string().into(),
             reason: "agent turn exceeded profile max_iters=24".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
@@ -402,6 +403,7 @@ pub(super) fn provider_error_categories_surface_in_tui_activity_and_runtime_stat
             3,
             &request_id,
             EventV1::TaskCancelled(TaskCancelledEvent {
+                failure: false,
                 task_id: "task_provider_category".to_string().into(),
                 reason: format!("{}: fixture provider failure", category.as_str()),
                 task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
@@ -534,6 +536,7 @@ pub(super) fn child_tool_task_cancelled_does_not_mark_parent_turn_activity_error
         4,
         "req_child_task_cancelled",
         EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: "task_child_tool".to_string().into(),
             reason: "tool request timed out".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
@@ -602,6 +605,7 @@ pub(super) fn terminal_only_turn_cancellation_scope_marks_activity_error_without
         2,
         "req_terminal_only_cancel",
         EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: "task_terminal_only_cancel".to_string().into(),
             reason: "agent turn exceeded profile max_iters=24".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
@@ -637,6 +641,7 @@ pub(super) fn terminal_only_tool_cancellation_scope_does_not_fail_activity_or_ru
         2,
         "req_terminal_only_tool_cancel",
         EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: "task_terminal_only_tool_cancel".to_string().into(),
             reason: "tool request timed out".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),

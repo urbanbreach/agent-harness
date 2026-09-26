@@ -43,9 +43,7 @@ mod settled_presentation;
 pub(crate) use live_turn_phase::LiveTurnPhase;
 use live_turn_phase::ProviderPhase;
 
-use self::background_notification::{
-    background_notification_for_request, background_task_notification_text,
-};
+use self::background_notification::background_notification_for_request;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum ProjectionDelta {
@@ -901,7 +899,6 @@ impl SessionProjection {
             return;
         }
 
-        let text = background_task_notification_text(data);
         let status = if data.delivered_turn_request_id.is_some() {
             ActivityStatus::Queued
         } else {
@@ -914,10 +911,7 @@ impl SessionProjection {
                 profile_label: self.profile_label_for_event(event),
                 model_id: String::new(),
                 provider_id: String::new(),
-                user_message: Some(UserMessageSubmittedEvent {
-                    request_id: request_id.into(),
-                    text,
-                }),
+                user_message: None,
                 user_timestamp: event.ts.clone(),
                 request_data: None,
                 transcript_text: String::new(),
@@ -1290,7 +1284,7 @@ impl SessionProjection {
         {
             let queue_key = row.queue_key.as_deref().unwrap_or_default();
             if Self::task_row_is_turn_level(row) {
-                if row.owner_kind == ActorKind::Worker {
+                if row.owner_kind == ActorKind::Worker && row.parent_tool_call_id.is_some() {
                     let request_id = row
                         .parent_tool_call_id
                         .as_deref()
@@ -1361,6 +1355,43 @@ impl SessionProjection {
             .is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
     }
 
+    pub(crate) fn subagent_request_projection(
+        &self,
+        tool: &ToolCallEntry,
+    ) -> Option<harness_core::proj::BackgroundRequestProjection> {
+        let request_id = tool
+            .lineage
+            .as_ref()
+            .and_then(|lineage| lineage.child_request_id.clone())
+            .or_else(|| task_child_request_id_from_output(tool.output_json.as_ref()))
+            .or_else(|| {
+                self.events.iter().rev().find_map(|event| {
+                    let EventV1::TaskScheduled(data) = &event.payload else {
+                        return None;
+                    };
+                    if !data
+                        .queue_key
+                        .as_deref()
+                        .is_some_and(|key| key.starts_with("provider_model:"))
+                    {
+                        return None;
+                    }
+                    let lineage = data.metadata.as_ref()?.lineage.as_ref()?;
+                    (lineage.parent_tool_call_id.as_deref() == Some(tool.tool_call_id.as_str()))
+                        .then(|| event.correlation_id.clone())
+                        .flatten()
+                })
+            })?;
+        harness_core::proj::project_background_request(
+            &self.events,
+            &harness_core::proj::BackgroundRequestRef {
+                request_id: request_id.into(),
+                session_id_hint: None,
+            },
+        )
+        .ok()
+    }
+
     pub(crate) fn transcript_task_row_for_tool_call(
         &self,
         tool_call: &ToolCallEntry,
@@ -1378,27 +1409,21 @@ impl SessionProjection {
 
         self.orchestration_tasks
             .values()
-            .filter_map(|row| {
-                let mut score = 0u8;
-                if row.parent_tool_call_id.as_deref() == Some(tool_call.tool_call_id.as_str()) {
-                    score += 8;
+            .filter(|row| {
+                if let Some(request_id) = child_request_id.as_deref() {
+                    return row.effective_child_request_id() == Some(request_id)
+                        || (row.child_request_id.is_none()
+                            && row.parent_tool_call_id.as_deref()
+                                == Some(tool_call.tool_call_id.as_str()));
                 }
-                if child_request_id
-                    .as_deref()
-                    .is_some_and(|request_id| row.effective_child_request_id() == Some(request_id))
-                {
-                    score += 4;
-                }
-                if child_session_id
-                    .as_deref()
-                    .is_some_and(|session_id| row.effective_child_session_id() == Some(session_id))
-                {
-                    score += 2;
-                }
-                (score > 0).then_some((score, !row.state.is_terminal(), row.last_seq, row.clone()))
+                row.parent_tool_call_id.as_deref() == Some(tool_call.tool_call_id.as_str())
+                    || (row.parent_tool_call_id.is_none()
+                        && child_session_id
+                            .as_deref()
+                            .is_some_and(|id| row.effective_child_session_id() == Some(id)))
             })
-            .max_by_key(|(score, active, last_seq, _)| (*score, *active, *last_seq))
-            .map(|(_, _, _, row)| row)
+            .max_by_key(|row| (Self::task_row_is_turn_level(row), row.last_seq))
+            .cloned()
     }
 
     fn enforce_orchestration_retention(&mut self) {

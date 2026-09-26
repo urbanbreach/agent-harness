@@ -332,15 +332,7 @@ pub(super) fn background_notification_projects_chat_reminder_without_duplicate_u
     assert_eq!(activity.request_id, "req_parent_wakeup");
     assert_eq!(activity.status, app::ActivityStatus::Queued);
     assert_eq!(activity.profile_label, "build");
-    let reminder = activity.user_message.as_ref().unwrap_or_abort();
-    assert_eq!(reminder.text, "Background task completed · agent_child");
-    assert!(!reminder.text.contains("summarize README"));
-    assert!(!reminder.text.contains("sessionId"));
-    assert!(!reminder.text.contains("secret"));
-    assert!(!reminder
-        .text
-        .chars()
-        .any(|ch| ch.is_control() && ch != '\n'));
+    assert!(activity.user_message.is_none());
 
     app.ingest_event(envelope(
         3,
@@ -354,14 +346,7 @@ pub(super) fn background_notification_projects_chat_reminder_without_duplicate_u
     ));
 
     assert_eq!(app.activities.len(), 1);
-    assert_eq!(
-        app.activities[0]
-            .user_message
-            .as_ref()
-            .unwrap_or_abort()
-            .text,
-        "Background task completed · agent_child"
-    );
+    assert!(app.activities[0].user_message.is_none());
     assert_eq!(app.activities[0].status, app::ActivityStatus::Queued);
 
     app.ingest_event(envelope_with_actor(

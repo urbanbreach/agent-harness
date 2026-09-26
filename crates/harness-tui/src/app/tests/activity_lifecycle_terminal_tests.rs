@@ -61,6 +61,7 @@ pub(crate) fn replay_terminal_only_turn_cancellation_scope_marks_activity_error_
                 2,
                 "req_replay_terminal_only_cancel",
                 EventV1::TaskCancelled(TaskCancelledEvent {
+                    failure: false,
                     task_id: "task_replay_terminal_only_cancel".to_string().into(),
                     reason: "agent turn exceeded profile max_iters=24".to_string(),
                     task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
@@ -99,6 +100,7 @@ pub(crate) fn replay_terminal_only_tool_cancellation_scope_does_not_fail_activit
                 2,
                 "req_replay_terminal_only_tool_cancel",
                 EventV1::TaskCancelled(TaskCancelledEvent {
+                    failure: false,
                     task_id: "task_replay_terminal_only_tool_cancel".to_string().into(),
                     reason: "tool request timed out".to_string(),
                     task_scope: Some(harness_core::event::TaskTerminalScope::ToolCall),
