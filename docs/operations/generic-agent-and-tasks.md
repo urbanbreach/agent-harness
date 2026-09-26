@@ -92,9 +92,11 @@ Duplicate `load_skills` names load once, at their first occurrence. Missing,
 denied, disabled, malformed, or unsafe symlinked skills fail the call before the
 child starts. The skill catalog reports `body_loaded: false` until activation.
 
-The runtime caps and redacts summaries returned by synchronous `task` calls or
-`background_output`. Truncation metadata, the child session ID, and next actions
-let the parent retrieve more output or continue the child.
+Synchronous `task` calls and `background_output` return the full redacted child
+report. The separate `child_summary` preview and completion notifications are
+capped. Both modes use the same request-scoped lifecycle; continuing a child
+session creates a new request. Blocking output checks accept waits up to five
+minutes (larger values are clamped), and wait expiry leaves children running.
 
 ## Enforcement boundary
 

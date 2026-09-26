@@ -212,7 +212,7 @@ Lifecycle
 
 Task management
 - `TaskScheduled` - Includes `task_id`, `state` (queued or started), optional `queue_key`, and optional typed `metadata`; child agent turns record parent-tool/child-request lineage in `metadata.lineage` when scheduled so active lifecycle projections do not depend on terminal events
-- `TaskCancelled` - Best-effort cancellation
+- `TaskCancelled` - Best-effort cancellation, or execution failure when `failure` is true
 - `TaskCompleted` - Normal completion
 - `TaskResultLate` - Result arrived after cancellation
 - `BackgroundTaskNotification` - Durable parent wakeup record for a `task(run_in_background=true)` child request after the child reaches a terminal state; carries parent/child ids, terminal status (`completed`, `cancelled`, `failed`, or `timed_out`), capped summary, terminal event id, and delivered parent turn request id. Replay projects this event only and must not schedule provider work.
