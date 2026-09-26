@@ -89,6 +89,11 @@ async fn background_output_full_session_and_thinking_return_event_stream_and_art
     let finished = find_finished(&events, &output_tool_call_id);
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     let output = finished.output_json.unwrap_or_abort();
+    let model_text = finished.output_summary.as_deref().unwrap_or_abort();
+    assert!(model_text.contains("full_session:"));
+    assert!(model_text.contains("event_count"));
+    assert!(model_text.contains("background-thinking.json"));
+    assert!(!model_text.contains("Let me think about this task"));
 
     assert_eq!(output["request_id"], json!(request_id));
     assert_eq!(output["status"], json!("completed"));

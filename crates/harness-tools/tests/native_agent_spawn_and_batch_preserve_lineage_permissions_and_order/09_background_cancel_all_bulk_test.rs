@@ -9,6 +9,8 @@ async fn background_cancel_all_cancels_all_non_terminal_background_tasks() {
     let (handle, run, worker_id) =
         spawn_run_with_provider(&workspace, Arc::new(BlockingProvider)).await;
 
+    let parent_request = handle.request_agent_turn(anonymous_supervisor_actor(), worker_id.clone(), "Keep the parent active").await.unwrap_or_abort();
+
     let mut request_ids = Vec::new();
     for i in 1..=3 {
         let task_tool_call_id = handle
@@ -59,6 +61,8 @@ async fn background_cancel_all_cancels_all_non_terminal_background_tasks() {
     let output = finished.output_json.unwrap_or_abort();
     assert_eq!(output["all"], json!(true));
     assert_eq!(output["cancelled_count"], json!(3));
+    let parent = handle.background_request_projection(worker_actor(&worker_id), Some(parent_request), None).await.unwrap_or_abort();
+    assert!(!parent.terminal, "bulk cancellation must not cancel the parent waiting for its children");
     assert_eq!(output["skipped_count"], json!(0));
     assert_eq!(output["cancel_reason"], json!("bulk cancel all tasks"));
 

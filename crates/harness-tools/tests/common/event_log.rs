@@ -63,10 +63,16 @@ pub(crate) async fn wait_for_request_terminal(path: &Path, request_id: &str) {
     loop {
         if read_events(path).iter().any(|event| {
             event.correlation_id.as_deref() == Some(request_id)
-                && matches!(
-                    &event.payload,
-                    EventV1::TaskCompleted(_) | EventV1::TaskCancelled(_)
-                )
+                && match &event.payload {
+                    EventV1::TaskCompleted(data) => {
+                        data.metadata.as_ref().and_then(|m| m.task_scope)
+                            == Some(harness_core::event::TaskTerminalScope::AgentTurn)
+                    }
+                    EventV1::TaskCancelled(data) => {
+                        data.task_scope == Some(harness_core::event::TaskTerminalScope::AgentTurn)
+                    }
+                    _ => false,
+                }
         }) {
             return;
         }

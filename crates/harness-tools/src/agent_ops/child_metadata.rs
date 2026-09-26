@@ -1,20 +1,12 @@
 // allow: SIZE_OK — agent operations (task delegation + control plane)
-use std::time::Duration;
-
 use harness_core::config::registered_profile_model_metadata;
 use harness_core::coord::AgentRuntimeInfo;
-use harness_core::event::{
-    EventV1, TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState, TaskTerminalScope,
-    ToolCallStatus,
-};
 use harness_core::redact::{DefaultRedactor, Redactor};
 use harness_core::store::{EventStoreError, EventStream};
 use harness_core::tool::{ToolContext, ToolError};
 use harness_core::ToolResultExt;
 use serde::Serialize;
 use serde_json::{json, Value};
-use tokio::time::{sleep, Instant};
-use tokio_stream::StreamExt;
 
 use super::AgentSpawnRequest;
 mod child_next_actions;
@@ -93,7 +85,7 @@ pub(super) struct ChildSessionObservability {
     pub(super) profile: String,
     pub(super) background: bool,
     pub(super) mode: &'static str,
-    pub(super) status: &'static str,
+    pub(super) status: String,
     pub(super) resumed_existing_session: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) duration_ms: Option<u64>,
@@ -110,7 +102,7 @@ pub(super) struct ChildSessionObservability {
 
 #[derive(Debug, Clone)]
 pub(super) struct ChildRequestObservability {
-    pub(super) status: &'static str,
+    pub(super) status: String,
     pub(super) duration_ms: Option<u64>,
     pub(super) result_summary: Option<String>,
     pub(super) failure_summary: Option<String>,
@@ -127,141 +119,48 @@ pub(super) struct ChildSummary {
     pub(super) truncated: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum ChildTerminalState {
-    Completed,
-    Failed,
-    TimedOut,
-}
-
 pub(super) async fn wait_for_request_completion(
     ctx: &ToolContext,
     request_id: &str,
 ) -> Result<ChildRequestObservability, ToolError> {
-    let mut stream = subscribe_events(ctx).await?;
-    let deadline = Instant::now() + Duration::from_millis(DEFAULT_TASK_WAIT_TIMEOUT_MS);
-    while Instant::now() < deadline {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let next =
-            tokio::time::timeout(remaining.min(Duration::from_millis(250)), stream.next()).await;
-        match next {
-            Ok(Some(Ok(event))) => match &event.payload {
-                EventV1::TaskCompleted(data)
-                    if event.correlation_id.as_deref() == Some(request_id)
-                        && task_completed_marks_child_agent_turn(data) =>
-                {
-                    return summarize_child_request(ctx, request_id, ChildTerminalState::Completed)
-                        .await;
-                }
-                EventV1::TaskCancelled(data)
-                    if event.correlation_id.as_deref() == Some(request_id)
-                        && task_cancelled_marks_child_agent_turn(data) =>
-                {
-                    return summarize_child_request(ctx, request_id, ChildTerminalState::Failed)
-                        .await;
-                }
-                _ => {}
-            },
-            Ok(Some(Err(err))) => {
-                return Err(map_event_stream_error(err));
-            }
-            Ok(None) | Err(_) => {
-                sleep(Duration::from_millis(10)).await;
-            }
-        }
+    // Sync and async delegation read the same request-scoped terminal state.
+    // A wait deadline is not a child failure: foreground tasks wait until the
+    // coordinator completes, cancels, or backgrounds the enclosing tool.
+    let mut projection = ctx
+        .coordinator
+        .background_request_projection(ctx.actor.clone(), Some(request_id.to_string()), None)
+        .await
+        .tool_err("failed to inspect child request")?;
+    while !projection.terminal {
+        let task_id = projection.scheduler_task_id.as_deref().ok_or_else(|| {
+            ToolError::Execution(format!("child request {request_id} has no scheduled turn"))
+        })?;
+        ctx.coordinator
+            .wait_background_request_terminal(request_id, task_id, DEFAULT_TASK_WAIT_TIMEOUT_MS)
+            .await
+            .tool_err("failed to wait for child request")?;
+        projection = ctx
+            .coordinator
+            .background_request_projection(ctx.actor.clone(), Some(request_id.to_string()), None)
+            .await
+            .tool_err("failed to inspect child request")?;
     }
-    summarize_child_request(ctx, request_id, ChildTerminalState::TimedOut).await
-}
-
-async fn summarize_child_request(
-    ctx: &ToolContext,
-    request_id: &str,
-    terminal_state: ChildTerminalState,
-) -> Result<ChildRequestObservability, ToolError> {
-    let mut replay = replay_events(ctx).await?;
-
-    let mut tool_calls = ChildToolCallCounts::default();
-    let mut started_mono_ms = None;
-    let mut observed_result_summary = None;
-    let mut observed_failure_summary = None;
-    let mut observed_duration_ms = None;
-    let mut observed_status = None;
-
-    while let Some(next) = replay.next().await {
-        let event = next.map_err(map_replay_stream_error)?;
-        if event.correlation_id.as_deref() != Some(request_id) {
-            continue;
-        }
-
-        match &event.payload {
-            EventV1::TaskScheduled(data) if data.state == TaskScheduleState::Started => {
-                started_mono_ms.get_or_insert(event.mono_ms);
-            }
-            EventV1::ToolCallRequested(_) => {
-                tool_calls.requested = tool_calls.requested.saturating_add(1);
-            }
-            EventV1::ToolCallFinished(data) => match data.status {
-                ToolCallStatus::Succeeded => {
-                    tool_calls.succeeded = tool_calls.succeeded.saturating_add(1);
-                }
-                ToolCallStatus::Failed => {
-                    tool_calls.failed = tool_calls.failed.saturating_add(1);
-                }
-            },
-            EventV1::TaskCompleted(data) if task_completed_marks_child_agent_turn(data) => {
-                observed_status = Some("completed");
-                observed_result_summary = Some(data.result_summary.clone());
-                let timing = data
-                    .metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.timing.as_ref());
-                started_mono_ms = timing
-                    .and_then(|metadata| metadata.started_mono_ms)
-                    .or(started_mono_ms);
-                observed_duration_ms = timing
-                    .and_then(|metadata| metadata.elapsed_ms)
-                    .or_else(|| elapsed_ms_from_events(started_mono_ms, event.mono_ms));
-            }
-            EventV1::TaskCancelled(data) if task_cancelled_marks_child_agent_turn(data) => {
-                observed_status = Some("failed");
-                observed_failure_summary = Some(data.reason.clone());
-                observed_duration_ms = elapsed_ms_from_events(started_mono_ms, event.mono_ms);
-            }
-            _ => {}
-        }
-    }
-
-    let (status, failure_summary) = match (observed_status, terminal_state) {
-        (Some(status), _) => (status, observed_failure_summary),
-        (None, ChildTerminalState::Completed) => ("completed", observed_failure_summary),
-        (None, ChildTerminalState::Failed) => ("failed", observed_failure_summary),
-        (None, ChildTerminalState::TimedOut) => (
-            "timed_out",
-            Some(format!("timed out waiting for task request {request_id}")),
-        ),
-    };
-    let (result_summary, result_child_summary) =
-        cap_optional_child_summary("result", observed_result_summary);
-    let (failure_summary, failure_child_summary) =
-        cap_optional_child_summary("failure", failure_summary);
-
+    let (result_summary, result_preview) =
+        cap_optional_child_summary("result", projection.result_summary);
+    let (failure_summary, failure_preview) =
+        cap_optional_child_summary("failure", projection.failure_summary);
     Ok(ChildRequestObservability {
-        status,
-        duration_ms: observed_duration_ms,
+        status: projection.status,
+        duration_ms: projection.duration_ms,
         result_summary,
         failure_summary,
-        child_summary: result_child_summary.or(failure_child_summary),
-        tool_calls,
+        child_summary: result_preview.or(failure_preview),
+        tool_calls: ChildToolCallCounts {
+            requested: projection.tool_calls.requested,
+            succeeded: projection.tool_calls.succeeded,
+            failed: projection.tool_calls.failed,
+        },
     })
-}
-
-async fn subscribe_events(ctx: &ToolContext) -> Result<EventStream, ToolError> {
-    let store = ctx
-        .coordinator
-        .event_store()
-        .await
-        .tool_err("failed to access event store")?;
-    store.subscribe(1).tool_err("failed to subscribe to events")
 }
 
 pub(super) async fn replay_events(ctx: &ToolContext) -> Result<EventStream, ToolError> {
@@ -273,28 +172,8 @@ pub(super) async fn replay_events(ctx: &ToolContext) -> Result<EventStream, Tool
     store.replay(1).tool_err("failed to replay events")
 }
 
-fn map_event_stream_error(err: EventStoreError) -> ToolError {
-    ToolError::Execution(format!("failed to consume event stream: {err}"))
-}
-
 pub(super) fn map_replay_stream_error(err: EventStoreError) -> ToolError {
     ToolError::Execution(format!("failed to replay event stream: {err}"))
-}
-
-fn elapsed_ms_from_events(started_mono_ms: Option<u64>, finished_mono_ms: u64) -> Option<u64> {
-    started_mono_ms.map(|started| finished_mono_ms.saturating_sub(started))
-}
-
-fn task_completed_marks_child_agent_turn(data: &TaskCompletedEvent) -> bool {
-    data.metadata
-        .as_ref()
-        .and_then(|metadata| metadata.task_scope)
-        .is_some_and(|scope| matches!(scope, TaskTerminalScope::AgentTurn))
-}
-
-fn task_cancelled_marks_child_agent_turn(data: &TaskCancelledEvent) -> bool {
-    data.task_scope
-        .is_some_and(|scope| matches!(scope, TaskTerminalScope::AgentTurn))
 }
 
 pub(super) fn child_permission_metadata(
@@ -407,7 +286,10 @@ pub(super) fn cap_optional_child_summary(
     summary
         .map(|summary| {
             let child_summary = cap_child_summary(kind, &summary);
-            (Some(child_summary.summary.clone()), Some(child_summary))
+            (
+                Some(DefaultRedactor::default().redact_text(summary.trim())),
+                Some(child_summary),
+            )
         })
         .unwrap_or((None, None))
 }
@@ -415,13 +297,8 @@ pub(super) fn cap_optional_child_summary(
 fn cap_child_summary(kind: &'static str, summary: &str) -> ChildSummary {
     let redacted = DefaultRedactor::default().redact_text(summary.trim());
     let redacted_chars = redacted.chars().count();
-    let already_ellipsized = redacted.ends_with('…');
-    let truncated = redacted_chars > CHILD_RESULT_SUMMARY_MAX_CHARS || already_ellipsized;
-    let original_chars = if already_ellipsized && redacted_chars <= CHILD_RESULT_SUMMARY_MAX_CHARS {
-        CHILD_RESULT_SUMMARY_MAX_CHARS + 1
-    } else {
-        redacted_chars
-    };
+    let truncated = redacted_chars > CHILD_RESULT_SUMMARY_MAX_CHARS;
+    let original_chars = redacted_chars;
     let mut capped = redacted
         .chars()
         .take(CHILD_RESULT_SUMMARY_MAX_CHARS)

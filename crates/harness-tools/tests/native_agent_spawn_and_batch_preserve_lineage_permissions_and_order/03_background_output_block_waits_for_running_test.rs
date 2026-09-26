@@ -597,7 +597,7 @@ async fn background_cancel_rejects_sibling_request_ids() {
         .is_some_and(|summary| summary.contains("not in the caller's task lineage")));
 }
 #[tokio::test]
-async fn background_output_rejects_excessive_block_timeout() {
+async fn background_output_clamps_excessive_block_timeout_before_resolving_request() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -624,5 +624,5 @@ async fn background_output_rejects_excessive_block_timeout() {
     assert!(finished
         .output_summary
         .as_deref()
-        .is_some_and(|summary| summary.contains("timeout must be <= 300000 ms")));
+        .is_some_and(|summary| summary.contains("could not resolve background request")));
 }

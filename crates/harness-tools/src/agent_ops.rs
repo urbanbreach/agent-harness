@@ -115,7 +115,7 @@ impl AgentOpsExecutor {
                 &permissions,
                 child_runtime_metadata(&runtime),
                 ChildRequestObservability {
-                    status: "scheduled",
+                    status: "scheduled".to_string(),
                     duration_ms: None,
                     result_summary: None,
                     failure_summary: None,
@@ -152,7 +152,7 @@ impl AgentOpsExecutor {
             .result_summary
             .clone()
             .or_else(|| child_session.failure_summary.clone())
-            .unwrap_or_else(|| match child_session.status {
+            .unwrap_or_else(|| match child_session.status.as_str() {
                 "timed_out" => {
                     format!("timed out waiting for child session request {request_id}")
                 }

@@ -106,13 +106,9 @@ fn child_tool_call_counts_from_projection(counts: BackgroundToolCallCounts) -> C
 
 pub(super) async fn background_output(
     ctx: &ToolContext,
-    request: BackgroundOutputRequest,
+    mut request: BackgroundOutputRequest,
 ) -> Result<ToolResult, ToolError> {
-    if request.timeout_ms > MAX_BACKGROUND_OUTPUT_TIMEOUT_MS {
-        return Err(ToolError::InvalidArguments(format!(
-            "background_output timeout must be <= {MAX_BACKGROUND_OUTPUT_TIMEOUT_MS} ms"
-        )));
-    }
+    request.timeout_ms = request.timeout_ms.min(MAX_BACKGROUND_OUTPUT_TIMEOUT_MS);
     let multi_request_ids = normalize_multi_request_ids(&request);
     if multi_request_ids.len() > 1 {
         return background_output_multi_wait(ctx, &request, multi_request_ids).await;
@@ -233,18 +229,19 @@ pub(super) async fn background_output(
     if !thinking_value.is_null() {
         payload["thinking"] = thinking_value;
     }
+    let mut text = format_background_output(&summary, timed_out);
+    // Providers consume display text; structured_json also serves UI metadata.
+    // Explicit history requests must include their data/artifact references there.
+    for field in ["full_session", "thinking"] {
+        if let Some(value) = payload.get(field) {
+            text.push_str(&format!("\n\n{field}: {value}"));
+        }
+    }
 
     if artifacts.is_empty() {
-        Ok(text_json_tool_result(
-            format_background_output(&summary, timed_out),
-            payload,
-        ))
+        Ok(text_json_tool_result(text, payload))
     } else {
-        Ok(text_json_artifacts_tool_result(
-            format_background_output(&summary, timed_out),
-            payload,
-            artifacts,
-        ))
+        Ok(text_json_artifacts_tool_result(text, payload, artifacts))
     }
 }
 
@@ -319,6 +316,7 @@ pub(super) async fn background_cancel(
             "duration_ms": summary.duration_ms,
             "result_summary": summary.result_summary,
             "failure_summary": summary.failure_summary,
+            "child_summary": summary.child_summary,
             "late_result": summary.late_result,
             "route": route,
             "runtime": child_runtime,
@@ -553,6 +551,7 @@ async fn background_output_multi_wait(
             "duration_ms": summary.duration_ms,
             "result_summary": summary.result_summary,
             "failure_summary": summary.failure_summary,
+            "child_summary": summary.child_summary,
             "late_result": summary.late_result,
             "cancel_reason": summary.cancel_reason,
         }));
@@ -601,7 +600,7 @@ fn format_multi_wait_output(
     summaries: &[BackgroundRequestSummary],
 ) -> String {
     let terminal_count = summaries.iter().filter(|summary| summary.terminal).count();
-    if timed_out {
+    let heading = if timed_out {
         format!(
             "background_output wait_{} timed out with {}/{} terminal",
             wait_mode.as_str(),
@@ -625,7 +624,13 @@ fn format_multi_wait_output(
             wait_mode.as_str(),
             summaries.len()
         )
-    }
+    };
+    let reports = summaries
+        .iter()
+        .map(|summary| format_background_output(summary, false))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    format!("{heading}\n\n{reports}")
 }
 
 async fn background_child_runtime_metadata(
@@ -708,7 +713,7 @@ fn format_background_output(summary: &BackgroundRequestSummary, timed_out: bool)
             .result_summary
             .as_deref()
             .unwrap_or("Background task completed without a result summary."),
-        "cancelled" => summary
+        "cancelled" | "failed" | "timed_out" => summary
             .failure_summary
             .as_deref()
             .unwrap_or("Background task was cancelled without a reason."),
