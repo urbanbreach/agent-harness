@@ -483,6 +483,19 @@ where
         child_task,
     } = args;
 
+    let (provider_id, model_id) = match queue_key {
+        ConcurrencyKey::ProviderModel {
+            provider_id,
+            model_id,
+        }
+        | ConcurrencyKey::NestedProviderModel {
+            provider_id,
+            model_id,
+            ..
+        } => (Some(provider_id.clone()), Some(model_id.clone())),
+        _ => (None, None),
+    };
+
     append_payload_event_with_correlation(
         clock,
         redactor,
@@ -501,6 +514,8 @@ where
                     parent_session_id: Some(child_task.parent_session_id.to_string()),
                     child_session_id: Some(child_task.child_session_id.to_string()),
                     child_request_id: Some(child_task.child_request_id.clone()),
+                    child_provider_id: provider_id,
+                    child_model_id: model_id,
                     ..TaskLineageMetadata::default()
                 }),
             }),

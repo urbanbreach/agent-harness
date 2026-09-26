@@ -707,13 +707,17 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
         .start_run_internal("stale_owner".to_string(), temp_dir.path().to_path_buf())
         .unwrap_or_abort();
     let task_id = "task_000001".to_string();
-    let queue_key = ConcurrencyKey::Tool {
-        tool_id: "shell.run".to_string(),
-    };
     let owner_actor = EventActor::new(ActorKind::Worker, Some("agent_000001".to_string()));
     let request_correlation_id = Some("req_000001".to_string());
 
-    {
+    for (test_id, test_tool) in [
+        ("task_000001", "shell.run"),
+        ("wait-task", "background_output"),
+    ] {
+        let task_id = test_id.to_string();
+        let queue_key = ConcurrencyKey::Tool {
+            tool_id: test_tool.to_string(),
+        };
         let run_state = coordinator.run_state.as_mut().unwrap_or_abort();
         assert!(matches!(
             run_state
@@ -751,6 +755,9 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
         )
         .unwrap_or_abort();
 
+    let waiting = &coordinator.run_state.as_ref().unwrap_or_abort().tasks["wait-task"];
+    assert_eq!(waiting.state, TaskExecutionState::Running);
+    assert!(!waiting.cancellation_token.is_cancelled());
     let events = read_events(&run.events_path);
     assert!(events.iter().any(|event| {
         matches!(

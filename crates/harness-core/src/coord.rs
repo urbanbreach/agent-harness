@@ -124,7 +124,6 @@ use self::agent_turn_runtime::{
 };
 use self::background_notifications::{
     append_background_task_notification_and_schedule,
-    background_notification_status_for_cancel_reason,
     background_projection_error_to_coordinator_error, background_terminal_event_matches_task,
     schedule_pending_agent_wakeups_for_idle_agent, terminal_event_summary,
 };

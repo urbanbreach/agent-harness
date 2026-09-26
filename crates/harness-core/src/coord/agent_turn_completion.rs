@@ -299,6 +299,7 @@ impl Coordinator {
                             Some(format!("task:{task_id}")),
                             Some(request_id.clone()),
                             EventV1::TaskCancelled(TaskCancelledEvent {
+                                failure: true,
                                 task_id: task_id.clone().into(),
                                 reason,
                                 task_scope: Some(TaskTerminalScope::AgentTurn),
@@ -404,6 +405,7 @@ impl Coordinator {
                         Some(format!("task:{task_id}")),
                         Some(request_id.clone()),
                         EventV1::TaskCancelled(TaskCancelledEvent {
+                            failure: true,
                             task_id: task_id.clone().into(),
                             reason: reason.clone(),
                             task_scope: Some(TaskTerminalScope::AgentTurn),
@@ -422,7 +424,7 @@ impl Coordinator {
                         Arc::clone(&self.config.tool_registry),
                         running.child_task.clone(),
                         &terminal_event,
-                        background_notification_status_for_cancel_reason(&reason),
+                        BackgroundTaskNotificationStatus::Failed,
                         &reason,
                     )
                     .await?;
