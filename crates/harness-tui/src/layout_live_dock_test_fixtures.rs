@@ -218,6 +218,7 @@ pub(super) fn cancelled_app() -> AppState {
         2,
         Some("req-waiting"),
         EventV1::TaskCancelled(TaskCancelledEvent {
+            failure: false,
             task_id: "req-waiting".into(),
             reason: "operator cancelled".to_string(),
             task_scope: Some(TaskTerminalScope::AgentTurn),

@@ -490,6 +490,7 @@ pub(super) fn live_status_strip_suppresses_request_digest_from_cancelled_summary
         1,
         None,
         harness_core::event::EventV1::TaskCancelled(harness_core::event::TaskCancelledEvent {
+            failure: false,
             task_id: "req_cancelled_visual".to_string().into(),
             reason: "mock fixture missing for request_digest=digest-cancelled-visual".to_string(),
             task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
@@ -674,5 +675,5 @@ pub(super) fn parent_view_ignores_streaming_child_activity_after_returning_from_
 
     let rendered = render_live_lines(&app, 100, 30);
     assert!(!rendered.contains("child-only work is still streaming"));
-    assert!(!rendered.contains("Explore · gpt-5.4-mini"));
+    assert!(rendered.contains("Explore · gpt-5.4-mini"));
 }

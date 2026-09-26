@@ -128,11 +128,11 @@ Keep activity, phase timing, and optional context metadata on one row. Stop and
 background controls take priority over metadata. Distinguish foreground, parked,
 background-only, recovery, reconnection, and cancellation states.
 
-The context segment shows `ctx used/limit`. When width permits, add a six-cell
-meter and a percentage. Warn at 75% and use critical styling at 90%. Unknown and
-compacted-pending-refresh states must not claim a known budget. Show context in
-the live status during work and the footer while idle; hide it before controls
-when space runs out.
+The top-right context counter shows compact token counts and a rounded percentage,
+such as `96K / 128K 75%`. The footer does not repeat this counter. Live status may
+show context during work, with warning styling at 75% and critical styling at 90%.
+Unknown and compacted-pending-refresh states must not claim a known budget. Hide
+live status metadata before controls when space runs out.
 
 ### Footer
 

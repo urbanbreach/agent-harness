@@ -15,7 +15,6 @@ use super::{
     composer_agent_accent, composer_input_accent, composer_input_muted, composer_input_text,
     control_dock_surface, truncate_plain_text,
 };
-use crate::ui::ui_context_budget::ContextBudget;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DisclosureTone {
@@ -116,64 +115,11 @@ pub(super) fn composer_context_summary_candidates(
     surface: Color,
 ) -> Vec<Vec<Span<'static>>> {
     let metrics = app.compaction_usage_metrics();
-    let budget = ContextBudget::from_app(app);
-    let mut primary = budget
-        .as_ref()
-        .map(|budget| {
-            vec![context_budget_segment(
-                budget.full_label(),
-                budget,
-                theme,
-                surface,
-            )]
-        })
-        .unwrap_or_default();
-    append_composer_compaction_metrics(&mut primary, app, metrics, theme, surface, false);
-
-    let mut candidates = Vec::new();
-    if !primary.is_empty() {
-        candidates.push(primary);
-    }
-    if let Some(budget) = budget.as_ref() {
-        let mut compact = vec![context_budget_segment(
-            budget.compact_label(),
-            budget,
-            theme,
-            surface,
-        )];
-        append_composer_compaction_metrics(&mut compact, app, metrics, theme, surface, true);
-        candidates.push(compact);
-    }
-    if metrics.completed_count > 0 {
-        candidates.push(composer_compaction_only_summary(
-            app, metrics, theme, surface,
-        ));
-    }
-    candidates.push(Vec::new());
-    candidates
-}
-
-fn append_composer_compaction_metrics(
-    spans: &mut Vec<Span<'static>>,
-    app: &AppState,
-    metrics: crate::app::CompactionUsageMetrics,
-    theme: &Theme,
-    surface: Color,
-    compact: bool,
-) {
-    let compaction_text = composer_compaction_metrics_text(app, metrics, compact);
-    if compaction_text.is_empty() {
-        return;
-    }
-    if !spans.is_empty() {
-        spans.push(disclosure_separator(theme, surface));
-    }
-    spans.push(disclosure_segment(
-        compaction_text,
-        DisclosureTone::Secondary,
-        theme,
-        surface,
-    ));
+    vec![
+        composer_compaction_only_summary(app, metrics, theme, surface, false),
+        composer_compaction_only_summary(app, metrics, theme, surface, true),
+        Vec::new(),
+    ]
 }
 
 fn composer_compaction_only_summary(
@@ -181,8 +127,9 @@ fn composer_compaction_only_summary(
     metrics: crate::app::CompactionUsageMetrics,
     theme: &Theme,
     surface: Color,
+    compact: bool,
 ) -> Vec<Span<'static>> {
-    let text = composer_compaction_metrics_text(app, metrics, false);
+    let text = composer_compaction_metrics_text(app, metrics, compact);
     if text.is_empty() {
         Vec::new()
     } else {
@@ -660,18 +607,6 @@ fn disclosure_segment(
         Style::default()
             .fg(disclosure_color(tone, theme, composer_input_accent(theme)))
             .bg(surface),
-    )
-}
-
-fn context_budget_segment(
-    text: impl Into<String>,
-    budget: &ContextBudget,
-    theme: &Theme,
-    surface: Color,
-) -> Span<'static> {
-    Span::styled(
-        text.into(),
-        Style::default().fg(budget.tone().color(theme)).bg(surface),
     )
 }
 

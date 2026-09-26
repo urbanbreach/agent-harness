@@ -362,7 +362,7 @@ pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Re
     frame.render_widget(Paragraph::new(line), row);
 }
 
-/// Freeze breadcrumb right meta: `12K / 262K` (uppercase K, space slash).
+/// Compact context usage and rounded percentage: `12K / 262K 5%`.
 fn breadcrumb_context_meta(app: &AppState) -> Option<String> {
     let snapshot = app.current_request_budget_snapshot()?;
     if snapshot.status != harness_core::context_budget::BudgetStatus::Estimated {
@@ -373,8 +373,10 @@ fn breadcrumb_context_meta(app: &AppState) -> Option<String> {
     let threshold = snapshot
         .compaction_threshold_tokens
         .filter(|threshold| *threshold > 0)?;
+    let percent =
+        ((u64::from(occupied) * 100 + u64::from(threshold) / 2) / u64::from(threshold)).min(999);
     Some(format!(
-        "{} / {}",
+        "{} / {} {percent}%",
         format_breadcrumb_token_count(occupied),
         format_breadcrumb_token_count(threshold)
     ))
