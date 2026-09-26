@@ -467,6 +467,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 EventActor::new(ActorKind::Worker, Some("agent_000102".to_string())),
                 Some("req_000102"),
                 EventV1::TaskCancelled(TaskCancelledEvent {
+                    failure: false,
                     task_id: "task_000302".to_string().into(),
                     reason: "cancelled while running".to_string(),
                     task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),

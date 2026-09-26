@@ -84,9 +84,15 @@ pub fn resolve_background_request_ref<'a>(
                     parent_by_agent.insert(data.agent_id.clone(), parent_agent_id.to_string());
                 }
             }
-            EventV1::TaskScheduled(data) => {
+            EventV1::TaskScheduled(data)
+                if data
+                    .queue_key
+                    .as_deref()
+                    .is_some_and(|key| key.starts_with("provider_model:")) =>
+            {
                 let event_request_id = event.correlation_id.as_deref();
-                let matches_explicit_request = explicit_request_id == event_request_id;
+                let matches_explicit_request =
+                    explicit_request_id.is_some() && explicit_request_id == event_request_id;
                 let matches_session = explicit_request_id.is_none()
                     && selector_hint.is_some_and(|selector| {
                         event.actor.agent_id.as_deref() == Some(selector)
@@ -169,6 +175,17 @@ pub fn resolve_all_background_request_refs<'a>(
                 let Some(correlation_id) = event.correlation_id.as_deref() else {
                     continue;
                 };
+                // Bulk child cancellation must never include the caller's own turn
+                // or another root agent, even when the caller is a supervisor.
+                if event.actor.agent_id == actor.agent_id
+                    || !event
+                        .actor
+                        .agent_id
+                        .as_ref()
+                        .is_some_and(|id| parent_by_agent.contains_key(id))
+                {
+                    continue;
+                }
                 if !background_request_authorized(
                     actor,
                     &parent_by_agent,
@@ -261,8 +278,10 @@ pub fn project_background_request<'a>(
             }
             EventV1::TaskCancelled(data) => {
                 if is_background_agent_turn_cancellation(data, scheduler_task_id.as_deref()) {
-                    terminal_status = Some("cancelled".to_string());
+                    terminal_status =
+                        Some(if data.failure { "failed" } else { "cancelled" }.to_string());
                     failure_summary = Some(data.reason.clone());
+                    duration_ms = elapsed_ms_from_events(started_mono_ms, event.mono_ms);
                 }
             }
             EventV1::TaskResultLate(_) => {
@@ -271,15 +290,16 @@ pub fn project_background_request<'a>(
             EventV1::BackgroundTaskNotification(data) => {
                 terminal_status = Some(data.status.as_str().to_string());
                 session_id = Some(data.child_session_id.to_string());
-                scheduler_task_id = Some(data.task_id.to_string());
+                // The notification's task_id is the child session, not the scheduled turn.
+                scheduler_task_id.get_or_insert_with(|| data.terminal_task_id.clone());
                 match data.status {
                     BackgroundTaskNotificationStatus::Completed => {
-                        result_summary = Some(data.summary.clone());
+                        result_summary.get_or_insert_with(|| data.summary.clone());
                     }
                     BackgroundTaskNotificationStatus::Cancelled
                     | BackgroundTaskNotificationStatus::Failed
                     | BackgroundTaskNotificationStatus::TimedOut => {
-                        failure_summary = Some(data.summary.clone());
+                        failure_summary.get_or_insert_with(|| data.summary.clone());
                     }
                 }
             }

@@ -450,7 +450,11 @@ pub fn project_resume_plan<'a>(
                     apply_agent_turn_terminal_state(
                         &mut child_sessions,
                         &turn,
-                        ChildSessionTerminalState::Cancelled,
+                        if payload.failure {
+                            ChildSessionTerminalState::Failed
+                        } else {
+                            ChildSessionTerminalState::Cancelled
+                        },
                         Some(payload.reason.clone()),
                         event.mono_ms,
                         None,

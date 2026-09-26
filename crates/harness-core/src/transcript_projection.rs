@@ -194,7 +194,11 @@ pub fn project_transcript(
                 event,
                 ProjectedTaskPart {
                     task_id: payload.task_id.clone(),
-                    state: ProjectedTaskState::Cancelled,
+                    state: if payload.failure {
+                        ProjectedTaskState::Failed
+                    } else {
+                        ProjectedTaskState::Cancelled
+                    },
                     queue_key: None,
                     reason: Some(payload.reason.clone()),
                     result_summary: None,

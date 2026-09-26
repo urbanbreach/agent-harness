@@ -438,6 +438,7 @@ fn append_materialized_terminal_event(events: &mut Vec<EventEnvelopeV1>, child_r
             events,
             child_run_id,
             EventV1::TaskCancelled(TaskCancelledEvent {
+                failure: false,
                 task_id: task_id.into(),
                 reason: "fork snapshot terminalized copied live task state".to_string(),
                 task_scope: None,

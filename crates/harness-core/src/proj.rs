@@ -512,6 +512,7 @@ mod tests {
                 Some("req_child"),
                 child_actor.clone(),
                 EventV1::TaskCancelled(TaskCancelledEvent {
+                    failure: false,
                     task_id: "task_000001".to_string().into(),
                     reason: "cancelled by test".to_string(),
                     task_scope: Some(TaskTerminalScope::AgentTurn),
