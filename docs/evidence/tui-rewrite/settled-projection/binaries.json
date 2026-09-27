@@ -1,0 +1,18 @@
+{
+  "profile": "release",
+  "features": "--all-features",
+  "binaries": [
+    {
+      "side": "reference",
+      "path": "/home/urbanbreach/.codex/worktrees/tui-reference/agent-harness/target/release/deps/rewrite_performance_test-aa215cfe2ad6594e",
+      "bytes": 15518744,
+      "sha256": "bddeb9916e8b64b9f015690eece455cd1266561e72f55df97232e2b5e9bd3508"
+    },
+    {
+      "side": "candidate",
+      "path": "/home/urbanbreach/Projects/agent-harness/target/release/deps/rewrite_performance_test-cbb137c337ae7103",
+      "bytes": 15183656,
+      "sha256": "d5091e3c15d5726e35c497c8188872c169bf007f8f2a74a1ff51b851d1dac139"
+    }
+  ]
+}

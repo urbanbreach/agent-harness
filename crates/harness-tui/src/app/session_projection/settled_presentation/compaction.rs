@@ -3,11 +3,11 @@ use super::*;
 impl SessionProjection {
     pub(super) fn rebuild_compaction_presentation(
         &mut self,
-        checkpoints: &[harness_core::transcript_projection::CompactionCheckpointProjection],
+        checkpoint: Option<&harness_core::transcript_projection::CompactionCheckpointProjection>,
     ) {
         self.compaction_status = None;
         self.compaction_usage_metrics = CompactionUsageMetrics::default();
-        let Some(checkpoint) = checkpoints.last() else {
+        let Some(checkpoint) = checkpoint else {
             return;
         };
         let (state, label) = match checkpoint.status {

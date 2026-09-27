@@ -504,6 +504,31 @@ remaining formatters; it does not establish their replacement or completion of
 the rewrite. Raw samples, source and binary receipts, and comparisons are in
 [`evidence/tui-rewrite/borrowed-text`](evidence/tui-rewrite/borrowed-text).
 
+## Borrowed settled projection
+
+Settled presentation now borrows the canonical transcript and run summary. Inline
+child projections remain locally owned; only the final compaction checkpoint is
+copied before whole-state mutation. The pass-through event-vector wrapper is
+removed. No backend contract or rendering logic changes.
+
+The five settlement checks, all 1,738 deterministic tests, seven gated PTY checks,
+Clippy, workspace check, formatting and suite gates pass. All 539 buffers match
+the preceding candidate exactly. The change removes 38 source lines.
+
+History workloads allocate about 2.1 MB less than the preceding candidate run;
+peak heap and RSS do not measurably improve. Against the paired original,
+streaming p95/p99 fall about 71% and allocations 49.2%, but RSS only 23.1%.
+Resize RSS falls 30.3%. Small startup, idle, typing and scrolling regressions
+remain within the paired-reference allowance. Startup cold preparation rises
+9.8%; coarse idle and scrolling frame CPU also rise.
+
+The original absolute timing limits are unchanged: streaming passes, while
+resize and the other four workloads still miss their earliest limits. This is
+reported separately from the current paired comparisons. Whole-history
+presentation and the retained event mirror still need replacement. No fresh
+browser or end-to-end latency claim is made. Evidence is in
+[`evidence/tui-rewrite/settled-projection`](evidence/tui-rewrite/settled-projection).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

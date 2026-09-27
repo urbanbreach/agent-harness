@@ -1,0 +1,181 @@
+diff --git i/crates/harness-tui/src/app/session_projection.rs w/crates/harness-tui/src/app/session_projection.rs
+index 5babd097..015c7aaf 100644
+--- i/crates/harness-tui/src/app/session_projection.rs
++++ w/crates/harness-tui/src/app/session_projection.rs
+@@ -110,51 +110,10 @@ struct ReasoningTiming {
+     finished_mono_ms: Option<u64>,
+ }
+ 
+-#[derive(Default)]
+-pub(crate) struct EventDetailsCache(Vec<EventEnvelopeV1>);
+-
+-impl std::ops::Deref for EventDetailsCache {
+-    type Target = Vec<EventEnvelopeV1>;
+-
+-    fn deref(&self) -> &Self::Target {
+-        &self.0
+-    }
+-}
+-
+-impl std::ops::DerefMut for EventDetailsCache {
+-    fn deref_mut(&mut self) -> &mut Self::Target {
+-        &mut self.0
+-    }
+-}
+-
+-impl<'a> IntoIterator for &'a EventDetailsCache {
+-    type Item = &'a EventEnvelopeV1;
+-    type IntoIter = std::slice::Iter<'a, EventEnvelopeV1>;
+-
+-    fn into_iter(self) -> Self::IntoIter {
+-        self.0.iter()
+-    }
+-}
+-
+-impl<'a> IntoIterator for &'a mut EventDetailsCache {
+-    type Item = &'a mut EventEnvelopeV1;
+-    type IntoIter = std::slice::IterMut<'a, EventEnvelopeV1>;
+-
+-    fn into_iter(self) -> Self::IntoIter {
+-        self.0.iter_mut()
+-    }
+-}
+-
+-impl From<Vec<EventEnvelopeV1>> for EventDetailsCache {
+-    fn from(events: Vec<EventEnvelopeV1>) -> Self {
+-        Self(events)
+-    }
+-}
+-
+ #[derive(Default)]
+ pub struct SessionProjection {
+     live_compactions: BTreeMap<String, LiveCompaction>,
+-    pub(crate) events: EventDetailsCache,
++    pub(crate) events: Vec<EventEnvelopeV1>,
+     canonical_projection: Option<CanonicalSessionProjection>,
+     canonical_projection_error: Option<String>,
+     unsettled_durable_events: Vec<EventEnvelopeV1>,
+diff --git i/crates/harness-tui/src/app/session_projection/settled_presentation.rs w/crates/harness-tui/src/app/session_projection/settled_presentation.rs
+index 2a95f18b..df42d2c1 100644
+--- i/crates/harness-tui/src/app/session_projection/settled_presentation.rs
++++ w/crates/harness-tui/src/app/session_projection/settled_presentation.rs
+@@ -34,13 +34,14 @@ impl SessionProjection {
+         // An inline child is a display slice, not a complete durable log. Keep
+         // its original sequence numbers and use the transcript projector,
+         // which accepts ordered slices without weakening history validation.
++        let inline_projection;
+         let (events, transcript, run_summary) = if inline {
+             let events = self.events.as_slice();
+-            match (
++            inline_projection = match (
+                 harness_core::transcript_projection::project_transcript(events),
+                 harness_core::proj::project_run_summary(events),
+             ) {
+-                (Ok(transcript), Ok(summary)) => (events, transcript, summary),
++                (Ok(transcript), Ok(summary)) => (transcript, summary),
+                 (Err(error), _) => {
+                     self.canonical_projection_error = Some(error.to_string());
+                     return;
+@@ -49,15 +50,16 @@ impl SessionProjection {
+                     self.canonical_projection_error = Some(error.to_string());
+                     return;
+                 }
+-            }
++            };
++            (events, &inline_projection.0, &inline_projection.1)
+         } else {
+             let Some(canonical) = self.canonical_projection.as_ref() else {
+                 return;
+             };
+             (
+                 canonical.source_events(),
+-                canonical.transcript.clone(),
+-                canonical.run_summary.clone(),
++                &canonical.transcript,
++                &canonical.run_summary,
+             )
+         };
+         let active_events = harness_core::conversation_rewind::active_events(events);
+@@ -90,7 +92,7 @@ impl SessionProjection {
+                     settled_activities.push_back(new_streaming_activity_entry(
+                         NewStreamingActivityEntryArgs {
+                             request_id: request_id.clone(),
+-                            profile_label: profile_label(&transcript, message.agent_id.as_deref()),
++                            profile_label: profile_label(transcript, message.agent_id.as_deref()),
+                             model_id: String::new(),
+                             provider_id: String::new(),
+                             user_message: Some(UserMessageSubmittedEvent {
+@@ -117,7 +119,7 @@ impl SessionProjection {
+                                 NewStreamingActivityEntryArgs {
+                                     request_id: request_id.clone(),
+                                     profile_label: profile_label(
+-                                        &transcript,
++                                        transcript,
+                                         message.agent_id.as_deref(),
+                                     ),
+                                     model_id: String::new(),
+@@ -197,11 +199,11 @@ impl SessionProjection {
+         }
+ 
+         let (latest_request_budget, provider_context_usage) =
+-            apply_canonical_provider_presentation(events, &transcript, &mut settled_activities);
++            apply_canonical_provider_presentation(events, transcript, &mut settled_activities);
+         mark_user_only_activities(&mut settled_activities);
+         apply_canonical_background_notifications(
+             events,
+-            &transcript,
++            transcript,
+             &mut settled_activities,
+             &mut orchestration_tasks,
+         );
+@@ -263,8 +265,9 @@ impl SessionProjection {
+         }
+         self.pending_permissions = pending_permissions;
+         self.orchestration_tasks = orchestration_tasks;
++        let checkpoint = transcript.compaction_checkpoints.last().cloned();
+         self.enforce_orchestration_retention();
+-        self.rebuild_compaction_presentation(&transcript.compaction_checkpoints);
++        self.rebuild_compaction_presentation(checkpoint.as_ref());
+         if self.compaction_status.is_none() {
+             self.rebuild_legacy_compaction_presentation(legacy_compaction.as_ref());
+         }
+diff --git i/crates/harness-tui/src/app/session_projection/settled_presentation/compaction.rs w/crates/harness-tui/src/app/session_projection/settled_presentation/compaction.rs
+index 33fc4cf7..475fdcc1 100644
+--- i/crates/harness-tui/src/app/session_projection/settled_presentation/compaction.rs
++++ w/crates/harness-tui/src/app/session_projection/settled_presentation/compaction.rs
+@@ -3,11 +3,11 @@ use super::*;
+ impl SessionProjection {
+     pub(super) fn rebuild_compaction_presentation(
+         &mut self,
+-        checkpoints: &[harness_core::transcript_projection::CompactionCheckpointProjection],
++        checkpoint: Option<&harness_core::transcript_projection::CompactionCheckpointProjection>,
+     ) {
+         self.compaction_status = None;
+         self.compaction_usage_metrics = CompactionUsageMetrics::default();
+-        let Some(checkpoint) = checkpoints.last() else {
++        let Some(checkpoint) = checkpoint else {
+             return;
+         };
+         let (state, label) = match checkpoint.status {
+diff --git i/crates/harness-tui/src/ui_transcript_compaction.rs w/crates/harness-tui/src/ui_transcript_compaction.rs
+index ea54cf5f..909023f1 100644
+--- i/crates/harness-tui/src/ui_transcript_compaction.rs
++++ w/crates/harness-tui/src/ui_transcript_compaction.rs
+@@ -256,7 +256,7 @@ mod tests {
+     fn compaction_event_injected_into_transcript_sections() {
+         let mut app = AppState::default();
+         app.activities = std::collections::VecDeque::from(vec![make_test_activity("request-1", 1)]);
+-        app.events = vec![make_session_compaction_event(2)].into();
++        app.events = vec![make_session_compaction_event(2)];
+ 
+         let sections = super::super::ui_transcript_sections::build_transcript_sections(&app);
+ 
+@@ -274,7 +274,7 @@ mod tests {
+     fn compaction_event_renders_badge_and_summary() {
+         let mut app = AppState::default();
+         app.activities = std::collections::VecDeque::from(vec![make_test_activity("request-1", 1)]);
+-        app.events = vec![make_session_compaction_event(2)].into();
++        app.events = vec![make_session_compaction_event(2)];
+ 
+         let theme = Theme::default();
+         let sections = super::super::ui_transcript_sections::build_transcript_sections(&app);

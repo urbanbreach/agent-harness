@@ -34,13 +34,14 @@ impl SessionProjection {
         // An inline child is a display slice, not a complete durable log. Keep
         // its original sequence numbers and use the transcript projector,
         // which accepts ordered slices without weakening history validation.
+        let inline_projection;
         let (events, transcript, run_summary) = if inline {
             let events = self.events.as_slice();
-            match (
+            inline_projection = match (
                 harness_core::transcript_projection::project_transcript(events),
                 harness_core::proj::project_run_summary(events),
             ) {
-                (Ok(transcript), Ok(summary)) => (events, transcript, summary),
+                (Ok(transcript), Ok(summary)) => (transcript, summary),
                 (Err(error), _) => {
                     self.canonical_projection_error = Some(error.to_string());
                     return;
@@ -49,15 +50,16 @@ impl SessionProjection {
                     self.canonical_projection_error = Some(error.to_string());
                     return;
                 }
-            }
+            };
+            (events, &inline_projection.0, &inline_projection.1)
         } else {
             let Some(canonical) = self.canonical_projection.as_ref() else {
                 return;
             };
             (
                 canonical.source_events(),
-                canonical.transcript.clone(),
-                canonical.run_summary.clone(),
+                &canonical.transcript,
+                &canonical.run_summary,
             )
         };
         let active_events = harness_core::conversation_rewind::active_events(events);
@@ -90,7 +92,7 @@ impl SessionProjection {
                     settled_activities.push_back(new_streaming_activity_entry(
                         NewStreamingActivityEntryArgs {
                             request_id: request_id.clone(),
-                            profile_label: profile_label(&transcript, message.agent_id.as_deref()),
+                            profile_label: profile_label(transcript, message.agent_id.as_deref()),
                             model_id: String::new(),
                             provider_id: String::new(),
                             user_message: Some(UserMessageSubmittedEvent {
@@ -117,7 +119,7 @@ impl SessionProjection {
                                 NewStreamingActivityEntryArgs {
                                     request_id: request_id.clone(),
                                     profile_label: profile_label(
-                                        &transcript,
+                                        transcript,
                                         message.agent_id.as_deref(),
                                     ),
                                     model_id: String::new(),
@@ -197,11 +199,11 @@ impl SessionProjection {
         }
 
         let (latest_request_budget, provider_context_usage) =
-            apply_canonical_provider_presentation(events, &transcript, &mut settled_activities);
+            apply_canonical_provider_presentation(events, transcript, &mut settled_activities);
         mark_user_only_activities(&mut settled_activities);
         apply_canonical_background_notifications(
             events,
-            &transcript,
+            transcript,
             &mut settled_activities,
             &mut orchestration_tasks,
         );
@@ -263,8 +265,9 @@ impl SessionProjection {
         }
         self.pending_permissions = pending_permissions;
         self.orchestration_tasks = orchestration_tasks;
+        let checkpoint = transcript.compaction_checkpoints.last().cloned();
         self.enforce_orchestration_retention();
-        self.rebuild_compaction_presentation(&transcript.compaction_checkpoints);
+        self.rebuild_compaction_presentation(checkpoint.as_ref());
         if self.compaction_status.is_none() {
             self.rebuild_legacy_compaction_presentation(legacy_compaction.as_ref());
         }

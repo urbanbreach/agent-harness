@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+────────────
+ Nextest run ID e5c566b7-f152-434a-ba5c-a079fdb88caa with nextest profile: ci
+    Starting 7 tests across 3 binaries
+        SLOW [>  2.000s] (───) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+────────────
+     Summary [   4.715s] 7 tests run: 7 passed (1 slow), 0 skipped
+        SLOW [   2.913s] (5/7) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append

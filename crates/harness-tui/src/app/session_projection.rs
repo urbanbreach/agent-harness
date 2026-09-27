@@ -111,50 +111,9 @@ struct ReasoningTiming {
 }
 
 #[derive(Default)]
-pub(crate) struct EventDetailsCache(Vec<EventEnvelopeV1>);
-
-impl std::ops::Deref for EventDetailsCache {
-    type Target = Vec<EventEnvelopeV1>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for EventDetailsCache {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl<'a> IntoIterator for &'a EventDetailsCache {
-    type Item = &'a EventEnvelopeV1;
-    type IntoIter = std::slice::Iter<'a, EventEnvelopeV1>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a mut EventDetailsCache {
-    type Item = &'a mut EventEnvelopeV1;
-    type IntoIter = std::slice::IterMut<'a, EventEnvelopeV1>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter_mut()
-    }
-}
-
-impl From<Vec<EventEnvelopeV1>> for EventDetailsCache {
-    fn from(events: Vec<EventEnvelopeV1>) -> Self {
-        Self(events)
-    }
-}
-
-#[derive(Default)]
 pub struct SessionProjection {
     live_compactions: BTreeMap<String, LiveCompaction>,
-    pub(crate) events: EventDetailsCache,
+    pub(crate) events: Vec<EventEnvelopeV1>,
     canonical_projection: Option<CanonicalSessionProjection>,
     canonical_projection_error: Option<String>,
     unsettled_durable_events: Vec<EventEnvelopeV1>,
