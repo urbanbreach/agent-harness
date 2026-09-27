@@ -70,7 +70,10 @@ fn p0_03_real_pty_records_markdown_and_event_driven_fence() {
         let cell = helper
             .parser
             .screen()
-            .cell(row as u16, column as u16)
+            .cell(
+                u16::try_from(row).unwrap_or_abort(),
+                u16::try_from(column).unwrap_or_abort(),
+            )
             .unwrap_or_abort();
         assert!(
             cell.bold() && cell.italic(),

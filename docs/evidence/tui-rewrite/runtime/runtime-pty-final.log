@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+────────────
+ Nextest run ID 135591b4-a809-4c6d-859e-42ab1cd2cd84 with nextest profile: ci
+    Starting 16 tests across 5 binaries
+        SLOW [> 30.000s] (─────) harness-tui::p1_03_pty_recorded p1_03_native_pty_owner_records_startup_reveal_terminal_states
+────────────
+     Summary [  55.697s] 16 tests run: 16 passed (1 slow), 0 skipped
+        SLOW [  55.697s] (16/16) harness-tui::p1_03_pty_recorded p1_03_native_pty_owner_records_startup_reveal_terminal_states

@@ -1,4 +1,4 @@
-use harness_tui::scheduling::{DualClock, FrameInputs, FrameScheduler};
+use harness_tui::scheduling::DualClock;
 use harness_tui::transcript_identity::{BlockId, ReplayTurn, TranscriptIdentity};
 use harness_tui::transcript_scroll::{
     DragAutoscroll, DragViewport, EasingKind, FollowState, FractionalScroll, LogicalAnchor,
@@ -222,40 +222,6 @@ fn reduced_motion_makes_every_transition_instant() -> TestResult {
     assert!(frame.settled);
     assert_close(frame.value, 480.0);
     assert!(!frame.needs_redraw);
-    Ok(())
-}
-
-#[test]
-fn settled_scroll_produces_zero_idle_scheduler_redraws() -> TestResult {
-    // arrange
-    // Given: a scheduled transition and the task-10 fake clock.
-    let clock = DualClock::new();
-    let transition = ScrollTransition::start(TransitionRequest::new(
-        0.0,
-        40.0,
-        0,
-        EasingKind::Page,
-        MotionPreference::Full,
-    ))?;
-    let mut scheduler = FrameScheduler::new();
-    let _ = scheduler.schedule(clock.snapshot(), FrameInputs::active());
-
-    // When: the transition has settled and no input is pending.
-    let settled = transition.sample(200);
-    let idle = scheduler.schedule(
-        clock.snapshot(),
-        if settled.needs_redraw {
-            FrameInputs::active()
-        } else {
-            FrameInputs::idle()
-        },
-    );
-
-    // act
-    // Then: the fake scheduler returns no idle frame.
-    // assert
-    assert!(settled.settled);
-    assert!(idle.is_none());
     Ok(())
 }
 

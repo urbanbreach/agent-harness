@@ -5,8 +5,7 @@ use harness_core::event::{
     ToolCallRequestedEvent,
 };
 use harness_tui::app::{AppState, Focus};
-use harness_tui::scheduling::{DualClock, MotionCadence, RuntimePacer};
-use harness_tui::terminal::FrameSubmission;
+use harness_tui::scheduling::MotionCadence;
 
 #[path = "motion_demand/support_test.rs"]
 mod support;
@@ -78,32 +77,6 @@ fn app_visual_sample_changes_only_at_its_natural_cadence_boundary() {
 }
 
 #[test]
-fn streaming_wait_plan_keeps_a_wake_at_the_next_visual_sample() {
-    // Given: a silent provider wait exactly at the start of its motion epoch.
-    let mut app = streaming_app();
-    app.restart_motion_epoch_for_evidence();
-
-    // When: AppState publishes its motion plan.
-    let plan = app.motion_plan_for_evidence();
-
-    // Then: unchanged-frame suppression can remove cadence without losing the next wake.
-    assert_eq!(plan.until(), Some(Duration::from_millis(133)));
-    let clock = DualClock::new();
-    let mut pacer = RuntimePacer::new();
-    pacer.poll(clock.snapshot(), plan);
-    pacer.record_submission(FrameSubmission::Unchanged, plan);
-    clock.advance_animation(20);
-    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(20));
-    let suppressed = pacer.poll(clock.snapshot(), app.motion_plan_for_evidence());
-    assert!(!suppressed.paint);
-    assert_eq!(suppressed.next_wait_ms, Some(113));
-    clock.advance_animation(113);
-    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(113));
-    let due = pacer.poll(clock.snapshot(), app.motion_plan_for_evidence());
-    assert!(due.advance_animation && due.paint);
-}
-
-#[test]
 fn reduced_motion_active_stream_has_no_periodic_deadline() {
     // arrange
     // Given: a live stream under the production reduced-motion authority.
@@ -117,8 +90,6 @@ fn reduced_motion_active_stream_has_no_periodic_deadline() {
     // Then: visual motion is settled and the runtime can park.
     // assert
     assert!(plan.is_none());
-    let pacer = RuntimePacer::with_reduced_motion(true);
-    assert!(!pacer.needs_poll(DualClock::new().snapshot(), plan));
 }
 
 #[test]

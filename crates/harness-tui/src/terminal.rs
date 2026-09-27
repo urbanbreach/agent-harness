@@ -17,7 +17,6 @@ pub mod frame_output;
 pub mod key;
 pub mod lifecycle;
 pub mod multiplexer;
-pub mod presenter;
 pub(crate) mod session;
 pub(crate) mod startup_diagnostics;
 pub mod unicode_width;
@@ -48,7 +47,6 @@ pub use lifecycle::{
     TerminalLifecycleError,
 };
 pub use multiplexer::TerminalMultiplexer;
-pub use presenter::Presenter;
 pub use unicode_width::{char_display_width, UnicodeWidthEntry, UnicodeWidthRecord};
 pub use writer::{
     SyncFrameGuard, SynchronizedWriter, BEGIN_SYNCHRONIZED_UPDATE, END_SYNCHRONIZED_UPDATE,

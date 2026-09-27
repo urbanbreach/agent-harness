@@ -1,11 +1,8 @@
 use std::io::Write;
 
-use harness_tui::presentation::{
-    CauseId, PresentationRevision, PresentationTimestamp, RenderDemand, RenderReason,
-};
 use harness_tui::terminal::{
     FrameKind, FrameOutput, FrameOutputBackend, FrameOutputFailure, FrameSubmission,
-    FrameWriteStage, Presenter,
+    FrameWriteStage,
 };
 use ratatui::backend::{Backend, ClearType};
 
@@ -86,99 +83,6 @@ fn presenter_metrics_distinguish_requests_submissions_noops_and_bytes() {
     assert_eq!(metrics.frames_submitted, 1);
     assert_eq!(metrics.no_op_frames, 1);
     assert_eq!(metrics.bytes_submitted, payload_len);
-}
-
-#[test]
-fn presenter_retains_dirty_work_across_writer_backpressure() {
-    // arrange
-    let now = std::time::Instant::now();
-    let mut presenter = Presenter::new();
-
-    // act
-    assert!(!presenter.should_present(false));
-    assert!(presenter.should_present(true));
-    presenter.record_submission(FrameSubmission::ResyncRequired, now);
-    assert!(presenter.should_present(true));
-    presenter.record_submission(FrameSubmission::Accepted(FrameKind::FullRepaint), now);
-
-    // assert
-    assert!(!presenter.should_present(true));
-    assert!(!presenter.force_full_repaint());
-}
-
-#[test]
-fn immediate_presenter_priority_survives_resync_until_acceptance() {
-    // arrange
-    // Given: immediate input dirtied a presenter whose first submission meets backpressure.
-    let now = std::time::Instant::now();
-    let mut presenter = Presenter::new();
-    presenter.request_immediate_redraw(now);
-
-    // When: the submission requires resynchronization and is then accepted.
-    presenter.record_submission(FrameSubmission::ResyncRequired, now);
-    let priority_after_resync = presenter.immediate_pending();
-    presenter.record_submission(FrameSubmission::Accepted(FrameKind::FullRepaint), now);
-
-    // act
-    // Then: priority survives the retry but clears once physical work is accepted.
-    // assert
-    assert!(priority_after_resync);
-    assert!(!presenter.immediate_pending());
-}
-
-#[test]
-fn unchanged_immediate_submission_clears_presenter_priority() {
-    // arrange
-    // Given: immediate input requests a frame whose cells ultimately do not change.
-    let now = std::time::Instant::now();
-    let mut presenter = Presenter::new();
-    presenter.request_immediate_redraw(now);
-
-    // When: the terminal backend reports an unchanged frame.
-    presenter.record_submission(FrameSubmission::Unchanged, now);
-
-    // act
-    // Then: no immediate priority remains to suppress unrelated live work.
-    // assert
-    assert!(!presenter.immediate_pending());
-}
-
-#[test]
-fn presenter_preserves_coalesced_demand_until_submission() {
-    // arrange
-    // Given: two revision-bearing redraw requests arrive before presentation.
-    let now = std::time::Instant::now();
-    let mut presenter = Presenter::new();
-    presenter.request_redraw_for(
-        RenderDemand::new(
-            PresentationRevision::new(1),
-            CauseId::new("trace:cause:1"),
-            PresentationTimestamp::from_micros(10),
-            RenderReason::TerminalInput,
-        ),
-        now,
-    );
-    presenter.request_redraw_for(
-        RenderDemand::new(
-            PresentationRevision::new(2),
-            CauseId::new("trace:cause:2"),
-            PresentationTimestamp::from_micros(20),
-            RenderReason::LiveUpdate,
-        ),
-        now,
-    );
-
-    // When: the presenter releases the demand for frame capture.
-    let demand = presenter.take_render_demand().expect("coalesced demand");
-
-    // act
-    // Then: both causes and the newest revision remain ordered and intact.
-    // assert
-    assert_eq!(demand.target_revision, PresentationRevision::new(2));
-    assert_eq!(
-        demand.cause_ids,
-        vec![CauseId::new("trace:cause:1"), CauseId::new("trace:cause:2")]
-    );
 }
 
 #[test]

@@ -1,5 +1,3 @@
-use crate::scheduling::FrameInputs;
-
 use super::{ScrollError, ScrollResult};
 
 const AUTOSCROLL_INTERVAL_MS: u64 = 16;
@@ -137,14 +135,6 @@ impl DragAutoscroll {
 
     pub const fn selection_end(self) -> i64 {
         self.selection_end
-    }
-
-    pub const fn frame_inputs(self) -> FrameInputs {
-        if self.next_deadline_ms.is_some() {
-            FrameInputs::flush()
-        } else {
-            FrameInputs::idle()
-        }
     }
 }
 

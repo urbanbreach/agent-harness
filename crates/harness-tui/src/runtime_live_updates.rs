@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::app::{set_pending_live_prompt_draft, AppState, ToastVariant, UiIntent};
 use crate::runtime_integration::RuntimeExperience;
 use crate::runtime_scheduling::SchedulingLiveReadiness;
-use crate::scheduling::{DeferredLiveUpdate, LIVE_BATCH_TIME};
+use crate::scheduling::LIVE_BATCH_TIME;
 use crate::{LiveUpdate, OperatorNoticeLevel};
 
 pub(crate) const LIVE_UPDATE_DRAIN_MAX_PER_FRAME: usize = 16;
@@ -24,7 +24,7 @@ pub struct LiveUpdateSender(Sender<LiveUpdate>);
 
 pub struct LiveUpdateReceiver {
     receiver: Receiver<LiveUpdate>,
-    selected: Mutex<DeferredLiveUpdate<LiveUpdate>>,
+    selected: Mutex<Option<LiveUpdate>>,
 }
 
 #[derive(Debug, Error)]
@@ -37,7 +37,7 @@ pub fn live_update_channel() -> (LiveUpdateSender, LiveUpdateReceiver) {
         LiveUpdateSender(sender),
         LiveUpdateReceiver {
             receiver,
-            selected: Mutex::new(DeferredLiveUpdate::default()),
+            selected: Mutex::new(None),
         },
     )
 }
@@ -105,8 +105,8 @@ impl LiveUpdateReceiver {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
-        let deferred = selected.defer(update);
-        debug_assert!(deferred.is_ok());
+        debug_assert!(selected.is_none());
+        *selected = Some(update);
     }
 }
 

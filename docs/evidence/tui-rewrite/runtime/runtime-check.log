@@ -1,0 +1,7 @@
+    Checking filedescriptor v0.8.3
+    Checking crossterm v0.29.0
+    Checking ratatui-crossterm v0.1.2
+    Checking ratatui v0.30.2
+    Checking harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Checking harness v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 14.64s

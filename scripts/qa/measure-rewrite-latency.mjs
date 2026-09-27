@@ -113,6 +113,19 @@ async function rewindJourney() {
   }
   report.rewind = { failure_preserves_draft: true, success_restores_prompt: true, stale_generations_ignored: true };
 }
+async function clickBurstJourney() {
+  // Keep immediate input pending while a separate backend message arrives.
+  const click = "\x1b[<0;10;10M";
+  pty.write(click.repeat(1000));
+  await delay(50);
+  const start = performance.now();
+  socket.write(`${JSON.stringify({ notice: "Live updates survive click bursts" })}\n`);
+  await terminal.waitForPaintedText("Live updates survive click bursts");
+  const elapsed = performance.now() - start;
+  report.click_burst = { clicks: 1000, live_response_ms: elapsed };
+  assert(elapsed < 1000, `live update starved for ${elapsed.toFixed(0)} ms during click burst`);
+  await terminal.capture(join(output, "click-burst.png"));
+}
 try {
   terminal = await openBrowserTerminal({ cols: 120, rows: 40, browser: "/usr/bin/chromium",
     captureAllCells: false, profilePath: join(temp, "browser"), title: "TUI rewrite latency",
@@ -181,10 +194,12 @@ try {
   report.emulator = await terminal.metadata();
   report.pty_boundary = "controller write/TIOCSWINSZ to first complete synchronized PTY frame; reduced motion and one operation at a time; does not include emulator paint";
   await rewindJourney();
-  socket.end();
+  if (workflowOnly) await clickBurstJourney();
+  if (workflowOnly) pty.write("\x1b[<0;10;10m");
   // Confirmation expires after one second; deliver both keys without observer delay.
   pty.write("\x11\x11");
   report.exit = await pty.waitForExit(15000);
+  socket.end();
   assert.equal(report.exit.code, 0);
   const restoration = pty.raw().toString("utf8").match(/QA_TERMIOS:([^|\r\n]+)\|([^|\r\n]+)\|(\d+)/);
   assert(restoration, "missing terminal restoration receipt");
@@ -201,6 +216,7 @@ try {
     report.failed_screen = await terminal.capture(join(output, "failure.png"));
   }
 } finally {
+  if (workflowOnly) report.pending_intents = intents;
   socket?.destroy();
   if (pty) {
     report.cleanup = await pty.cleanup();

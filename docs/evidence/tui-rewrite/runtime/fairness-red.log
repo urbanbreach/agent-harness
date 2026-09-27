@@ -1,0 +1,18 @@
+Input latency samples complete
+Stream latency samples complete
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: live update starved for 2149 ms during click burst
+    at clickBurstJourney (file:///home/urbanbreach/Projects/agent-harness/scripts/qa/measure-rewrite-latency.mjs:126:3)
+    at async file:///home/urbanbreach/Projects/agent-harness/scripts/qa/measure-rewrite-latency.mjs:196:21 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v26.7.0

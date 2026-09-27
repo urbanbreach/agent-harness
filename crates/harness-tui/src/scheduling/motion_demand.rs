@@ -103,11 +103,6 @@ impl MotionPlan {
         self
     }
 
-    pub(super) const fn without_cadence(mut self) -> Self {
-        self.cadence = MotionCadence::None;
-        self
-    }
-
     pub const fn is_none(self) -> bool {
         matches!(self.cadence, MotionCadence::None) && self.until.is_none()
     }

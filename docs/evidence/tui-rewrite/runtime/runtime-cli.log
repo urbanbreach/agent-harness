@@ -1,0 +1,11 @@
+   Compiling crossterm v0.29.0
+   Compiling ratatui-crossterm v0.1.2
+   Compiling ratatui v0.30.2
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+   Compiling harness v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.86s
+────────────
+ Nextest run ID 9d91cf31-91dc-40e7-ab6b-55466267b175 with nextest profile: ci
+    Starting 1 test across 1 binary
+────────────
+     Summary [   1.776s] 1 test run: 1 passed, 0 skipped

@@ -1,0 +1,82 @@
+[
+  {
+    "path": "browser.json.gz",
+    "bytes": 7471,
+    "sha256": "4d5f4cd1754dd8ed78155738be5bdde1eea69423d5e5e0a54a064325e3bad7c6"
+  },
+  {
+    "path": "click-burst.png",
+    "bytes": 30863,
+    "sha256": "61b517666e4405f2b3eecd9fc3641ea423eb908d060f55f9bb5742110f2328ef"
+  },
+  {
+    "path": "fairness-red.json.gz",
+    "bytes": 14047,
+    "sha256": "cef57c790931c51bc18e9834a434f03fd98c187cc9247dae6da0a62beca74ab9"
+  },
+  {
+    "path": "fairness-red.log",
+    "bytes": 588,
+    "sha256": "1a41edbe48fda1e6e517fce7d4b84d037d22b00d49b04eb95638f13ee1b5cdaf"
+  },
+  {
+    "path": "ingress-red.json.gz",
+    "bytes": 13499,
+    "sha256": "5041abe955683139acbf2bfc2461baa5a0e26f36f8f98b0cda2d466af513d025"
+  },
+  {
+    "path": "ingress-red.log",
+    "bytes": 416,
+    "sha256": "6becb7df6435ce51d92af78ab3cd72a505ecf7088a391e59891c51ab0427f316"
+  },
+  {
+    "path": "restoration.json",
+    "bytes": 1782,
+    "sha256": "3f09e9d467721d80ad95dad8634c72cd86f59c8305408261a784f9bb45a96207"
+  },
+  {
+    "path": "runtime-browser-final.log",
+    "bytes": 545,
+    "sha256": "d21aebc0e9615ba569c710657d8a8fa9ee442452bfc44793984324e1b75c8ae0"
+  },
+  {
+    "path": "runtime-check.log",
+    "bytes": 386,
+    "sha256": "7968dff9e632780d42dccf5cf9ff91fd7d36540429e1f2127703abfcef326927"
+  },
+  {
+    "path": "runtime-cli.log",
+    "bytes": 597,
+    "sha256": "c185922de28edd2f0a087d3241af934407b7deb41cb62600c49bb7d3f0649282"
+  },
+  {
+    "path": "runtime-clippy.log",
+    "bytes": 166,
+    "sha256": "8d99420f586bd38e1d0430b4de1f0441226d0d17fde492dbcc8bae87d855ff3e"
+  },
+  {
+    "path": "runtime-deterministic.log",
+    "bytes": 7015,
+    "sha256": "718111576bdb086e7b0bb4823f2993829a823f72d40de178d7763d03c428d144"
+  },
+  {
+    "path": "runtime-pty-final.log",
+    "bytes": 598,
+    "sha256": "5e8503397006347ea2b3cbda16d9d83c5f6136bb1f6ddf24eb7aa8ef279ac8b6"
+  },
+  {
+    "path": "runtime-restoration.log",
+    "bytes": 1207,
+    "sha256": "c299b56f360329b463c862cf6bf28182b65c0eb142c5985d488df0a4dc5fce31"
+  },
+  {
+    "path": "runtime-suite-gates.log",
+    "bytes": 38,
+    "sha256": "9dbaeda37da424493a0057a1d54b636bc8c9da7e77a14322d41d4e63b18196d9"
+  },
+  {
+    "path": "terminal-captures.tar.gz",
+    "bytes": 4131,
+    "sha256": "c3809dd95b8c667f06b5ecbfcda688cfd8ac95aff634987ba6440e61820affb1"
+  }
+]
