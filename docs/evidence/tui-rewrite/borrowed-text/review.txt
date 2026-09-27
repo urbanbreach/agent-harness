@@ -1,0 +1,23 @@
+Independent reviewer: /root/tui_review
+Scope: borrowed-text geometry slice, read-only source and evidence review.
+No builds or tests run by the reviewer.
+
+Approved to commit this slice. No blocking source or evidence findings.
+
+Verified:
+- All 132 artifact hashes, 562 source hashes, binary receipts, and identical
+  benchmark fixtures.
+- All 48 raw reports agree with their logs. Percentiles, medians, CPU,
+  allocations, and percentage changes recompute correctly.
+- The 539 frames, streaming PNGs, selection captures, and cleanup evidence
+  support the parity claims.
+- Timed bytes and retained-history screens match. Only the documented R8
+  diagnostic screen differs.
+- Existing coverage is sufficient; no additional helper test is needed.
+
+The documentation accurately leaves streaming RSS, frozen resize limits,
+source reduction, and sustained typing/burst CPU targets open.
+
+This review does not approve completion of the whole rewrite. This receipt
+and the README review-status sentence were added after the reviewed artifacts;
+the final manifest includes both.

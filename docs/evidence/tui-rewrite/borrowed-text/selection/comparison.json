@@ -1,0 +1,15 @@
+{
+  "compared_with": "../prepared-transcript/selection/candidate",
+  "exact": {
+    "before": {
+      "cells": true,
+      "text": true,
+      "cursor": true
+    },
+    "selected": {
+      "cells": true,
+      "text": true,
+      "cursor": true
+    }
+  }
+}

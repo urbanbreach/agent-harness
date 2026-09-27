@@ -30,6 +30,11 @@ pub(crate) fn split_graphemes(text: &str) -> Vec<GraphemeCluster> {
     text.graphemes(true).map(GraphemeCluster::new).collect()
 }
 
+pub(crate) fn measured_graphemes(text: &str) -> impl Iterator<Item = (&str, u16)> {
+    text.graphemes(true)
+        .map(|text| (text, cluster_display_width(text)))
+}
+
 fn cluster_display_width(text: &str) -> u16 {
     if text.chars().count() == 2 && text.chars().all(is_regional_indicator) {
         return 2;

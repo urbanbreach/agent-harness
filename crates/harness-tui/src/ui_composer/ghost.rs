@@ -1,9 +1,8 @@
-use crate::composer_atoms::split_graphemes;
+use crate::composer_atoms::measured_graphemes;
 
 pub(super) fn truncate_to_width(text: &str, max_width: usize) -> String {
-    let clusters = split_graphemes(text);
-    let text_width = clusters.iter().fold(0_usize, |width, cluster| {
-        width.saturating_add(usize::from(cluster.display_width()))
+    let text_width = measured_graphemes(text).fold(0_usize, |width, (_, cells)| {
+        width.saturating_add(usize::from(cells))
     });
     if text_width <= max_width {
         return text.to_string();
@@ -15,12 +14,12 @@ pub(super) fn truncate_to_width(text: &str, max_width: usize) -> String {
     let target_width = max_width.saturating_sub(1);
     let mut used_width = 0_usize;
     let mut output = String::new();
-    for cluster in clusters {
-        let width = usize::from(cluster.display_width());
+    for (cluster, cells) in measured_graphemes(text) {
+        let width = usize::from(cells);
         if used_width.saturating_add(width) > target_width {
             break;
         }
-        output.push_str(cluster.as_str());
+        output.push_str(cluster);
         used_width = used_width.saturating_add(width);
     }
     output.push('…');

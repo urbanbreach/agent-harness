@@ -8,7 +8,7 @@ use super::ui_transcript_tool_render::{
 };
 use super::*;
 use crate::app::ToolCallPresentationStatus;
-use crate::composer_atoms::split_graphemes;
+use crate::composer_atoms::measured_graphemes;
 use harness_core::event::ProviderRequestRetryMetadata;
 use std::time::Duration;
 
@@ -356,12 +356,12 @@ fn collapse_user_surface_body(
 fn take_grapheme_width_prefix(text: &str, max_width: usize) -> String {
     let mut prefix = String::new();
     let mut used = 0usize;
-    for cluster in split_graphemes(text) {
-        let width = usize::from(cluster.display_width());
+    for (cluster, cells) in measured_graphemes(text) {
+        let width = usize::from(cells);
         if used.saturating_add(width) > max_width {
             break;
         }
-        prefix.push_str(cluster.as_str());
+        prefix.push_str(cluster);
         used = used.saturating_add(width);
     }
     prefix

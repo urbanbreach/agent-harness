@@ -477,6 +477,33 @@ after it. The row builder, styles and wrapping remain unchanged; this is a purit
 correction during migration, not a replacement of the remaining terminal formatter.
 Evidence is in [`evidence/tui-rewrite/terminal-panel`](evidence/tui-rewrite/terminal-panel).
 
+## Borrowed text geometry
+
+Rendering and selection now measure borrowed grapheme slices, preserving the
+existing segmentation and display-width rules. Scalar width queries avoid
+constructing temporary Ratatui lines. Inline Markdown measures preceding spans
+only for linked tokens; unlinked text no longer repeats that unused scan. Output
+rows retain ownership where needed. No cache, dependency or backend change was
+added.
+
+All 1,738 deterministic checks and seven gated PTY checks pass. The 539 frozen
+frames match the preceding candidate exactly. Both streaming xterm PNGs are
+byte-identical to the reference; real PTY selection retains its approved cells
+and restores terminal and process state. Clippy, workspace check, formatting
+and test-suite gates pass. Existing behavioral tests cover the changes.
+
+Against the paired original, streaming p95/p99 fall 70.8%/71.8%, CPU 64.9%, and
+allocated bytes 48.9%. Streaming RSS falls only 24.0%, missing its 30% target.
+Resize CPU, allocations and RSS fall 64.3%, 45.3% and 30.6%; its p95/p99 fall
+42.5%. Typing and scrolling latency increase slightly within their allowance.
+All timed output byte counts and oldest screens match.
+
+The frozen absolute resize limits, source reduction and sustained typing/burst
+CPU targets remain outstanding. This removes temporary allocations within the
+remaining formatters; it does not establish their replacement or completion of
+the rewrite. Raw samples, source and binary receipts, and comparisons are in
+[`evidence/tui-rewrite/borrowed-text`](evidence/tui-rewrite/borrowed-text).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

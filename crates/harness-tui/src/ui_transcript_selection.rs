@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::composer_atoms::split_graphemes;
+use crate::composer_atoms::measured_graphemes;
 use crate::theme::Theme;
 
 use super::ui_chrome::display_width;
@@ -342,11 +342,11 @@ pub(super) fn selection_row_line_text(row: &TranscriptSelectionRow) -> String {
 fn extract_text_by_display_columns(text: &str, start_col: usize, end_col: usize) -> String {
     let mut result = String::new();
     let mut cell = 0usize;
-    for cluster in split_graphemes(text) {
-        let cluster_width = usize::from(cluster.display_width());
+    for (cluster, width) in measured_graphemes(text) {
+        let cluster_width = usize::from(width);
         let cluster_end = cell.saturating_add(cluster_width);
         if cell <= end_col && cluster_end > start_col {
-            result.push_str(cluster.as_str());
+            result.push_str(cluster);
         }
         cell = cluster_end;
         if cell > end_col {
@@ -364,11 +364,11 @@ pub(super) fn transcript_selection_line_rows(
     let mut rows = Vec::new();
 
     for span in &line.spans {
-        for cluster in split_graphemes(span.content.as_ref()) {
-            let cell_width = usize::from(cluster.display_width());
+        for (cluster, cells) in measured_graphemes(span.content.as_ref()) {
+            let cell_width = usize::from(cells);
             if cell_width == 0 {
                 if let Some(cell) = row.iter_mut().rev().find(|cell| !cell.is_empty()) {
-                    cell.push_str(cluster.as_str());
+                    cell.push_str(cluster);
                 }
                 continue;
             }
@@ -376,7 +376,7 @@ pub(super) fn transcript_selection_line_rows(
                 rows.push(std::mem::take(&mut row));
             }
 
-            row.push(cluster.as_str().to_string());
+            row.push(cluster.to_string());
             for _ in 1..cell_width {
                 if row.len() == width {
                     rows.push(std::mem::take(&mut row));

@@ -37,10 +37,10 @@ impl ParsedInlineMarkdown {
         if text.is_empty() {
             return;
         }
-        let start_cell = self.spans.iter().map(Span::width).sum::<usize>();
-        let end_cell = start_cell.saturating_add(display_width(text));
-        if let Some(destination) = destination.filter(|destination| {
-            crate::transcript_selection::Hyperlink::new(
+        if let Some(destination) = destination {
+            let start_cell = self.spans.iter().map(Span::width).sum::<usize>();
+            let end_cell = start_cell.saturating_add(display_width(text));
+            if crate::transcript_selection::Hyperlink::new(
                 text,
                 destination,
                 crate::transcript_selection::LinkRange::new(
@@ -50,19 +50,20 @@ impl ParsedInlineMarkdown {
                 ),
             )
             .is_ok()
-        }) {
-            if let Some(previous) = self.links.last_mut().filter(|previous| {
-                previous.end_cell == start_cell && previous.destination == destination
-            }) {
-                previous.label.push_str(text);
-                previous.end_cell = end_cell;
-            } else {
-                self.links.push(InlineMarkdownLink {
-                    label: text.to_string(),
-                    start_cell,
-                    end_cell,
-                    destination: destination.to_string(),
-                });
+            {
+                if let Some(previous) = self.links.last_mut().filter(|previous| {
+                    previous.end_cell == start_cell && previous.destination == destination
+                }) {
+                    previous.label.push_str(text);
+                    previous.end_cell = end_cell;
+                } else {
+                    self.links.push(InlineMarkdownLink {
+                        label: text.to_string(),
+                        start_cell,
+                        end_cell,
+                        destination: destination.to_string(),
+                    });
+                }
             }
         }
         if let Some(previous) = self
