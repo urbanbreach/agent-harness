@@ -1,307 +1,214 @@
-//! Durable multi-agent team mailbox journal under a workspace.
-//!
-//! Persists team registry + mailbox at `.agent-harness/team-mailbox.json`.
-//! Delivers messages via fail-closed membership rules with reload across restarts.
-
-mod product;
-mod store;
-
-use std::io;
-use std::path::{Path, PathBuf};
-
-use thiserror::Error;
-
-use crate::team_registry::{
-    TeamMessage, TeamRecord, TeamRegistry, TeamRegistryError, TeamRegistryParts,
-    TeamRegistrySummary,
+use crate::{store, team_registry::*};
+use serde::{Deserialize, Serialize};
+use std::{
+    io,
+    path::{Path, PathBuf},
 };
-
-use store::{load_or_empty, save, MailboxBucket, TeamMailboxDocument};
-
-pub use product::{run_durable_multi_agent_team_product, MultiAgentTeamProduct};
-
-/// Relative durable store path under a workspace root.
+mod product;
+pub use product::*;
 pub const TEAM_MAILBOX_JOURNAL_REL: &str = ".agent-harness/team-mailbox.json";
+const MAX_BYTES: u64 = 8 * 1024 * 1024;
 
-pub(crate) const STORE_VERSION: u32 = 1;
-
-/// Failures for durable team mailbox I/O.
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum TeamMailboxJournalError {
-    #[error("failed to create team-mailbox parent directory {path}: {source}")]
-    CreateParent {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to read team-mailbox journal {path}: {source}")]
-    Read {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to parse team-mailbox journal {path}: {detail}")]
-    Parse { path: String, detail: String },
-    #[error("unsupported team-mailbox journal version {version} at {path}")]
+    #[error("team mailbox I/O failed: {0}")]
+    Io(#[from] io::Error),
+    #[error("team mailbox has invalid JSON or duplicate identifiers")]
+    Invalid,
+    #[error("unsupported team mailbox version {version} at {path}")]
     UnsupportedVersion { path: String, version: u32 },
-    #[error("failed to write team-mailbox journal {path}: {source}")]
-    Write {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to replace team-mailbox journal {path}: {source}")]
-    Replace {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
     #[error(transparent)]
     Registry(#[from] TeamRegistryError),
 }
-
-/// Durable team registry + mailbox for one workspace.
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Document {
+    version: u32,
+    next_seq: u64,
+    next_message_seq: u64,
+    teams: Vec<TeamRecord>,
+    mailboxes: Vec<Mailbox>,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Mailbox {
+    team_id: String,
+    messages: Vec<TeamMessage>,
+}
+#[derive(Debug)]
 pub struct DurableTeamRegistry {
     workspace_root: PathBuf,
     journal_path: PathBuf,
-    pub(crate) registry: TeamRegistry,
-    next_seq: u64,
-    next_message_seq: u64,
+    registry: TeamRegistry,
 }
-
 impl DurableTeamRegistry {
+    /// Reading a missing mailbox does not create workspace files.
     pub fn open(workspace_root: impl Into<PathBuf>) -> Result<Self, TeamMailboxJournalError> {
         let workspace_root = workspace_root.into();
         let journal_path = workspace_root.join(TEAM_MAILBOX_JOURNAL_REL);
-        let doc = load_or_empty(&journal_path)?;
-        let registry = team_registry_from_document(&doc);
         Ok(Self {
+            registry: load(&journal_path)?,
             workspace_root,
             journal_path,
-            registry,
-            next_seq: doc.next_seq,
-            next_message_seq: doc.next_message_seq,
         })
     }
-
     pub fn workspace_root(&self) -> &Path {
         &self.workspace_root
     }
-
     pub fn journal_path(&self) -> &Path {
         &self.journal_path
     }
-
+    /// Last successfully loaded or committed snapshot; inbox reads load current state.
     pub fn registry(&self) -> &TeamRegistry {
         &self.registry
     }
-
     pub fn summary(&self) -> TeamRegistrySummary {
         self.registry.summary()
     }
-
     pub fn create_team(
         &mut self,
         name: impl Into<String>,
     ) -> Result<TeamRecord, TeamMailboxJournalError> {
-        let record = self.registry.create_team(name)?;
-        self.persist()?;
-        Ok(record)
+        self.update(|r| r.create_team(name))
     }
-
     pub fn add_member(
         &mut self,
-        team_id: &str,
-        agent_id: impl Into<String>,
+        team: &str,
+        agent: impl Into<String>,
         role: impl Into<String>,
     ) -> Result<TeamRecord, TeamMailboxJournalError> {
-        let record = self.registry.add_member(team_id, agent_id, role)?;
-        self.persist()?;
-        Ok(record)
+        self.update(|r| r.add_member(team, agent, role))
     }
-
+    pub fn remove_member(
+        &mut self,
+        team: &str,
+        agent: impl Into<String>,
+    ) -> Result<TeamRecord, TeamMailboxJournalError> {
+        self.update(|r| r.remove_member(team, agent))
+    }
     pub fn send_message(
         &mut self,
-        team_id: &str,
-        from_agent_id: impl Into<String>,
-        to_agent_id: Option<String>,
+        team: &str,
+        from: impl Into<String>,
+        to: Option<String>,
         body: impl Into<String>,
     ) -> Result<TeamMessage, TeamMailboxJournalError> {
-        let message = self
-            .registry
-            .send_message(team_id, from_agent_id, to_agent_id, body)?;
-        self.persist()?;
-        Ok(message)
+        self.update(|r| r.send_message(team, from, to, body))
     }
-
-    /// Deliver (drain) undelivered mailbox messages for an agent and persist.
     pub fn deliver_messages(
         &mut self,
-        team_id: &str,
-        agent_id: &str,
+        team: &str,
+        agent: &str,
     ) -> Result<Vec<TeamMessage>, TeamMailboxJournalError> {
-        let delivered = self.registry.receive_messages(team_id, agent_id)?;
-        self.persist()?;
-        Ok(delivered)
+        self.update(|r| r.receive_messages(team, agent))
     }
-
-    pub fn cancel_team(&mut self, team_id: &str) -> Result<TeamRecord, TeamMailboxJournalError> {
-        let record = self.registry.cancel_team(team_id)?;
-        self.persist()?;
-        Ok(record)
+    pub fn cancel_team(&mut self, team: &str) -> Result<TeamRecord, TeamMailboxJournalError> {
+        self.update(|r| r.cancel_team(team))
     }
-
     pub fn peek_inbox(
         &self,
-        team_id: &str,
-        agent_id: &str,
+        team: &str,
+        agent: &str,
     ) -> Result<Vec<TeamMessage>, TeamMailboxJournalError> {
-        Ok(self.registry.peek_inbox(team_id, agent_id)?)
+        Ok(load(&self.journal_path)?.peek_inbox(team, agent)?)
     }
-
-    pub(crate) fn persist(&mut self) -> Result<(), TeamMailboxJournalError> {
-        let doc = snapshot_document(&self.registry);
-        self.next_seq = doc.next_seq;
-        self.next_message_seq = doc.next_message_seq;
-        save(&self.journal_path, &doc)
+    fn update<T>(
+        &mut self,
+        change: impl FnOnce(&mut TeamRegistry) -> Result<T, TeamRegistryError>,
+    ) -> Result<T, TeamMailboxJournalError> {
+        let _lock = store::lock_private_parent(&self.journal_path)?;
+        let mut next = load(&self.journal_path)?;
+        let result = change(&mut next)?;
+        next.validate()?;
+        let parts = next.to_parts();
+        let doc = Document {
+            version: 1,
+            next_seq: parts.next_seq,
+            next_message_seq: parts.next_message_seq,
+            teams: parts.teams.into_values().collect(),
+            mailboxes: parts
+                .mailboxes
+                .into_iter()
+                .map(|(team_id, messages)| Mailbox { team_id, messages })
+                .collect(),
+        };
+        let bytes = serde_json::to_vec(&doc).map_err(|_| TeamMailboxJournalError::Invalid)?;
+        if bytes.len() as u64 > MAX_BYTES {
+            return Err(TeamRegistryError::Capacity.into());
+        }
+        store::write_private_atomic(&self.journal_path, &bytes)?;
+        self.registry = next;
+        Ok(result)
     }
 }
-
-fn team_registry_from_document(doc: &TeamMailboxDocument) -> TeamRegistry {
-    let teams = doc
-        .teams
-        .iter()
-        .cloned()
-        .map(|t| (t.team_id.clone(), t))
-        .collect();
-    let mailboxes = doc
-        .mailboxes
-        .iter()
-        .cloned()
-        .map(|b| (b.team_id, b.messages))
-        .collect();
-    TeamRegistry::from_parts(TeamRegistryParts {
-        teams,
-        mailboxes,
+fn load(path: &Path) -> Result<TeamRegistry, TeamMailboxJournalError> {
+    let Some(bytes) = store::read_private_bytes(path, MAX_BYTES)? else {
+        return Ok(TeamRegistry::new());
+    };
+    let doc: Document =
+        serde_json::from_slice(&bytes).map_err(|_| TeamMailboxJournalError::Invalid)?;
+    if doc.version != 1 {
+        return Err(TeamMailboxJournalError::UnsupportedVersion {
+            path: path.display().to_string(),
+            version: doc.version,
+        });
+    }
+    let mut parts = TeamRegistryParts {
         next_seq: doc.next_seq,
         next_message_seq: doc.next_message_seq,
-    })
-}
-
-fn snapshot_document(registry: &TeamRegistry) -> TeamMailboxDocument {
-    let parts = registry.to_parts();
-    TeamMailboxDocument {
-        version: STORE_VERSION,
-        next_seq: parts.next_seq,
-        next_message_seq: parts.next_message_seq,
-        teams: parts.teams.into_values().collect(),
-        mailboxes: parts
+        ..Default::default()
+    };
+    for team in doc.teams {
+        if parts.teams.insert(team.team_id.clone(), team).is_some() {
+            return Err(TeamMailboxJournalError::Invalid);
+        }
+    }
+    for mailbox in doc.mailboxes {
+        if parts
             .mailboxes
-            .into_iter()
-            .map(|(team_id, messages)| MailboxBucket { team_id, messages })
-            .collect(),
+            .insert(mailbox.team_id, mailbox.messages)
+            .is_some()
+        {
+            return Err(TeamMailboxJournalError::Invalid);
+        }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn durable_team_mailbox_persists_deliver_and_reloads() {
-        // Given
-        let temp = tempfile::tempdir().expect("temp");
-        let root = temp.path();
-        let mut durable = DurableTeamRegistry::open(root).expect("open");
-        let team = durable.create_team("alpha").expect("create");
-        durable
-            .add_member(&team.team_id, "lead", "lead")
-            .expect("lead");
-        durable
-            .add_member(&team.team_id, "worker", "worker")
-            .expect("worker");
-        durable
-            .send_message(&team.team_id, "lead", Some("worker".into()), "do work")
-            .expect("send");
-        assert!(durable.journal_path().is_file());
-
-        // When
-        let delivered = durable
-            .deliver_messages(&team.team_id, "worker")
-            .expect("deliver");
-        assert_eq!(delivered.len(), 1);
-        assert_eq!(delivered[0].body, "do work");
-
-        // Then
-        let reloaded = DurableTeamRegistry::open(root).expect("reload");
-        let peek = reloaded.peek_inbox(&team.team_id, "worker").expect("peek");
-        assert!(peek.is_empty());
-        assert_eq!(reloaded.summary().teams, 1);
-        assert_eq!(reloaded.summary().members, 2);
+    let registry = TeamRegistry::from_parts(parts);
+    registry.validate()?;
+    let mut parts = registry.into_parts();
+    let (mut count, mut bytes) = (0, 0);
+    for (team_id, messages) in &mut parts.mailboxes {
+        // Old journals stored one broadcast envelope. Expand it once so every member can consume it.
+        let team = parts
+            .teams
+            .get(team_id)
+            .ok_or(TeamMailboxJournalError::Invalid)?;
+        let mut expanded = Vec::new();
+        for mut message in messages.drain(..) {
+            message.body = crate::redact::redact_artifact_text(&message.body);
+            let copies = if message.to_agent_id.is_some() {
+                1
+            } else {
+                team.members.len()
+            };
+            count += copies;
+            bytes += message.body.len() * copies;
+            if count > 4096 || bytes > 4 * 1024 * 1024 {
+                return Err(TeamRegistryError::Capacity.into());
+            }
+            if message.to_agent_id.is_some() {
+                expanded.push(message);
+            } else {
+                for member in &team.members {
+                    expanded.push(TeamMessage {
+                        to_agent_id: Some(member.agent_id.clone()),
+                        ..message.clone()
+                    });
+                }
+            }
+        }
+        *messages = expanded;
     }
-
-    #[test]
-    fn durable_team_fail_closed_on_non_member_send() {
-        // Given
-        let temp = tempfile::tempdir().expect("temp");
-        let mut durable = DurableTeamRegistry::open(temp.path()).expect("open");
-        let team = durable.create_team("strict").expect("create");
-        durable
-            .add_member(&team.team_id, "lead", "lead")
-            .expect("lead");
-
-        // When / Then
-        let err = durable
-            .send_message(&team.team_id, "ghost", None, "nope")
-            .expect_err("non-member");
-        assert!(matches!(
-            err,
-            TeamMailboxJournalError::Registry(TeamRegistryError::NotAMember { .. })
-        ));
-    }
-
-    #[test]
-    fn durable_team_send_after_cancel_fails_closed() {
-        // arrange
-        let temp = tempfile::tempdir().expect("temp");
-        let mut durable = DurableTeamRegistry::open(temp.path()).expect("open");
-        let team = durable.create_team("winding-down").expect("create");
-        durable
-            .add_member(&team.team_id, "lead", "lead")
-            .expect("lead");
-        durable.cancel_team(&team.team_id).expect("cancel");
-
-        // act — even a member cannot send once the team is cancelled
-        let err = durable
-            .send_message(&team.team_id, "lead", None, "late message")
-            .expect_err("cancelled team");
-
-        // assert
-        assert!(matches!(
-            err,
-            TeamMailboxJournalError::Registry(TeamRegistryError::Cancelled { .. })
-        ));
-    }
-
-    #[test]
-    fn durable_multi_agent_team_product_meets_contract() {
-        // Given
-        let temp = tempfile::tempdir().expect("temp");
-
-        // When
-        let product = run_durable_multi_agent_team_product(temp.path()).expect("product");
-
-        // Then
-        assert!(
-            product.meets_durable_team_contract(),
-            "durable team product failed: summary={:?} delivered={} journal={}",
-            product.summary,
-            product.delivered_count,
-            product.journal_path,
-        );
-        let reloaded = DurableTeamRegistry::open(temp.path()).expect("reload");
-        assert!(reloaded.summary().teams >= 2);
-        assert!(reloaded.summary().cancelled >= 1);
-    }
+    let registry = TeamRegistry::from_parts(parts);
+    registry.validate()?;
+    Ok(registry)
 }

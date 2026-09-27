@@ -1,249 +1,204 @@
-use std::{
-    collections::BTreeMap,
-    sync::{Mutex, OnceLock},
-};
+//! The unchanged TUI reads these snapshots. Runtime execution receives its config directly.
+use super::*;
+use std::sync::{LazyLock, PoisonError, RwLock};
 
-use super::{
-    resolve_profile_model_metadata, ConfigError, FormatterConfig, HarnessConfig, HookRuntimeConfig,
-    IntegrationsConfig, LspConfig, McpServerConnectionState, ResolvedProfileModelMetadata,
-    SkillsConfig,
-};
-
-static PROFILE_MODEL_METADATA_REGISTRY: OnceLock<
-    Mutex<BTreeMap<String, ResolvedProfileModelMetadata>>,
-> = OnceLock::new();
-static HOOK_RUNTIME_CONFIG_REGISTRY: OnceLock<Mutex<HookRuntimeConfig>> = OnceLock::new();
-static SKILLS_CONFIG_REGISTRY: OnceLock<Mutex<SkillsConfig>> = OnceLock::new();
-static LSP_CONFIG_REGISTRY: OnceLock<Mutex<LspConfig>> = OnceLock::new();
-static INTEGRATIONS_CONFIG_REGISTRY: OnceLock<Mutex<Option<IntegrationsConfig>>> = OnceLock::new();
-static MCP_SERVER_CONNECTION_REGISTRY: OnceLock<Mutex<BTreeMap<String, McpServerConnectionState>>> =
-    OnceLock::new();
-static MCP_SERVER_FIRST_CLASS_TOOL_ID_REGISTRY: OnceLock<
-    Mutex<BTreeMap<String, BTreeMap<String, String>>>,
-> = OnceLock::new();
-static FORMATTER_CONFIG_REGISTRY: OnceLock<Mutex<Option<FormatterConfig>>> = OnceLock::new();
-
-fn profile_model_metadata_registry(
-) -> &'static Mutex<BTreeMap<String, ResolvedProfileModelMetadata>> {
-    PROFILE_MODEL_METADATA_REGISTRY.get_or_init(|| Mutex::new(BTreeMap::new()))
+#[derive(Default)]
+struct Registered {
+    integrations: Option<IntegrationsConfig>,
+    lsp: LspConfig,
+    formatter: Option<FormatterConfig>,
+    skills: SkillsConfig,
+    hooks: HookRuntimeConfig,
+    models: BTreeMap<String, ResolvedProfileModelMetadata>,
+    connections: BTreeMap<String, McpServerConnectionState>,
+    tool_ids: BTreeMap<String, BTreeMap<String, String>>,
 }
+static REGISTERED: LazyLock<RwLock<Registered>> =
+    LazyLock::new(|| RwLock::new(Registered::default()));
 
-fn hook_runtime_config_registry() -> &'static Mutex<HookRuntimeConfig> {
-    HOOK_RUNTIME_CONFIG_REGISTRY.get_or_init(|| Mutex::new(HookRuntimeConfig::default()))
+pub fn registered_integrations_config() -> Option<IntegrationsConfig> {
+    REGISTERED
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .integrations
+        .clone()
 }
-
-fn skills_config_registry() -> &'static Mutex<SkillsConfig> {
-    SKILLS_CONFIG_REGISTRY.get_or_init(|| Mutex::new(SkillsConfig::default()))
+pub fn registered_lsp_config() -> LspConfig {
+    REGISTERED
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .lsp
+        .clone()
 }
-
-fn lsp_config_registry() -> &'static Mutex<LspConfig> {
-    LSP_CONFIG_REGISTRY.get_or_init(|| Mutex::new(LspConfig::default()))
+pub fn registered_formatter_config() -> Option<FormatterConfig> {
+    REGISTERED
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .formatter
+        .clone()
 }
-
-fn integrations_config_registry() -> &'static Mutex<Option<IntegrationsConfig>> {
-    INTEGRATIONS_CONFIG_REGISTRY.get_or_init(|| Mutex::new(None))
+pub fn registered_skills_config() -> SkillsConfig {
+    REGISTERED
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .skills
+        .clone()
 }
-
-fn mcp_server_connection_registry() -> &'static Mutex<BTreeMap<String, McpServerConnectionState>> {
-    MCP_SERVER_CONNECTION_REGISTRY.get_or_init(|| Mutex::new(BTreeMap::new()))
+pub fn registered_hook_runtime_config() -> HookRuntimeConfig {
+    REGISTERED
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .hooks
+        .clone()
 }
-
-fn mcp_server_first_class_tool_id_registry(
-) -> &'static Mutex<BTreeMap<String, BTreeMap<String, String>>> {
-    MCP_SERVER_FIRST_CLASS_TOOL_ID_REGISTRY.get_or_init(|| Mutex::new(BTreeMap::new()))
+pub fn registered_profile_model_metadata(profile: &str) -> Option<ResolvedProfileModelMetadata> {
+    REGISTERED
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .models
+        .get(profile)
+        .cloned()
 }
-
-fn formatter_config_registry() -> &'static Mutex<Option<FormatterConfig>> {
-    FORMATTER_CONFIG_REGISTRY.get_or_init(|| Mutex::new(None))
+pub fn registered_mcp_server_connection_state(name: &str) -> Option<McpServerConnectionState> {
+    REGISTERED
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .connections
+        .get(name)
+        .cloned()
 }
-
-fn with_registry_lock<T, U>(registry: &'static Mutex<T>, f: impl FnOnce(&mut T) -> U) -> U {
-    match registry.lock() {
-        Ok(mut guard) => f(&mut guard),
-        Err(poisoned) => {
-            let mut guard = poisoned.into_inner();
-            f(&mut guard)
-        }
+pub fn registered_mcp_server_first_class_tool_id(server: &str, tool: &str) -> Option<String> {
+    REGISTERED
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .tool_ids
+        .get(server)?
+        .get(tool)
+        .cloned()
+}
+pub fn update_registered_mcp_server_connection(
+    name: &str,
+    state: Option<McpServerConnectionState>,
+) {
+    let mut registered = REGISTERED.write().unwrap_or_else(PoisonError::into_inner);
+    if let Some(state) = state {
+        registered.connections.insert(name.into(), state);
+    } else {
+        registered.connections.remove(name);
     }
 }
-
-fn with_profile_model_metadata_registry<T>(
-    f: impl FnOnce(&mut BTreeMap<String, ResolvedProfileModelMetadata>) -> T,
-) -> T {
-    with_registry_lock(profile_model_metadata_registry(), f)
-}
-
-fn with_hook_runtime_config_registry<T>(f: impl FnOnce(&mut HookRuntimeConfig) -> T) -> T {
-    with_registry_lock(hook_runtime_config_registry(), f)
-}
-
-fn with_skills_config_registry<T>(f: impl FnOnce(&mut SkillsConfig) -> T) -> T {
-    with_registry_lock(skills_config_registry(), f)
-}
-
-fn with_lsp_config_registry<T>(f: impl FnOnce(&mut LspConfig) -> T) -> T {
-    with_registry_lock(lsp_config_registry(), f)
-}
-
-fn with_integrations_config_registry<T>(f: impl FnOnce(&mut Option<IntegrationsConfig>) -> T) -> T {
-    with_registry_lock(integrations_config_registry(), f)
-}
-
-fn with_mcp_server_connection_registry<T>(
-    f: impl FnOnce(&mut BTreeMap<String, McpServerConnectionState>) -> T,
-) -> T {
-    with_registry_lock(mcp_server_connection_registry(), f)
-}
-
-fn with_mcp_server_first_class_tool_id_registry<T>(
-    f: impl FnOnce(&mut BTreeMap<String, BTreeMap<String, String>>) -> T,
-) -> T {
-    with_registry_lock(mcp_server_first_class_tool_id_registry(), f)
-}
-
-fn with_formatter_config_registry<T>(f: impl FnOnce(&mut Option<FormatterConfig>) -> T) -> T {
-    with_registry_lock(formatter_config_registry(), f)
-}
-
-pub fn refresh_profile_model_metadata_registry(cfg: &HarnessConfig) -> Result<(), ConfigError> {
-    let resolved = cfg
-        .agents
-        .keys()
-        .map(|profile_name| {
-            resolve_profile_model_metadata(cfg, profile_name)
-                .map(|metadata| (profile_name.clone(), metadata))
-        })
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
-
-    with_profile_model_metadata_registry(|registry| {
-        *registry = resolved;
-    });
-
-    Ok(())
-}
-
-pub fn refresh_hook_runtime_config_registry(cfg: &HarnessConfig) {
-    set_registered_hook_runtime_config(HookRuntimeConfig {
-        hooks: cfg.hooks.clone(),
-        shell_allowlist: cfg.permissions.shell_allowlist.clone(),
-        suppress_execution: false,
-    });
-}
-
-pub fn refresh_skills_config_registry(cfg: &HarnessConfig) {
-    with_skills_config_registry(|registered| {
-        *registered = cfg.skills.clone();
-    });
-}
-
-pub fn set_registered_hook_runtime_config(config: HookRuntimeConfig) {
-    with_hook_runtime_config_registry(|registered| {
-        *registered = config;
-    });
-}
-
-pub fn registered_hook_runtime_config() -> HookRuntimeConfig {
-    with_hook_runtime_config_registry(|registered| registered.clone())
-}
-
-pub fn refresh_lsp_config_registry(cfg: &HarnessConfig) {
-    set_registered_lsp_config(cfg.lsp.clone());
-}
-
-pub fn refresh_integrations_config_registry(cfg: &HarnessConfig) {
-    set_registered_integrations_config(cfg.integrations.clone());
-    clear_registered_mcp_server_connection_states();
-    clear_registered_mcp_server_first_class_tool_ids();
-}
-
-pub fn registered_skills_config() -> SkillsConfig {
-    with_skills_config_registry(|registered| registered.clone())
+pub fn update_registered_mcp_server_tools(name: &str, tools: BTreeMap<String, String>) {
+    REGISTERED
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .tool_ids
+        .insert(name.into(), tools);
 }
 
 pub fn set_registered_integrations_config(config: IntegrationsConfig) {
-    with_integrations_config_registry(|registered| {
-        *registered = Some(config);
-    });
+    REGISTERED
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .integrations = Some(config);
 }
-
-pub fn clear_registered_integrations_config() {
-    with_integrations_config_registry(|registered| {
-        *registered = None;
-    });
-    clear_registered_mcp_server_connection_states();
-    clear_registered_mcp_server_first_class_tool_ids();
+pub fn set_registered_lsp_config(config: LspConfig) {
+    REGISTERED
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .lsp = config;
 }
-
-pub fn registered_integrations_config() -> Option<IntegrationsConfig> {
-    with_integrations_config_registry(|registered| registered.clone())
+pub fn set_registered_formatter_config(config: FormatterConfig) {
+    REGISTERED
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .formatter = Some(config);
 }
-
+pub fn set_registered_hook_runtime_config(config: HookRuntimeConfig) {
+    REGISTERED
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .hooks = config;
+}
 pub fn set_registered_mcp_server_connection_states(
     states: BTreeMap<String, McpServerConnectionState>,
 ) {
-    with_mcp_server_connection_registry(|registered| {
-        *registered = states;
-    });
+    REGISTERED
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .connections = states;
 }
-
-pub fn clear_registered_mcp_server_connection_states() {
-    with_mcp_server_connection_registry(|registered| {
-        registered.clear();
-    });
-}
-
 pub fn set_registered_mcp_server_first_class_tool_ids(
-    tool_ids: BTreeMap<String, BTreeMap<String, String>>,
+    ids: BTreeMap<String, BTreeMap<String, String>>,
 ) {
-    with_mcp_server_first_class_tool_id_registry(|registered| {
-        *registered = tool_ids;
-    });
+    REGISTERED
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .tool_ids = ids;
 }
 
+pub fn clear_registered_integrations_config() {
+    let mut state = REGISTERED.write().unwrap_or_else(PoisonError::into_inner);
+    state.integrations = None;
+    state.connections.clear();
+    state.tool_ids.clear();
+}
+pub fn clear_registered_mcp_server_connection_states() {
+    REGISTERED
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .connections
+        .clear();
+}
 pub fn clear_registered_mcp_server_first_class_tool_ids() {
-    with_mcp_server_first_class_tool_id_registry(|registered| {
-        registered.clear();
+    REGISTERED
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .tool_ids
+        .clear();
+}
+pub fn refresh_integrations_config_registry(config: &HarnessConfig) {
+    let mut state = REGISTERED.write().unwrap_or_else(PoisonError::into_inner);
+    state.integrations = Some(config.integrations.clone());
+    state.connections.clear();
+    state.tool_ids.clear();
+}
+pub fn refresh_lsp_config_registry(config: &HarnessConfig) {
+    set_registered_lsp_config(config.lsp.clone());
+}
+pub fn refresh_skills_config_registry(config: &HarnessConfig) {
+    REGISTERED
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .skills = config.skills.clone();
+}
+pub fn refresh_hook_runtime_config_registry(config: &HarnessConfig) {
+    set_registered_hook_runtime_config(HookRuntimeConfig {
+        hooks: config.hooks.clone(),
+        shell_allowlist: config.permissions.shell_allowlist.clone(),
+        suppress_execution: false,
     });
 }
-
-pub fn registered_mcp_server_first_class_tool_id(
-    server_name: &str,
-    remote_tool_name: &str,
-) -> Option<String> {
-    with_mcp_server_first_class_tool_id_registry(|registered| {
-        registered
-            .get(server_name)
-            .and_then(|tool_ids| tool_ids.get(remote_tool_name))
-            .cloned()
-    })
+pub fn refresh_profile_model_metadata_registry(config: &HarnessConfig) -> Result<(), ConfigError> {
+    let mut models = BTreeMap::new();
+    for (name, agent) in &config.agents {
+        if agent.model_ref == "mock:default" && !config.providers.contains_key("mock") {
+            continue;
+        }
+        models.insert(name.clone(), resolve_profile_model_metadata(config, name)?);
+    }
+    REGISTERED
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .models = models;
+    Ok(())
 }
 
-pub fn registered_mcp_server_connection_state(
-    server_name: &str,
-) -> Option<McpServerConnectionState> {
-    with_mcp_server_connection_registry(|registered| registered.get(server_name).cloned())
-}
-
-pub fn set_registered_lsp_config(config: LspConfig) {
-    with_lsp_config_registry(|registered| {
-        *registered = config;
-    });
-}
-
-pub fn registered_lsp_config() -> LspConfig {
-    with_lsp_config_registry(|registered| registered.clone())
-}
-
-pub fn set_registered_formatter_config(config: FormatterConfig) {
-    with_formatter_config_registry(|registered| {
-        *registered = Some(config);
-    });
-}
-
-pub fn registered_formatter_config() -> Option<FormatterConfig> {
-    with_formatter_config_registry(|registered| registered.clone())
-}
-
-pub fn registered_profile_model_metadata(profile: &str) -> Option<ResolvedProfileModelMetadata> {
-    with_profile_model_metadata_registry(|registry| registry.get(profile).cloned())
+pub(super) fn register(config: &HarnessConfig) -> Result<(), ConfigError> {
+    refresh_profile_model_metadata_registry(config)?;
+    refresh_hook_runtime_config_registry(config);
+    refresh_skills_config_registry(config);
+    refresh_lsp_config_registry(config);
+    refresh_integrations_config_registry(config);
+    set_registered_formatter_config(config.formatter.clone());
+    Ok(())
 }

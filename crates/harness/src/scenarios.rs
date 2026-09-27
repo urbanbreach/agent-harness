@@ -1,38 +1,24 @@
-// allow: SIZE_OK — CLI scenarios (deterministic built-in run scenarios)
-use crate::UnwrapOrAbort;
-use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use clap::ValueEnum;
-use harness_core::agent::AgentProfile;
-use harness_core::config::ShellAllowlist;
-use harness_core::edit::hashline::{compute_line_hash, HashlineOp, HashlinePatch, LineAnchor};
-use harness_core::event::{ActorKind, EventActor};
-use harness_core::perm::PermissionPolicy;
-use harness_core::tool::build_tool_function_name_mapping;
-use harness_providers::mock::{request_digest, MockProvider};
-use harness_providers::{
-    AssistantToolCall, CompletionMessage, CompletionRequest, CompletionUsage, MessageRole,
-    ProviderStreamEvent, ToolChoice, ToolDef,
+use harness_core::{
+    agent::AgentProfile,
+    event::{ActorKind, EventActor},
+    perm::PermissionPolicy,
 };
-use harness_tools::coordinator_registry;
+use harness_providers::mock::MockProvider;
 use serde_json::{json, Value};
-use uuid::Uuid;
-
-static WORKSPACE_COUNTER: AtomicU64 = AtomicU64::new(1);
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "snake_case")]
 pub enum ScenarioName {
-    #[value(name = "golden_path")]
     GoldenPath,
-    #[value(name = "golden_path_interactive")]
     GoldenPathInteractive,
-    #[value(name = "question_interactive")]
     QuestionInteractive,
 }
-
 impl ScenarioName {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -41,985 +27,87 @@ impl ScenarioName {
             Self::QuestionInteractive => "question_interactive",
         }
     }
-
     pub fn interactive_permissions(self) -> bool {
-        matches!(
-            self,
-            Self::GoldenPathInteractive | Self::QuestionInteractive
-        )
+        self != Self::GoldenPath
     }
-
     pub fn is_question(self) -> bool {
-        matches!(self, Self::QuestionInteractive)
+        self == Self::QuestionInteractive
     }
 }
-
-pub fn question_interactive_request_json() -> Value {
-    json!({
-        "questions": [{
-            "question": "Pick one",
-            "header": "Choice",
-            "options": [{"label": "A", "description": "Option A"}],
-            "multiple": false,
-        }]
-    })
-}
-
 pub fn deterministic_run_id(seed: u64, scenario: ScenarioName) -> String {
-    let namespace = Uuid::new_v5(
-        &Uuid::NAMESPACE_OID,
+    let namespace = uuid::Uuid::new_v5(
+        &uuid::Uuid::NAMESPACE_OID,
         format!("harness-seed:{seed}").as_bytes(),
     );
-    let run_uuid = Uuid::new_v5(&namespace, scenario.as_str().as_bytes());
-    format!("run_{}", run_uuid.simple())
+    format!(
+        "run_{}",
+        uuid::Uuid::new_v5(&namespace, scenario.as_str().as_bytes()).simple()
+    )
 }
-
 pub fn create_workspace(
     session_dir: &Path,
     scenario: ScenarioName,
-    deterministic_run_id: Option<&str>,
+    run_id: Option<&str>,
 ) -> Result<PathBuf, String> {
-    let workspace_dir = if let Some(run_id) = deterministic_run_id {
-        session_dir
-            .join("workspaces")
-            .join(format!("{}-{run_id}", scenario.as_str()))
-    } else {
-        let id = WORKSPACE_COUNTER.fetch_add(1, Ordering::SeqCst);
-        session_dir
-            .join("workspaces")
-            .join(format!("{}-{id:06}", scenario.as_str()))
-    };
-
-    if workspace_dir.exists() {
-        fs::remove_dir_all(&workspace_dir).map_err(|err| {
-            format!(
-                "failed to clear workspace {}: {err}",
-                workspace_dir.display()
-            )
-        })?;
-    }
-
-    fs::create_dir_all(&workspace_dir).map_err(|err| {
+    let id = run_id.map(str::to_owned).unwrap_or_else(|| {
         format!(
-            "failed to create workspace {}: {err}",
-            workspace_dir.display()
+            "{}-{}-{}",
+            scenario.as_str(),
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos())
         )
-    })?;
-    fs::write(workspace_dir.join("demo.txt"), "alpha\nbeta\ngamma\n")
-        .map_err(|err| format!("failed to seed demo.txt: {err}"))?;
-
-    Ok(workspace_dir)
-}
-
-pub fn golden_path_patch() -> HashlinePatch {
-    let source = "alpha\nbeta\ngamma\n";
-    let source_lines = source
-        .trim_end_matches('\n')
-        .split('\n')
-        .collect::<Vec<_>>();
-    let anchor = LineAnchor {
-        line: 2,
-        hash: compute_line_hash(source_lines[1]),
-    };
-
-    HashlinePatch {
-        edit_id: "edit-golden-path".to_string(),
-        path: "demo.txt".to_string(),
-        ops: vec![HashlineOp::Replace {
-            expected: vec![anchor],
-            lines: vec!["BETA".to_string()],
-        }],
-    }
-}
-
-pub fn golden_path_edit_args() -> Value {
-    let patch = golden_path_patch();
-    json!({
-        "editId": patch.edit_id,
-        "filePath": patch.path,
-        "edits": [
-            {
-                "op": "replace",
-                "pos": format!("2#{}", compute_line_hash("beta")),
-                "lines": ["BETA"],
-            }
-        ],
-    })
-}
-
-pub fn golden_path_provider() -> MockProvider {
-    let mut scripted_events = BTreeMap::new();
-
-    let prompt = "default-prompt";
-    let request = CompletionRequest {
-        provider_id: Some("mock".to_string()),
-        model_id: "model-1".to_string(),
-        messages: vec![
-            CompletionMessage {
-                role: MessageRole::System,
-                content: prompt.to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: prompt.to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-        ],
-        temperature: Some(0.0),
-        max_tokens: None,
-        variant: None,
-        reasoning_effort: None,
-        text_verbosity: None,
-        reasoning_summary: None,
-        thinking: None,
-        tools: None,
-        tool_choice: None,
-        context: Default::default(),
-        stream: true,
-    };
-
-    insert_model_setting_variants(
-        &mut scripted_events,
-        &request,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta(format!("{prompt}-delta")),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 2,
-                    completion_tokens: 1,
-                    total_tokens: 3,
-                }),
-            },
-        ],
-    );
-
-    let default_request_with_tools = CompletionRequest {
-        provider_id: request.provider_id.clone(),
-        model_id: request.model_id.clone(),
-        messages: request.messages.clone(),
-        temperature: request.temperature,
-        max_tokens: request.max_tokens,
-        variant: request.variant.clone(),
-        reasoning_effort: request.reasoning_effort.clone(),
-        text_verbosity: request.text_verbosity.clone(),
-        reasoning_summary: request.reasoning_summary.clone(),
-        thinking: request.thinking.clone(),
-        tools: Some(vec![demo_edit_tool_def()]),
-        tool_choice: Some(ToolChoice::Auto),
-        context: Default::default(),
-        stream: request.stream,
-    };
-
-    insert_model_setting_variants(
-        &mut scripted_events,
-        &default_request_with_tools,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta(format!("{prompt}-delta")),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 2,
-                    completion_tokens: 1,
-                    total_tokens: 3,
-                }),
-            },
-        ],
-    );
-
-    let interactive_request = CompletionRequest {
-        provider_id: Some("mock".to_string()),
-        model_id: "model-1".to_string(),
-        messages: vec![
-            CompletionMessage {
-                role: MessageRole::System,
-                content: "default-prompt".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: "Hello from PTY".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-        ],
-        temperature: Some(0.0),
-        max_tokens: None,
-        variant: None,
-        reasoning_effort: None,
-        text_verbosity: None,
-        reasoning_summary: None,
-        thinking: None,
-        tools: None,
-        tool_choice: None,
-        context: Default::default(),
-        stream: true,
-    };
-
-    insert_model_setting_variants(
-        &mut scripted_events,
-        &interactive_request,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("Hello".to_string()),
-            ProviderStreamEvent::TextDelta(" world".to_string()),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 4,
-                    completion_tokens: 2,
-                    total_tokens: 6,
-                }),
-            },
-        ],
-    );
-
-    let interactive_request_with_tools = CompletionRequest {
-        provider_id: Some("mock".to_string()),
-        model_id: "model-1".to_string(),
-        messages: interactive_request.messages.clone(),
-        temperature: interactive_request.temperature,
-        max_tokens: interactive_request.max_tokens,
-        variant: interactive_request.variant.clone(),
-        reasoning_effort: interactive_request.reasoning_effort.clone(),
-        text_verbosity: interactive_request.text_verbosity.clone(),
-        reasoning_summary: interactive_request.reasoning_summary.clone(),
-        thinking: interactive_request.thinking.clone(),
-        tools: Some(vec![demo_edit_tool_def()]),
-        tool_choice: Some(ToolChoice::Auto),
-        context: Default::default(),
-        stream: interactive_request.stream,
-    };
-
-    insert_model_setting_variants(
-        &mut scripted_events,
-        &interactive_request_with_tools,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("Hello".to_string()),
-            ProviderStreamEvent::TextDelta(" world".to_string()),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 4,
-                    completion_tokens: 2,
-                    total_tokens: 6,
-                }),
-            },
-        ],
-    );
-
-    for prompt_text in ["hello", "hi", "pipe", "arg\npipe", "Hello"] {
-        insert_default_text_response(&mut scripted_events, prompt_text, true, "Hello world");
-    }
-    let resumed_semantic_request = CompletionRequest {
-        provider_id: Some("mock".to_string()),
-        model_id: "model-1".to_string(),
-        messages: vec![
-            CompletionMessage {
-                role: MessageRole::System,
-                content: "default-prompt".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: "hello".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::Assistant,
-                content: "Hello world".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: "hello".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-        ],
-        temperature: Some(0.0),
-        max_tokens: None,
-        variant: None,
-        reasoning_effort: None,
-        text_verbosity: None,
-        reasoning_summary: None,
-        thinking: None,
-        tools: Some(vec![demo_edit_tool_def()]),
-        tool_choice: Some(ToolChoice::Auto),
-        context: Default::default(),
-        stream: true,
-    };
-    insert_model_setting_variants(
-        &mut scripted_events,
-        &resumed_semantic_request,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::ReasoningDelta("continuation reasoning".to_string()),
-            ProviderStreamEvent::TextDelta("Hello again".to_string()),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 8,
-                    completion_tokens: 3,
-                    total_tokens: 11,
-                }),
-            },
-        ],
-    );
-    let mut third_resumed_semantic_request = resumed_semantic_request.clone();
-    third_resumed_semantic_request.messages.extend([
-        CompletionMessage {
-            role: MessageRole::Assistant,
-            content: "Hello again".to_string(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        },
-        CompletionMessage {
-            role: MessageRole::User,
-            content: "hello".to_string(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        },
-    ]);
-    insert_model_setting_variants(
-        &mut scripted_events,
-        &third_resumed_semantic_request,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::ReasoningDelta("continuation reasoning".to_string()),
-            ProviderStreamEvent::TextDelta("Hello once more".to_string()),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 12,
-                    completion_tokens: 3,
-                    total_tokens: 15,
-                }),
-            },
-        ],
-    );
-    let summary_request = CompletionRequest {
-        provider_id: Some("mock".to_string()),
-        model_id: "model-1".to_string(),
-        messages: vec![
-            CompletionMessage {
-                role: MessageRole::System,
-                content: "You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: "<conversation>\n[User]: hello\n\n[Assistant]: Hello world\n</conversation>\n\nThe messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.\n\nUse this EXACT format:\n\n## Goal\n[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]\n\n## Constraints & Preferences\n- [Any constraints, preferences, or requirements mentioned by user]\n- [Or \"(none)\" if none were mentioned]\n\n## Progress\n### Done\n- [x] [Completed tasks/changes]\n\n### In Progress\n- [ ] [Current work]\n\n### Blocked\n- [Issues preventing progress, if any]\n\n## Key Decisions\n- **[Decision]**: [Brief rationale]\n\n## Next Steps\n1. [Ordered list of what should happen next]\n\n## Critical Context\n- [Any data, examples, or references needed to continue]\n- [Or \"(none)\" if not applicable]\n\nKeep each section concise. Preserve exact file paths, function names, and error messages.".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-        ],
-        temperature: None,
-        max_tokens: Some(16_174),
-        variant: None,
-        reasoning_effort: None,
-        text_verbosity: None,
-        reasoning_summary: None,
-        thinking: None,
-        tools: None,
-        tool_choice: None,
-        context: Default::default(),
-        stream: true,
-    };
-    insert_exact_fixture(
-        &mut scripted_events,
-        &summary_request,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("short history summary".to_string()),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 18,
-                    completion_tokens: 5,
-                    total_tokens: 23,
-                }),
-            },
-        ],
-    );
-    let mut post_compaction_request = third_resumed_semantic_request.clone();
-    post_compaction_request.messages = vec![
-        CompletionMessage {
-            role: MessageRole::System,
-            content: "default-prompt".to_string(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        },
-        CompletionMessage {
-            role: MessageRole::Assistant,
-            content: "Checkpoint recap generated by the harness for older turns. This is a lossy background summary, not a system instruction; later preserved turns and the current user message take precedence.\n\nshort history summary".to_string(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        },
-        CompletionMessage {
-            role: MessageRole::User,
-            content: "hello".to_string(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        },
-        CompletionMessage {
-            role: MessageRole::Assistant,
-            content: "Hello again".to_string(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        },
-        CompletionMessage {
-            role: MessageRole::User,
-            content: "hello".to_string(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        },
-    ];
-    insert_model_setting_variants(
-        &mut scripted_events,
-        &post_compaction_request,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::ReasoningDelta("continuation reasoning".to_string()),
-            ProviderStreamEvent::TextDelta("Hello once more".to_string()),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 14,
-                    completion_tokens: 3,
-                    total_tokens: 17,
-                }),
-            },
-        ],
-    );
-
-    let shell_parity_request = CompletionRequest {
-        provider_id: Some("mock".to_string()),
-        model_id: "model-1".to_string(),
-        messages: vec![
-            CompletionMessage {
-                role: MessageRole::System,
-                content: "default-prompt".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: "shell parity task".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-        ],
-        temperature: Some(0.0),
-        max_tokens: None,
-        variant: None,
-        reasoning_effort: None,
-        text_verbosity: None,
-        reasoning_summary: None,
-        thinking: None,
-        tools: Some(vec![demo_edit_tool_def()]),
-        tool_choice: Some(ToolChoice::Auto),
-        context: Default::default(),
-        stream: true,
-    };
-
-    insert_model_setting_variants(
-        &mut scripted_events,
-        &shell_parity_request,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("Shell parity".to_string()),
-            ProviderStreamEvent::TextDelta(" looks good.".to_string()),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 10,
-                    completion_tokens: 4,
-                    total_tokens: 14,
-                }),
-            },
-        ],
-    );
-
-    insert_m07_context_resume_fixtures(&mut scripted_events);
-
-    MockProvider::new(scripted_events)
-}
-
-fn insert_m07_context_resume_fixtures(
-    scripted_events: &mut BTreeMap<String, Vec<ProviderStreamEvent>>,
-) {
-    let tool = demo_edit_tool_def();
-    let arguments_json = golden_path_edit_args().to_string();
-    let provider_tool_call_id = "m07-provider-tool-1";
-    let mut request = CompletionRequest {
-        provider_id: Some("mock".to_string()),
-        model_id: "model-1".to_string(),
-        messages: vec![
-            CompletionMessage {
-                role: MessageRole::System,
-                content: "default-prompt".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: "m07 tool".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-        ],
-        temperature: Some(0.0),
-        max_tokens: None,
-        variant: None,
-        reasoning_effort: None,
-        text_verbosity: None,
-        reasoning_summary: None,
-        thinking: None,
-        tools: Some(vec![tool.clone()]),
-        tool_choice: Some(ToolChoice::Auto),
-        context: Default::default(),
-        stream: true,
-    };
-    insert_model_setting_variants(
-        scripted_events,
-        &request,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::ToolCallComplete {
-                tool_call_id: provider_tool_call_id.to_string(),
-                function_name: tool.function_name.clone(),
-                arguments_json: arguments_json.clone(),
-            },
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 12,
-                    completion_tokens: 3,
-                    total_tokens: 15,
-                }),
-            },
-        ],
-    );
-
-    request.messages.extend([
-        CompletionMessage {
-            role: MessageRole::Assistant,
-            content: String::new(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: Some(vec![AssistantToolCall {
-                tool_call_id: provider_tool_call_id.to_string(),
-                function_name: tool.function_name.clone(),
-                arguments_json,
-            }]),
-        },
-        CompletionMessage {
-            role: MessageRole::Tool,
-            content: "Edit applied successfully.".to_string(),
-            name: Some(tool.function_name),
-            tool_call_id: Some(provider_tool_call_id.to_string()),
-            assistant_tool_calls: None,
-        },
-    ]);
-    insert_model_setting_variants(
-        scripted_events,
-        &request,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("M07 tool complete".to_string()),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 18,
-                    completion_tokens: 4,
-                    total_tokens: 22,
-                }),
-            },
-        ],
-    );
-
-    request.messages.extend([
-        CompletionMessage {
-            role: MessageRole::Assistant,
-            content: "M07 tool complete".to_string(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        },
-        CompletionMessage {
-            role: MessageRole::User,
-            content: "m07 continue".to_string(),
-            name: None,
-            tool_call_id: None,
-            assistant_tool_calls: None,
-        },
-    ]);
-    insert_model_setting_variants(
-        scripted_events,
-        &request,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::ReasoningDelta("m07 continuation reasoning".to_string()),
-            ProviderStreamEvent::TextDelta("M07 continuation complete".to_string()),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 24,
-                    completion_tokens: 5,
-                    total_tokens: 29,
-                }),
-            },
-        ],
-    );
-}
-
-fn insert_default_text_response(
-    scripted_events: &mut BTreeMap<String, Vec<ProviderStreamEvent>>,
-    prompt_text: &str,
-    include_tools: bool,
-    response: &str,
-) {
-    let mut request = CompletionRequest {
-        provider_id: Some("mock".to_string()),
-        model_id: "model-1".to_string(),
-        messages: vec![
-            CompletionMessage {
-                role: MessageRole::System,
-                content: "default-prompt".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: prompt_text.to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-        ],
-        temperature: Some(0.0),
-        max_tokens: None,
-        variant: None,
-        reasoning_effort: None,
-        text_verbosity: None,
-        reasoning_summary: None,
-        thinking: None,
-        tools: None,
-        tool_choice: None,
-        context: Default::default(),
-        stream: true,
-    };
-    if include_tools {
-        request.tools = Some(vec![demo_edit_tool_def()]);
-        request.tool_choice = Some(ToolChoice::Auto);
-    }
-
-    insert_model_setting_variants(
-        scripted_events,
-        &request,
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta(response.to_string()),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 4,
-                    completion_tokens: 2,
-                    total_tokens: 6,
-                }),
-            },
-        ],
-    );
-}
-
-fn demo_edit_tool_def() -> ToolDef {
-    let tool_id = "edit";
-    let registry = coordinator_registry(ShellAllowlist::default());
-    let tool = registry.get(tool_id).unwrap_or_abort();
-    let function_name = build_tool_function_name_mapping([tool_id])
-        .function_name_for_tool_id(tool_id)
-        .unwrap_or_abort()
-        .to_string();
-
-    ToolDef {
-        tool_id: tool_id.to_string(),
-        function_name,
-        description: Some(tool.description().to_string()),
-        parameters: tool.parameters_json_schema(),
-    }
-}
-
-fn golden_path_thinking() -> Option<Value> {
-    Some(json!({
-        "budgetTokens": 32_000,
-        "type": "enabled",
-    }))
-}
-
-fn insert_model_setting_variants(
-    scripted_events: &mut BTreeMap<String, Vec<ProviderStreamEvent>>,
-    request: &CompletionRequest,
-    events: Vec<ProviderStreamEvent>,
-) {
-    for (variant, reasoning_effort, reasoning_summary, thinking) in [
-        (None, None, None, None),
-        (None, None, None, golden_path_thinking()),
-        (Some("max"), Some("max"), Some("auto"), None),
-    ] {
-        let mut request = request.clone();
-        request.variant = variant.map(str::to_string);
-        request.reasoning_effort = reasoning_effort.map(str::to_string);
-        request.reasoning_summary = reasoning_summary.map(str::to_string);
-        request.thinking = thinking;
-        scripted_events.insert(request_digest(&request), events.clone());
-    }
-}
-
-fn insert_exact_fixture(
-    scripted_events: &mut BTreeMap<String, Vec<ProviderStreamEvent>>,
-    request: &CompletionRequest,
-    events: Vec<ProviderStreamEvent>,
-) {
-    scripted_events.insert(request_digest(request), events);
-}
-
-pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
-    BTreeMap::from([(
-        "default".to_string(),
-        AgentProfile {
-            name: "default".to_string(),
-            model_ref: "mock:model-1".to_string(),
-            model_ref_explicit: true,
-            system_prompt: "default-prompt".to_string(),
-            cache_retention: Default::default(),
-            max_iters: Some(12),
-            temperature: Some(0.0),
-            tool_failure_mode: harness_core::config::ToolFailureMode::ContinueAsToolMessage,
-            toolset: vec!["edit".to_string()],
-            permission_ruleset: Vec::new(),
-        },
-    )])
-}
-
-pub fn default_permission_policy() -> PermissionPolicy {
-    use harness_core::config::PermissionMode;
-    PermissionPolicy::new(
-        PermissionMode::Ask,
-        PermissionMode::Deny,
-        PermissionMode::Deny,
-    )
-    .with_ask_timeout_ms(30_000)
-}
-
-pub fn supervisor_actor() -> EventActor {
-    EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string()))
-}
-
-pub fn worker_actor(agent_id: String) -> EventActor {
-    EventActor::new(ActorKind::Worker, Some(agent_id))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use harness_providers::Provider;
-    use tokio_stream::StreamExt;
-
-    #[test]
-    fn scenario_name_reports_interactive_permission_mode() {
-        assert!(!ScenarioName::GoldenPath.interactive_permissions());
-        assert!(ScenarioName::GoldenPathInteractive.interactive_permissions());
-        assert!(ScenarioName::QuestionInteractive.interactive_permissions());
-        assert!(ScenarioName::QuestionInteractive.is_question());
-        assert!(!ScenarioName::GoldenPath.is_question());
-    }
-
-    #[tokio::test]
-    async fn golden_path_provider_supports_third_resumed_hello_turn() {
-        // arrange
-        let provider = golden_path_provider();
-        let request = third_resumed_hello_request();
-
-        // act
-        let events = provider
-            .stream_completion(request)
-            .await
-            .collect::<Vec<_>>()
-            .await;
-
-        // assert
-        assert_eq!(
-            events,
-            vec![
-                ProviderStreamEvent::Start,
-                ProviderStreamEvent::ReasoningDelta("continuation reasoning".to_string()),
-                ProviderStreamEvent::TextDelta("Hello once more".to_string()),
-                ProviderStreamEvent::Done {
-                    usage: Some(CompletionUsage {
-                        prompt_tokens: 12,
-                        completion_tokens: 3,
-                        total_tokens: 15,
-                    }),
-                },
-            ],
-            "third resumed hello turn must have a deterministic demo fixture"
-        );
-    }
-
-    #[tokio::test]
-    async fn golden_path_provider_supports_post_compaction_hello_turn() {
-        // arrange
-        let provider = golden_path_provider();
-        let request = post_compaction_hello_request();
-
-        // act
-        let events = provider
-            .stream_completion(request)
-            .await
-            .collect::<Vec<_>>()
-            .await;
-
-        // assert
-        assert_eq!(
-            events,
-            vec![
-                ProviderStreamEvent::Start,
-                ProviderStreamEvent::ReasoningDelta("continuation reasoning".to_string()),
-                ProviderStreamEvent::TextDelta("Hello once more".to_string()),
-                ProviderStreamEvent::Done {
-                    usage: Some(CompletionUsage {
-                        prompt_tokens: 14,
-                        completion_tokens: 3,
-                        total_tokens: 17,
-                    }),
-                },
-            ],
-            "post-compaction hello turn must have a deterministic demo fixture"
-        );
-    }
-
-    fn third_resumed_hello_request() -> CompletionRequest {
-        CompletionRequest {
-            provider_id: Some("mock".to_string()),
-            model_id: "model-1".to_string(),
-            messages: vec![
-                CompletionMessage {
-                    role: MessageRole::System,
-                    content: "default-prompt".to_string(),
-                    name: None,
-                    tool_call_id: None,
-                    assistant_tool_calls: None,
-                },
-                CompletionMessage {
-                    role: MessageRole::User,
-                    content: "hello".to_string(),
-                    name: None,
-                    tool_call_id: None,
-                    assistant_tool_calls: None,
-                },
-                CompletionMessage {
-                    role: MessageRole::Assistant,
-                    content: "Hello world".to_string(),
-                    name: None,
-                    tool_call_id: None,
-                    assistant_tool_calls: None,
-                },
-                CompletionMessage {
-                    role: MessageRole::User,
-                    content: "hello".to_string(),
-                    name: None,
-                    tool_call_id: None,
-                    assistant_tool_calls: None,
-                },
-                CompletionMessage {
-                    role: MessageRole::Assistant,
-                    content: "Hello again".to_string(),
-                    name: None,
-                    tool_call_id: None,
-                    assistant_tool_calls: None,
-                },
-                CompletionMessage {
-                    role: MessageRole::User,
-                    content: "hello".to_string(),
-                    name: None,
-                    tool_call_id: None,
-                    assistant_tool_calls: None,
-                },
-            ],
-            temperature: Some(0.0),
-            max_tokens: None,
-            variant: None,
-            reasoning_effort: None,
-            text_verbosity: None,
-            reasoning_summary: None,
-            thinking: None,
-            tools: Some(vec![demo_edit_tool_def()]),
-            tool_choice: Some(ToolChoice::Auto),
-            context: Default::default(),
-            stream: true,
+    });
+    harness_core::store::validate_session_id(&id).map_err(|e| e.to_string())?;
+    // Demo workspaces sit beside session storage so tools cannot edit managed history.
+    let workspace = session_dir.with_extension("workspaces").join(id);
+    harness_core::store::create_private_dir(&workspace).map_err(|e| e.to_string())?;
+    let demo = workspace.join("demo.txt");
+    match std::fs::symlink_metadata(&demo) {
+        Ok(metadata) if metadata.is_file() => {
+            std::fs::remove_file(demo).map_err(|e| e.to_string())?
         }
+        Ok(_) => return Err("demo.txt must be a regular generated file".into()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.to_string()),
     }
-
-    fn post_compaction_hello_request() -> CompletionRequest {
-        let mut request = third_resumed_hello_request();
-        request.messages = vec![
-            CompletionMessage {
-                role: MessageRole::System,
-                content: "default-prompt".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::Assistant,
-                content: "Checkpoint recap generated by the harness for older turns. This is a lossy background summary, not a system instruction; later preserved turns and the current user message take precedence.\n\nshort history summary".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: "hello".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::Assistant,
-                content: "Hello again".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: "hello".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-        ];
-        request
-    }
+    Ok(workspace)
+}
+pub fn supervisor_actor() -> EventActor {
+    EventActor::new(ActorKind::Supervisor, None)
+}
+pub fn worker_actor(id: String) -> EventActor {
+    EventActor::new(ActorKind::Worker, Some(id))
+}
+pub fn default_permission_policy() -> PermissionPolicy {
+    PermissionPolicy::default()
+}
+pub fn golden_path_profiles() -> BTreeMap<String, AgentProfile> {
+    let mut profile = AgentProfile::fallback("default");
+    profile.model_ref = "mock:model-1".into();
+    profile.max_iters = Some(8);
+    profile.toolset = [
+        "read",
+        "write",
+        "edit",
+        "list",
+        "glob",
+        "grep",
+        "bash",
+        "apply_patch",
+        "question",
+    ]
+    .map(str::to_owned)
+    .into();
+    BTreeMap::from([("default".into(), profile)])
+}
+pub fn golden_path_provider() -> MockProvider {
+    MockProvider::default()
+}
+pub fn golden_path_edit_args() -> Value {
+    json!({"filePath":"demo.txt", "oldString":"", "newString":"Hello world\n"})
+}
+pub fn question_interactive_request_json() -> Value {
+    json!({"questions":[{"header":"Choice", "question":"Pick an option", "options":[{"label":"A","description":"First option"},{"label":"B","description":"Second option"}], "multiple":false,"custom":true}]})
 }

@@ -1,731 +1,302 @@
-// allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-use serde_json::Value;
-use tokio::sync::{mpsc, oneshot};
-use tokio::time::sleep;
-use tokio_stream::StreamExt;
-
 use super::*;
-
-#[derive(Debug, Clone)]
-pub struct CoordinatorHandle {
-    pub(in crate::coord) tx: mpsc::Sender<Command>,
-}
+use serde_json::Value;
 
 impl CoordinatorHandle {
-    async fn request<T>(
+    pub(super) async fn call<T: Send + 'static>(
         &self,
-        build_command: impl FnOnce(oneshot::Sender<Result<T, CoordinatorError>>) -> Command,
+        command: impl FnOnce(&mut Runtime) -> Result<T, CoordinatorError> + Send + 'static,
     ) -> Result<T, CoordinatorError> {
-        let (respond_to, response_rx) = oneshot::channel();
+        let (tx, rx) = oneshot::channel();
         self.tx
-            .send(build_command(respond_to))
+            .send(Box::new(move |state| {
+                let _ = tx.send(command(state));
+            }))
             .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed)?
+            .map_err(|_| CoordinatorError::Closed)?;
+        rx.await.map_err(|_| CoordinatorError::Closed)?
     }
-
-    async fn request_string_error<T>(
-        &self,
-        build_command: impl FnOnce(oneshot::Sender<Result<T, String>>) -> Command,
-    ) -> Result<T, String> {
-        let (respond_to, response_rx) = oneshot::channel();
-        self.tx
-            .send(build_command(respond_to))
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed.to_string())?;
-
-        response_rx
-            .await
-            .map_err(|_| CoordinatorError::ResponseChannelClosed.to_string())?
-    }
-
-    async fn send_command(&self, command: Command) -> Result<(), CoordinatorError> {
-        self.tx
-            .send(command)
-            .await
-            .map_err(|_| CoordinatorError::CommandChannelClosed)
-    }
-
     pub async fn start_run(
         &self,
-        run_name: impl Into<String>,
-        workspace_root: impl Into<PathBuf>,
+        name: impl Into<String>,
+        root: impl Into<PathBuf>,
     ) -> Result<RunInfo, CoordinatorError> {
-        self.request(|respond_to| Command::StartRun {
-            run_name: run_name.into(),
-            workspace_root: workspace_root.into(),
-            respond_to,
-        })
-        .await
+        let (name, root) = (name.into(), root.into());
+        self.call(move |s| s.start(name, root)).await
     }
-
-    pub async fn resume_run(
-        &self,
-        run_id: impl Into<String>,
-        run_name: impl Into<String>,
-    ) -> Result<RunInfo, CoordinatorError> {
-        self.request(|respond_to| Command::ResumeRun {
-            run_id: run_id.into(),
-            run_name: run_name.into(),
-            respond_to,
-        })
-        .await
-    }
-
-    pub async fn stop_run(&self) -> Result<(), CoordinatorError> {
-        self.request(|respond_to| Command::StopRun { respond_to })
-            .await
-    }
-
-    pub async fn fail_run(&self, error: impl Into<String>) -> Result<(), CoordinatorError> {
-        let error = error.into();
-        self.request(|respond_to| Command::FailRun { error, respond_to })
-            .await
-    }
-
-    pub async fn event_store(&self) -> Result<Arc<dyn EventStore>, CoordinatorError> {
-        let store = self
-            .request(|respond_to| Command::GetEventStore { respond_to })
-            .await?;
-        let store: Arc<dyn EventStore> = store;
-        Ok(store)
-    }
-
     pub async fn run_info(&self) -> Result<RunInfo, CoordinatorError> {
-        self.request(|respond_to| Command::GetRunInfo { respond_to })
-            .await
+        self.call(|s| s.info().cloned()).await
     }
-
+    pub async fn plugin_lifecycle_summary(
+        &self,
+    ) -> Result<crate::integrations::PluginLifecycleSummary, CoordinatorError> {
+        self.call(|s| {
+            crate::integrations::PluginRuntimeContract::open(&s.info()?.workspace_root)
+                .map(|runtime| runtime.summary())
+                .map_err(|e| CoordinatorError::Invalid(e.to_string()))
+        })
+        .await
+    }
+    pub async fn event_store(&self) -> Result<Arc<dyn EventStore>, CoordinatorError> {
+        self.call(|s| {
+            s.store
+                .clone()
+                .map(crate::store::observer)
+                .ok_or(CoordinatorError::RunNotStarted)
+        })
+        .await
+    }
+    /// A read-only redactor that also sees credentials registered during the run.
+    pub async fn output_redactor(
+        &self,
+    ) -> Result<Arc<dyn Redactor + Send + Sync>, CoordinatorError> {
+        self.call(|s| Ok(Arc::clone(&s.redactor))).await
+    }
+    pub async fn subscribe_new_events(
+        &self,
+    ) -> Result<crate::store::EventStream, CoordinatorError> {
+        self.call(|s| {
+            s.store
+                .as_ref()
+                .ok_or(CoordinatorError::RunNotStarted)?
+                .subscribe(s.last_seq.saturating_add(1))
+                .map_err(Into::into)
+        })
+        .await
+    }
+    pub async fn stop_run(&self) -> Result<(), CoordinatorError> {
+        self.stop(None).await
+    }
+    pub async fn fail_run(&self, error: impl Into<String>) -> Result<(), CoordinatorError> {
+        self.stop(Some(error.into())).await
+    }
+    async fn stop(&self, failure: Option<String>) -> Result<(), CoordinatorError> {
+        let (tx, rx) = oneshot::channel();
+        self.call(move |s| s.stop(failure, tx)).await?;
+        rx.await.map_err(|_| CoordinatorError::Closed)?
+    }
     pub async fn update_session_title(
         &self,
         title: impl Into<String>,
     ) -> Result<RunInfo, CoordinatorError> {
-        self.request(|respond_to| Command::UpdateSessionTitle {
-            title: title.into(),
-            respond_to,
+        let title = title.into();
+        self.call(move |s| {
+            if title.trim().is_empty() || title.len() > 1024 {
+                return Err(CoordinatorError::Invalid("invalid session title".into()));
+            }
+            s.emit(
+                system(),
+                None,
+                EventV1::SessionTitleUpdated(SessionTitleUpdatedEvent {
+                    title: title.clone(),
+                }),
+            )?;
+            if let Some(info) = &mut s.info {
+                info.run_name = title.clone().into();
+            }
+            if let Some(metadata) = &mut s.metadata {
+                metadata.run_name = title;
+            }
+            s.write_metadata()?;
+            s.info().cloned()
         })
         .await
     }
-
     pub async fn record_ui_intent(
         &self,
-        agent_id: impl Into<String>,
+        agent: impl Into<String>,
         intent: impl Into<String>,
         params: BTreeMap<String, String>,
     ) -> Result<(), CoordinatorError> {
-        self.request(|respond_to| Command::RecordUiIntent {
-            agent_id: agent_id.into(),
-            intent: intent.into(),
-            params,
-            respond_to,
+        let (agent, intent) = (agent.into(), intent.into());
+        self.call(move |s| {
+            s.emit(
+                EventActor::new(ActorKind::User, Some(agent)),
+                None,
+                EventV1::UiIntentReceived(UiIntentReceivedEvent { intent, params }),
+            )
+            .map(|_| ())
         })
         .await
     }
-
-    pub async fn agent_runtime_info(
-        &self,
-        agent_id: impl Into<String>,
-    ) -> Result<AgentRuntimeInfo, CoordinatorError> {
-        self.request(|respond_to| Command::GetAgentRuntimeInfo {
-            agent_id: agent_id.into(),
-            respond_to,
-        })
-        .await
-    }
-
     pub async fn spawn_agent(
         &self,
         actor: EventActor,
         profile: impl Into<String>,
-        parent_agent_id: Option<String>,
+        parent: Option<String>,
     ) -> Result<String, CoordinatorError> {
-        self.request(|respond_to| Command::SpawnAgent {
-            actor,
-            profile: profile.into(),
-            parent_agent_id,
-            child_session_title: None,
-            respond_to,
-        })
-        .await
+        self.spawn_agent_idle(actor, profile, parent).await
     }
-
     pub async fn spawn_agent_idle(
         &self,
         actor: EventActor,
         profile: impl Into<String>,
-        parent_agent_id: Option<String>,
+        parent: Option<String>,
     ) -> Result<String, CoordinatorError> {
-        self.request(|respond_to| Command::SpawnAgentIdle {
-            actor,
-            profile: profile.into(),
-            parent_agent_id,
-            child_session_title: None,
-            respond_to,
-        })
-        .await
+        let profile = profile.into();
+        self.call(move |s| s.spawn_agent(actor, &profile, parent))
+            .await
     }
-
-    pub async fn spawn_agent_idle_with_child_title(
+    pub async fn agent_runtime_info(
         &self,
-        actor: EventActor,
-        profile: impl Into<String>,
-        parent_agent_id: Option<String>,
-        child_session_title: impl Into<String>,
-    ) -> Result<String, CoordinatorError> {
-        self.request(|respond_to| Command::SpawnAgentIdle {
-            actor,
-            profile: profile.into(),
-            parent_agent_id,
-            child_session_title: Some(child_session_title.into()),
-            respond_to,
+        agent: impl Into<String>,
+    ) -> Result<AgentRuntimeInfo, CoordinatorError> {
+        let agent = agent.into();
+        self.call(move |s| {
+            s.agents
+                .get(&agent)
+                .map(|a| a.info.clone())
+                .ok_or(CoordinatorError::UnknownAgent(agent))
         })
         .await
     }
-
-    pub async fn request_tool_call(
-        &self,
-        actor: EventActor,
-        legacy_profile_hint: Option<String>,
-        tool_id: impl Into<String>,
-        args_json: Value,
-    ) -> Result<String, CoordinatorError> {
-        self.request(|respond_to| Command::RequestToolCall {
-            actor,
-            legacy_profile_hint,
-            tool_id: tool_id.into(),
-            args_json,
-            respond_to,
-        })
-        .await
-    }
-
-    pub async fn execute_agent_tool_call(
-        &self,
-        actor: EventActor,
-        legacy_profile_hint: Option<String>,
-        tool_id: impl Into<String>,
-        args_json: Value,
-    ) -> Result<ToolResult, String> {
-        self.request_string_error(|respond_to| Command::ExecuteAgentToolCall {
-            actor,
-            legacy_profile_hint,
-            tool_id: tool_id.into(),
-            args_json,
-            reserved_tool_call_id: None,
-            respond_to,
-        })
-        .await
-    }
-
     pub async fn request_agent_turn(
         &self,
         actor: EventActor,
-        agent_id: impl Into<String>,
+        agent: impl Into<String>,
         prompt: impl Into<String>,
     ) -> Result<String, CoordinatorError> {
-        self.request_agent_turn_with_model(actor, agent_id, prompt, None, None)
+        self.request_agent_turn_with_model(actor, agent, prompt, None, None)
             .await
     }
-
     pub async fn request_agent_turn_with_model(
         &self,
         actor: EventActor,
-        agent_id: impl Into<String>,
+        agent: impl Into<String>,
         prompt: impl Into<String>,
-        model_ref_override: Option<String>,
-        model_settings_override: Option<AgentModelSettings>,
+        model: Option<String>,
+        settings: Option<AgentModelSettings>,
     ) -> Result<String, CoordinatorError> {
-        self.request_agent_turn_with_model_and_selected_tags(
-            actor,
-            agent_id,
-            prompt,
-            crate::file_tag::SelectedPromptTags::default(),
-            model_ref_override,
-            model_settings_override,
-        )
-        .await
+        let (agent, prompt) = (agent.into(), prompt.into());
+        self.call(move |s| s.queue_turn(actor, &agent, prompt.into(), model, settings, None))
+            .await
     }
-
     pub async fn request_agent_turn_with_model_target(
         &self,
         actor: EventActor,
-        agent_id: impl Into<String>,
+        agent: impl Into<String>,
         prompt: impl Into<String>,
-        target: crate::config::ResolvedModelTarget,
+        target: ResolvedModelTarget,
     ) -> Result<String, CoordinatorError> {
-        self.request_agent_turn_with_model_target_and_selected_tags_and_attachments(
-            actor,
-            agent_id,
-            prompt,
-            crate::file_tag::SelectedPromptTags::default(),
-            Vec::new(),
-            target,
-        )
+        let (agent, prompt) = (agent.into(), prompt.into());
+        self.call(move |s| {
+            s.queue_turn(
+                actor,
+                &agent,
+                prompt.into(),
+                Some(target.model_ref.clone()),
+                Some((&target).into()),
+                Some(target),
+            )
+        })
         .await
     }
-
-    pub async fn request_agent_turn_with_model_and_selected_tags(
+    pub async fn request_tool_call(
         &self,
         actor: EventActor,
-        agent_id: impl Into<String>,
-        prompt: impl Into<String>,
-        selected_tags: crate::file_tag::SelectedPromptTags,
-        model_ref_override: Option<String>,
-        model_settings_override: Option<AgentModelSettings>,
+        _legacy_profile_hint: Option<String>,
+        tool: impl Into<String>,
+        args: Value,
     ) -> Result<String, CoordinatorError> {
-        self.request(|respond_to| Command::RequestAgentTurn {
-            actor,
-            agent_id: agent_id.into(),
-            prompt: prompt.into(),
-            selected_file_tags: selected_tags.files,
-            selected_agent_tags: selected_tags.agents,
-            selected_resource_tags: selected_tags.resources,
-            attachments: Vec::new(),
-            model_ref_override,
-            model_settings_override,
-            model_target_override: None,
-            child_task_metadata: None,
-            respond_to,
-        })
-        .await
+        let tool = tool.into();
+        self.call(move |s| s.request_tool(actor, None, None, tool, args, None))
+            .await
     }
-
-    pub async fn request_agent_turn_with_model_and_selected_tags_and_attachments(
+    pub async fn execute_agent_tool_call(
         &self,
         actor: EventActor,
-        agent_id: impl Into<String>,
-        prompt: impl Into<String>,
-        selected_tags: crate::file_tag::SelectedPromptTags,
-        attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
-        model_ref_override: Option<String>,
-        model_settings_override: Option<AgentModelSettings>,
-    ) -> Result<String, CoordinatorError> {
-        self.request(|respond_to| Command::RequestAgentTurn {
-            actor,
-            agent_id: agent_id.into(),
-            prompt: prompt.into(),
-            selected_file_tags: selected_tags.files,
-            selected_agent_tags: selected_tags.agents,
-            selected_resource_tags: selected_tags.resources,
-            attachments,
-            model_ref_override,
-            model_settings_override,
-            model_target_override: None,
-            child_task_metadata: None,
-            respond_to,
-        })
-        .await
+        _legacy_profile_hint: Option<String>,
+        tool: impl Into<String>,
+        args: Value,
+    ) -> Result<ToolResult, String> {
+        self.execute_tool(actor, None, None, tool.into(), args)
+            .await
+            .map_err(|e| e.to_string())
     }
-
-    pub async fn request_agent_turn_with_model_target_and_selected_tags_and_attachments(
+    pub(super) async fn execute_tool(
         &self,
         actor: EventActor,
-        agent_id: impl Into<String>,
-        prompt: impl Into<String>,
-        selected_tags: crate::file_tag::SelectedPromptTags,
-        attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
-        target: crate::config::ResolvedModelTarget,
-    ) -> Result<String, CoordinatorError> {
-        let model_ref_override = Some(target.model_ref.clone());
-        let model_settings_override = Some(AgentModelSettings::from(&target));
-        self.request(|respond_to| Command::RequestAgentTurn {
-            actor,
-            agent_id: agent_id.into(),
-            prompt: prompt.into(),
-            selected_file_tags: selected_tags.files,
-            selected_agent_tags: selected_tags.agents,
-            selected_resource_tags: selected_tags.resources,
-            attachments,
-            model_ref_override,
-            model_settings_override,
-            model_target_override: Some(Box::new(target)),
-            child_task_metadata: None,
-            respond_to,
-        })
-        .await
+        parent: Option<String>,
+        id: Option<String>,
+        tool: String,
+        args: Value,
+    ) -> Result<ToolResult, CoordinatorError> {
+        let (tx, rx) = oneshot::channel();
+        self.call(move |s| s.request_tool(actor, parent, id, tool, args, Some(tx)))
+            .await?;
+        rx.await.map_err(|_| CoordinatorError::Closed)?
     }
-
-    pub async fn request_child_agent_turn_with_model(
-        &self,
-        actor: EventActor,
-        agent_id: impl Into<String>,
-        prompt: impl Into<String>,
-        model_ref_override: Option<String>,
-        model_settings_override: Option<AgentModelSettings>,
-        child_task_metadata: ChildTaskRequestMetadata,
-    ) -> Result<String, CoordinatorError> {
-        self.request(|respond_to| Command::RequestAgentTurn {
-            actor,
-            agent_id: agent_id.into(),
-            prompt: prompt.into(),
-            selected_file_tags: Vec::new(),
-            selected_agent_tags: Vec::new(),
-            selected_resource_tags: Vec::new(),
-            attachments: Vec::new(),
-            model_ref_override,
-            model_settings_override,
-            model_target_override: None,
-            child_task_metadata: Some(child_task_metadata),
-            respond_to,
-        })
-        .await
-    }
-
-    pub async fn compact_agent_context(
-        &self,
-        agent_id: impl Into<String>,
-        through_request_id: Option<String>,
-        trigger_reason: impl Into<String>,
-    ) -> Result<ManualCompactionOutcome, CoordinatorError> {
-        self.compact_agent_context_with_instructions(
-            agent_id,
-            through_request_id,
-            trigger_reason,
-            None,
-        )
-        .await
-    }
-
-    pub async fn compact_agent_context_with_instructions(
-        &self,
-        agent_id: impl Into<String>,
-        through_request_id: Option<String>,
-        trigger_reason: impl Into<String>,
-        custom_instructions: Option<String>,
-    ) -> Result<ManualCompactionOutcome, CoordinatorError> {
-        self.request(|respond_to| Command::ManualCompactAgentContext {
-            custom_instructions,
-            agent_id: agent_id.into(),
-            through_request_id,
-            trigger_reason: trigger_reason.into(),
-            respond_to,
-        })
-        .await
-    }
-
-    pub async fn cancel_compaction(&self, agent_id: String) -> Result<(), CoordinatorError> {
-        self.request(|respond_to| Command::CancelCompaction {
-            agent_id,
-            respond_to,
-        })
-        .await
-    }
-
     pub async fn resolve_permission(
         &self,
-        permission_id: impl Into<String>,
+        id: impl Into<String>,
         decision: PermissionDecision,
         reason: Option<String>,
     ) -> Result<(), CoordinatorError> {
-        self.resolve_permission_with_grant_scope(permission_id, decision, reason, None)
+        let id = id.into();
+        self.call(move |s| s.resolve_permission(&id, decision, reason))
             .await
     }
-
-    pub async fn resolve_permission_with_grant_scope(
-        &self,
-        permission_id: impl Into<String>,
-        decision: PermissionDecision,
-        reason: Option<String>,
-        grant_scope: Option<PermissionGrantScope>,
-    ) -> Result<(), CoordinatorError> {
-        self.request(|respond_to| Command::ResolvePermission {
-            permission_id: permission_id.into(),
-            decision,
-            reason,
-            grant_scope,
-            respond_to,
-        })
-        .await
-    }
-
     pub async fn set_always_approve_mode(&self, enabled: bool) -> Result<(), CoordinatorError> {
-        self.request(|respond_to| Command::SetAlwaysApproveMode {
-            enabled,
-            respond_to,
-        })
-        .await
+        self.call(move |s| s.set_always_approve_mode(enabled)).await
     }
-
-    pub async fn request_question(
-        &self,
-        actor: EventActor,
-        tool_call_id: impl Into<String>,
-        request_json: Value,
-    ) -> Result<Vec<Vec<String>>, String> {
-        self.request_string_error(|respond_to| Command::RequestQuestion {
-            actor,
-            tool_call_id: tool_call_id.into(),
-            request_json,
-            respond_to,
-        })
-        .await
-    }
-
-    pub async fn job_progress(
-        &self,
-        task_id: impl AsRef<str>,
-        kind: JobProgressKind,
-    ) -> Result<(), CoordinatorError> {
-        self.send_command(Command::JobProgress {
-            task_id: task_id.as_ref().to_string(),
-            kind,
-        })
-        .await
-    }
-
     pub async fn cancel_task(
         &self,
-        task_id: impl AsRef<str>,
+        id: impl AsRef<str>,
         reason: impl Into<String>,
     ) -> Result<(), CoordinatorError> {
-        self.request(|respond_to| Command::CancelTask {
-            task_id: task_id.as_ref().to_string(),
-            reason: reason.into(),
-            respond_to,
+        let (id, reason) = (id.as_ref().to_owned(), reason.into());
+        self.call(move |s| s.cancel(&id, &reason)).await
+    }
+    /// Directory searches skip files that need a separate read approval.
+    pub async fn allowed_read_paths(
+        &self,
+        task: impl Into<String>,
+        paths: Vec<PathBuf>,
+    ) -> Result<Vec<PathBuf>, CoordinatorError> {
+        self.allowed_paths(task, paths, &["read"]).await
+    }
+    /// Filter a directory query using the running tool's actor and current policy.
+    pub async fn allowed_paths(
+        &self,
+        task: impl Into<String>,
+        paths: Vec<PathBuf>,
+        permissions: &[&str],
+    ) -> Result<Vec<PathBuf>, CoordinatorError> {
+        let task = task.into();
+        let permissions: Vec<String> = permissions.iter().map(|name| (*name).into()).collect();
+        self.call(move |s| {
+            s.check_task(&task)?;
+            let job = s
+                .running
+                .get(&task)
+                .ok_or_else(|| CoordinatorError::UnknownTask(task.clone()))?;
+            let policy = job
+                .actor
+                .agent_id
+                .as_ref()
+                .and_then(|id| s.agents.get(id))
+                .map(|a| &a.policy);
+            let root = &s.info()?.workspace_root;
+            let allowed = |path: &std::path::Path| {
+                let relative = path.strip_prefix(root).unwrap_or(path).to_string_lossy();
+                permissions.iter().all(|permission| {
+                    s.config
+                        .permission_policy
+                        .check(permission, &relative, policy)
+                        == crate::perm::PermissionAction::Allow
+                })
+            };
+            Ok(paths
+                .into_iter()
+                .filter_map(|path| {
+                    let resolved = crate::tool::resolve_file_path(root, &path).ok()?;
+                    (allowed(&path) && allowed(&resolved)).then_some(resolved)
+                })
+                .collect())
         })
         .await
     }
+}
 
-    pub async fn background_request_projection(
-        &self,
-        actor: EventActor,
-        request_id: Option<String>,
-        selector_hint: Option<String>,
-    ) -> Result<BackgroundRequestProjection, CoordinatorError> {
-        self.request(|respond_to| Command::GetBackgroundRequestProjection {
-            actor,
-            request_id,
-            selector_hint,
-            respond_to,
-        })
-        .await
-    }
-
-    pub async fn cancel_background_request(
-        &self,
-        actor: EventActor,
-        request_id: Option<String>,
-        selector_hint: Option<String>,
-        reason: impl Into<String>,
-    ) -> Result<BackgroundRequestProjection, CoordinatorError> {
-        self.request(|respond_to| Command::CancelBackgroundRequest {
-            actor,
-            request_id,
-            selector_hint,
-            reason: reason.into(),
-            respond_to,
-        })
-        .await
-    }
-
-    pub async fn background_foreground_child_tasks(&self) -> Result<usize, CoordinatorError> {
-        self.request(|respond_to| Command::BackgroundForegroundChildTasks { respond_to })
-            .await
-    }
-
-    /// Demote one foreground-blocking child task by child request id.
-    ///
-    /// On accept, the child continues as background under the same request id
-    /// (usable with `background_output`). Parent wait is released via the
-    /// existing mark-backgrounded journey.
-    pub async fn demote_foreground_child_task(
-        &self,
-        handle_id: impl Into<String>,
-    ) -> Result<crate::foreground_demote::DemoteToBackgroundResult, CoordinatorError> {
-        self.request(|respond_to| Command::DemoteForegroundChildTask {
-            handle_id: handle_id.into(),
-            respond_to,
-        })
-        .await
-    }
-
-    /// Demote every foreground-blocking child task; returns per-handle results.
-    pub async fn demote_all_foreground_child_tasks(
-        &self,
-    ) -> Result<Vec<crate::foreground_demote::DemoteToBackgroundResult>, CoordinatorError> {
-        self.request(|respond_to| Command::DemoteAllForegroundChildTasks { respond_to })
-            .await
-    }
-
-    pub async fn wait_background_request_terminal(
-        &self,
-        request_id: impl Into<String>,
-        scheduler_task_id: impl AsRef<str>,
-        timeout_ms: u64,
-    ) -> Result<bool, CoordinatorError> {
-        let request_id = request_id.into();
-        let scheduler_task_id = scheduler_task_id.as_ref().to_string();
-        let outcome = self
-            .wait_background_requests_terminal(
-                &[(request_id, scheduler_task_id)],
-                BackgroundWaitMode::All,
-                &[],
-                timeout_ms,
-            )
-            .await?;
-        Ok(outcome.satisfied)
-    }
-
-    /// Wait until wait-any / wait-all is satisfied for background targets.
-    ///
-    /// Targets are `(request_id, scheduler_task_id)`. `already_terminal` seeds ids known
-    /// terminal before the wait so already-satisfied waits return without re-emitted events.
-    pub async fn wait_background_requests_terminal(
-        &self,
-        targets: &[(String, String)],
-        mode: BackgroundWaitMode,
-        already_terminal: &[String],
-        timeout_ms: u64,
-    ) -> Result<BackgroundWaitOutcome, CoordinatorError> {
-        use std::collections::{BTreeMap, BTreeSet};
-
-        let mut terminal: BTreeSet<String> = already_terminal.iter().cloned().collect();
-        if targets.is_empty() {
-            let seeded: Vec<(String, bool)> = already_terminal
-                .iter()
-                .map(|request_id| (request_id.clone(), true))
-                .collect();
-            return Ok(BackgroundWaitOutcome {
-                satisfied: background_wait_condition_satisfied(mode, &seeded),
-                first_terminal_request_id: first_terminal_request_id(&seeded),
-            });
-        }
-
-        let scheduler_by_request: BTreeMap<&str, &str> = targets
-            .iter()
-            .map(|(request_id, scheduler_task_id)| {
-                (request_id.as_str(), scheduler_task_id.as_str())
-            })
-            .collect();
-        let mut ordered: Vec<(String, bool)> = already_terminal
-            .iter()
-            .map(|request_id| (request_id.clone(), true))
-            .collect();
-        ordered.extend(
-            targets
-                .iter()
-                .map(|(request_id, _)| (request_id.clone(), terminal.contains(request_id))),
-        );
-        if background_wait_condition_satisfied(mode, &ordered) {
-            return Ok(BackgroundWaitOutcome {
-                satisfied: true,
-                first_terminal_request_id: first_terminal_request_id(&ordered),
-            });
-        }
-
-        let store = self.event_store().await?;
-        let mut stream = store.subscribe(1)?;
-        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
-        let mut first_seen_terminal: Option<String> = first_terminal_request_id(&ordered);
-
-        while Instant::now() < deadline {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            let next = tokio::time::timeout(remaining, stream.next()).await;
-            match next {
-                Ok(Some(Ok(event))) => {
-                    let Some(request_id) = event.correlation_id.as_deref() else {
-                        continue;
-                    };
-                    let Some(scheduler_task_id) = scheduler_by_request.get(request_id) else {
-                        continue;
-                    };
-                    if !background_terminal_event_matches_task(&event, scheduler_task_id) {
-                        continue;
-                    }
-                    if terminal.insert(request_id.to_string()) && first_seen_terminal.is_none() {
-                        first_seen_terminal = Some(request_id.to_string());
-                    }
-                    let mut snapshot: Vec<(String, bool)> = already_terminal
-                        .iter()
-                        .map(|id| (id.clone(), true))
-                        .collect();
-                    snapshot.extend(
-                        targets
-                            .iter()
-                            .map(|(id, _)| (id.clone(), terminal.contains(id))),
-                    );
-                    if background_wait_condition_satisfied(mode, &snapshot) {
-                        return Ok(BackgroundWaitOutcome {
-                            satisfied: true,
-                            first_terminal_request_id: first_seen_terminal
-                                .or_else(|| first_terminal_request_id(&snapshot)),
-                        });
-                    }
-                }
-                Ok(Some(Err(err))) => return Err(CoordinatorError::EventStore(err)),
-                Ok(None) | Err(_) => break,
-            }
-        }
-
-        Ok(BackgroundWaitOutcome {
-            satisfied: false,
-            first_terminal_request_id: first_seen_terminal,
-        })
-    }
-
-    pub async fn job_finished(
-        &self,
-        task_id: impl AsRef<str>,
-        outcome: JobOutcome,
-    ) -> Result<(), CoordinatorError> {
-        self.send_command(Command::JobFinished {
-            task_id: task_id.as_ref().to_string(),
-            outcome,
-        })
-        .await
-    }
-
-    pub async fn rewind_points(
-        &self,
-    ) -> Result<Option<Vec<crate::conversation_rewind::RewindPoint>>, CoordinatorError> {
-        self.request(|respond_to| Command::GetRewindPoints { respond_to })
-            .await
-    }
-
-    pub async fn rewind_conversation(
-        &self,
-        request_id: impl Into<String>,
-    ) -> Result<crate::conversation_rewind::RewindPoint, CoordinatorError> {
-        self.request(|respond_to| Command::RewindConversation {
-            request_id: request_id.into(),
-            respond_to,
-        })
-        .await
-    }
-
-    pub async fn snapshot_workspace(
-        &self,
-        request_id: impl Into<String>,
-    ) -> Result<WorkspaceSnapshotSummary, CoordinatorError> {
-        self.request(|respond_to| Command::SnapshotWorkspace {
-            request_id: request_id.into(),
-            respond_to,
-        })
-        .await
-    }
-
-    pub async fn revert_workspace(
-        &self,
-        snapshot_request_id: impl Into<String>,
-    ) -> Result<WorkspaceRevertSummary, CoordinatorError> {
-        self.request(|respond_to| Command::RevertWorkspace {
-            snapshot_request_id: snapshot_request_id.into(),
-            respond_to,
-        })
-        .await
-    }
-
-    pub async fn plugin_lifecycle_summary(
-        &self,
-    ) -> Result<crate::integrations::PluginLifecycleSummary, CoordinatorError> {
-        self.request(|respond_to| Command::GetPluginLifecycleSummary { respond_to })
-            .await
-    }
+pub(super) fn system() -> EventActor {
+    EventActor::new(ActorKind::System, None)
 }

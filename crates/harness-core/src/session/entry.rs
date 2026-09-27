@@ -1,12 +1,9 @@
+use super::*;
+use crate::{attachment_transport::AttachmentMetadata, event::UiIntentReceivedEvent, ids::*};
 use harness_providers::CompletionUsage;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::attachment_transport::AttachmentMetadata;
-use crate::event::UiIntentReceivedEvent;
-use crate::ids::{EntryId, ProviderRequestId, RunId, ToolCallId, TurnId};
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionEntry {
     pub id: EntryId,
     pub parent_id: Option<EntryId>,
@@ -15,7 +12,7 @@ pub struct SessionEntry {
     pub payload: SessionEntryPayload,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SessionEntryPayload {
     UserMessage {
@@ -88,39 +85,7 @@ pub struct CompactionPreservedState {
     pub current_intent: Option<UiIntentReceivedEvent>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum AssistantPart {
-    Text { text: String },
-    Reasoning { text: String },
-    ToolCall(AssistantToolCall),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AssistantToolCall {
-    pub tool_call_id: ToolCallId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_tool_call_id: Option<String>,
-    pub tool_id: String,
-    pub args_summary: String,
-    pub args_digest: String,
-    pub provider_call_id: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderProvenance {
-    pub provider_id: String,
-    pub model_id: String,
-    pub request_id: ProviderRequestId,
-    pub response_id: Option<String>,
-    pub stop_reason: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub usage: Option<CompletionUsage>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime_selection: Option<Box<super::CanonicalRuntimeSelection>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolResultStatus {
     Succeeded,
