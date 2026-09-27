@@ -1,0 +1,14 @@
+Independent reviewer: /root/tui_review
+
+Approved for committing this deletion slice. No blocking findings.
+Removed helpers have no runtime callers; the 11 deleted tests exercised those
+obsolete paths. Public WelcomeLayout::for_area behavior and release-note content
+are unchanged. The migrated color test covers actual diff rendering and its
+recorded mutation failure is meaningful.
+
+Verified all 20 source receipts, archived patch, 17 artifact hashes, and exact
+equality of 555 complete frame records and ANSI outputs. Logs support 1,671
+deterministic passes, seven PTY passes, and passing quality checks. The reduction
+of 817 production lines and 283 test lines is consistent. The README accurately
+limits the claims; remaining rewrite and resource targets stay open.
+The manifest was regenerated after adding this receipt.

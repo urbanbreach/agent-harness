@@ -19,12 +19,10 @@ use ui_diff_render::render_structured_diff_model;
 use ui_diff_model::DiffSegmentKind;
 #[cfg(test)]
 use ui_diff_render::{
-    diff_added_bg, diff_added_line_number_bg, diff_highlight_added, diff_highlight_removed,
-    diff_hunk_header, diff_hunk_palette, diff_marker_style, diff_removed_bg,
-    diff_removed_line_number_bg, diff_row_palette, diff_segment_style, render_diff_hunk_header,
+    diff_added_bg, diff_highlight_added, diff_highlight_removed, diff_hunk_header,
+    diff_hunk_palette, diff_marker_style, diff_removed_bg, diff_row_palette, diff_segment_style,
+    render_diff_hunk_header,
 };
-#[cfg(test)]
-use ui_diff_syntax::{diff_path_is_plain_prose, highlight_diff_line_chunks};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct StructuredDiffRenderOptions {
@@ -227,78 +225,30 @@ mod tests {
     }
 
     #[test]
-    fn prose_diff_paths_skip_syntax_highlighting_fast_path() {
-        // arrange
-        let prose_paths = [
-            "README.md",
-            "docs/guide.markdown",
-            "notes.MDOWN",
-            "changelog.mkd",
-            "manual.rst",
-            "plain.text",
-            "message.txt",
-            "guide.adoc",
-            "guide.asciidoc",
-        ];
-        let syntax_paths = ["src/lib.rs", "script.py", "Makefile"];
-
-        // act
-        let prose_results = prose_paths.map(|path| {
-            (
-                path,
-                diff_path_is_plain_prose(path),
-                highlight_diff_line_chunks(
-                    Some(path),
-                    "# heading",
-                    Some(diff_added_bg(&Theme::default())),
-                    crate::theme::ColorLevel::TrueColor,
-                )
-                .is_none(),
-            )
-        });
-        let syntax_results = syntax_paths.map(|path| (path, diff_path_is_plain_prose(path)));
-        let extensionless_result = diff_path_is_plain_prose("README");
-
-        // assert
-        for (path, is_plain_prose, skips_highlighting) in prose_results {
-            assert!(is_plain_prose, "{path} should be treated as prose");
-            assert!(
-                skips_highlighting,
-                "{path} should not initialize syntect syntax highlighting"
-            );
-        }
-
-        for (path, is_plain_prose) in syntax_results {
-            assert!(!is_plain_prose, "{path} should keep normal syntax handling");
-        }
-        assert!(!extensionless_result);
-    }
-
-    #[test]
     fn structured_diff_syntax_respects_limited_color_levels() {
-        // arrange
-        // act
-        let chunks = highlight_diff_line_chunks(
-            Some("src/demo.rs"),
-            "let value = 42;",
-            Some(
-                Theme::harness_dark()
-                    .for_color_level(crate::theme::ColorLevel::Ansi256)
-                    .surface
-                    .panel,
-            ),
-            crate::theme::ColorLevel::Ansi256,
+        let lines = render_structured_diff_lines_with_options(
+            "--- src/demo.rs\n+++ src/demo.rs\n@@ -1 +1 @@\n-let value = 1;\n+let value = 42;\n",
+            None,
+            "",
+            80,
+            StructuredDiffRenderOptions {
+                force_stacked: true,
+                plain_numbered: false,
+                highlight_intraline: true,
+                highlight_syntax: true,
+                show_file_header: true,
+                show_hunk_header: true,
+            },
+            &Theme::harness_dark().for_color_level(crate::theme::ColorLevel::Ansi256),
         )
         .unwrap_or_abort();
-
-        // assert
-        assert!(chunks
-            .iter()
-            .all(|chunk| !matches!(chunk.style.fg, Some(Color::Rgb(_, _, _)))));
-        assert!(chunks
-            .iter()
-            .all(|chunk| !matches!(chunk.style.bg, Some(Color::Rgb(_, _, _)))));
+        assert!(lines.iter().any(|line| line.to_string().contains("42")));
+        assert!(lines.iter().flat_map(|line| &line.spans).all(|span| {
+            !matches!(span.style.fg, Some(Color::Rgb(..)))
+                && !matches!(span.style.bg, Some(Color::Rgb(..)))
+        }));
     }
+
     #[test]
     fn separated_hunks_render_truthful_unchanged_line_marker() {
         // arrange

@@ -1,0 +1,92 @@
+[
+  {
+    "path": "README.md",
+    "bytes": 4326,
+    "sha256": "6fe9dcf03a0519ae800f3b36b3c9bd335d7b2a7ccad8a37d7d69273a59501350"
+  },
+  {
+    "path": "ansi-comparison.json.gz",
+    "bytes": 19688,
+    "sha256": "0f4f51526ade38640af0cf76997e6a500bca700505486837019da2db367524f1"
+  },
+  {
+    "path": "before-unused.log",
+    "bytes": 37265,
+    "sha256": "06e86bc6478ca3e33a45e5ba0597c7ec9f73f61e8fcbea1864dd0618ab0f054a"
+  },
+  {
+    "path": "clippy.log",
+    "bytes": 167,
+    "sha256": "e1f691627965987ff2c3c432c893e6f5c38f2ad4c29233fbafdcf6f14806be63"
+  },
+  {
+    "path": "color-mutation.patch",
+    "bytes": 639,
+    "sha256": "57a73f048cee1a373561c9d2e1e0d9ee17332198f043722f6bd36a5282597d7f"
+  },
+  {
+    "path": "color-red.log",
+    "bytes": 2412,
+    "sha256": "beeb5da0cf2f14bd126dee17ae52663e630f1be18af894d48b4fb5c5c7acbda5"
+  },
+  {
+    "path": "compile.log",
+    "bytes": 510,
+    "sha256": "f85b18a7abfb957403d19091093c5ac84230b3db1f09e5f2e28d1d573f41f8f2"
+  },
+  {
+    "path": "fmt.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "full.log",
+    "bytes": 3709,
+    "sha256": "b90c340ff5996cffd32fae139d39537e5e44e051a3ea8d234f8afafc42919f07"
+  },
+  {
+    "path": "gates.log",
+    "bytes": 38,
+    "sha256": "9dbaeda37da424493a0057a1d54b636bc8c9da7e77a14322d41d4e63b18196d9"
+  },
+  {
+    "path": "matrix.json",
+    "bytes": 974,
+    "sha256": "516696e7541557a91921890770fed5b55343e81425ab694b132c052b08de693e"
+  },
+  {
+    "path": "pty.log",
+    "bytes": 595,
+    "sha256": "8bf7c071db684b2631dba77190cec44357d0d5905cfe72e74b5c27f5b0ad42a5"
+  },
+  {
+    "path": "review.txt",
+    "bytes": 826,
+    "sha256": "899c2ab639f6fd4673f38cfc8f78f75881d947b96bff2f1171d80b0f7cc89bf9"
+  },
+  {
+    "path": "source-counts.json",
+    "bytes": 3254,
+    "sha256": "bd499d7f999ec91f754d01aed91ae3e993144ef6984af85a4bfb73b9d95a31ea"
+  },
+  {
+    "path": "source.json",
+    "bytes": 5277,
+    "sha256": "ad34595013cf7dad0170aa7a8cee9eb3c107014d2b677f7ee4423a3aa140aecb"
+  },
+  {
+    "path": "source.patch.gz",
+    "bytes": 13243,
+    "sha256": "a8e44e691286d7fb949dbbf5f0f2be69ac286128217f22ac1bc4adf890669775"
+  },
+  {
+    "path": "unused.log",
+    "bytes": 22561,
+    "sha256": "cc1b28c7af206b75e742bb2ef2896f0f103f9d84afee76d4420eb578a5974eb1"
+  },
+  {
+    "path": "workspace.log",
+    "bytes": 253,
+    "sha256": "57f567d4684a3df8a94d459c8cd4a810bebd038cb2c61ff7c22709d4c8cde094"
+  }
+]

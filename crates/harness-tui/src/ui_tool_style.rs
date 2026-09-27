@@ -1,7 +1,6 @@
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::app::{ToolCallDisplayStatus, ToolCallEntry, ToolCallPresentationStatus};
-use crate::theme::Theme;
+use crate::app::{ToolCallDisplayStatus, ToolCallEntry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TranscriptToolCallVisualStyle {
@@ -22,37 +21,6 @@ pub(super) fn generic_tool_visual_style(
         TranscriptToolCallVisualStyle::Block
     } else {
         TranscriptToolCallVisualStyle::Inline
-    }
-}
-
-pub(super) fn inline_tool_color(status: ToolCallPresentationStatus, theme: &Theme) -> Color {
-    match status {
-        ToolCallPresentationStatus::Queued | ToolCallPresentationStatus::Succeeded => {
-            theme.text.secondary
-        }
-        ToolCallPresentationStatus::Running => theme.text.primary,
-        ToolCallPresentationStatus::Waiting => theme.status.warning,
-        ToolCallPresentationStatus::Failed => theme.status.error,
-        ToolCallPresentationStatus::Cancelled => theme.status.disabled,
-    }
-}
-
-pub(super) fn block_tool_color(status: ToolCallPresentationStatus, theme: &Theme) -> Color {
-    block_status_color(status, theme, theme.text.primary)
-}
-
-fn block_status_color(
-    status: ToolCallPresentationStatus,
-    theme: &Theme,
-    active_color: Color,
-) -> Color {
-    match status {
-        ToolCallPresentationStatus::Waiting => theme.status.warning,
-        ToolCallPresentationStatus::Failed => theme.status.error,
-        ToolCallPresentationStatus::Cancelled => theme.status.disabled,
-        ToolCallPresentationStatus::Queued
-        | ToolCallPresentationStatus::Running
-        | ToolCallPresentationStatus::Succeeded => active_color,
     }
 }
 
@@ -77,39 +45,4 @@ pub(super) fn tool_call_header_style(struck_out: bool, color: Color) -> Style {
         style = style.add_modifier(Modifier::CROSSED_OUT);
     }
     style
-}
-
-#[cfg(test)]
-mod presentation_style_tests {
-    use super::*;
-    use crate::app::ToolCallPresentationStatus;
-
-    #[test]
-    fn inline_status_colors_distinguish_running_success_error_waiting_and_cancelled() {
-        // arrange
-        // act
-        let theme = Theme::default();
-
-        // assert
-        assert_eq!(
-            inline_tool_color(ToolCallPresentationStatus::Running, &theme),
-            theme.text.primary
-        );
-        assert_eq!(
-            inline_tool_color(ToolCallPresentationStatus::Succeeded, &theme),
-            theme.text.secondary
-        );
-        assert_eq!(
-            inline_tool_color(ToolCallPresentationStatus::Failed, &theme),
-            theme.status.error
-        );
-        assert_eq!(
-            inline_tool_color(ToolCallPresentationStatus::Waiting, &theme),
-            theme.status.warning
-        );
-        assert_eq!(
-            inline_tool_color(ToolCallPresentationStatus::Cancelled, &theme),
-            theme.status.disabled
-        );
-    }
 }

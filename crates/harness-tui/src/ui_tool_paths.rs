@@ -205,29 +205,9 @@ pub(super) fn search_result_count_suffix(
         .unwrap_or_default()
 }
 
-pub(super) fn todo_write_tool_id(tool_id: &str) -> bool {
-    matches!(tool_id, "todo.write" | "todowrite")
-}
-
 pub(super) fn tool_id_matches(tool_call: &ToolCallEntry, expected: &[&str]) -> bool {
     expected.contains(&tool_call.effective_tool_id())
         || expected.contains(&tool_call.tool_id.as_str())
-}
-
-pub(super) fn context_group_tool_id(tool_id: &str) -> bool {
-    matches!(
-        tool_id,
-        "fs.read"
-            | "read"
-            | "fs.glob"
-            | "glob"
-            | "fs.grep"
-            | "grep"
-            | "fs.ls"
-            | "list"
-            | "skill"
-            | "skill.load"
-    )
 }
 
 pub(super) fn join_tool_subtitles(
@@ -239,22 +219,5 @@ pub(super) fn join_tool_subtitles(
         (Some(primary), None) => Some(primary),
         (None, Some(secondary)) => Some(secondary),
         (None, None) => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::context_group_tool_id;
-
-    #[test]
-    fn context_groups_include_skill_aliases() {
-        // arrange
-        // act
-        // Given: both shipped spellings of the skill loader.
-        // When: the context-group classifier evaluates them.
-        // Then: either spelling participates in compact context summaries.
-        // assert
-        assert!(context_group_tool_id("skill"));
-        assert!(context_group_tool_id("skill.load"));
     }
 }

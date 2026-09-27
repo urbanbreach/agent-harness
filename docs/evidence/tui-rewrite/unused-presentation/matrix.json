@@ -1,0 +1,26 @@
+[
+  {
+    "name": "matrix",
+    "records": 543,
+    "raw_artifact": "../styled-wrap/matrix.cells.json.gz",
+    "before_sha256": "3ba090388367678cbfa2d005fcd199869e06bcae67514a2c0a2bc031a5702710",
+    "current_sha256": "3ba090388367678cbfa2d005fcd199869e06bcae67514a2c0a2bc031a5702710",
+    "complete_records_equal": true
+  },
+  {
+    "name": "plans",
+    "records": 8,
+    "raw_artifact": "../styled-wrap/plans.cells.json.gz",
+    "before_sha256": "0fdad77d4163956f985c4560b7dfb0e0cb70ad622cd072a04583c9df12f5047f",
+    "current_sha256": "0fdad77d4163956f985c4560b7dfb0e0cb70ad622cd072a04583c9df12f5047f",
+    "complete_records_equal": true
+  },
+  {
+    "name": "wrapping",
+    "records": 4,
+    "raw_artifact": "../styled-wrap/candidate.cells.json.gz",
+    "before_sha256": "1efc94ddebc1a9b3a8034f1ab69954fc496faa2a1815d5c52e362c1e59ac0a27",
+    "current_sha256": "1efc94ddebc1a9b3a8034f1ab69954fc496faa2a1815d5c52e362c1e59ac0a27",
+    "complete_records_equal": true
+  }
+]

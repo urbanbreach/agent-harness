@@ -669,14 +669,6 @@ pub(super) const fn diff_removed_bg(theme: &Theme) -> Color {
     theme.terminal_colors.diff_removed
 }
 
-pub(super) const fn diff_added_line_number_bg(theme: &Theme) -> Color {
-    theme.terminal_colors.diff_added_gutter
-}
-
-pub(super) const fn diff_removed_line_number_bg(theme: &Theme) -> Color {
-    theme.terminal_colors.diff_removed_gutter
-}
-
 pub(super) const fn diff_highlight_added(theme: &Theme) -> Color {
     theme.terminal_colors.diff_added_highlight
 }

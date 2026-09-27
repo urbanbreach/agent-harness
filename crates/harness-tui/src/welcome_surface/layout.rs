@@ -33,30 +33,7 @@ impl WelcomeLayout {
         Self::for_area((0, 0, width, height), false)
     }
 
-    pub(crate) fn for_startup_area(
-        area: (u16, u16, u16, u16),
-        clipboard_warning_visible: bool,
-        expanded: bool,
-    ) -> Self {
-        Self::for_area_state(area, clipboard_warning_visible, expanded)
-    }
-
-    pub fn for_area(
-        (origin_x, origin_y, width, height): (u16, u16, u16, u16),
-        clipboard_warning_visible: bool,
-    ) -> Self {
-        Self::for_area_state(
-            (origin_x, origin_y, width, height),
-            clipboard_warning_visible,
-            true,
-        )
-    }
-
-    fn for_area_state(
-        area: (u16, u16, u16, u16),
-        _clipboard_warning_visible: bool,
-        _expanded: bool,
-    ) -> Self {
+    pub fn for_area(area: (u16, u16, u16, u16), _clipboard_warning_visible: bool) -> Self {
         Self::with_content(area, &crate::release_notes::CURRENT, "", true)
     }
 
