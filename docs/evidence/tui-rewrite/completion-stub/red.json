@@ -1,0 +1,16 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--all-features",
+    "--no-fail-fast",
+    "-E",
+    "test(composer_editing::completion_tests) | binary(production_composer_reachability_test) | binary(completion_controller_test)"
+  ],
+  "exit": 100
+}

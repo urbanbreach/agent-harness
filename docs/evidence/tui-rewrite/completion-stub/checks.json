@@ -1,0 +1,58 @@
+[
+  {
+    "name": "all",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--profile",
+      "ci",
+      "-p",
+      "harness-tui",
+      "--all-features"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "workspace-check",
+    "command": [
+      "cargo",
+      "check",
+      "--workspace"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--all-features",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "suite-gates",
+    "command": [
+      "python3",
+      "scripts/check-test-suite-gates.py"
+    ],
+    "exit": 0
+  }
+]

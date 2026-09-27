@@ -1017,6 +1017,20 @@ it is documented and left unchanged. The working Ctrl+Shift+Z binding exercises
 redo. State/text replacement, sustained targets and the full rewrite remain open.
 Evidence is in [`evidence/tui-rewrite/undo-sharing`](evidence/tui-rewrite/undo-sharing).
 
+## Test-only completion stub removal
+
+Removed 349 lines of completion code and ten tests that existed only in test
+builds and called only that stub. The remaining 293-line file matches the old
+non-test prefix exactly. No production behavior, public contract or snapshot
+changed. Existing checks exercise real AppState and completion-controller paths:
+a temporary ignored-insertion mutation fails two of those checks while all ten
+stub tests still pass. All 1,658 remaining TUI tests and quality checks pass.
+
+This is test maintenance removal, with no new runtime performance claim. Whole
+TUI source is 166,604 lines, including tests under `src`, only 8.4% below the
+original. The source target and full implementation replacement remain unmet.
+Evidence is in [`evidence/tui-rewrite/completion-stub`](evidence/tui-rewrite/completion-stub).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal
