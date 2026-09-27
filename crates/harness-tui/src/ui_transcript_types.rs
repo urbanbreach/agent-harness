@@ -92,7 +92,7 @@ pub(in crate::ui) struct TranscriptVisualEntryDraft {
     pub(in crate::ui) surface: Color,
     pub(in crate::ui) lines: Vec<Line<'static>>,
     pub(in crate::ui) interaction_rows: Option<Vec<Option<TranscriptInteractionRow>>>,
-    pub(in crate::ui) selection_rows: Option<Vec<TranscriptSelectionRow>>,
+    pub(in crate::ui) selection_rows: Option<Vec<SelectionRow>>,
     pub(in crate::ui) diff_hunk_offsets: Vec<usize>,
     pub(in crate::ui) selected_rail: bool,
     pub(in crate::ui) tool_rail_motion: Option<ToolRailMotion>,

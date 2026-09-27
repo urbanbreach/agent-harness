@@ -1,0 +1,8 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.03s
+────────────
+ Nextest run ID ceb16c5a-f983-4922-b07c-077096748bc4 with nextest profile: default
+    Starting 1 test across 1 binary (1254 tests skipped)
+        PASS [   0.023s] (1/1) harness-tui app::tests::disabled_copy_on_select_keeps_selection_until_right_click_copy
+────────────
+     Summary [   0.025s] 1 test run: 1 passed, 1254 skipped

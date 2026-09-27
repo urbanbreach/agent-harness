@@ -1,0 +1,9 @@
+{
+  "scope": "one untrimmed candidate resize diagnostic; excluded from acceptance samples",
+  "calls": 420,
+  "cols": 210,
+  "lines": 210,
+  "parent_processes": 1,
+  "cause": "fixed viewport clear queries CrosstermBackend size; failed terminal ioctl falls back to tput",
+  "process_cpu_excludes_children": true
+}

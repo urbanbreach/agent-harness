@@ -27,7 +27,15 @@ use super::ui_transcript_surface::{
     wrap_surface_spans, wrap_surface_spans_with_links, SurfaceLinkRun,
 };
 
-const TRANSCRIPT_SELECTION_RAIL_GLYPH: &str = " ";
+#[path = "ui_transcript_selection/markdown.rs"]
+mod markdown;
+#[path = "ui_transcript_selection/rows.rs"]
+mod rows;
+pub(super) use markdown::{
+    selection_rows_for_markdownish_text_block, selection_rows_for_rich_text_block,
+};
+use rows::aligned_selection_rows_for_line;
+pub(super) use rows::{selection_rows_for_rendered_line, surface_selection_rows};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct TranscriptSelectionCell {
@@ -55,6 +63,7 @@ impl TranscriptSelection {
 pub(crate) struct SelectionRow {
     pub line_index: usize,
     pub text: String,
+    pub width: usize,
     pub continues_previous: bool,
     pub copy_joiner: Option<String>,
     pub start_cell: usize,
@@ -63,6 +72,18 @@ pub(crate) struct SelectionRow {
 }
 
 impl SelectionRow {
+    fn exclude_prefix(&mut self, offset: usize) {
+        if self.has_content() {
+            self.start_cell = self.start_cell.max(offset);
+        }
+    }
+
+    fn pad_to(&mut self, width: usize) {
+        self.text
+            .extend(std::iter::repeat_n(' ', width.saturating_sub(self.width)));
+        self.width = self.width.max(width);
+    }
+
     fn has_content(&self) -> bool {
         self.end_cell >= self.start_cell
     }
@@ -83,15 +104,6 @@ pub(super) struct TranscriptSelectionLink {
     pub(super) start_cell: usize,
     pub(super) end_cell: usize,
     pub(super) destination: String,
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct TranscriptSelectionRow {
-    pub(super) cells: Vec<String>,
-    pub(super) continues_previous: bool,
-    pub(super) copy_offset: usize,
-    pub(super) copy_joiner: Option<String>,
-    pub(super) links: Vec<TranscriptSelectionLink>,
 }
 
 #[cfg(test)]
@@ -232,114 +244,6 @@ impl TranscriptSelectionSnapshot {
     }
 }
 
-fn selection_row_content_start(row: &TranscriptSelectionRow) -> usize {
-    let mut index = usize::from(
-        row.cells
-            .first()
-            .is_some_and(|cell| cell.as_str() == TRANSCRIPT_SELECTION_RAIL_GLYPH),
-    );
-    if index > 0 {
-        while row
-            .cells
-            .get(index)
-            .is_some_and(|cell| cell.as_str() == " ")
-        {
-            index += 1;
-        }
-    }
-    index
-}
-
-fn selection_row_content_end(row: &TranscriptSelectionRow, content_start: usize) -> Option<usize> {
-    row.cells
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(idx, cell)| *idx >= content_start && !cell.is_empty() && cell.as_str() != " ")
-        .map(|(idx, _)| idx)
-}
-
-pub(super) fn compact_selection_row(
-    row: &TranscriptSelectionRow,
-    line_index: usize,
-) -> SelectionRow {
-    let content_start = selection_row_content_start(row);
-    let start_cell = if row.copy_joiner.is_some() {
-        row.copy_offset
-    } else {
-        content_start.max(row.copy_offset)
-    };
-    match selection_row_content_end(row, content_start) {
-        Some(end_cell) => SelectionRow {
-            line_index,
-            text: selection_row_line_text(row),
-            continues_previous: row.continues_previous,
-            copy_joiner: row.copy_joiner.clone(),
-            start_cell,
-            end_cell,
-            links: row.links.clone(),
-        },
-        None => SelectionRow {
-            line_index,
-            text: selection_row_line_text(row),
-            continues_previous: row.continues_previous,
-            copy_joiner: row.copy_joiner.clone(),
-            start_cell: 1,
-            end_cell: 0,
-            links: Vec::new(),
-        },
-    }
-}
-
-pub(super) fn surface_selection_rows(
-    lines: &[Line<'static>],
-    width: u16,
-    show_outer_rail: bool,
-    rail_glyph: &str,
-) -> Vec<SelectionRow> {
-    let surface_width = usize::from(width.max(1));
-    let content_width =
-        usize::from(super::ui_transcript_surface::transcript_surface_content_width(width, false))
-            .max(1);
-    let mut rows = Vec::new();
-    for line in lines {
-        for (index, mut cells) in transcript_selection_line_rows(line, content_width)
-            .into_iter()
-            .enumerate()
-        {
-            if show_outer_rail {
-                if let Some(first) = cells.first_mut() {
-                    *first = rail_glyph.to_string();
-                }
-            }
-            cells.truncate(surface_width);
-            let padding = surface_width.saturating_sub(cells.len());
-            let mut row = compact_selection_row(
-                &TranscriptSelectionRow {
-                    cells,
-                    continues_previous: index > 0,
-                    copy_offset: usize::from(show_outer_rail),
-                    copy_joiner: None,
-                    links: Vec::new(),
-                },
-                rows.len(),
-            );
-            row.text.extend(std::iter::repeat_n(' ', padding));
-            rows.push(row);
-        }
-    }
-    if rows.is_empty() {
-        let mut row = compact_selection_row(&blank_selection_row(), 0);
-        row.text = " ".repeat(surface_width);
-        rows.push(row);
-    }
-    rows
-}
-
-pub(super) fn selection_row_line_text(row: &TranscriptSelectionRow) -> String {
-    row.cells.join("")
-}
-
 fn extract_text_by_display_columns(text: &str, start_col: usize, end_col: usize) -> String {
     let mut result = String::new();
     let mut cell = 0usize;
@@ -357,452 +261,6 @@ fn extract_text_by_display_columns(text: &str, start_col: usize, end_col: usize)
     result
 }
 
-pub(super) fn transcript_selection_line_rows(
-    line: &Line<'static>,
-    width: usize,
-) -> Vec<Vec<String>> {
-    let mut row = Vec::<String>::new();
-    let mut rows = Vec::new();
-
-    for span in &line.spans {
-        for cluster in span.content.graphemes(true) {
-            let cell_width = cluster.width();
-            if cell_width == 0 {
-                if let Some(cell) = row.iter_mut().rev().find(|cell| !cell.is_empty()) {
-                    cell.push_str(cluster);
-                }
-                continue;
-            }
-            if row.len() + cell_width > width {
-                rows.push(std::mem::take(&mut row));
-            }
-
-            row.push(cluster.to_string());
-            for _ in 1..cell_width {
-                if row.len() == width {
-                    rows.push(std::mem::take(&mut row));
-                }
-                row.push(String::new());
-            }
-
-            if row.len() == width {
-                rows.push(std::mem::take(&mut row));
-            }
-        }
-    }
-
-    if rows.is_empty() && row.is_empty() {
-        rows.push(row);
-        return rows;
-    }
-
-    if !row.is_empty() {
-        rows.push(row);
-    }
-
-    rows
-}
-
-pub(super) fn selection_rows_for_rendered_line(
-    line: &Line<'static>,
-    width: u16,
-) -> Vec<TranscriptSelectionRow> {
-    transcript_selection_line_rows(line, usize::from(width.max(1)))
-        .into_iter()
-        .enumerate()
-        .map(|(idx, cells)| TranscriptSelectionRow {
-            cells,
-            continues_previous: idx > 0,
-            copy_offset: 0,
-            copy_joiner: None,
-            links: Vec::new(),
-        })
-        .collect()
-}
-
-pub(super) fn selection_rows_for_markdownish_text_block(
-    text: &str,
-    color: Color,
-    prefix: &str,
-    theme: &Theme,
-    width: u16,
-) -> Vec<TranscriptSelectionRow> {
-    let base_style = Style::default().fg(color);
-    let display_source = markdown_display_source(text);
-    let source_rows = display_source.lines().collect::<Vec<_>>();
-    let mut rows = Vec::new();
-    let mut index = 0;
-
-    while let Some(line) = source_rows.get(index).copied() {
-        if line.is_empty() && rows.last().is_some_and(selection_row_is_blank) {
-            index += 1;
-            continue;
-        }
-        if let Some((table_lines, consumed, table_links)) =
-            try_render_markdown_table_block(&source_rows[index..], color, prefix, theme, width)
-        {
-            rows.extend(selection_rows_for_rendered_table_lines(
-                table_lines,
-                width,
-                display_width(prefix),
-                &table_links,
-            ));
-            index += consumed;
-            continue;
-        }
-
-        rows.extend(selection_rows_for_markdownish_line(
-            line, color, prefix, base_style, theme, width,
-        ));
-        index += 1;
-    }
-
-    if text.is_empty() {
-        rows.extend(selection_rows_for_prefixed_wrapped_spans(
-            prefix,
-            base_style,
-            Vec::new(),
-            width,
-            display_width(prefix),
-        ));
-    }
-
-    rows
-}
-
-pub(super) fn selection_rows_for_rich_text_block(
-    text: &str,
-    color: Color,
-    prefix: &str,
-    theme: &Theme,
-    width: u16,
-    is_streaming: bool,
-) -> Option<Vec<TranscriptSelectionRow>> {
-    let Some(blocks) = (text.contains("```") || text.contains("~~~"))
-        .then(|| {
-            if is_streaming {
-                Some(parse_streaming_fenced_text_blocks(text))
-            } else {
-                parse_fenced_text_blocks(text)
-            }
-        })
-        .flatten()
-    else {
-        return Some(selection_rows_for_markdownish_text_block(
-            text, color, prefix, theme, width,
-        ));
-    };
-
-    let base_style = Style::default().fg(color);
-    let copy_offset = display_width(prefix);
-    let mut rows = Vec::new();
-    for block in blocks {
-        match block {
-            ParsedTextBlock::Plain(plain) => {
-                let mut plain_rows =
-                    selection_rows_for_markdownish_text_block(&plain, color, prefix, theme, width);
-                if rows.last().is_some_and(selection_row_is_blank)
-                    && plain_rows.first().is_some_and(selection_row_is_blank)
-                {
-                    plain_rows.remove(0);
-                }
-                rows.extend(plain_rows);
-                if rows.last().is_some_and(|row| !selection_row_is_blank(row)) {
-                    rows.push(blank_selection_row());
-                }
-            }
-            ParsedTextBlock::Code { language, body, .. } => {
-                if is_mermaid_language(language.as_deref())
-                    || matches!(language.as_deref(), Some("diff" | "patch"))
-                {
-                    return None;
-                }
-                if rows.last().is_some_and(|row| !selection_row_is_blank(row)) {
-                    rows.push(blank_selection_row());
-                }
-                for line in body.lines() {
-                    rows.extend(selection_rows_for_preformatted_line(
-                        line,
-                        prefix,
-                        base_style,
-                        width,
-                        copy_offset,
-                    ));
-                }
-                rows.push(blank_selection_row());
-            }
-        }
-    }
-    Some(rows)
-}
-
-fn selection_rows_for_preformatted_line(
-    line: &str,
-    prefix: &str,
-    style: Style,
-    width: u16,
-    copy_offset: usize,
-) -> Vec<TranscriptSelectionRow> {
-    let source_spans = vec![Span::styled(line.to_string(), style)];
-    let expanded =
-        super::ui_transcript_surface::wrap_preformatted_spans(source_spans.clone(), usize::MAX)
-            .into_iter()
-            .flatten()
-            .map(|span| span.content.into_owned())
-            .collect::<String>();
-    let wrapped = super::ui_transcript_surface::wrap_preformatted_spans(
-        source_spans,
-        usize::from(width).saturating_sub(copy_offset).max(1),
-    );
-    let mut consumed = 0;
-    let mut trailing = String::new();
-    let mut rows = Vec::new();
-    for (index, spans) in wrapped.into_iter().enumerate() {
-        let text = spans
-            .iter()
-            .map(|span| span.content.as_ref())
-            .collect::<String>();
-        let rest = &expanded[consumed..];
-        let gap = rest.find(&text).unwrap_or_default();
-        let joiner = format!("{trailing}{}", &rest[..gap]);
-        consumed += gap + text.len();
-        trailing = text[text.trim_end_matches(' ').len()..].to_string();
-        let mut rendered = vec![Span::styled(prefix.to_string(), style)];
-        rendered.extend(spans);
-        let mut selected = selection_rows_for_rendered_line(&Line::from(rendered), width);
-        for row in &mut selected {
-            row.continues_previous |= index > 0;
-            row.copy_offset = copy_offset;
-            row.copy_joiner = Some(joiner.clone());
-        }
-        rows.extend(selected);
-    }
-    rows
-}
-
-fn selection_row_is_blank(row: &TranscriptSelectionRow) -> bool {
-    row.cells
-        .iter()
-        .all(|cell| cell.is_empty() || cell.chars().all(char::is_whitespace))
-}
-
-fn selection_rows_for_rendered_table_lines(
-    lines: Vec<Line<'static>>,
-    width: u16,
-    copy_offset: usize,
-    links: &[TableLinkRun],
-) -> Vec<TranscriptSelectionRow> {
-    lines
-        .into_iter()
-        .enumerate()
-        .flat_map(|(line_index, line)| {
-            transcript_selection_line_rows(&line, usize::from(width.max(1)))
-                .into_iter()
-                .enumerate()
-                .map(move |(wrapped_index, cells)| TranscriptSelectionRow {
-                    cells,
-                    continues_previous: wrapped_index > 0,
-                    copy_offset,
-                    copy_joiner: None,
-                    links: links
-                        .iter()
-                        .filter(|link| link.row == line_index)
-                        .map(|link| TranscriptSelectionLink {
-                            start_cell: link.start_cell,
-                            end_cell: link.end_cell,
-                            destination: link.destination.clone(),
-                        })
-                        .collect(),
-                })
-        })
-        .collect()
-}
-
-fn selection_rows_for_markdownish_line(
-    line: &str,
-    color: Color,
-    prefix: &str,
-    base_style: Style,
-    theme: &Theme,
-    width: u16,
-) -> Vec<TranscriptSelectionRow> {
-    if line.is_empty() {
-        return selection_rows_for_prefixed_wrapped_spans(
-            prefix,
-            base_style,
-            Vec::new(),
-            width,
-            display_width(prefix),
-        );
-    }
-
-    let indent_width = line.chars().take_while(|ch| ch.is_whitespace()).count();
-    let indent = " ".repeat(indent_width);
-    let trimmed = line.trim_start();
-    let content_width = usize::from(width)
-        .saturating_sub(display_width(prefix))
-        .max(1);
-
-    if let Some(text) = markdown_heading_text(trimmed) {
-        return selection_rows_for_prefixed_wrapped_inline(
-            &format!("{prefix}{indent}"),
-            base_style,
-            parse_inline_markdown(
-                text,
-                base_style
-                    .fg(theme.text.accent)
-                    .add_modifier(Modifier::BOLD),
-                theme.text.accent,
-                theme,
-            ),
-            width,
-            display_width(prefix),
-        );
-    }
-
-    if markdown_rule(trimmed) {
-        return selection_rows_for_prefixed_wrapped_spans(
-            prefix,
-            base_style,
-            vec![Span::styled(
-                "─".repeat(content_width),
-                Style::default().fg(theme.text.secondary),
-            )],
-            width,
-            display_width(prefix),
-        );
-    }
-
-    if let Some((depth, text)) = markdown_quote_prefix(trimmed) {
-        let quote_prefix = format!("{prefix}{indent}{}", "│ ".repeat(depth));
-        return selection_rows_for_prefixed_wrapped_inline(
-            &quote_prefix,
-            Style::default().fg(theme.markdown.block_quote),
-            parse_inline_markdown(
-                text,
-                Style::default().fg(theme.markdown.block_quote),
-                theme.markdown.block_quote,
-                theme,
-            ),
-            width,
-            display_width(&quote_prefix),
-        );
-    }
-
-    if let Some((list_prefix, text, list_style, text_style)) = markdown_list_prefix(trimmed, theme)
-    {
-        return selection_rows_for_prefixed_wrapped_inline(
-            &format!("{prefix}{indent}{list_prefix}"),
-            list_style,
-            parse_inline_markdown(text, text_style, color, theme),
-            width,
-            display_width(prefix),
-        );
-    }
-
-    selection_rows_for_prefixed_wrapped_inline(
-        prefix,
-        base_style,
-        parse_inline_markdown(trimmed, base_style, color, theme),
-        width,
-        display_width(prefix),
-    )
-}
-
-fn selection_rows_for_prefixed_wrapped_inline(
-    prefix: &str,
-    prefix_style: Style,
-    parsed: ParsedInlineMarkdown,
-    width: u16,
-    copy_offset: usize,
-) -> Vec<TranscriptSelectionRow> {
-    let prefix_width = display_width(prefix);
-    let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
-    let source_links = parsed
-        .links
-        .into_iter()
-        .map(|link| SurfaceLinkRun {
-            start_cell: link.start_cell,
-            end_cell: link.end_cell,
-            destination: link.destination,
-        })
-        .collect::<Vec<_>>();
-    wrap_surface_spans_with_links(parsed.spans, &source_links, content_width)
-        .into_iter()
-        .enumerate()
-        .map(|(index, row)| {
-            let mut spans = vec![Span::styled(prefix.to_string(), prefix_style)];
-            spans.extend(row.spans);
-            TranscriptSelectionRow {
-                cells: transcript_selection_line_rows(&Line::from(spans), usize::from(width))
-                    .into_iter()
-                    .next()
-                    .unwrap_or_else(|| vec![" ".to_string(); usize::from(width)]),
-                continues_previous: index > 0,
-                copy_offset,
-                copy_joiner: None,
-                links: row
-                    .links
-                    .into_iter()
-                    .map(|link| TranscriptSelectionLink {
-                        start_cell: prefix_width.saturating_add(link.start_cell),
-                        end_cell: prefix_width.saturating_add(link.end_cell),
-                        destination: link.destination,
-                    })
-                    .collect(),
-            }
-        })
-        .collect()
-}
-
-fn selection_rows_for_prefixed_wrapped_spans(
-    prefix: &str,
-    prefix_style: Style,
-    content_spans: Vec<Span<'static>>,
-    width: u16,
-    copy_offset: usize,
-) -> Vec<TranscriptSelectionRow> {
-    let rendered_lines = if content_spans.is_empty() {
-        vec![Line::from(Span::styled(prefix.to_string(), prefix_style))]
-    } else {
-        let prefix_width = display_width(prefix);
-        let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
-        wrap_surface_spans(content_spans, content_width)
-            .into_iter()
-            .map(|row| {
-                let mut spans = vec![Span::styled(prefix.to_string(), prefix_style)];
-                spans.extend(row);
-                Line::from(spans)
-            })
-            .collect::<Vec<_>>()
-    };
-
-    rendered_lines
-        .into_iter()
-        .enumerate()
-        .map(|(idx, row)| TranscriptSelectionRow {
-            cells: transcript_selection_line_rows(&row, usize::from(width))
-                .into_iter()
-                .next()
-                .unwrap_or_default(),
-            continues_previous: idx > 0,
-            copy_offset,
-            copy_joiner: None,
-            links: Vec::new(),
-        })
-        .collect()
-}
-
-pub(super) fn blank_selection_row() -> TranscriptSelectionRow {
-    TranscriptSelectionRow {
-        cells: Vec::new(),
-        continues_previous: false,
-        copy_offset: 0,
-        copy_joiner: None,
-        links: Vec::new(),
-    }
-}
-
 pub(super) fn lifecycle_selection_snapshot(
     surface: LifecycleSelectionSurface,
 ) -> Option<TranscriptSelectionSnapshot> {
@@ -816,6 +274,7 @@ pub(super) fn lifecycle_selection_snapshot(
         .map(|line_index| SelectionRow {
             line_index,
             text: " ".repeat(width),
+            width,
             continues_previous: false,
             copy_joiner: None,
             start_cell: 1,
@@ -832,7 +291,8 @@ pub(super) fn lifecycle_selection_snapshot(
             if target >= rows.len() {
                 break;
             }
-            rows[target] = compact_selection_row(&row, target);
+            rows[target] = row;
+            rows[target].line_index = target;
             rows[target].continues_previous = offset > 0;
         }
     }
@@ -845,61 +305,6 @@ pub(super) fn lifecycle_selection_snapshot(
         row_width: width,
         resolved_selection: None,
     })
-}
-
-fn aligned_selection_rows_for_line(
-    line: &Line<'static>,
-    width: usize,
-    alignment: Alignment,
-) -> Vec<TranscriptSelectionRow> {
-    let mut rows = transcript_selection_line_rows(line, width.max(1));
-    let mut copy_offsets = vec![0; rows.len()];
-    if !matches!(alignment, Alignment::Left) {
-        for (idx, cells) in rows.iter_mut().enumerate() {
-            cells.resize(width, " ".to_string());
-            copy_offsets[idx] = align_selection_cells(cells, alignment);
-        }
-    }
-
-    rows.into_iter()
-        .enumerate()
-        .map(|(idx, cells)| TranscriptSelectionRow {
-            cells,
-            continues_previous: idx > 0,
-            copy_offset: copy_offsets[idx],
-            copy_joiner: None,
-            links: Vec::new(),
-        })
-        .collect()
-}
-
-fn align_selection_cells(cells: &mut Vec<String>, alignment: Alignment) -> usize {
-    let width = cells.len();
-    let content_end = cells
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, cell)| !cell.is_empty() && cell.as_str() != " ")
-        .map(|(idx, _)| idx.saturating_add(1))
-        .unwrap_or(0);
-    if content_end == 0 || content_end >= width {
-        return 0;
-    }
-
-    let leading = match alignment {
-        Alignment::Center => width.saturating_sub(content_end) / 2,
-        Alignment::Right => width.saturating_sub(content_end),
-        Alignment::Left => 0,
-    };
-    if leading == 0 {
-        return 0;
-    }
-
-    let mut shifted = vec![" ".to_string(); width];
-    let copy_len = content_end.min(width.saturating_sub(leading));
-    shifted[leading..leading + copy_len].clone_from_slice(&cells[..copy_len]);
-    *cells = shifted;
-    leading
 }
 
 pub(super) fn render_transcript_selection(
@@ -991,300 +396,18 @@ fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
 mod grammar_tests;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "ui_transcript_selection/tests.rs"]
+mod tests;
 
-    #[test]
-    fn fenced_selection_rows_preserve_logical_code_lines_through_rewrap() {
-        // arrange
-        // Given: a fenced assistant body whose code line wraps at a narrow width.
-        let Some(rows) = selection_rows_for_rich_text_block(
-            "```rust\nlet value = a_very_long_identifier;\n```",
-            Color::White,
-            "  ",
-            &Theme::default(),
-            16,
-            false,
-        ) else {
-            panic!("ordinary code must remain selectable");
-        };
-
-        // When: the selection model records the rendered rows.
-        let rendered = rows
-            .iter()
-            .map(selection_row_line_text)
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        // act
-        // Then: only painted code is selectable and wrapped rows retain one logical line.
-        // assert
-        assert!(!rendered.contains("```rust"));
-        assert!(rendered.contains("let value"));
-        assert!(rows.iter().any(|row| row.continues_previous));
-    }
-
-    #[test]
-    fn open_fence_selection_rows_match_streaming_code_body() {
-        // arrange
-        // act
-        let Some(rows) = selection_rows_for_rich_text_block(
-            "Before\n```rust\nlet value = 42;",
-            Color::White,
-            "  ",
-            &Theme::default(),
-            24,
-            true,
-        ) else {
-            panic!("streaming code must remain selectable");
-        };
-        let rendered = rows
-            .iter()
-            .map(selection_row_line_text)
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        // assert
-        assert!(rendered.contains("Before"));
-        assert!(rendered.contains("let value = 42;"));
-        assert!(!rendered.contains("```rust"));
-    }
-
-    #[test]
-    fn markdown_selection_copy_retains_safe_destination_metadata() {
-        // Given: a production markdown selection row containing a labeled link.
-        let rows = selection_rows_for_markdownish_text_block(
-            "Read [docs](https://example.com/docs)",
-            Color::White,
-            "  ",
-            &Theme::default(),
-            40,
-        );
-        let compact = rows
-            .iter()
-            .enumerate()
-            .map(|(index, row)| compact_selection_row(row, index))
-            .collect::<Vec<_>>();
-        let snapshot = TranscriptSelectionSnapshot {
-            viewport: Rect::new(0, 0, 40, 1),
-            visible_rows: vec![Some(0)],
-            rows: compact,
-            total_rows: 1,
-            row_width: 40,
-            resolved_selection: Some(TranscriptSelection {
-                anchor: TranscriptSelectionCell { row: 0, column: 2 },
-                focus: TranscriptSelectionCell { row: 0, column: 10 },
-            }),
-        };
-
-        // When: selected cells are copied.
-        let copied = snapshot
-            .selection_text_with_destinations(TranscriptSelection {
-                anchor: TranscriptSelectionCell { row: 0, column: 2 },
-                focus: TranscriptSelectionCell { row: 0, column: 10 },
-            })
-            .expect("selected text");
-
-        // Then: visible text and the safe destination survive together.
-        assert_eq!(copied, "Read docs\n\nLinks:\nhttps://example.com/docs");
-    }
-
-    #[test]
-    fn destination_export_includes_only_half_open_runs_intersecting_selection() {
-        // Given: one safe link occupying display cells [3, 7).
-        let row = TranscriptSelectionRow {
-            cells: "aa link zz".chars().map(|ch| ch.to_string()).collect(),
-            continues_previous: false,
-            copy_offset: 0,
-            copy_joiner: None,
-            links: vec![TranscriptSelectionLink {
-                start_cell: 3,
-                end_cell: 7,
-                destination: "https://example.com/link".to_string(),
-            }],
-        };
-        let snapshot_for = |anchor, focus| TranscriptSelectionSnapshot {
-            viewport: Rect::new(0, 0, 10, 1),
-            visible_rows: vec![Some(0)],
-            rows: vec![compact_selection_row(&row, 0)],
-            total_rows: 1,
-            row_width: 10,
-            resolved_selection: Some(TranscriptSelection {
-                anchor: TranscriptSelectionCell {
-                    row: 0,
-                    column: anchor,
-                },
-                focus: TranscriptSelectionCell {
-                    row: 0,
-                    column: focus,
-                },
-            }),
-        };
-
-        // When: selections land before, after, and on the final linked cell.
-        let before = snapshot_for(0, 1)
-            .selection_text_with_destinations(TranscriptSelection {
-                anchor: TranscriptSelectionCell { row: 0, column: 0 },
-                focus: TranscriptSelectionCell { row: 0, column: 1 },
-            })
-            .expect("before text");
-        let after = snapshot_for(8, 9)
-            .selection_text_with_destinations(TranscriptSelection {
-                anchor: TranscriptSelectionCell { row: 0, column: 8 },
-                focus: TranscriptSelectionCell { row: 0, column: 9 },
-            })
-            .expect("after text");
-        let boundary = snapshot_for(6, 7)
-            .selection_text_with_destinations(TranscriptSelection {
-                anchor: TranscriptSelectionCell { row: 0, column: 6 },
-                focus: TranscriptSelectionCell { row: 0, column: 7 },
-            })
-            .expect("boundary text");
-
-        // Then: only the exact half-open overlap exports the destination.
-        assert!(!before.contains("Links:") && !after.contains("Links:"));
-        assert!(boundary.ends_with("Links:\nhttps://example.com/link"));
-    }
-
-    #[test]
-    fn inline_link_ranges_survive_repeated_labels_wrapping_and_wide_graphemes() {
-        // Given: duplicate labels, whitespace, CJK, joined emoji and emoji presentation.
-        let rows = selection_rows_for_markdownish_text_block(
-            "same [same](https://example.com/one) 👩‍💻中#\u{fe0f} [same](https://example.com/two) [two words](https://example.com/words)",
-            Color::White,
-            "",
-            &Theme::default(),
-            7,
-        );
-
-        // When: rendered row-local link runs are inspected.
-        let links = rows
-            .iter()
-            .flat_map(|row| row.links.iter().map(move |link| (row, link)))
-            .collect::<Vec<_>>();
-
-        // Then: each URL has its own exact non-empty run, including both words when wrapped.
-        assert_eq!(
-            links
-                .iter()
-                .map(|(_, link)| link.destination.as_str())
-                .collect::<Vec<_>>(),
-            vec![
-                "https://example.com/one",
-                "https://example.com/two",
-                "https://example.com/words",
-                "https://example.com/words",
-            ]
-        );
-        for (row, link) in links {
-            assert!(link.start_cell < link.end_cell);
-            assert!(link.end_cell <= row.cells.len());
-            let label = row.cells[link.start_cell..link.end_cell].concat();
-            assert!(matches!(label.as_str(), "same" | "two " | "words"));
-        }
-    }
-
-    #[test]
-    fn selection_cells_treat_combining_and_zwj_sequences_as_single_graphemes() {
-        // Given: combining text and a ZWJ emoji before a trailing link-like label.
-        let line = Line::from("e\u{301}👩‍💻x");
-
-        // When: the rendered line is projected into terminal cells.
-        let rows = transcript_selection_line_rows(&line, 8);
-
-        // Then: each grapheme starts in one cell and wide continuation cells stay empty.
-        assert_eq!(rows[0][0], "e\u{301}");
-        assert_eq!(rows[0][1], "👩‍💻");
-        assert_eq!(rows[0][2], "");
-        assert_eq!(rows[0][3], "x");
-        assert_eq!(extract_text_by_display_columns("e\u{301}👩‍💻x", 1, 2), "👩‍💻");
-    }
-
-    #[test]
-    fn streaming_and_settled_rows_preserve_link_metadata_before_open_fence() {
-        // Given: visible linked prose before an unfinished code fence.
-        let theme = Theme::default();
-        let streaming = selection_rows_for_rich_text_block(
-            "See [docs](https://example.com/docs)\n```rust\nfn main() {}",
-            Color::White,
-            "  ",
-            &theme,
-            40,
-            true,
-        )
-        .expect("streaming rows");
-
-        // When: the closing fence settles the same document.
-        let settled = selection_rows_for_rich_text_block(
-            "See [docs](https://example.com/docs)\n```rust\nfn main() {}\n```",
-            Color::White,
-            "  ",
-            &theme,
-            40,
-            false,
-        )
-        .expect("settled rows");
-
-        // Then: already-visible link geometry and destination stay stable.
-        assert_eq!(streaming[0].links, settled[0].links);
-        assert_eq!(
-            streaming[0].links[0].destination,
-            "https://example.com/docs"
-        );
-    }
-
-    #[test]
-    fn transformed_fences_fail_closed_for_semantic_selection() {
-        // arrange
-        // act
-        for source in [
-            "```mermaid\ngraph TD\nA --> B\n```",
-            "```diff\n-old\n+new\n```",
-        ] {
-            // assert
-            assert!(selection_rows_for_rich_text_block(
-                source,
-                Color::White,
-                "  ",
-                &Theme::default(),
-                40,
-                false,
-            )
-            .is_none());
-        }
-    }
-
-    #[test]
-    fn unresolved_semantic_selection_does_not_fall_back_to_stale_cells() {
-        // arrange
-        // Given: a snapshot whose anchored surface disappeared during reflow.
-        let snapshot = TranscriptSelectionSnapshot {
-            viewport: Rect::new(0, 0, 5, 1),
-            visible_rows: vec![Some(0)],
-            rows: vec![SelectionRow {
-                line_index: 0,
-                text: "stale".into(),
-                continues_previous: false,
-                copy_joiner: None,
-                start_cell: 0,
-                end_cell: 4,
-                links: Vec::new(),
-            }],
-            total_rows: 1,
-            row_width: 5,
-            resolved_selection: None,
-        };
-        let stale_selection = TranscriptSelection {
-            anchor: TranscriptSelectionCell { row: 0, column: 0 },
-            focus: TranscriptSelectionCell { row: 0, column: 4 },
-        };
-
-        // When: copy resolves selection text from the reflowed snapshot.
-        let text = snapshot.selection_text(stale_selection);
-
-        // act
-        // Then: unresolved semantic endpoints fail closed instead of selecting new content.
-        // assert
-        assert_eq!(text, None);
+pub(super) fn blank_selection_row() -> SelectionRow {
+    SelectionRow {
+        line_index: 0,
+        text: String::new(),
+        width: 0,
+        continues_previous: false,
+        copy_joiner: None,
+        start_cell: 1,
+        end_cell: 0,
+        links: Vec::new(),
     }
 }

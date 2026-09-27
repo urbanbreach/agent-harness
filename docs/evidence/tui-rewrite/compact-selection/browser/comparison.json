@@ -1,0 +1,27 @@
+{
+  "before": {
+    "different_fields": [
+      "parsedCount"
+    ],
+    "changed_cells": 0,
+    "text_equal": true,
+    "render_count": [
+      8,
+      8
+    ]
+  },
+  "selected": {
+    "different_fields": [
+      "parsedCount",
+      "cells",
+      "lines"
+    ],
+    "changed_cells": 21,
+    "text_equal": true,
+    "render_count": [
+      12,
+      12
+    ]
+  },
+  "decision": "Existing R7: candidate highlights the selected reply. No new appearance change."
+}

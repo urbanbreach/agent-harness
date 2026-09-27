@@ -1,0 +1,30 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.86s
+────────────
+ Nextest run ID 96e9aecf-62a5-4325-a2d7-28c543c39048 with nextest profile: default
+    Starting 1 test across 1 binary (1254 tests skipped)
+        FAIL [   0.022s] (1/1) harness-tui app::tests::disabled_copy_on_select_keeps_selection_until_right_click_copy
+  stdout ───
+
+    running 1 test
+    test app::tests::disabled_copy_on_select_keeps_selection_until_right_click_copy ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::disabled_copy_on_select_keeps_selection_until_right_click_copy
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1254 filtered out; finished in 0.02s
+
+  stderr ───
+
+    thread 'app::tests::disabled_copy_on_select_keeps_selection_until_right_click_copy' (2667148) panicked at crates/harness-tui/src/app/tests/transcript_selection_tests.rs:228:5:
+    assertion `left == right` failed
+      left: Some("Copy 界 e\u{301} 👩\u{200d}💻 #\u{fe0f} wrapped words 界 e\u{301} 👩\u{200d}💻 #\u{fe0f} wrapped words 界 e\u{301} 👩\u{200d}💻 #\u{fe0f} wrapped words 界 e\u{301} 👩\u{200d}💻 #\u{fe0f} wrapped words ")
+     right: Some("Copy 界 e\u{301} 👩\u{200d}💻 #\u{fe0f} wrapped words 界 e\u{301} 👩\u{200d}💻 #\u{fe0f} wrapped words 界 e\u{301} 👩\u{200d}💻 #\u{fe0f} wrapped words 界 e\u{301} 👩\u{200d}💻 #\u{fe0f} wrapped words 界 e\u{301} 👩\u{200d}💻 #\u{fe0f} wrapped words 界 e\u{301} 👩\u{200d}💻 #\u{fe0f} wrapped words 界 e\u{301} 👩\u{200d}💻 #\u{fe0f} wrapped words 界 e\u{301} 👩\u{200d}💻 #\u{fe0f} wrapped words\n\nfinish\n\nLinks:\nhttps://example.com/copy")
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.024s] 1 test run: 0 passed, 1 failed, 1254 skipped
+        FAIL [   0.022s] (1/1) harness-tui app::tests::disabled_copy_on_select_keeps_selection_until_right_click_copy
+error: test run failed

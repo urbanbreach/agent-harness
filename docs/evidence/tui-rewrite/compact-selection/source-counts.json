@@ -1,0 +1,77 @@
+{
+  "method": "physical lines; test module files and cfg(test) items with trailing separators count as test source",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/app/tests/transcript_selection_tests.rs",
+      "production_delta": 0,
+      "test_delta": 21,
+      "total_delta": 21
+    },
+    {
+      "path": "crates/harness-tui/src/ui_reasoning_markdown/body.rs",
+      "production_delta": 0,
+      "test_delta": 0,
+      "total_delta": 0
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript.rs",
+      "production_delta": 0,
+      "test_delta": 0,
+      "total_delta": 0
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_layout.rs",
+      "production_delta": 1,
+      "test_delta": 0,
+      "total_delta": 1
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_render.rs",
+      "production_delta": -3,
+      "test_delta": 0,
+      "total_delta": -3
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_selection.rs",
+      "production_delta": -583,
+      "test_delta": -294,
+      "total_delta": -877
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_selection/markdown.rs",
+      "production_delta": 372,
+      "test_delta": 0,
+      "total_delta": 372
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_selection/rows.rs",
+      "production_delta": 161,
+      "test_delta": 0,
+      "total_delta": 161
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_selection/tests.rs",
+      "production_delta": 0,
+      "test_delta": 279,
+      "total_delta": 279
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_types.rs",
+      "production_delta": 0,
+      "test_delta": 0,
+      "total_delta": 0
+    }
+  ],
+  "totals": {
+    "production_delta": -52,
+    "test_delta": 6,
+    "total_delta": -46
+  },
+  "whole_source": {
+    "original_files": 585,
+    "original_lines": 181882,
+    "current_files": 558,
+    "current_lines": 168043,
+    "line_reduction_percent": 7.61
+  }
+}

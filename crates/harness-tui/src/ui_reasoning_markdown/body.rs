@@ -5,7 +5,7 @@ use crate::theme::Theme;
 use super::super::ui_streaming_markdown::append_streaming_rich_text_block;
 use super::super::ui_transcript_selection::{
     blank_selection_row, selection_rows_for_rendered_line, selection_rows_for_rich_text_block,
-    TranscriptSelectionRow,
+    SelectionRow,
 };
 use super::super::ui_transcript_style::blend_color;
 
@@ -16,7 +16,7 @@ pub(super) fn append_reasoning_body_lines(
     surface: Color,
     prefix: &str,
     width: u16,
-) -> Vec<TranscriptSelectionRow> {
+) -> Vec<SelectionRow> {
     // Reasoning shares the answer grammar, syntax palette and wrapping. Blend
     // the rendered colors so nested Markdown and unfinished fences dim too.
     let start = lines.len();

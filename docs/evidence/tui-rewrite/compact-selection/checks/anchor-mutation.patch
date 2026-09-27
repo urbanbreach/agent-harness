@@ -1,0 +1,13 @@
+diff --git i/crates/harness-tui/src/ui_transcript_layout.rs w/crates/harness-tui/src/ui_transcript_layout.rs
+index 8bc1c238..c8d12d29 100644
+--- i/crates/harness-tui/src/ui_transcript_layout.rs
++++ w/crates/harness-tui/src/ui_transcript_layout.rs
+@@ -297,7 +297,7 @@ impl MeasuredTranscriptLayout {
+             .surfaces
+             .iter()
+             .find(|surface| surface.metadata.id == anchor.entry_id)?;
+-        let (row_within_surface, column) = if anchor.selection_backed {
++        let (row_within_surface, column) = if false && anchor.selection_backed {
+             if !surface.semantic_selection {
+                 return None;
+             }

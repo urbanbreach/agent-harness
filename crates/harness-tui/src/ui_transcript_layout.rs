@@ -17,7 +17,7 @@ use super::ui_transcript::{
 };
 use super::ui_transcript_interaction::TranscriptInteractionRow;
 use super::ui_transcript_selection::{
-    compact_selection_row, surface_selection_rows, SelectionRow, TranscriptSelectionCell,
+    surface_selection_rows, SelectionRow, TranscriptSelectionCell,
 };
 use super::ui_transcript_surface::{
     render_transcript_surface, transcript_surface_content_width, transcript_surface_render_width,
@@ -475,7 +475,7 @@ pub(super) fn measure_transcript_layout<Section>(
                     .join("\n"),
             );
             let semantic_selection = surface.selection_rows.is_some();
-            let selection_rows = surface.selection_rows.as_ref().map_or_else(
+            let selection_rows = surface.selection_rows.map_or_else(
                 || {
                     surface_selection_rows(
                         &surface.lines,
@@ -484,11 +484,12 @@ pub(super) fn measure_transcript_layout<Section>(
                         surface.rail_glyph,
                     )
                 },
-                |rows| {
-                    rows.iter()
-                        .enumerate()
-                        .map(|(index, row)| compact_selection_row(row, index))
-                        .collect()
+                |mut rows| {
+                    for (index, row) in rows.iter_mut().enumerate() {
+                        row.line_index = index;
+                    }
+                    rows.shrink_to_fit();
+                    rows
                 },
             );
             measured_surfaces.push(TranscriptVisualEntry {
@@ -1648,15 +1649,15 @@ mod pin_tests {
     }
 
     fn selection_row(width: usize, continues_previous: bool) -> SelectionRow {
-        compact_selection_row(
-            &crate::ui::ui_transcript_selection::TranscriptSelectionRow {
-                cells: vec!["x".to_string(); width],
-                continues_previous,
-                copy_offset: 0,
-                copy_joiner: None,
-                links: Vec::new(),
-            },
-            0,
-        )
+        SelectionRow {
+            line_index: 0,
+            text: "x".repeat(width),
+            width,
+            continues_previous,
+            copy_joiner: None,
+            start_cell: 0,
+            end_cell: width - 1,
+            links: Vec::new(),
+        }
     }
 }

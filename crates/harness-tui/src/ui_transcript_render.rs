@@ -686,7 +686,7 @@ fn build_assistant_part_render_surface(
 
 struct AssistantBodyContent {
     lines: Vec<Line<'static>>,
-    selection_rows: Option<Vec<TranscriptSelectionRow>>,
+    selection_rows: Option<Vec<SelectionRow>>,
 }
 
 fn resolve_assistant_body_content(
@@ -758,9 +758,6 @@ fn resolve_assistant_body_content(
     }
     if let Some(rows) = &mut selection_rows {
         rows.truncate(lines.len());
-        for row in rows {
-            row.cells.truncate(usize::from(content_width));
-        }
     }
     AssistantBodyContent {
         lines,
@@ -825,7 +822,7 @@ struct ReasoningBlockContext<'a> {
 #[derive(Clone, Default)]
 struct ReasoningBlockLayout {
     body_start: Option<usize>,
-    selection_rows: Vec<Option<TranscriptSelectionRow>>,
+    selection_rows: Vec<Option<SelectionRow>>,
 }
 
 fn append_reasoning_block(
@@ -955,7 +952,7 @@ fn append_reasoning_block(
 fn reasoning_selection_rows(
     lines: &[Line<'static>],
     layout: ReasoningBlockLayout,
-) -> Vec<TranscriptSelectionRow> {
+) -> Vec<SelectionRow> {
     lines
         .iter()
         .enumerate()
