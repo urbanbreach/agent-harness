@@ -1,0 +1,46 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.67s
+────────────
+ Nextest run ID 21989ba9-917e-4fed-a4a1-8190c92c5bc5 with nextest profile: ci
+    Starting 1 test across 1 binary (7 tests skipped)
+        FAIL [   0.016s] (1/1) harness-tui::transcript_block_viewer_test search_accepts_complete_unicode_graphemes_and_rejects_partial_ones
+  stdout ───
+
+    running 1 test
+    test search_accepts_complete_unicode_graphemes_and_rejects_partial_ones ... FAILED
+
+    failures:
+
+    failures:
+        search_accepts_complete_unicode_graphemes_and_rejects_partial_ones
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'search_accepts_complete_unicode_graphemes_and_rejects_partial_ones' (2369039) panicked at crates/harness-tui/tests/transcript_block_viewer_test.rs:86:5:
+    assertion failed: marker.modifier.contains(ratatui::style::Modifier::REVERSED)
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.018s] 1 test run: 0 passed, 1 failed, 7 skipped
+        FAIL [   0.016s] (1/1) harness-tui::transcript_block_viewer_test search_accepts_complete_unicode_graphemes_and_rejects_partial_ones
+  stdout ───
+
+    running 1 test
+    test search_accepts_complete_unicode_graphemes_and_rejects_partial_ones ... FAILED
+
+    failures:
+
+    failures:
+        search_accepts_complete_unicode_graphemes_and_rejects_partial_ones
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'search_accepts_complete_unicode_graphemes_and_rejects_partial_ones' (2369039) panicked at crates/harness-tui/tests/transcript_block_viewer_test.rs:86:5:
+    assertion failed: marker.modifier.contains(ratatui::style::Modifier::REVERSED)
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

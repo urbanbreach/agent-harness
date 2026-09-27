@@ -1,0 +1,2805 @@
+{
+  "base": "0b04162624769cc347be9d26c94c31eb141dbab4",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/app/activity.rs",
+      "bytes": 14561,
+      "sha256": "7971bb8072414f1f125a77b626f2c2747db64a1b5595a9358cedc0d261816f41"
+    },
+    {
+      "path": "crates/harness-tui/src/app/auth_dialog/input.rs",
+      "bytes": 9320,
+      "sha256": "2769a16704b781f66f887d66d09abb0e4020e6774e23f4aa21eee742c61c396d"
+    },
+    {
+      "path": "crates/harness-tui/src/app/auth_dialog/lifecycle.rs",
+      "bytes": 3459,
+      "sha256": "c78a0cc4ee34371ed05a469c1d72ed7f0570834157f43c00a12264a11ed43c6f"
+    },
+    {
+      "path": "crates/harness-tui/src/app/auth_dialog/provider_menu.rs",
+      "bytes": 4748,
+      "sha256": "5ce01aa20eb86138de3b8721df140b3dee18d7d1e732a7254e3d9ac9c5043638"
+    },
+    {
+      "path": "crates/harness-tui/src/app/auth_dialog/selection.rs",
+      "bytes": 7754,
+      "sha256": "4722c2c651ad86aa69091cab209d237e73c4da98c9f8e8b9a0bfb9a050929fce"
+    },
+    {
+      "path": "crates/harness-tui/src/app/auth_dialog/tests.rs",
+      "bytes": 11556,
+      "sha256": "6068369d412cbcc77905507c67d3aed2ef12b165dce5c455a7af873b8a19f164"
+    },
+    {
+      "path": "crates/harness-tui/src/app/auth_dialog.rs",
+      "bytes": 4951,
+      "sha256": "81995aeef85f69909840a24f502bedfd82885256be3df6f7275af433272a0cf2"
+    },
+    {
+      "path": "crates/harness-tui/src/app/auth_display.rs",
+      "bytes": 2526,
+      "sha256": "a217106a7ea31bee79448aa985dfb28c6b431cf1df778a41599ee7f9975bb877"
+    },
+    {
+      "path": "crates/harness-tui/src/app/child_session.rs",
+      "bytes": 4995,
+      "sha256": "e9d9266234a7f070e4679d8b15b925b123ddde55dd8143525470af9d5d0057a5"
+    },
+    {
+      "path": "crates/harness-tui/src/app/composer.rs",
+      "bytes": 5564,
+      "sha256": "d1412b1a0303a46b8d8a01a0c9cd0c494016388cc28f354abc3f345fd01cc38e"
+    },
+    {
+      "path": "crates/harness-tui/src/app/composer_editing.rs",
+      "bytes": 21988,
+      "sha256": "d7fac7b723d7b99ab45d005afff8d09e64657cb79e16bb1633a2c934c7fe63c0"
+    },
+    {
+      "path": "crates/harness-tui/src/app/dashboard_roster.rs",
+      "bytes": 835,
+      "sha256": "40b41020760613e886356d765e4ee7b4a46888febf08336866afbbf320b16b61"
+    },
+    {
+      "path": "crates/harness-tui/src/app/file_mentions/entries.rs",
+      "bytes": 14024,
+      "sha256": "8f207fffe2922dc44f2be9ed62ea3974fdc35a83874fbe5d9d7df4fa5cecf40e"
+    },
+    {
+      "path": "crates/harness-tui/src/app/file_mentions.rs",
+      "bytes": 24873,
+      "sha256": "228c9186804687417cacb1dd0b74ccedd79d3bb756f19bd636b375b718bbcb85"
+    },
+    {
+      "path": "crates/harness-tui/src/app/first_prompt.rs",
+      "bytes": 1236,
+      "sha256": "f3411c19077a6a9c2ebcd2d3d789ea29ce682136f148203cd2d817b093bde7ff"
+    },
+    {
+      "path": "crates/harness-tui/src/app/foreign_import.rs",
+      "bytes": 9826,
+      "sha256": "ec78d0d3a4b653d3e7aa7a7c0d82524f06a0c049eaf0b2044522023bb44bc700"
+    },
+    {
+      "path": "crates/harness-tui/src/app/ghost_suggestion.rs",
+      "bytes": 1314,
+      "sha256": "4845dd68eb27717c3afdf9958512788fc0e9184c0c33a1ef7ddcd7edae135628"
+    },
+    {
+      "path": "crates/harness-tui/src/app/help_browser/catalog.rs",
+      "bytes": 2555,
+      "sha256": "cec6363bd8e9a0dfb1bca159f81169082f8f95175934c1fc6731184ebf50b968"
+    },
+    {
+      "path": "crates/harness-tui/src/app/help_browser/input.rs",
+      "bytes": 9270,
+      "sha256": "92011cc454e98758e12cd6841d7e2ea2d2c7378d707bf70ae046af215ef6c7d6"
+    },
+    {
+      "path": "crates/harness-tui/src/app/help_browser.rs",
+      "bytes": 3188,
+      "sha256": "9dd024a9732b9fc24f4b3e086ce98399755a058ad91433ad329fb0b9674e4d91"
+    },
+    {
+      "path": "crates/harness-tui/src/app/key_interaction.rs",
+      "bytes": 74136,
+      "sha256": "5cf686f75fcdebb090e5ac4b791bf9cb30b160bf6e8e1dde3c6605b5f29caa45"
+    },
+    {
+      "path": "crates/harness-tui/src/app/lifecycle.rs",
+      "bytes": 41695,
+      "sha256": "16030b28a4b2a83671b71566062605198c52983a36daa7dbe5bfaa146411b9d1"
+    },
+    {
+      "path": "crates/harness-tui/src/app/lineage.rs",
+      "bytes": 27025,
+      "sha256": "f36accb76d12b83fa0dcfbb5884116469c9e8e7d38421a214b2d1fd2b8120c60"
+    },
+    {
+      "path": "crates/harness-tui/src/app/memory_browser.rs",
+      "bytes": 10502,
+      "sha256": "392d3adf41172e2ba00e202af13973083cd658046742a286cbcfe390e9559439"
+    },
+    {
+      "path": "crates/harness-tui/src/app/modal_interaction.rs",
+      "bytes": 20108,
+      "sha256": "d1e596bceb6863051b517aabef4f25dc2a942238ea4ddbe349c97ec350a25387"
+    },
+    {
+      "path": "crates/harness-tui/src/app/model_favorites.rs",
+      "bytes": 6403,
+      "sha256": "4086e3b02ebb0e8d15d2bc817d9b2ef285037430ee64d1e68b76ea57d421f219"
+    },
+    {
+      "path": "crates/harness-tui/src/app/model_metadata.rs",
+      "bytes": 19154,
+      "sha256": "745a2d5a62901ccfb729c09d9c8f74389f1676400ed9af21fa3af81eae63529d"
+    },
+    {
+      "path": "crates/harness-tui/src/app/model_switcher.rs",
+      "bytes": 31203,
+      "sha256": "c1f0cb41bb4d556c9f69f463ef7f15ef74133a0357e7592a261dc0dd2173c22f"
+    },
+    {
+      "path": "crates/harness-tui/src/app/motion.rs",
+      "bytes": 11328,
+      "sha256": "b11c1f91f9914c959dfb144f824a33926b1e401c2df03e05fa0d01b7fd4e6f47"
+    },
+    {
+      "path": "crates/harness-tui/src/app/mouse_interaction.rs",
+      "bytes": 70545,
+      "sha256": "19d3166b00057348aae0c7178b01b1d098a3c7a3f64f596f2faea32d8809cc4b"
+    },
+    {
+      "path": "crates/harness-tui/src/app/new_worktree_dialog.rs",
+      "bytes": 4633,
+      "sha256": "712c53b32f672156e56ee287971367f2b400474eb19863035416ff4f67dae47a"
+    },
+    {
+      "path": "crates/harness-tui/src/app/notifications.rs",
+      "bytes": 2735,
+      "sha256": "5ec21c958c64b4f4ef27ac8df7d5b7d0103b8542768a68c94511c8c8397c0afd"
+    },
+    {
+      "path": "crates/harness-tui/src/app/operator_sidebar.rs",
+      "bytes": 89,
+      "sha256": "2777fc5a534563994111cc8cfb77254f9a2cf8d350375174e626c50d17ef3647"
+    },
+    {
+      "path": "crates/harness-tui/src/app/palette_controller.rs",
+      "bytes": 21389,
+      "sha256": "82a7aa5864604acd99c45968cee5dfedd1df6b13fe0765222ffd0cdeb6d88a06"
+    },
+    {
+      "path": "crates/harness-tui/src/app/paste_preview.rs",
+      "bytes": 2033,
+      "sha256": "1a6e90507c0b517b8a6e0af347eee31c4b544a5ef9b2e491dc5d3d9aa0e4560c"
+    },
+    {
+      "path": "crates/harness-tui/src/app/pending_live.rs",
+      "bytes": 9731,
+      "sha256": "cbbaacf51362f2e6da9bdcfcd3407e1128b8fea00d278563af3c915ce84cfc86"
+    },
+    {
+      "path": "crates/harness-tui/src/app/permission_prompt.rs",
+      "bytes": 4886,
+      "sha256": "723a818fc728c6b345b5c6f85908bbca6f465b0d873a747c71048d984a0c224b"
+    },
+    {
+      "path": "crates/harness-tui/src/app/permissions/modal.rs",
+      "bytes": 2176,
+      "sha256": "7466c7df2ecb7f20858b822c255b551c4ed40a3d78775ec9359e68db75068d33"
+    },
+    {
+      "path": "crates/harness-tui/src/app/permissions/question.rs",
+      "bytes": 5440,
+      "sha256": "c4e4d1a1c8358e37137e71eb34a6c6cf5c2cf355c3b8c90bd00d4403be9ea95c"
+    },
+    {
+      "path": "crates/harness-tui/src/app/permissions.rs",
+      "bytes": 56685,
+      "sha256": "cb108b1fd388bc90157f115855c8b07d1f27ed28c8a1874223d266b6adf7f24f"
+    },
+    {
+      "path": "crates/harness-tui/src/app/plan_view.rs",
+      "bytes": 17365,
+      "sha256": "e5a63b15f203b6e0aa29be2a30d1ed13b6028ac6d2d1fe47635141f1c4e2993e"
+    },
+    {
+      "path": "crates/harness-tui/src/app/product_info.rs",
+      "bytes": 7589,
+      "sha256": "1a09f0e922423903b0e26c632b6d67105406c298ddbb95892e7d74442a5e88e5"
+    },
+    {
+      "path": "crates/harness-tui/src/app/prompt_history.rs",
+      "bytes": 2410,
+      "sha256": "0415727690b04a5e21164601e8bc0cbff976e08692b6a21c7306b50050db56e3"
+    },
+    {
+      "path": "crates/harness-tui/src/app/prompt_history_picker.rs",
+      "bytes": 5031,
+      "sha256": "fd721c0f0e62de211976d5cde80382ce1a6b925380cd6aa014dd753f8c37f1a5"
+    },
+    {
+      "path": "crates/harness-tui/src/app/prompt_input.rs",
+      "bytes": 27470,
+      "sha256": "74c15d1674e00281fbea6d2ef9c8e21f5348d484f806c16ac49cd46d5f57a32b"
+    },
+    {
+      "path": "crates/harness-tui/src/app/prompt_stash.rs",
+      "bytes": 4781,
+      "sha256": "b36e6681a3c0daef743e180942cd3b1a29984d2e2d134abefaeb3c925643c2a6"
+    },
+    {
+      "path": "crates/harness-tui/src/app/prompt_stash_actions.rs",
+      "bytes": 5213,
+      "sha256": "407140bd9d74e32f6a8e3e30e602695bb5bc3c936956c3588b1e82e0238f6474"
+    },
+    {
+      "path": "crates/harness-tui/src/app/question_prompt.rs",
+      "bytes": 672,
+      "sha256": "83455c0f2771eaa99bc8fcf063aa3b1dba49cbd1a124a103b4314801b3991b73"
+    },
+    {
+      "path": "crates/harness-tui/src/app/recorded_artifacts.rs",
+      "bytes": 3626,
+      "sha256": "eabf00db75a548f4d9f578d0f730495ae471cd3dd4a8d50e96f1d9421365e716"
+    },
+    {
+      "path": "crates/harness-tui/src/app/rewind.rs",
+      "bytes": 16964,
+      "sha256": "0b5e045d160044078732eee9d71a7dc0bb9a3b6139c75729fc7afb481d3b0d38"
+    },
+    {
+      "path": "crates/harness-tui/src/app/screen_mode.rs",
+      "bytes": 7512,
+      "sha256": "dc6ba502d687cc8a46b9421cac1670f81d5782c78ae5aa4f79dcbb662326ff17"
+    },
+    {
+      "path": "crates/harness-tui/src/app/secondary_surfaces.rs",
+      "bytes": 3660,
+      "sha256": "9ad76a1611925445c946616cdf1fbf68266c9dd3aaab91463e8e64bc73701b88"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_history.rs",
+      "bytes": 29525,
+      "sha256": "6adcec86ed58fc85d91d0c2c3e0617759217578fd8e652048296cd1fa9fec1b7"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_live_routing.rs",
+      "bytes": 8983,
+      "sha256": "64dc01e9b53c5e1d337a874c195c243ea0b9c1115aa0ebc7429a138122b63909"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_navigation.rs",
+      "bytes": 50975,
+      "sha256": "575e1c8fa0953cdbdf4da509a0537318afe38f5f80ab4b9e17941908c8f311c2"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_pins.rs",
+      "bytes": 3467,
+      "sha256": "7327736d4aac0eeb99f202aeebd012ca04b313e83da7d4edfa87dac7caa67e10"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/background_notification.rs",
+      "bytes": 636,
+      "sha256": "33ad705e10e565e960345e36f761786ec3b1ba2cf1e16321484fb5c4a8996dd4"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/event_ingest.rs",
+      "bytes": 2830,
+      "sha256": "95512a56ce107ca1e2d26996be25b0431dd6b23c4e128494b783d9418baf7b55"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/live_lifecycle.rs",
+      "bytes": 9508,
+      "sha256": "23d34648047f7f579808a5e2f1f47abb3177097693df6a2703a2da7d350a39c6"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/live_orchestration.rs",
+      "bytes": 4039,
+      "sha256": "c748a2db626718071f41df6dcc120f5f7c6465e0d1afaa11b39090f1c4b3b936"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/live_tool.rs",
+      "bytes": 8714,
+      "sha256": "5765038e035f7588cf3ce848e2b0f0bc89f3150675db0ed95bc1b227f3c69cdb"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/live_turn_phase.rs",
+      "bytes": 7659,
+      "sha256": "973b597c77a19ee984d4fe0153b734174cdd9f9ca38cb05d53dbc4c6e76f392a"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/settled_presentation/canonical_orchestration.rs",
+      "bytes": 8368,
+      "sha256": "8b96e043c9a8065bf871e8afa57ed9835caf022861b7648aa21762012c2c641f"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/settled_presentation/canonical_provider.rs",
+      "bytes": 5118,
+      "sha256": "614afd6a99dbafc9f051f8fd47f1056de806e6083d6540e4c295329ba8527305"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/settled_presentation/compaction.rs",
+      "bytes": 3819,
+      "sha256": "ae4c1538f0922aa563908521b30e57be62c01607d7116353347f90d5d5cced26"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/settled_presentation/parts.rs",
+      "bytes": 8046,
+      "sha256": "b0a9b7abe5a7eb6c09fea2756d0d04e07ee29413a6c714b0fc8d0aa82f80bf38"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/settled_presentation/presentation_merge.rs",
+      "bytes": 6343,
+      "sha256": "a9a799e2b44d47efda7b0b735c2c8174f4c629152b093a63425c403e88e78b20"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/settled_presentation/tasks.rs",
+      "bytes": 6731,
+      "sha256": "ba24dc4062eb83206fe16ef32dc72d50186d424a3bcc6356bfded4a690a58aa3"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection/settled_presentation.rs",
+      "bytes": 15595,
+      "sha256": "eecacfc2c6303156f35885846c0af2d6a75cd01d3f373eb4b5bf0705e30e553d"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection.rs",
+      "bytes": 72118,
+      "sha256": "db01469da08d33c88028d2db1a8aea6885bae650e4bf6b65366dcb29c189982a"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_slash.rs",
+      "bytes": 2541,
+      "sha256": "593552a3cf71aa6a5b7f1b1c6be8f33f877d4c4b64456f5128f36f3167f0a4a2"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_stack.rs",
+      "bytes": 50735,
+      "sha256": "b04592d709414175c7f582d6ec641ed73140baebfb681b0cf655fb2e9c5c42ed"
+    },
+    {
+      "path": "crates/harness-tui/src/app/settings_editor.rs",
+      "bytes": 38130,
+      "sha256": "75d7d93672ebe591bbde66b0e0af43fd212c145d4ddd58710220532c250d6346"
+    },
+    {
+      "path": "crates/harness-tui/src/app/slash_completion.rs",
+      "bytes": 9237,
+      "sha256": "989c75fb9b90a9c8cb2a8f05118b5ea0dc448dbfb9d71fd4c85bd5fc07c54079"
+    },
+    {
+      "path": "crates/harness-tui/src/app/terminal_diagnostics.rs",
+      "bytes": 3142,
+      "sha256": "ad8e3c429bfcd82d1e20ccd03fd34f9c12a89478e3ec0113f398300a6ee7d573"
+    },
+    {
+      "path": "crates/harness-tui/src/app/terminal_panel.rs",
+      "bytes": 9502,
+      "sha256": "3730faab5334b27507324d6180f06c35156fa9b8cf8141107173b4680e96147b"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/activity_lifecycle_terminal_tests.rs",
+      "bytes": 9744,
+      "sha256": "57b786042e0add0b41e9f54d5ee4a452c5ee84c52e28f41b9381449eb7812333"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/activity_lifecycle_tests.rs",
+      "bytes": 24995,
+      "sha256": "c34511e59ae48c17d5614f0d6e1a1dcbe1e3043d82ddac99e77053133e723bae"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/composer_editing_tests.rs",
+      "bytes": 11639,
+      "sha256": "1cf23e0b1c0b9e9100099bfa706a74bdd3dfd3212885e393c812165305428e08"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/file_mention_tests.rs",
+      "bytes": 10631,
+      "sha256": "861e1be95663bbfc0bee8bbfad1f8915d0235c2c86299d74263faeed8915c0de"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/grok_parity_surfaces_test.rs",
+      "bytes": 29551,
+      "sha256": "60d95834c581795b6a19f2dc77408f0998944d503ae1be3dccbb775837145999"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/help_browser_mouse_tests.rs",
+      "bytes": 6268,
+      "sha256": "8ad6cc1dba2d03634abc21ed83bfec6acebaad2f68fd0bff2279629fad12ccd5"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/interaction_tests.rs",
+      "bytes": 21550,
+      "sha256": "5b0a08743c45393fccb5f65d664ad06e138988dbeb6417485199d10983231984"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/interaction_tests_part2_test.rs",
+      "bytes": 27091,
+      "sha256": "3bcba0d9c20b4115568cf6b9ab5fd33d62fd0ce378fcb2cc697e59d769423126"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/interaction_tests_part3_test.rs",
+      "bytes": 16856,
+      "sha256": "5eba9f41d80a49eb0a555e62b2a99615aaa3c0ec1cd96113f784ebbfb398da63"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/interaction_welcome_tests.rs",
+      "bytes": 5521,
+      "sha256": "469e60381098d32e7b31383e72cfdbd68e39dfdb164f67801b420d93f49ffba3"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/lifecycle_shell_part2_test.rs",
+      "bytes": 17677,
+      "sha256": "349c7d381579a4941651436b11fbce06f7dfa3bd6eec9bd93459ec3a38f8d962"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/lifecycle_shell_part3_test.rs",
+      "bytes": 16642,
+      "sha256": "59aaee49728884f51694d2bc750f48a1c48b9d01309afec44e8e739985488e93"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/lifecycle_shell_tests.rs",
+      "bytes": 24576,
+      "sha256": "2fc038f87359faae4a53e3bd6f45fca5ef713c725e4edbc62c9c103462c0867e"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/live_compaction_tests.rs",
+      "bytes": 5445,
+      "sha256": "7ac2233430633c15c70524fbf2a7408ee07a0437cb52330c0424df5256281b55"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/live_turn_lineage_geometry_regression.rs",
+      "bytes": 4362,
+      "sha256": "1d861e2f6ce14de9f747f4ce367137069b22c525fec2c8e57551f815efcc931b"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/live_turn_scope_regression.rs",
+      "bytes": 6573,
+      "sha256": "14efae204e3ac6817323728d91c127bbb243463c246097a287a5190990e4939a"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/live_turn_status_tests.rs",
+      "bytes": 23898,
+      "sha256": "2a1e1b830dbdceeffa014c7eabb9093b0ae024a27b314281d2e3092599c3f212"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/live_turn_watcher_dedup_tests.rs",
+      "bytes": 3395,
+      "sha256": "d1ea1452b38d5dc273441c0f6903bd0845827bd413f65574081b4812fefd34f4"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/live_turn_watcher_interaction_tests.rs",
+      "bytes": 4086,
+      "sha256": "c97d75f777a8533e0560ede602ea6807870fd5b5b57bb1944db0c387d71b85f0"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/modal_hit_map_parity_tests.rs",
+      "bytes": 4620,
+      "sha256": "bcbce081c46003b4280e3046e327c70bd1233c5a48d65b50f8d4db7ec9eb6e4b"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/modal_press_invalidation_tests.rs",
+      "bytes": 3494,
+      "sha256": "e92893b9df51c5388a27f4131168a6b4cc5373f353531fb7bab90754efb910ab"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/model_context_tests.rs",
+      "bytes": 11296,
+      "sha256": "9958d8ae5c64fc697a176985939897fbba835162f54c1719eb4c8a5886411808"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/p0_04_composer_tests.rs",
+      "bytes": 9240,
+      "sha256": "3513e3d683204dc9ee9d86c8a65da49041e489aa49ece113fd54235633fd2c38"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/p1_02_modal_chrome_tests.rs",
+      "bytes": 11121,
+      "sha256": "1fe02d418360352fd8eaabfc8d647ccfbf148eb437cad35709caf770b084f52f"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/permission_modal_tests.rs",
+      "bytes": 26740,
+      "sha256": "f40195505a3b027989c4a35c71badc8152761273896d6c2037cdad63b39d146a"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/permission_modal_tests_part2_test.rs",
+      "bytes": 27492,
+      "sha256": "b6b5bca7ccfb1fd740377c8526e6e2135577c4b9f2db181785cb68006f4fbbb0"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/permission_modal_tests_part3_test.rs",
+      "bytes": 28817,
+      "sha256": "f765ec6a7fe2dc7755a0b77552b10cdcbfe88cdde54d23bb31c514819643b25a"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/permission_modal_tests_part4_test.rs",
+      "bytes": 1592,
+      "sha256": "46840dcacb292163800fc1c8d262e112884e99b20b3a6bf447c5df7f4acff83e"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/permission_modal_tests_part5_test.rs",
+      "bytes": 9564,
+      "sha256": "01b258f265e3001412195701330ad13baa3e94052ca7c6e13e603eb2d76a5fa0"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/permission_modal_tests_part6_test.rs",
+      "bytes": 10815,
+      "sha256": "e4f6e51b547d5dd15e98736d891c675249e3e4351016eda13d81b94f37b5992a"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/permission_projection_tests.rs",
+      "bytes": 7975,
+      "sha256": "f810231c81607b0ce604a875c15cd2feedf008126de2b0ebd783d45df5ef9f53"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/plan_view_tests.rs",
+      "bytes": 19084,
+      "sha256": "c9c3510595156f17fd601012a3c15a28000508c4581c13a10b3fe158e6c49b1d"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/prompt_input_tests.rs",
+      "bytes": 24980,
+      "sha256": "b8866421b9a7743fc0427b9442ff44e0cde9741ec511ed06f17c44dacdde9571"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/prompt_stash_tests.rs",
+      "bytes": 10084,
+      "sha256": "e3cdf4662f187b8306cadca71df8b6c180c7d1fb3be2285f2302fa469c680caf"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/recovery_state_machine_tests.rs",
+      "bytes": 4200,
+      "sha256": "445c201ceeb06bfd4e7e90d6e65c4909e4eb9039a6e0730d0a0d15805a9611a6"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/render_purity_tests.rs",
+      "bytes": 6725,
+      "sha256": "065329c00dcb3776dc9d5f673f90206e4638b0c5ccaf9777140f875c51f6b4f6"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/resize_performance_tests.rs",
+      "bytes": 18763,
+      "sha256": "dcd5132d2bf17a43eb5a76add4aa1532012776485c407a1a643d7fff86504a03"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/rewind_tests.rs",
+      "bytes": 8524,
+      "sha256": "aaf7ef974ccb519b5c76109a5a2d30c80538eb5d73c2b2960f99aca24d0ae7c8"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/secondary_surface_ownership_tests.rs",
+      "bytes": 14487,
+      "sha256": "afae3753ea6f66274720d22371437b7a01ce3bf03af69ef40d2c58df9c73b714"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/session_navigation_parent_child_tests.rs",
+      "bytes": 12096,
+      "sha256": "bc148fbbcb8994198e9926089057d49994cfcb3d818d8d1f84faddd5bcbb2096"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/session_navigation_tests.rs",
+      "bytes": 21680,
+      "sha256": "bd41259ac6a4f61075d949b283df63fe570f979e34fb6071ca7093b41e64283a"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/settings_editor_tests.rs",
+      "bytes": 27627,
+      "sha256": "38b2a9eebd248019d69566c21c33f3758348bbbf397f0766de18021292a64d15"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/slash_menu_tests.rs",
+      "bytes": 21902,
+      "sha256": "9c04c3408d3d898bfe9373604afb0c5592f0ac40d8f618ef63aab5f647e457f4"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/subagent_inline_exit_tests.rs",
+      "bytes": 2319,
+      "sha256": "2784695af157e1d909f29a07fd88abb230268d1ef4271b295430cf56e135f702"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/subagent_navigation_keyboard_tests.rs",
+      "bytes": 6655,
+      "sha256": "edcd43fef93946748dab483458870f6d0a50866d9222082d3011681caab67d71"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/subagent_navigation_tests.rs",
+      "bytes": 1658,
+      "sha256": "424de15752288e1dcab4a3b88a74134d343e02fc9f99e78e2e3350234a1bbb0e"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/subagent_task_general_navigation_tests.rs",
+      "bytes": 5863,
+      "sha256": "fdde560e411895f5809384d5086c8b76cf21387319dbd803cba4d599f054226f"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/subagent_task_inline_navigation_tests.rs",
+      "bytes": 6746,
+      "sha256": "70b685368667c71cdc10f3e1dc713d0560856742302a8811e3d2f816de5b17eb"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/subagent_task_metadata_navigation_tests.rs",
+      "bytes": 3809,
+      "sha256": "aa2df4702ac6d930e5a1c10ad24deaacd4cdda4d851ed7d584f94c21029a933f"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/terminal_panel_tests.rs",
+      "bytes": 9490,
+      "sha256": "a64c90fb07d581cb8a46b6430cd9a27b26c2e6164cb77f3572c6f76577196f5b"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/theme_runtime_tests.rs",
+      "bytes": 4960,
+      "sha256": "fdeee90712c08574d7b5945354d0e72f9fc5f6eda77dfebc58e864a32e7e67ac"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/toggles_menu_tests.rs",
+      "bytes": 8337,
+      "sha256": "40b3956572a563be688e06c8b3cf5c4c0b80012bc1e225b6fb8ea9e7690d835f"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/tool_disclosure_tests.rs",
+      "bytes": 20897,
+      "sha256": "3ebd21c3ab38ebbe8a3b8a685a8e40a120c518bef2e3a3c18568ae7370d2e1d2"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/tool_group_folding_parity_tests.rs",
+      "bytes": 10613,
+      "sha256": "2282e52b46be7d16f1d023fa48038deb22112542a7917846d77046b802aa4fc1"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/tool_runtime_capture_tests.rs",
+      "bytes": 18174,
+      "sha256": "0d62d71d537e67ce762454cddcedf840ab354688adb3400dbc29a9b7e5f82225"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/transcript_return_to_live_tests.rs",
+      "bytes": 1734,
+      "sha256": "a2fb12aa0ed4ee0345aa6c9baefb762c272eef746c5e5308c7b7ec199fb7caf2"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/transcript_selection_tests.rs",
+      "bytes": 19204,
+      "sha256": "0ebd035944202a6a8aa5ea0919df86f1981b59604cbc2739b330dafead3b3ce5"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests.rs",
+      "bytes": 88094,
+      "sha256": "055cdf6fa96025a442d538631ebb53b78ff279e4df652b2dcd456f5ca275e8da"
+    },
+    {
+      "path": "crates/harness-tui/src/app/theme_preview.rs",
+      "bytes": 3334,
+      "sha256": "b3ca90585495fa91d012deeba7b6cd135b45fd9f29e6bb96e76fa1b3dff30f4a"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tips.rs",
+      "bytes": 1613,
+      "sha256": "019fb23d06b982685421e6dbd2bce834b22b6f8bdfdd09e2a9ea1e62453368b1"
+    },
+    {
+      "path": "crates/harness-tui/src/app/todo_pane/pointer.rs",
+      "bytes": 2815,
+      "sha256": "13bc80f8d77fb62797c363485be1491820f6a8b3315d5dfe7f6894635eb818e3"
+    },
+    {
+      "path": "crates/harness-tui/src/app/todo_pane/query.rs",
+      "bytes": 4028,
+      "sha256": "f0da3f70ff7b84b578b343edca069dec8d060d20bbc6c47f399df2603663c8ce"
+    },
+    {
+      "path": "crates/harness-tui/src/app/todo_pane.rs",
+      "bytes": 11812,
+      "sha256": "a096de2cb04224cf26114d2fde8c5c4dde10b0336033f83b0573f08fed8a17a5"
+    },
+    {
+      "path": "crates/harness-tui/src/app/toggles.rs",
+      "bytes": 13775,
+      "sha256": "904936472d660c697c71d712d5f6a4be7d4e362815a0cc22f1ed8a06b2b16282"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tool_call.rs",
+      "bytes": 19774,
+      "sha256": "8b7bce3d39a34c57b6150ec9c2ba0b7bde8f61e229cc7aea6d84656881c0f9dd"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tool_output.rs",
+      "bytes": 6708,
+      "sha256": "9c6b4022f51a7d36554725f9c17462104651bce16a910d43507150019314fa9d"
+    },
+    {
+      "path": "crates/harness-tui/src/app/transcript_entry.rs",
+      "bytes": 14100,
+      "sha256": "945f6963c31c584d806d01bb98618b4ce9e97d77edebaa607b884e7ff3664a58"
+    },
+    {
+      "path": "crates/harness-tui/src/app/transcript_export.rs",
+      "bytes": 1738,
+      "sha256": "e82d606b88c0f942f429e76a8dfb8cd6a71ae3aaf9d6c3f9b520f96274467e5d"
+    },
+    {
+      "path": "crates/harness-tui/src/app/transcript_outline.rs",
+      "bytes": 15076,
+      "sha256": "39b7bb4bf37a460eba0a885488f1ddd02e10d710204b90e3b21171358aed9870"
+    },
+    {
+      "path": "crates/harness-tui/src/app/transcript_state.rs",
+      "bytes": 39066,
+      "sha256": "94d8cecc0ea8ca9d13ba009f6e521510d3254ba2f3c15873ebd3da075ff185bf"
+    },
+    {
+      "path": "crates/harness-tui/src/app/transcript_view.rs",
+      "bytes": 9766,
+      "sha256": "d556b2c4cbc6f945d7f9ee66dc7c5606b4413dc328b0141a5a8d84a3e699620c"
+    },
+    {
+      "path": "crates/harness-tui/src/app/transcript_viewer.rs",
+      "bytes": 9740,
+      "sha256": "110b29e34dc04aa9229a8b1435e23f9f90304249651df711008aef9ecb2daa58"
+    },
+    {
+      "path": "crates/harness-tui/src/app/transcript_viewport.rs",
+      "bytes": 3377,
+      "sha256": "f5d1c4622635abca94d38cfa4d8c4073029c47d75ebebe8c8f964a18a43867f0"
+    },
+    {
+      "path": "crates/harness-tui/src/app/trust_prompt.rs",
+      "bytes": 1268,
+      "sha256": "4f044f73c33e00e1239f2df1896cf6463e42e4e35bc27950e2efda7d0f7451c2"
+    },
+    {
+      "path": "crates/harness-tui/src/app/welcome.rs",
+      "bytes": 1679,
+      "sha256": "0dac378df0eb98e6a25a548a2bbfc605a50bc7b0f0baf94d61fa31ebfe6f0327"
+    },
+    {
+      "path": "crates/harness-tui/src/app/workspace_display.rs",
+      "bytes": 5588,
+      "sha256": "d25053f1f44fcdbd7ea56ac9a6ab1f157fce0aa053a980ae13e3a9b5d8845da9"
+    },
+    {
+      "path": "crates/harness-tui/src/app/worktree_picker.rs",
+      "bytes": 4417,
+      "sha256": "dd84fa8057ce188bc1f785344c772cbec96feeb30deb7ab1e5871e4977225551"
+    },
+    {
+      "path": "crates/harness-tui/src/app.rs",
+      "bytes": 159926,
+      "sha256": "b4a9c8e818481a855fe6585ced6f1bf46815abd1bcd51fafabdffe1f9c712951"
+    },
+    {
+      "path": "crates/harness-tui/src/attachment_lifecycle/cleanup.rs",
+      "bytes": 2925,
+      "sha256": "90339b7fd731628ded28dbdf23137bd2501398de109d3b165570f890ade08aa4"
+    },
+    {
+      "path": "crates/harness-tui/src/attachment_lifecycle/external_editor.rs",
+      "bytes": 3676,
+      "sha256": "6c90c93c83953cf6f8260f1868ad7d29bca3f80512bfd8925cd9582fd2cb76bd"
+    },
+    {
+      "path": "crates/harness-tui/src/attachment_lifecycle/ingest.rs",
+      "bytes": 7914,
+      "sha256": "425057506f7c0dfa7e2d00b99154669b1e2ef970b0322184ac350fb302043ccc"
+    },
+    {
+      "path": "crates/harness-tui/src/attachment_lifecycle/limits.rs",
+      "bytes": 5857,
+      "sha256": "9ab1392fb5bf4ae1520ac3d70f32d3b0b85addb1b1434cd61e516d11621abadc"
+    },
+    {
+      "path": "crates/harness-tui/src/attachment_lifecycle/mime.rs",
+      "bytes": 1629,
+      "sha256": "e32420c5ecbbfb5ff484b12e41dfc15b1705657ff15a33c5f78ab36597f0077a"
+    },
+    {
+      "path": "crates/harness-tui/src/attachment_lifecycle/mod.rs",
+      "bytes": 4462,
+      "sha256": "2966c9793a1b4a7de2ea01476e7512fddb65fbc6f8c9ec8b1d4d506595c0db91"
+    },
+    {
+      "path": "crates/harness-tui/src/attachment_lifecycle/preview.rs",
+      "bytes": 1606,
+      "sha256": "6a0b3ac07a4b38af7f9fde32bf6542f546b901b64fd6feb38ed2200041e536ea"
+    },
+    {
+      "path": "crates/harness-tui/src/capability_matrix/axes.rs",
+      "bytes": 3230,
+      "sha256": "97373fdf7d2e631367dc37db012a29f983a9d0f83b4ee0771caf143f5df95f3c"
+    },
+    {
+      "path": "crates/harness-tui/src/capability_matrix/classify.rs",
+      "bytes": 6398,
+      "sha256": "d3da98ff0a68016f3d252a8df102d8f59ce2db7ba7c201c89e924b0dae7ae0ca"
+    },
+    {
+      "path": "crates/harness-tui/src/capability_matrix/matrix.rs",
+      "bytes": 3579,
+      "sha256": "95bac815c5aaff76a5a8eee1b77e58476ece57e321700638266d93ca96e55424"
+    },
+    {
+      "path": "crates/harness-tui/src/capability_matrix/mod.rs",
+      "bytes": 280,
+      "sha256": "4d11156059dcb0b80c102474c808ab8a3475cfa114b9f9711b436494171ce297"
+    },
+    {
+      "path": "crates/harness-tui/src/capability_matrix/test_data.rs",
+      "bytes": 902,
+      "sha256": "6789454bf0cd544354cb7680b04fc93acdeaa29ec07f5b5e1b15c0067eb7132b"
+    },
+    {
+      "path": "crates/harness-tui/src/clipboard.rs",
+      "bytes": 10217,
+      "sha256": "4d897b53480264e70a501687952911c3da01e16dc13a9896420cdc3e0cf7fb0d"
+    },
+    {
+      "path": "crates/harness-tui/src/completion_controller/controller.rs",
+      "bytes": 6331,
+      "sha256": "3f7f3db83fdbb1a8fe30cee55fc68a0570c8d9793510aed55ecedad2f8db3a0e"
+    },
+    {
+      "path": "crates/harness-tui/src/completion_controller/geometry.rs",
+      "bytes": 2521,
+      "sha256": "9991d145f0b8dfaddc9964c412e237e469558fbc4977609c4af20167bebdb68a"
+    },
+    {
+      "path": "crates/harness-tui/src/completion_controller/insertion.rs",
+      "bytes": 1113,
+      "sha256": "603cf967930e4f0a7336e0b4a821c4fbd0c6fc7591c7450f0eebf44bf4320d0b"
+    },
+    {
+      "path": "crates/harness-tui/src/completion_controller/mod.rs",
+      "bytes": 2975,
+      "sha256": "b85529f29b9bb5d3250a76d6588520db47228bddb944605ec5a125a86d482af3"
+    },
+    {
+      "path": "crates/harness-tui/src/completion_controller/precedence.rs",
+      "bytes": 1018,
+      "sha256": "2b01c5f57a9eaf3550d5fe7a165e1849e8231efda4e2db9d6cae18902cf81c6b"
+    },
+    {
+      "path": "crates/harness-tui/src/completion_controller/trigger.rs",
+      "bytes": 1436,
+      "sha256": "c2c0d555abbb0d11e4ce5a6ffc1c88c8ecb7560b16b02898cbcc584b3aa4f50a"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_atoms/atom.rs",
+      "bytes": 2625,
+      "sha256": "0a67f745dfcbcba9a5052a481e8474387d24bc739e7b4d2d4c4a3c4f7d29b3f9"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_atoms/buffer.rs",
+      "bytes": 6612,
+      "sha256": "4b88a8c3bccbaa9b6a6a15dc4291b4e411ae334e5393987c80ff0defd4a749fa"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_atoms/cursor.rs",
+      "bytes": 1388,
+      "sha256": "23987bae7a463e8fa867f951de49bf368d9912fc5be38898c5534a7d13f456df"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_atoms/grapheme.rs",
+      "bytes": 2070,
+      "sha256": "e803ada0488ddda548294c584de696f924231f676cd6a24de62d38278a6489ec"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_atoms/mod.rs",
+      "bytes": 469,
+      "sha256": "e2c875e15c1b9e1a2e3e4187aa0085b538c723e2e2e88e9f2ea17f9a2129af32"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_atoms/serialization.rs",
+      "bytes": 1039,
+      "sha256": "b7ea9c8f04582e891a264740735cba4d014026615579902b9d6e59211211670a"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_editing/deletion.rs",
+      "bytes": 3637,
+      "sha256": "ec1c228e039eacc6f51e2e7f765b27ceb7ab9dae0f30f6f89fb660570420aa9a"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_editing/history.rs",
+      "bytes": 3210,
+      "sha256": "339c50eea08c947a74c5deaf0ff277af851df481c6691eef10e5fae1401c141f"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_editing/mod.rs",
+      "bytes": 3520,
+      "sha256": "a3152bbc11b7a73ce16a9b291ce8a6448f26565610d92b90c67fa5c7dbffff6d"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_editing/movement.rs",
+      "bytes": 3925,
+      "sha256": "d515c3f2d1c40687f36c5c9fab266288dc1717a934d14e38b64cbd88f85130cb"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_editing/paste.rs",
+      "bytes": 2355,
+      "sha256": "1cb4ee0917dcf2a5fb017f53cf9af99d0c556cff4eb2b0266d56ef65f417269d"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_editing/selection.rs",
+      "bytes": 4460,
+      "sha256": "7e22ed9c1517d5067d7a823527e8a181a412d202600e844860d0a68b38f4eb24"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_editing/undo.rs",
+      "bytes": 2817,
+      "sha256": "b638799aeed24afcbe87b0178f3f9805e77cf0a49c44feb767218b85a6e37bc0"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/controllers.rs",
+      "bytes": 6049,
+      "sha256": "fde5ca3bb7f0b84d8bed4e3788a7e6144dd10b3967e13efbe995938dc9d411cc"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/hit_map.rs",
+      "bytes": 4280,
+      "sha256": "2ac96facacabbe25e575fdc3bd3343c346690c7f85e12d7a095d74d93ba0236c"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/interaction/intent.rs",
+      "bytes": 3929,
+      "sha256": "e65cb7f2ff1835afa3bfa58dcd3410096f22ff02df5ff2d2ede26a42c46dc818"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/interaction/mod.rs",
+      "bytes": 335,
+      "sha256": "c24d4236306d339d82ce7b8b16c45d7459ea6a70f79b5242bc484a8808aa4806"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/interaction/state.rs",
+      "bytes": 4336,
+      "sha256": "5e2bb7cb2f54ec63df67d157aa742cde445cb1f2be5ca6d6c647249cdd085c18"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/interaction/transitions.rs",
+      "bytes": 9850,
+      "sha256": "494b3eee152d581d7d927e9ba8b384157045006ec3bffee9db823dc0b0f7afa5"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/mod.rs",
+      "bytes": 1165,
+      "sha256": "0b5d54b280f26b63de3eb584a3ea3e051efe5299381eca0f614c2dbd5d70276b"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/presentation.rs",
+      "bytes": 6777,
+      "sha256": "e95e73d5a99141daaee25ed5050af8ce839454e0bb908d28c963e14d5639df10"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/presentation_adapter.rs",
+      "bytes": 2408,
+      "sha256": "23c2abbdd85e0e3e11b96889a14db72870542134825fb14da4bca1f403d4c12f"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/presentation_error.rs",
+      "bytes": 1089,
+      "sha256": "7561d62c3b7276cdd642d075469462c42f93b3593870fdad9056aefa747ed927"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/presentation_policy.rs",
+      "bytes": 835,
+      "sha256": "d3116f85417766532bd0cd127f80c93b10477566bfd47bd7ccf595d4664fe922"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/presentation_tests.rs",
+      "bytes": 7725,
+      "sha256": "d09f01e096ed37a65ae3f13c4113d8e10b7c60ab155779a5cd795ed77ea5fb09"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/slice.rs",
+      "bytes": 6752,
+      "sha256": "65e644ee89820994f25f0b4562d59dd3ee4d06e400c0d39df35f03561ebcca01"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/submission.rs",
+      "bytes": 1972,
+      "sha256": "006b08e8e5ea6081d33186e5556157899204e8486657c1e7812e9a88e16ed75e"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/view_helpers.rs",
+      "bytes": 1060,
+      "sha256": "407a3bbeafb0d33f99c7872e2eb2e525fd0dd9bb4865d9c88c924a8793631c81"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/view_model.rs",
+      "bytes": 7269,
+      "sha256": "f1a6f304b1364ca34b9992b3b82891f36b656bc427cf651c706964491aa9e1fc"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard/eligibility.rs",
+      "bytes": 3721,
+      "sha256": "9fd00f62b864da37a4550b35dd68a1b047f3766d131e1f8558ceff722c141df0"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard/mod.rs",
+      "bytes": 491,
+      "sha256": "4fe103949ceed6db48dd740ec3b60f292f5a683cdaa9d73074d86ffc5c81144a"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard/model.rs",
+      "bytes": 7845,
+      "sha256": "d3234138877000fed6eeb78703af1e6e9ac4ae573a035b2b631c3b6f2756b17f"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard/projection.rs",
+      "bytes": 8512,
+      "sha256": "d29e3031d14cfc088ee45583d2d3e444fd5300e1260deba7d1954bf985c2a7f2"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard/status.rs",
+      "bytes": 7382,
+      "sha256": "77998e094f3fa647084bf84e499ae0928d61c027da4321a3e06884f53b30161b"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_controls/intents.rs",
+      "bytes": 6654,
+      "sha256": "6708c56a5ef38a7fb972bcf8c87001bd35b90f871a85514d201de5d279eff2a6"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_controls/lifecycle.rs",
+      "bytes": 8690,
+      "sha256": "28903395ae438bda9ccea9d3c6bff938ebfdf33f96fbfbf53de053a5d43dc53f"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_controls/mod.rs",
+      "bytes": 7426,
+      "sha256": "37af119f5ea034a9f3091c96dfa956542b7cbfd168c78276e4b858688e238264"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_controls/permissions.rs",
+      "bytes": 3640,
+      "sha256": "582b9b682f8683e2dde016003cb733390150047c615b2cfeb540a1d07eb4d8cd"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_controls/question.rs",
+      "bytes": 3124,
+      "sha256": "218c800423833e5db95cb45fbba482c9ddc5a4bf2ece28c346982b2e26f1e6b9"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_details/fields.rs",
+      "bytes": 2261,
+      "sha256": "47793231b028a717ba4846cf15402b51a4894b1800642472a7c3a20cbb67eaad"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_details/layout.rs",
+      "bytes": 1084,
+      "sha256": "080c0b50addf2a359d7cd70da2a859e2f8996bf1bf2ed5c4c4632cda3717c6c6"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_details/mod.rs",
+      "bytes": 324,
+      "sha256": "df5f9adaf49a42a8809cdb114ff98d8e4896adb0dbaeb7dc900acf054a5d5fd7"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_details/navigation.rs",
+      "bytes": 8613,
+      "sha256": "a6d33a6ceeb5f6a9e55b7d6ea6fc5f24b85e80ded22b7340c3471e355f0f16ae"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_details/restoration.rs",
+      "bytes": 1081,
+      "sha256": "04b4ef032ff587c463482005fcdd66ac8d937d2b4356a8ba843ca7cfad7c99ec"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_integration/focus.rs",
+      "bytes": 1408,
+      "sha256": "d24fb2b993ee0af513822e1954a4da78c5eb914b1926a97f04500b2ea2cd0a5b"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_integration/input.rs",
+      "bytes": 9068,
+      "sha256": "267671bc3599be486a79598a882a5b3cde2c5ef0d85d40cb3dc607b0279d2f8b"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_integration/mod.rs",
+      "bytes": 10588,
+      "sha256": "1083b1fd27fe4551cf47113825bbf60d3a7e2fb0f42155983e0fd798cf19b307"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_integration/overlays.rs",
+      "bytes": 1818,
+      "sha256": "9170c5f0a41250efd342a22f00546eedac3222554a2a1e6b934064921bfdc9c0"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_integration/reply.rs",
+      "bytes": 8085,
+      "sha256": "5b9927e52f4b25282a307f0228570436be275e0fb8fae47def35b3a717050ab6"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_integration/responsive.rs",
+      "bytes": 6410,
+      "sha256": "b6d2b3532bd702d3ce0b67d4860b8e014c8306030ec822f84ea320c7bf975124"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_integration/state.rs",
+      "bytes": 3343,
+      "sha256": "d187198a2c53831471af39a783ed1152230d9d4a3e0d651c0b053236f10e8757"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_integration/surface.rs",
+      "bytes": 3375,
+      "sha256": "4da6e7e800aef670164552b242f45c2124defae79ef212b9b2427e9a287a0084"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_peek/draft.rs",
+      "bytes": 4247,
+      "sha256": "0d8c68b213328df3af9cf22a9f57064be94b5a1555252e52f60e655827e1bebf"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_peek/mod.rs",
+      "bytes": 8584,
+      "sha256": "18328a3d2330b03188fd0a14a51d9cdd4e3b7a2d6bcbcde5624e5fe9531aef2c"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_peek/scroll.rs",
+      "bytes": 3722,
+      "sha256": "02910265badd4b01a25131feb8dfc9255c554df21abf01681dcd047d6781f58e"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_peek/tail.rs",
+      "bytes": 3755,
+      "sha256": "08d663ca5f395f538f909d92060dcd1f6ddf9f656ba2933cd268d93192f1a9db"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_roster/filter.rs",
+      "bytes": 8824,
+      "sha256": "4dbdc35802633f9b789913eb479c313e5327900ab4f391fe4663d577e3621f62"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_roster/hit_map.rs",
+      "bytes": 2272,
+      "sha256": "38afedde3d85fb0696761f4afeb6945a9ff70fcd6fabda095b3e8a46d22de813"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_roster/layout.rs",
+      "bytes": 8945,
+      "sha256": "160b4180fc274abd5df9474fd812d574f3a1afa370a58573cd70605429d77dce"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_roster/mod.rs",
+      "bytes": 3667,
+      "sha256": "4e7d24bddb88e52f72cac132d0e3c61f5e5de08a13be75674b05c7deb80d6614"
+    },
+    {
+      "path": "crates/harness-tui/src/dashboard_roster/responsive.rs",
+      "bytes": 4803,
+      "sha256": "3fe5887f8e6661162fd21b14d49c5c1269c3a157e9300d8fb643377a1b86c5c6"
+    },
+    {
+      "path": "crates/harness-tui/src/event.rs",
+      "bytes": 1170,
+      "sha256": "99faf1ea40844d4cc181c443b0472f29bae343706182dd944c609abf900dae13"
+    },
+    {
+      "path": "crates/harness-tui/src/gestures/classifier.rs",
+      "bytes": 3098,
+      "sha256": "354dd00d47ac5c0967d72f44113eb68bd5c176b00578ec4dc9dccceee3036210"
+    },
+    {
+      "path": "crates/harness-tui/src/gestures/device.rs",
+      "bytes": 331,
+      "sha256": "2d6712ca3b6e3a6e2daf4a22da729a21141722a23d0f8778f283f3214c993890"
+    },
+    {
+      "path": "crates/harness-tui/src/gestures/drag.rs",
+      "bytes": 2018,
+      "sha256": "075daafbeeb201de893f6a7741f2bc7bb9f87643d5d195d15233afc2bd02d132"
+    },
+    {
+      "path": "crates/harness-tui/src/gestures/mod.rs",
+      "bytes": 761,
+      "sha256": "4ced0c623a549d3aa6763a8630d2a813b56c4865f368b39fbfd8c907dcfb577d"
+    },
+    {
+      "path": "crates/harness-tui/src/gestures/routing.rs",
+      "bytes": 1643,
+      "sha256": "99df779bd2252f1a4030d502a13a11e225163c9961c39768a183d54abb41995b"
+    },
+    {
+      "path": "crates/harness-tui/src/gestures/scroll.rs",
+      "bytes": 4141,
+      "sha256": "df3d1016bc3820f2d2c501fc655fa89bbfd330bd38a797a509fcdea520b199e0"
+    },
+    {
+      "path": "crates/harness-tui/src/ghost_suggestions/controller.rs",
+      "bytes": 7837,
+      "sha256": "8983e1e5a79dcf8eb8b5b651b274b7dd90723a5eaeabfbfd573550ffc47cf078"
+    },
+    {
+      "path": "crates/harness-tui/src/ghost_suggestions/debounce.rs",
+      "bytes": 1673,
+      "sha256": "69e9c52abd2e49b4b90fc35e819356a24d3c3be9682489c625dcc8a81c42ef5a"
+    },
+    {
+      "path": "crates/harness-tui/src/ghost_suggestions/generation.rs",
+      "bytes": 1038,
+      "sha256": "2d058382b10c6b402d0b247a1e5985312ae1d3c0b3f4931605a5cec2b6ecbdd9"
+    },
+    {
+      "path": "crates/harness-tui/src/ghost_suggestions/mod.rs",
+      "bytes": 3045,
+      "sha256": "70c49aff6d85900f9a269f3edadd0972672c2a9165aa07c5248cc7af3db4f963"
+    },
+    {
+      "path": "crates/harness-tui/src/ghost_suggestions/render.rs",
+      "bytes": 899,
+      "sha256": "be1f895301f967a1721b114e810f52800e57a96e7e34b6da3a42b07bc6e1e586"
+    },
+    {
+      "path": "crates/harness-tui/src/ghost_suggestions/secret_safe.rs",
+      "bytes": 333,
+      "sha256": "5b48b362c325601e86a310be19c37a94de727fd35d4b8f34819161ee56b3f4b5"
+    },
+    {
+      "path": "crates/harness-tui/src/input/ctrl_c.rs",
+      "bytes": 1087,
+      "sha256": "8c5c8b93abaec52beea9776d09ca79ab979a6a1f0c78bf8d317af372fd2effd1"
+    },
+    {
+      "path": "crates/harness-tui/src/input/esc.rs",
+      "bytes": 797,
+      "sha256": "3be81b90b06924f69b0b92b8122dea198141c22a60f721916bc814f6aa3ef24e"
+    },
+    {
+      "path": "crates/harness-tui/src/input/key.rs",
+      "bytes": 2467,
+      "sha256": "a425b3044e64f82425a9219acbc7722ff7c465a745d9211b53bf1753e0e3c544"
+    },
+    {
+      "path": "crates/harness-tui/src/input/mod.rs",
+      "bytes": 1221,
+      "sha256": "f2627c0fa36df77b46d2ac83509fb0cc9ed0e08b96b92d01c168730b48e9a90b"
+    },
+    {
+      "path": "crates/harness-tui/src/input/normalizer.rs",
+      "bytes": 6411,
+      "sha256": "ed1aa4a4cb99bcf7fccb8ca1e48da212b9f9d88898bd804fd42661742f8c6918"
+    },
+    {
+      "path": "crates/harness-tui/src/input/paste.rs",
+      "bytes": 4570,
+      "sha256": "827bc4d36f1b0d1d5a612799241ec49daf1d7f534295f265338aec6df8c0f7b1"
+    },
+    {
+      "path": "crates/harness-tui/src/input/resize.rs",
+      "bytes": 3008,
+      "sha256": "e767e18a04bb23d4b514cac0199a6531241eb9c70877c6fb7b94019e6bfb5ea0"
+    },
+    {
+      "path": "crates/harness-tui/src/input/scroll_normalizer.rs",
+      "bytes": 9010,
+      "sha256": "6dd421042f746dab1362ef7e4b5b6f1aec554d95eadb054a14854c43285c1528"
+    },
+    {
+      "path": "crates/harness-tui/src/input/terminal_queue.rs",
+      "bytes": 2528,
+      "sha256": "3bccb148b76359cd727beb8a31b6335b02d6b8be17c75dea73a78099059425f1"
+    },
+    {
+      "path": "crates/harness-tui/src/input/terminal_reader.rs",
+      "bytes": 4377,
+      "sha256": "ccf73502f2337b02ce8f4bf6967cf98ed7aac4a3e3bb5a7aa7f91606c25884ca"
+    },
+    {
+      "path": "crates/harness-tui/src/keybindings/command_registry.rs",
+      "bytes": 23279,
+      "sha256": "77592f789e8b4248fedcee689e0b89f60252b297b4daf7761cb8d8866fd8ed1b"
+    },
+    {
+      "path": "crates/harness-tui/src/keybindings/palette_model.rs",
+      "bytes": 23489,
+      "sha256": "e80086540905fca12ecb20946b9789d042b60f3bb8240c38db511c24c7a35b33"
+    },
+    {
+      "path": "crates/harness-tui/src/keybindings/tests.rs",
+      "bytes": 26882,
+      "sha256": "086ab5763835e75838cb653a124fc33944135f377f1f9354d00da5887b14e562"
+    },
+    {
+      "path": "crates/harness-tui/src/keybindings.rs",
+      "bytes": 36839,
+      "sha256": "7a78d83fe79906149f5ac3c2e81e314a0288dd909e2e5adb255dba61d36d694f"
+    },
+    {
+      "path": "crates/harness-tui/src/layout/overlays.rs",
+      "bytes": 10022,
+      "sha256": "e9339396570f971ed5bbaf068b7bf704393cf5dd26c86767b94c9f516ef75bce"
+    },
+    {
+      "path": "crates/harness-tui/src/layout/permission.rs",
+      "bytes": 28223,
+      "sha256": "efd8f2df7986281510cc32779fd13d6907b87edd31ce65845d88d82da2fab484"
+    },
+    {
+      "path": "crates/harness-tui/src/layout/surfaces.rs",
+      "bytes": 10412,
+      "sha256": "79bd506787b57741ea110f493e098faf6919600fbfd9e9cd375a602d8ecdf1c2"
+    },
+    {
+      "path": "crates/harness-tui/src/layout.rs",
+      "bytes": 47567,
+      "sha256": "397f2b03e5a679e6c3a75b734a3f8fe0bae11cf6891870b12cc8185772d0587f"
+    },
+    {
+      "path": "crates/harness-tui/src/layout_live_dock_test_fixtures.rs",
+      "bytes": 6342,
+      "sha256": "e744a08ed1fd02640136d867306c53b29d2fee01c898785b76c1fd845561f17a"
+    },
+    {
+      "path": "crates/harness-tui/src/layout_live_dock_tests.rs",
+      "bytes": 7633,
+      "sha256": "28aa98b30a1598c2c2260b3105707438d195a4d9b3347ddbda3816aec42a0600"
+    },
+    {
+      "path": "crates/harness-tui/src/leaf_actions/group_d_dashboard.rs",
+      "bytes": 4149,
+      "sha256": "bafe3f5b6a3dc66b1b19f39ad8da07e3f7b24af462e4a2bfea2f41124ead5a84"
+    },
+    {
+      "path": "crates/harness-tui/src/leaf_actions/group_f_notices.rs",
+      "bytes": 4603,
+      "sha256": "e8d40345e669100f0421ed87ba46de2a8a82bfadae709b2affeb4b007308f687"
+    },
+    {
+      "path": "crates/harness-tui/src/leaf_actions.rs",
+      "bytes": 52,
+      "sha256": "0fd945910e250632e74934f15b2cb8664c70d78d853adad716d0d626c6472016"
+    },
+    {
+      "path": "crates/harness-tui/src/lib.rs",
+      "bytes": 4982,
+      "sha256": "e1c3d7948855062b3795eaf569dde2312965b651090a60dddbafbfe55042864c"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/command_session_surface.rs",
+      "bytes": 33140,
+      "sha256": "8ec9d9a9d016037d155c5f83095b0ac71dd7969eeaadb40e71bf79817b629208"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/fixture_helpers.rs",
+      "bytes": 25793,
+      "sha256": "ffbad6e98ab17089f71987a888606233d039e20e12fb70fed26e63fab092ae50"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/live_interaction_surface.rs",
+      "bytes": 17210,
+      "sha256": "9f284d4063852d37ce60b85902444c54190eb550fdc20610d245a41d498005dd"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/live_shell_state.rs",
+      "bytes": 9731,
+      "sha256": "fee79784661e13d24de2036d546657df2caaac8dc8dfa89bb07e7bdc77af62c5"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/live_turn_surface.rs",
+      "bytes": 24824,
+      "sha256": "22d499398149ef278e604439cf27ecbd4c33f67d98add46bcf4583e1cd4c0b55"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/operator_sidebar.rs",
+      "bytes": 4483,
+      "sha256": "aa5c88a46f565c93c9bb0cdee82cf719401725afd8163864ad05ec2bb55ca069"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/orchestration_projection_identity.rs",
+      "bytes": 15837,
+      "sha256": "7cff304ce884d8e2cbe2ef77f45daca9295d7eededc5720ed941224e9951045e"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/orchestration_projection_state.rs",
+      "bytes": 20525,
+      "sha256": "2b7ec1d6a4c529484417976318eb4750e5c31e00c2c2cf46a587e04b11980fae"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/orchestration_sidebar_surface.rs",
+      "bytes": 12601,
+      "sha256": "98b1e3d9ecd641cbdde747f1f5c50ef469c9358f16d4e3794a73cbf88c576872"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/permission_runtime.rs",
+      "bytes": 10442,
+      "sha256": "f42a228805e15f2bae21e256b23fe7fd8ecf43b2bf0e039e39198ac9ac9346cc"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/render_helpers.rs",
+      "bytes": 26808,
+      "sha256": "9d6196ede473a30cc3ba3b42831e86f203652c742b15525c940817d7a6b67e6d"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/replay_command_history.rs",
+      "bytes": 5106,
+      "sha256": "7c0cf7c4021d7519d64255a7e1f5f9868b28eb7f7e2710ba538a1ecd49000702"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/runtime_review_surface.rs",
+      "bytes": 11124,
+      "sha256": "cfc2d48fbc15cba729d12fabfb3804e57511a14e72b0e71a1f52fa77eb5f980d"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/shell_geometry.rs",
+      "bytes": 9747,
+      "sha256": "94ad5ab7e95b231268ec9daf9b9b73069a687ce955e3448707e7333d1a4f459c"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/shell_overlay_contract.rs",
+      "bytes": 19367,
+      "sha256": "dc0b06d976fa19dfe3cff3b2404eb133fd55dc383cc8bf9fbf901572c8e1be74"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/startup_composer.rs",
+      "bytes": 8023,
+      "sha256": "bcdf0b945e5bdc0e7e7cab3bd5675fdfb83ed6f527c5c3183b4fc6e5b159ad92"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/startup_lifecycle_surface.rs",
+      "bytes": 27582,
+      "sha256": "45d49397ed67f94df700e06cb572d62c4d061c55a46be16199d7849516fb1c6b"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/startup_live_empty_surface.rs",
+      "bytes": 13690,
+      "sha256": "9c4c2001fb57846e6e701e88087d3aab7228cd533b859130227a7c0ac65b4fe3"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/theme_layout.rs",
+      "bytes": 14796,
+      "sha256": "28b58241751d54997f4490405ff1b4ba298a826fd4f34ec348b7592f2906f8ab"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/transcript_fixture_helpers.rs",
+      "bytes": 9540,
+      "sha256": "debd74f726332174d7e673613a98328e406c13e079c47b2bbb81866d0f99146c"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/transcript_flow.rs",
+      "bytes": 26526,
+      "sha256": "4425384715e9ebe50ef23130f7928ca75f19ec45affecb77a58fde1ecb906478"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/transcript_turn_sections.rs",
+      "bytes": 11504,
+      "sha256": "bdc0c5c6359fa13670ab73b3de2a0f4ca8ec8ad5d309602da6e668b83f521d91"
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests.rs",
+      "bytes": 30809,
+      "sha256": "e53341bbfa8dc74b1d025e72c614576da9ad716650b2a20d020fbd2d8ca26409"
+    },
+    {
+      "path": "crates/harness-tui/src/lifecycle_choreography/mod.rs",
+      "bytes": 103,
+      "sha256": "43730b96ceb166c1e8320eeaa70c1457a453a4fd049a468010268bef0a0c0b4e"
+    },
+    {
+      "path": "crates/harness-tui/src/lifecycle_choreography/state.rs",
+      "bytes": 1605,
+      "sha256": "24b9dfb42b19080c7c0483fe5a6ccd3b6d34b334383132981958b1e61ace748d"
+    },
+    {
+      "path": "crates/harness-tui/src/mouse.rs",
+      "bytes": 8436,
+      "sha256": "0ae80c5c2be114f9b2c4a4d51365668f7100aa21043757c898b3a2f6ad679928"
+    },
+    {
+      "path": "crates/harness-tui/src/overlay.rs",
+      "bytes": 9432,
+      "sha256": "96236f3e44f75bac0cf3a88a7d428c887584754d501b1ba055a1bb0fc36d943b"
+    },
+    {
+      "path": "crates/harness-tui/src/overlay_tests.rs",
+      "bytes": 7557,
+      "sha256": "77475fe10bb768075b787ab25577df151aab369335ff9be1067275c33ad66b5f"
+    },
+    {
+      "path": "crates/harness-tui/src/presentation/clock.rs",
+      "bytes": 694,
+      "sha256": "3837fb3614cdf48926b22d9ab8e01809bbc54337be3f0dd1481c67480e2514df"
+    },
+    {
+      "path": "crates/harness-tui/src/presentation/model.rs",
+      "bytes": 6280,
+      "sha256": "2679d1621a3c77a60be377bcf0566fa154aaa0b3aa1b7084f4929e3874368f4e"
+    },
+    {
+      "path": "crates/harness-tui/src/presentation/trace.rs",
+      "bytes": 5283,
+      "sha256": "5baaef364eaccc76bad5553b3fce5801d871233171a13914c45d3f45bcaa9aab"
+    },
+    {
+      "path": "crates/harness-tui/src/presentation.rs",
+      "bytes": 359,
+      "sha256": "5e8506f20d3a2a385a6729bf7a4eb2ae840c17425dcb2cb600b607e6f8e704c6"
+    },
+    {
+      "path": "crates/harness-tui/src/prompt_queue_actions/actions.rs",
+      "bytes": 5859,
+      "sha256": "18675bb125479ab76a483ad34a807033d784976eec68d6c91f38bb7d7acda5af"
+    },
+    {
+      "path": "crates/harness-tui/src/prompt_queue_actions/cancel.rs",
+      "bytes": 2444,
+      "sha256": "aa2f4c25910c4bfd594a40ebf15f2c425b8b1ab4c32f43a8f04e7c132d1c7d0e"
+    },
+    {
+      "path": "crates/harness-tui/src/prompt_queue_actions/drafts.rs",
+      "bytes": 284,
+      "sha256": "03e9ad52e6fea52073dfa6025dce357e1f926876e2f22af3b36bb6df4a57b1e2"
+    },
+    {
+      "path": "crates/harness-tui/src/prompt_queue_actions/mod.rs",
+      "bytes": 417,
+      "sha256": "efe8e228e50dc3d7a950399501244f2d1490463fe4caadf7be2bd8ebaea02855"
+    },
+    {
+      "path": "crates/harness-tui/src/prompt_queue_actions/stale.rs",
+      "bytes": 668,
+      "sha256": "30887de741c3be55045f344524f81975c7c3e60172547e9d6932d16969342fd5"
+    },
+    {
+      "path": "crates/harness-tui/src/prompt_queue_actions/state.rs",
+      "bytes": 2330,
+      "sha256": "5f0cc0deb7cafff3fc5f3e3b76fe2272335322c3ad9c9dd5d59d8d43f1d29b45"
+    },
+    {
+      "path": "crates/harness-tui/src/release_notes.rs",
+      "bytes": 451,
+      "sha256": "d33f17542f80addc8474abb3cc9b604a8f1181038e80440bfef4de669d5ce029"
+    },
+    {
+      "path": "crates/harness-tui/src/render_test.rs",
+      "bytes": 1093,
+      "sha256": "da061f02e824a913e9cf516bc2b8f05fc29517bc34ad8acb229b30c93f91f7ab"
+    },
+    {
+      "path": "crates/harness-tui/src/responsive/density.rs",
+      "bytes": 2154,
+      "sha256": "e839dc21dcda36c8c00ce8ff21b1664cdf9a4924c0c741cc73bbebbddde9ef78"
+    },
+    {
+      "path": "crates/harness-tui/src/responsive/viewport.rs",
+      "bytes": 9977,
+      "sha256": "c7d8ede698c29b8676b1576a1ea2c241dd57da8f0430789e55903e617fcc521e"
+    },
+    {
+      "path": "crates/harness-tui/src/responsive.rs",
+      "bytes": 646,
+      "sha256": "90f37684ccfef0104394d5e8aff3f698fba8af29234f08c226d73e6a5242556b"
+    },
+    {
+      "path": "crates/harness-tui/src/rewind_list.rs",
+      "bytes": 7653,
+      "sha256": "34287c77a1d7e72e48c4a3e879cb89f304540d2baf08757a5ae6d539819bbac4"
+    },
+    {
+      "path": "crates/harness-tui/src/rewind_view.rs",
+      "bytes": 18582,
+      "sha256": "62d10ef9fc56d3a69f8f4670d49865a34e28f52fe8a76c29a196b19936af12d7"
+    },
+    {
+      "path": "crates/harness-tui/src/runtime/contracts.rs",
+      "bytes": 2710,
+      "sha256": "1d4d8813368b5bae5d3d4c5b01eb0447ef210cdc735c80416c97264245543bb3"
+    },
+    {
+      "path": "crates/harness-tui/src/runtime/input.rs",
+      "bytes": 7203,
+      "sha256": "ab27d465c0f304d93bf8cb75fdbd709e27c7cf2f106f8d1a8d35e83ddd1c3dd4"
+    },
+    {
+      "path": "crates/harness-tui/src/runtime/paint.rs",
+      "bytes": 2406,
+      "sha256": "e95a5353aba8bc17c2b63e690e376ff674ea68e011ce4ab5b9c4668ecaa9596a"
+    },
+    {
+      "path": "crates/harness-tui/src/runtime/setup.rs",
+      "bytes": 5098,
+      "sha256": "e1b2f9ca47a45091c3c1703c0574ee5da8feae12eb580f413bc359d8c7778e3b"
+    },
+    {
+      "path": "crates/harness-tui/src/runtime.rs",
+      "bytes": 16877,
+      "sha256": "77b39b263535ae41830756b39bb206395967f5219b9885cee1d7fa341d38c3e6"
+    },
+    {
+      "path": "crates/harness-tui/src/runtime_integration.rs",
+      "bytes": 5641,
+      "sha256": "fb2342ac2dced190b2c5ff4dec2d79ffa08b8be62d86e6f70a6971d2f20d13c6"
+    },
+    {
+      "path": "crates/harness-tui/src/runtime_live_updates.rs",
+      "bytes": 9182,
+      "sha256": "e7178f448e0820a1c804feab5fb38a79cfed20f9b95dff48e02ec6fabed86846"
+    },
+    {
+      "path": "crates/harness-tui/src/runtime_presentation/interaction_queue.rs",
+      "bytes": 5255,
+      "sha256": "dcc5ca9f5f6abc9a5cf1cc50ab7d689c0ada2be5fc36c215a88c8be9bfb875b1"
+    },
+    {
+      "path": "crates/harness-tui/src/runtime_presentation.rs",
+      "bytes": 6921,
+      "sha256": "ba8be9447121532bf511bd9139abad75c23f34b2cd15a2a3b8181050ba62b4c5"
+    },
+    {
+      "path": "crates/harness-tui/src/runtime_scheduling.rs",
+      "bytes": 6034,
+      "sha256": "e1609083c3899762d8501f6fc2725145b8d250028905e1bd8abec70d40d5dde2"
+    },
+    {
+      "path": "crates/harness-tui/src/runtime_wait_set.rs",
+      "bytes": 3238,
+      "sha256": "e94437bdb53eaa0cb6097a930e909e669a156298443310fe3bfa63046c4dc66f"
+    },
+    {
+      "path": "crates/harness-tui/src/scheduling/decision.rs",
+      "bytes": 786,
+      "sha256": "ba1c0075a3c3d727bdec86966d09d9968d28ee87557cba46186fe7040e281750"
+    },
+    {
+      "path": "crates/harness-tui/src/scheduling/dual_clock.rs",
+      "bytes": 1229,
+      "sha256": "1920046d6998646e86036865d7a18fb01989bcda1eadb841f48e02b03088eccf"
+    },
+    {
+      "path": "crates/harness-tui/src/scheduling/frame_cadence.rs",
+      "bytes": 800,
+      "sha256": "31567ae9975da42637d7ac7b1f2f121e207dc571a8c56b26b712addcb3567d0d"
+    },
+    {
+      "path": "crates/harness-tui/src/scheduling/mod.rs",
+      "bytes": 922,
+      "sha256": "f758c73f1dcb3062d07021f41a4008bfed18a00bafba9754b42e845e1db179bd"
+    },
+    {
+      "path": "crates/harness-tui/src/scheduling/motion_demand.rs",
+      "bytes": 3973,
+      "sha256": "c5745f43c89a1c73d90fffebe482b1ec7d4bd64b0fa1df31b206805c1e207d9a"
+    },
+    {
+      "path": "crates/harness-tui/src/session_events.rs",
+      "bytes": 2726,
+      "sha256": "afdf6fa7b3ebfd85d8e1e52019f7edc1f6472fa705697c3b093095f400c3d991"
+    },
+    {
+      "path": "crates/harness-tui/src/shell_geometry/cursor_placement.rs",
+      "bytes": 1999,
+      "sha256": "48fbc86250919b5e69ec558280269180211f65fe11d3f0424c7433363c870b4a"
+    },
+    {
+      "path": "crates/harness-tui/src/shell_geometry/hit_map.rs",
+      "bytes": 3439,
+      "sha256": "fac1d0f326d8a862b5f45417988cc25d702a5c73f1e009111661256132f614c8"
+    },
+    {
+      "path": "crates/harness-tui/src/shell_geometry/mod.rs",
+      "bytes": 539,
+      "sha256": "17544c60743cd60e1c065e5e29a47bb4678e67f423ef5cc0a746f2615cce9516"
+    },
+    {
+      "path": "crates/harness-tui/src/shell_geometry/regions.rs",
+      "bytes": 4452,
+      "sha256": "4c7ffb8d2528eae9e62792c1dce289111ac6e98ebbef559e357ed245dbd37d10"
+    },
+    {
+      "path": "crates/harness-tui/src/shell_geometry/responsive.rs",
+      "bytes": 2994,
+      "sha256": "42febe0200048ba63dab114695857ad8f3c82f542a09b1864dc078758e05a688"
+    },
+    {
+      "path": "crates/harness-tui/src/startup_logo.rs",
+      "bytes": 4185,
+      "sha256": "9163ef353c8004ec1123aaa0ffaf44d24e3171a2437f66c3a18d4eeddedb1db8"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/brand.rs",
+      "bytes": 6394,
+      "sha256": "100cba1806eb8a21c9d539f92fa19a5af78cf2dc4ebbf4aef9a5f8c5c07c13ea"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/capability.rs",
+      "bytes": 9810,
+      "sha256": "1c6c4d79f01d5fdd5070bc5181f10520dead099e402b27d4663580bdb04ec45a"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/cursor.rs",
+      "bytes": 3025,
+      "sha256": "77e9db80ddbff3821866c1598a143b0b2fb956679cc62db532a723b3efaf574f"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/decode.rs",
+      "bytes": 9776,
+      "sha256": "979007fb40cce4f8f553fbcb93f087517b395b14c9fe717971e15590998762b7"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/env.rs",
+      "bytes": 2522,
+      "sha256": "d16a6ad179e8f45ebd651da489ac581225a248c7ccb2bafa22f8178147c07ab8"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/event.rs",
+      "bytes": 4274,
+      "sha256": "68523bbbeef880eef9f5cf24b761e0b97239ca7fd448cec45e9a5616918f828e"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/fallback.rs",
+      "bytes": 5414,
+      "sha256": "77da603e362b527a698a3bfebcb56f93e62d51d4c1e65b0296697552036a38b0"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/frame_clock.rs",
+      "bytes": 3000,
+      "sha256": "47ace634615f4248777b674cce5d1f6fdea36b4364e7932a91b2727e8072afbb"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/frame_output/backend.rs",
+      "bytes": 7785,
+      "sha256": "6093369d01e4f13da953d63ef8cd4632749f69f8b3bafff75d1f8f5f4e6f3356"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/frame_output/backend_tests.rs",
+      "bytes": 8396,
+      "sha256": "bcda0d08c0a31c19c7be205d0f68103c2cbd24097f83414a33d2ccd4064e4f9e"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/frame_output/capture.rs",
+      "bytes": 1904,
+      "sha256": "56729976d2580913a75d68acde3912e0b7b21ca5151ae6e7ed86a68389cba846"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/frame_output/model.rs",
+      "bytes": 5668,
+      "sha256": "590abeb5c0dcee5bfa8e4480dbd4f857935b9914af56f48340c7ee3b1abedce6"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/frame_output/queue.rs",
+      "bytes": 9554,
+      "sha256": "16866c19a353754d4f979365f5b9894495a0e04f6157e1d2279e05e13f193ee7"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/frame_output/worker.rs",
+      "bytes": 6300,
+      "sha256": "529415ed9a06e7e75d694d77822c7e60b97af5ca4e1ef27ecd87b404b99ba445"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/frame_output.rs",
+      "bytes": 525,
+      "sha256": "1995f3d74c9e5feb46cc152d48449148d179a22f9de7aff79e3c5eb05569debe"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/key.rs",
+      "bytes": 5715,
+      "sha256": "fda69dce4c4d44b9241fa750af8f526d04727bf13ecd96ebfc59598f1b0bccee"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/lifecycle.rs",
+      "bytes": 9034,
+      "sha256": "1cbb47d9920050847862f3b8fafa49adb46679f2955384fd0eeebc6ccae29f74"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/multiplexer.rs",
+      "bytes": 1365,
+      "sha256": "7b6b690918a895ebf685aa103889fb2fcf65bdc40a2c6ea76ae6a2b8413bb6e4"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/session.rs",
+      "bytes": 7104,
+      "sha256": "d874c104572cffff393860fdfe8db3a0ceac546a2aa4d06c564098b5f492da3d"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/startup_diagnostics.rs",
+      "bytes": 8667,
+      "sha256": "29882f1e444a12c3fa59709a7e9d668138e294b684d95dc1496d6896870285ce"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/unicode_width.rs",
+      "bytes": 7172,
+      "sha256": "a80e4cbb7183a125c97b1a9f5b58536e5dce89a75b1322b9a63d3981e9f4d6d5"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal/writer.rs",
+      "bytes": 4665,
+      "sha256": "425e621fd45809e21b9feac79204d6ad01e9d5e8ab947ed3229293786f509323"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal.rs",
+      "bytes": 4115,
+      "sha256": "f47d095ea5aafce4eef297cb4bb6a37764f42b5f2c323b75aadd9c6bb3aaa435"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal_notifications/mod.rs",
+      "bytes": 363,
+      "sha256": "d3974fa3d720f677c65c242e402a9b54a55e4285722a0dd568149d2fb2d54cd5"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal_notifications/policy.rs",
+      "bytes": 3393,
+      "sha256": "4656f84815dc170f2e84c0f788af05cc751c809d6663e574b5dadc963faa6bef"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal_notifications/protocol.rs",
+      "bytes": 3636,
+      "sha256": "fcc0d5bf0a58182488a810c7aa94b9cc38d951a9de6c9a1e6f2e773330f18e83"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal_notifications/writer.rs",
+      "bytes": 1979,
+      "sha256": "e9360b9bf4f37d927beaf19e20d324560033764130b52ef7543a0e8851c43396"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal_title/mod.rs",
+      "bytes": 274,
+      "sha256": "814c483b565ab1d8de6d3d1851516e5a6b7d9937919927212ebaa427395a1bee"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal_title/sanitize.rs",
+      "bytes": 2517,
+      "sha256": "6e9f67a12deba2647797912ed565b230501a6a05d41ca72aa4d527a502e003a8"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal_title/states.rs",
+      "bytes": 2464,
+      "sha256": "74023f5d6f1d5390167af88b50b38bbfe41aa9be323f6a98f98ff28ea195a812"
+    },
+    {
+      "path": "crates/harness-tui/src/terminal_title/writer.rs",
+      "bytes": 1980,
+      "sha256": "b341c1b3027ef0c54985ccb405af48a12ee946b1c22d164bbf3b88f6b79bed04"
+    },
+    {
+      "path": "crates/harness-tui/src/tests/activity_projection_tests.rs",
+      "bytes": 17330,
+      "sha256": "17feab4e86a5f6abb7fedf315c546a6b6e859ba7b9f23a927a660afe42dc3756"
+    },
+    {
+      "path": "crates/harness-tui/src/tests/permission_modal_tests.rs",
+      "bytes": 27945,
+      "sha256": "4b895aaeae1db18674e0477a97b26ce9b8e9c0547a7bcd90bb083dbe575ea6b3"
+    },
+    {
+      "path": "crates/harness-tui/src/tests/rewind_parity_test.rs",
+      "bytes": 3683,
+      "sha256": "7eaedddfbf461d493bf2cbe4aa93b32b9563a4ce5f06d2cf063ee3251ca360c2"
+    },
+    {
+      "path": "crates/harness-tui/src/tests/snapshot_render_tests.rs",
+      "bytes": 2943,
+      "sha256": "c62377f4bfb2b37393f2435299ecdcbed8ba6fd416dc8a653a41fcfaba82f26c"
+    },
+    {
+      "path": "crates/harness-tui/src/tests/transcript_render_tests.rs",
+      "bytes": 21474,
+      "sha256": "802b343f994d00e8f457850ff556930f348495d6367fb807ebce0ac1df475526"
+    },
+    {
+      "path": "crates/harness-tui/src/tests.rs",
+      "bytes": 24116,
+      "sha256": "aa2c9e8b1d21d80da3217d610c80a9b1c465de2484a1cc36f3df663792188836"
+    },
+    {
+      "path": "crates/harness-tui/src/text.rs",
+      "bytes": 7714,
+      "sha256": "348e1008b02f22d5f8ba7e84b0643adb60330faa2eed3193bea6216d2f1794f4"
+    },
+    {
+      "path": "crates/harness-tui/src/theme/tests.rs",
+      "bytes": 14938,
+      "sha256": "3233a9e7a01582c1c93d77694190077698970ce27717844fb40f79fe96ced49a"
+    },
+    {
+      "path": "crates/harness-tui/src/theme.rs",
+      "bytes": 81681,
+      "sha256": "19e49cd40d8d4d1a7c465f9b0620500679fc612a60e8852e3a55709465ee2a0f"
+    },
+    {
+      "path": "crates/harness-tui/src/theme_family/auto.rs",
+      "bytes": 3135,
+      "sha256": "6831ae67dc991433360f49ded9e4d4788e8593c976e25b238f316045c8acc231"
+    },
+    {
+      "path": "crates/harness-tui/src/theme_family/fallback.rs",
+      "bytes": 2188,
+      "sha256": "1a0b98cc579830bbdd3451acc3e72edfa931f3037e9ff5c9887ac3dbd59019df"
+    },
+    {
+      "path": "crates/harness-tui/src/theme_family/family.rs",
+      "bytes": 2345,
+      "sha256": "f06fc3d9558589f10f4d4aec46f90e7cf02bbe626e219a68f6f9dbe0f9c76758"
+    },
+    {
+      "path": "crates/harness-tui/src/theme_family/mod.rs",
+      "bytes": 1548,
+      "sha256": "5075e667dadcbab67772417bc60d718fe7f13fc63060019654595e221ce2ec80"
+    },
+    {
+      "path": "crates/harness-tui/src/theme_family/persist.rs",
+      "bytes": 3340,
+      "sha256": "f60addfb7d7a99861896e23620bfbca408e66817a044477a4062c032995fc1b1"
+    },
+    {
+      "path": "crates/harness-tui/src/theme_family/preview.rs",
+      "bytes": 3173,
+      "sha256": "eb7ce6630c6d4f7dfabd34fff45714a6bd8e05cdad0fe8689c04b22edf43ea17"
+    },
+    {
+      "path": "crates/harness-tui/src/theme_family/roles.rs",
+      "bytes": 6657,
+      "sha256": "33913a5e23d51d05fe9c7f41ebed2ed4214c9082ec648f0fbdbd94f33d7a187b"
+    },
+    {
+      "path": "crates/harness-tui/src/theme_tokens/types.rs",
+      "bytes": 8551,
+      "sha256": "04b99c2ef3f281c0df30978d8c06ca35558224a2b649f592edf84f38ed9f64a4"
+    },
+    {
+      "path": "crates/harness-tui/src/theme_tokens.rs",
+      "bytes": 11600,
+      "sha256": "561adbcf079c2e5a75c84195530c9fc4708030cb006926b57ba7e83a276bd920"
+    },
+    {
+      "path": "crates/harness-tui/src/time_format.rs",
+      "bytes": 3293,
+      "sha256": "d47fa8ab660438400b7ad0d4456910bf7fc5f1d73cfee0c813db71861d3b4650"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_block_viewer/layout.rs",
+      "bytes": 1742,
+      "sha256": "416024eb3a7dcd85c796b738e2939983d187d9382ec47a9465d4294b6e0cb6a6"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_block_viewer/mod.rs",
+      "bytes": 10156,
+      "sha256": "827b6085961e87a164bfe0c24ef03930ea2049471c8df5e153b2cf70cece9787"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_block_viewer/render.rs",
+      "bytes": 17353,
+      "sha256": "c3d5c21e55ccd432f7c747ade175dca34eb2ff8d33cbc62d05edc86deb746ee1"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_block_viewer/search.rs",
+      "bytes": 4239,
+      "sha256": "be366deef24899fcf69b3abf080744b3f768c1331639a5a5335dfabe9598f825"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_block_viewer/state.rs",
+      "bytes": 16399,
+      "sha256": "0a091bfc28847c9188198b3d7bd5c07d2c0ee85f6901afe6d08decc3d25e6c4e"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_blocks/folds.rs",
+      "bytes": 757,
+      "sha256": "af4e95b8ea42077e0971bbb796667c91cf58e38087c642bbe45ace788d6acc77"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_blocks/kind.rs",
+      "bytes": 746,
+      "sha256": "b7d1532c32284b2f89287a988ae85d91f21fd48f414152cf25e703e2ef70cf95"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_blocks/mod.rs",
+      "bytes": 903,
+      "sha256": "62a231b972b4c9ca6c4f846a6169bfdf3cd3dd0e0c1f142bef1a65c16a546127"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_blocks/raw.rs",
+      "bytes": 8604,
+      "sha256": "564bca6ad54feec2a92ceaf2e446af8301682a1973bed832e23714077e3a7023"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_identity/focus_follow.rs",
+      "bytes": 393,
+      "sha256": "d693395e430f281b474e9f1ac5179d2d7d519dcb6406207851745288993430be"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_identity/ids.rs",
+      "bytes": 4168,
+      "sha256": "c268a9dbf20cad20331c1389c75ece0c6cfffd4065ab3dad2c33a434e19ea51e"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_identity/mod.rs",
+      "bytes": 224,
+      "sha256": "3afaa043ddf959c2784788d9a7ccfc227938f748851f0d604818cebd14022cd0"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_identity/screen_mode.rs",
+      "bytes": 394,
+      "sha256": "0f16c84766c6fef22542931de174c4979bab3bc985975ef519a0aeac7cbc7437"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_pager/cleanup.rs",
+      "bytes": 5500,
+      "sha256": "01e4ba64a21147bf2fbae7e2cbc229bf1994d562631cbbeb5ebedf75abd42754"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_pager/launch.rs",
+      "bytes": 6600,
+      "sha256": "3f2e52f98b0ab7e5af0e6996bf57e4829387f35a89837604c36713a4392067de"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_pager/mod.rs",
+      "bytes": 2775,
+      "sha256": "1852608e10b5cea77554768afc96434a31da5f4c090f59490028a93b5c599077"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_pager/restore.rs",
+      "bytes": 1812,
+      "sha256": "13df3e9f165fa4062e0af55b57cd582f23926844554b29e33ea9a789af496cdb"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_pager/snapshot.rs",
+      "bytes": 482,
+      "sha256": "b5ace8653c9b9a46849eb8ea54b6ea997095216649eec15481862db6d27e6f8f"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_pager/suspend.rs",
+      "bytes": 5899,
+      "sha256": "50f6bacc52dbb83ebe65c15c4e59be4f53ecc3d182fc3e107c5617efd21dc5ae"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_scroll/anchors.rs",
+      "bytes": 5017,
+      "sha256": "0146a315bd98486f9ee25556a286d9aba56dc3766c29d8d66a06a64e59e143e4"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_scroll/autoscroll.rs",
+      "bytes": 3783,
+      "sha256": "540210635d2210cd64a16ddce8ec8707f66b3848c919315dd25223c657023075"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_scroll/easing.rs",
+      "bytes": 4006,
+      "sha256": "d6ef4d0fa0aebafbdba018d3cceafed096d6502dd6dbc597c646a272f2d31116"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_scroll/follow.rs",
+      "bytes": 6541,
+      "sha256": "19ceb32928c7c7cca768cf071b6d90f2f8483f5d60c14036e91f2e34cd8f747f"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_scroll/mod.rs",
+      "bytes": 1472,
+      "sha256": "7e791459bee001d7a50e62211bac0c1ee4f4f39e0f11a74563deff6a1b156795"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_scroll/scrollbar.rs",
+      "bytes": 4104,
+      "sha256": "2426739c308306b06fe2f7314eb4d3294a5798f370bc24455d1c8a8b7fd08a94"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_selection/copy_metadata.rs",
+      "bytes": 1588,
+      "sha256": "df9dc29a0cf8873595353ffc0539adce3d8c64475607654963da659b5e7bb852"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_selection/hyperlinks.rs",
+      "bytes": 3543,
+      "sha256": "4e2755d4f667e0b4db8196fe7ee8c282fb8afd0eaed2d319c832ce30ea26d429"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_selection/local_clipboard.rs",
+      "bytes": 2916,
+      "sha256": "28bebd6ba47c0c35f53df0504d8206dbfeb94dfeea7d9d5a7ee5769cad559147"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_selection/mod.rs",
+      "bytes": 860,
+      "sha256": "96eb893d68a56bff045cb5645af5f1413812930853a1e3afe90562690a908a09"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_selection/osc52.rs",
+      "bytes": 1701,
+      "sha256": "41b508e6b9aa82aaf964730a67563e737785ca5868cbda5f02554a2038a7716d"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_selection/selection.rs",
+      "bytes": 9620,
+      "sha256": "e7167442ca3ef2669a1e370a629e6e4d5dbcfc23d74ae365efc271076996c050"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_selection/selection_types.rs",
+      "bytes": 2414,
+      "sha256": "f6dbe9041f9b010b662f3e432cbecdcbb0ebe9cf7ae3745c6d647f81e131d72e"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_timeline/key_navigation.rs",
+      "bytes": 992,
+      "sha256": "f87d63cb2661824b91236585772f30c87d6ebd3c6a3d6bbcf5101543f8935e96"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_timeline/markers.rs",
+      "bytes": 5152,
+      "sha256": "bcf8f828d5aefbae4f3048158712deba1bcfe1d7f07b32c56331bca35aa464f1"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_timeline/mod.rs",
+      "bytes": 316,
+      "sha256": "998d00eeae818b99d00dc035e8000e1a5b6ab47533f2eb48da0fb9a0b2ba3591"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_timeline/navigation.rs",
+      "bytes": 264,
+      "sha256": "d4d37b0e10222421f15db3bbc0baf139806d6b67b6a6b462689b6f35a6f3641f"
+    },
+    {
+      "path": "crates/harness-tui/src/ui.rs",
+      "bytes": 35652,
+      "sha256": "2bb96668047b385c677430705a10814d8f76e9e56b03899a085a30ccdb7539ac"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_chrome.rs",
+      "bytes": 48983,
+      "sha256": "d5ba330aef72f1a44da86847e99e2f674db5808cd71d5640405bc5d98e245309"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/bordered.rs",
+      "bytes": 11803,
+      "sha256": "1f104b305e5525e238badccf8dfe8db1242f891f5f8eab9fa54963ae93a0dfb4"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/collapsed.rs",
+      "bytes": 1339,
+      "sha256": "4c44e2f46c1fe7772ea1fba4cf9d0c007cfb75a518b1c9fdd4c5ec173009bf09"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/document.rs",
+      "bytes": 8427,
+      "sha256": "7b17cc4a229df3597954c324f35931dd6e93da6ab5109a8e27553e567b81ccc4"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/file_tags.rs",
+      "bytes": 1964,
+      "sha256": "b3548203f35baff2e00eaa6536d6cc8be4dc58162f8e22cdff52419eb7fa770e"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/ghost.rs",
+      "bytes": 1647,
+      "sha256": "09d357cab5d10d5a750d2afb8bfbc6e0b68e365fb4578e368a44f32c667c65ac"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/identity.rs",
+      "bytes": 1996,
+      "sha256": "b6c4521e4885d96e70978dcf52ef22c3c2428f1147a8e17c6c2bc9f303e1b783"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/metadata.rs",
+      "bytes": 5509,
+      "sha256": "76c45213789250154b0ff06fb5caefc61bb93bd370598b1359e1788d620b91c9"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/presentation.rs",
+      "bytes": 3221,
+      "sha256": "cb6a27a4defb0181e0fc1a2b703b0374bb99a6a95de03ad714ac394049748c06"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/viewport.rs",
+      "bytes": 6965,
+      "sha256": "96eeafb6e2b3c4c6e3113c2ad71b96ab2b6fca8fbf7d856c8c90bf01b00dca73"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer.rs",
+      "bytes": 2666,
+      "sha256": "022a45f7d18876a5021e7043252a915adb2e4b2915b53d873520dfd227b8e31e"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_context_budget.rs",
+      "bytes": 4475,
+      "sha256": "4e6175ef3e19053b8e2adaec5720994724895766355a63c8e796ba2da5e15ce9"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_control_dock_disclosure.rs",
+      "bytes": 33477,
+      "sha256": "6b635959cff9b491cd807652a9fd6ec2cbdc209d97fcd5421fb2249538703443"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_dashboard_preview.rs",
+      "bytes": 4010,
+      "sha256": "e56b24bc43b34014cb8206c1870109c2635b21b90b0ec2f2a6c03abf2c460dfd"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_diff.rs",
+      "bytes": 16603,
+      "sha256": "9da7ee135a83a6ab227112521c4d2906d5228248109076667fe2c7c41157ad88"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_diff_model.rs",
+      "bytes": 20298,
+      "sha256": "bcafa8bddff94c3fe87794bc4e4709a291affeabd6a31d11704f9666fadb0bc3"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_diff_render.rs",
+      "bytes": 22433,
+      "sha256": "08bcd22bf2852d8886607d7e257a3bdb60e1ec99c4fd69438cceffb88ecb0fcc"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_diff_syntax.rs",
+      "bytes": 9547,
+      "sha256": "bbc1acba1e62edff48a561cef45faa850cdd56db52dcde605fab54d766ed0b3a"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_diff_unified_tests.rs",
+      "bytes": 16446,
+      "sha256": "361bf8d80bae3530e24e23bcf83004ddc813983b414eed2d46144af5ef91225d"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_fenced_text.rs",
+      "bytes": 6399,
+      "sha256": "52e30f2c085b0920a82b8bae865c6ef5eb62856081454fbc826c75579bcfeb64"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_lifecycle.rs",
+      "bytes": 35583,
+      "sha256": "db9ccd32d6146a107419e27379db09fa87bf66145cc411f40eb621d7d2f23845"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_live_turn_status.rs",
+      "bytes": 11880,
+      "sha256": "64ac267277fd960dac32d07c92c1eb2b4516092ec4cbde8f96e630a185b0a78c"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_live_turn_status_geometry.rs",
+      "bytes": 5135,
+      "sha256": "bca758908f2b00d0991cf01eff5660c64d2d0cd60e178aa85a1c92222c5ca5fd"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_live_turn_status_presentation.rs",
+      "bytes": 7871,
+      "sha256": "511e58c930c8ea02cec126d85d2f067716e36d118aa8be4c69de0cb50309eccd"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_live_turn_status_render_parts.rs",
+      "bytes": 2273,
+      "sha256": "303815863717204e0e6c5fc1a05e4f23dce578fbaa4be52f357d529182d5ade8"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_lsp.rs",
+      "bytes": 2540,
+      "sha256": "5fe9074490bdf996eebeb11ec5ba96bb36e7c8d9488916683b3f3e462a768aeb"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_markdown.rs",
+      "bytes": 48942,
+      "sha256": "0438e470a76f7efefb35d2d635d96353e02b64a12250651dcab4bb49d957752d"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_markdown_table.rs",
+      "bytes": 7136,
+      "sha256": "b697443264f56d6bf05dd0da41cb2277919c70066e79d1119dbff0d5dbe9ac78"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_markdown_table_parse.rs",
+      "bytes": 1272,
+      "sha256": "6e5c038bae55ffa287317df3ba14a9b248a4bda6534992e3e4ae875c66aef43c"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_markdown_table_tests.rs",
+      "bytes": 7387,
+      "sha256": "6b87a01a1622ea74dff8d3abeb18ad209ce19c6b603f8b4abe94fe829925c229"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/auth_dialog/common.rs",
+      "bytes": 6523,
+      "sha256": "7212976d7dd64fed438750cbfe98f4ebfa7853d4fc65b0f1f92f712375d8303a"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/auth_dialog/prompt.rs",
+      "bytes": 8104,
+      "sha256": "832727499207343947aedd1f6c5a0c1ea53b7fa8c6dd77e5a8c95833f250c11d"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/auth_dialog/prompt_panel.rs",
+      "bytes": 3697,
+      "sha256": "176da1eae1ec979f1f482a726beec18bd40fe1091a09093fc5e5d44a719c5301"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/auth_dialog/provider_rows.rs",
+      "bytes": 4352,
+      "sha256": "6934f5966b70c26a94650ded141286178aa1a0404cec101c707c199106801f63"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/auth_dialog/select.rs",
+      "bytes": 5593,
+      "sha256": "30e1fb77316133f36bfe718b608f46ba0262fde1f3564c43d6b7d2d6ca64191a"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/auth_dialog.rs",
+      "bytes": 2069,
+      "sha256": "5c4a71b2b566e291067a4be4f1e8f447256fde6dbf2ed29ddcd951968d10e739"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/foreign_import_picker.rs",
+      "bytes": 7099,
+      "sha256": "c0b09efd96b013e7b34ce8b044f444198138b762200bf968b193d2e66da03e6c"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/memory_browser.rs",
+      "bytes": 3850,
+      "sha256": "cb1e2d80709637022a0b9245bc6409d58ae99465194e5e13684ce2a78fea1ac3"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/modal_chrome.rs",
+      "bytes": 4573,
+      "sha256": "77b254bf015e5d8d21cbafdf0e7f047c2d5faca32c9aa87e33f3b30c336f5f04"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/modal_interaction.rs",
+      "bytes": 31750,
+      "sha256": "7652ad214694f6c5d92ff17907d1a94fcea0a014d1d36c758d96a4fe6f034f03"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/modal_list_row.rs",
+      "bytes": 12595,
+      "sha256": "6d482c4ae1fa28993cb2245a8757383dd546a3f0d992952749724775f053e86e"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/model_switcher.rs",
+      "bytes": 11731,
+      "sha256": "3596036026533b5b510d8a603d4f9d51606183647ebbed31cd4b73e8bc353583"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/new_worktree_dialog.rs",
+      "bytes": 5967,
+      "sha256": "3312c2c3096517b059fa98f9c7a120a9fc963f9dcec0c6d1cbcc53cf43175618"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+      "bytes": 33519,
+      "sha256": "d0ff800546d558e76ec399768d371183b6372c1b3e6669ff00c431a419f4accd"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/plan_view.rs",
+      "bytes": 6942,
+      "sha256": "1f579b8be0d4448b79c2b9b3fd2b565e93549b157338c1dd02b0b3be2ddd4408"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/product_info.rs",
+      "bytes": 2527,
+      "sha256": "307bb712b35a2076d7c3ffbc759ab0a632d479c54efe337edac10b19fa64f7dc"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/prompt_history.rs",
+      "bytes": 2103,
+      "sha256": "026f2b431afe40ab47bfa4a415f4e941ae3830fa52676d67607297a689213889"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/prompt_stash_dialog.rs",
+      "bytes": 5881,
+      "sha256": "423734db9ec452cfe7a3e9e0eb1945c2f18faced919c06e5bf221b3165950149"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/release_notes.rs",
+      "bytes": 11717,
+      "sha256": "cf02e47ac903155bea1f2c9d27cbcfe8d1c80c1c8c07d6a01d3bcf6041bf4d96"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/session_history.rs",
+      "bytes": 30655,
+      "sha256": "0acb2054b4b606e7b0cd5f515d30e2f02bac4fc66dc662e4325bfb05bf6f8e18"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/settings_editor.rs",
+      "bytes": 9465,
+      "sha256": "2c603a2c6367cfa88942803ba772289a444ca095977e6a140f7a89908ac202b8"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/status_dialog.rs",
+      "bytes": 143040,
+      "sha256": "5612a6a32ed4a1e9c311e73c3b221e0cc048c860569563cc8e8afeeee92fd683"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/theme_dialog.rs",
+      "bytes": 5161,
+      "sha256": "f7748f4a1453348da870c27cba07e68c24cac498e1a37997e68fcce44b0329fc"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/toggles_menu.rs",
+      "bytes": 8992,
+      "sha256": "354b8ef58ae094fe6e090d2d4e80087bbd9dfae03a8aae4e61f1d919e21c6cfd"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/worktree_picker.rs",
+      "bytes": 5127,
+      "sha256": "bcf9491f6ff8066abae9f09fd237e3ee35dd12341d1fa564e575890a6663026d"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays.rs",
+      "bytes": 48442,
+      "sha256": "fb217ff8568761e1ddfbbbc6a7d645da744182385b1cb9d2deba3ab4fe2f732a"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_permission_dock.rs",
+      "bytes": 30356,
+      "sha256": "fa72ecaed2b90cae076eee163fa9a755044491ae8b354ff72ce338e9c22f4360"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_reasoning_markdown/body.rs",
+      "bytes": 1698,
+      "sha256": "2ab142e3432fb1362095e4c7990aa3154409669f29bb8bd5a22492718d7746da"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_recorded_tool_output.rs",
+      "bytes": 27447,
+      "sha256": "6c8d4f94197d519cf9198c1e6dbf9e8d9b8b6c9d674c2c42bb0e399927b55c16"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_secondary/operator_rail_model_tests.rs",
+      "bytes": 30649,
+      "sha256": "b2ec3826a62e3bdb344febdb021ac95478e75723237294e191d71d751f9d30bc"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_secondary/operator_rail_test_fixtures.rs",
+      "bytes": 11173,
+      "sha256": "a4affc9d6a81a37b236d10d3da5c7d2e71b521d199aeff33c77dd2c8760cb691"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_secondary/operator_rail_todo_tests.rs",
+      "bytes": 15885,
+      "sha256": "5cbb9644a748a16cce57a7376ee31e44930d1e6ba07e9a46b110e21281c2556f"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_secondary/orchestration_card.rs",
+      "bytes": 4482,
+      "sha256": "03f24601f3b69adba08c003d54ba392c155949c614126a035865afc6770dd69b"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_secondary/sidebar_data.rs",
+      "bytes": 24994,
+      "sha256": "af4b58006cc78aba6188a18786965bfa3cc67ffc6bf3dd0a10dd79b0d215ed84"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_secondary/sidebar_interaction.rs",
+      "bytes": 19908,
+      "sha256": "3d219d7a66c05edfe467cf4005f6fdf8032e72174642ac64ae7d1faeacb9e26c"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_secondary/sidebar_sections.rs",
+      "bytes": 14487,
+      "sha256": "1174451a6b7eb9351a9557917ad16e18a75fa0fc79056eb4d5c513ab4914726c"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_secondary/subagent_tests.rs",
+      "bytes": 38519,
+      "sha256": "3dc519e43bbc97de0095cb135850ba3a5b06117316000b2a3a9dce007f397144"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_secondary.rs",
+      "bytes": 32900,
+      "sha256": "c472009e09ea77897050248956b61157764b4fcc086085d80c5a24cac4389c3c"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_secondary_events_tab/rows.rs",
+      "bytes": 10066,
+      "sha256": "5019750313fb906f9a808cd264160396b14944f747275094e1a5117697f58e56"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_secondary_events_tab/tests.rs",
+      "bytes": 2755,
+      "sha256": "a63cead5f1e91f1c0a8195807e79d770e52660e4bf4fb8c77ff31030f37390c4"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_secondary_events_tab.rs",
+      "bytes": 10649,
+      "sha256": "ae0aba0bed8dc932b05f50cb659d8a6fe679e92292e55ffbd8dfc11798d9c920"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_streaming_markdown.rs",
+      "bytes": 5608,
+      "sha256": "8e2175a9f8a7f0041d2a9aeacedbabff889b9e086c4057ecb5991a649959b1e9"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_subagent_footer.rs",
+      "bytes": 3081,
+      "sha256": "5c07a908ed261b110bebd8b025c4ad7bb6a759b9c8853871eae91f7f83549284"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_subagent_footer_navigation.rs",
+      "bytes": 6140,
+      "sha256": "749ff0d68cc7270d96fded1e73b8c46c8ad346d233e7803ed317a39070717038"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_syntax_highlight/cache.rs",
+      "bytes": 5532,
+      "sha256": "3481d3aebefa09592976c6f6f54868ad9d537dbed513309aae08368287edc412"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_syntax_highlight.rs",
+      "bytes": 6598,
+      "sha256": "4ada9758349b6f1b5ef105f6c3caae3e13f33b3d19e2bb6fe78d0b70f57d5570"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_terminal.rs",
+      "bytes": 10528,
+      "sha256": "07a5c87450e973122fd38b303f2dc8f2001c7701cbebf7a14ef849db3c355996"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_terminal_output.rs",
+      "bytes": 10600,
+      "sha256": "9a96ffafd560a1a0d78604452d95f9d45b75c676a751f4760e0270d0fce730a6"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tests.rs",
+      "bytes": 42994,
+      "sha256": "08cf5a9d4ee1f462da4dad68c0ec31a1e8d02cf75ea1ea1b011fbda8f8a85567"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_todo_pane.rs",
+      "bytes": 11035,
+      "sha256": "e1e48f79c756f6747f919c260216c9fc8a2b5c877c94250204e262187ebcea5e"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_delegation.rs",
+      "bytes": 6938,
+      "sha256": "9f3b940378bb7f1ed08b20348999b954c2ae4b0ede1ef0c84d16ef3aa8107ee9"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_diffs.rs",
+      "bytes": 10093,
+      "sha256": "ec9294907b39c203712fa05a36814035a83de67ea73090dbfc50cffb4a4974d7"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_error.rs",
+      "bytes": 8839,
+      "sha256": "9523e4894596efafddee9cf1ff898ca376afc88f8c0f63873a6d60d578369787"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_input.rs",
+      "bytes": 7992,
+      "sha256": "2ce2ba54ce5832e385be7b0dd92b94e71ef609b8caf079ee0671223c937a7eeb"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_metadata.rs",
+      "bytes": 9398,
+      "sha256": "206d2fdf827c019c2943a18653a542d03e680133cb8b13ebe932a9c801d1e899"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_output.rs",
+      "bytes": 1892,
+      "sha256": "0a8b3321418ad6b109fecf39dac2486f21d10b101b6cd85386f29169330243a0"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_paths.rs",
+      "bytes": 8393,
+      "sha256": "24a869e6e3b00344104a5a623603ae02560610d988db5122107de93fbffa28c7"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_question_todo.rs",
+      "bytes": 11144,
+      "sha256": "0c720e981dc6fc79b54d3a9463ba031384b5eef03e3cd50db275effba0058074"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_style.rs",
+      "bytes": 3624,
+      "sha256": "4073a3d2f755c2231f2e409a41dce69cd6792cbd9a939d47ebcf24aba9353572"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_titles.rs",
+      "bytes": 8536,
+      "sha256": "3c18e873913dc24d53f8a54ec9d34cb419b8085c80d2da920cb22869a04ee050"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_titles_harness.rs",
+      "bytes": 4910,
+      "sha256": "fa0c6dd217249d5e6d17aa1aa302ab91ba9f57a044f7263e73582ad0a9b5ee9b"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_visibility.rs",
+      "bytes": 3921,
+      "sha256": "5f7f7dfa5128ea4acd06ce84d51d356394914278da23e750582031e227c5f769"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_wrapping.rs",
+      "bytes": 7394,
+      "sha256": "95b0f4a0589fd94a986c3648959cfb4e72a1f19b2a1fc3f9987e58a2239e616f"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript.rs",
+      "bytes": 49258,
+      "sha256": "f3c96e4d7db0ddeec5700d5dfc84ca40e73ea15b0c4dcb75a780d5fc299a982f"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_bash.rs",
+      "bytes": 16651,
+      "sha256": "fad32ef54649d3c7dc3440365ee72ed8dfa6480b3d55910a6cfaa704c5087768"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_compaction.rs",
+      "bytes": 13793,
+      "sha256": "a47836c4050a57be2f7bd931e3f2cf416834ea4b264fe34b813d68ba5ef683d0"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_entry.rs",
+      "bytes": 7959,
+      "sha256": "63e86ad3071a8a931850208b7b4660679faa4cd5176fcfeaa70690f0ecc396cb"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_events.rs",
+      "bytes": 1368,
+      "sha256": "71a09dbf9e40715aaf677dae691fa1b0dcf8770630e5a77803538c1204edc37a"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_frame.rs",
+      "bytes": 4613,
+      "sha256": "b43668f735fbab52f47ced3f8d879727e9535126835d5da15c49e39fa79a569b"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_groups.rs",
+      "bytes": 6220,
+      "sha256": "40cc2b98da921dcb053f3379b6a0a110d79257e58cae4fb43f6b16e98f79e038"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_interaction.rs",
+      "bytes": 10412,
+      "sha256": "943d3434c1bab9b2b30cba5d7df11932156752b590ee9ee07550fb8713c1376f"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_layout.rs",
+      "bytes": 61450,
+      "sha256": "abd90c41bb3ecd0b229261cc1494220d34ba6a989be11dfe26d7ff386d087b32"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_lifecycle_tests.rs",
+      "bytes": 13428,
+      "sha256": "73c60a1793004b56ce7fe8eb2a6ab892ee03d0c3fc540ff8a0ed617073e5ac81"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_mermaid.rs",
+      "bytes": 23580,
+      "sha256": "3db3342aa55855ddadcc2a8fadf450a6c7f780016b503b1c9e31b53d97ebb9da"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_mermaid_art.rs",
+      "bytes": 10691,
+      "sha256": "cc249bb56b36d75fad9161ee9198583a4c83c884c62dcc009cf6c158284246d7"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_page_flip.rs",
+      "bytes": 3274,
+      "sha256": "6d5ec819f998ecdf274ca0e8ad35bf17c92629b0837d234920e26d79c0bfbf6a"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_reasoning_selection_tests.rs",
+      "bytes": 2008,
+      "sha256": "089c2dda46f696227a7263310d5a59f7c16272c64502dba5a67ea87c9446c0b3"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_render.rs",
+      "bytes": 89698,
+      "sha256": "849909949792f351d2b1057e4db343f1b5d150604608896a41606326bd93216b"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_scrollbar.rs",
+      "bytes": 16628,
+      "sha256": "eb2e0caa589e77f13e80b3a523bb355c2d4299b06c550892cc5cc7c2be6bb2c5"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_scrollbar_hover_tests.rs",
+      "bytes": 1048,
+      "sha256": "4b8739e770d60bd191677750aefbdeb64699b5552d93ebc7525d2679b3a22130"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_sections.rs",
+      "bytes": 47672,
+      "sha256": "b5fd793b72a04d5f268ec8e8d306c43117b4d1af8b4e1f07979c3f41251a4cc0"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_selection.rs",
+      "bytes": 41486,
+      "sha256": "e63eb01f0cafe6c91d5fa241a98dc9897bade114088d0b0f9f6f917860d26ce7"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_selection_grammar_tests.rs",
+      "bytes": 11535,
+      "sha256": "9eec998524f9ca86a758bc9ee51fea42a59f22cd33d51c0b41289e82509d5c28"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_streaming_tests.rs",
+      "bytes": 8210,
+      "sha256": "6652ed26b2e6d6e903e126ec716bda1e1b7d6ff9161bf18c3fcb0b50ae0c00e9"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_style.rs",
+      "bytes": 10156,
+      "sha256": "c9c433bcf7c223ffb11ff6c027182a9c28ee975f5d204ff8a8b0e31c1096a247"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_subagent.rs",
+      "bytes": 8454,
+      "sha256": "b18ebd97c91d9e071f2040f5415b6ba03c5ab0e4b5af3f8a9eca892ec9f97a10"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_surface.rs",
+      "bytes": 43581,
+      "sha256": "c3466765516b50f7cb80975dd66f73c65c5ffa35e9964680e671197c423c197f"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_surface_tests.rs",
+      "bytes": 6587,
+      "sha256": "aba44ef5d4d2d1de2532ae1941693578df79d4443c048780e3978f271731a1d2"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_test_helpers.rs",
+      "bytes": 4005,
+      "sha256": "aec49dc58c93c906d0aa66c647c16fee3d6419c6c24f83939afcca8ab185e292"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_tests.rs",
+      "bytes": 83860,
+      "sha256": "22f457b4e333267ff3033da1d70975ebfe2ebf46abd520bdfd8a61592f13bbf0"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_tool_hooks.rs",
+      "bytes": 5837,
+      "sha256": "97060c8949d01a399c5e4bac1f7665009619647c39ecfdc82eee110f89f4c42a"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_tool_render.rs",
+      "bytes": 61279,
+      "sha256": "87dc8ff7e398d4a065549d80c13df9a9870fd190b3c40a6ef353a9510f23b80b"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_tool_sections.rs",
+      "bytes": 58952,
+      "sha256": "e865234727d639150b551d8db0ee9f7e3ab68d7cfeb09e831bde1917b7d4c05f"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_types.rs",
+      "bytes": 35872,
+      "sha256": "fbde0cb0f922b8de188aaebaed29240f53d9b4e3b382515624e6e6e796856dbc"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_viewport.rs",
+      "bytes": 5477,
+      "sha256": "057b73e414b9c4aeb5a8922ac0a7515f48598fad50ae31c48bffeace6d663c41"
+    },
+    {
+      "path": "crates/harness-tui/src/view_model.rs",
+      "bytes": 35199,
+      "sha256": "a2bfcd60a02fb034be759751f8c3a0edea0e51c9703bc530a5f2fee925b024ad"
+    },
+    {
+      "path": "crates/harness-tui/src/viewport.rs",
+      "bytes": 2502,
+      "sha256": "747e531e61aadbbe42f3e407c580184d644181bd98fd79936f70c5c061f77422"
+    },
+    {
+      "path": "crates/harness-tui/src/welcome_surface/hit_map.rs",
+      "bytes": 2029,
+      "sha256": "ade3fee91a8d2947184f74986c27f211bfd27c5c3b1b2a029e6433c3c1f85fc8"
+    },
+    {
+      "path": "crates/harness-tui/src/welcome_surface/layout.rs",
+      "bytes": 9059,
+      "sha256": "3c2b41c3f0de2de46be0de24416d4210f4668dcf90d6fdccbfbce355fb9eb26a"
+    },
+    {
+      "path": "crates/harness-tui/src/welcome_surface/mod.rs",
+      "bytes": 305,
+      "sha256": "9566ef22e3088c73ba242f4afca51d208a24d9d68cb7ed1301fea9fad2f8b224"
+    },
+    {
+      "path": "crates/harness-tui/src/welcome_surface/state.rs",
+      "bytes": 6442,
+      "sha256": "5d244f724a734775232f1bedcdd841ffd7bf7c66b7b4cebef58b27632985e778"
+    },
+    {
+      "path": "crates/harness-tui/examples/rewrite_probe.rs",
+      "bytes": 4891,
+      "sha256": "c4cf6da4e4cc06f10fe54101c7913b054cb7db0e41e14a22ce3f682c95c07c24"
+    },
+    {
+      "path": "crates/harness-tui/tests/rewrite_performance_test.rs",
+      "bytes": 8712,
+      "sha256": "9928404a38cc966814620c26b90332d90500123575a7be9ff909df2bbd03e9d9"
+    },
+    {
+      "path": "crates/harness-tui/tests/support/rewrite_journey.rs",
+      "bytes": 6280,
+      "sha256": "a3e48bb45948409ca6d4e4c9a695f7ba8900920a1d17613cb22b889815473b74"
+    }
+  ]
+}

@@ -4,9 +4,7 @@
 )]
 
 mod copy_metadata;
-mod grapheme;
 mod hyperlinks;
-mod keyboard;
 mod local_clipboard;
 mod osc52;
 mod selection;

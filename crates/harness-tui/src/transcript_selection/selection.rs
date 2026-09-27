@@ -1,43 +1,104 @@
-use super::grapheme::segment;
-use super::keyboard;
+use std::ops::Range;
+
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
+
 use super::selection_types::{
-    Autoscroll, CellPoint, DragResult, Grapheme, NavigationKey, SelectionError, SelectionMode,
-    SelectionRange, Viewport,
+    Autoscroll, CellPoint, DragResult, Grapheme, GraphemeRange, NavigationKey, SelectionError,
+    SelectionMode, SelectionRange, Viewport,
 };
 
 #[derive(Debug, Clone)]
-pub(super) struct WrappedRow {
-    pub(super) graphemes: Vec<Grapheme>,
-    pub(super) source_offset: usize,
-    pub(super) width: usize,
+struct Row {
+    graphemes: Range<usize>,
+    source_offset: usize,
+    width: usize,
 }
 
 #[derive(Debug, Clone)]
 pub struct WrappedText {
-    rows: Vec<WrappedRow>,
     source: String,
+    graphemes: Vec<Grapheme>,
+    rows: Vec<Row>,
 }
 
 impl WrappedText {
+    pub fn new(text: &str, width: usize) -> Result<Self, SelectionError> {
+        if width == 0 {
+            return Err(SelectionError::ZeroWidth);
+        }
+        let mut graphemes = Vec::new();
+        let mut rows = Vec::new();
+        let mut source_offset = 0;
+        for line in text.split('\n') {
+            let mut start = graphemes.len();
+            let mut cell = 0;
+            for (byte, value) in line.grapheme_indices(true) {
+                let cells = value.width().max(1);
+                let wrapped = cell + cells > width && start < graphemes.len();
+                if wrapped {
+                    rows.push(Row {
+                        graphemes: start..graphemes.len(),
+                        source_offset,
+                        width: cell,
+                    });
+                    start = graphemes.len();
+                    cell = 0;
+                }
+                // Only the whitespace that caused a soft wrap is omitted.
+                if wrapped && value.chars().all(char::is_whitespace) {
+                    continue;
+                }
+                graphemes.push(Grapheme {
+                    text: value.to_owned(),
+                    range: GraphemeRange {
+                        byte_range: byte..byte + value.len(),
+                        cell_range: cell..cell + cells,
+                    },
+                    end: CellPoint::new(0, cell + cells - 1),
+                });
+                cell += cells;
+            }
+            rows.push(Row {
+                graphemes: start..graphemes.len(),
+                source_offset,
+                width: cell,
+            });
+            source_offset += line.len() + 1;
+        }
+        Ok(Self {
+            source: text.to_owned(),
+            graphemes,
+            rows,
+        })
+    }
+
     pub fn row_count(&self) -> usize {
         self.rows.len()
     }
 
     pub fn row_text(&self, row: usize) -> String {
-        self.rows.get(row).map_or_else(String::new, |row| {
-            row.graphemes
-                .iter()
-                .map(|cluster| cluster.text.as_str())
-                .collect()
-        })
+        let Some(row) = self.rows.get(row) else {
+            return String::new();
+        };
+        let clusters = &self.graphemes[row.graphemes.clone()];
+        match (clusters.first(), clusters.last()) {
+            (Some(first), Some(last)) => self.source[row.source_offset
+                + first.range.byte_range.start
+                ..row.source_offset + last.range.byte_range.end]
+                .to_owned(),
+            _ => String::new(),
+        }
     }
 
     pub fn point_for_byte(&self, byte: usize) -> CellPoint {
         for (index, row) in self.rows.iter().enumerate() {
-            for cluster in &row.graphemes {
-                if row.source_offset + cluster.range.byte_range.end > byte {
-                    return CellPoint::new(index, cluster.range.cell_range.start);
-                }
+            let clusters = &self.graphemes[row.graphemes.clone()];
+            let cluster = clusters.partition_point(|cluster| {
+                row.source_offset + cluster.range.byte_range.end <= byte
+            });
+            if let Some(cluster) = clusters.get(cluster) {
+                return CellPoint::new(index, cluster.range.cell_range.start);
             }
         }
         CellPoint::new(
@@ -46,62 +107,8 @@ impl WrappedText {
         )
     }
 
-    pub fn new(text: &str, width: usize) -> Result<Self, SelectionError> {
-        if width == 0 {
-            return Err(SelectionError::ZeroWidth);
-        }
-        let mut rows = Vec::new();
-        let mut next_offset = 0;
-        for line in text.split('\n') {
-            let source_offset = next_offset;
-            next_offset += line.len() + 1;
-            let clusters = segment(line);
-            if clusters.is_empty() {
-                rows.push(WrappedRow {
-                    graphemes: Vec::new(),
-                    source_offset,
-                    width: 0,
-                });
-                continue;
-            }
-            let mut current = Vec::new();
-            let mut current_width = 0;
-            for cluster in clusters {
-                let cluster_width = cluster.range.cell_range.len();
-                let wrapped = current_width + cluster_width > width && !current.is_empty();
-                if wrapped {
-                    rows.push(WrappedRow {
-                        graphemes: std::mem::take(&mut current),
-                        source_offset,
-                        width: current_width,
-                    });
-                    current_width = 0;
-                }
-                if wrapped && cluster.text.chars().all(char::is_whitespace) {
-                    continue;
-                }
-                let mut cluster = cluster;
-                cluster.range.cell_range = current_width..current_width + cluster_width;
-                cluster.end = CellPoint::new(0, current_width + cluster_width.saturating_sub(1));
-                current_width += cluster_width;
-                current.push(cluster);
-            }
-            rows.push(WrappedRow {
-                graphemes: current,
-                source_offset,
-                width: current_width,
-            });
-        }
-        Ok(Self {
-            rows,
-            source: text.to_owned(),
-        })
-    }
-
     pub fn grapheme_at(&self, point: CellPoint) -> Option<&Grapheme> {
-        self.rows
-            .get(point.row)?
-            .graphemes
+        self.clusters(point.row)
             .iter()
             .find(|cluster| cluster.range.cell_range.contains(&point.cell))
     }
@@ -116,13 +123,13 @@ impl WrappedText {
         focus: CellPoint,
         viewport: Viewport,
     ) -> DragResult {
-        let last_visible = viewport
+        let last = viewport
             .top
             .saturating_add(viewport.height.saturating_sub(1));
         let lines = if focus.row < viewport.top {
             -i32::try_from(viewport.top - focus.row).unwrap_or(i32::MAX)
-        } else if focus.row > last_visible {
-            i32::try_from(focus.row - last_visible).unwrap_or(i32::MAX)
+        } else if focus.row > last {
+            i32::try_from(focus.row - last).unwrap_or(i32::MAX)
         } else {
             0
         };
@@ -134,37 +141,54 @@ impl WrappedText {
 
     pub fn select(&self, point: CellPoint, mode: SelectionMode) -> SelectionRange {
         let row = point.row.min(self.rows.len().saturating_sub(1));
-        let Some(current) = self.rows.get(row) else {
-            return SelectionRange::new(point, point);
-        };
+        let clusters = self.clusters(row);
         match mode {
             SelectionMode::Character => SelectionRange::new(point, point),
             SelectionMode::Line => SelectionRange::new(
                 CellPoint::new(row, 0),
-                CellPoint::new(row, current.width.saturating_sub(1)),
+                CellPoint::new(row, self.last_cell(row)),
             ),
-            SelectionMode::Word => self.word_selection(row, point.cell),
+            SelectionMode::Word => {
+                let Some(index) = clusters
+                    .iter()
+                    .position(|cluster| cluster.range.cell_range.contains(&point.cell))
+                else {
+                    let point = CellPoint::new(row, point.cell);
+                    return SelectionRange::new(point, point);
+                };
+                let mut first = index;
+                let mut last = index;
+                if !clusters[index].text.chars().all(char::is_whitespace) {
+                    while first > 0 && !clusters[first - 1].text.chars().all(char::is_whitespace) {
+                        first -= 1;
+                    }
+                    while last + 1 < clusters.len()
+                        && !clusters[last + 1].text.chars().all(char::is_whitespace)
+                    {
+                        last += 1;
+                    }
+                }
+                SelectionRange::new(
+                    CellPoint::new(row, clusters[first].range.cell_range.start),
+                    CellPoint::new(row, clusters[last].range.cell_range.end - 1),
+                )
+            }
         }
     }
 
     pub fn copy(&self, selection: SelectionRange) -> Result<String, SelectionError> {
-        if self.rows.is_empty() {
-            return Err(SelectionError::EmptyText);
-        }
         let (start, end) = selection.normalized();
         let first_row = start.row.min(self.rows.len().saturating_sub(1));
         let last_row = end.row.min(self.rows.len().saturating_sub(1));
-        let first = &self.rows[first_row];
-        let last = &self.rows[last_row];
-        let from = first.source_offset
-            + first
-                .graphemes
+        let from = self.rows[first_row].source_offset
+            + self
+                .clusters(first_row)
                 .iter()
                 .find(|cluster| cluster.range.cell_range.end > start.cell)
                 .map_or(0, |cluster| cluster.range.byte_range.start);
-        let to = last.source_offset
-            + last
-                .graphemes
+        let to = self.rows[last_row].source_offset
+            + self
+                .clusters(last_row)
                 .iter()
                 .rev()
                 .find(|cluster| cluster.range.cell_range.start <= end.cell)
@@ -179,72 +203,60 @@ impl WrappedText {
     }
 
     pub fn move_focus(&self, point: CellPoint, key: NavigationKey) -> CellPoint {
-        keyboard::move_focus(&self.rows, point, key)
+        let point = self.snap_point(point);
+        match key {
+            NavigationKey::Up => {
+                self.snap_point(CellPoint::new(point.row.saturating_sub(1), point.cell))
+            }
+            NavigationKey::Down => {
+                self.snap_point(CellPoint::new(point.row.saturating_add(1), point.cell))
+            }
+            NavigationKey::Home => CellPoint::new(point.row, 0),
+            NavigationKey::End => CellPoint::new(point.row, self.last_cell(point.row)),
+            NavigationKey::Left | NavigationKey::Right => {
+                let clusters = self.clusters(point.row);
+                let Some(index) = clusters
+                    .iter()
+                    .position(|cluster| cluster.range.cell_range.contains(&point.cell))
+                else {
+                    return point;
+                };
+                if key == NavigationKey::Left {
+                    if index > 0 {
+                        CellPoint::new(point.row, clusters[index - 1].range.cell_range.start)
+                    } else if point.row > 0 {
+                        CellPoint::new(point.row - 1, self.last_cell(point.row - 1))
+                    } else {
+                        point
+                    }
+                } else if let Some(next) = clusters.get(index + 1) {
+                    CellPoint::new(point.row, next.range.cell_range.start)
+                } else if point.row + 1 < self.rows.len() {
+                    CellPoint::new(point.row + 1, 0)
+                } else {
+                    point
+                }
+            }
+        }
     }
 
-    fn word_selection(&self, row_index: usize, cell: usize) -> SelectionRange {
-        let Some(row) = self.rows.get(row_index) else {
-            return SelectionRange::new(
-                CellPoint::new(row_index, cell),
-                CellPoint::new(row_index, cell),
-            );
-        };
-        let Some(index) = row
-            .graphemes
-            .iter()
-            .position(|cluster| cluster.range.cell_range.contains(&cell))
-        else {
-            return SelectionRange::new(
-                CellPoint::new(row_index, cell),
-                CellPoint::new(row_index, cell),
-            );
-        };
-        if row.graphemes[index].text.chars().all(char::is_whitespace) {
-            return self.range_for(row_index, index, index);
-        }
-        let mut first = index;
-        let mut last = index;
-        while first > 0 && !self.is_whitespace(row_index, first - 1) {
-            first -= 1;
-        }
-        while last + 1 < row.graphemes.len() && !self.is_whitespace(row_index, last + 1) {
-            last += 1;
-        }
-        self.range_for(row_index, first, last)
+    fn clusters(&self, row: usize) -> &[Grapheme] {
+        self.rows
+            .get(row)
+            .map_or(&[], |row| &self.graphemes[row.graphemes.clone()])
     }
 
-    fn is_whitespace(&self, row: usize, index: usize) -> bool {
-        self.rows[row].graphemes[index]
-            .text
-            .chars()
-            .all(char::is_whitespace)
-    }
-
-    fn range_for(&self, row: usize, first: usize, last: usize) -> SelectionRange {
-        SelectionRange::new(
-            CellPoint::new(row, self.rows[row].graphemes[first].range.cell_range.start),
-            CellPoint::new(
-                row,
-                self.rows[row].graphemes[last]
-                    .range
-                    .cell_range
-                    .end
-                    .saturating_sub(1),
-            ),
-        )
+    fn last_cell(&self, row: usize) -> usize {
+        self.rows
+            .get(row)
+            .map_or(0, |row| row.width.saturating_sub(1))
     }
 
     fn snap_point(&self, point: CellPoint) -> CellPoint {
         let row = point.row.min(self.rows.len().saturating_sub(1));
-        let Some(data) = self.rows.get(row) else {
-            return point;
-        };
-        let cell = point.cell.min(data.width.saturating_sub(1));
-        data.graphemes
-            .iter()
-            .find(|cluster| cluster.range.cell_range.contains(&cell))
-            .map_or(CellPoint::new(row, cell), |cluster| {
-                CellPoint::new(row, cluster.range.cell_range.start)
-            })
+        let point = CellPoint::new(row, point.cell.min(self.last_cell(row)));
+        self.grapheme_at(point).map_or(point, |cluster| {
+            CellPoint::new(row, cluster.range.cell_range.start)
+        })
     }
 }

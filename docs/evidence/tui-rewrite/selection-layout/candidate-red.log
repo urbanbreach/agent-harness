@@ -1,0 +1,88 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.19s
+────────────
+ Nextest run ID 0f1887a3-bb0e-4e01-8c58-c911b04ab685 with nextest profile: ci
+    Starting 2 tests across 2 binaries (18 tests skipped)
+        FAIL [   0.016s] (1/2) harness-tui::transcript_block_viewer_test search_accepts_complete_unicode_graphemes_and_rejects_partial_ones
+  stdout ───
+
+    running 1 test
+    test search_accepts_complete_unicode_graphemes_and_rejects_partial_ones ... FAILED
+
+    failures:
+
+    failures:
+        search_accepts_complete_unicode_graphemes_and_rejects_partial_ones
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'search_accepts_complete_unicode_graphemes_and_rejects_partial_ones' (2356563) panicked at crates/harness-tui/tests/transcript_block_viewer_test.rs:86:5:
+    assertion failed: viewer.set_search_query("\u{1161}").no_result
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.007s] (2/2) harness-tui::transcript_selection_test cjk_and_emoji_selection_stays_on_grapheme_boundaries
+  stdout ───
+
+    running 1 test
+    test cjk_and_emoji_selection_stays_on_grapheme_boundaries ... FAILED
+
+    failures:
+
+    failures:
+        cjk_and_emoji_selection_stays_on_grapheme_boundaries
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'cjk_and_emoji_selection_stays_on_grapheme_boundaries' (2356565) panicked at crates/harness-tui/tests/transcript_selection_test.rs:56:5:
+    assertion `left == right` failed: a syllable must not split across rows
+      left: 2
+     right: 1
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.025s] 2 tests run: 0 passed, 2 failed, 18 skipped
+        FAIL [   0.016s] (1/2) harness-tui::transcript_block_viewer_test search_accepts_complete_unicode_graphemes_and_rejects_partial_ones
+  stdout ───
+
+    running 1 test
+    test search_accepts_complete_unicode_graphemes_and_rejects_partial_ones ... FAILED
+
+    failures:
+
+    failures:
+        search_accepts_complete_unicode_graphemes_and_rejects_partial_ones
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'search_accepts_complete_unicode_graphemes_and_rejects_partial_ones' (2356563) panicked at crates/harness-tui/tests/transcript_block_viewer_test.rs:86:5:
+    assertion failed: viewer.set_search_query("\u{1161}").no_result
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.007s] (2/2) harness-tui::transcript_selection_test cjk_and_emoji_selection_stays_on_grapheme_boundaries
+  stdout ───
+
+    running 1 test
+    test cjk_and_emoji_selection_stays_on_grapheme_boundaries ... FAILED
+
+    failures:
+
+    failures:
+        cjk_and_emoji_selection_stays_on_grapheme_boundaries
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'cjk_and_emoji_selection_stays_on_grapheme_boundaries' (2356565) panicked at crates/harness-tui/tests/transcript_selection_test.rs:56:5:
+    assertion `left == right` failed: a syllable must not split across rows
+      left: 2
+     right: 1
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

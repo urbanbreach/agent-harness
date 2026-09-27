@@ -124,6 +124,7 @@ before changing the implementation.
 | R8 | A viewport anchor in a blank gap resolves to a neighboring content row. Repainting can move the viewport without input or trap one-row scrolling at that boundary | Preserve the signed gap distance from the content anchor. Require repeated preparation and paint to preserve position, including a width round trip. |
 | R9 | The margin timeline sums scalar widths, so joined emoji produce different jump offsets from ASCII with the same display width | Measure string display width. A public navigation journey fails on the original and passes on the replacement; its 12 paired post-jump frames remain identical, so this is a numeric geometry correction without a demonstrated visual improvement. |
 | R10 | Terminal-panel Home reads a scroll limit written by the previous paint, so it stays at the bottom before the first paint and can use stale wrapping after resize | Derive the limit from the current wrapped rows when handling Home. Retain the last drawable geometry during frame preparation for temporarily hidden panels; painting stays immutable. |
+| R11 | The hand-written selection segmenter splits a decomposed Hangul syllable and lets viewer search match an interior jamo | Use the installed Unicode grapheme segmenter for layout and search boundaries, and measure cluster widths as painting does. Existing selection and search fixtures reproduce both failures on the original; a spacing-mark fixture protects painted highlight and copy alignment. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -528,6 +529,26 @@ reported separately from the current paired comparisons. Whole-history
 presentation and the retained event mirror still need replacement. No fresh
 browser or end-to-end latency claim is made. Evidence is in
 [`evidence/tui-rewrite/settled-projection`](evidence/tui-rewrite/settled-projection).
+
+## Selection layout replacement (R11)
+
+Selection now stores one grapheme vector with row ranges, replacing the custom
+segmenter and separate keyboard engine. Viewer layout reuses its measured row
+count; search reads Unicode byte boundaries directly. Public selection APIs and
+soft-wrap copy behavior remain intact. The change removes 188 source lines.
+
+R11 corrects decomposed Hangul splitting and partial-syllable search. Independent
+review caught a spacing-mark width regression during migration. Measuring whole
+graphemes as painting does resolves it; the existing viewer test verifies both
+the painted search highlight and exact copying at the following cell.
+
+The full 1,738-test run and final focused, viewer and matrix checks pass. All 539
+frozen buffers match the previous candidate. All 51 viewer ANSI frames match the
+original, and two xterm screenshots and terminal snapshots are exact matches.
+The debug viewer journey is slower on the candidate, so release measurement is
+needed before attributing that difference. No new resource-performance or PTY
+latency claim is made. Evidence is in
+[`evidence/tui-rewrite/selection-layout`](evidence/tui-rewrite/selection-layout).
 
 ## Verification sequence
 

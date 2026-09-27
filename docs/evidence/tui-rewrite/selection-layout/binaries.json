@@ -1,0 +1,19 @@
+{
+  "profile": "debug",
+  "target": "harness-tui library tests; AppState viewer capture",
+  "features": "--all-features",
+  "binaries": [
+    {
+      "side": "reference",
+      "path": "/home/urbanbreach/.codex/worktrees/tui-reference/agent-harness/target/debug/deps/harness_tui-d263d345a2989e78",
+      "bytes": 156282955,
+      "sha256": "771928c8f908f53cafb5b37b437c99d21e2d2ef32cc3abe1e71a405438044c15"
+    },
+    {
+      "side": "candidate",
+      "path": "/home/urbanbreach/Projects/agent-harness/target/debug/deps/harness_tui-251580669bdc3a1d",
+      "bytes": 150590072,
+      "sha256": "bc713ea3445056130b3ccc1e10f7cdb93e5c9d661c60baec207a3ee02ecf71f8"
+    }
+  ]
+}

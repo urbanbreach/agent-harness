@@ -1,0 +1,12 @@
+[
+  {
+    "name": "runtime-viewer-long-select-40x32-motion-0ms.screen",
+    "all_snapshot_fields_equal": true,
+    "png_equal": true
+  },
+  {
+    "name": "runtime-viewer-search-120x40-motion-0ms.screen",
+    "all_snapshot_fields_equal": true,
+    "png_equal": true
+  }
+]
