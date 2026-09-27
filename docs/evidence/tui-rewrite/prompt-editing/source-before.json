@@ -1,0 +1,9 @@
+{
+  "reference": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+  "predecessor": "172b776e6219c400005a43bd67d1f62e46099b48",
+  "current_controller_sha256": "f24794c0473d356f6371fa03ed8bb1fdc3d60f4e3f09efff4d42f63592742c9a",
+  "current_lines": 293,
+  "identical_original_prefix": false,
+  "removed_unit_tests": 26,
+  "replacement_public_tests": 1
+}

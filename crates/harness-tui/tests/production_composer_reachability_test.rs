@@ -94,3 +94,126 @@ fn production_app_state_routes_attachment_ingest_and_submit() {
     assert_eq!(submission.attachments[0].id, AttachmentId::new(7));
     assert_eq!(submission.attachments[0].bytes, b"hello attachment");
 }
+
+// Invoke shipped key bindings through the public dispatcher, including the
+// surviving Ctrl+Shift+Z redo binding rather than the conflicting Ctrl+Y.
+// Buffer-start has no surviving default: its Ctrl+Home becomes FirstMessage.
+fn shortcut(app: &mut AppState, action: harness_tui::Action) {
+    let event = app
+        .keymap
+        .get_bindings(action)
+        .into_iter()
+        .map(|key| KeyEvent::new(key.code, key.modifiers))
+        .find(|event| app.keymap.get_action(event) == Some(action));
+    assert!(event.is_some(), "no surviving key binding for {action:?}");
+    if let Some(event) = event {
+        app.handle_key(event);
+    }
+}
+
+fn draft(text: &str, cursor: usize, anchor: Option<usize>) -> AppState {
+    let mut app = AppState::new_live(None, false, None);
+    app.composer.prompt_buffer = text.into();
+    app.composer.prompt_cursor = cursor;
+    app.composer.selection_anchor = anchor;
+    app.keymap
+        .apply_overrides(&std::collections::BTreeMap::from([(
+            "move_buffer_start".into(),
+            "F12".into(),
+        )]));
+    app
+}
+
+#[test]
+fn prompt_shortcuts_preserve_boundaries_and_selection() {
+    use harness_tui::Action::*;
+    let text = "界\none.two tail\nlast";
+    for (action, cursor, anchor) in [
+        (MoveWordLeft, 6, None),
+        (MoveWordRight, 10, None),
+        (MoveLineStart, 2, None),
+        (MoveLineEnd, 14, None),
+        (MoveBufferStart, 0, None),
+        (MoveBufferEnd, 19, None),
+        (CursorLeft, 7, None),
+        (SelectCharLeft, 7, Some(1)),
+        (SelectCharRight, 9, Some(1)),
+        (SelectWordLeft, 6, Some(1)),
+        (SelectWordRight, 10, Some(1)),
+        (SelectLine, 14, Some(2)),
+        (SelectAll, 19, Some(0)),
+    ] {
+        let mut app = draft(text, 8, Some(1));
+        shortcut(&mut app, action);
+        assert_eq!(app.composer.prompt_buffer, text, "{action:?}");
+        assert_eq!(app.composer.prompt_cursor, cursor, "{action:?}");
+        assert_eq!(app.composer.selection_anchor, anchor, "{action:?}");
+    }
+    let mut app = draft("界e\u{301}👩‍💻", 6, None);
+    for cursor in [3, 1, 0, 0] {
+        shortcut(&mut app, SelectCharLeft);
+        assert_eq!(app.composer.prompt_cursor, cursor);
+        assert_eq!(app.composer.selection_anchor, Some(6));
+    }
+    for cursor in [1, 3, 6, 6] {
+        shortcut(&mut app, SelectCharRight);
+        assert_eq!(app.composer.prompt_cursor, cursor);
+        assert_eq!(app.composer.selection_anchor, Some(6));
+    }
+    for (text, cursor, action, expected) in [
+        ("", 0, MoveWordLeft, 0),
+        ("hello", 0, MoveWordLeft, 0),
+        ("hello", 5, MoveWordRight, 5),
+        ("  hello", 7, MoveWordLeft, 2),
+    ] {
+        let mut app = draft(text, cursor, Some(0));
+        shortcut(&mut app, action);
+        assert_eq!(app.composer.prompt_cursor, expected);
+        assert_eq!(app.composer.selection_anchor, None);
+    }
+}
+
+#[test]
+fn prompt_deletion_preserves_undo_selection_and_history() {
+    use harness_tui::Action::*;
+    let text = "界\none.two tail\nlast";
+    for (action, expected, cursor) in [
+        (DeleteWordBackward, "界\none.o tail\nlast", 6),
+        (DeleteWordForward, "界\none.twtail\nlast", 8),
+        (DeleteLine, "界\nlast", 2),
+        (KillToLineStart, "界\no tail\nlast", 2),
+        (KillToLineEnd, "界\none.tw\nlast", 8),
+    ] {
+        let mut app = draft(text, 8, None);
+        shortcut(&mut app, action);
+        assert_eq!(app.composer.prompt_buffer, expected, "{action:?}");
+        assert_eq!(app.composer.prompt_cursor, cursor, "{action:?}");
+        shortcut(&mut app, Undo);
+        assert_eq!(app.composer.prompt_buffer, text, "{action:?}");
+        assert_eq!(app.composer.prompt_cursor, 8, "{action:?}");
+        shortcut(&mut app, Redo);
+        assert_eq!(app.composer.prompt_buffer, expected, "{action:?}");
+        assert_eq!(app.composer.prompt_cursor, cursor, "{action:?}");
+    }
+    let mut app = draft("hello world", 5, Some(0));
+    app.handle_key(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE));
+    assert_eq!(app.composer.prompt_buffer, "X world");
+    shortcut(&mut app, Undo);
+    assert_eq!(app.composer.prompt_buffer, "hello world");
+    assert_eq!(app.composer.prompt_cursor, 5);
+    assert_eq!(app.composer.selection_anchor, Some(0));
+    shortcut(&mut app, Backspace);
+    assert_eq!(app.composer.prompt_buffer, " world");
+    assert_eq!(app.composer.prompt_cursor, 0);
+    assert_eq!(app.composer.selection_anchor, None);
+    shortcut(&mut app, Redo);
+    assert_eq!(app.composer.prompt_buffer, " world");
+
+    let mut app = draft("draft text", 0, None);
+    app.composer.prompt_history.push("old prompt".into());
+    shortcut(&mut app, HistoryUp);
+    assert_eq!(app.composer.prompt_buffer, "old prompt");
+    shortcut(&mut app, Undo);
+    assert_eq!(app.composer.prompt_buffer, "draft text");
+    assert_eq!(app.composer.prompt_cursor, 0);
+}

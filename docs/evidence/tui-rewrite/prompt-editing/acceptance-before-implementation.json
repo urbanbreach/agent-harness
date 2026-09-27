@@ -1,0 +1,27 @@
+{
+  "recorded_at": "2026-09-27T23:10:27.251255+00:00",
+  "source": "172b776e6219c400005a43bd67d1f62e46099b48",
+  "baseline": {
+    "p50_us": 311,
+    "p95_us": 336,
+    "p99_us": 352,
+    "bytes": 356250,
+    "rss_kib": 9692,
+    "cpu_ms_per_frame": 0.32,
+    "allocated_bytes": 328144360,
+    "peak_heap_bytes": 2010934,
+    "malloc_calls": 4632693
+  },
+  "limits": {
+    "navigation": {
+      "p95_us": 369.6,
+      "rss_kib": 10661.2,
+      "peak_heap_bytes": 2212027.4000000004,
+      "cpu_ms_per_frame": 0.35200000000000004,
+      "p99_us": 452,
+      "allocated_bytes": 328144360,
+      "malloc_calls": 4632293
+    }
+  },
+  "requirement": "Remove at least400 malloc calls over510 navigation actions; no allocated-byte increase, p95/CPU/memory at most10% higher; p99 follows original other-renderer allowance max100us or10%. Preserve exact output. Earlier typing gates remain open."
+}

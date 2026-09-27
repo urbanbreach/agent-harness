@@ -1373,39 +1373,8 @@ delegate_test!(queued_prompt_count_tracks_queued_activities => prompt_stash_test
 delegate_test!(queued_prompt_indicator_renders_when_count_positive => prompt_stash_tests::queued_prompt_indicator_renders_when_count_positive);
 
 #[cfg(test)]
-#[path = "tests/composer_editing_tests.rs"]
-mod composer_editing_tests;
-
-#[cfg(test)]
 #[path = "tests/p0_04_composer_tests.rs"]
 mod p0_04_composer_tests;
-
-delegate_test!(move_word_left_skips_separators_then_word => composer_editing_tests::move_word_left_skips_separators_then_word);
-delegate_test!(move_word_right_skips_word_then_separators => composer_editing_tests::move_word_right_skips_word_then_separators);
-delegate_test!(move_word_left_at_start_stays_at_zero => composer_editing_tests::move_word_left_at_start_stays_at_zero);
-delegate_test!(move_word_right_at_end_stays_at_end => composer_editing_tests::move_word_right_at_end_stays_at_end);
-delegate_test!(move_word_left_handles_leading_separators => composer_editing_tests::move_word_left_handles_leading_separators);
-delegate_test!(delete_word_backward_removes_word_and_pushes_undo => composer_editing_tests::delete_word_backward_removes_word_and_pushes_undo);
-delegate_test!(delete_word_forward_removes_word_and_pushes_undo => composer_editing_tests::delete_word_forward_removes_word_and_pushes_undo);
-delegate_test!(redo_re_applies_after_undo => composer_editing_tests::redo_re_applies_after_undo);
-delegate_test!(undo_restores_selection_anchor => composer_editing_tests::undo_restores_selection_anchor);
-delegate_test!(select_char_left_extends_selection => composer_editing_tests::select_char_left_extends_selection);
-delegate_test!(select_word_right_extends_selection => composer_editing_tests::select_word_right_extends_selection);
-delegate_test!(select_all_selects_entire_buffer => composer_editing_tests::select_all_selects_entire_buffer);
-delegate_test!(select_line_selects_current_line => composer_editing_tests::select_line_selects_current_line);
-delegate_test!(move_line_start_clears_selection => composer_editing_tests::move_line_start_clears_selection);
-delegate_test!(move_line_end_clears_selection => composer_editing_tests::move_line_end_clears_selection);
-delegate_test!(move_buffer_start_clears_selection => composer_editing_tests::move_buffer_start_clears_selection);
-delegate_test!(move_buffer_end_clears_selection => composer_editing_tests::move_buffer_end_clears_selection);
-delegate_test!(delete_line_removes_entire_line_including_newline => composer_editing_tests::delete_line_removes_entire_line_including_newline);
-delegate_test!(kill_to_line_start_deletes_from_cursor_to_line_start => composer_editing_tests::kill_to_line_start_deletes_from_cursor_to_line_start);
-delegate_test!(kill_to_line_end_deletes_from_cursor_to_line_end => composer_editing_tests::kill_to_line_end_deletes_from_cursor_to_line_end);
-delegate_test!(typing_after_select_replaces_selection => composer_editing_tests::typing_after_select_replaces_selection);
-delegate_test!(backspace_with_selection_deletes_selection => composer_editing_tests::backspace_with_selection_deletes_selection);
-delegate_test!(undo_stack_caps_at_max_entries => composer_editing_tests::undo_stack_caps_at_max_entries);
-delegate_test!(history_navigation_preserves_draft_via_undo => composer_editing_tests::history_navigation_preserves_draft_via_undo);
-delegate_test!(cursor_left_clears_selection => composer_editing_tests::cursor_left_clears_selection);
-delegate_test!(word_boundary_detects_punctuation_as_separator => composer_editing_tests::word_boundary_detects_punctuation_as_separator);
 
 #[cfg(test)]
 #[path = "tests/file_mention_tests.rs"]

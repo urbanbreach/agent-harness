@@ -1,0 +1,38 @@
+{
+  "tui": {
+    "run": 1635,
+    "passed": 1635,
+    "skipped": 7
+  },
+  "pty": {
+    "run": 7,
+    "passed": 7
+  },
+  "public_tests_before": {
+    "run": 5,
+    "passed": 5
+  },
+  "mutation": {
+    "run": 5,
+    "passed": 4,
+    "failed": 1
+  },
+  "initial_with_legacy_tests": {
+    "run": 1660,
+    "passed": 1660,
+    "skipped": 7
+  },
+  "workspace_check": "passed",
+  "clippy": "passed",
+  "fmt": "passed",
+  "suite_gates": "passed",
+  "performance_runs_retained": 12,
+  "performance_final": "7/7 navigation limits passed; exact output/content",
+  "paired_browser_frames": 23,
+  "browser_exact_pngs": true,
+  "browser_exact_terminal_state_except_observer_counts": true,
+  "terminal_and_resource_cleanup": "both passed",
+  "browser_preparation": "wrong three-line collapse expectation; failed wait and forced cleanup retained",
+  "workspace_test_suite": "not rerun; earlier predecessor CLI fixture failures remain",
+  "whole_rewrite": "unfinished"
+}

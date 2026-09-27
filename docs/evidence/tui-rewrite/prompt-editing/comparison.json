@@ -1,0 +1,95 @@
+{
+  "checks": {
+    "navigation": {
+      "p95_us": {
+        "value": 339,
+        "limit": 369.6,
+        "pass": true
+      },
+      "rss_kib": {
+        "value": 9808,
+        "limit": 10661.2,
+        "pass": true
+      },
+      "peak_heap_bytes": {
+        "value": 2013049,
+        "limit": 2212027.4000000004,
+        "pass": true
+      },
+      "cpu_ms_per_frame": {
+        "value": 0.32,
+        "limit": 0.35200000000000004,
+        "pass": true
+      },
+      "p99_us": {
+        "value": 350,
+        "limit": 452,
+        "pass": true
+      },
+      "allocated_bytes": {
+        "value": 326443366,
+        "limit": 328144360,
+        "pass": true
+      },
+      "malloc_calls": {
+        "value": 4632184,
+        "limit": 4632293,
+        "pass": true
+      }
+    }
+  },
+  "content": [
+    {
+      "scenario": "navigation",
+      "sample": "1",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "navigation",
+      "sample": "2",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "navigation",
+      "sample": "3",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "navigation",
+      "sample": "alloc",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    }
+  ]
+}

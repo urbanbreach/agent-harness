@@ -1,0 +1,35 @@
+{
+  "reviewer": "/root/tui_review",
+  "decision": "approved for this intermediate atomic commit; full rewrite not approved",
+  "blocking_findings": [],
+  "verified_artifacts_before_review_receipt": 41,
+  "verified_source_files": 5,
+  "verified_performance_reports": 12,
+  "verified": [
+    "exact five-path source patch and line counts; all artifact/source receipts",
+    "retained baseline fixture hash and matching final fixture/binary hashes",
+    "all raw medians and all seven frozen navigation limits",
+    "23 exact paired PNGs/full terminal states except observer counts; input/environment equality",
+    "real navigation changes, restored selection and redo",
+    "termios/protocol restoration and natural child/socket/browser cleanup",
+    "retained failed preparation and documented fixture corrections",
+    "1635 TUI checks, seven gated PTY checks and recorded quality checks"
+  ],
+  "resolved_findings": [
+    {
+      "finding": "final cursor alone could miss a no-op End or Ctrl+Left in the navigation workload",
+      "resolution": "assert all four cursor phases outside the timed interval; rebuild both final binaries with the same fixture and retain the original baseline fixture patch/hash"
+    },
+    {
+      "finding": "selection case needed a distinct existing anchor to prove preservation and line-anchor replacement",
+      "resolution": "use existing anchor1 and require line selection to replace it with2"
+    }
+  ],
+  "limits_retained": [
+    "earlier typing latency gates remain unresolved",
+    "CPU unchanged for this workload; sustained runtime target not demonstrated",
+    "legacy AppState, duplicate editor state and fallback history remain",
+    "whole-rewrite source, cadence, environment and final review criteria remain incomplete"
+  ],
+  "reviewer_actions": "Read-only; no builds, tests or edits."
+}

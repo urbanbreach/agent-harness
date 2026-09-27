@@ -1,39 +1,6 @@
 use super::*;
 use unicode_segmentation::UnicodeSegmentation;
 
-fn collect_chars(text: &str) -> Vec<char> {
-    text.chars().collect()
-}
-
-fn find_word_start_left(chars: &[char], cursor: usize) -> usize {
-    if cursor == 0 {
-        return 0;
-    }
-    let mut pos = cursor;
-    while pos > 0 && !chars[pos - 1].is_alphanumeric() {
-        pos -= 1;
-    }
-    while pos > 0 && chars[pos - 1].is_alphanumeric() {
-        pos -= 1;
-    }
-    pos
-}
-
-fn find_word_end_right(chars: &[char], cursor: usize) -> usize {
-    let len = chars.len();
-    if cursor >= len {
-        return len;
-    }
-    let mut pos = cursor;
-    while pos < len && chars[pos].is_alphanumeric() {
-        pos += 1;
-    }
-    while pos < len && !chars[pos].is_alphanumeric() {
-        pos += 1;
-    }
-    pos
-}
-
 impl AppState {
     pub(in crate::app) fn prompt_grapheme_boundary(&self, forward: bool) -> usize {
         let mut boundaries =
@@ -56,36 +23,51 @@ impl AppState {
         }
     }
 
-    fn composer_chars(&self) -> Vec<char> {
-        collect_chars(&self.composer.prompt_buffer)
-    }
-
-    fn composer_word_start_left(&self) -> usize {
-        let chars = self.composer_chars();
-        find_word_start_left(&chars, self.composer.prompt_cursor)
-    }
-
-    fn composer_word_end_right(&self) -> usize {
-        let chars = self.composer_chars();
-        find_word_end_right(&chars, self.composer.prompt_cursor)
-    }
-
-    fn composer_line_start(&self) -> usize {
-        let chars = self.composer_chars();
-        let mut pos = self.composer.prompt_cursor;
-        while pos > 0 && chars[pos - 1] != '\n' {
-            pos -= 1;
+    fn composer_word_boundary(&self, forward: bool) -> usize {
+        let (left, right) = self
+            .composer
+            .prompt_buffer
+            .split_at(self.prompt_cursor_byte_index());
+        if forward {
+            self.prompt_char_count()
+                - right
+                    .chars()
+                    .skip_while(|ch| ch.is_alphanumeric())
+                    .skip_while(|ch| !ch.is_alphanumeric())
+                    .count()
+        } else {
+            left.chars()
+                .rev()
+                .skip_while(|ch| !ch.is_alphanumeric())
+                .skip_while(|ch| ch.is_alphanumeric())
+                .count()
         }
-        pos
     }
 
-    fn composer_line_end(&self) -> usize {
-        let chars = self.composer_chars();
-        let mut pos = self.composer.prompt_cursor;
-        while pos < chars.len() && chars[pos] != '\n' {
-            pos += 1;
+    fn composer_line_boundary(&self, forward: bool) -> usize {
+        let (left, right) = self
+            .composer
+            .prompt_buffer
+            .split_at(self.prompt_cursor_byte_index());
+        if forward {
+            self.composer.prompt_cursor + right.chars().take_while(|ch| *ch != '\n').count()
+        } else {
+            self.composer.prompt_cursor - left.chars().rev().take_while(|ch| *ch != '\n').count()
         }
-        pos
+    }
+
+    fn move_composer_cursor(&mut self, cursor: usize, selecting: bool) {
+        self.composer.selection_anchor = if selecting {
+            Some(
+                self.composer
+                    .selection_anchor
+                    .unwrap_or(self.composer.prompt_cursor),
+            )
+        } else {
+            None
+        };
+        self.composer.prompt_cursor = cursor;
+        self.sync_file_mention_overlay();
     }
 
     pub(in crate::app) fn delete_prompt_range(&mut self, start: usize, end: usize) {
@@ -102,192 +84,144 @@ impl AppState {
         self.composer
             .prompt_buffer
             .replace_range(start_byte..end_byte, "");
-        let removed = end - start;
-        if self.composer.prompt_cursor > start {
-            if self.composer.prompt_cursor <= end {
-                self.composer.prompt_cursor = start;
-            } else {
-                self.composer.prompt_cursor -= removed;
-            }
-        }
+        self.composer.prompt_cursor -=
+            (end - start).min(self.composer.prompt_cursor.saturating_sub(start));
         self.composer.selection_anchor = None;
         self.sync_slash_overlay();
         self.sync_file_mention_overlay();
     }
 
     pub(in crate::app) fn composer_select_char_left(&mut self) {
-        if self.composer.prompt_cursor == 0 {
-            return;
+        if self.composer.prompt_cursor > 0 {
+            self.move_composer_cursor(self.prompt_grapheme_boundary(false), true);
         }
-        if self.composer.selection_anchor.is_none() {
-            self.composer.selection_anchor = Some(self.composer.prompt_cursor);
-        }
-        self.composer.prompt_cursor = self.prompt_grapheme_boundary(false);
-        self.sync_file_mention_overlay();
     }
 
     pub(in crate::app) fn composer_select_char_right(&mut self) {
-        if self.composer.prompt_cursor >= self.prompt_char_count() {
-            return;
+        if self.composer.prompt_cursor < self.prompt_char_count() {
+            self.move_composer_cursor(self.prompt_grapheme_boundary(true), true);
         }
-        if self.composer.selection_anchor.is_none() {
-            self.composer.selection_anchor = Some(self.composer.prompt_cursor);
-        }
-        self.composer.prompt_cursor = self.prompt_grapheme_boundary(true);
-        self.sync_file_mention_overlay();
     }
 
     pub(in crate::app) fn composer_select_word_left(&mut self) {
-        let new_pos = self.composer_word_start_left();
-        if self.composer.selection_anchor.is_none() {
-            self.composer.selection_anchor = Some(self.composer.prompt_cursor);
-        }
-        self.composer.prompt_cursor = new_pos;
-        self.sync_file_mention_overlay();
+        self.move_composer_cursor(self.composer_word_boundary(false), true);
     }
 
     pub(in crate::app) fn composer_select_word_right(&mut self) {
-        let new_pos = self.composer_word_end_right();
-        if self.composer.selection_anchor.is_none() {
-            self.composer.selection_anchor = Some(self.composer.prompt_cursor);
-        }
-        self.composer.prompt_cursor = new_pos;
-        self.sync_file_mention_overlay();
+        self.move_composer_cursor(self.composer_word_boundary(true), true);
     }
 
     pub(in crate::app) fn composer_select_line(&mut self) {
-        let line_start = self.composer_line_start();
-        let line_end = self.composer_line_end();
-        self.composer.selection_anchor = Some(line_start);
-        self.composer.prompt_cursor = line_end;
-        self.sync_file_mention_overlay();
+        self.composer.selection_anchor = Some(self.composer_line_boundary(false));
+        self.move_composer_cursor(self.composer_line_boundary(true), true);
     }
 
     pub(in crate::app) fn composer_select_all(&mut self) {
         self.composer.selection_anchor = Some(0);
-        self.composer.prompt_cursor = self.prompt_char_count();
-        self.sync_file_mention_overlay();
+        self.move_composer_cursor(self.prompt_char_count(), true);
     }
 
     pub(in crate::app) fn composer_move_word_left(&mut self) {
-        self.composer.prompt_cursor = self.composer_word_start_left();
-        self.composer.selection_anchor = None;
-        self.sync_file_mention_overlay();
+        self.move_composer_cursor(self.composer_word_boundary(false), false);
     }
 
     pub(in crate::app) fn composer_move_word_right(&mut self) {
-        self.composer.prompt_cursor = self.composer_word_end_right();
-        self.composer.selection_anchor = None;
-        self.sync_file_mention_overlay();
+        self.move_composer_cursor(self.composer_word_boundary(true), false);
     }
 
     pub(in crate::app) fn composer_move_line_start(&mut self) {
-        self.composer.prompt_cursor = self.composer_line_start();
-        self.composer.selection_anchor = None;
-        self.sync_file_mention_overlay();
+        self.move_composer_cursor(self.composer_line_boundary(false), false);
     }
 
     pub(in crate::app) fn composer_move_line_end(&mut self) {
-        self.composer.prompt_cursor = self.composer_line_end();
-        self.composer.selection_anchor = None;
-        self.sync_file_mention_overlay();
+        self.move_composer_cursor(self.composer_line_boundary(true), false);
     }
 
     pub(in crate::app) fn composer_move_buffer_start(&mut self) {
-        self.composer.prompt_cursor = 0;
-        self.composer.selection_anchor = None;
-        self.sync_file_mention_overlay();
+        self.move_composer_cursor(0, false);
     }
 
     pub(in crate::app) fn composer_move_buffer_end(&mut self) {
-        self.composer.prompt_cursor = self.prompt_char_count();
-        self.composer.selection_anchor = None;
-        self.sync_file_mention_overlay();
+        self.move_composer_cursor(self.prompt_char_count(), false);
+    }
+
+    fn delete_recorded_range(&mut self, start: usize, end: usize) {
+        if start < end {
+            self.composer.push_undo();
+            self.delete_prompt_range(start, end);
+        }
     }
 
     pub(in crate::app) fn composer_delete_word_forward(&mut self) {
-        let end = self.composer_word_end_right();
-        if end <= self.composer.prompt_cursor {
-            return;
-        }
-        self.composer.push_undo();
-        self.delete_prompt_range(self.composer.prompt_cursor, end);
+        self.delete_recorded_range(
+            self.composer.prompt_cursor,
+            self.composer_word_boundary(true),
+        );
     }
 
     pub(in crate::app) fn composer_delete_word_backward(&mut self) {
-        let start = self.composer_word_start_left();
-        if start >= self.composer.prompt_cursor {
-            return;
-        }
-        self.composer.push_undo();
-        self.delete_prompt_range(start, self.composer.prompt_cursor);
+        self.delete_recorded_range(
+            self.composer_word_boundary(false),
+            self.composer.prompt_cursor,
+        );
     }
 
     pub(in crate::app) fn composer_delete_line(&mut self) {
-        let line_start = self.composer_line_start();
-        let chars = self.composer_chars();
-        let mut line_end = self.composer_line_end();
-        if line_end < chars.len() && chars[line_end] == '\n' {
-            line_end += 1;
-        }
-        if line_start >= line_end {
-            return;
-        }
-        self.composer.push_undo();
-        self.delete_prompt_range(line_start, line_end);
+        let end = self.composer_line_boundary(true);
+        self.delete_recorded_range(
+            self.composer_line_boundary(false),
+            end + usize::from(end < self.prompt_char_count()),
+        );
     }
 
     pub(in crate::app) fn composer_kill_to_line_start(&mut self) {
-        let line_start = self.composer_line_start();
-        if line_start >= self.composer.prompt_cursor {
-            return;
-        }
-        self.composer.push_undo();
-        self.delete_prompt_range(line_start, self.composer.prompt_cursor);
+        self.delete_recorded_range(
+            self.composer_line_boundary(false),
+            self.composer.prompt_cursor,
+        );
     }
 
     pub(in crate::app) fn composer_kill_to_line_end(&mut self) {
-        let line_end = self.composer_line_end();
-        if self.composer.prompt_cursor >= line_end {
-            return;
+        self.delete_recorded_range(
+            self.composer.prompt_cursor,
+            self.composer_line_boundary(true),
+        );
+    }
+
+    fn restore_composer_edit(&mut self, redo: bool) {
+        self.reset_clear_prompt_confirmation();
+        let restored = self.composer.editor_matches_prompt_fields()
+            && if redo {
+                matches!(self.composer.editor_redo(), Ok(true))
+            } else {
+                matches!(self.composer.editor_undo(), Ok(true))
+            };
+        if !restored {
+            let snapshot = if redo {
+                self.composer.redo_stack.pop()
+            } else {
+                self.composer.undo_stack.pop()
+            };
+            let Some(snapshot) = snapshot else {
+                return;
+            };
+            let current = self.composer.snapshot();
+            if redo {
+                self.composer.undo_stack.push(current);
+            } else {
+                self.composer.redo_stack.push(current);
+            }
+            self.composer.restore(snapshot);
         }
-        self.composer.push_undo();
-        self.delete_prompt_range(self.composer.prompt_cursor, line_end);
+        self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
     }
 
     pub(in crate::app) fn composer_undo(&mut self) {
-        self.reset_clear_prompt_confirmation();
-        if self.composer.editor_matches_prompt_fields()
-            && matches!(self.composer.editor_undo(), Ok(true))
-        {
-            self.sync_slash_overlay();
-            self.sync_file_mention_overlay();
-            return;
-        }
-        let Some(snapshot) = self.composer.undo_stack.pop() else {
-            return;
-        };
-        self.composer.redo_stack.push(self.composer.snapshot());
-        self.composer.restore(snapshot);
-        self.sync_slash_overlay();
-        self.sync_file_mention_overlay();
+        self.restore_composer_edit(false);
     }
 
     pub(in crate::app) fn composer_redo(&mut self) {
-        self.reset_clear_prompt_confirmation();
-        if self.composer.editor_matches_prompt_fields()
-            && matches!(self.composer.editor_redo(), Ok(true))
-        {
-            self.sync_slash_overlay();
-            self.sync_file_mention_overlay();
-            return;
-        }
-        let Some(snapshot) = self.composer.redo_stack.pop() else {
-            return;
-        };
-        self.composer.undo_stack.push(self.composer.snapshot());
-        self.composer.restore(snapshot);
-        self.sync_slash_overlay();
-        self.sync_file_mention_overlay();
+        self.restore_composer_edit(true);
     }
 }

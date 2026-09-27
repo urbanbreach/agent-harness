@@ -1,0 +1,170 @@
+[
+  {
+    "side": "before",
+    "sample": "navigation-1",
+    "started_at": "2026-09-27T23:25:32.038217+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-prompt-editing/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-prompt-editing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "navigation-1",
+    "started_at": "2026-09-27T23:25:32.262104+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-prompt-editing/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-prompt-editing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "navigation-2",
+    "started_at": "2026-09-27T23:25:32.481801+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-prompt-editing/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-prompt-editing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "navigation-2",
+    "started_at": "2026-09-27T23:25:32.702442+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-prompt-editing/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-prompt-editing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "navigation-3",
+    "started_at": "2026-09-27T23:25:32.923591+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-prompt-editing/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-prompt-editing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "navigation-3",
+    "started_at": "2026-09-27T23:25:33.140376+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-prompt-editing/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-prompt-editing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "navigation-alloc",
+    "started_at": "2026-09-27T23:25:33.355331+00:00",
+    "command": [
+      "memusage",
+      "-n",
+      "before.bin",
+      "--no-timer",
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-prompt-editing/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-prompt-editing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "navigation-alloc",
+    "started_at": "2026-09-27T23:25:33.745176+00:00",
+    "command": [
+      "memusage",
+      "-n",
+      "candidate.bin",
+      "--no-timer",
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-prompt-editing/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-prompt-editing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  }
+]

@@ -1,0 +1,39 @@
+{
+  "sources": [
+    {
+      "path": "crates/harness-tui/src/app/composer_editing.rs",
+      "before_lines": 293,
+      "after_lines": 227,
+      "sha256": "4228dbca1a786eb0f1dbfb6c46d2faf40bef8f70c88b9e1439e44c3621db9947"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests.rs",
+      "before_lines": 1491,
+      "after_lines": 1460,
+      "sha256": "f2f523b49ae929a033e91dc22b48eba4b528ad7b9250dd8b2b16153ac61f3cbb"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/composer_editing_tests.rs",
+      "before_lines": 354,
+      "after_lines": 0,
+      "sha256": null
+    },
+    {
+      "path": "crates/harness-tui/tests/production_composer_reachability_test.rs",
+      "before_lines": 96,
+      "after_lines": 219,
+      "sha256": "51a3f892ede87103406c2105991298707fc26f1ac8adfde8cf3e290f109d2499"
+    },
+    {
+      "path": "crates/harness-tui/tests/rewrite_performance_test.rs",
+      "before_lines": 350,
+      "after_lines": 377,
+      "sha256": "f9c70767ac1442e02fc9fb899d80088ddc56523b26603b8aebd2aee7612d91ec"
+    }
+  ],
+  "all_src_rs_lines": 166128,
+  "src_line_reduction": 451,
+  "production_line_reduction": 66,
+  "integration_fixture_lines_added": 150,
+  "total_rust_line_reduction": 301
+}

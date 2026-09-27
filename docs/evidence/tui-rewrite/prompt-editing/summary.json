@@ -1,0 +1,28 @@
+{
+  "before": {
+    "navigation": {
+      "p50_us": 312,
+      "p95_us": 340,
+      "p99_us": 363,
+      "bytes": 356250,
+      "rss_kib": 9592,
+      "cpu_ms_per_frame": 0.32,
+      "allocated_bytes": 328147888,
+      "peak_heap_bytes": 2010934,
+      "malloc_calls": 4632701
+    }
+  },
+  "candidate": {
+    "navigation": {
+      "p50_us": 314,
+      "p95_us": 339,
+      "p99_us": 350,
+      "bytes": 356250,
+      "rss_kib": 9808,
+      "cpu_ms_per_frame": 0.32,
+      "allocated_bytes": 326443366,
+      "peak_heap_bytes": 2013049,
+      "malloc_calls": 4632184
+    }
+  }
+}
