@@ -1,0 +1,22 @@
+{
+  "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+  "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+  "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+  "release_profile": {
+    "opt_level": 3,
+    "lto": "fat",
+    "codegen_units": 1
+  },
+  "binaries": {
+    "before-probe": {
+      "path": "/tmp/tui-prompt-editing/before-probe",
+      "sha256": "9e14868e462136c8e0e6253ae9bc84d7a1a32cac1176c6b82ea6ad21ea640e59",
+      "bytes": 15206760
+    },
+    "candidate-probe": {
+      "path": "/tmp/tui-prompt-editing/candidate-probe",
+      "sha256": "5eb5805f8a8663e3cc443e8ce8d4cf24d87b60cad2cab3abe5b76114511e48ca",
+      "bytes": 15207776
+    }
+  }
+}

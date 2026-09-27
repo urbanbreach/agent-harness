@@ -132,6 +132,7 @@ before changing the implementation.
 | R16 | Rewinding a later turn can leave a retained older tool labeled Patch or showing a discarded rejection, because prior display state overwrites the active-history edit proposal | Fold edit state from active events after successful complete-history or untrimmed-inline reconstruction. The pinned original fails the public rewind check. Capped inline child histories retain their prior edit state because the proposal may no longer be available; exact edit rewind there remains unverified. |
 | R17 | Tool-row assembly eagerly parses todo data for every visible tool and may read unrelated JSON/text artifacts before discarding the result | Remove the eager todo call and unreachable todo row branches. Production transcript dispatch already hides todo calls; retain the active todo pane parser. This is a source-traced side-effect correction with unchanged visible output, not a syscall-count claim. |
 | R18 | Default bindings assign Ctrl+Y to Redo and then overwrite it with AllowPermission, so it does nothing in the ordinary composer | Record the unchanged no-op on both builds. Use the working Ctrl+Shift+Z binding for redo parity. Defer the shortcut-policy correction separately from snapshot ownership; the failed predecessor capture is retained in undo-sharing evidence. |
+| R19 | Default bindings assign Ctrl+Home to MoveBufferStart and then overwrite it with FirstMessage, leaving no default buffer-start shortcut | Preserve the existing default. Exercise MoveBufferStart through a configured F12 binding in the public keyboard test; use ordinary Home/End for the navigation workload. Defer the shortcut-policy correction; preparation failures are retained in prompt-editing evidence. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -1057,6 +1058,29 @@ cause or clear the failed gate. These input/render/encoding timings exclude
 terminal-emulator latency and do not establish the sustained runtime target.
 The short-draft gate, state/text replacement and full rewrite remain unfinished.
 Evidence is in [`evidence/tui-rewrite/atom-buffer`](evidence/tui-rewrite/atom-buffer).
+
+## Prompt editing controller
+
+Borrowed string scans replace temporary character vectors in word and line
+navigation. Shared movement, deletion and undo/redo paths preserve selection,
+newline handling, overlay updates and the typed-editor/fallback-history order.
+The controller shrinks from 293 to 227 lines; two public keyboard tests replace
+26 private tests. Whole TUI source is 166,128 lines, 8.66% below the original;
+the 90,941-line target and full state/text replacement remain unfinished.
+
+All 1,635 TUI tests, seven gated PTY checks and quality checks pass. Twenty-three
+paired actual-runtime xterm captures match exactly, with natural exit and terminal
+and resource cleanup. A failed preparation expected three-line paste to collapse;
+existing behavior expands it, and the corrected fixture waits for that text. R19
+records the existing Ctrl+Home binding conflict without changing shortcut policy.
+
+The fixed navigation workload passes all seven frozen limits: malloc calls fall
+by 517 and allocated bytes by 1.7 MB (0.52%) across 510 actions. CPU remains
+0.32 ms/frame. The timing covers input handling, rendering and ANSI encoding,
+excluding terminal-emulator latency. Four baseline and eight final paired runs
+are retained. Earlier typing latency failures and the sustained-runtime targets
+remain open. Evidence is in
+[`evidence/tui-rewrite/prompt-editing`](evidence/tui-rewrite/prompt-editing).
 
 ## Verification sequence
 

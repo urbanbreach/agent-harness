@@ -162,7 +162,7 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
         j.app.replace_events(events);
     }
     let mut draft = String::new();
-    if scenario == "typing-long" {
+    if matches!(scenario.as_str(), "typing-long" | "navigation") {
         draft = "plain 界 e\u{301} 👩‍💻 ".repeat(32);
         j.app.handle_paste(&draft);
         assert_eq!(j.app.composer.prompt_buffer, draft);
@@ -235,6 +235,15 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
             "tools" => j
                 .app
                 .set_generic_tool_output_visible_for_test(index % 2 == 0),
+            "navigation" => {
+                let (code, modifiers) = match index % 4 {
+                    0 => (KeyCode::Home, KeyModifiers::NONE),
+                    1 => (KeyCode::Right, KeyModifiers::CONTROL),
+                    2 => (KeyCode::End, KeyModifiers::NONE),
+                    _ => (KeyCode::Left, KeyModifiers::CONTROL),
+                };
+                j.app.handle_key(KeyEvent::new(code, modifiers));
+            }
             "typing" | "typing-long" => j.app.handle_key(KeyEvent::new(
                 if index % 2 == 0 {
                     KeyCode::Char('x')
@@ -270,6 +279,13 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
         if index >= 10 {
             samples_us.push(start.elapsed().as_micros());
         }
+        if scenario == "navigation" && (10..14).contains(&index) {
+            let length = draft.chars().count();
+            assert_eq!(
+                j.app.composer.prompt_cursor,
+                [length, length - 7, 0, 6][index - 10]
+            );
+        }
         if scenario == "typing-long" {
             match index {
                 10 => assert_eq!(
@@ -280,6 +296,17 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
                 _ => {}
             }
         }
+    }
+    if scenario == "navigation" {
+        assert_eq!(j.app.composer.prompt_buffer, draft);
+        let length = draft.chars().count();
+        let expected = match (frames + 9) % 4 {
+            0 => 0,
+            1 => 6,
+            2 => length,
+            _ => length - 7,
+        };
+        assert_eq!(j.app.composer.prompt_cursor, expected);
     }
     let after = resources()?;
     if scenario == "typing-long" {

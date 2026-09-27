@@ -1,0 +1,8 @@
+{
+  "base": "172b776e6219c400005a43bd67d1f62e46099b48",
+  "side": "candidate",
+  "sha256": "9fecd39a7924ed06f0a68ef2efea5ba3ba7cee284bca9ee09693e5f5be39a64d",
+  "probe_sha256": "5eb5805f8a8663e3cc443e8ce8d4cf24d87b60cad2cab3abe5b76114511e48ca",
+  "source_sha256": "4228dbca1a786eb0f1dbfb6c46d2faf40bef8f70c88b9e1439e44c3621db9947",
+  "fixture_sha256": "f9c70767ac1442e02fc9fb899d80088ddc56523b26603b8aebd2aee7612d91ec"
+}
