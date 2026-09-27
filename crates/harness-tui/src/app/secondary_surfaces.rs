@@ -48,10 +48,6 @@ impl SecondarySurfaceState {
         self.status_dialog_visible = false;
     }
 
-    pub(crate) fn set_status_dialog_visible(&mut self, visible: bool) {
-        self.status_dialog_visible = visible;
-    }
-
     pub(crate) const fn selected_section(&self) -> Option<OperatorSidebarSection> {
         self.selected_section
     }

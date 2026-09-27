@@ -1,0 +1,23 @@
+[
+  {
+    "role": "candidate-library",
+    "profile": "debug",
+    "path": "/home/urbanbreach/Projects/agent-harness/target/debug/deps/harness_tui-251580669bdc3a1d",
+    "bytes": 149835983,
+    "sha256": "867957624ba8342ca6edd78e2bd469c70109031ed8b27f43edf125fc5f1835f5"
+  },
+  {
+    "role": "candidate-oracle",
+    "profile": "debug",
+    "path": "/home/urbanbreach/Projects/agent-harness/target/debug/deps/rewrite_reference_test-5d287d018ec646b1",
+    "bytes": 117409827,
+    "sha256": "2e5b895928149577a3f9f5cc2eccef60b020997e096936b88165622c369f666b"
+  },
+  {
+    "role": "original-oracle",
+    "profile": "debug",
+    "path": "/home/urbanbreach/.codex/worktrees/tui-reference/agent-harness/target/debug/deps/rewrite_reference_test-dfe1ffa562725899",
+    "bytes": 121761163,
+    "sha256": "e29b33ec2ce92f9160e60e96130b043de7517049a0037833427411e813e95fff"
+  }
+]

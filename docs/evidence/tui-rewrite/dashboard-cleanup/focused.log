@@ -1,0 +1,14 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 45.24s
+────────────
+ Nextest run ID 350771da-829c-4727-bd69-0a4e44cd2fad with nextest profile: ci
+    Starting 13 tests across 78 binaries (1678 tests and 1 binary skipped, including 1 binary via profile.default.default-filter)
+        SLOW [>  2.000s] (─────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  4.000s] (─────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  6.000s] (─────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  8.000s] (─────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [> 10.000s] (─────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [> 12.000s] (─────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+────────────
+     Summary [  12.963s] 13 tests run: 13 passed (1 slow), 1678 skipped
+        SLOW [  12.517s] (13/13) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents

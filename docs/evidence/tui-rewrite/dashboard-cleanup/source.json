@@ -1,0 +1,49 @@
+{
+  "base": "b3202dfc2df003be23ea1ad041681032b179b6e9",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/app/dashboard_roster.rs",
+      "deleted_from": "b3202dfc2df003be23ea1ad041681032b179b6e9"
+    },
+    {
+      "path": "crates/harness-tui/src/app/screen_mode.rs",
+      "deleted_from": "b3202dfc2df003be23ea1ad041681032b179b6e9"
+    },
+    {
+      "path": "crates/harness-tui/src/app/secondary_surfaces.rs",
+      "sha256": "ef0a37c45eecb9fd00d161f3120686e6fbb7a28b2d6c776ec74d2bdfbb0eeafa"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/secondary_surface_ownership_tests.rs",
+      "sha256": "a3cc28c8b871217cebb9766c98e4ca9e55e047cc251640fd0c2e2986565b9efb"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays.rs",
+      "sha256": "51c233ee0cc8fad4e573c8b7df3a03b4be89c4769a74275bcc524aba974ac9fa"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/snapshots/harness_tui__ui__ui_overlays__status_dialog__status_dialog_render_snapshot_covers_harness_sections.snap",
+      "deleted_from": "b3202dfc2df003be23ea1ad041681032b179b6e9"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/status_dialog.rs",
+      "sha256": "bc4c201b1427249e0863cf9c10bf40a723f5c3ba65fa2605a5bbeec61fa8a8f2"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/status_dialog/agents.rs",
+      "sha256": "d51e241ae123bfa2e7c75f3d10fed5b8317f310353c38d7402a49ed1f0d5f024"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_reasoning_selection_tests.rs",
+      "deleted_from": "b3202dfc2df003be23ea1ad041681032b179b6e9"
+    },
+    {
+      "path": "crates/harness-tui/tests/fixtures/tui-reference.cells.jsonl",
+      "sha256": "5913f3430a0572b649f1758a4d29648a90dc6a7194d5951ba9898254dd0e2751"
+    },
+    {
+      "path": "crates/harness-tui/tests/rewrite_reference_test.rs",
+      "sha256": "f8778ae47d3a30e0247267f5703e9e615d973e5f1c59eb81a3992e2d49e9bace"
+    }
+  ]
+}

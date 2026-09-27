@@ -1,0 +1,21 @@
+{
+  "base": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+  "production_source_unchanged": true,
+  "recorder_base": "36455057",
+  "fixtures": [
+    {
+      "path": "crates/harness-tui/tests/rewrite_reference_test.rs",
+      "sha256": "cffa123d410f339caac3fcbae8e1585d4fe1b4ffd19d1c0ceec0ca98f1127d62"
+    },
+    {
+      "path": "crates/harness-tui/tests/support/rewrite_journey.rs",
+      "sha256": "a3e48bb45948409ca6d4e4c9a695f7ba8900920a1d17613cb22b889815473b74"
+    },
+    {
+      "path": "crates/harness-tui/tests/support/rewrite_workflows.rs",
+      "sha256": "879c334dac3f659e063d00be76d1782f2941ad9ce8dd14f97120fa4a4f7128eb"
+    }
+  ],
+  "prior_golden_records_byte_identical": 539,
+  "added_records": 4
+}

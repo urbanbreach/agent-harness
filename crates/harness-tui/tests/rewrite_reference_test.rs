@@ -118,6 +118,10 @@ impl Recorder {
             self.frame(&format!("dialog-{command}"), &mut journey)?;
             journey.key(K::Down, M::NONE);
             self.frame(&format!("selected-{command}"), &mut journey)?;
+            if command == "dashboard" {
+                journey.key(K::Char('d'), M::NONE);
+                self.frame("dashboard-details", &mut journey)?;
+            }
         }
         for (name, query) in [
             ("memory", "Memory"),

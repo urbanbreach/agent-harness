@@ -1,0 +1,32 @@
+[
+  {
+    "name": "dashboard-details-120x40-reduced-0ms",
+    "png_equal": true,
+    "different_snapshot_fields": {}
+  },
+  {
+    "name": "dashboard-details-160x50-reduced-0ms",
+    "png_equal": true,
+    "different_snapshot_fields": {
+      "renderCount": {
+        "reference": 4,
+        "candidate": 5
+      }
+    }
+  },
+  {
+    "name": "dashboard-details-40x24-reduced-0ms",
+    "png_equal": true,
+    "different_snapshot_fields": {
+      "renderCount": {
+        "reference": 3,
+        "candidate": 4
+      }
+    }
+  },
+  {
+    "name": "dashboard-details-80x24-reduced-0ms",
+    "png_equal": true,
+    "different_snapshot_fields": {}
+  }
+]

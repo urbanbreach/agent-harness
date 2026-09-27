@@ -1,0 +1,12 @@
+Independent reviewer: /root/tui_review
+Result: approved to commit dashboard-cleanup; no blockers.
+
+Verified all 48 pre-receipt artifacts, source/binary receipts, the exact
+55-test removal list and the 1,684 passing-test log. All 543 frames match;
+the original 539 records are unchanged. The four added original captures,
+51 viewer ANSI captures and four visually inspected PNGs match as claimed.
+
+The documented render-count differences, remaining plan disk read and
+absence of a new performance claim are accurate. Source reachability,
+68-probe counting and literal edit-path behavior are approved.
+Whole-rewrite acceptance remains incomplete.

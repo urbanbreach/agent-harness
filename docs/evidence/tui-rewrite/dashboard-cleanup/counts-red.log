@@ -1,0 +1,46 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.87s
+────────────
+ Nextest run ID d5bf1698-7dc3-4149-ac72-7e9ef4faf63c with nextest profile: ci
+    Starting 1 test across 1 binary (1269 tests skipped)
+        FAIL [   0.096s] (1/1) harness-tui app::tests::status_dashboard_renders_populated_sections_from_app_state
+  stdout ───
+
+    running 1 test
+    test app::tests::status_dashboard_renders_populated_sections_from_app_state ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::status_dashboard_renders_populated_sections_from_app_state
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1269 filtered out; finished in 0.09s
+
+  stderr ───
+
+    thread 'app::tests::status_dashboard_renders_populated_sections_from_app_state' (2459930) panicked at crates/harness-tui/src/app/tests/secondary_surface_ownership_tests.rs:328:5:
+    assertion failed: render_text(&app, 100, 40).contains(&expected)
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.102s] 1 test run: 0 passed, 1 failed, 1269 skipped
+        FAIL [   0.096s] (1/1) harness-tui app::tests::status_dashboard_renders_populated_sections_from_app_state
+  stdout ───
+
+    running 1 test
+    test app::tests::status_dashboard_renders_populated_sections_from_app_state ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::status_dashboard_renders_populated_sections_from_app_state
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1269 filtered out; finished in 0.09s
+
+  stderr ───
+
+    thread 'app::tests::status_dashboard_renders_populated_sections_from_app_state' (2459930) panicked at crates/harness-tui/src/app/tests/secondary_surface_ownership_tests.rs:328:5:
+    assertion failed: render_text(&app, 100, 40).contains(&expected)
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

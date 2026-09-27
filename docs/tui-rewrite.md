@@ -574,6 +574,22 @@ attempt. The retained failure and corrected public journey protect the indexed
 replacement. Whole-rewrite source, state/formatter replacement, runtime and
 absolute timing requirements remain outstanding.
 
+## Status fallback removal
+
+The unreachable centered status fallback and 55 tests of its private summaries
+are removed. Public status commands still open the full dashboard. Its compact
+summary directly counts the same 68 probe presences and distinct literal edit
+paths, without the old temporary diagnostic strings or edit-file digest reads.
+Three uncompiled orphan files and an unused private setter are also removed.
+
+All 1,684 remaining TUI tests pass. Four original dashboard-details checkpoints
+extend the matrix to 543 without changing any prior reference record; cells,
+ANSI and all four xterm PNGs match. The public dashboard journey checks empty,
+absent and unavailable probes plus repeated edit paths, and its mutation check
+fails as intended. The source tree shrinks by 3,867 lines including the removed
+tests. Plan-list reads still need to move out of painting. Evidence is in
+[`evidence/tui-rewrite/dashboard-cleanup`](evidence/tui-rewrite/dashboard-cleanup).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal
