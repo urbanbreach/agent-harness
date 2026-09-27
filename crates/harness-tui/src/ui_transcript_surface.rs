@@ -6,6 +6,7 @@ use ratatui::{
     widgets::{Block, Paragraph},
     Frame,
 };
+#[cfg(test)]
 use std::borrow::Borrow;
 use std::time::Duration;
 
@@ -160,7 +161,6 @@ mod animation_phase_tests {
             metadata: TranscriptVisualEntryMetadata::settled(
                 0,
                 0,
-                TranscriptRenderSurfaceKind::AssistantReasoning,
                 TranscriptVisualEntryDisplayMode::Flow,
             ),
             kind: TranscriptRenderSurfaceKind::AssistantReasoning,
@@ -207,7 +207,6 @@ mod animation_phase_tests {
             metadata: TranscriptVisualEntryMetadata::settled(
                 0,
                 0,
-                TranscriptRenderSurfaceKind::AssistantFooter,
                 TranscriptVisualEntryDisplayMode::Flow,
             ),
             kind: TranscriptRenderSurfaceKind::AssistantFooter,
@@ -576,6 +575,7 @@ pub(super) fn visible_surface_lines(
         .collect()
 }
 
+#[cfg(test)]
 pub(super) fn render_transcript_surface_lines<Entry>(surfaces: &[Entry]) -> Vec<Line<'static>>
 where
     Entry: Borrow<TranscriptVisualEntryDraft>,

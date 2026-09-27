@@ -1,0 +1,4 @@
+{
+  "crates/harness-tui/tests/rewrite_performance_test.rs": "9928404a38cc966814620c26b90332d90500123575a7be9ff909df2bbd03e9d9",
+  "crates/harness-tui/tests/support/rewrite_journey.rs": "a3e48bb45948409ca6d4e4c9a695f7ba8900920a1d17613cb22b889815473b74"
+}

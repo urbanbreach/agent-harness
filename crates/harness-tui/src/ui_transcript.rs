@@ -1,3 +1,5 @@
+#[cfg(test)]
+use super::ui_transcript_layout::transcript_layout_lines;
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use crate::app::{ToolCallPresentation, ToolCallPresentationStatus};
 use crate::UnwrapOrAbort;
@@ -71,8 +73,8 @@ use super::ui_transcript_interaction::{
 use super::ui_transcript_layout::measure_transcript_layout;
 use super::ui_transcript_layout::{
     render_transcript_layout_surfaces, transcript_diff_hunk_rows_for_layout,
-    transcript_layout_has_visible_running_tool, transcript_layout_lines, transcript_viewport_rows,
-    MeasuredTranscriptLayout, TranscriptVisualEntry,
+    transcript_layout_has_visible_running_tool, transcript_viewport_rows, MeasuredTranscriptLayout,
+    TranscriptVisualEntry,
 };
 use super::ui_transcript_page_flip::{transcript_scroll_position, TranscriptScrollPosition};
 use super::ui_transcript_scrollbar::transcript_more_below_hit_rect;
@@ -115,9 +117,6 @@ mod ui_transcript_groups;
 #[path = "ui_transcript_entry.rs"]
 pub(in crate::ui) mod ui_transcript_entry;
 
-#[path = "ui_transcript_block_grammar.rs"]
-pub(in crate::ui) mod ui_transcript_block_grammar;
-
 #[path = "ui_transcript_render.rs"]
 mod ui_transcript_render;
 
@@ -142,12 +141,10 @@ mod ui_transcript_sections;
 #[path = "ui_transcript_compaction.rs"]
 mod ui_transcript_compaction;
 
-pub(in crate::ui) use ui_transcript_block_grammar::TranscriptBlockPlacement;
 pub(crate) use ui_transcript_entry::TranscriptVisualEntryId;
 pub(super) use ui_transcript_entry::{
-    IntoResolvedTranscriptVisualEntryDraft, ResolvedTranscriptVisualEntryDraft,
-    TranscriptVisualEntryAccent, TranscriptVisualEntryDisplayMode, TranscriptVisualEntryGroup,
-    TranscriptVisualEntryHitRegion, TranscriptVisualEntryLifecycle, TranscriptVisualEntryMetadata,
+    ResolvedTranscriptVisualEntryDraft, TranscriptVisualEntryDisplayMode,
+    TranscriptVisualEntryHitRegion, TranscriptVisualEntryMetadata,
 };
 use ui_transcript_render::build_transcript_render_surfaces;
 use ui_transcript_sections::{build_transcript_sections, prepare_transcript_sections};
@@ -155,6 +152,7 @@ use ui_transcript_sections::{build_transcript_sections, prepare_transcript_secti
 use ui_transcript_tool_render::append_tool_call_section_lines;
 #[cfg(test)]
 use ui_transcript_tool_sections::{build_tool_call_section, build_transcript_tool_call_section};
+pub(in crate::ui) use ui_transcript_types::TranscriptBlockPlacement;
 pub(crate) use ui_transcript_types::TranscriptRenderSurfaceKind;
 use ui_transcript_types::*;
 pub(super) use ui_transcript_types::{
@@ -974,10 +972,12 @@ fn transcript_selection_rows(
     rows
 }
 
+#[cfg(test)]
 pub(crate) fn build_transcript_lines(app: &AppState, theme: &Theme) -> Vec<Line<'static>> {
     build_transcript_lines_for_width(app, theme, DIFF_SIDE_BY_SIDE_MIN_WIDTH.saturating_sub(1))
 }
 
+#[cfg(test)]
 pub(crate) fn build_transcript_lines_for_width(
     app: &AppState,
     theme: &Theme,
