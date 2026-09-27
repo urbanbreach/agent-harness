@@ -23,7 +23,7 @@ def main():
         parser.error("need positive repetitions/history and at least 100 frames")
     root, output = args.root.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    target = ["--release", "-p", "harness-tui", "--test", "rewrite_performance_test"]
+    target = ["--release", "-p", "harness-tui", "--all-features", "--test", "rewrite_performance_test"]
     # Finish compilation before taking any timing samples.
     metadata = json.loads(subprocess.check_output(
         ["cargo", "nextest", "list", *target, "--message-format", "json"], cwd=root))

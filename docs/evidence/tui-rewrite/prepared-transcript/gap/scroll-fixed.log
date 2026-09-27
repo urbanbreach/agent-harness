@@ -1,0 +1,9 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.81s
+────────────
+ Nextest run ID 30d89491-fd82-4467-8dfa-3aaf3f43b488 with nextest profile: ci
+    Starting 1 test across 1 binary
+        SLOW [>  2.000s] (───) harness-tui::rewrite_scroll_trace_test recorded_single_row_scroll_trace
+────────────
+     Summary [   2.920s] 1 test run: 1 passed (1 slow), 0 skipped
+        SLOW [   2.919s] (1/1) harness-tui::rewrite_scroll_trace_test recorded_single_row_scroll_trace

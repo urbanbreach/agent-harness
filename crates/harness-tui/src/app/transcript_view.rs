@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
-use super::transcript_cache::TranscriptRenderCache;
 use super::transcript_viewport::TranscriptViewport;
 use super::{AppState, TranscriptScrollbarDragState};
 use crate::transcript_scroll::PageFlipState;
@@ -114,7 +113,7 @@ pub(crate) struct TranscriptViewState {
     pub(crate) expanded_tool_groups: BTreeSet<String>,
     pub(crate) collapsed_tool_outputs: BTreeSet<String>,
     pub(crate) expanded_patch_file_outputs: BTreeSet<String>,
-    pub(crate) transcript_cache: TranscriptRenderCache,
+    pub(crate) prepared: crate::ui::PreparedTranscript,
     pub(crate) transcript_animation_phase: usize,
     pub(crate) last_transcript_viewport_height: usize,
     pub(crate) viewport: TranscriptViewport,
@@ -171,7 +170,7 @@ impl Default for TranscriptViewState {
             expanded_tool_groups: BTreeSet::new(),
             collapsed_tool_outputs: BTreeSet::new(),
             expanded_patch_file_outputs: BTreeSet::new(),
-            transcript_cache: TranscriptRenderCache::default(),
+            prepared: crate::ui::PreparedTranscript::default(),
             transcript_animation_phase: 0,
             last_transcript_viewport_height: 0,
             viewport: TranscriptViewport::following(0),

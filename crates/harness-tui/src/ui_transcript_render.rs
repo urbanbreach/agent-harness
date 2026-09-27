@@ -1935,8 +1935,11 @@ mod tests {
                         .collect::<String>()
                 })
                 .collect::<Vec<_>>();
-            let before_selection =
-                super::super::transcript_selection_rows(&before, usize::from(width));
+            let before_selection = super::super::transcript_selection_rows(
+                &before,
+                usize::from(width),
+                &(0..before.total_height).collect(),
+            );
 
             // When: the lifecycle promotes the same diff to full syntax styles.
             let mut after_turn = before_turn.clone();
@@ -1960,8 +1963,11 @@ mod tests {
                         .collect::<String>()
                 })
                 .collect::<Vec<_>>();
-            let after_selection =
-                super::super::transcript_selection_rows(&after, usize::from(width));
+            let after_selection = super::super::transcript_selection_rows(
+                &after,
+                usize::from(width),
+                &(0..after.total_height).collect(),
+            );
             assert_ne!(
                 after.sections[0].surfaces[0].lines,
                 before.sections[0].surfaces[0].lines

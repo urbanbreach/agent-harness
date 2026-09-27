@@ -1,0 +1,327 @@
+{
+  "startup-0": {
+    "metrics": {
+      "p95_us": {
+        "reference": 423,
+        "candidate": 422,
+        "change_percent": -0.24
+      },
+      "p99_us": {
+        "reference": 433,
+        "candidate": 428,
+        "change_percent": -1.15
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.35,
+        "candidate": 0.35,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 12512,
+        "candidate": 12364,
+        "change_percent": -1.18
+      },
+      "cold_us": {
+        "reference": 1174,
+        "candidate": 1093,
+        "change_percent": -6.9
+      },
+      "allocated_bytes": {
+        "reference": 12662899,
+        "candidate": 12656827,
+        "change_percent": -0.05
+      },
+      "peak_heap_bytes": {
+        "reference": 1907453,
+        "candidate": 1907431,
+        "change_percent": -0.0
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "idle-1000": {
+    "metrics": {
+      "p95_us": {
+        "reference": 314,
+        "candidate": 309,
+        "change_percent": -1.59
+      },
+      "p99_us": {
+        "reference": 328,
+        "candidate": 314,
+        "change_percent": -4.27
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.3,
+        "candidate": 0.3,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 48948,
+        "candidate": 44852,
+        "change_percent": -8.37
+      },
+      "cold_us": {
+        "reference": 54273,
+        "candidate": 69352,
+        "change_percent": 27.78
+      },
+      "allocated_bytes": {
+        "reference": 227098713,
+        "candidate": 234773697,
+        "change_percent": 3.38
+      },
+      "peak_heap_bytes": {
+        "reference": 29591149,
+        "candidate": 27816063,
+        "change_percent": -6.0
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "typing-1000": {
+    "metrics": {
+      "p95_us": {
+        "reference": 316,
+        "candidate": 323,
+        "change_percent": 2.22
+      },
+      "p99_us": {
+        "reference": 330,
+        "candidate": 342,
+        "change_percent": 3.64
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.3,
+        "candidate": 0.3,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 48984,
+        "candidate": 44584,
+        "change_percent": -8.98
+      },
+      "cold_us": {
+        "reference": 54163,
+        "candidate": 69239,
+        "change_percent": 27.83
+      },
+      "allocated_bytes": {
+        "reference": 227544011,
+        "candidate": 235277239,
+        "change_percent": 3.4
+      },
+      "peak_heap_bytes": {
+        "reference": 29683617,
+        "candidate": 27906419,
+        "change_percent": -5.99
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "stream-1000": {
+    "metrics": {
+      "p95_us": {
+        "reference": 8827,
+        "candidate": 8764,
+        "change_percent": -0.71
+      },
+      "p99_us": {
+        "reference": 9333,
+        "candidate": 9279,
+        "change_percent": -0.58
+      },
+      "cpu_ms_per_frame": {
+        "reference": 4.75,
+        "candidate": 4.2,
+        "change_percent": -11.58
+      },
+      "rss_kib": {
+        "reference": 51460,
+        "candidate": 46416,
+        "change_percent": -9.8
+      },
+      "cold_us": {
+        "reference": 55627,
+        "candidate": 69347,
+        "change_percent": 24.66
+      },
+      "allocated_bytes": {
+        "reference": 744460862,
+        "candidate": 511276394,
+        "change_percent": -31.32
+      },
+      "peak_heap_bytes": {
+        "reference": 30320745,
+        "candidate": 28569361,
+        "change_percent": -5.78
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "scroll-1000": {
+    "metrics": {
+      "p95_us": {
+        "reference": 381,
+        "candidate": 396,
+        "change_percent": 3.94
+      },
+      "p99_us": {
+        "reference": 389,
+        "candidate": 404,
+        "change_percent": 3.86
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.35,
+        "candidate": 0.4,
+        "change_percent": 14.29
+      },
+      "rss_kib": {
+        "reference": 48884,
+        "candidate": 44840,
+        "change_percent": -8.27
+      },
+      "cold_us": {
+        "reference": 54940,
+        "candidate": 72081,
+        "change_percent": 31.2
+      },
+      "allocated_bytes": {
+        "reference": 226740500,
+        "candidate": 234402680,
+        "change_percent": 3.38
+      },
+      "peak_heap_bytes": {
+        "reference": 29593265,
+        "candidate": 27816053,
+        "change_percent": -6.01
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": [
+          "visible"
+        ]
+      },
+      {
+        "repetition": 2,
+        "different_fields": [
+          "visible"
+        ]
+      },
+      {
+        "repetition": 3,
+        "different_fields": [
+          "visible"
+        ]
+      }
+    ],
+    "explanation": "R8: the extra screen() preparation/paint after timing snaps the reference off its two-row gap. Candidate retains that gap. Timed output byte counts and reachable oldest text match; the separate public scroll trace compares single and repeated preparation."
+  },
+  "resize-1000": {
+    "metrics": {
+      "p95_us": {
+        "reference": 9688,
+        "candidate": 9497,
+        "change_percent": -1.97
+      },
+      "p99_us": {
+        "reference": 9947,
+        "candidate": 9875,
+        "change_percent": -0.72
+      },
+      "cpu_ms_per_frame": {
+        "reference": 5.5,
+        "candidate": 5.6,
+        "change_percent": 1.82
+      },
+      "rss_kib": {
+        "reference": 65760,
+        "candidate": 57072,
+        "change_percent": -13.21
+      },
+      "cold_us": {
+        "reference": 55820,
+        "candidate": 69491,
+        "change_percent": 24.49
+      },
+      "allocated_bytes": {
+        "reference": 670831392,
+        "candidate": 685928608,
+        "change_percent": 2.25
+      },
+      "peak_heap_bytes": {
+        "reference": 40670781,
+        "candidate": 36616695,
+        "change_percent": -9.97
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  }
+}

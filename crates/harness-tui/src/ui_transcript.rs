@@ -1,9 +1,9 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use crate::app::{ToolCallPresentation, ToolCallPresentationStatus};
 use crate::UnwrapOrAbort;
-use std::cell::{Cell, RefCell};
+use std::collections::BTreeSet;
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use super::*;
 
@@ -67,11 +67,12 @@ use super::ui_transcript_interaction::{
     transcript_target_is_hovered, NestedSurfaceChrome, TranscriptInteractionRow,
     TranscriptMouseTarget,
 };
+#[cfg(test)]
+use super::ui_transcript_layout::measure_transcript_layout;
 use super::ui_transcript_layout::{
-    measure_transcript_layout, render_transcript_layout_surfaces,
-    transcript_diff_hunk_rows_for_layout, transcript_layout_has_visible_running_tool,
-    transcript_layout_lines, transcript_viewport_rows, MeasuredTranscriptLayout,
-    TranscriptVisualEntry,
+    render_transcript_layout_surfaces, transcript_diff_hunk_rows_for_layout,
+    transcript_layout_has_visible_running_tool, transcript_layout_lines, transcript_viewport_rows,
+    MeasuredTranscriptLayout, TranscriptVisualEntry,
 };
 use super::ui_transcript_page_flip::{transcript_scroll_position, TranscriptScrollPosition};
 use super::ui_transcript_scrollbar::transcript_more_below_hit_rect;
@@ -82,12 +83,10 @@ use super::ui_transcript_scrollbar::{
     TranscriptScrollbarHit, TranscriptScrollbarRenderSpec,
 };
 use super::ui_transcript_selection::{
-    blank_selection_row, compact_selection_row, lifecycle_selection_snapshot,
-    render_transcript_selection, selection_row_line_text,
-    selection_rows_for_markdownish_text_block, selection_rows_for_rendered_line,
-    transcript_selection_line_rows, with_cached_transcript_selection_snapshot, SelectionRow,
-    TranscriptSelection, TranscriptSelectionCacheKey, TranscriptSelectionCell,
-    TranscriptSelectionRow, TranscriptSelectionSnapshot,
+    blank_selection_row, lifecycle_selection_snapshot, render_transcript_selection,
+    selection_rows_for_markdownish_text_block, selection_rows_for_rendered_line, SelectionRow,
+    TranscriptSelection, TranscriptSelectionCell, TranscriptSelectionRow,
+    TranscriptSelectionSnapshot,
 };
 use super::ui_transcript_style::{
     assistant_footer_label, assistant_primary_label_color, assistant_primary_rail_color,
@@ -102,6 +101,11 @@ use super::ui_transcript_surface::{
     transcript_surface_content_width, transcript_surface_render_width, user_surface_line,
     wrap_surface_spans, TRANSCRIPT_RAIL_GLYPH,
 };
+#[path = "ui_transcript_frame.rs"]
+mod ui_transcript_frame;
+pub(super) use ui_transcript_frame::prepare_width;
+pub(crate) use ui_transcript_frame::PreparedTranscript;
+
 #[path = "ui_transcript_types.rs"]
 mod ui_transcript_types;
 
@@ -146,7 +150,7 @@ pub(super) use ui_transcript_entry::{
     TranscriptVisualEntryHitRegion, TranscriptVisualEntryLifecycle, TranscriptVisualEntryMetadata,
 };
 use ui_transcript_render::build_transcript_render_surfaces;
-use ui_transcript_sections::build_transcript_sections;
+use ui_transcript_sections::{build_transcript_sections, prepare_transcript_sections};
 #[cfg(test)]
 use ui_transcript_tool_render::append_tool_call_section_lines;
 #[cfg(test)]
@@ -161,13 +165,8 @@ pub(super) use ui_transcript_types::{
 #[cfg(test)]
 use super::ui_transcript_surface::{render_transcript_surface_lines, visible_surface_lines};
 
-use super::ui_transcript_layout::MeasuredTranscriptSection;
-
 #[cfg(test)]
-use super::ui_transcript_selection::{
-    reset_transcript_selection_cache_metrics_for_test,
-    transcript_selection_cache_build_count_for_test, TranscriptSelectionDebugSnapshot,
-};
+use super::ui_transcript_selection::TranscriptSelectionDebugSnapshot;
 
 #[cfg(test)]
 use super::ui_tool_delegation::subagent_profile_label;
@@ -176,126 +175,6 @@ use super::ui_transcript_test_helpers::{
     transcript_section_model_test_activity, transcript_section_model_test_tool_call,
     transcript_test_line_texts,
 };
-
-thread_local! {
-    static TRANSCRIPT_LAYOUT_CACHE: RefCell<Vec<TranscriptLayoutCacheEntry>> = const { RefCell::new(Vec::new()) };
-    #[cfg(test)]
-    static TRANSCRIPT_SECTION_RENDER_COUNT: Cell<usize> = const { Cell::new(0) };
-    #[cfg(test)]
-    static TRANSCRIPT_SEMANTIC_BUILD_COUNT: Cell<usize> = const { Cell::new(0) };
-}
-
-#[cfg(test)]
-fn reset_transcript_section_render_count_for_test() {
-    TRANSCRIPT_SECTION_RENDER_COUNT.with(|count| count.set(0));
-}
-
-#[cfg(test)]
-fn transcript_section_render_count_for_test() -> usize {
-    TRANSCRIPT_SECTION_RENDER_COUNT.with(Cell::get)
-}
-
-fn record_transcript_section_render_for_test() {
-    #[cfg(test)]
-    TRANSCRIPT_SECTION_RENDER_COUNT.with(|count| count.set(count.get().saturating_add(1)));
-}
-
-fn cached_measured_section(
-    index: usize,
-    section: &TranscriptTurnSection,
-    previous: Option<&TranscriptLayoutCacheEntry>,
-) -> Option<Rc<MeasuredTranscriptSection>> {
-    let previous = previous?;
-    transcript_section_cache_matches(previous.sections.get(index)?, section)
-        .then(|| previous.layout.sections.get(index).cloned())
-        .flatten()
-}
-
-fn transcript_section_cache_matches(
-    candidate: &TranscriptTurnSection,
-    section: &TranscriptTurnSection,
-) -> bool {
-    candidate.activity_first_seq == section.activity_first_seq
-        && candidate.request_id == section.request_id
-        && candidate.user_message == section.user_message
-        && candidate.motion_enabled == section.motion_enabled
-        && candidate.reasoning_expanded == section.reasoning_expanded
-        && candidate.assistant_part_source_ids == section.assistant_part_source_ids
-        && candidate.show_footer == section.show_footer
-        && candidate.footer_timestamp == section.footer_timestamp
-        && candidate.header == section.header
-        && transcript_assistant_parts_cache_match(
-            &candidate.assistant_parts,
-            &section.assistant_parts,
-        )
-}
-
-fn transcript_tool_call_cache_matches(
-    candidate: &TranscriptToolCallSection,
-    section: &TranscriptToolCallSection,
-) -> bool {
-    candidate.tool_call_id == section.tool_call_id
-        && candidate.coalesced_tool_call_ids == section.coalesced_tool_call_ids
-        && candidate.child_session_id == section.child_session_id
-        && candidate.subagent_background == section.subagent_background
-        && candidate.output_truncated == section.output_truncated
-        && candidate.replay_read_only == section.replay_read_only
-        && candidate.hook_executions == section.hook_executions
-        && candidate.group == section.group
-        && candidate.hovered_target == section.hovered_target
-        && transcript_tool_header_cache_matches(&candidate.header, &section.header)
-        && candidate.detail_blocks == section.detail_blocks
-        && candidate.details_collapsed_by_default == section.details_collapsed_by_default
-        && candidate.details_preview_visible == section.details_preview_visible
-        && candidate.expanded == section.expanded
-        && transcript_tool_rail_motion_cache_matches(candidate.rail_motion, section.rail_motion)
-}
-
-fn transcript_tool_header_cache_matches(
-    candidate: &TranscriptToolCallHeader,
-    section: &TranscriptToolCallHeader,
-) -> bool {
-    candidate.tool_id == section.tool_id
-        && candidate.selected == section.selected
-        && candidate.title == section.title
-        && candidate.subtitle == section.subtitle
-        && candidate.path_metadata == section.path_metadata
-        && (candidate.icon == section.icon
-            || (candidate.presentation.status == ToolCallPresentationStatus::Running
-                && section.presentation.status == ToolCallPresentationStatus::Running))
-        && candidate.presentation == section.presentation
-        && candidate.visual_style == section.visual_style
-        && candidate.struck_out == section.struck_out
-        && candidate.disclosure_state == section.disclosure_state
-}
-
-fn transcript_tool_rail_motion_cache_matches(
-    candidate: ToolRailMotion,
-    section: ToolRailMotion,
-) -> bool {
-    match (candidate, section) {
-        (ToolRailMotion::Running { .. }, ToolRailMotion::Running { .. })
-        | (ToolRailMotion::FinishFlash { .. }, ToolRailMotion::FinishFlash { .. }) => true,
-        _ => candidate == section,
-    }
-}
-
-fn transcript_assistant_parts_cache_match(
-    candidate: &[TranscriptAssistantPart],
-    section: &[TranscriptAssistantPart],
-) -> bool {
-    candidate.len() == section.len()
-        && candidate
-            .iter()
-            .zip(section)
-            .all(|(candidate, section)| match (candidate, section) {
-                (
-                    TranscriptAssistantPart::ToolCall(candidate),
-                    TranscriptAssistantPart::ToolCall(section),
-                ) => transcript_tool_call_cache_matches(candidate, section),
-                _ => candidate == section,
-            })
-}
 
 #[derive(Clone)]
 pub(crate) struct TranscriptNavigationEntry {
@@ -307,8 +186,8 @@ pub(crate) struct TranscriptNavigationEntry {
     pub(crate) top: usize,
     pub(crate) height: usize,
     pub(crate) max_scroll: usize,
-    pub(crate) text: Rc<str>,
-    pub(crate) source_text: Option<Rc<str>>,
+    pub(crate) text: Arc<str>,
+    pub(crate) source_text: Option<Arc<str>>,
 }
 
 pub(crate) fn transcript_navigation_entries(
@@ -361,7 +240,7 @@ pub(crate) fn transcript_navigation_entries(
                                 max_scroll: layout
                                     .total_height
                                     .saturating_sub(usize::from(viewport.height)),
-                                text: Rc::clone(&surface.rendered_text),
+                                text: Arc::clone(&surface.rendered_text),
                                 source_text: surface.source_text.clone(),
                             }
                         })
@@ -852,7 +731,7 @@ fn transcript_scroll_top(
 fn build_transcript_selection_snapshot(
     app: &AppState,
     area: Rect,
-    previous: Option<&TranscriptSelectionSnapshot>,
+    resolved_selection: Option<TranscriptSelection>,
 ) -> Option<TranscriptSelectionSnapshot> {
     let transcript_area = resolved_transcript_area(app, area)?;
     let context = transcript_pane_context(app, transcript_area, app.theme());
@@ -895,19 +774,6 @@ fn build_transcript_selection_snapshot(
         u16::try_from(render_width).unwrap_or(u16::MAX),
         context.base_surface,
         |layout| {
-            let (rows, line_texts, continues_previous) = previous.map_or_else(
-                || {
-                    let (rows, texts, continues) = transcript_selection_rows(layout, render_width);
-                    (Rc::from(rows), Rc::from(texts), Rc::from(continues))
-                },
-                |snapshot| {
-                    (
-                        Rc::clone(&snapshot.rows),
-                        Rc::clone(&snapshot.line_texts),
-                        Rc::clone(&snapshot.continues_previous),
-                    )
-                },
-            );
             let scroll_position = transcript_scroll_position(
                 app.transcript_page_flip_state(),
                 layout,
@@ -921,16 +787,28 @@ fn build_transcript_selection_snapshot(
                 usize::from(selection_viewport.height),
                 scroll_position.top,
             );
+            let visible_rows = (0..usize::from(selection_viewport.height))
+                .map(|row| viewport_rows.absolute_row(row))
+                .collect::<Vec<_>>();
+            let mut requested = visible_rows
+                .iter()
+                .flatten()
+                .copied()
+                .collect::<BTreeSet<_>>();
+            if let Some(selection) = resolved_selection {
+                let last = layout.total_height.saturating_sub(1);
+                requested.extend(
+                    selection.anchor.row.min(selection.focus.row).min(last)
+                        ..=selection.anchor.row.max(selection.focus.row).min(last),
+                );
+            }
             TranscriptSelectionSnapshot {
                 viewport: selection_viewport,
-                visible_rows: (0..usize::from(selection_viewport.height))
-                    .filter_map(|row| viewport_rows.absolute_row(row))
-                    .collect(),
-                rows,
-                line_texts,
-                continues_previous,
+                rows: transcript_selection_rows(layout, render_width, &requested),
+                visible_rows,
+                total_rows: layout.total_height,
                 row_width: render_width,
-                resolved_selection: None,
+                resolved_selection,
             }
         },
     ))
@@ -984,23 +862,9 @@ fn with_transcript_selection_snapshot<R>(
         )
     };
 
-    with_cached_transcript_selection_snapshot(
-        TranscriptSelectionCacheKey {
-            render_width,
-            app_instance_id: app.transcript_cache_instance_id(),
-            render_key: app.transcript_selection_cache_key(),
-            theme,
-            area: transcript_area,
-            follow_mode: app.transcript_following(),
-            transcript_scroll: app.transcript_scroll_offset(),
-        },
-        |previous| build_transcript_selection_snapshot(app, area, previous),
-        |snapshot| {
-            let mut snapshot = snapshot.clone();
-            snapshot.resolved_selection = resolved_selection;
-            render(&snapshot)
-        },
-    )
+    let mut snapshot = build_transcript_selection_snapshot(app, area, resolved_selection)?;
+    snapshot.resolved_selection = resolved_selection;
+    Some(render(&snapshot))
 }
 
 pub(super) fn transcript_hyperlinks(
@@ -1017,7 +881,7 @@ pub(super) fn transcript_hyperlinks(
         let Some(row) = transcript_selection_row_at(layout, absolute_row) else {
             continue;
         };
-        for link in row.links {
+        for link in &row.links {
             let Ok(start_column) = u16::try_from(link.start_cell) else {
                 continue;
             };
@@ -1030,7 +894,7 @@ pub(super) fn transcript_hyperlinks(
                     .saturating_add(u16::try_from(local_row).unwrap_or(u16::MAX)),
                 start_column: viewport.x.saturating_add(start_column),
                 end_column: viewport.x.saturating_add(end_column).min(viewport.right()),
-                destination: link.destination,
+                destination: link.destination.clone(),
             });
         }
     }
@@ -1040,7 +904,7 @@ pub(super) fn transcript_hyperlinks(
 fn transcript_selection_row_at(
     layout: &MeasuredTranscriptLayout,
     absolute_row: usize,
-) -> Option<SelectionRow> {
+) -> Option<&SelectionRow> {
     let section_index = layout
         .sections
         .partition_point(|section| section.top_row <= absolute_row)
@@ -1052,110 +916,61 @@ fn transcript_selection_row_at(
         content_row >= surface.top_offset
             && content_row < surface.top_offset.saturating_add(surface.height)
     })?;
-    let row = surface
+    surface
         .selection_rows
-        .as_ref()?
-        .get(content_row.saturating_sub(surface.top_offset))?;
-    Some(compact_selection_row(row, absolute_row))
+        .get(content_row.saturating_sub(surface.top_offset))
 }
 
 fn transcript_selection_rows(
     layout: &MeasuredTranscriptLayout,
     width: usize,
-) -> (Vec<SelectionRow>, Vec<String>, Vec<bool>) {
+    requested: &BTreeSet<usize>,
+) -> Vec<SelectionRow> {
     if layout.total_height == 0 || width == 0 {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return Vec::new();
     }
-
-    let mut rows: Vec<SelectionRow> = (0..layout.total_height)
-        .map(|line_index| SelectionRow {
+    let mut rows = requested
+        .range(..layout.total_height)
+        .map(|&line_index| SelectionRow {
             line_index,
+            text: " ".repeat(width),
+            continues_previous: false,
             copy_joiner: None,
             start_cell: 1,
             end_cell: 0,
             links: Vec::new(),
         })
-        .collect();
-    let mut line_texts = vec![" ".repeat(width); layout.total_height];
-    let mut continues_previous = vec![false; layout.total_height];
-
-    for section in &layout.sections {
+        .collect::<Vec<_>>();
+    let sections = rows
+        .iter()
+        .filter_map(|row| {
+            layout
+                .sections
+                .partition_point(|section| section.top_row <= row.line_index)
+                .checked_sub(1)
+        })
+        .collect::<BTreeSet<_>>();
+    for index in sections {
+        let section = &layout.sections[index];
         let section_top = section.top_row.saturating_add(section.leading_gap_height);
         for surface in &section.surfaces {
-            let surface_top = section_top.saturating_add(surface.top_offset);
-            for (offset, row) in transcript_surface_selection_rows(surface)
-                .into_iter()
-                .enumerate()
-            {
-                let target = surface_top.saturating_add(offset);
-                if target >= rows.len() {
-                    break;
+            let top = section_top.saturating_add(surface.top_offset);
+            let start = rows.partition_point(|row| row.line_index < top);
+            let end =
+                rows.partition_point(|row| row.line_index < top.saturating_add(surface.height));
+            if start == end {
+                continue;
+            }
+            let content = &surface.selection_rows;
+            for target in &mut rows[start..end] {
+                if let Some(row) = content.get(target.line_index - top) {
+                    let line_index = target.line_index;
+                    *target = row.clone();
+                    target.line_index = line_index;
                 }
-                rows[target] = compact_selection_row(&row, target);
-                line_texts[target] = selection_row_line_text(&row);
-                continues_previous[target] = row.continues_previous;
             }
         }
     }
-
-    (rows, line_texts, continues_previous)
-}
-
-fn transcript_surface_selection_rows(
-    surface: &TranscriptVisualEntry,
-) -> Vec<TranscriptSelectionRow> {
-    if let Some(rows) = surface.selection_rows.clone() {
-        return rows;
-    }
-
-    let surface_width = usize::from(surface.width.max(1));
-    let content_width = usize::from(transcript_surface_content_width(surface.width, false)).max(1);
-    let mut rows = Vec::new();
-
-    for line in &surface.lines {
-        let content_rows = transcript_selection_line_rows(line, content_width);
-        if surface.show_outer_rail {
-            rows.extend(content_rows.into_iter().enumerate().map(|(idx, mut row)| {
-                if let Some(first) = row.first_mut() {
-                    *first = surface.rail_glyph.to_string();
-                }
-                row.truncate(surface_width);
-                row.resize(surface_width, " ".to_string());
-                TranscriptSelectionRow {
-                    cells: row,
-                    continues_previous: idx > 0,
-                    copy_offset: 1,
-                    copy_joiner: None,
-                    links: Vec::new(),
-                }
-            }));
-        } else {
-            rows.extend(content_rows.into_iter().enumerate().map(|(idx, mut row)| {
-                row.truncate(surface_width);
-                if row.len() < surface_width {
-                    row.resize(surface_width, " ".to_string());
-                }
-                TranscriptSelectionRow {
-                    cells: row,
-                    continues_previous: idx > 0,
-                    copy_offset: 0,
-                    copy_joiner: None,
-                    links: Vec::new(),
-                }
-            }));
-        }
-    }
-
-    if rows.is_empty() {
-        rows.push(TranscriptSelectionRow {
-            cells: vec![" ".to_string(); surface_width],
-            continues_previous: false,
-            copy_offset: 0,
-            copy_joiner: None,
-            links: Vec::new(),
-        });
-    }
-
     rows
 }
 
@@ -1207,91 +1022,7 @@ pub(super) fn with_measured_transcript_layout_for_width_on_surface<R>(
     base_surface: Color,
     render: impl FnOnce(&MeasuredTranscriptLayout) -> R,
 ) -> R {
-    let app_instance_id = app.transcript_cache_instance_id();
-    let render_key = app.transcript_render_cache_key();
-
-    TRANSCRIPT_LAYOUT_CACHE.with(|cache| {
-        {
-            let cache = cache.borrow();
-            if let Some(entry) = cache.iter().find(|entry| {
-                entry.app_instance_id == app_instance_id
-                    && entry.render_key == render_key
-                    && entry.theme == *theme
-                    && entry.width == width
-                    && entry.base_surface == base_surface
-            }) {
-                return render(&entry.layout);
-            }
-        }
-
-        let previous_cache = cache.borrow();
-        let sections = previous_cache
-            .iter()
-            .rev()
-            .find(|entry| {
-                entry.app_instance_id == app_instance_id
-                    && entry.render_key == render_key
-                    && entry.theme == *theme
-                    && entry.base_surface == base_surface
-            })
-            .map(|entry| Rc::clone(&entry.sections))
-            .unwrap_or_else(|| Rc::from(build_transcript_sections(app)));
-        let previous = previous_cache.iter().rev().find(|entry| {
-            entry.app_instance_id == app_instance_id
-                && entry.theme == *theme
-                && entry.width == width
-                && entry.base_surface == base_surface
-        });
-        let layout = measure_transcript_layout(
-            &sections,
-            theme,
-            width,
-            base_surface,
-            |section| section.activity_first_seq,
-            |index, section| cached_measured_section(index, section, previous),
-            |section, theme, width, base_surface| {
-                record_transcript_section_render_for_test();
-                build_transcript_render_surfaces(section, theme, width, base_surface)
-            },
-        );
-        drop(previous_cache);
-
-        {
-            let mut cache = cache.borrow_mut();
-            cache.retain(|entry| {
-                entry.app_instance_id != app_instance_id
-                    || entry.theme != *theme
-                    || entry.width != width
-                    || entry.base_surface != base_surface
-            });
-            cache.push(TranscriptLayoutCacheEntry {
-                app_instance_id,
-                render_key,
-                theme: *theme,
-                width,
-                base_surface,
-                sections,
-                layout,
-            });
-            if cache.len() > 4 {
-                let overflow = cache.len().saturating_sub(4);
-                cache.drain(0..overflow);
-            }
-        }
-
-        let cache = cache.borrow();
-        let entry = cache
-            .iter()
-            .find(|entry| {
-                entry.app_instance_id == app_instance_id
-                    && entry.render_key == render_key
-                    && entry.theme == *theme
-                    && entry.width == width
-                    && entry.base_surface == base_surface
-            })
-            .unwrap_or_abort();
-        render(&entry.layout)
-    })
+    ui_transcript_frame::with_layout(app, theme, width, base_surface, render)
 }
 
 pub(crate) fn transcript_scrollbar_hit(
@@ -1588,11 +1319,6 @@ pub(crate) fn transcript_selection_debug_snapshot(
         viewport: snapshot.viewport,
         rows: snapshot.visible_rows(),
     })
-}
-
-#[cfg(test)]
-pub(crate) fn transcript_selection_row_count(app: &AppState, area: Rect) -> Option<usize> {
-    with_transcript_selection_snapshot(app, area, |snapshot| snapshot.rows.len())
 }
 
 #[cfg(test)]

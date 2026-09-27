@@ -156,7 +156,7 @@ mod animation_phase_tests {
     ) -> TranscriptVisualEntry {
         TranscriptVisualEntry {
             source_text: None,
-            rendered_text: std::rc::Rc::from(""),
+            rendered_text: std::sync::Arc::from(""),
             metadata: TranscriptVisualEntryMetadata::settled(
                 0,
                 0,
@@ -187,7 +187,8 @@ mod animation_phase_tests {
                 ),
             ])],
             interaction_rows: None,
-            selection_rows: None,
+            selection_rows: Vec::new(),
+            semantic_selection: false,
             diff_hunk_offsets: Vec::new(),
             selected_rail: false,
             tool_rail_motion: motion,
@@ -202,7 +203,7 @@ mod animation_phase_tests {
         let theme = Theme::default();
         let surface = TranscriptVisualEntry {
             source_text: None,
-            rendered_text: std::rc::Rc::from(""),
+            rendered_text: std::sync::Arc::from(""),
             metadata: TranscriptVisualEntryMetadata::settled(
                 0,
                 0,
@@ -228,7 +229,8 @@ mod animation_phase_tests {
                 ),
             ])],
             interaction_rows: None,
-            selection_rows: None,
+            selection_rows: Vec::new(),
+            semantic_selection: false,
             diff_hunk_offsets: Vec::new(),
             selected_rail: false,
             tool_rail_motion: None,

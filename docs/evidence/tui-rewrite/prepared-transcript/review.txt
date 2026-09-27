@@ -1,0 +1,9 @@
+Independent reviewer: /root/tui_review
+
+Approved to commit this migration slice. No remaining blocking correctness or evidence findings.
+
+The reviewer independently verified source/binary hashes, identical benchmark fixtures, raw performance medians, matching timed byte counts and oldest text, and the final R7 capture: exactly 21 selection-color changes, unchanged text/cursor, natural exit, and complete cleanup. R8 has 537 exact original frames and two precisely derived gap corrections, with frozen goldens unchanged. All 80 fixed scroll trace steps match the reference first paints and are invariant under repeated preparation.
+
+The evidence README accurately states the limits: resource acceptance fails, cold preparation regresses, and source reduction is only 1.9%. Whole-rewrite approval remains open.
+
+No reviewer edits, builds, or test reruns were performed. The parent ran the published checks and captures.

@@ -33,10 +33,12 @@ fn resolve_block_surface_for_activity(
     let source_text = match &spec.content {
         TranscriptBlockContent::UserMessage { text, .. }
         | TranscriptBlockContent::AssistantBody { text, .. }
-        | TranscriptBlockContent::Reasoning { text, .. } => Some(std::rc::Rc::from(text.as_str())),
-        TranscriptBlockContent::Error { message } => Some(std::rc::Rc::from(message.as_str())),
+        | TranscriptBlockContent::Reasoning { text, .. } => {
+            Some(std::sync::Arc::from(text.as_str()))
+        }
+        TranscriptBlockContent::Error { message } => Some(std::sync::Arc::from(message.as_str())),
         TranscriptBlockContent::Compaction { summary, .. } => {
-            Some(std::rc::Rc::from(summary.as_str()))
+            Some(std::sync::Arc::from(summary.as_str()))
         }
         _ => None,
     };

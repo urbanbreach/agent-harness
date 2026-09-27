@@ -46,6 +46,12 @@ pub(crate) fn prepare_transcript(app: &mut AppState, area: Rect) {
     };
     let theme = *app.theme();
     let context = transcript_pane_context(app, area, &theme);
+    super::ui_transcript::prepare_width(
+        app,
+        &theme,
+        context.inner_area.width,
+        context.base_surface,
+    );
     let scrollbar = with_measured_transcript_layout_for_width_on_surface(
         app,
         &theme,
@@ -54,6 +60,7 @@ pub(crate) fn prepare_transcript(app: &mut AppState, area: Rect) {
         |layout| transcript_scrollbar_needed(layout.total_height, context.inner_area),
     );
     let content = transcript_viewport_layout(context.inner_area, scrollbar).content;
+    super::ui_transcript::prepare_width(app, &theme, content.width, context.base_surface);
     let (viewport, anchor, position, height, running, links) =
         with_measured_transcript_layout_for_width_on_surface(
             app,

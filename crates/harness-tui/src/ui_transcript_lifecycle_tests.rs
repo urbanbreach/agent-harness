@@ -272,64 +272,6 @@ fn transcript_wrapping_respects_display_width_for_wide_glyphs() {
 }
 
 #[test]
-fn transcript_selection_snapshot_cache_reuses_repeated_hit_tests() {
-    let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
-        request_id: "req_selection_cache".to_string(),
-        profile_label: "default".to_string(),
-        model_id: "model-1".to_string(),
-        provider_id: "default".to_string(),
-        status: ActivityStatus::Done,
-        user_message: Some(UserMessageSubmittedEvent {
-            request_id: "req_selection_cache".into(),
-            text: "Select this".to_string(),
-        }),
-        user_timestamp: None,
-        request_data: None,
-        thinking_text: String::new(),
-        thinking_first_mono_ms: None,
-        thinking_last_mono_ms: None,
-        transcript_text: "Cache this selection text across repeated hit tests".to_string(),
-        first_delta_mono_ms: None,
-        usage: None,
-        cache_usage: None,
-        error_message: None,
-        permissions: Vec::new(),
-        tool_calls: Vec::new(),
-        first_seq: 1,
-        last_seq: 2,
-        first_mono_ms: 1,
-        last_mono_ms: 2,
-        request_started_mono_ms: None,
-        revision: 0,
-    }]);
-    app.transcript_view.selected_activity_index = 0;
-
-    let area = Rect::new(0, 0, 140, 40);
-    let snapshot = transcript_selection_debug_snapshot(&app, area).unwrap_or_abort();
-    let row = snapshot
-        .rows
-        .iter()
-        .position(|line| line.contains("selection text"))
-        .unwrap_or_abort();
-    let column = snapshot.rows[row].find("selection").unwrap_or_abort();
-
-    reset_transcript_selection_cache_metrics_for_test();
-
-    for offset in 0..6 {
-        assert!(transcript_selection_cell(
-            &app,
-            area,
-            snapshot.viewport.x + u16::try_from(column + offset).unwrap_or_abort(),
-            snapshot.viewport.y + u16::try_from(row).unwrap_or_abort(),
-        )
-        .is_some());
-    }
-
-    assert_eq!(transcript_selection_cache_build_count_for_test(), 1);
-}
-
-#[test]
 fn startup_lifecycle_text_participates_in_selection_copy() {
     let mut app = AppState::new_startup(Vec::new(), None);
     app.set_launch_metadata(

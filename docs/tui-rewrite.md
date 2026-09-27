@@ -120,6 +120,8 @@ before changing the implementation.
 | R4 | Shift-K/J response navigation positions the answer under its sticky header, hiding a short answer and preventing reliable advancement | Fix in the replacement. The selected answer's first line must remain visible and navigation must clamp at both ends. |
 | R5 | Direct `tui --scenario ... --exit-on-finish` preserves the terminal but its CLI route never closes it | Move final preserved-terminal cleanup to the shared CLI exit path. The PTY check first failed on active alternate-screen/paste modes. |
 | R6 | Setup flush failures can leave enabled modes untracked; shutdown can hide the first error or leave synchronized output open after a partial frame | Track completed keyboard pushes before flushing, arm idempotent mode cleanup before setup, end synchronization, and attempt every cleanup while retaining the first error. |
+| R7 | Selection drops the sticky prompt separator from its screen-row map, so a drag below the prompt selects the following source row | Keep an empty slot for the separator. Verify painted highlight placement, release, and copying after the selected text scrolls offscreen. |
+| R8 | A viewport anchor in a blank gap resolves to a neighboring content row. Repainting can move the viewport without input or trap one-row scrolling at that boundary | Preserve the signed gap distance from the content anchor. Require repeated preparation and paint to preserve position, including a width round trip. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -306,9 +308,9 @@ HARNESS_REWRITE_SCENARIO=stream HARNESS_REWRITE_HISTORY=1000 HARNESS_REWRITE_FRA
 
 Raw reports are in [`evidence/tui-rewrite/viewport`](evidence/tui-rewrite/viewport).
 
-This is a state-ownership migration, not completion of the renderer rewrite.
-Whole-history projection, global layout caches, and the original rendering engine
-remain.
+The viewport migration left whole-history projection, global layout caches, and
+the original rendering engine in place. The next transcript change replaces the
+layout and selection caches.
 
 ## Response navigation correction (R4)
 
@@ -341,6 +343,59 @@ cargo nextest run --profile ci -p harness-tui --all-features \
 Raw checks, browser actions, ANSI, cell buffers, screenshots, and hashes are in
 [`evidence/tui-rewrite/response-navigation`](evidence/tui-rewrite/response-navigation).
 The red PTY report is in [`viewport/pty.log`](evidence/tui-rewrite/viewport/pty.log).
+
+## Prepared transcript replacement
+
+`PreparedTranscript` owns semantic sections and measured rows in `AppState`.
+Frame preparation updates the changed activity suffix and retains at most four
+width/surface layouts. Session replacement releases the old layouts. This removes
+the thread-local layout cache, instance IDs, whole-history content hashes, deep
+section comparisons, and selection snapshot cache.
+
+Every measured block now retains compact selection text, cell bounds and links.
+Selection queries collect the visible rows and the explicit selected range;
+dragging no longer copies the whole history or rebuilds long fallback surfaces.
+The R7 check drags below a sticky prompt, checks the highlight after release,
+scrolls the answer offscreen, and copies the selected text. Paired PTY/xterm
+captures reproduce the defect in the reference: before selection, all cells match;
+after release, only the selected 21 cells change foreground and background.
+
+Paired resource measurements exposed R8. A fresh anchor in a blank gap snapped
+to neighboring content on its next resolution. The viewport migration had made
+paint immutable but still allowed its effective top to differ from the committed
+position and prepared links. A signed row bias now preserves the gap. Selection
+anchors keep their existing source-position semantics. The public oracle requires
+repeated frame preparation to preserve interaction state and painted cells; the
+existing Ctrl-Up/Down check crosses section gaps and includes width round trips.
+
+The original 539 recordings remain unchanged. Exactly two require the documented
+R8 correction: `detached-history-40x24` and `detached-append-40x24`. Their transcript
+body retains one blank row above the next prompt. The comparison derives those
+expected cells by moving the original body down one row; chrome, scrollbar,
+colors, cursor, inputs and intents retain their original checks. All other
+recorded frames compare directly. In the separate 80-step public trace, corrected
+frames equal the reference's first paints, and extra preparation produces the
+same trace. The reference stalls at a gap when those extra paints occur.
+
+Validation passes: 1,783 deterministic tests with six skips, seven gated PTY
+checks, scoped all-target/all-feature Clippy, formatting, and test-suite gates.
+The final deterministic run is serial. An earlier parallel run timed out in the
+viewer capture; its log remains published and no timeout was relaxed.
+
+The four-paint selection cycle improves from 11,293 to 1,842 µs p95 against the
+intermediate whole-history selection implementation. The paired original/current
+public runs show 31.3% fewer streaming allocations, but only 9.8%/13.2% lower
+streaming/resize RSS. Tail latency is roughly unchanged, resize allocations rise
+2.3%, and cold preparation rises about 25%. These miss the frozen whole-rewrite
+requirements. All timed output byte counts match. The scrolling report's extra
+post-timing screen preserves the R8 gap; other final screens match directly.
+
+Raw checks, paired screenshots and cells, reproduction fixtures, resource samples,
+and source/binary receipts are in
+[`evidence/tui-rewrite/prepared-transcript`](evidence/tui-rewrite/prepared-transcript).
+The original composite state engine and render-surface builders remain during
+migration. Streaming and resize resource acceptance is still outstanding; this
+slice does not establish completion of the rewrite.
 
 ## Verification sequence
 

@@ -210,45 +210,6 @@ fn provider_finish_settles_every_interleaved_body() {
 }
 
 #[test]
-fn trailing_append_rerenders_only_the_active_turn_section() {
-    let mut app = AppState::new_live(None, false, None);
-    start_turn(&mut app, 1, "req_done", "first turn");
-    delta(&mut app, 3, "req_done", "settled first response");
-    finish_turn(&mut app, 4, "req_done");
-    start_turn(&mut app, 5, "req_live", "second turn");
-    delta(&mut app, 7, "req_live", "streaming response");
-    let theme = Theme::default();
-    let _ = build_measured_transcript_layout_for_width(&app, &theme, 100);
-    reset_transcript_section_render_count_for_test();
-
-    delta(&mut app, 8, "req_live", " grows");
-    let _ = build_measured_transcript_layout_for_width(&app, &theme, 100);
-
-    assert_eq!(transcript_section_render_count_for_test(), 1);
-}
-
-#[test]
-fn animation_tick_reuses_all_measured_turn_sections() {
-    // Given: one settled turn and one active streaming turn in the transcript cache.
-    let mut app = AppState::new_live(None, false, None);
-    start_turn(&mut app, 1, "req_done_tick", "first turn");
-    delta(&mut app, 3, "req_done_tick", "settled first response");
-    finish_turn(&mut app, 4, "req_done_tick");
-    start_turn(&mut app, 5, "req_live_tick", "second turn");
-    delta(&mut app, 7, "req_live_tick", "streaming response");
-    let theme = Theme::default();
-    let _ = build_measured_transcript_layout_for_width(&app, &theme, 100);
-    reset_transcript_section_render_count_for_test();
-
-    // When: only the active animation phase advances.
-    app.advance_animation_tick();
-    let _ = build_measured_transcript_layout_for_width(&app, &theme, 100);
-
-    // Then: animation paint state reuses both settled and active measured sections.
-    assert_eq!(transcript_section_render_count_for_test(), 0);
-}
-
-#[test]
 fn answer_phase_collapses_reasoning_expanded_while_running() {
     // Given: a running reasoning trace that the user deliberately expanded.
     let request_id = "req_reasoning_disclosure";

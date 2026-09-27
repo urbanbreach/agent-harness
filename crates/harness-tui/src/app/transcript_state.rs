@@ -15,8 +15,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use super::session_projection::ProjectionDelta;
-#[cfg(test)]
-use super::transcript_cache::TranscriptRenderCache;
 use super::transcript_viewport::TranscriptViewport;
 use super::*;
 
@@ -70,6 +68,15 @@ impl AppState {
 
     pub(crate) fn sync_transcript_integration(&mut self, animate_tool_transitions: bool) {
         let projection_delta = self.projection.take_transcript_delta();
+        match projection_delta {
+            ProjectionDelta::Activity { index } => {
+                self.transcript_view.prepared.invalidate_from(index)
+            }
+            ProjectionDelta::None => self.transcript_view.prepared.invalidate_from(usize::MAX),
+            ProjectionDelta::FullRebuild | ProjectionDelta::ReplayPending => {
+                self.transcript_view.prepared.invalidate_from(0)
+            }
+        }
         let now = self.now();
         let running_tool_ids = self
             .activities
@@ -354,75 +361,16 @@ impl AppState {
         self.transcript_view.hovered_transcript_target.as_ref()
     }
 
-    pub(crate) fn transcript_cache_instance_id(&self) -> u64 {
-        self.transcript_view.transcript_cache.instance_id()
-    }
-
     pub(crate) fn transcript_render_cache_key(&self) -> u64 {
-        let stamp = self.transcript_render_cache_stamp();
-        self.transcript_view
-            .transcript_cache
-            .cache_key(stamp, || self.compute_transcript_render_cache_key())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn transcript_measure_cache_key(&self) -> u64 {
-        let stamp = self.transcript_measure_cache_stamp();
-        self.transcript_view
-            .transcript_cache
-            .cache_key(stamp, || self.compute_transcript_measure_cache_key())
-    }
-
-    pub(crate) fn transcript_selection_cache_key(&self) -> u64 {
-        let stamp = self.transcript_measure_cache_stamp();
-        self.transcript_view
-            .transcript_cache
-            .selection_cache_key(stamp, || self.compute_transcript_measure_cache_key())
-    }
-
-    fn transcript_render_cache_stamp(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
-
         self.hash_transcript_render_settings(&mut hasher);
-
+        self.transcript_view.prepared.epoch().hash(&mut hasher);
         hasher.finish()
     }
 
-    fn transcript_measure_cache_stamp(&self) -> u64 {
+    pub(crate) fn transcript_settings_key(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
-
-        self.hash_transcript_measure_settings(&mut hasher);
-
-        hasher.finish()
-    }
-
-    fn compute_transcript_render_cache_key(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-
         self.hash_transcript_render_settings(&mut hasher);
-        self.hash_transcript_content(&mut hasher);
-        self.hash_transcript_render_expansions(&mut hasher);
-
-        for (permission_id, summary) in self.transcript_pending_permissions() {
-            permission_id.hash(&mut hasher);
-            summary.hash(&mut hasher);
-        }
-
-        hasher.finish()
-    }
-
-    fn compute_transcript_measure_cache_key(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-
-        self.hash_transcript_measure_settings(&mut hasher);
-        self.hash_transcript_content(&mut hasher);
-        self.hash_transcript_render_expansions(&mut hasher);
-
-        for (permission_id, summary) in self.transcript_pending_permissions() {
-            permission_id.hash(&mut hasher);
-            summary.hash(&mut hasher);
-        }
-
         hasher.finish()
     }
 
@@ -441,125 +389,8 @@ impl AppState {
         self.transcript_view.show_generic_tool_output.hash(hasher);
         self.transcript_view.stacked_transcript_diffs.hash(hasher);
         self.transcript_view.hovered_transcript_target.hash(hasher);
-        self.transcript_view.transcript_cache.epoch().hash(hasher);
         self.active_profile().hash(hasher);
         self.session_path.hash(hasher);
-    }
-
-    fn hash_transcript_measure_settings(&self, hasher: &mut impl Hasher) {
-        self.replay_mode.hash(hasher);
-        self.transcript_view.selected_activity_index.hash(hasher);
-        self.transcript_view.show_transcript_thinking.hash(hasher);
-        self.transcript_view.show_transcript_timestamps.hash(hasher);
-        self.transcript_view.show_tool_details.hash(hasher);
-        self.transcript_view
-            .compaction_details_expanded
-            .hash(hasher);
-        self.transcript_view.show_generic_tool_output.hash(hasher);
-        self.transcript_view.stacked_transcript_diffs.hash(hasher);
-        self.transcript_view.transcript_cache.epoch().hash(hasher);
-        self.active_profile().hash(hasher);
-        self.session_path.hash(hasher);
-    }
-
-    fn hash_transcript_content(&self, hasher: &mut impl Hasher) {
-        for activity in &self.activities {
-            activity.request_id.hash(hasher);
-            activity.profile_label.hash(hasher);
-            activity.model_id.hash(hasher);
-            activity.provider_id.hash(hasher);
-            activity.status.hash(hasher);
-            activity.user_timestamp.hash(hasher);
-            activity.thinking_text.hash(hasher);
-            activity.transcript_text.hash(hasher);
-            activity.error_message.hash(hasher);
-            activity.first_seq.hash(hasher);
-            activity.last_seq.hash(hasher);
-            activity.revision.hash(hasher);
-
-            if let Some(user_message) = activity.user_message.as_ref() {
-                user_message.request_id.hash(hasher);
-                user_message.text.hash(hasher);
-            }
-
-            for permission in &activity.permissions {
-                permission.permission_id.hash(hasher);
-                permission.kind.hash(hasher);
-                permission.tool_call_id.hash(hasher);
-                permission.summary.hash(hasher);
-                permission.request_digest.hash(hasher);
-                permission.timeout_ms.hash(hasher);
-                std::mem::discriminant(&permission.default_decision).hash(hasher);
-                permission.resolution_reason.hash(hasher);
-                permission.first_seq.hash(hasher);
-                permission.last_seq.hash(hasher);
-            }
-
-            for tool_call in &activity.tool_calls {
-                tool_call.tool_call_id.hash(hasher);
-                tool_call.tool_id.hash(hasher);
-                tool_call.canonical_tool_id.hash(hasher);
-                tool_call.alias_source_tool_id.hash(hasher);
-                tool_call.args_digest.hash(hasher);
-                tool_call.output_digest.hash(hasher);
-                tool_call.output_summary.hash(hasher);
-                tool_call.first_seq.hash(hasher);
-                tool_call.last_seq.hash(hasher);
-                std::mem::discriminant(&tool_call.status).hash(hasher);
-
-                if let Some(edit) = tool_call.edit.as_ref() {
-                    edit.edit_id.hash(hasher);
-                    edit.path.hash(hasher);
-                    std::mem::discriminant(&edit.status).hash(hasher);
-                    edit.summary.hash(hasher);
-                    edit.patch_digest.hash(hasher);
-                    edit.new_file_digest.hash(hasher);
-                    edit.diff_rel_path.hash(hasher);
-                    edit.diff_digest.hash(hasher);
-                    edit.rejection_reason.hash(hasher);
-                }
-
-                for artifact in &tool_call.artifact_refs {
-                    artifact.path.hash(hasher);
-                    artifact.digest.hash(hasher);
-                }
-            }
-        }
-    }
-
-    fn hash_transcript_render_expansions(&self, hasher: &mut impl Hasher) {
-        #[cfg(test)]
-        TranscriptRenderCache::note_expansion_hash_for_test();
-
-        for request_id in &self.transcript_view.expanded_reasoning_requests {
-            request_id.hash(hasher);
-        }
-        for tool_call_id in &self.transcript_view.expanded_tool_outputs {
-            tool_call_id.hash(hasher);
-        }
-        self.transcript_view.expanded_tool_groups.hash(hasher);
-        self.transcript_view.previewed_tool_outputs.hash(hasher);
-        for tool_call_id in &self.transcript_view.collapsed_tool_outputs {
-            tool_call_id.hash(hasher);
-        }
-        for file_key in &self.transcript_view.expanded_patch_file_outputs {
-            file_key.hash(hasher);
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn reset_transcript_render_key_metrics_for_test() {
-        TranscriptRenderCache::reset_build_metrics_for_test();
-    }
-
-    #[cfg(test)]
-    pub(crate) fn transcript_render_key_build_count_for_test() -> usize {
-        TranscriptRenderCache::build_count_for_test()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn transcript_render_expansion_hash_count_for_test() -> usize {
-        TranscriptRenderCache::expansion_hash_count_for_test()
     }
 
     pub(crate) fn advance_transcript_animation_phase(&mut self) {
@@ -650,7 +481,7 @@ impl AppState {
     }
 
     pub(in crate::app) fn bump_transcript_render_epoch(&mut self) {
-        self.transcript_view.transcript_cache.bump_epoch();
+        self.transcript_view.prepared.invalidate_from(0);
     }
 
     pub(crate) fn tool_details_visible(&self) -> bool {

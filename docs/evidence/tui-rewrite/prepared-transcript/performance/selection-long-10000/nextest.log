@@ -1,0 +1,16 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.22s
+────────────
+ Nextest run ID 7cb1fef0-76ad-44bc-8f14-c1eb24689be4 with nextest profile: perf
+    Starting 1 test across 1 binary (1334 tests skipped)
+        PASS [   0.345s] (1/1) harness-tui app::tests::resize_performance_tests::perf_interactive_resources_under_load
+  stdout ───
+
+    running 1 test
+    {"benchmark":"interactive_resources","bytes_submitted":10200,"cold_us":160480,"columns":160,"cpu_ticks":15,"frames":100,"history":1,"long_surface_lines":10000,"p50_us":1439,"p95_us":1450,"p99_us":1472,"paints_per_sample":4,"peak_rss_kib":61920,"rows":48,"rss_after_kib":61920,"rss_before_kib":61920,"samples_us":[1480,1445,1446,1444,1445,1440,1447,1445,1438,1452,1436,1441,1433,1444,1430,1434,1436,1429,1442,1432,1441,1443,1432,1435,1434,1449,1442,1439,1428,1445,1433,1435,1442,1436,1433,1440,1439,1435,1440,1450,1436,1445,1432,1436,1433,1443,1442,1430,1432,1432,1439,1432,1446,1444,1441,1436,1438,1441,1435,1443,1437,1442,1440,1441,1439,1442,1472,1444,1451,1421,1447,1436,1437,1440,1430,1446,1430,1454,1435,1437,1437,1445,1434,1439,1432,1439,1436,1439,1440,1432,1433,1441,1444,1438,1434,1444,1435,1435,1438,1439],"scenario":"selection-long","wall_us":143992}
+    test app::tests::resize_performance_tests::perf_interactive_resources_under_load ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1334 filtered out; finished in 0.34s
+
+
+────────────
+     Summary [   0.350s] 1 test run: 1 passed, 1334 skipped

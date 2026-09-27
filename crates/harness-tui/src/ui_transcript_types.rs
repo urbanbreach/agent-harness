@@ -15,17 +15,6 @@ pub(super) struct TranscriptToolCardShell {
 pub(super) const THINKING_TRACE_LABEL: &str = "Thinking:";
 
 #[derive(Debug, Clone)]
-pub(super) struct TranscriptLayoutCacheEntry {
-    pub(super) app_instance_id: u64,
-    pub(super) render_key: u64,
-    pub(super) theme: Theme,
-    pub(super) width: u16,
-    pub(super) base_surface: Color,
-    pub(super) sections: Rc<[TranscriptTurnSection]>,
-    pub(super) layout: MeasuredTranscriptLayout,
-}
-
-#[derive(Debug, Clone)]
 pub(in crate::ui) struct TranscriptVisualEntryDraft {
     pub(in crate::ui) kind: TranscriptRenderSurfaceKind,
     pub(in crate::ui) leading_gap_rows: usize,

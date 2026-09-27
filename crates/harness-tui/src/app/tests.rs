@@ -8,10 +8,9 @@ use crate::layout::FrameLayoutPlan;
 use crate::overlay::OverlayKind;
 use crate::theme::Theme;
 use crate::ui::{
-    render_app, reset_transcript_selection_cache_metrics_for_test, subagent_footer_target_at,
-    transcript_mouse_target, transcript_selection_cache_build_count_for_test,
-    transcript_selection_cell, transcript_selection_debug_snapshot, SubagentFooterTarget,
-    TranscriptMouseTarget, TranscriptScrollbarHit, WheelTarget,
+    render_app, subagent_footer_target_at, transcript_mouse_target, transcript_selection_cell,
+    transcript_selection_debug_snapshot, SubagentFooterTarget, TranscriptMouseTarget,
+    TranscriptScrollbarHit, WheelTarget,
 };
 use crate::UnwrapOrAbort;
 use crossterm::event::{MouseButton, MouseEvent};
@@ -1243,13 +1242,8 @@ delegate_test!(disabled_copy_on_select_supports_ctrl_c_and_escape => transcript_
 delegate_test!(expanded_edit_ctrl_c_copies_canonical_unified_patches => transcript_selection_tests::expanded_edit_ctrl_c_copies_canonical_unified_patches);
 #[cfg(not(windows))]
 delegate_test!(mouse_drag_copy_on_select_keeps_body_rows_aligned_after_reasoning_gap => transcript_selection_tests::mouse_drag_copy_on_select_keeps_body_rows_aligned_after_reasoning_gap);
-delegate_test!(transcript_selection_hit_testing_reuses_cached_snapshot_during_drag => transcript_selection_tests::transcript_selection_hit_testing_reuses_cached_snapshot_during_drag);
 delegate_test!(transcript_selection_snapshot_preserves_user_card_marker => transcript_selection_tests::transcript_selection_snapshot_preserves_user_card_marker);
-delegate_test!(mouse_wheel_does_not_build_transcript_selection_snapshot => transcript_selection_tests::mouse_wheel_does_not_build_transcript_selection_snapshot);
-delegate_test!(transcript_selection_render_reuses_cached_snapshot => transcript_selection_tests::transcript_selection_render_reuses_cached_snapshot);
 delegate_test!(transcript_selection_render_stays_aligned_after_large_reasoning_block => transcript_selection_tests::transcript_selection_render_stays_aligned_after_large_reasoning_block);
-delegate_test!(transcript_render_key_is_cached_across_selection_drag_path => transcript_selection_tests::transcript_render_key_is_cached_across_selection_drag_path);
-delegate_test!(transcript_render_key_reuses_cache_until_marked_dirty => transcript_selection_tests::transcript_render_key_reuses_cache_until_marked_dirty);
 
 delegate_test!(historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit => lifecycle_shell_part2_test::historical_task_completed_marks_turn_done_and_unblocks_first_resumed_submit);
 

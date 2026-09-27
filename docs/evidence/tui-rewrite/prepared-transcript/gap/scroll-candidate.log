@@ -1,0 +1,14 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.44s
+────────────
+ Nextest run ID 9373365b-7fe2-4921-894c-d14e73ef5b60 with nextest profile: ci
+    Starting 1 test across 1 binary
+        SLOW [>  2.000s] (───) harness-tui::rewrite_scroll_trace_test recorded_single_row_scroll_trace
+        SLOW [>  4.000s] (───) harness-tui::rewrite_scroll_trace_test recorded_single_row_scroll_trace
+        SLOW [>  6.000s] (───) harness-tui::rewrite_scroll_trace_test recorded_single_row_scroll_trace
+────────────
+     Summary [   7.482s] 1 test run: 1 passed (1 slow), 0 skipped
+        SLOW [   7.481s] (1/1) harness-tui::rewrite_scroll_trace_test recorded_single_row_scroll_trace
