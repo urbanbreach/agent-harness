@@ -656,7 +656,7 @@ fn plan_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {
         ModalViewKey::Primary
     };
     let count = if view == ModalViewKey::Primary {
-        app.plan_view_rows().len()
+        app.plan_entries.len()
     } else {
         0
     };

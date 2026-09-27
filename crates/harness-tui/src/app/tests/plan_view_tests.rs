@@ -1,50 +1,6 @@
 use super::*;
 use crate::keybindings::palette_model::{PaletteDispatch, PALETTE_COMMAND_ENTRIES};
-
-pub(super) fn plan_view_opens_from_action() {
-    // Given
-    let mut app = AppState::new_live(None, false, None);
-
-    // When
-    app.execute_action(Action::OpenViewPlan);
-
-    // Then
-    assert!(app.plan_view_is_visible());
-    assert_eq!(app.overlay_stack().top(), Some(OverlayKind::PlanView));
-}
-
-pub(super) fn plan_view_closes_on_esc() {
-    // Given
-    let mut app = AppState::new_live(None, false, None);
-    app.execute_action(Action::OpenViewPlan);
-    assert!(app.plan_view_is_visible());
-
-    // When
-    app.handle_key(key(KeyCode::Esc));
-
-    // Then
-    assert!(!app.plan_view_is_visible());
-    assert_ne!(app.overlay_stack().top(), Some(OverlayKind::PlanView));
-}
-
-pub(super) fn context_view_plan_palette_dispatch_opens_plan_view() {
-    // Given
-    let mut app = AppState::new_live(None, false, None);
-    let entry = PALETTE_COMMAND_ENTRIES
-        .iter()
-        .find(|e| e.id == "context.view_plan")
-        .expect("context.view_plan entry");
-    assert_eq!(
-        entry.dispatch,
-        PaletteDispatch::Action(Action::OpenViewPlan)
-    );
-
-    // When
-    app.execute_action(Action::OpenViewPlan);
-
-    // Then
-    assert!(app.plan_view_is_visible());
-}
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub(super) fn session_feedback_maps_to_help_action() {
     let entry = PALETTE_COMMAND_ENTRIES
@@ -55,7 +11,6 @@ pub(super) fn session_feedback_maps_to_help_action() {
 }
 
 pub(super) fn plan_view_enter_opens_existing_plan_preview() {
-    // Given: workspace with a plan file and open plan view
     let dir = std::env::temp_dir().join(format!(
         "harness-tui-plan-{}-{}",
         "preview",
@@ -72,7 +27,6 @@ pub(super) fn plan_view_enter_opens_existing_plan_preview() {
     assert!(app.plan_view_is_visible());
     assert!(app.plan_view_preview().is_none());
 
-    // When: select existing plan and Enter
     let rows = app.plan_view_rows();
     let demo_index = rows
         .iter()
@@ -81,17 +35,14 @@ pub(super) fn plan_view_enter_opens_existing_plan_preview() {
     app.plan_view_selected = demo_index;
     app.handle_key(key(KeyCode::Enter));
 
-    // Then: preview loaded
     let preview = app.plan_view_preview().expect("preview");
     assert!(preview.contains("Demo plan"));
     assert!(preview.contains("step one"));
 
-    // When: Esc from preview returns to list
     app.handle_key(key(KeyCode::Esc));
     assert!(app.plan_view_is_visible());
     assert!(app.plan_view_preview().is_none());
 
-    // When: 'y' copies absolute plan path to clipboard (OSC52/native) and banners it
     let copied = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     let copied_hook = std::sync::Arc::clone(&copied);
     crate::clipboard::set_copy_override(Some(Box::new(move |text| {
@@ -117,7 +68,6 @@ pub(super) fn plan_view_enter_opens_existing_plan_preview() {
 }
 
 pub(super) fn plan_view_y_key_reports_clipboard_failure_without_dropping_path_banner() {
-    // Given: workspace with a plan file and open plan view
     let dir = std::env::temp_dir().join(format!(
         "harness-tui-plan-{}-{}",
         "copy-fail",
@@ -138,7 +88,6 @@ pub(super) fn plan_view_y_key_reports_clipboard_failure_without_dropping_path_ba
         .expect("demo plan row");
     app.plan_view_selected = demo_index;
 
-    // When: clipboard integration fails
     crate::clipboard::set_copy_override(Some(Box::new(|_| {
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -148,7 +97,6 @@ pub(super) fn plan_view_y_key_reports_clipboard_failure_without_dropping_path_ba
     app.handle_key(key(KeyCode::Char('y')));
     crate::clipboard::set_copy_override(None);
 
-    // Then: path banner still surfaces absolute path; toast reports failure
     let banner = app.status_banner.as_deref().expect("path banner");
     assert!(banner.contains("plan path:"));
     assert!(banner.contains("demo.md"));
@@ -157,7 +105,6 @@ pub(super) fn plan_view_y_key_reports_clipboard_failure_without_dropping_path_ba
 }
 
 pub(super) fn plan_view_empty_state_enter_toasts_guidance() {
-    // Given: workspace with no plan files
     let dir = std::env::temp_dir().join(format!(
         "harness-tui-plan-{}-{}",
         "empty",
@@ -171,10 +118,8 @@ pub(super) fn plan_view_empty_state_enter_toasts_guidance() {
     app.execute_action(Action::OpenViewPlan);
     assert!(app.plan_view_rows().is_empty());
 
-    // When: Enter with empty list
     app.handle_key(key(KeyCode::Enter));
 
-    // Then: guidance toast, still open, no preview
     assert!(app.plan_view_is_visible());
     assert!(app.plan_view_preview().is_none());
 
@@ -182,7 +127,6 @@ pub(super) fn plan_view_empty_state_enter_toasts_guidance() {
 }
 
 pub(super) fn plan_view_summary_counts_existing_and_preview() {
-    // Given: workspace with one existing plan
     let dir = std::env::temp_dir().join(format!(
         "harness-tui-plan-{}-{}",
         "summary",
@@ -197,7 +141,6 @@ pub(super) fn plan_view_summary_counts_existing_and_preview() {
     app.file_mention_workspace_root = Some(dir.clone());
     app.execute_action(Action::OpenViewPlan);
 
-    // When: summarizing closed list
     let summary = app.plan_view_summary();
     assert!(summary.total >= 1);
     assert!(summary.existing >= 1);
@@ -210,7 +153,6 @@ pub(super) fn plan_view_summary_counts_existing_and_preview() {
     assert!(summary.overlay_line().contains("existing"));
     assert!(!summary.overlay_line().contains("preview open"));
 
-    // When: opening preview
     let demo_index = app
         .plan_view_rows()
         .iter()
@@ -219,7 +161,6 @@ pub(super) fn plan_view_summary_counts_existing_and_preview() {
     app.plan_view_selected = demo_index;
     app.plan_view_open_selected();
 
-    // Then: preview flag flips open and overlay subtitle reflects it
     let open = app.plan_view_summary();
     assert!(open.preview_open);
     assert!(open.one_line().contains("preview=open"));
@@ -230,7 +171,6 @@ pub(super) fn plan_view_summary_counts_existing_and_preview() {
 }
 
 pub(super) fn plan_view_c_key_copies_plan_body() {
-    // Given: workspace with a plan file and open plan view
     let dir = std::env::temp_dir().join(format!(
         "harness-tui-plan-{}-{}",
         "copy-body",
@@ -252,7 +192,6 @@ pub(super) fn plan_view_c_key_copies_plan_body() {
         .expect("demo plan row");
     app.plan_view_selected = demo_index;
 
-    // When: clipboard captures body via 'c'
     let captured = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     let captured_for_copy = std::sync::Arc::clone(&captured);
     crate::clipboard::set_copy_override(Some(Box::new(move |text: &str| {
@@ -262,7 +201,6 @@ pub(super) fn plan_view_c_key_copies_plan_body() {
     app.handle_key(key(KeyCode::Char('c')));
     crate::clipboard::set_copy_override(None);
 
-    // Then: body banner + clipboard content match file
     let banner = app.status_banner.as_deref().expect("body banner");
     assert!(banner.contains("plan body:"));
     assert!(banner.contains("demo"));
@@ -278,7 +216,6 @@ pub(super) fn plan_view_c_key_copies_plan_body() {
 }
 
 pub(super) fn plan_view_c_key_reports_clipboard_failure_for_body() {
-    // Given: workspace with a plan file and open plan view
     let dir = std::env::temp_dir().join(format!(
         "harness-tui-plan-{}-{}",
         "copy-body-fail",
@@ -299,7 +236,6 @@ pub(super) fn plan_view_c_key_reports_clipboard_failure_for_body() {
         .expect("demo plan row");
     app.plan_view_selected = demo_index;
 
-    // When: clipboard integration fails on body copy
     crate::clipboard::set_copy_override(Some(Box::new(|_| {
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -309,7 +245,6 @@ pub(super) fn plan_view_c_key_reports_clipboard_failure_for_body() {
     app.handle_key(key(KeyCode::Char('c')));
     crate::clipboard::set_copy_override(None);
 
-    // Then: body banner still surfaces slug/char count honesty
     let banner = app.status_banner.as_deref().expect("body banner");
     assert!(banner.contains("plan body:"));
     assert!(banner.contains("demo"));
@@ -318,7 +253,6 @@ pub(super) fn plan_view_c_key_reports_clipboard_failure_for_body() {
 }
 
 pub(super) fn plan_view_d_key_deletes_selected_plan() {
-    // Given: workspace with a plan file and open plan view
     let dir = std::env::temp_dir().join(format!(
         "harness-tui-plan-{}-{}",
         "delete",
@@ -341,10 +275,8 @@ pub(super) fn plan_view_d_key_deletes_selected_plan() {
     app.plan_view_selected = demo_index;
     assert!(plan_path.is_file());
 
-    // When: delete selected plan via 'd'
     app.handle_key(key(KeyCode::Char('d')));
 
-    // Then: file gone, banner set, list no longer includes demo
     assert!(!plan_path.is_file(), "plan file should be deleted");
     let banner = app.status_banner.as_deref().expect("delete banner");
     assert!(banner.contains("plan deleted:"));
@@ -361,7 +293,6 @@ pub(super) fn plan_view_d_key_deletes_selected_plan() {
 }
 
 pub(super) fn plan_view_d_key_toasts_when_no_plans() {
-    // Given: empty workspace plan list
     let dir = std::env::temp_dir().join(format!(
         "harness-tui-plan-{}-{}",
         "delete-empty",
@@ -375,17 +306,14 @@ pub(super) fn plan_view_d_key_toasts_when_no_plans() {
     app.execute_action(Action::OpenViewPlan);
     assert!(app.plan_view_rows().is_empty() || app.plan_view_rows().iter().all(|r| !r.exists));
 
-    // When
     app.handle_key(key(KeyCode::Char('d')));
 
-    // Then: still open, no crash; toast path exercised via delete method
     assert!(app.plan_view_is_visible());
 
     let _ = fs::remove_dir_all(&dir);
 }
 
 pub(super) fn plan_view_multi_plan_open_select_activate_product_path() {
-    // Given: multi-plan workspace + active-run plan bound via RunFinished
     let dir = std::env::temp_dir().join(format!(
         "harness-tui-plan-{}-{}",
         "multi-activate",
@@ -408,7 +336,13 @@ pub(super) fn plan_view_multi_plan_open_select_activate_product_path() {
     .expect("active");
 
     let mut app = AppState::new_live(None, false, None);
-    app.file_mention_workspace_root = Some(dir.clone());
+    let reads = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&reads);
+    let workspace = dir.clone();
+    app.file_mention_workspace_root_provider = Arc::new(move || {
+        counted.fetch_add(1, Ordering::Relaxed);
+        Some(workspace.clone())
+    });
     let mut active_run = envelope(
         1,
         "plan-activate",
@@ -421,12 +355,17 @@ pub(super) fn plan_view_multi_plan_open_select_activate_product_path() {
     app.ingest_historical_event(active_run);
     assert_eq!(app.run_id(), Some("harness-probe-run"));
 
-    // When: open plan view
-    app.execute_action(Action::OpenViewPlan);
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('p'),
+        KeyModifiers::CONTROL,
+    ));
+    for ch in "View Plan".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
     assert!(app.plan_view_is_visible());
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::PlanView));
 
-    // Then: multi-plan rows + active binding from real FS
     let summary = app.plan_view_summary();
     assert!(summary.total >= 4, "summary={summary:?}");
     assert!(summary.existing >= 4, "summary={summary:?}");
@@ -434,15 +373,12 @@ pub(super) fn plan_view_multi_plan_open_select_activate_product_path() {
     assert!(summary.total_bytes > 0);
     assert!(summary.has_plans());
     let rows = app.plan_view_rows();
-    assert!(
-        rows.iter()
-            .any(|row| row.slug == "harness-probe-run" && row.is_active && row.exists),
-        "expected active-run plan row: {rows:?}"
+    assert_eq!(
+        rows.iter().map(|row| row.slug.as_str()).collect::<Vec<_>>(),
+        ["harness-probe-run", "alt", "ops", "primary"]
     );
-    assert!(rows.iter().any(|row| row.slug == "primary" && row.exists));
-    assert!(rows.iter().any(|row| row.slug == "alt" && row.exists));
+    assert!(rows[0].is_active);
 
-    // When: select primary and activate (Enter opens preview from FS)
     let primary_index = rows
         .iter()
         .position(|row| row.slug == "primary" && row.exists)
@@ -454,12 +390,12 @@ pub(super) fn plan_view_multi_plan_open_select_activate_product_path() {
     assert!(preview.contains("primary step"));
     assert!(app.plan_view_summary().preview_open);
 
-    exercise_plan_preview_navigation(&mut app);
+    exercise_plan_preview_navigation(&mut app, &plans, &reads);
+
     let _ = fs::remove_dir_all(&dir);
 }
 
-fn exercise_plan_preview_navigation(app: &mut AppState) {
-    // When: Esc closes preview, navigate to active plan, activate again
+fn exercise_plan_preview_navigation(app: &mut AppState, plans: &Path, reads: &AtomicUsize) {
     app.handle_key(key(KeyCode::Esc));
     assert!(app.plan_view_is_visible());
     assert!(app.plan_view_preview().is_none());
@@ -474,7 +410,6 @@ fn exercise_plan_preview_navigation(app: &mut AppState) {
     assert!(active_preview.contains("Active run plan"));
     assert!(active_preview.contains("active step"));
 
-    // When: navigate down/up while list open (selection product path)
     app.handle_key(key(KeyCode::Esc));
     let before = app.plan_view_selected_index();
     app.handle_key(key(KeyCode::Down));
@@ -484,10 +419,31 @@ fn exercise_plan_preview_navigation(app: &mut AppState) {
     }
     app.handle_key(key(KeyCode::Up));
     assert_eq!(app.plan_view_selected_index(), before.min(after_down));
+
+    // A frame uses one prepared directory snapshot even if files change mid-paint.
+    app.freeze_animation_clock();
+    app.set_frame_area(Rect::new(0, 0, 80, 24));
+    let prepared = render_debug(app, 80, 24);
+    fs::write(plans.join("new.md"), "# Added between frames\n").expect("new plan");
+    assert!(app.plan_view_rows().iter().any(|row| row.slug == "new"));
+    assert_eq!(render_debug(app, 80, 24), prepared);
+    app.set_frame_area(Rect::new(0, 0, 80, 24));
+    assert_ne!(render_debug(app, 80, 24), prepared);
+    app.handle_key(key(KeyCode::Esc));
+    assert!(!app.plan_view_is_visible());
+    assert_ne!(app.overlay_stack().top(), Some(OverlayKind::PlanView));
+    app.execute_action(Action::OpenStatusDialog);
+    app.execute_slash_command("new", None);
+    let before = reads.load(Ordering::Relaxed);
+    app.set_frame_area(Rect::new(0, 0, 80, 24));
+    assert_eq!(
+        reads.load(Ordering::Relaxed),
+        before,
+        "hidden plans must not query disk"
+    );
 }
 
 pub(super) fn plan_view_rows_and_summary_surface_byte_len() {
-    // Given: workspace with a known-size plan file
     let dir = std::env::temp_dir().join(format!(
         "harness-tui-plan-{}-{}",
         "byte-len",
@@ -504,7 +460,6 @@ pub(super) fn plan_view_rows_and_summary_surface_byte_len() {
     app.file_mention_workspace_root = Some(dir.clone());
     app.execute_action(Action::OpenViewPlan);
 
-    // When: inspect rows + summary
     let row = app
         .plan_view_rows()
         .into_iter()
@@ -512,7 +467,6 @@ pub(super) fn plan_view_rows_and_summary_surface_byte_len() {
         .expect("demo row");
     let summary = app.plan_view_summary();
 
-    // Then: row byte_len and summary total_bytes surface file size
     assert_eq!(row.byte_len, Some(expected_bytes));
     assert!(summary.total_bytes >= expected_bytes);
     assert!(

@@ -1,0 +1,37 @@
+{
+  "base": "f9bd48e6c9d029d2d4972822d37aaab6e66d0321",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/app.rs",
+      "sha256": "b469b4df988fb18a6894b8c8a76a6d646765283797e85ae93a26ca23003dc963"
+    },
+    {
+      "path": "crates/harness-tui/src/app/mouse_interaction.rs",
+      "sha256": "06d5715d84c670afc414eed4e20d81db4fdeee6fdbdcbb64c668aac9ad44b392"
+    },
+    {
+      "path": "crates/harness-tui/src/app/plan_view.rs",
+      "sha256": "99d585a787fd361bfc8d3c9440edeb92ea452b38f083dad8eeff1be3f3d12e3b"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests.rs",
+      "sha256": "2906bc1bf27f4f30e90e5d25b7073351f8087db53aefd725ecb0268735151569"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/plan_view_tests.rs",
+      "sha256": "e5df814f3afe00a6d1dc992fc1889941ab3c89479aafaa6a8814ed6cdfe3a76c"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/modal_interaction.rs",
+      "sha256": "b2e5df9c214f42a47d73891e1e7986be6d14c19848c32854ad6a231ce7c12218"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/plan_view.rs",
+      "sha256": "ddf18e33f70f0a9bae00dae4af3022bc2c6942642bc2fa0de2b7804c95852566"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/status_dialog.rs",
+      "sha256": "7822d1b796cc189f0607b17a56916caeac8f87e549a3ed5f0ae05cb9575f3c1c"
+    }
+  ]
+}

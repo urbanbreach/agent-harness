@@ -1,0 +1,102 @@
+[
+  {
+    "name": "activated-view-plan-120x40-reduced-0ms.ansi",
+    "bytes": 6595,
+    "sha256": "87364772f0c2004d0a0a4a84bc58d06fb8ff17250b20055760e3d55f6ab069f4"
+  },
+  {
+    "name": "activated-view-plan-160x50-reduced-0ms.ansi",
+    "bytes": 10025,
+    "sha256": "529076c98132241debeb36fbce16364015945f1df5bd32788ff86e498c5882f1"
+  },
+  {
+    "name": "activated-view-plan-40x24-reduced-0ms.ansi",
+    "bytes": 1605,
+    "sha256": "f92ee2f448311ed79e41750b1eb4e4b41a730972142132a69ce1caef7dfdc834"
+  },
+  {
+    "name": "activated-view-plan-80x24-reduced-0ms.ansi",
+    "bytes": 2725,
+    "sha256": "08193085f57258e965141a2d03a9236a7e6218a9b1242e0fc55c7b1f60710805"
+  },
+  {
+    "name": "dialog-view-plan-120x40-reduced-0ms.ansi",
+    "bytes": 6593,
+    "sha256": "0a46e0e2fcaa557ab415726e445c8e780f84349057a819a5936ea9ec897c7b9e"
+  },
+  {
+    "name": "dialog-view-plan-160x50-reduced-0ms.ansi",
+    "bytes": 10023,
+    "sha256": "057d23b81380a25589f0e34d56e03eef3d0799b3b21cfe815c766e58fcf2846c"
+  },
+  {
+    "name": "dialog-view-plan-40x24-reduced-0ms.ansi",
+    "bytes": 1598,
+    "sha256": "79123c9cc9524317a1234e58657aba0df86b6291b11be3421f4a5066f5470eb3"
+  },
+  {
+    "name": "dialog-view-plan-80x24-reduced-0ms.ansi",
+    "bytes": 2723,
+    "sha256": "22f45bc75c450e2667dc3144b8cc55daac08296189fa3bec434f1586e7cad0ab"
+  },
+  {
+    "name": "populated-view-plan-120x40-reduced-0ms.ansi",
+    "bytes": 6606,
+    "sha256": "db43c41c9730e336c0754ab0301f64d3666fbfac5ce82d625ebd33b1ff3b2795"
+  },
+  {
+    "name": "populated-view-plan-160x50-reduced-0ms.ansi",
+    "bytes": 10036,
+    "sha256": "560283f68eec3132f25bfd9e3629297dd834212af6ea561d116e8702421993b9"
+  },
+  {
+    "name": "populated-view-plan-40x24-reduced-0ms.ansi",
+    "bytes": 1613,
+    "sha256": "d4ceefc01374b78f773052884b94f600123004acad8cd2e27e4e07b35f9ff01f"
+  },
+  {
+    "name": "populated-view-plan-80x24-reduced-0ms.ansi",
+    "bytes": 2736,
+    "sha256": "9188251ce66b694a1c116bc2cd3d5069b8daec8d96fde21ec1472592afe7ca81"
+  },
+  {
+    "name": "selected-view-plan-120x40-reduced-0ms.ansi",
+    "bytes": 6593,
+    "sha256": "0a46e0e2fcaa557ab415726e445c8e780f84349057a819a5936ea9ec897c7b9e"
+  },
+  {
+    "name": "selected-view-plan-160x50-reduced-0ms.ansi",
+    "bytes": 10023,
+    "sha256": "057d23b81380a25589f0e34d56e03eef3d0799b3b21cfe815c766e58fcf2846c"
+  },
+  {
+    "name": "selected-view-plan-40x24-reduced-0ms.ansi",
+    "bytes": 1598,
+    "sha256": "79123c9cc9524317a1234e58657aba0df86b6291b11be3421f4a5066f5470eb3"
+  },
+  {
+    "name": "selected-view-plan-80x24-reduced-0ms.ansi",
+    "bytes": 2723,
+    "sha256": "22f45bc75c450e2667dc3144b8cc55daac08296189fa3bec434f1586e7cad0ab"
+  },
+  {
+    "name": "slash-view-plan-120x40-reduced-0ms.ansi",
+    "bytes": 5700,
+    "sha256": "7e7ffb4f06bf0e981cb310e4d3280be61fb35d17740fadbb5181d21b19bb3e48"
+  },
+  {
+    "name": "slash-view-plan-160x50-reduced-0ms.ansi",
+    "bytes": 9130,
+    "sha256": "f727b2e89322b81439c19c2ad09ba0f0e7960eaccaf3c70a38078c1ebc58df59"
+  },
+  {
+    "name": "slash-view-plan-40x24-reduced-0ms.ansi",
+    "bytes": 1371,
+    "sha256": "75b1ade804c9361486159f5259c7d5217857e781f0cf7279d40b5f897a5e9f3a"
+  },
+  {
+    "name": "slash-view-plan-80x24-reduced-0ms.ansi",
+    "bytes": 2548,
+    "sha256": "c85ef032f0208896b110934a125204f9c367e1f62d31d0b59dc804d590cb781c"
+  }
+]

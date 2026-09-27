@@ -1,0 +1,10 @@
+{
+  "tested_base": "f9bd48e6c9d029d2d4972822d37aaab6e66d0321",
+  "original_base": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+  "unchanged_since_original": [
+    "crates/harness-tui/src/app/plan_view.rs",
+    "crates/harness-tui/src/ui_overlays/plan_view.rs"
+  ],
+  "check": "existing plan navigation test plus file-change-between-paints assertion",
+  "failure": "prepared and repeated buffers differ after creating new.md"
+}

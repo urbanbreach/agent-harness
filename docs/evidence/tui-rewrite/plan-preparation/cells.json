@@ -1,0 +1,7 @@
+{
+  "count": 543,
+  "comparison": "all complete records equal f9bd48e6; original matrix including explicit R8 correction passes",
+  "prior_sha256": "3ba090388367678cbfa2d005fcd199869e06bcae67514a2c0a2bc031a5702710",
+  "current_sha256": "3ba090388367678cbfa2d005fcd199869e06bcae67514a2c0a2bc031a5702710",
+  "golden_sha256": "5913f3430a0572b649f1758a4d29648a90dc6a7194d5951ba9898254dd0e2751"
+}

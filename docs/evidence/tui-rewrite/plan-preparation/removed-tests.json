@@ -1,0 +1,8 @@
+{
+  "removed": [
+    "app::tests::plan_view_opens_from_action",
+    "app::tests::plan_view_closes_on_esc",
+    "app::tests::context_view_plan_palette_dispatch_opens_plan_view"
+  ],
+  "replacement": "existing plan_view_multi_plan_open_select_activate_product_path and 543-frame public oracle"
+}

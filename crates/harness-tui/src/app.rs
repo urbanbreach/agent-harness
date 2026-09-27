@@ -554,6 +554,7 @@ pub struct AppState {
     pub trust_folder_prompt_visible: bool,
     pub plan_view_selected: usize,
     pub plan_view_preview: Option<String>,
+    pub(crate) plan_entries: Vec<harness_core::plan::PlanProjectionEntry>,
     pub theme_name: String,
     theme_choice: ThemeChoice,
     theme_family: ThemeFamily,
@@ -809,6 +810,7 @@ impl Default for AppState {
             trust_folder_prompt_visible: false,
             plan_view_selected: 0,
             plan_view_preview: None,
+            plan_entries: Vec::new(),
             theme_name: "default".to_string(),
             model_options: Vec::new(),
             model_filtered: Vec::new(),
@@ -932,6 +934,7 @@ impl AppState {
                 self.dashboard = Some(dashboard);
                 self.dashboard_return_focus = Some(return_focus);
                 self.secondary_surfaces.open_status_dialog();
+                self.prepare_plan_view();
             }
             Err(error) => {
                 self.status_banner = Some(format!("dashboard unavailable: {error}"));

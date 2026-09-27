@@ -47,6 +47,20 @@ pub struct PlanViewSummary {
 }
 
 impl PlanViewSummary {
+    fn from_entries(entries: &[PlanProjectionEntry], preview_open: bool) -> Self {
+        Self {
+            total: entries.len(),
+            existing: entries.iter().filter(|entry| entry.exists).count(),
+            missing: entries.iter().filter(|entry| !entry.exists).count(),
+            active: entries.iter().filter(|entry| entry.is_active).count(),
+            preview_open,
+            total_bytes: entries
+                .iter()
+                .filter_map(|entry| entry.byte_len)
+                .fold(0, u64::saturating_add),
+        }
+    }
+
     pub fn one_line(&self) -> String {
         format!(
             "plan view: {} total (existing={}, missing={}, active={}, preview={}, bytes={})",
@@ -87,6 +101,7 @@ impl AppState {
         }
 
         self.plan_view_visible = true;
+        self.prepare_plan_view();
         self.plan_view_selected = 0;
         self.plan_view_preview = None;
         self.status_banner = Some("plan mode entered".to_string());
@@ -108,54 +123,36 @@ impl AppState {
     }
 
     pub(in crate::app) fn plan_view_move(&mut self, delta: isize) {
-        let len = self.plan_view_entries().len();
-        if len == 0 {
+        self.plan_entries = self.plan_view_entries();
+        if self.plan_entries.is_empty() {
             self.plan_view_selected = 0;
             return;
         }
-        let current = isize::try_from(self.plan_view_selected.min(len - 1)).unwrap_or(0);
-        let next = (current + delta).clamp(0, isize::try_from(len - 1).unwrap_or(0));
-        self.plan_view_selected = usize::try_from(next).unwrap_or(0);
+        let last = self.plan_entries.len() - 1;
+        self.plan_view_selected = self
+            .plan_view_selected
+            .min(last)
+            .saturating_add_signed(delta)
+            .min(last);
         self.plan_view_preview = None;
     }
 
     /// Open the selected plan file content into the overlay preview (Enter).
     pub fn plan_view_open_selected(&mut self) {
-        let entries = self.plan_view_entries();
-        if entries.is_empty() {
-            self.show_toast(
-                "no plan files yet — write a plan under .omo/plans/".to_string(),
-                ToastVariant::Info,
-            );
-            return;
-        }
-        let Some(entry) = entries.get(self.plan_view_selected) else {
-            self.show_toast("no plan selected".to_string(), ToastVariant::Info);
+        let Some((workspace, entry)) = self.selected_plan() else {
             return;
         };
-        if !entry.exists {
-            self.show_toast(
-                format!("plan `{}` does not exist yet", entry.slug),
-                ToastVariant::Info,
-            );
+        if !self.plan_exists(&entry) {
             self.plan_view_preview = None;
             return;
         }
-        let workspace = self
-            .file_mention_workspace_root
-            .clone()
-            .or_else(|| (self.file_mention_workspace_root_provider)())
-            .unwrap_or_else(|| PathBuf::from("."));
-        let absolute = workspace.join(&entry.path);
-        match fs::read_to_string(&absolute) {
-            Ok(body) => {
-                let preview = if body.chars().count() > 4_000 {
-                    let truncated: String = body.chars().take(4_000).collect();
-                    format!("{truncated}\n… (truncated)")
-                } else {
-                    body
-                };
-                self.plan_view_preview = Some(preview);
+        match fs::read_to_string(workspace.join(&entry.path)) {
+            Ok(mut body) => {
+                if let Some((end, _)) = body.char_indices().nth(4_000) {
+                    body.truncate(end);
+                    body.push_str("\n… (truncated)");
+                }
+                self.plan_view_preview = Some(body);
             }
             Err(err) => {
                 self.plan_view_preview = None;
@@ -168,25 +165,10 @@ impl AppState {
     }
 
     pub fn plan_view_copy_selected_path(&mut self) {
-        let entries = self.plan_view_entries();
-        if entries.is_empty() {
-            self.show_toast(
-                "no plan files yet — write a plan under .omo/plans/".to_string(),
-                ToastVariant::Info,
-            );
-            return;
-        }
-        let Some(entry) = entries.get(self.plan_view_selected) else {
-            self.show_toast("no plan selected".to_string(), ToastVariant::Info);
+        let Some((workspace, entry)) = self.selected_plan() else {
             return;
         };
-        let workspace = self
-            .file_mention_workspace_root
-            .clone()
-            .or_else(|| (self.file_mention_workspace_root_provider)())
-            .unwrap_or_else(|| PathBuf::from("."));
-        let absolute = workspace.join(&entry.path);
-        let path_text = absolute.display().to_string();
+        let path_text = workspace.join(&entry.path).display().to_string();
         self.status_banner = Some(format!("plan path: {path_text}"));
         match crate::clipboard::copy(&path_text) {
             Ok(()) => self.show_toast(format!("copied plan path: {path_text}"), ToastVariant::Info),
@@ -197,56 +179,26 @@ impl AppState {
         }
     }
 
-    /// Copy selected plan file body to clipboard (full file when present; preview text if open).
+    /// Copy the full selected file, falling back to its open preview on a read error.
     pub fn plan_view_copy_selected_body(&mut self) {
-        let entries = self.plan_view_entries();
-        if entries.is_empty() {
-            self.show_toast(
-                "no plan files yet — write a plan under .omo/plans/".to_string(),
-                ToastVariant::Info,
-            );
-            return;
-        }
-        let Some(entry) = entries.get(self.plan_view_selected) else {
-            self.show_toast("no plan selected".to_string(), ToastVariant::Info);
+        let Some((workspace, entry)) = self.selected_plan() else {
             return;
         };
-        if !entry.exists {
-            self.show_toast(
-                format!("plan `{}` does not exist yet", entry.slug),
-                ToastVariant::Info,
-            );
+        if !self.plan_exists(&entry) {
             return;
         }
-
-        let body = if let Some(preview) = self.plan_view_preview.as_ref() {
-            // Prefer full file over truncated preview when possible.
-            let workspace = self
-                .file_mention_workspace_root
-                .clone()
-                .or_else(|| (self.file_mention_workspace_root_provider)())
-                .unwrap_or_else(|| PathBuf::from("."));
-            let absolute = workspace.join(&entry.path);
-            fs::read_to_string(&absolute).unwrap_or_else(|_| preview.clone())
-        } else {
-            let workspace = self
-                .file_mention_workspace_root
-                .clone()
-                .or_else(|| (self.file_mention_workspace_root_provider)())
-                .unwrap_or_else(|| PathBuf::from("."));
-            let absolute = workspace.join(&entry.path);
-            match fs::read_to_string(&absolute) {
-                Ok(body) => body,
-                Err(err) => {
-                    self.show_toast(
-                        format!("failed to read plan `{}`: {err}", entry.slug),
-                        ToastVariant::Error,
-                    );
-                    return;
-                }
+        let body = match fs::read_to_string(workspace.join(&entry.path))
+            .or_else(|err| self.plan_view_preview.clone().ok_or(err))
+        {
+            Ok(body) => body,
+            Err(err) => {
+                self.show_toast(
+                    format!("failed to read plan `{}`: {err}", entry.slug),
+                    ToastVariant::Error,
+                );
+                return;
             }
         };
-
         let chars = body.chars().count();
         self.status_banner = Some(format!("plan body: {} ({} chars)", entry.slug, chars));
         match crate::clipboard::copy(&body) {
@@ -270,31 +222,12 @@ impl AppState {
             self.status_banner = Some("plan deletion is unavailable during replay".to_string());
             return;
         }
-
-        let entries = self.plan_view_entries();
-        if entries.is_empty() {
-            self.show_toast(
-                "no plan files yet — write a plan under .omo/plans/".to_string(),
-                ToastVariant::Info,
-            );
-            return;
-        }
-        let Some(entry) = entries.get(self.plan_view_selected).cloned() else {
-            self.show_toast("no plan selected".to_string(), ToastVariant::Info);
+        let Some((workspace, entry)) = self.selected_plan() else {
             return;
         };
-        if !entry.exists {
-            self.show_toast(
-                format!("plan `{}` does not exist yet", entry.slug),
-                ToastVariant::Info,
-            );
+        if !self.plan_exists(&entry) {
             return;
         }
-        let workspace = self
-            .file_mention_workspace_root
-            .clone()
-            .or_else(|| (self.file_mention_workspace_root_provider)())
-            .unwrap_or_else(|| PathBuf::from("."));
         let relative = Path::new(&entry.path);
         if let Err(err) = self
             .plan_validate_path(&entry.path)
@@ -307,28 +240,63 @@ impl AppState {
             );
             return;
         }
-        let absolute = workspace.join(relative);
-        match fs::remove_file(&absolute) {
+        match fs::remove_file(workspace.join(relative)) {
             Ok(()) => {
                 self.plan_view_preview = None;
-                let remaining = self.plan_view_entries().len();
-                if remaining == 0 {
-                    self.plan_view_selected = 0;
-                } else if self.plan_view_selected >= remaining {
-                    self.plan_view_selected = remaining - 1;
-                }
+                self.plan_entries = self.plan_view_entries();
+                self.plan_view_selected = self
+                    .plan_view_selected
+                    .min(self.plan_entries.len().saturating_sub(1));
                 self.status_banner = Some(format!("plan deleted: {}", entry.slug));
                 self.show_toast(format!("deleted plan `{}`", entry.slug), ToastVariant::Info);
             }
-            Err(err) => {
+            Err(err) => self.show_toast(
+                format!("failed to delete plan `{}`: {err}", entry.slug),
+                ToastVariant::Error,
+            ),
+        }
+    }
+
+    fn selected_plan(&mut self) -> Option<(PathBuf, PlanProjectionEntry)> {
+        let workspace = self.plan_workspace();
+        self.plan_entries = project_plan_list(&workspace, self.run_id());
+        match self.plan_entries.get(self.plan_view_selected).cloned() {
+            Some(entry) => Some((workspace, entry)),
+            None => {
                 self.show_toast(
-                    format!("failed to delete plan `{}`: {err}", entry.slug),
-                    ToastVariant::Error,
+                    if self.plan_entries.is_empty() {
+                        "no plan files yet — write a plan under .omo/plans/"
+                    } else {
+                        "no plan selected"
+                    }
+                    .to_string(),
+                    ToastVariant::Info,
                 );
+                None
             }
         }
     }
 
+    fn plan_exists(&mut self, entry: &PlanProjectionEntry) -> bool {
+        if !entry.exists {
+            self.show_toast(
+                format!("plan `{}` does not exist yet", entry.slug),
+                ToastVariant::Info,
+            );
+        }
+        entry.exists
+    }
+
+    /// Read the filesystem once before paint and hit testing share these entries.
+    pub(super) fn prepare_plan_view(&mut self) {
+        if self.plan_view_visible || self.status_dashboard_is_active() {
+            self.plan_entries = self.plan_view_entries();
+        } else {
+            self.plan_entries.clear();
+        }
+    }
+
+    /// Query current files, including changes since the last prepared frame.
     pub fn plan_view_rows(&self) -> Vec<PlanViewRow> {
         let selected = self.plan_view_selected;
         self.plan_view_entries()
@@ -357,37 +325,24 @@ impl AppState {
         self.plan_view_preview.as_deref()
     }
 
+    /// Query current files for diagnostics; painting uses the prepared snapshot.
     pub fn plan_view_summary(&self) -> PlanViewSummary {
-        let entries = self.plan_view_entries();
-        let mut summary = PlanViewSummary {
-            total: entries.len(),
-            preview_open: self.plan_view_preview.is_some(),
-            ..PlanViewSummary::default()
-        };
-        for entry in &entries {
-            if entry.exists {
-                summary.existing = summary.existing.saturating_add(1);
-            } else {
-                summary.missing = summary.missing.saturating_add(1);
-            }
-            if entry.is_active {
-                summary.active = summary.active.saturating_add(1);
-            }
-            if let Some(bytes) = entry.byte_len {
-                summary.total_bytes = summary.total_bytes.saturating_add(bytes);
-            }
-        }
-        summary
+        PlanViewSummary::from_entries(&self.plan_view_entries(), self.plan_view_preview.is_some())
+    }
+
+    pub(crate) fn prepared_plan_summary(&self) -> PlanViewSummary {
+        PlanViewSummary::from_entries(&self.plan_entries, self.plan_view_preview.is_some())
+    }
+
+    fn plan_workspace(&self) -> PathBuf {
+        self.file_mention_workspace_root
+            .clone()
+            .or_else(|| (self.file_mention_workspace_root_provider)())
+            .unwrap_or_else(|| PathBuf::from("."))
     }
 
     fn plan_view_entries(&self) -> Vec<PlanProjectionEntry> {
-        let workspace = self
-            .file_mention_workspace_root
-            .clone()
-            .or_else(|| (self.file_mention_workspace_root_provider)())
-            .unwrap_or_else(|| PathBuf::from("."));
-        let active_run = self.run_id();
-        project_plan_list(&workspace, active_run)
+        project_plan_list(&self.plan_workspace(), self.run_id())
     }
 
     /// Validate that a plan path is confined to `.agent-harness/plans/*.md`.

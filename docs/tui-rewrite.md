@@ -125,6 +125,7 @@ before changing the implementation.
 | R9 | The margin timeline sums scalar widths, so joined emoji produce different jump offsets from ASCII with the same display width | Measure string display width. A public navigation journey fails on the original and passes on the replacement; its 12 paired post-jump frames remain identical, so this is a numeric geometry correction without a demonstrated visual improvement. |
 | R10 | Terminal-panel Home reads a scroll limit written by the previous paint, so it stays at the bottom before the first paint and can use stale wrapping after resize | Derive the limit from the current wrapped rows when handling Home. Retain the last drawable geometry during frame preparation for temporarily hidden panels; painting stays immutable. |
 | R11 | The hand-written selection segmenter splits a decomposed Hangul syllable and lets viewer search match an interior jamo | Use the installed Unicode grapheme segmenter for layout and search boundaries, and measure cluster widths as painting does. Existing selection and search fixtures reproduce both failures on the original; a spacing-mark fixture protects painted highlight and copy alignment. |
+| R12 | Plan painting, summary counts and pointer geometry read the filesystem independently, so identical state can paint different buffers after a directory change | Read one plan snapshot before painting and hit testing. Refresh during surface opening, frame preparation and plan actions; keep public diagnostic queries fresh. The extended plan journey fails on the preceding implementation, whose plan state/renderer sources still matched the pinned original. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -589,6 +590,22 @@ absent and unavailable probes plus repeated edit paths, and its mutation check
 fails as intended. The source tree shrinks by 3,867 lines including the removed
 tests. Plan-list reads still need to move out of painting. Evidence is in
 [`evidence/tui-rewrite/dashboard-cleanup`](evidence/tui-rewrite/dashboard-cleanup).
+
+## Plan filesystem preparation (R12)
+
+Plan painting, pointer geometry and dashboard presence counts now use one
+prepared directory snapshot. Opening either surface and preparing a demanded
+frame refresh it; no watcher or timer is added. Public plan rows and summary
+queries still read current files. Preview, copy and delete actions reread the
+directory, and deletion retains replay, confinement and symlink checks.
+
+The existing multi-plan journey verifies that a directory change between paints
+does not change the prepared frame, while the next preparation reveals it. Three
+redundant open/close/palette tests are removed; the navigation journey and frozen
+matrix retain those routes. Plan rendering and its scalar-based text truncation
+still need replacement. This is a paint-purity step, with no new resource or
+terminal-latency claim. Evidence is in
+[`evidence/tui-rewrite/plan-preparation`](evidence/tui-rewrite/plan-preparation).
 
 ## Verification sequence
 

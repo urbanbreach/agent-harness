@@ -300,8 +300,7 @@ fn render_dashboard_summary(frame: &mut Frame, app: &AppState, theme: &Theme, ar
         app.edit_attribution_first_line().is_some(),
         app.edit_attribution_last_line().is_some(),
         true, // A plan summary is available even when the list is empty.
-        // ponytail: the plan-state rewrite must move this disk read into preparation.
-        !app.plan_view_rows().is_empty(),
+        !app.plan_entries.is_empty(),
     ];
     let bound = probes.iter().filter(|present| **present).count();
     let operator_line = format!(
