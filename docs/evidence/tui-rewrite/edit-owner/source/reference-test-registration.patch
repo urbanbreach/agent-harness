@@ -1,0 +1,11 @@
+diff --git i/crates/harness-tui/src/app/session_projection.rs w/crates/harness-tui/src/app/session_projection.rs
+index 5babd097..580ae846 100644
+--- i/crates/harness-tui/src/app/session_projection.rs
++++ w/crates/harness-tui/src/app/session_projection.rs
+@@ -1920,3 +1920,6 @@ mod tests {
+         assert!(retry.is_none());
+     }
+ }
++
++#[cfg(test)]
++mod edit_contract_test;

@@ -1,0 +1,12 @@
+{
+  "rewrite_probe": {
+    "path": "/tmp/tui-edit-owner-rewrite_probe.bin",
+    "sha256": "31aa5c7c031c9f8f1a02f4506469b9a86b02604cbe980a3fd7a1b3684d2ed12f",
+    "bytes": 15210104
+  },
+  "resource_probe": {
+    "path": "/tmp/tui-edit-owner-resource_probe.bin",
+    "sha256": "90184ee76f8399f06f4676d3a2b23b62c95d2c75af549fade5b9e71b1a51fa6e",
+    "bytes": 14013920
+  }
+}

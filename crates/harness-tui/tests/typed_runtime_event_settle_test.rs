@@ -18,6 +18,9 @@ use harness_tui::render_test::render_to_string;
 use harness_tui::ui;
 use ratatui::layout::Rect;
 
+#[path = "typed_runtime_event_settle/edits.rs"]
+mod edits;
+
 fn durable(seq: u64, payload: EventV1) -> RuntimeEvent {
     RuntimeEvent::Durable(Box::new(durable_envelope(seq, payload)))
 }

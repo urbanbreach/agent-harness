@@ -1,0 +1,25 @@
+[
+  {
+    "name": "workflow",
+    "command": [
+      "node",
+      "scripts/qa/measure-rewrite-latency.mjs",
+      "/tmp/tui-edit-owner-rewrite_probe.bin",
+      ".omo/evidence/tui-rewrite/edit-owner/workflow",
+      "--workflow-only"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "restoration",
+    "command": [
+      "python3",
+      "scripts/check-tui-restoration.py",
+      "--binary",
+      "/tmp/tui-edit-owner-resource_probe.bin",
+      "--output",
+      "/tmp/tui-edit-owner-restoration"
+    ],
+    "exit_code": 0
+  }
+]

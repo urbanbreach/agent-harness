@@ -1,0 +1,37 @@
+[
+  {
+    "name": "rewind-original",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--profile",
+      "ci",
+      "-p",
+      "harness-tui",
+      "--all-features",
+      "--test",
+      "typed_runtime_event_settle_test",
+      "-E",
+      "test(edits::)"
+    ],
+    "exit_code": 100
+  },
+  {
+    "name": "trim-original",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--profile",
+      "ci",
+      "-p",
+      "harness-tui",
+      "--all-features",
+      "--lib",
+      "-E",
+      "test(trimmed_child_slice)"
+    ],
+    "exit_code": 0
+  }
+]

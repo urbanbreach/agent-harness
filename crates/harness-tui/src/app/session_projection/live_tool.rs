@@ -99,80 +99,14 @@ impl SessionProjection {
                     tool_entry.last_timestamp = event.ts.clone();
                 }
             }
-            EventV1::EditProposed(data) => {
-                if let Some(tool_entry) = event
+            EventV1::EditProposed(_) | EventV1::EditApplied(_) | EventV1::EditRejected(_) => {
+                if let Some(tool) = event
                     .correlation_id
                     .as_deref()
-                    .and_then(|tool_call_id| self.find_tool_call_mut(tool_call_id))
+                    .and_then(|id| self.find_tool_call_mut(id))
                 {
-                    tool_entry.edit = Some(super::EditEntry {
-                        edit_id: data.edit_id.clone(),
-                        path: data.path.clone(),
-                        status: super::EditDisplayStatus::Proposed,
-                        summary: Some(data.summary.clone()),
-                        patch_digest: Some(data.patch_digest.clone()),
-                        new_file_digest: None,
-                        diff_rel_path: None,
-                        diff_digest: None,
-                        rejection_reason: None,
-                    });
-                    tool_entry.last_seq = event.seq;
-                }
-            }
-            EventV1::EditApplied(data) => {
-                if let Some(tool_entry) = event
-                    .correlation_id
-                    .as_deref()
-                    .and_then(|tool_call_id| self.find_tool_call_mut(tool_call_id))
-                {
-                    let summary = tool_entry
-                        .edit
-                        .as_ref()
-                        .and_then(|edit| edit.summary.clone());
-                    let patch_digest = tool_entry
-                        .edit
-                        .as_ref()
-                        .and_then(|edit| edit.patch_digest.clone());
-                    tool_entry.edit = Some(super::EditEntry {
-                        edit_id: data.edit_id.clone(),
-                        path: data.path.clone(),
-                        status: super::EditDisplayStatus::Applied,
-                        summary,
-                        patch_digest,
-                        new_file_digest: Some(data.new_file_digest.clone()),
-                        diff_rel_path: data.diff_rel_path.clone(),
-                        diff_digest: data.diff_digest.clone(),
-                        rejection_reason: None,
-                    });
-                    tool_entry.last_seq = event.seq;
-                }
-            }
-            EventV1::EditRejected(data) => {
-                if let Some(tool_entry) = event
-                    .correlation_id
-                    .as_deref()
-                    .and_then(|tool_call_id| self.find_tool_call_mut(tool_call_id))
-                {
-                    let summary = tool_entry
-                        .edit
-                        .as_ref()
-                        .and_then(|edit| edit.summary.clone());
-                    let patch_digest = tool_entry
-                        .edit
-                        .as_ref()
-                        .and_then(|edit| edit.patch_digest.clone());
-                    tool_entry.edit = Some(super::EditEntry {
-                        edit_id: data.edit_id.clone(),
-                        path: data.path.clone(),
-                        status: super::EditDisplayStatus::Rejected,
-                        summary,
-                        patch_digest,
-                        new_file_digest: None,
-                        diff_rel_path: None,
-                        diff_digest: None,
-                        rejection_reason: Some(data.reason.clone()),
-                    });
-                    tool_entry.last_seq = event.seq;
+                    super::edit::apply_edit(tool, &event.payload);
+                    tool.last_seq = event.seq;
                 }
             }
             _ => return false,

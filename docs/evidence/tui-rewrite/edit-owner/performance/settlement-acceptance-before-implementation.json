@@ -1,0 +1,27 @@
+{
+  "recorded_before_implementation_at": "2026-09-27T16:45:45.777904+00:00",
+  "source": "d7df6d0f",
+  "fixture_sha256": "9e845d57123c0bd5ec3bc3ef876b9e50e33d700851b1ad40c58efcf9189d488d",
+  "workload": "1000 initial turns; six durable events and three canonical settlements per measured turn; 10 warmups + 200 timed frames; 160x48",
+  "baseline_medians": {
+    "construction_us": 30749,
+    "cold_us": 19169,
+    "p50_us": 64886,
+    "p95_us": 70987,
+    "p99_us": 71545,
+    "bytes": 28598,
+    "cpu_ms_per_frame": 64.85,
+    "rss_kib": 50696,
+    "allocated_bytes": 37900673749,
+    "peak_heap_bytes": 35051202
+  },
+  "candidate_limits": {
+    "p95_us": 49690.899999999994,
+    "p99_us": 50081.5,
+    "cpu_ms_per_frame": 45.394999999999996,
+    "allocated_bytes": 26530471624.3,
+    "rss_kib": 55765.600000000006
+  },
+  "parity": "identical terminal byte count, final and oldest text, event counts; original frozen renderer/latency limits remain unchanged",
+  "boundary": "ingestion, frame preparation, renderer, Ratatui diff, Crossterm encoding; not PTY latency"
+}

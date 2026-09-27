@@ -129,6 +129,7 @@ before changing the implementation.
 | R13 | Plan rows and previews budget Unicode scalars rather than cells; shared UI clipping also undercounts emoji presentation sequences | Replace plan painting and use Ratatui-compatible grapheme widths. Eight original/candidate frames cover metadata, combining text, joined emoji and VS16. Terminal and Bash title wrapping keep whole graphemes, including zero-width prefixes, without adding or undercounting rows. |
 | R14 | Long transcript tokens undercount VS16 cells, whitespace tokenization splits combining clusters, and selection uses different widths from painting | Replace styled wrapping with borrowed grapheme tokens and align selection with Ratatui widths. Four paired records restore all missing clusters; copy/highlight checks use painted coordinates. Zero-width prefixes remain on their content row. |
 | R15 | A first local file/subagent mention can remain absent from a warmed empty transcript until another update invalidates it | Preserve the recorded first-echo timing during the settlement optimization. Explicitly invalidate later local echoes, whose changed selection index previously caused the refresh. A separate correction needs an intentional first-echo behavior change; the original and unconditional-invalidation captures are retained under `evidence/tui-rewrite/settlement-suffix/diagnostics`. |
+| R16 | Rewinding a later turn can leave a retained older tool labeled Patch or showing a discarded rejection, because prior display state overwrites the active-history edit proposal | Fold edit state from active events after successful complete-history or untrimmed-inline reconstruction. The pinned original fails the public rewind check. Capped inline child histories retain their prior edit state because the proposal may no longer be available; exact edit rewind there remains unverified. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -814,6 +815,33 @@ The slice adds 278 production and 42 unit-test lines. Whole TUI source is
 eligibility scans, complex-turn conversion and the old state engine remain;
 this does not complete their replacement. Evidence and limitations are in
 [`evidence/tui-rewrite/settlement-suffix`](evidence/tui-rewrite/settlement-suffix).
+
+## Edit presentation ownership
+
+One reducer now owns proposed, applied and rejected edit transitions for live
+input and retained histories. Both duplicated transition blocks are removed.
+Complete-history reconstruction no longer copies an older tool's edit back over
+the event-derived result. This fixes R16. Capped inline child views keep the
+existing carry behavior because their inspection buffer may have discarded the
+proposal; the remaining tool timestamp and identity enrichment is unchanged.
+
+Two behavioral checks cover discarded applied/rejected results after a real user
+rewind point, fresh replay, and proposal metadata surviving a capped child slice
+and a later rewind. The original reproduces R16 and passes the capped-slice
+contract. All 1,668 deterministic tests, 555 reference records, 733 controlled
+animation frames and seven gated PTY checks pass. Six xterm screenshots match.
+The real xterm rewind/click-burst workflow and terminal restoration checks pass.
+
+All nineteen frozen performance checks pass across 84 serial release samples.
+Streaming p99 is 989 µs versus 981 µs before this change; resize p99 is 2,740
+versus 2,729 µs. Allocations are essentially unchanged. These are general
+renderer/encoder workloads, not an edit-throughput or end-to-end speed claim.
+The change removes 45 production lines and adds 117 unit-test lines, plus 129
+integration-test lines. Whole TUI source is 168,006 lines, 7.63% below the
+original. The source-reduction target, remaining state/formatter replacement,
+polling removal and runtime resource targets are unfinished. Evidence and
+commands are in
+[`evidence/tui-rewrite/edit-owner`](evidence/tui-rewrite/edit-owner).
 
 ## Verification sequence
 

@@ -226,7 +226,11 @@ impl SessionProjection {
             &mut orchestration_tasks,
         );
         apply_canonical_stale_detections(events, &mut orchestration_tasks);
-        apply_canonical_edits(events, &mut settled_activities);
+        super::edit::hydrate_edits(
+            events,
+            &mut settled_activities,
+            (inline && self.events_trimmed_count > 0).then_some(&presentation_enrichment),
+        );
 
         merge_presentation_enrichment(&mut settled_activities, &presentation_enrichment);
         self.restore_uncommitted_assistant_suffixes(
