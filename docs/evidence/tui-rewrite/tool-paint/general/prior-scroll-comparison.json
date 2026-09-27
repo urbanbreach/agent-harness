@@ -1,0 +1,106 @@
+[
+  {
+    "sample": "scroll-1000-alloc.json",
+    "side": "reference",
+    "matches_published_tool_layout": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ]
+  },
+  {
+    "sample": "scroll-1000-alloc.json",
+    "side": "candidate",
+    "matches_published_tool_layout": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ]
+  },
+  {
+    "sample": "scroll-1000-3.json",
+    "side": "reference",
+    "matches_published_tool_layout": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ]
+  },
+  {
+    "sample": "scroll-1000-3.json",
+    "side": "candidate",
+    "matches_published_tool_layout": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ]
+  },
+  {
+    "sample": "scroll-1000-2.json",
+    "side": "reference",
+    "matches_published_tool_layout": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ]
+  },
+  {
+    "sample": "scroll-1000-2.json",
+    "side": "candidate",
+    "matches_published_tool_layout": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ]
+  },
+  {
+    "sample": "scroll-1000-1.json",
+    "side": "reference",
+    "matches_published_tool_layout": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ]
+  },
+  {
+    "sample": "scroll-1000-1.json",
+    "side": "candidate",
+    "matches_published_tool_layout": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ]
+  }
+]

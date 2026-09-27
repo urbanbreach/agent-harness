@@ -1,0 +1,68 @@
+[
+  {
+    "name": "body-execute-shell-run-success-open-120x40-motion-0ms.png",
+    "pixels_cells_modes_equal": true,
+    "candidate_png_sha256": "b8cae7bff777e8698ff4a3aa181e0dca6bf77a73b59d14288ece4c8d2fa5b28a",
+    "observer_differences": {
+      "renderCount": {
+        "before": 3,
+        "candidate": 4
+      }
+    }
+  },
+  {
+    "name": "body-mcp-use-mcp-linear-save-issue-success-open-120x40-motion-0ms.png",
+    "pixels_cells_modes_equal": true,
+    "candidate_png_sha256": "c95c2ae0be736f2ade058984e7172b868b4e2778eb820e96560b5ed38eb09798",
+    "observer_differences": {
+      "renderCount": {
+        "before": 5,
+        "candidate": 6
+      }
+    }
+  },
+  {
+    "name": "body-patch-apply-patch-success-open-120x40-motion-0ms.png",
+    "pixels_cells_modes_equal": true,
+    "candidate_png_sha256": "88d618f67bd133561fc35d0fd03275ce76a88b452c11255e040dcb8c2686490b",
+    "observer_differences": {
+      "renderCount": {
+        "before": 7,
+        "candidate": 8
+      }
+    }
+  },
+  {
+    "name": "body-ranged-read-fs-read-success-open-120x40-motion-0ms.png",
+    "pixels_cells_modes_equal": true,
+    "candidate_png_sha256": "4aaae10aebc4e69c73ff6c902d69d21470251ea398bcea28bc26cd0535dfc815",
+    "observer_differences": {
+      "renderCount": {
+        "before": 8,
+        "candidate": 10
+      }
+    }
+  },
+  {
+    "name": "body-sent-agent-message-success-open-120x40-motion-0ms.png",
+    "pixels_cells_modes_equal": true,
+    "candidate_png_sha256": "9171eda5c413b5ca89a0fbc6f558f2e37c8213b90101a31f4e7e460fcd6d95af",
+    "observer_differences": {
+      "renderCount": {
+        "before": 9,
+        "candidate": 11
+      }
+    }
+  },
+  {
+    "name": "body-unknown-fixture-inspect-success-open-120x40-motion-0ms.png",
+    "pixels_cells_modes_equal": true,
+    "candidate_png_sha256": "4613dffd80254509eea3845c62a13181db8c32a15eeb595ab932c39eab024982",
+    "observer_differences": {
+      "renderCount": {
+        "before": 11,
+        "candidate": 13
+      }
+    }
+  }
+]

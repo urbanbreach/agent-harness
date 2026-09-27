@@ -1,0 +1,22 @@
+{
+  "scope": "tool painter dispatch, borrowed detail rendering and dead private chain removal",
+  "production_files_replaced": [
+    "ui_transcript_tool_render.rs"
+  ],
+  "stable_leaf_rules_preserved": [
+    "header formatting",
+    "shell title wrapping",
+    "read gutter/tab geometry",
+    "error formatting",
+    "completion rails"
+  ],
+  "source_files": 574,
+  "source_lines": 167082,
+  "original_source_lines": 181882,
+  "source_reduction_percent": 8.13714386250426,
+  "changed_source_lines_before": 8522,
+  "changed_source_lines_after": 7945,
+  "net_lines_removed": 577,
+  "backend_changes": false,
+  "replacement_files_max_lines": 391
+}

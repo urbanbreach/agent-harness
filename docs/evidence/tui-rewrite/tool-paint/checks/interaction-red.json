@@ -1,0 +1,17 @@
+{
+  "mutation": "Remove PatchFile pointer target from rendered file header",
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--all-features",
+    "--lib",
+    "-E",
+    "test(mouse_click_toggles_apply_patch_file_disclosure)"
+  ],
+  "exit_code": 100
+}

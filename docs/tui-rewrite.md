@@ -894,6 +894,26 @@ the total only 7.82% below the original. The remaining implementation replacemen
 sustained runtime targets and final feature/removal review are still outstanding.
 Evidence is in [`evidence/tui-rewrite/tool-layout`](evidence/tui-rewrite/tool-layout).
 
+## Borrowed tool detail painting
+
+Tool rendering now shares ordinary headers and reads nested detail blocks directly.
+Synthetic cloned tool sections and the unreachable nested-card, transcript Markdown/todo
+and ignored bash-hint paths are removed. Task/shell interactions and stable formatting
+rules remain. A shared hit-bound guard avoids measuring non-clickable shell rows.
+
+All 1,668 TUI tests, seven gated PTY checks and quality checks pass. The 555 reference
+records, 733 animation frames and additional body/order/interaction captures are exact.
+Six paired xterm tool captures and actual-runtime selection captures match, with terminal
+restoration and cleanup confirmed. All twenty existing release limits pass. Tool p99 is
+8,939 µs versus 9,056 immediately before this change; allocated bytes are
+7,927,932,588 versus 7,928,203,764. These measure projection/rendering
+and encoding, not keyboard-to-screen latency.
+
+The change removes 577 lines; replacement files stay below 500 lines. Whole TUI source
+is 167,082 lines, only 8.14% below the original. State/text replacement, runtime resource
+and polling work, and final feature/removal review remain unfinished. Evidence is in
+[`evidence/tui-rewrite/tool-paint`](evidence/tui-rewrite/tool-paint).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

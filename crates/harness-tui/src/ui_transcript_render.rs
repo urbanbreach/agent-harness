@@ -5,7 +5,7 @@ use super::ui_streaming_markdown::append_streaming_rich_text_block;
 use super::ui_transcript_style::pending_diamond_color;
 use super::ui_transcript_surface::TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH;
 use super::ui_transcript_tool_render::{
-    append_assistant_error_box, append_tool_call_section_lines, tool_call_is_todo,
+    append_assistant_error_box, append_tool_call_section_lines,
 };
 use super::*;
 use crate::app::ToolCallPresentationStatus;
@@ -610,7 +610,6 @@ fn build_assistant_part_render_surface(
                     ) || super::super::ui_tool_titles::is_mcp_tool_id(
                         &tool_call.header.tool_id,
                     ))
-                    && !tool_call_is_todo(tool_call)
                     && tool_call.header.visual_style != TranscriptToolCallVisualStyle::TaskInline,
                 tool_section_rail_color(tool_call, family, theme),
                 base_surface,
@@ -2114,14 +2113,12 @@ mod tests {
         }
 
         let theme = Theme::default();
-        let todo = tool_section(
-            "todo-card",
-            "todo.write",
-            vec![super::super::TranscriptToolCallDetailBlock::TodoList {
-                items: vec![super::super::TranscriptTodoItem {
-                    content: "remove the panel surface".to_string(),
-                    status: crate::ui::ui_tool_question_todo::TranscriptTodoStatus::Completed,
-                }],
+        let edit = tool_section(
+            "edit-card",
+            "edit",
+            vec![super::super::TranscriptToolCallDetailBlock::Message {
+                text: "updated file".to_string(),
+                tone: super::super::TranscriptToolCallDetailTone::Primary,
             }],
         );
         let shell = tool_section(
@@ -2131,7 +2128,6 @@ mod tests {
                 command: "printf tool-card".to_string(),
                 output: "tool-card".to_string(),
                 description: Some("Shell".to_string()),
-                expand_hint: None,
             }],
         );
         let turn = super::super::TranscriptTurnSection {
@@ -2158,7 +2154,7 @@ mod tests {
                 retry_elapsed_ms: None,
             },
             assistant_parts: vec![
-                super::super::TranscriptAssistantPart::ToolCall(Box::new(todo)),
+                super::super::TranscriptAssistantPart::ToolCall(Box::new(edit)),
                 super::super::TranscriptAssistantPart::Body(
                     super::super::TranscriptBodyBlock::RichText("between tools".to_string()),
                 ),
@@ -2179,13 +2175,19 @@ mod tests {
         );
 
         // act
-        for surface in surfaces.into_iter().filter(|surface| {
-            matches!(
-                surface.kind,
-                super::super::TranscriptRenderSurfaceKind::AssistantTool
-                    | super::super::TranscriptRenderSurfaceKind::AssistantCommandTool
-            )
-        }) {
+        let tools = surfaces
+            .into_iter()
+            .filter(|surface| {
+                matches!(
+                    surface.kind,
+                    super::super::TranscriptRenderSurfaceKind::AssistantTool
+                        | super::super::TranscriptRenderSurfaceKind::AssistantCommandTool
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(tools.len(), 2);
+        for surface in tools {
+            assert!(!surface.lines.is_empty());
             // assert
             assert_eq!(surface.surface, ratatui::style::Color::Rgb(1, 2, 3));
             let backgrounds = surface

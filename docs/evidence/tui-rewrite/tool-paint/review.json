@@ -1,0 +1,37 @@
+{
+  "reviewer": "/root/tui_review",
+  "reviewed_at": "2026-09-27T19:56:01.094000+00:00",
+  "decision": "approved",
+  "scope": "bounded tool-painter replacement",
+  "whole_rewrite_signoff": false,
+  "blocking_findings": [],
+  "source_patch_sha256": "fef4ef68640ace22932de5b9a5d9572566dd419d50a895060ccc54d5a0ef3906",
+  "verified": {
+    "source_receipts": 14,
+    "frozen_records": 555,
+    "controlled_animation_frames": 733,
+    "tool_body_frames": 445,
+    "ordering_frames": 234,
+    "interaction_frames": 93,
+    "paired_xterm_tool_images": 6,
+    "selection_raw_ansi_bytes_equal": 17850,
+    "raw_release_reports": 84,
+    "unchanged_gates_passed": 20,
+    "net_source_lines_removed": 577
+  },
+  "review_statement": "Approved for this bounded tool-painter replacement. No blocking findings remain. Source receipts and patch match; parity, resource reports, cleanup and disclosed observer differences verified. Initial regression retained and excluded; ungated regressions accurately disclosed. This is not whole-rewrite signoff.",
+  "resolved_findings": [
+    "Measured geometry for targetless shell rows; shared helper now returns before geometry when target is absent.",
+    "README now discloses typing CPU from 0.10 to 0.15 ms/frame and startup cold rendering from 622 to 661 \u00b5s, and states that neither metric has a gate in this 20-check set."
+  ],
+  "remaining": [
+    "full state and text formatter replacement",
+    "50% source reduction target",
+    "terminal-reader polling",
+    "sustained runtime resource targets",
+    "startup animation cadence difference",
+    "long-duration resource evidence",
+    "full feature and legacy-removal review",
+    "other operating systems and live providers"
+  ]
+}

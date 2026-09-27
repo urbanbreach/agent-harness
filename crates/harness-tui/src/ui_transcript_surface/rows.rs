@@ -65,27 +65,6 @@ pub(in crate::ui) fn transcript_surface_render_width(
     }
 }
 
-pub(in crate::ui) fn append_prebuilt_nested_surface_lines(
-    lines: &mut Vec<Line<'static>>,
-    indent: &str,
-    rail_color: Color,
-    surface: Color,
-    prebuilt: Vec<Line<'static>>,
-    width: u16,
-) {
-    let prefix = nested_surface_prefix(indent, rail_color, surface);
-    let prefix_width = nested_surface_prefix_width(indent);
-    for line in prebuilt {
-        lines.push(surface_line(
-            prefix.clone(),
-            prefix_width,
-            line.spans,
-            width,
-            surface,
-        ));
-    }
-}
-
 pub(in crate::ui) fn append_prebuilt_surface_lines(
     lines: &mut Vec<Line<'static>>,
     indent: &str,
@@ -372,74 +351,4 @@ pub(in crate::ui) fn surface_span(
     surface: Color,
 ) -> Span<'static> {
     Span::styled(text.into(), Style::default().bg(surface).patch(style))
-}
-
-pub(in crate::ui) fn append_nested_surface_row(
-    lines: &mut Vec<Line<'static>>,
-    indent: &str,
-    rail_color: Color,
-    surface: Color,
-    content_leading_spaces: &str,
-    content_spans: Vec<Span<'static>>,
-    width: u16,
-) {
-    let prefix = nested_surface_prefix(indent, rail_color, surface);
-    let prefix_width = nested_surface_prefix_width(indent);
-    let leading_width = display_width(content_leading_spaces);
-    let content_width = usize::from(width)
-        .saturating_sub(prefix_width)
-        .saturating_sub(leading_width)
-        .max(1);
-    let wrapped_rows = wrap_surface_spans(content_spans, content_width);
-
-    if wrapped_rows.is_empty() {
-        lines.push(surface_line(
-            prefix,
-            prefix_width,
-            Vec::new(),
-            width,
-            surface,
-        ));
-        return;
-    }
-
-    let leading_span = if content_leading_spaces.is_empty() {
-        None
-    } else {
-        Some(Span::styled(
-            content_leading_spaces.to_string(),
-            Style::default().bg(surface),
-        ))
-    };
-
-    for row in wrapped_rows {
-        let mut row = row;
-        if let Some(leading) = leading_span.clone() {
-            row.insert(0, leading);
-        }
-        lines.push(surface_line(
-            prefix.clone(),
-            prefix_width,
-            row,
-            width,
-            surface,
-        ));
-    }
-}
-
-fn nested_surface_prefix(indent: &str, rail_color: Color, surface: Color) -> Vec<Span<'static>> {
-    let mut spans = Vec::new();
-    if !indent.is_empty() {
-        spans.push(Span::raw(indent.to_string()));
-    }
-    spans.push(Span::styled(
-        TRANSCRIPT_RAIL_GLYPH,
-        Style::default().fg(rail_color).bg(surface),
-    ));
-    spans.push(surface_span(" ", Style::default(), surface));
-    spans
-}
-
-pub(in crate::ui) fn nested_surface_prefix_width(indent: &str) -> usize {
-    display_width(indent) + display_width(TRANSCRIPT_RAIL_GLYPH) + 1
 }

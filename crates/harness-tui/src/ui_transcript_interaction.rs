@@ -12,7 +12,7 @@ use crate::text::has_trimmed_content;
 use super::ui_transcript_layout::{
     transcript_visual_entry_viewport_placement, MeasuredTranscriptLayout, TranscriptViewportRows,
 };
-use super::ui_transcript_surface::{append_nested_surface_row, append_surface_row};
+use super::ui_transcript_surface::append_surface_row;
 use super::WheelTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -132,14 +132,6 @@ impl<'a> TranscriptViewportHitMap<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(super) struct NestedSurfaceChrome<'a> {
-    pub(super) indent: &'a str,
-    pub(super) rail_color: Color,
-    pub(super) surface: Color,
-    pub(super) content_leading_spaces: &'a str,
-}
-
 pub(super) fn transcript_target_is_hovered(
     target: Option<&TranscriptMouseTarget>,
     hovered: Option<&TranscriptMouseTarget>,
@@ -236,8 +228,9 @@ pub(super) fn bounded_interaction_row(
     target: Option<TranscriptMouseTarget>,
     line: &Line<'_>,
 ) -> Option<TranscriptInteractionRow> {
+    let target = target?;
     let (hit_start, hit_width) = line_hit_bounds_without_trailing_fill(line);
-    target.map(|target| TranscriptInteractionRow {
+    Some(TranscriptInteractionRow {
         target,
         hit_start,
         hit_width,
@@ -272,27 +265,6 @@ pub(super) fn append_surface_row_with_bounded_target(
     for line in &lines[start..] {
         interaction_rows.push(bounded_interaction_row(target.clone(), line));
     }
-}
-
-pub(super) fn append_nested_surface_row_with_target(
-    lines: &mut Vec<Line<'static>>,
-    interaction_rows: &mut Vec<Option<TranscriptInteractionRow>>,
-    target: Option<TranscriptMouseTarget>,
-    chrome: NestedSurfaceChrome<'_>,
-    content_spans: Vec<Span<'static>>,
-    width: u16,
-) {
-    let start = lines.len();
-    append_nested_surface_row(
-        lines,
-        chrome.indent,
-        chrome.rail_color,
-        chrome.surface,
-        chrome.content_leading_spaces,
-        content_spans,
-        width,
-    );
-    append_full_width_interaction_rows(lines, interaction_rows, target, start);
 }
 
 pub(super) fn append_noninteractive_rows(

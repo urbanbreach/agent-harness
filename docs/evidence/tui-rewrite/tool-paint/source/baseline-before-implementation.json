@@ -1,0 +1,13 @@
+{
+  "recorded_at": "2026-09-27T19:28:00.472471+00:00",
+  "head": "a7d6d8e17168ea339b9d660456b308f3839d3ff1",
+  "reference": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+  "baseline_binary": "/tmp/tui-tool-layout-candidate.bin",
+  "frozen_limits": [
+    "docs/evidence/tui-rewrite/tool-layout/performance/acceptance-before-implementation.json",
+    "docs/evidence/tui-rewrite/tool-layout/general/frozen-timing-comparison.json",
+    "docs/evidence/tui-rewrite/tool-layout/general/frozen-resource-comparison.json"
+  ],
+  "parity_baseline": "docs/evidence/tui-rewrite/tool-layout/frames/comparison.json",
+  "scope": "Tool surface renderer replacement; all 20 existing numeric limits retained. No visual/interaction difference accepted."
+}

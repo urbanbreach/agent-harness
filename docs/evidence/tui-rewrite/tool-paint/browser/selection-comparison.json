@@ -1,0 +1,38 @@
+{
+  "comparisons": [
+    {
+      "name": "before",
+      "pixels_cells_modes_equal": true,
+      "observer_differences": {
+        "renderCount": {
+          "before": 8,
+          "candidate": 9
+        },
+        "parsedCount": {
+          "before": 5,
+          "candidate": 6
+        }
+      },
+      "candidate_png_sha256": "c9ac8a3935a2bf174802fd80c6bfb76018a72cc52ba36c510af1c684eba634ed"
+    },
+    {
+      "name": "selected",
+      "pixels_cells_modes_equal": true,
+      "observer_differences": {
+        "renderCount": {
+          "before": 12,
+          "candidate": 13
+        },
+        "parsedCount": {
+          "before": 6,
+          "candidate": 7
+        }
+      },
+      "candidate_png_sha256": "87be22208cb7577436af9a0f3cc136f61c435ab9a52fce758447576bd1086d1d"
+    }
+  ],
+  "both_restoration_and_cleanup_pass": true,
+  "raw_terminal_bytes_equal": true,
+  "raw_terminal_sha256": "3defd6c22ae7c2c5f5d26c54c7bda85514a0d3b3caece38b73a837923805c725",
+  "observer_note": "parsedCount counts xterm onWriteParsed callbacks; identical terminal bytes can arrive in different chunks. Cells, PNGs, modes and raw bytes are exact."
+}
