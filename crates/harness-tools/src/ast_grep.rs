@@ -1,999 +1,391 @@
-// allow: SIZE_OK — ast-grep tool wrapper (search + replace + schema)
-use crate::UnwrapOrAbort;
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
-
-use async_trait::async_trait;
-use globset::{Glob, GlobSet, GlobSetBuilder};
-use harness_core::redact::redact_artifact_text;
-use harness_core::tool::{ArtifactRef, Tool, ToolCapability, ToolContext, ToolError, ToolResult};
-use harness_core::tool_metadata;
-use harness_core::ToolResultExt;
+mod stage;
+use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use similar::TextDiff;
-
-use crate::fs_walk::{
-    collect_workspace_files, normalize_workspace_relative_entry, workspace_file_from_path,
-    WorkspaceFile,
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    time::{Duration, Instant},
 };
-use crate::hashline_apply::write_atomic;
-use crate::limit_summary::summarize_limit;
-use crate::workspace_paths::{
-    canonical_workspace_root, ensure_within_workspace_path, normalize_workspace_target_path,
-};
-use crate::{parse_tool_args, text_json_artifacts_tool_result, text_json_tool_result};
 
-mod adapter;
-
-use adapter::{run_ast_grep, AstGrepCliMatch, AstGrepRunRequest};
-
-const DEFAULT_AST_GREP_LIMIT: usize = 100;
-const MAX_AST_GREP_LIMIT: usize = 200;
-const MAX_AST_GREP_CONTEXT: usize = 5;
-const MAX_MATCH_TEXT_CHARS: usize = 4_000;
-const MAX_SNIPPET_CHARS: usize = 8_000;
-const MAX_INLINE_JSON_CHARS: usize = 24_000;
-
-pub(crate) struct AstGrepSearchTool {
-    command: String,
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum AstTool {
+    Search,
+    Replace,
 }
-
-pub(crate) struct AstGrepReplaceTool {
-    command: String,
-}
-
-impl AstGrepSearchTool {
-    pub(crate) fn new() -> Self {
-        Self::with_command("ast-grep")
-    }
-
-    pub(crate) fn with_command(command: impl Into<String>) -> Self {
-        Self {
-            command: ast_grep_command(command.into()),
-        }
-    }
-}
-
-impl AstGrepReplaceTool {
-    pub(crate) fn new() -> Self {
-        Self::with_command("ast-grep")
-    }
-
-    pub(crate) fn with_command(command: impl Into<String>) -> Self {
-        Self {
-            command: ast_grep_command(command.into()),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct AstGrepSearchArgs {
-    pattern: String,
-    #[serde(default)]
-    language: Option<String>,
-    #[serde(default)]
-    path: Option<String>,
-    #[serde(default)]
-    paths: Vec<String>,
-    #[serde(default)]
-    include: Vec<String>,
-    #[serde(default)]
-    exclude: Vec<String>,
-    #[serde(default)]
-    context: Option<u32>,
-    #[serde(default)]
-    limit: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct AstGrepReplaceArgs {
-    pattern: String,
-    rewrite: String,
-    #[serde(default)]
-    language: Option<String>,
-    #[serde(default)]
-    path: Option<String>,
-    #[serde(default)]
-    paths: Vec<String>,
-    #[serde(default)]
-    include: Vec<String>,
-    #[serde(default)]
-    exclude: Vec<String>,
-    #[serde(default)]
-    mode: AstGrepReplaceMode,
-    #[serde(default)]
-    limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Default, Clone, Copy, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
-enum AstGrepReplaceMode {
+enum Mode {
     #[default]
     DryRun,
     Apply,
 }
-
-impl AstGrepReplaceMode {
-    fn as_str(self) -> &'static str {
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct Args {
+    pattern: String,
+    rewrite: Option<String>,
+    language: Option<String>,
+    path: Option<PathBuf>,
+    #[serde(default)]
+    paths: Vec<PathBuf>,
+    #[serde(default)]
+    include: Vec<String>,
+    #[serde(default)]
+    exclude: Vec<String>,
+    #[serde(default)]
+    mode: Mode,
+    context: Option<usize>,
+    limit: Option<usize>,
+}
+impl Args {
+    fn roots(&self) -> Vec<PathBuf> {
+        let mut roots: Vec<_> = self.path.iter().chain(&self.paths).cloned().collect();
+        if roots.is_empty() {
+            roots.push(".".into());
+        }
+        roots
+    }
+}
+fn invalid(message: impl Into<String>) -> ToolError {
+    ToolError::InvalidArguments(message.into())
+}
+fn failure(message: impl Into<String>) -> ToolError {
+    ToolError::Execution(message.into())
+}
+impl AstTool {
+    fn parse(self, value: Value) -> Result<Args, ToolError> {
+        let args: Args = serde_json::from_value(value).map_err(|e| invalid(e.to_string()))?;
+        if args.pattern.trim().is_empty()
+            || args.pattern.len() > 8192
+            || args.rewrite.as_ref().is_some_and(|s| s.len() > 8192)
+            || args.paths.len() > 256
+            || (self == Self::Replace) != args.rewrite.is_some()
+            || (self == Self::Search && args.mode == Mode::Apply)
+        {
+            return Err(invalid("provide a pattern (at most 8192 bytes), at most 256 paths, and rewrite only for ast_grep_replace"));
+        }
+        Ok(args)
+    }
+}
+#[async_trait::async_trait]
+impl Tool for AstTool {
+    fn id(&self) -> &str {
         match self {
-            Self::DryRun => "dry_run",
-            Self::Apply => "apply",
+            Self::Search => "ast_grep_search",
+            Self::Replace => "ast_grep_replace",
         }
     }
-}
-
-#[derive(Debug, Clone)]
-struct SearchRoot {
-    canonical: PathBuf,
-    relative: String,
-}
-
-#[derive(Debug, Clone)]
-struct AstGrepMatch {
-    file_path: String,
-    language: String,
-    start_line: u64,
-    start_column: u64,
-    end_line: u64,
-    end_column: u64,
-    matched_text: String,
-    matched_text_truncated: bool,
-    byte_start: Option<u64>,
-    byte_end: Option<u64>,
-    snippet: String,
-    snippet_truncated: bool,
-}
-
-#[derive(Debug, Clone)]
-struct AstGrepReplacement {
-    file_path: String,
-    resolved_path: PathBuf,
-    language: String,
-    start_line: u64,
-    start_column: u64,
-    end_line: u64,
-    end_column: u64,
-    match_byte_start: usize,
-    match_byte_end: usize,
-    byte_start: usize,
-    byte_end: usize,
-    matched_text: String,
-    matched_text_truncated: bool,
-    replacement: String,
-    replacement_truncated: bool,
-}
-
-#[derive(Debug)]
-struct ReplacementFilePlan {
-    file_path: String,
-    resolved_path: PathBuf,
-    before: String,
-    after: String,
-    diff: String,
-    replacement_count: usize,
-}
-
-#[async_trait]
-impl Tool for AstGrepSearchTool {
-    tool_metadata!(
-        "ast_grep_search",
-        "Performs read-only structural code search through the ast-grep CLI with workspace path safety, explicit or safely inferred language, hard caps, and artifact spill for large output.",
-        ToolCapability::ReadFs,
-        crate::json_schema_for::<AstGrepSearchArgs>()
-    );
-
-    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: AstGrepSearchArgs = parse_tool_args(args_json)?;
-        let pattern = validate_pattern(&args.pattern)?;
-        let workspace = canonical_workspace_root(&ctx)?;
-        let include = compile_glob_set(&args.include, "include")?;
-        let exclude = compile_glob_set(&args.exclude, "exclude")?;
-        let paths = requested_paths(args.path.as_deref(), &args.paths);
-        let search_roots = search_roots(&workspace, &paths)?;
-        let limit = clamp_limit(args.limit, DEFAULT_AST_GREP_LIMIT, MAX_AST_GREP_LIMIT, 1);
-        let context = clamp_limit(args.context, 0, MAX_AST_GREP_CONTEXT, 0);
-        let explicit_language = args
-            .language
-            .as_deref()
-            .map(normalize_language)
-            .transpose()?;
-        let language = match explicit_language.clone() {
-            Some(language) => language,
-            None => infer_single_language(
-                &workspace,
-                &search_roots,
-                include.as_ref(),
-                exclude.as_ref(),
-            )?,
-        };
-
-        let adapter = run_ast_grep(AstGrepRunRequest {
-            workspace: &workspace,
-            roots: &search_roots,
-            pattern: &pattern,
-            rewrite: None,
-            language: &language,
-            include: &args.include,
-            exclude: &args.exclude,
-            context: context.effective,
-            command_name: &self.command,
-            tool_id: "ast_grep_search",
-        })
-        .await?;
-
-        let all_matches = adapter
-            .matches
-            .into_iter()
-            .map(|matched| cli_match_to_match(matched, &language))
-            .collect::<Vec<_>>();
-        let total_count = all_matches.len();
-        let limit_summary = summarize_limit(total_count, limit.effective);
-        let returned_matches = all_matches
-            .into_iter()
-            .take(limit_summary.returned_count)
-            .map(|matched| {
-                json!({
-                    "file_path": matched.file_path,
-                    "range": {
-                        "start": { "line": matched.start_line, "column": matched.start_column },
-                        "end": { "line": matched.end_line, "column": matched.end_column },
-                    },
-                    "language": matched.language,
-                    "byte_range": {
-                        "start": matched.byte_start,
-                        "end": matched.byte_end,
-                    },
-                    "matched_text": matched.matched_text,
-                    "matched_text_truncated": matched.matched_text_truncated,
-                    "snippet": matched.snippet,
-                    "snippet_truncated": matched.snippet_truncated,
-                })
-            })
-            .collect::<Vec<_>>();
-        let returned_count = returned_matches.len();
-
-        let payload = json!({
-            "source": "ast_grep_cli_adapter",
-            "adapter": {
-                "name": "ast-grep",
-                "status": "available",
-                "command": format!("{} run", self.command),
-                "warnings": adapter.warnings,
-                "exit_status": adapter.exit_status,
-            },
-            "pattern": args.pattern,
-            "language": language,
-            "language_inference": if explicit_language.is_some() { "explicit" } else { "single_language_from_paths" },
-            "paths": paths,
-            "include": args.include,
-            "exclude": args.exclude,
-            "context": context.effective,
-            "requested_context": context.requested,
-            "effective_context": context.effective,
-            "max_context": MAX_AST_GREP_CONTEXT,
-            "context_clamped": context.clamped,
-            "limit": limit.effective,
-            "requested_limit": limit.requested,
-            "effective_limit": limit.effective,
-            "max_limit": MAX_AST_GREP_LIMIT,
-            "limit_clamped": limit.clamped,
-            "per_match_caps": {
-                "matched_text_chars": MAX_MATCH_TEXT_CHARS,
-                "snippet_chars": MAX_SNIPPET_CHARS,
-            },
-            "total_count": total_count,
-            "returned_count": returned_count,
-            "truncated_count": limit_summary.truncated_count,
-            "truncated": limit_summary.is_truncated,
-            "matches": returned_matches,
-        });
-
-        if returned_count == 0 {
-            return Ok(text_json_tool_result("No structural matches.", payload));
+    fn description(&self) -> &str {
+        match self {
+            Self::Search => "Search code structurally using ast-grep patterns such as console.log($X). Select language or one inferable language, path/paths, include/exclude globs, context (0–5), and limit (1–200). Requires ast-grep on PATH.",
+            Self::Replace => "Preview structural edits with pattern and rewrite; mode defaults to dry_run. Apply mode checks the complete plan and each target's edit permission before changing files through normal edit receipts. Partial, unreadable, or over-limit plans are not applied.",
         }
-        maybe_spill_json(
-            &ctx,
-            "ast-grep-search.json",
-            format!("{returned_count} structural match(es)"),
-            payload,
-        )
     }
-}
-
-#[async_trait]
-impl Tool for AstGrepReplaceTool {
-    tool_metadata!(
-        "ast_grep_replace",
-        "Plans or applies structural code rewrites through ast-grep JSON rewrite output. The adapter never mutates the workspace directly; apply mode writes files only through the Harness edit-permission path with workspace path checks, atomic writes, and diff artifacts. Defaults to dry_run.",
-        ToolCapability::EditFs,
-        crate::json_schema_for::<AstGrepReplaceArgs>()
-    );
-
-    async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
-        let args: AstGrepReplaceArgs = parse_tool_args(args_json)?;
-        let pattern = validate_pattern_for_tool("ast_grep_replace", &args.pattern)?;
-        let workspace = canonical_workspace_root(&ctx)?;
-        let include = compile_glob_set(&args.include, "include")?;
-        let exclude = compile_glob_set(&args.exclude, "exclude")?;
-        let paths = requested_paths(args.path.as_deref(), &args.paths);
-        let search_roots = search_roots(&workspace, &paths)?;
-        let limit = clamp_limit(args.limit, DEFAULT_AST_GREP_LIMIT, MAX_AST_GREP_LIMIT, 1);
-        let explicit_language = args
-            .language
-            .as_deref()
-            .map(normalize_language)
-            .transpose()?;
-        let language = match explicit_language.clone() {
-            Some(language) => language,
-            None => infer_single_language(
-                &workspace,
-                &search_roots,
-                include.as_ref(),
-                exclude.as_ref(),
-            )?,
-        };
-
-        let adapter = run_ast_grep(AstGrepRunRequest {
-            workspace: &workspace,
-            roots: &search_roots,
-            pattern: &pattern,
-            rewrite: Some(&args.rewrite),
-            language: &language,
-            include: &args.include,
-            exclude: &args.exclude,
-            context: 0,
-            command_name: &self.command,
-            tool_id: "ast_grep_replace",
-        })
-        .await?;
-
-        let all_replacements = adapter
-            .matches
-            .into_iter()
-            .map(|matched| cli_match_to_replacement(&workspace, &search_roots, matched, &language))
-            .collect::<Result<Vec<_>, _>>()?;
-        let total_count = all_replacements.len();
-        let limit_summary = summarize_limit(total_count, limit.effective);
-        if args.mode == AstGrepReplaceMode::Apply && limit_summary.is_truncated {
-            return Err(ToolError::Execution(format!(
-                "ast_grep_replace refused to apply {total_count} replacement(s) because the effective limit is {}; narrow paths/include globs or run dry_run first",
-                limit.effective
-            )));
-        }
-        let replacements = all_replacements
-            .into_iter()
-            .take(limit_summary.returned_count)
-            .collect::<Vec<_>>();
-        let returned_count = replacements.len();
-        let plans = plan_replacements(&replacements)?;
-        let diff_artifact = if plans.is_empty() {
-            None
+    fn capability(&self) -> ToolCapability {
+        if *self == Self::Replace {
+            ToolCapability::EditFs
         } else {
-            Some(write_replace_diff_artifact(
-                &ctx,
-                args.mode,
-                &combined_diff(&plans),
-            )?)
-        };
-
-        if args.mode == AstGrepReplaceMode::Apply {
-            for plan in &plans {
-                write_atomic(&plan.resolved_path, &plan.after)?;
-            }
+            ToolCapability::ReadFs
         }
-
-        let edits = replacements
-            .iter()
-            .map(replacement_json)
-            .collect::<Vec<_>>();
-        let files = plans
-            .iter()
-            .map(|plan| {
-                json!({
-                    "file_path": plan.file_path,
-                    "resolved_path": plan.resolved_path.display().to_string(),
-                    "replacement_count": plan.replacement_count,
-                    "changed": plan.before != plan.after,
-                })
+    }
+    fn parameters_json_schema(&self) -> Value {
+        schemars::schema_for!(Args).to_value()
+    }
+    fn filesystem_paths(&self, value: &Value) -> Result<Vec<PathBuf>, ToolError> {
+        Ok(self.parse(value.clone())?.roots())
+    }
+    fn permission_requests(&self, value: &Value) -> Vec<(String, String)> {
+        self.parse(value.clone())
+            .map(|args| {
+                args.roots()
+                    .into_iter()
+                    .flat_map(|path| {
+                        let selector = path.to_string_lossy().into_owned();
+                        let mut requests = vec![("read".into(), selector.clone())];
+                        if args.mode == Mode::Apply {
+                            requests.push(("edit".into(), selector));
+                        }
+                        requests
+                    })
+                    .collect()
             })
-            .collect::<Vec<_>>();
-        let mut artifacts = Vec::new();
-        let diff_artifact_json = diff_artifact.as_ref().map(|artifact| {
-            artifacts.push(artifact.clone());
-            json!({
-                "path": artifact.path,
-                "digest": artifact.digest,
-            })
-        });
-        let payload = json!({
-            "source": "ast_grep_cli_adapter",
-            "adapter": {
-                "name": "ast-grep",
-                "status": "available",
-                "command": format!("{} run", self.command),
-                "mutation": "json_rewrite_dry_run_only",
-                "warnings": adapter.warnings,
-                "exit_status": adapter.exit_status,
-            },
-            "pattern": args.pattern,
-            "rewrite": args.rewrite,
-            "language": language,
-            "language_inference": if explicit_language.is_some() { "explicit" } else { "single_language_from_paths" },
-            "mode": args.mode.as_str(),
-            "applied": args.mode == AstGrepReplaceMode::Apply,
-            "paths": paths,
-            "include": args.include,
-            "exclude": args.exclude,
-            "limit": limit.effective,
-            "requested_limit": limit.requested,
-            "effective_limit": limit.effective,
-            "max_limit": MAX_AST_GREP_LIMIT,
-            "limit_clamped": limit.clamped,
-            "per_match_caps": {
-                "matched_text_chars": MAX_MATCH_TEXT_CHARS,
-                "replacement_chars": MAX_MATCH_TEXT_CHARS,
-            },
-            "total_count": total_count,
-            "returned_count": returned_count,
-            "truncated_count": limit_summary.truncated_count,
-            "truncated": limit_summary.is_truncated,
-            "files": files,
-            "diff_artifact": diff_artifact_json,
-            "edits": edits,
-        });
+            .unwrap_or_default()
+    }
+    async fn call(&self, ctx: ToolContext, value: Value) -> Result<ToolResult, ToolError> {
+        let args = self.parse(value)?;
+        tokio::task::spawn_blocking(move || execute(&ctx, args))
+            .await
+            .map_err(|_| failure("structural search worker stopped"))?
+    }
+}
 
-        if returned_count == 0 {
-            return Ok(text_json_tool_result(
-                "No structural replacements.",
-                payload,
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Hit {
+    text: String,
+    file: PathBuf,
+    range: Range,
+    lines: Option<String>,
+    replacement: Option<String>,
+    replacement_offsets: Option<Span>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Range {
+    byte_offset: Span,
+    start: Position,
+    end: Position,
+}
+#[derive(Deserialize)]
+struct Position {
+    line: u32,
+    column: u32,
+}
+#[derive(Deserialize, Clone, Copy)]
+struct Span {
+    start: usize,
+    end: usize,
+}
+impl Span {
+    fn slice(self, text: &str) -> Result<&str, ToolError> {
+        text.get(self.start..self.end)
+            .ok_or_else(|| failure("ast-grep returned an invalid UTF-8 byte range"))
+    }
+}
+fn execute(ctx: &ToolContext, args: Args) -> Result<ToolResult, ToolError> {
+    let started = Instant::now();
+    let executor = tokio::runtime::Handle::current();
+    let (stage, sources, language, skipped) = stage::prepare(ctx, &args, &executor)?;
+    let limit = args.limit.unwrap_or(100).clamp(1, 200);
+    let mut hits: Vec<Hit> = if sources.is_empty() {
+        Vec::new()
+    } else {
+        let mut command = tokio::process::Command::new("ast-grep");
+        command
+            .current_dir(stage.path())
+            .args([
+                "run",
+                "--pattern",
+                &args.pattern,
+                "--lang",
+                language,
+                "--json=compact",
+                "--threads",
+                "1",
+                "--color",
+                "never",
+                "--heading",
+                "never",
+                "--context",
+            ])
+            .arg(args.context.unwrap_or(0).min(5).to_string());
+        if let Some(rewrite) = &args.rewrite {
+            command.args(["--rewrite", rewrite]);
+        }
+        command
+            .arg("--")
+            .args(sources.iter().map(|source| &source.staged));
+        let timeout = Duration::from_secs(30)
+            .checked_sub(started.elapsed())
+            .ok_or_else(|| failure("structural search timed out"))?;
+        let output = executor
+            .block_on(crate::process::run(command, timeout, &ctx.cancellation))
+            .map_err(|e| match e {
+                ToolError::Io(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    failure("ast-grep is required on PATH; install it or use grep")
+                }
+                e => e,
+            })?;
+        if output.truncated {
+            return Err(failure(
+                "ast-grep output exceeds 512 KiB; narrow the search",
             ));
         }
-        maybe_spill_json_with_artifacts(
-            &ctx,
-            "ast-grep-replace.json",
-            format!(
-                "{} structural replacement(s) {}; diff artifact {}",
-                returned_count,
-                if args.mode == AstGrepReplaceMode::Apply {
-                    "applied"
-                } else {
-                    "planned (dry run, no files written)"
-                },
-                diff_artifact
-                    .as_ref()
-                    .map(|artifact| artifact.path.as_str())
-                    .unwrap_or("<none>")
-            ),
-            payload,
-            artifacts,
-        )
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ClampedLimit {
-    requested: Option<usize>,
-    effective: usize,
-    clamped: bool,
-}
-
-fn clamp_limit(
-    requested: Option<u32>,
-    default_value: usize,
-    max_value: usize,
-    min_value: usize,
-) -> ClampedLimit {
-    let requested = requested.map(|value| value as usize);
-    let raw = requested.unwrap_or(default_value);
-    let effective = raw.clamp(min_value.min(max_value), max_value);
-    ClampedLimit {
-        requested,
-        effective,
-        clamped: raw != effective,
-    }
-}
-
-fn validate_pattern(pattern: &str) -> Result<String, ToolError> {
-    validate_pattern_for_tool("ast_grep_search", pattern)
-}
-
-fn validate_pattern_for_tool(tool_id: &str, pattern: &str) -> Result<String, ToolError> {
-    let trimmed = pattern.trim();
-    if trimmed.is_empty() {
-        return Err(ToolError::InvalidArguments(format!(
-            "{tool_id} pattern cannot be empty"
-        )));
-    }
-    Ok(trimmed.to_string())
-}
-
-fn ast_grep_command(command: String) -> String {
-    let trimmed = command.trim();
-    if trimmed.is_empty() {
-        "ast-grep".to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-fn requested_paths(path: Option<&str>, paths: &[String]) -> Vec<String> {
-    let mut requested = Vec::with_capacity(paths.len() + usize::from(path.is_some()));
-    if let Some(path) = path.filter(|path| !path.trim().is_empty()) {
-        requested.push(path.to_string());
-    }
-    requested.extend(paths.iter().cloned());
-    requested
-}
-
-fn search_roots(workspace: &Path, paths: &[String]) -> Result<Vec<SearchRoot>, ToolError> {
-    if paths.is_empty() {
-        return Ok(vec![SearchRoot {
-            canonical: workspace.to_path_buf(),
-            relative: ".".to_string(),
-        }]);
-    }
-    paths
-        .iter()
-        .map(|path| {
-            if path.contains("..") {
-                return Err(ToolError::InvalidArguments(
-                    "ast_grep_search paths cannot contain parent traversal".to_string(),
-                ));
-            }
-            let candidate = normalize_workspace_target_path(workspace, Path::new(path))?;
-            let canonical = candidate.canonicalize().map_err(|err| {
-                ToolError::Execution(format!("failed to resolve path {path}: {err}"))
-            })?;
-            ensure_within_workspace_path(workspace, &canonical)?;
-            if !(canonical.is_file() || canonical.is_dir()) {
-                return Err(ToolError::InvalidArguments(format!(
-                    "path `{path}` must resolve to a file or directory"
-                )));
-            }
-            Ok(SearchRoot {
-                relative: normalize_workspace_relative_entry(workspace, &canonical)?,
-                canonical,
-            })
-        })
-        .collect()
-}
-
-fn infer_single_language(
-    workspace: &Path,
-    roots: &[SearchRoot],
-    include: Option<&GlobSet>,
-    exclude: Option<&GlobSet>,
-) -> Result<String, ToolError> {
-    let mut languages = BTreeSet::new();
-    for root in roots {
-        for file in collect_candidate_files(workspace, root, include, exclude)? {
-            if let Some(language) = infer_language_from_path(Path::new(&file.relative_path)) {
-                languages.insert(language);
-            }
-            if languages.len() > 1 {
-                return Err(ToolError::InvalidArguments(format!(
-                    "ast_grep_search language is required when paths resolve to multiple supported languages: {}; pass `language` explicitly",
-                    languages.into_iter().collect::<Vec<_>>().join(", ")
-                )));
-            }
-        }
-    }
-    languages.into_iter().next().ok_or_else(|| {
-        ToolError::InvalidArguments(
-            "ast_grep_search could not infer a supported language from the selected paths; pass `language` explicitly".to_string(),
-        )
-    })
-}
-
-fn collect_candidate_files(
-    workspace: &Path,
-    root: &SearchRoot,
-    include: Option<&GlobSet>,
-    exclude: Option<&GlobSet>,
-) -> Result<Vec<WorkspaceFile>, ToolError> {
-    let mut files = if root.canonical.is_file() {
-        vec![workspace_file_from_path(workspace, &root.canonical)?]
-    } else {
-        collect_workspace_files(workspace, &root.canonical)?
-    };
-    files.retain(|file| {
-        include.is_none_or(|set| set.is_match(&file.relative_path))
-            && exclude.is_none_or(|set| !set.is_match(&file.relative_path))
-            && infer_language_from_path(Path::new(&file.relative_path)).is_some()
-    });
-    files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
-    Ok(files)
-}
-
-fn cli_match_to_match(matched: AstGrepCliMatch, requested_language: &str) -> AstGrepMatch {
-    let (matched_text, matched_text_truncated) = cap_text(&matched.text, MAX_MATCH_TEXT_CHARS);
-    let snippet_source = matched.lines.as_deref().unwrap_or(&matched.text);
-    let (snippet, snippet_truncated) = cap_text(snippet_source, MAX_SNIPPET_CHARS);
-    let byte_start = matched.range.byte_offset.as_ref().map(|range| range.start);
-    let byte_end = matched.range.byte_offset.as_ref().map(|range| range.end);
-    AstGrepMatch {
-        file_path: normalize_adapter_file_path(&matched.file),
-        language: matched
-            .language
-            .as_deref()
-            .map(normalize_output_language)
-            .unwrap_or_else(|| requested_language.to_string()),
-        start_line: matched.range.start.line + 1,
-        start_column: matched.range.start.column + 1,
-        end_line: matched.range.end.line + 1,
-        end_column: matched.range.end.column + 1,
-        matched_text,
-        matched_text_truncated,
-        byte_start,
-        byte_end,
-        snippet,
-        snippet_truncated,
-    }
-}
-
-fn cli_match_to_replacement(
-    workspace: &Path,
-    roots: &[SearchRoot],
-    matched: AstGrepCliMatch,
-    requested_language: &str,
-) -> Result<AstGrepReplacement, ToolError> {
-    let (file_path, resolved_path) =
-        resolve_adapter_replacement_path(workspace, roots, &matched.file)?;
-    let replacement = matched.replacement.ok_or_else(|| {
-        ToolError::Execution(
-            "ast_grep_replace adapter output did not include `replacement`; ensure ast-grep supports JSON rewrite output".to_string(),
-        )
-    })?;
-    let match_byte_range = matched.range.byte_offset.ok_or_else(|| {
-        ToolError::Execution(
-            "ast_grep_replace adapter output did not include match byte offsets; cannot safely validate rewrite".to_string(),
-        )
-    })?;
-    let replacement_byte_range = matched
-        .replacement_offsets
-        .unwrap_or_else(|| match_byte_range.clone());
-    let match_byte_start = usize::try_from(match_byte_range.start).map_err(|_| {
-        ToolError::Execution(
-            "ast_grep_replace match byte range start exceeds platform size".to_string(),
-        )
-    })?;
-    let match_byte_end = usize::try_from(match_byte_range.end).map_err(|_| {
-        ToolError::Execution(
-            "ast_grep_replace match byte range end exceeds platform size".to_string(),
-        )
-    })?;
-    if match_byte_start > match_byte_end {
-        return Err(ToolError::Execution(format!(
-            "ast_grep_replace adapter returned an invalid match byte range {match_byte_start}..{match_byte_end} for {file_path}"
-        )));
-    }
-    let byte_start = usize::try_from(replacement_byte_range.start).map_err(|_| {
-        ToolError::Execution("ast_grep_replace byte range start exceeds platform size".to_string())
-    })?;
-    let byte_end = usize::try_from(replacement_byte_range.end).map_err(|_| {
-        ToolError::Execution("ast_grep_replace byte range end exceeds platform size".to_string())
-    })?;
-    if byte_start > byte_end {
-        return Err(ToolError::Execution(format!(
-            "ast_grep_replace adapter returned an invalid byte range {byte_start}..{byte_end} for {file_path}"
-        )));
-    }
-    if byte_start < match_byte_start || byte_end > match_byte_end {
-        return Err(ToolError::Execution(format!(
-            "ast_grep_replace adapter replacement range {byte_start}..{byte_end} escapes match range {match_byte_start}..{match_byte_end} for {file_path}"
-        )));
-    }
-
-    Ok(AstGrepReplacement {
-        file_path,
-        resolved_path,
-        language: matched
-            .language
-            .as_deref()
-            .map(normalize_output_language)
-            .unwrap_or_else(|| requested_language.to_string()),
-        start_line: matched.range.start.line + 1,
-        start_column: matched.range.start.column + 1,
-        end_line: matched.range.end.line + 1,
-        end_column: matched.range.end.column + 1,
-        match_byte_start,
-        match_byte_end,
-        byte_start,
-        byte_end,
-        matched_text_truncated: matched.text.chars().count() > MAX_MATCH_TEXT_CHARS,
-        matched_text: matched.text,
-        replacement_truncated: replacement.chars().count() > MAX_MATCH_TEXT_CHARS,
-        replacement,
-    })
-}
-
-fn resolve_adapter_replacement_path(
-    workspace: &Path,
-    roots: &[SearchRoot],
-    adapter_path: &str,
-) -> Result<(String, PathBuf), ToolError> {
-    let normalized = normalize_adapter_file_path(adapter_path);
-    let candidate = normalize_workspace_target_path(workspace, Path::new(&normalized))?;
-    let canonical = candidate.canonicalize().map_err(|err| {
-        ToolError::Execution(format!(
-            "ast_grep_replace failed to resolve adapter path `{adapter_path}`: {err}"
-        ))
-    })?;
-    ensure_within_workspace_path(workspace, &canonical)?;
-    if !roots.iter().any(|root| {
-        if root.canonical.is_file() {
-            canonical == root.canonical
-        } else {
-            canonical.starts_with(&root.canonical)
-        }
-    }) {
-        return Err(ToolError::PathEscapesWorkspace {
-            workspace_root: workspace.display().to_string(),
-            path: adapter_path.to_string(),
-        });
-    }
-    Ok((
-        normalize_workspace_relative_entry(workspace, &canonical)?,
-        canonical,
-    ))
-}
-
-fn plan_replacements(
-    replacements: &[AstGrepReplacement],
-) -> Result<Vec<ReplacementFilePlan>, ToolError> {
-    let mut by_file: BTreeMap<String, Vec<&AstGrepReplacement>> = BTreeMap::new();
-    for replacement in replacements {
-        by_file
-            .entry(replacement.file_path.clone())
-            .or_default()
-            .push(replacement);
-    }
-
-    by_file
-        .into_iter()
-        .map(|(file_path, mut edits)| {
-            edits.sort_by_key(|edit| (edit.byte_start, edit.byte_end));
-            let resolved_path = edits
-                .first()
-                .map(|edit| edit.resolved_path.clone())
-                .unwrap_or_abort();
-            let before = std::fs::read_to_string(&resolved_path).map_err(|err| {
-                ToolError::Execution(format!(
-                    "ast_grep_replace failed to read {file_path} before applying rewrite: {err}"
-                ))
-            })?;
-            let mut previous_end = 0usize;
-            for edit in &edits {
-                if edit.match_byte_end > before.len()
-                    || edit.byte_end > before.len()
-                    || !before.is_char_boundary(edit.match_byte_start)
-                    || !before.is_char_boundary(edit.match_byte_end)
-                    || !before.is_char_boundary(edit.byte_start)
-                    || !before.is_char_boundary(edit.byte_end)
-                {
-                    return Err(ToolError::Execution(format!(
-                        "ast_grep_replace adapter byte range {}..{} is invalid for {file_path}",
-                        edit.byte_start, edit.byte_end
-                    )));
-                }
-                if edit.byte_start < edit.match_byte_start || edit.byte_end > edit.match_byte_end {
-                    return Err(ToolError::Execution(format!(
-                        "ast_grep_replace adapter replacement range {}..{} escapes match range {}..{} for {file_path}",
-                        edit.byte_start, edit.byte_end, edit.match_byte_start, edit.match_byte_end
-                    )));
-                }
-                if edit.byte_start < previous_end {
-                    return Err(ToolError::Execution(format!(
-                        "ast_grep_replace refused overlapping rewrites in {file_path}; narrow the pattern or run separate edits"
-                    )));
-                }
-                let current = &before[edit.match_byte_start..edit.match_byte_end];
-                if current != edit.matched_text {
-                    return Err(ToolError::Execution(format!(
-                        "ast_grep_replace refused stale adapter output for {file_path}; expected match byte range did not match current file contents"
-                    )));
-                }
-                previous_end = edit.byte_end;
-            }
-
-            let mut after = before.clone();
-            for edit in edits.iter().rev() {
-                after.replace_range(edit.byte_start..edit.byte_end, &edit.replacement);
-            }
-            let diff = TextDiff::from_lines(&redact_artifact_text(&before), &redact_artifact_text(&after))
-                .unified_diff()
-                .to_string();
-            Ok(ReplacementFilePlan {
-                file_path,
-                resolved_path,
-                before,
-                after,
-                diff,
-                replacement_count: edits.len(),
-            })
-        })
-        .collect()
-}
-
-fn replacement_json(replacement: &AstGrepReplacement) -> Value {
-    let (matched_text, matched_text_truncated) =
-        cap_text(&replacement.matched_text, MAX_MATCH_TEXT_CHARS);
-    let (replacement_text, replacement_text_truncated) =
-        cap_text(&replacement.replacement, MAX_MATCH_TEXT_CHARS);
-    json!({
-        "file_path": replacement.file_path,
-        "range": {
-            "start": { "line": replacement.start_line, "column": replacement.start_column },
-            "end": { "line": replacement.end_line, "column": replacement.end_column },
-        },
-        "language": replacement.language,
-        "byte_range": {
-            "start": replacement.byte_start,
-            "end": replacement.byte_end,
-        },
-        "match_byte_range": {
-            "start": replacement.match_byte_start,
-            "end": replacement.match_byte_end,
-        },
-        "matched_text": matched_text,
-        "matched_text_truncated": matched_text_truncated || replacement.matched_text_truncated,
-        "replacement": replacement_text,
-        "replacement_truncated": replacement_text_truncated || replacement.replacement_truncated,
-    })
-}
-
-fn combined_diff(plans: &[ReplacementFilePlan]) -> String {
-    let mut output = String::new();
-    for plan in plans {
-        output.push_str(&format!("diff --ast-grep-replace {}\n", plan.file_path));
-        output.push_str(&plan.diff);
-        if !output.ends_with('\n') {
-            output.push('\n');
-        }
-    }
-    output
-}
-
-fn write_replace_diff_artifact(
-    ctx: &ToolContext,
-    mode: AstGrepReplaceMode,
-    diff: &str,
-) -> Result<ArtifactRef, ToolError> {
-    ctx.artifact_store()
-        .map_err(|err| ToolError::Execution(err.to_string()))?
-        .write_text(&format!("ast-grep-replace-{}.diff", mode.as_str()), diff)
-        .map_err(|err| {
-            ToolError::Execution(format!(
-                "failed to write ast_grep_replace diff artifact: {err}"
-            ))
-        })
-}
-
-fn normalize_adapter_file_path(path: &str) -> String {
-    path.replace('\\', "/")
-}
-
-fn cap_text(text: &str, max_chars: usize) -> (String, bool) {
-    if text.chars().count() <= max_chars {
-        return (text.to_string(), false);
-    }
-    let mut capped = text.chars().take(max_chars).collect::<String>();
-    capped.push_str("…[truncated]");
-    (capped, true)
-}
-
-fn compile_glob_set(patterns: &[String], label: &str) -> Result<Option<GlobSet>, ToolError> {
-    if patterns.is_empty() {
-        return Ok(None);
-    }
-    let mut builder = GlobSetBuilder::new();
-    for pattern in patterns {
-        validate_glob_pattern(pattern, label)?;
-        builder.add(Glob::new(pattern).map_err(|err| {
-            ToolError::InvalidArguments(format!("invalid {label} glob `{pattern}`: {err}"))
-        })?);
-    }
-    builder
-        .build()
-        .map(Some)
-        .map_err(|err| ToolError::InvalidArguments(format!("invalid {label} globs: {err}")))
-}
-
-fn validate_glob_pattern(pattern: &str, label: &str) -> Result<(), ToolError> {
-    if pattern.trim().is_empty() {
-        return Err(ToolError::InvalidArguments(format!(
-            "ast_grep_search {label} globs cannot be empty"
-        )));
-    }
-    if pattern.contains("..") || pattern.starts_with('/') || pattern.starts_with('\\') {
-        return Err(ToolError::InvalidArguments(format!(
-            "ast_grep_search {label} glob `{pattern}` must stay within the workspace"
-        )));
-    }
-    Ok(())
-}
-
-fn normalize_language(language: &str) -> Result<String, ToolError> {
-    let normalized = match language.trim().to_ascii_lowercase().as_str() {
-        "rs" | "rust" => "rust",
-        "js" | "javascript" => "javascript",
-        "ts" | "typescript" => "typescript",
-        "tsx" => "tsx",
-        "jsx" => "jsx",
-        "py" | "python" => "python",
-        "md" | "markdown" => "markdown",
-        "json" => "json",
-        "toml" => "toml",
-        "yaml" | "yml" => "yaml",
-        other => {
-            return Err(ToolError::InvalidArguments(format!(
-                "unsupported language `{other}`; expected rust, javascript, typescript, tsx, jsx, python, markdown, json, toml, or yaml"
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("Pattern contains an ERROR node")
+            || !(output.status.success() || output.status.code() == Some(1))
+        {
+            return Err(failure(format!(
+                "ast-grep failed: {}",
+                &stderr[..stderr.floor_char_boundary(stderr.len().min(4096))]
             )));
         }
-    };
-    Ok(normalized.to_string())
-}
-
-fn normalize_output_language(language: &str) -> String {
-    normalize_language(language).unwrap_or_else(|_| language.trim().to_ascii_lowercase())
-}
-
-fn infer_language_from_path(path: &Path) -> Option<String> {
-    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
-    normalize_language(&ext).ok()
-}
-
-fn maybe_spill_json(
-    ctx: &ToolContext,
-    artifact_name: &str,
-    display_text: String,
-    payload: Value,
-) -> Result<ToolResult, ToolError> {
-    maybe_spill_json_with_artifacts(ctx, artifact_name, display_text, payload, Vec::new())
-}
-
-fn maybe_spill_json_with_artifacts(
-    ctx: &ToolContext,
-    artifact_name: &str,
-    display_text: String,
-    payload: Value,
-    mut artifacts: Vec<ArtifactRef>,
-) -> Result<ToolResult, ToolError> {
-    let body = serde_json::to_string_pretty(&payload).tool_err("failed to serialize output")?;
-    if body.len() <= MAX_INLINE_JSON_CHARS {
-        if artifacts.is_empty() {
-            return Ok(text_json_tool_result(display_text, payload));
+        let hits: Vec<Hit> = serde_json::from_slice(&output.stdout)
+            .map_err(|e| failure(format!("invalid ast-grep response: {e}")))?;
+        if !output.status.success() && !hits.is_empty() {
+            return Err(failure("ast-grep failed with partial results"));
         }
-        return Ok(text_json_artifacts_tool_result(
-            display_text,
-            payload,
-            artifacts,
+        hits
+    };
+    let count = hits.len();
+    if args.mode == Mode::Apply && (count > limit || skipped > 0) {
+        return Err(failure(
+            "rewrite limit exceeded or files were skipped; narrow the selection before applying",
         ));
     }
-    let artifact = ctx
-        .artifact_store()
-        .map_err(|err| ToolError::Execution(err.to_string()))?
-        .write_text(artifact_name, &body)
-        .map_err(|err| ToolError::Execution(err.to_string()))?;
-    let artifact_ref = ArtifactRef {
-        path: artifact.path,
-        digest: artifact.digest,
-    };
-    artifacts.push(artifact_ref.clone());
-    Ok(text_json_artifacts_tool_result(
+    hits.truncate(limit);
+    let mut grouped = BTreeMap::<usize, Vec<&Hit>>::new();
+    let mut matches = Vec::new();
+    for hit in &hits {
+        let index = sources
+            .iter()
+            .position(|s| s.staged == hit.file)
+            .ok_or_else(|| failure("ast-grep returned an unrequested path"))?;
+        let source = &sources[index];
+        if hit.range.byte_offset.slice(&source.before)? != hit.text {
+            return Err(failure(
+                "ast-grep returned a match that differs from the source",
+            ));
+        }
+        grouped.entry(index).or_default().push(hit);
+        matches.push(json!({"file_path":source.path.strip_prefix(&ctx.workspace_root).unwrap_or(&source.path),
+            "range":{"start":{"line":hit.range.start.line.saturating_add(1),"column":hit.range.start.column.saturating_add(1)},"end":{"line":hit.range.end.line.saturating_add(1),"column":hit.range.end.column.saturating_add(1)}},
+            "byte_range":{"start":hit.range.byte_offset.start,"end":hit.range.byte_offset.end},
+            "matched_text":hit.text,"snippet":hit.lines,"replacement":hit.replacement}));
+    }
+    let mut plans = Vec::new();
+    let mut diff = String::new();
+    if args.rewrite.is_some() {
+        for (index, mut hits) in grouped {
+            hits.sort_by_key(|hit| {
+                hit.replacement_offsets
+                    .unwrap_or(hit.range.byte_offset)
+                    .start
+            });
+            let source = &sources[index];
+            let (mut end, mut size) = (0, source.before.len());
+            for hit in &hits {
+                let span = hit.replacement_offsets.unwrap_or(hit.range.byte_offset);
+                let _ = span.slice(&source.before)?;
+                if span.start < end {
+                    return Err(failure("overlapping AST rewrites require separate calls"));
+                }
+                end = span.end;
+                size = size.saturating_sub(span.end - span.start).saturating_add(
+                    hit.replacement
+                        .as_ref()
+                        .ok_or_else(|| failure("ast-grep omitted a replacement"))?
+                        .len(),
+                );
+                if size as u64 > crate::files::MAX_FILE {
+                    return Err(failure("rewritten file exceeds 8 MiB"));
+                }
+            }
+            let mut after = source.before.clone();
+            for hit in hits.into_iter().rev() {
+                let span = hit.replacement_offsets.unwrap_or(hit.range.byte_offset);
+                after.replace_range(
+                    span.start..span.end,
+                    hit.replacement
+                        .as_deref()
+                        .ok_or_else(|| failure("missing replacement"))?,
+                );
+            }
+            if after == source.before {
+                continue;
+            }
+            if args.mode == Mode::DryRun {
+                let display = source
+                    .path
+                    .strip_prefix(&ctx.workspace_root)
+                    .unwrap_or(&source.path)
+                    .to_string_lossy();
+                diff.push_str(
+                    &similar::TextDiff::configure()
+                        .timeout(Duration::from_millis(200))
+                        .diff_lines(&source.before, &after)
+                        .unified_diff()
+                        .header(&format!("a/{display}"), &format!("b/{display}"))
+                        .to_string(),
+                );
+                if diff.len() > 1024 * 1024 {
+                    return Err(failure(
+                        "rewrite preview exceeds 1 MiB; narrow the selection",
+                    ));
+                }
+            }
+            plans.push((index, after));
+        }
+    }
+    let mut artifacts = Vec::new();
+    if !diff.is_empty() {
+        artifacts.push(
+            executor
+                .block_on(
+                    ctx.coordinator
+                        .retain_tool_diff(ctx.tool_call_id.to_string(), diff),
+                )
+                .map_err(|e| failure(e.to_string()))?,
+        );
+    }
+    let mut result = json!({"language":language,"total_count":count,"returned_count":hits.len(),"truncated":count>limit,
+        "skipped_files":skipped,"matches":matches,"applied":false,"diff_artifact":artifacts.first()});
+    let mut completed = Vec::new();
+    let mut details = Vec::new();
+    let mut warning = None;
+    if args.mode == Mode::Apply {
+        executor
+            .block_on(
+                ctx.coordinator.authorize_tool_edit_paths(
+                    ctx.tool_call_id.to_string(),
+                    plans
+                        .iter()
+                        .map(|(i, _)| sources[*i].path.clone())
+                        .collect(),
+                ),
+            )
+            .map_err(|e| failure(e.to_string()))?;
+        for (index, _) in &plans {
+            let source = &sources[*index];
+            if ctx.resolve_workspace_path(&source.path)? != source.path
+                || crate::files::contents(&source.path)? != source.before
+            {
+                return Err(failure("a rewrite target changed; no files were edited"));
+            }
+        }
+        for (index, after) in plans {
+            let source = &sources[index];
+            let display = source
+                .path
+                .strip_prefix(&ctx.workspace_root)
+                .unwrap_or(&source.path);
+            let written = ctx.tool_state.edit(&source.path, |_| {
+                crate::files::edit::commit(
+                    ctx,
+                    &source.path,
+                    display,
+                    Some(&source.before),
+                    Some(after),
+                )
+            });
+            match written {
+                Ok(output) => {
+                    details.push(output.display_text);
+                    artifacts.extend(output.artifacts);
+                    completed.push(display.to_string_lossy().into_owned());
+                }
+                Err(error) => {
+                    warning = Some(error.to_string());
+                    break;
+                }
+            }
+        }
+        result["applied"] = warning.is_none().into();
+    }
+    result["completed_files"] = json!(completed);
+    result["is_error"] = warning.is_some().into();
+    result["error"] = json!(warning);
+    Ok(ToolResult::structured_with_artifacts(
         format!(
-            "{display_text}; full output spilled to {}",
-            artifact_ref.path
+            "{} structural matches; {} files changed.\n{}{}",
+            hits.len(),
+            completed.len(),
+            details.join("\n"),
+            warning.map_or_else(String::new, |w| format!("\n{w}"))
         ),
-        json!({
-            "source": "ast_grep_cli_adapter",
-            "spilled": true,
-            "artifact": artifact_ref,
-        }),
+        result,
         artifacts,
     ))
 }

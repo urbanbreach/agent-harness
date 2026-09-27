@@ -1,72 +1,57 @@
-//! Conversation rewind is a projection change. The source journal and workspace stay intact.
-
-use std::ops::Range;
-
+use crate::event::{ActorKind, EventEnvelopeV1, EventV1};
 use serde::{Deserialize, Serialize};
-
-use crate::event::{EventEnvelopeV1, EventV1};
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConversationRewoundEvent {
     pub target_seq: u64,
     pub request_id: String,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RewindPoint {
     pub seq: u64,
     pub request_id: String,
     pub text: String,
 }
 
-pub fn excluded_ranges(events: &[EventEnvelopeV1]) -> Vec<Range<u64>> {
-    events
+pub fn active_events(events: &[EventEnvelopeV1]) -> Cow<'_, [EventEnvelopeV1]> {
+    if !events
         .iter()
-        .filter_map(|event| match &event.payload {
-            EventV1::ConversationRewound(rewind) => Some(rewind.target_seq..event.seq),
-            _ => None,
-        })
-        .collect()
+        .any(|e| matches!(e.payload, EventV1::ConversationRewound(_)))
+    {
+        return Cow::Borrowed(events);
+    }
+    Cow::Owned(active_refs(events).into_iter().cloned().collect())
 }
 
-pub fn is_excluded(ranges: &[Range<u64>], seq: u64) -> bool {
-    ranges.iter().any(|range| range.contains(&seq))
+pub(crate) fn active_refs<'a>(
+    events: impl IntoIterator<Item = &'a EventEnvelopeV1>,
+) -> Vec<&'a EventEnvelopeV1> {
+    let mut active: Vec<&EventEnvelopeV1> = Vec::new();
+    for event in events {
+        if let EventV1::ConversationRewound(rewind) = &event.payload {
+            let boundary = active.partition_point(|e| e.seq < rewind.target_seq);
+            active.truncate(boundary);
+        }
+        active.push(event);
+    }
+    active
 }
 
 pub fn rewind_points(events: &[EventEnvelopeV1]) -> Vec<RewindPoint> {
-    let ranges = excluded_ranges(events);
-    events
+    active_events(events)
         .iter()
-        .filter(|event| !is_excluded(&ranges, event.seq))
-        .filter_map(|event| match &event.payload {
-            EventV1::UserMessageSubmitted(prompt)
-                if matches!(
-                    event.actor.kind,
-                    crate::event::ActorKind::User | crate::event::ActorKind::Supervisor
-                ) =>
-            {
-                Some(RewindPoint {
+        .filter_map(|event| {
+            let EventV1::UserMessageSubmitted(message) = &event.payload else {
+                return None;
+            };
+            matches!(event.actor.kind, ActorKind::User | ActorKind::Supervisor).then(|| {
+                RewindPoint {
                     seq: event.seq,
-                    request_id: prompt.request_id.to_string(),
-                    text: prompt.text.clone(),
-                })
-            }
-            _ => None,
+                    request_id: message.request_id.to_string(),
+                    text: message.text.clone(),
+                }
+            })
         })
         .collect()
-}
-
-/// Select the visible conversation without renumbering or changing stored events.
-pub fn active_events(events: &[EventEnvelopeV1]) -> std::borrow::Cow<'_, [EventEnvelopeV1]> {
-    let ranges = excluded_ranges(events);
-    if ranges.is_empty() {
-        return std::borrow::Cow::Borrowed(events);
-    }
-    std::borrow::Cow::Owned(
-        events
-            .iter()
-            .filter(|event| !is_excluded(&ranges, event.seq))
-            .cloned()
-            .collect(),
-    )
 }

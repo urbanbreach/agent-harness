@@ -1,31 +1,23 @@
-//! Previous-crash detection and recovery path for session run directories.
-//!
-//! Detection is read-only. Recovery reuses the JSONL event store open path,
-//! which already repairs truncated crash tails and recovers dead-PID writer
-//! locks without rewriting complete event lines.
-
-use std::fs;
-use std::path::{Path, PathBuf};
-
+//! Inspection does not acquire a writer or repair files. Explicit recovery preserves torn bytes.
+use crate::{
+    event::*,
+    proj::InFlight,
+    store::{EventStore, EventStoreError, Journal},
+};
 use serde::{Deserialize, Serialize};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+const MARKER: &str = ".writer.lock.recovering";
 
-use crate::session_paths::{EVENTS_FILE_NAME, WRITER_LOCK_FILE_NAME};
-use crate::store::{unborn_run_dir, EventStoreError, JsonlFileEventStore, WriterLockRecoveryGuard};
-
-const WRITER_LOCK_RECOVERY_FILE_NAME: &str = ".writer.lock.recovering";
-
-/// Operator-facing recovery step after a previous crash was detected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CrashRecoveryAction {
-    /// Resume with a new prompt once the run is resumable.
     ResumeWithPrompt,
-    /// Reopen the session for inspection when resume is not available.
     ReopenSession,
-    /// Exclusive open will recover locks/markers; no separate CLI step.
     OpenRecovers,
 }
-
 impl CrashRecoveryAction {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -34,121 +26,50 @@ impl CrashRecoveryAction {
             Self::OpenRecovers => "open_recovers",
         }
     }
-
     pub fn operator_hint(self, run_id: &str) -> String {
         match self {
             Self::ResumeWithPrompt => {
                 format!("harness prompt --resume {run_id} --text \"<next prompt>\"")
             }
-            Self::ReopenSession => {
-                format!("harness sessions reopen --session {run_id}")
-            }
+            Self::ReopenSession => format!("harness sessions reopen --session {run_id}"),
             Self::OpenRecovers => {
-                "open this session exclusively; lock recovery runs automatically".to_string()
+                "open this session exclusively to recover interrupted work".into()
             }
         }
     }
 }
-
-/// Read-only previous-crash markers for a session run directory.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PreviousCrashReport {
     pub run_dir: PathBuf,
     pub previous_crash_detected: bool,
     pub stale_writer_lock: bool,
     pub recovery_marker_present: bool,
     pub events_log_present: bool,
-    /// Human-readable recovery guidance when a previous crash was detected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recovery_message: Option<String>,
-    /// Structured recovery action for CLI/TUI operators.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recovery_action: Option<CrashRecoveryAction>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }
-
-/// Inspect a run directory for previous-crash markers (does not mutate disk).
-pub fn inspect_previous_crash(run_dir: &Path) -> PreviousCrashReport {
-    let lock_path = run_dir.join(WRITER_LOCK_FILE_NAME);
-    let recovery_path = run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME);
-    let events_path = run_dir.join(EVENTS_FILE_NAME);
-
-    let events_log_present = events_path.is_file();
-    let recovery_marker_present = recovery_path.exists();
-    let mut notes = Vec::new();
-    let mut stale_writer_lock = false;
-
-    if lock_path.is_file() {
-        match fs::read_to_string(&lock_path) {
-            Ok(contents) => {
-                if let Some(pid) = parse_writer_lock_pid(&contents) {
-                    if !process_exists(pid) {
-                        stale_writer_lock = true;
-                        notes.push(format!(
-                            "stale writer lock held by dead pid {pid}; open_existing will recover"
-                        ));
-                    } else {
-                        notes.push(format!(
-                            "writer lock held by live pid {pid}; exclusive open may fail"
-                        ));
-                    }
-                } else if contents.trim().is_empty() {
-                    if unborn_run_dir(run_dir) {
-                        stale_writer_lock = true;
-                        notes.push(
-                            "legacy empty writer lock on unborn run dir; open will recover"
-                                .to_string(),
-                        );
-                    } else {
-                        notes.push(
-                            "empty writer lock present with session artifacts; exclusive open may fail"
-                                .to_string(),
-                        );
-                    }
-                } else if unborn_run_dir(run_dir) {
-                    stale_writer_lock = true;
-                    notes.push(
-                        "legacy text writer lock on unborn run dir; open will recover".to_string(),
-                    );
-                } else {
-                    notes.push(
-                        "non-pid writer lock present with session artifacts; exclusive open may fail"
-                            .to_string(),
-                    );
-                }
-            }
-            Err(err) => notes.push(format!("failed to read writer lock: {err}")),
+impl PreviousCrashReport {
+    pub fn one_line(&self) -> String {
+        if !self.previous_crash_detected {
+            let status = if self.notes.is_empty() {
+                "clean"
+            } else {
+                "inspection note"
+            };
+            return format!("{status}: {}", self.run_dir.display());
         }
-    }
-
-    if recovery_marker_present {
-        notes.push("recovery marker .writer.lock.recovering is present".to_string());
-    }
-
-    let previous_crash_detected = stale_writer_lock || recovery_marker_present;
-    let recovery_message = previous_crash_detected.then(|| {
-        build_recovery_message(
-            stale_writer_lock,
-            recovery_marker_present,
-            events_log_present,
+        format!(
+            "previous-crash: {} (stale_lock={}, recovery_marker={}, events={}, action={})",
+            self.run_dir.display(),
+            self.stale_writer_lock,
+            self.recovery_marker_present,
+            self.events_log_present,
+            self.recovery_action
+                .map_or("reopen_session", CrashRecoveryAction::as_str)
         )
-    });
-    let recovery_action = previous_crash_detected.then_some(CrashRecoveryAction::OpenRecovers);
-
-    PreviousCrashReport {
-        run_dir: run_dir.to_path_buf(),
-        previous_crash_detected,
-        stale_writer_lock,
-        recovery_marker_present,
-        events_log_present,
-        recovery_message,
-        recovery_action,
-        notes,
     }
 }
-
-/// Prefer resume when the catalog marks the run resumable; otherwise reopen.
 pub fn resolve_crash_recovery_action(is_resumable: bool) -> CrashRecoveryAction {
     if is_resumable {
         CrashRecoveryAction::ResumeWithPrompt
@@ -156,9 +77,61 @@ pub fn resolve_crash_recovery_action(is_resumable: bool) -> CrashRecoveryAction 
         CrashRecoveryAction::ReopenSession
     }
 }
-
-/// Operator-facing counts for a multi-run crash scan (diagnostics only).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub fn inspect_previous_crash(run_dir: &Path) -> PreviousCrashReport {
+    let mut report = PreviousCrashReport {
+        run_dir: run_dir.into(),
+        ..Default::default()
+    };
+    if !fs::symlink_metadata(run_dir).is_ok_and(|m| m.is_dir()) {
+        return report;
+    }
+    report.events_log_present =
+        fs::symlink_metadata(run_dir.join("events.jsonl")).is_ok_and(|m| m.is_file());
+    report.recovery_marker_present = fs::symlink_metadata(run_dir.join(MARKER)).is_ok();
+    let lock = run_dir.join(".writer.lock");
+    let lock_present = lock.exists();
+    let _lock = match crate::store::existing_writer_lock(run_dir) {
+        Ok(lock) => lock,
+        Err(error) => {
+            report
+                .notes
+                .push(format!("writer inspection unavailable: {error}"));
+            return report;
+        }
+    };
+    if report.events_log_present {
+        match crate::store::read_events(&run_dir.join("events.jsonl")).and_then(|events| {
+            crate::proj::checked_history(&events)
+                .map_err(|_| EventStoreError::Invalid("invalid complete history"))?;
+            let mut state = InFlight::default();
+            for event in &events {
+                state.apply(event);
+            }
+            Ok((state.stable(), events.is_empty()))
+        }) {
+            Ok((stable, empty)) => {
+                report.previous_crash_detected = !stable;
+                report.stale_writer_lock = lock_present && (!stable || empty);
+            }
+            Err(error) => {
+                report.previous_crash_detected = true;
+                report.stale_writer_lock = lock_present;
+                report
+                    .notes
+                    .push(format!("journal inspection failed: {error}"));
+            }
+        }
+    } else {
+        report.stale_writer_lock = lock_present;
+    }
+    report.previous_crash_detected |= report.stale_writer_lock || report.recovery_marker_present;
+    if report.previous_crash_detected {
+        report.recovery_action = Some(CrashRecoveryAction::OpenRecovers);
+        report.recovery_message=Some("Previous crash detected. Exclusive recovery preserves complete records and marks interrupted work as unknown.".into());
+    }
+    report
+}
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CrashRecoveryScanSummary {
     pub scanned: usize,
     pub previous_crash: usize,
@@ -166,555 +139,148 @@ pub struct CrashRecoveryScanSummary {
     pub stale_writer_lock: usize,
     pub recovery_marker: usize,
 }
-
 impl CrashRecoveryScanSummary {
     pub fn one_line(&self) -> String {
-        format!(
-            "crash scan: {} previous-crash, {} clean ({} scanned; {} stale-lock, {} recovery-marker)",
-            self.previous_crash,
-            self.clean,
-            self.scanned,
-            self.stale_writer_lock,
-            self.recovery_marker
-        )
+        format!("crash scan: {} previous-crash, {} clean ({} scanned; {} stale-lock, {} recovery-marker)",self.previous_crash,self.clean,self.scanned,self.stale_writer_lock,self.recovery_marker)
     }
-
     pub const fn has_previous_crash(&self) -> bool {
         self.previous_crash > 0
     }
 }
-
-/// Scan immediate children of a sessions root for previous-crash markers (read-only).
-///
-/// Non-directories and unreadable roots yield an empty list (fail soft for scan UX).
-pub fn scan_previous_crashes(sessions_root: &Path) -> Vec<PreviousCrashReport> {
-    let Ok(entries) = fs::read_dir(sessions_root) else {
-        return Vec::new();
-    };
-    let mut reports = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            reports.push(inspect_previous_crash(&path));
-        }
-    }
-    reports.sort_by(|left, right| left.run_dir.cmp(&right.run_dir));
+pub fn scan_previous_crashes(root: &Path) -> Vec<PreviousCrashReport> {
+    let mut reports: Vec<_> = fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter(|e| {
+            e.file_type().is_ok_and(|t| t.is_dir())
+                && !e.file_name().to_string_lossy().starts_with('.')
+        })
+        .map(|e| inspect_previous_crash(&e.path()))
+        .collect();
+    reports.sort_by(|a, b| a.run_dir.cmp(&b.run_dir));
     reports
 }
-
-/// Summarize multi-run crash inspect results for CLI/operator surfaces.
 pub fn summarize_crash_reports(reports: &[PreviousCrashReport]) -> CrashRecoveryScanSummary {
-    let mut summary = CrashRecoveryScanSummary {
+    CrashRecoveryScanSummary {
         scanned: reports.len(),
-        ..CrashRecoveryScanSummary::default()
-    };
-    for report in reports {
-        if report.previous_crash_detected {
-            summary.previous_crash = summary.previous_crash.saturating_add(1);
-        } else {
-            summary.clean = summary.clean.saturating_add(1);
-        }
-        if report.stale_writer_lock {
-            summary.stale_writer_lock = summary.stale_writer_lock.saturating_add(1);
-        }
-        if report.recovery_marker_present {
-            summary.recovery_marker = summary.recovery_marker.saturating_add(1);
-        }
-    }
-    summary
-}
-
-impl PreviousCrashReport {
-    pub fn one_line(&self) -> String {
-        if !self.previous_crash_detected {
-            return format!("clean: {}", self.run_dir.display());
-        }
-        let action = self
-            .recovery_action
-            .map(|action| action.as_str())
-            .unwrap_or("open_recovers");
-        format!(
-            "previous-crash: {} (stale_lock={}, recovery_marker={}, events={}, action={})",
-            self.run_dir.display(),
-            self.stale_writer_lock,
-            self.recovery_marker_present,
-            self.events_log_present,
-            action
-        )
+        previous_crash: reports.iter().filter(|r| r.previous_crash_detected).count(),
+        clean: reports
+            .iter()
+            .filter(|r| !r.previous_crash_detected && r.notes.is_empty())
+            .count(),
+        stale_writer_lock: reports.iter().filter(|r| r.stale_writer_lock).count(),
+        recovery_marker: reports.iter().filter(|r| r.recovery_marker_present).count(),
     }
 }
 
-fn build_recovery_message(
-    stale_writer_lock: bool,
-    recovery_marker_present: bool,
-    events_log_present: bool,
-) -> String {
-    let mut parts = Vec::new();
-    parts.push("Previous crash detected.".to_string());
-    if stale_writer_lock {
-        parts.push(
-            "Stale writer lock from a dead process will be recovered on next exclusive open."
-                .to_string(),
-        );
-    }
-    if recovery_marker_present {
-        parts.push("Recovery marker present; open_existing will finish lock recovery.".to_string());
-    }
-    if events_log_present {
-        parts.push(
-            "Event log is present; truncated crash tails are repaired without rewriting complete lines."
-                .to_string(),
-        );
-    } else {
-        parts.push("No events.jsonl found yet; session may be unborn.".to_string());
-    }
-    parts.push(
-        "Use `harness sessions inspect <run>` then resume with `harness prompt --resume` when resumable."
-            .to_string(),
-    );
-    parts.join(" ")
-}
-
-/// Open an existing session event store, applying crash-tail + lock recovery.
 pub fn recover_session_event_store(
     session_dir: impl AsRef<Path>,
     run_id: impl AsRef<str>,
-    deterministic: bool,
-) -> Result<JsonlFileEventStore, EventStoreError> {
-    JsonlFileEventStore::open_existing(session_dir, run_id, deterministic)
+    _deterministic: bool,
+) -> Result<Journal, EventStoreError> {
+    crate::store::validate_session_id(run_id.as_ref())?;
+    let marker = session_dir.as_ref().join(run_id.as_ref()).join(MARKER);
+    let clear_marker = match fs::symlink_metadata(&marker) {
+        Ok(meta) if meta.is_file() => true,
+        Ok(_) => {
+            return Err(EventStoreError::Invalid(
+                "recovery marker must be a regular file",
+            ))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => return Err(e.into()),
+    };
+    let journal = Journal::open_for_recovery(session_dir.as_ref(), run_id.as_ref())?;
+    let events = crate::store::read_events(journal.file_path())?;
+    crate::proj::checked_history(&events)
+        .map_err(|_| EventStoreError::Invalid("invalid complete history; recovery was refused"))?;
+    let mut state = InFlight::default();
+    for event in &events {
+        state.apply(event);
+    }
+    if !state.stable() {
+        let template = events
+            .last()
+            .ok_or(EventStoreError::Invalid("missing recovery history"))?;
+        let reason="interrupted by session restart; outcome is unknown, inspect current state before retrying";
+        let mut identities: std::collections::HashSet<_> =
+            events.iter().map(|e| e.event_id.clone()).collect();
+        for event in state
+            .terminals(reason)
+            .into_iter()
+            .chain(std::iter::once(EventEnvelopeV1 {
+                payload: EventV1::RunFailed(RunFailedEvent {
+                    error: reason.into(),
+                }),
+                actor: EventActor::new(ActorKind::System, None),
+                ..template.clone()
+            }))
+        {
+            let seq = journal.next_seq()?;
+            let mut suffix = seq;
+            let id = loop {
+                let candidate = format!("{}-recovery-{suffix}", run_id.as_ref());
+                if identities.insert(candidate.clone()) {
+                    break candidate;
+                }
+                suffix = suffix
+                    .checked_add(1)
+                    .ok_or(EventStoreError::Invalid("recovery identifiers exhausted"))?;
+            };
+            let mut envelope: crate::store::EventEnvelopeWithoutSeqV1 = event.into();
+            envelope.event_id = id;
+            envelope.mono_ms = template.mono_ms;
+            envelope.ts = None;
+            envelope.payload = crate::redact::redact_event_payload(
+                &crate::redact::DefaultRedactor::default(),
+                envelope.payload,
+            )?;
+            journal.append(envelope)?;
+        }
+    }
+    if clear_marker {
+        fs::remove_file(&marker)?;
+        #[cfg(unix)]
+        if let Some(parent) = marker.parent() {
+            fs::File::open(parent)?.sync_all()?;
+        }
+    }
+    Ok(journal)
 }
-
-/// Structured outcome of applying crash recovery to one session run.
-///
-/// Exclusive open recovers dead-PID writer locks, finishes recovery-marker
-/// cleanup, and repairs truncated crash tails without rewriting complete lines.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CrashRecoveryApplyResult {
     pub run_id: String,
     pub run_dir: PathBuf,
-    /// True when exclusive open was performed.
     pub applied: bool,
     pub before: PreviousCrashReport,
     pub after: PreviousCrashReport,
-    /// True when previous-crash markers were present and cleared after open.
     pub recovered: bool,
     pub recovery_marker_cleared: bool,
     pub stale_lock_cleared: bool,
     pub events_log_present: bool,
 }
-
-impl CrashRecoveryApplyResult {
-    pub fn one_line(&self) -> String {
-        if !self.applied {
-            return format!("crash recovery skipped: {}", self.run_dir.display());
-        }
-        if self.recovered {
-            format!(
-                "crash recovery applied: {} (marker_cleared={}, stale_lock_cleared={}, events={})",
-                self.run_dir.display(),
-                self.recovery_marker_cleared,
-                self.stale_lock_cleared,
-                self.events_log_present
-            )
-        } else if self.before.previous_crash_detected {
-            format!(
-                "crash recovery open completed: {} (markers may remain; events={})",
-                self.run_dir.display(),
-                self.events_log_present
-            )
-        } else {
-            format!(
-                "crash recovery open completed: {} (no previous-crash markers; events={})",
-                self.run_dir.display(),
-                self.events_log_present
-            )
-        }
-    }
-}
-
-/// Apply exclusive-open crash recovery for one run under a sessions root.
-///
-/// This is the product reopen path: inspect markers → open_existing (lock + tail
-/// repair) → clear orphan recovery markers → re-inspect. Dropping the store
-/// releases the writer lock.
 pub fn apply_crash_recovery(
     session_dir: impl AsRef<Path>,
     run_id: impl AsRef<str>,
     deterministic: bool,
 ) -> Result<CrashRecoveryApplyResult, EventStoreError> {
-    let session_dir = session_dir.as_ref();
-    let run_id = run_id.as_ref();
-    let run_dir = session_dir.join(run_id);
-    let before = inspect_previous_crash(&run_dir);
-
-    let store = recover_session_event_store(session_dir, run_id, deterministic)?;
-    drop(store);
-
-    // Exclusive open can leave a pre-existing `.writer.lock.recovering` marker
-    // when recovery finished without holding a live writer lock. Clear orphans.
-    clear_orphan_recovery_marker(&run_dir);
-
-    let after = inspect_previous_crash(&run_dir);
-    let recovery_marker_cleared = before.recovery_marker_present && !after.recovery_marker_present;
-    let stale_lock_cleared = before.stale_writer_lock && !after.stale_writer_lock;
-    let recovered = before.previous_crash_detected
-        && (recovery_marker_cleared || stale_lock_cleared || !after.previous_crash_detected);
-    let events_log_present = after.events_log_present;
-
+    crate::store::validate_session_id(run_id.as_ref())?;
+    let dir = session_dir.as_ref().join(run_id.as_ref());
+    let before = inspect_previous_crash(&dir);
+    let journal =
+        recover_session_event_store(session_dir.as_ref(), run_id.as_ref(), deterministic)?;
+    journal.close_writer()?;
+    let after = inspect_previous_crash(&dir);
     Ok(CrashRecoveryApplyResult {
-        run_id: run_id.to_string(),
-        run_dir,
-        applied: true,
+        run_id: run_id.as_ref().into(),
+        run_dir: dir,
+        applied: before.previous_crash_detected,
+        recovered: before.previous_crash_detected && !after.previous_crash_detected,
+        recovery_marker_cleared: before.recovery_marker_present && !after.recovery_marker_present,
+        stale_lock_cleared: before.stale_writer_lock && !after.stale_writer_lock,
+        events_log_present: after.events_log_present,
         before,
         after,
-        recovered,
-        recovery_marker_cleared,
-        stale_lock_cleared,
-        events_log_present,
     })
-}
-
-fn clear_orphan_recovery_marker(run_dir: &Path) {
-    let recovery_path = run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME);
-    if !recovery_path.exists() {
-        return;
-    }
-    let lock_path = run_dir.join(WRITER_LOCK_FILE_NAME);
-    if lock_path.is_file() {
-        if let Ok(contents) = fs::read_to_string(&lock_path) {
-            if let Some(pid) = parse_writer_lock_pid(&contents) {
-                if process_exists(pid) {
-                    return;
-                }
-            }
-        }
-    }
-    // Acquisition rechecks the marker owner under the stable recovery mutex.
-    // Live/unknown owners or a busy/unavailable mutex leave the marker intact.
-    let _recovery_guard = WriterLockRecoveryGuard::acquire(run_dir, &lock_path);
-}
-
-fn parse_writer_lock_pid(contents: &str) -> Option<u32> {
-    contents.lines().find_map(|line| {
-        line.strip_prefix("pid=")
-            .and_then(|pid| pid.parse::<u32>().ok())
-    })
-}
-
-#[cfg(target_os = "linux")]
-fn process_exists(pid: u32) -> bool {
-    Path::new("/proc").join(pid.to_string()).exists()
-}
-
-#[cfg(not(target_os = "linux"))]
-fn process_exists(_pid: u32) -> bool {
-    true
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::event::{ActorKind, EventActor, EventV1, RunStartedEvent, SCHEMA_VERSION};
-    use crate::store::{EventEnvelopeWithoutSeqV1, EventStore};
-    use crate::UnwrapOrAbort;
-    use std::io::Write;
-    use tokio_stream::StreamExt;
-
-    fn run_started_draft(run_id: &str, mono_ms: u64) -> EventEnvelopeWithoutSeqV1 {
-        EventEnvelopeWithoutSeqV1 {
-            schema_version: SCHEMA_VERSION,
-            event_id: format!("evt-{mono_ms:020}"),
-            run_id: run_id.into(),
-            mono_ms,
-            ts: None,
-            actor: EventActor::new(ActorKind::System, None),
-            correlation_id: None,
-            causation_id: None,
-            stream_key: None,
-            payload: EventV1::RunStarted(RunStartedEvent {
-                run_name: "crash-recovery".into(),
-                workspace_root: "/tmp".into(),
-            }),
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn inspect_detects_stale_writer_lock_as_previous_crash() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let run_dir = temp.path().join("run_crash");
-        fs::create_dir_all(&run_dir).unwrap_or_abort();
-        fs::write(run_dir.join(EVENTS_FILE_NAME), "").unwrap_or_abort();
-        fs::write(
-            run_dir.join(WRITER_LOCK_FILE_NAME),
-            "pid=999999999\ntoken=1\n",
-        )
-        .unwrap_or_abort();
-
-        let report = inspect_previous_crash(&run_dir);
-        assert!(report.previous_crash_detected);
-        assert!(report.stale_writer_lock);
-        assert!(report.events_log_present);
-        let message = report.recovery_message.expect("recovery message");
-        assert!(message.contains("Previous crash detected"));
-        assert!(message.contains("Stale writer lock"));
-        assert!(message.contains("sessions inspect"));
-        assert_eq!(
-            report.recovery_action,
-            Some(CrashRecoveryAction::OpenRecovers)
-        );
-        assert_eq!(
-            resolve_crash_recovery_action(true),
-            CrashRecoveryAction::ResumeWithPrompt
-        );
-        assert_eq!(
-            resolve_crash_recovery_action(false),
-            CrashRecoveryAction::ReopenSession
-        );
-    }
-
-    #[test]
-    fn inspect_detects_recovery_marker() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let run_dir = temp.path().join("run_recovering");
-        fs::create_dir_all(&run_dir).unwrap_or_abort();
-        fs::write(run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME), "pid=1\n").unwrap_or_abort();
-
-        let report = inspect_previous_crash(&run_dir);
-        assert!(report.previous_crash_detected);
-        assert!(report.recovery_marker_present);
-        let message = report.recovery_message.expect("recovery message");
-        assert!(message.contains("Recovery marker present"));
-        assert_eq!(fs::read_dir(&run_dir).unwrap_or_abort().count(), 1);
-    }
-
-    #[test]
-    fn inspect_without_crash_has_no_recovery_message() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let run_dir = temp.path().join("run_clean");
-        fs::create_dir_all(&run_dir).unwrap_or_abort();
-        fs::write(run_dir.join(EVENTS_FILE_NAME), "").unwrap_or_abort();
-
-        let report = inspect_previous_crash(&run_dir);
-        assert!(!report.previous_crash_detected);
-        assert!(report.recovery_message.is_none());
-        assert!(report.one_line().starts_with("clean:"));
-    }
-
-    #[test]
-    fn scan_previous_crashes_summarizes_mixed_session_root() {
-        // Given: sessions root with one clean run and one recovery-marker crash
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let sessions = temp.path().join("sessions");
-        let clean = sessions.join("run_clean");
-        let crashed = sessions.join("run_crashed");
-        fs::create_dir_all(&clean).unwrap_or_abort();
-        fs::create_dir_all(&crashed).unwrap_or_abort();
-        fs::write(clean.join(EVENTS_FILE_NAME), "").unwrap_or_abort();
-        fs::write(crashed.join(EVENTS_FILE_NAME), "").unwrap_or_abort();
-        fs::write(crashed.join(WRITER_LOCK_RECOVERY_FILE_NAME), "pid=1\n").unwrap_or_abort();
-
-        // When
-        let reports = scan_previous_crashes(&sessions);
-        let summary = summarize_crash_reports(&reports);
-
-        // Then
-        assert_eq!(reports.len(), 2);
-        assert_eq!(summary.scanned, 2);
-        assert_eq!(summary.previous_crash, 1);
-        assert_eq!(summary.clean, 1);
-        assert_eq!(summary.recovery_marker, 1);
-        assert!(summary.has_previous_crash());
-        assert!(summary.one_line().contains("previous-crash"));
-        assert!(reports.iter().any(|report| {
-            report.previous_crash_detected && report.one_line().contains("previous-crash")
-        }));
-        assert!(scan_previous_crashes(temp.path().join("missing").as_path()).is_empty());
-    }
-
-    #[tokio::test]
-    async fn recover_session_repairs_truncated_tail_via_store_path() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let run_id = "run_recover_tail";
-        let file_path = {
-            let store = JsonlFileEventStore::open(temp.path(), run_id, false).unwrap_or_abort();
-            store.append(run_started_draft(run_id, 1)).unwrap_or_abort();
-            store.append(run_started_draft(run_id, 2)).unwrap_or_abort();
-            store.file_path().to_path_buf()
-        };
-
-        {
-            let mut file = fs::OpenOptions::new()
-                .append(true)
-                .open(&file_path)
-                .unwrap_or_abort();
-            file.write_all(b"{").unwrap_or_abort();
-        }
-
-        let recovered = recover_session_event_store(temp.path(), run_id, false).unwrap_or_abort();
-        let mut stream = recovered.replay(1).unwrap_or_abort();
-        let mut seqs = Vec::new();
-        while let Some(item) = stream.next().await {
-            seqs.push(item.unwrap_or_abort().seq);
-        }
-        assert_eq!(seqs, vec![1, 2]);
-
-        let contents = fs::read_to_string(recovered.file_path()).unwrap_or_abort();
-        assert!(!contents.ends_with('{'));
-        assert_eq!(contents.lines().count(), 2);
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn apply_crash_recovery_clears_recovery_marker_and_reports_outcome() {
-        // Given: run with events + recovery marker (previous crash)
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let sessions = temp.path().join("sessions");
-        let run_id = "run_apply_marker";
-        let run_dir = sessions.join(run_id);
-        fs::create_dir_all(&run_dir).unwrap_or_abort();
-        {
-            let store = JsonlFileEventStore::open(&sessions, run_id, false).unwrap_or_abort();
-            store.append(run_started_draft(run_id, 1)).unwrap_or_abort();
-        }
-        fs::write(
-            run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME),
-            "pid=999999999\n",
-        )
-        .unwrap_or_abort();
-        assert!(inspect_previous_crash(&run_dir).previous_crash_detected);
-
-        // When: operator apply path runs exclusive open recovery
-        let result = apply_crash_recovery(&sessions, run_id, false).unwrap_or_abort();
-
-        // Then: recovery applied, marker cleared, after-state clean
-        assert!(result.applied);
-        assert!(result.recovered);
-        assert!(result.recovery_marker_cleared);
-        assert!(result.before.previous_crash_detected);
-        assert!(!result.after.previous_crash_detected);
-        assert!(!result.after.recovery_marker_present);
-        assert!(result.events_log_present);
-        assert!(result.one_line().contains("crash recovery applied"));
-        assert!(!run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME).exists());
-        assert!(!run_dir.join(WRITER_LOCK_FILE_NAME).exists());
-    }
-
-    #[test]
-    fn apply_crash_recovery_preserves_live_or_unknown_marker() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let run_id = "run_apply_owned_marker";
-        let run_dir = temp.path().join(run_id);
-        drop(JsonlFileEventStore::open(temp.path(), run_id, false).unwrap_or_abort());
-
-        for marker in [
-            format!("pid={}\ntoken=1\n", std::process::id()),
-            "locked".into(),
-        ] {
-            fs::write(run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME), &marker).unwrap_or_abort();
-            let result = apply_crash_recovery(temp.path(), run_id, false).unwrap_or_abort();
-            assert!(!result.recovered);
-            assert!(result.after.recovery_marker_present);
-            assert_eq!(
-                fs::read_to_string(run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME)).unwrap_or_abort(),
-                marker
-            );
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn recovery_mutex_excludes_cleanup_and_writer_acquisition() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let run_id = "run_busy_recovery_mutex";
-        let run_dir = temp.path().join(run_id);
-        drop(JsonlFileEventStore::open(temp.path(), run_id, false).unwrap_or_abort());
-        let marker_path = run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME);
-        let dead_owner = "pid=999999999\ntoken=1\n";
-        fs::write(&marker_path, dead_owner).unwrap_or_abort();
-        let mutex_path = run_dir.join(".writer.lock.recovery-mutex");
-        let mutex = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&mutex_path)
-            .unwrap_or_abort();
-        mutex.try_lock().unwrap_or_abort();
-
-        let result = apply_crash_recovery(temp.path(), run_id, false).unwrap_or_abort();
-        assert!(!result.recovered);
-        assert_eq!(
-            fs::read_to_string(&marker_path).unwrap_or_abort(),
-            dead_owner
-        );
-
-        fs::write(run_dir.join(WRITER_LOCK_FILE_NAME), dead_owner).unwrap_or_abort();
-        assert!(matches!(
-            apply_crash_recovery(temp.path(), run_id, false),
-            Err(EventStoreError::AcquireWriterLock { .. })
-        ));
-        assert_eq!(
-            fs::read_to_string(&marker_path).unwrap_or_abort(),
-            dead_owner
-        );
-
-        mutex.unlock().unwrap_or_abort();
-        let result = apply_crash_recovery(temp.path(), run_id, false).unwrap_or_abort();
-        assert!(result.recovered);
-        assert!(result.recovery_marker_cleared);
-        assert!(result.stale_lock_cleared);
-        assert!(!result.after.previous_crash_detected);
-
-        let next_mutex = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&mutex_path)
-            .unwrap_or_abort();
-        next_mutex.try_lock().unwrap_or_abort();
-        assert!(matches!(
-            mutex.try_lock(),
-            Err(fs::TryLockError::WouldBlock)
-        ));
-        drop(next_mutex);
-        mutex.try_lock().unwrap_or_abort();
-    }
-
-    #[tokio::test]
-    async fn apply_crash_recovery_repairs_truncated_tail() {
-        // Given: a truncated events tail without a legacy recovery owner.
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let sessions = temp.path().join("sessions");
-        let run_id = "run_apply_tail";
-        let file_path = {
-            let store = JsonlFileEventStore::open(&sessions, run_id, false).unwrap_or_abort();
-            store.append(run_started_draft(run_id, 1)).unwrap_or_abort();
-            store.append(run_started_draft(run_id, 2)).unwrap_or_abort();
-            store.file_path().to_path_buf()
-        };
-        {
-            let mut file = fs::OpenOptions::new()
-                .append(true)
-                .open(&file_path)
-                .unwrap_or_abort();
-            file.write_all(b"{").unwrap_or_abort();
-        }
-
-        // When
-        let result = apply_crash_recovery(&sessions, run_id, false).unwrap_or_abort();
-
-        // Then: complete lines only, on every supported platform.
-        assert!(result.applied);
-        let contents = fs::read_to_string(&file_path).unwrap_or_abort();
-        assert!(!contents.ends_with('{'));
-        assert_eq!(contents.lines().count(), 2);
-
-        let store = recover_session_event_store(&sessions, run_id, false).unwrap_or_abort();
-        let mut stream = store.replay(1).unwrap_or_abort();
-        let mut seqs = Vec::new();
-        while let Some(item) = stream.next().await {
-            seqs.push(item.unwrap_or_abort().seq);
-        }
-        assert_eq!(seqs, vec![1, 2]);
-    }
 }

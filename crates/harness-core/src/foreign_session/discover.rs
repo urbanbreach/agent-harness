@@ -1,150 +1,103 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use super::*;
 
-use super::{ForeignAgentKind, ForeignSessionCandidate, ForeignSessionError, MARKERS};
-
-/// Discover foreign session candidates under `scan_root` (immediate children only).
-///
-/// Read-only: never writes, never touches a harness active session directory.
 pub fn discover_foreign_sessions(
-    scan_root: &Path,
+    root: &Path,
 ) -> Result<Vec<ForeignSessionCandidate>, ForeignSessionError> {
-    if !scan_root.is_dir() {
+    let failed = |message: &str| ForeignSessionError::ScanRootRead {
+        path: safe_path(root),
+        message: message.into(),
+    };
+    crate::store::validate_private_path(root).map_err(|_| failed("unsafe scan path"))?;
+    if !root.is_dir() {
         return Err(ForeignSessionError::ScanRootNotDirectory {
-            path: scan_root.display().to_string(),
+            path: safe_path(root),
         });
     }
-
-    let entries = fs::read_dir(scan_root).map_err(|err| ForeignSessionError::ScanRootRead {
-        path: scan_root.display().to_string(),
-        message: err.to_string(),
-    })?;
-
-    let mut out = Vec::new();
-    for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(err) => {
-                out.push(ForeignSessionCandidate::Rejected {
-                    path: scan_root.to_path_buf(),
-                    reason: format!("directory entry unreadable: {err}"),
-                });
-                continue;
-            }
-        };
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        out.push(classify_candidate(&path));
+    let mut paths = std::fs::read_dir(root)
+        .map_err(|_| failed("cannot list directory"))?
+        .take(513)
+        .map(|e| e.map(|e| e.path()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| failed("cannot read directory entry"))?;
+    if paths.len() > 512 {
+        return Err(failed(
+            "scan exceeds 512 candidates; choose a narrower root",
+        ));
     }
-
-    out.sort_by(|left, right| left.path().cmp(right.path()));
-    Ok(out)
+    paths.sort();
+    let mut bytes = 0;
+    let mut candidates = Vec::new();
+    for path in paths {
+        for marker in MARKERS {
+            bytes += std::fs::symlink_metadata(path.join(marker))
+                .map_or(0, |m| m.len().min(MAX_BYTES + 1));
+        }
+        if bytes > MAX_BYTES {
+            return Err(failed("scan exceeds 64 MiB; choose a narrower root"));
+        }
+        candidates.push(classify(&path));
+    }
+    Ok(candidates)
 }
-
-/// Explicitly refuse mutating import into an active harness session.
-pub fn refuse_import_into_active_session(
-    foreign_path: &Path,
-    active_session_dir: &Path,
-) -> Result<(), ForeignSessionError> {
-    let _ = foreign_path;
-    Err(ForeignSessionError::ImportIntoActiveForbidden {
-        active_session: active_session_dir.display().to_string(),
-    })
-}
-
-pub(super) fn classify_candidate(path: &Path) -> ForeignSessionCandidate {
-    let kind = infer_kind(path);
-    let Some((marker_name, marker_path)) = first_marker(path) else {
-        return ForeignSessionCandidate::Rejected {
-            path: path.to_path_buf(),
-            reason: "no foreign session markers found".to_string(),
-        };
+fn classify(path: &Path) -> ForeignSessionCandidate {
+    let rejected = |reason: &str| ForeignSessionCandidate::Rejected {
+        path: path.into(),
+        reason: reason.into(),
     };
-
-    match validate_marker(&marker_path, marker_name) {
-        Ok(()) => ForeignSessionCandidate::Discoverable {
-            kind,
-            path: path.to_path_buf(),
-            marker: marker_name.to_string(),
-        },
-        Err(reason) => ForeignSessionCandidate::Corrupt {
-            kind,
-            path: path.to_path_buf(),
-            reason,
-        },
+    if crate::store::validate_private_path(path).is_err() || !path.is_dir() {
+        return rejected("candidate must be a directory without symlinks");
     }
-}
-
-fn first_marker(path: &Path) -> Option<(&'static str, PathBuf)> {
-    for name in MARKERS {
-        let candidate = path.join(name);
-        if candidate.is_file() {
-            return Some((*name, candidate));
-        }
-    }
-    None
-}
-
-fn validate_marker(marker_path: &Path, marker_name: &str) -> Result<(), String> {
-    let bytes = fs::read(marker_path).map_err(|err| {
-        format!(
-            "failed to read marker {marker_name} at {}: {err}",
-            marker_path.display()
-        )
-    })?;
-    if bytes.is_empty() {
-        return Err(format!("marker {marker_name} is empty"));
-    }
-
-    if marker_name.ends_with(".json") {
-        let value: serde_json::Value = serde_json::from_slice(&bytes)
-            .map_err(|err| format!("marker {marker_name} is not valid JSON: {err}"))?;
-        if !value.is_object() && !value.is_array() {
-            return Err(format!(
-                "marker {marker_name} JSON root must be object or array"
-            ));
-        }
-        return Ok(());
-    }
-
-    let text = String::from_utf8_lossy(&bytes);
-    let mut saw_line = false;
-    for (idx, line) in text.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        saw_line = true;
-        let value: serde_json::Value = serde_json::from_str(trimmed).map_err(|err| {
-            format!(
-                "marker {marker_name} line {} is not valid JSON: {err}",
-                idx + 1
-            )
-        })?;
-        if !value.is_object() && !value.is_array() {
-            return Err(format!(
-                "marker {marker_name} line {} JSON root must be object or array",
-                idx + 1
-            ));
-        }
-    }
-    if !saw_line {
-        return Err(format!("marker {marker_name} has no non-empty JSONL lines"));
-    }
-    Ok(())
-}
-
-fn infer_kind(path: &Path) -> ForeignAgentKind {
-    let haystack = path.to_string_lossy().to_ascii_lowercase();
-    if haystack.contains("codex") {
+    let name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    let kind = if name.contains("codex") {
         ForeignAgentKind::Codex
-    } else if haystack.contains("claude") {
+    } else if name.contains("claude") {
         ForeignAgentKind::Claude
-    } else if haystack.contains("opencode") || haystack.contains("open-code") {
+    } else if name.contains("opencode") {
         ForeignAgentKind::OpenCode
     } else {
         ForeignAgentKind::Unknown
+    };
+    let Some(marker) = MARKERS
+        .iter()
+        .find(|marker| std::fs::symlink_metadata(path.join(marker)).is_ok())
+    else {
+        return rejected("no recognized session marker");
+    };
+    let valid = if *marker == "events.jsonl" {
+        load_events(path).is_ok()
+    } else {
+        valid_descriptor(&path.join(marker), marker.ends_with("jsonl"))
+    };
+    if valid {
+        ForeignSessionCandidate::Discoverable {
+            kind,
+            path: path.into(),
+            marker: (*marker).into(),
+        }
+    } else {
+        ForeignSessionCandidate::Corrupt {
+            kind,
+            path: path.into(),
+            reason: "session marker is unreadable, malformed, or oversized".into(),
+        }
+    }
+}
+fn valid_descriptor(path: &Path, jsonl: bool) -> bool {
+    let Ok(Some(bytes)) = crate::store::read_private_bytes(path, 1024 * 1024) else {
+        return false;
+    };
+    if jsonl {
+        let mut lines = bytes
+            .split(|b| *b == b'\n')
+            .filter(|s| !s.iter().all(u8::is_ascii_whitespace))
+            .peekable();
+        lines.peek().is_some()
+            && lines.all(|s| serde_json::from_slice::<serde_json::Value>(s).is_ok())
+    } else {
+        serde_json::from_slice::<serde_json::Value>(&bytes).is_ok()
     }
 }

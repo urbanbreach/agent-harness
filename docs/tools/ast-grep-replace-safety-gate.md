@@ -1,38 +1,54 @@
-# Structural replacement safety
+# Structural search and replacement
 
-Accepted for G005 on 30 May 2026.
+`ast_grep_search` searches syntax with the installed `ast-grep` CLI.
+`ast_grep_replace` uses its JSON replacements to preview or apply edits.
+Both accept `pattern`, `language`, `path` or `paths`, `include`, `exclude`,
+`limit`, and `context`. Replacement also requires `rewrite`; its `mode` defaults
+to `dry_run`. Use `apply` to change files.
 
-## Decision
+Language is inferred only when the selected readable files have one supported
+language. Supported names are Rust, JavaScript, TypeScript, TSX, JSX, Python,
+Markdown, JSON, TOML, and YAML, with their usual extension aliases. The installed
+ast-grep build must provide the requested grammar.
 
-`ast_grep_replace` uses the same edit permission and workspace validation as
-other native file-changing tools.
+Discovery respects ignore files and skips symlinks, hidden directories, build
+outputs, and session storage. Additional files need an existing read allow rule;
+files requiring separate approval are counted as skipped. Explicitly selected
+files retain their initial read approval. All paths stay within the workspace.
 
-The tool defaults to `mode: "dry_run"`. The ast-grep CLI is invoked only to produce JSON rewrite matches and replacement byte ranges; Harness never passes an update/apply flag that lets the adapter mutate the live workspace. `mode: "apply"` validates the planned ranges against the current file contents and writes through Harness workspace path checks, atomic writes, and diff artifacts.
+The CLI reads private temporary copies of approved files, using one worker thread.
+It never receives an update flag or the live workspace paths. Harness verifies
+returned paths, byte ranges, UTF-8 boundaries, matched text, and non-overlapping
+replacements against those copies. Temporary files are removed after the call. Previews retain a redacted `.diff` artifact for the existing TUI renderer.
 
-## Safety gate
+Before apply, the coordinator checks the complete target set against edit policy.
+New targets that need approval use the normal permission prompt, grant scopes,
+timeout, and cancellation. A denied path prevents the entire plan from starting.
+After approval, all files are checked again for concurrent changes. Each write
+then uses the shared formatter, fingerprint, atomic file replacement, diff receipt,
+and undo path. Writes are sequential; a later I/O failure reports completed files.
 
-- Runtime capability is `ToolCapability::EditFs`.
-- Public permission mapping is `edit` / `PermissionKind::EditFs`.
-- Coordinator path-scoped policy denial, including list-valued `paths`, happens
-  before `ToolCallStarted` and before adapter invocation.
-- The tool is not reachable through `ReadFs`, `codesearch`, aliases, or a read-only fallback.
-- Arguments use strict schemas with unknown fields denied.
-- Paths must stay inside the workspace, existing roots must match adapter output, and traversal is rejected.
-- Dry-run returns structured edits and a diff artifact without changing files.
-- Apply refuses truncated result sets to avoid partial rewrites.
-- Apply rejects missing byte offsets, stale file contents, invalid byte ranges, and overlapping rewrites.
-- Missing ast-grep binaries and invalid patterns return actionable errors.
+## Limits
 
-## Evidence
+| Resource | Limit |
+| --- | --- |
+| Pattern and replacement | 8 KiB each |
+| Include or exclude globs | 64 each, 8 KiB per glob |
+| Directory entries | 100,000 per search root |
+| Source files | 200, 8 MiB per file, 32 MiB combined |
+| Matches returned | Default 100; clamped to 1–200 |
+| Context | Clamped to 0–5 lines |
+| CLI execution | 30 seconds minus discovery time; 512 KiB per output stream |
+| Combined preview diff | 1 MiB |
 
-- `cargo nextest run -p harness-tools --test native_ast_grep_replace_test`
-- `cargo nextest run -p harness-tools --test native_ast_grep_search_test`
-- `cargo nextest run -p harness-tools`
-- `cargo nextest run -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test`
-- `cargo nextest run -p harness-core --test coord_ast_grep_auth_test -- --nocapture`
+Apply rejects truncated matches and skipped files. Narrow the selection before
+retrying. Large results use the coordinator's existing redacted artifact handling.
 
-## Rejected alternatives
+The native check covers search, ignore rules, unreadable files, previews,
+replacement limits, denied and cancelled approvals, stale files, reusable grants,
+edit receipts, and undo:
 
-- Letting `ast-grep` update files directly: rejected because it bypasses Harness edit artifacts, byte-range validation, and permission/replay accounting.
-- Registering the tool as `codesearch` or `ReadFs`: rejected because apply mode mutates workspace files and must be controlled by `edit`.
-- Applying only the capped subset of a larger match set: rejected because partial structural rewrites are surprising and hard to audit.
+```bash
+HARNESS_BINARY_SIGNOFF=1 cargo nextest run -p harness-tools --test binary_smoke \
+  --ignore-default-filter -E 'test(ast_rewrites)'
+```

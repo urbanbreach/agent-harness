@@ -1,46 +1,57 @@
-#![allow(
-    clippy::mod_module_files,
-    reason = "The canonical session facade intentionally groups focused sibling modules"
-)]
-
+//! Settled session content and provider selection recorded in the journal.
+use serde::{Deserialize, Serialize};
 mod entry;
-mod error;
-pub mod history_index;
-mod identity;
-pub mod journal;
 pub mod legacy;
 mod model;
 mod projection;
-mod provider_view;
-mod record;
-pub mod reducer;
-
-pub use entry::{
-    AssistantPart, AssistantToolCall, CompactionPreservedState, ProviderProvenance, SessionEntry,
-    SessionEntryPayload, ToolResultStatus,
-};
-pub use error::SessionError;
-pub use identity::EventIdentityNamespace;
-pub use legacy::LegacyWarning as CompatibilityWarning;
+pub use entry::*;
 pub use legacy::{
     canonical_provider_fragment_for_event, canonical_provider_fragment_payload,
     CanonicalLegacyCompaction, CanonicalLegacyCompactionStatus, CanonicalProviderFragment,
-    CanonicalProviderFragmentKind, CanonicalProviderFragmentPayload,
+    CanonicalProviderFragmentKind,
 };
-pub(crate) use legacy::{
-    classify_compatibility_event, CompatibilityEvent, CompatibilityEventLifecycle,
-};
-pub use model::{CanonicalSession, RunAttempt, RunStatus, SessionMetadata, SessionStatus};
-pub use projection::{
-    canonical_projection_update_for_event, CanonicalBackgroundNotification, CanonicalEditEvent,
-    CanonicalEditPayload, CanonicalProjectionUpdate, CanonicalProviderRequestFinish,
-    CanonicalProviderRequestStart, CanonicalSessionProjection, CanonicalSessionProjectionError,
-    CanonicalStaleDetection,
-};
-pub(crate) use provider_view::select_active_path as select_provider_active_path;
-pub use provider_view::{
-    CanonicalAttachment, CanonicalCompactionSummary, CanonicalPendingPrompt, CanonicalProviderView,
-    CanonicalRuntimeSelection, CanonicalToolPair, CanonicalUsageBoundary, OwnedSession,
-    ProviderViewError, ProviderViewInput, ProviderViewOwner, UsageBoundaryKind,
-};
-pub use record::{CanonicalRecord, CanonicalRecordKind, RecordSequence};
+pub use model::CanonicalSession;
+pub use projection::*;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AssistantPart {
+    Text { text: String },
+    Reasoning { text: String },
+    ToolCall(AssistantToolCall),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssistantToolCall {
+    pub tool_call_id: crate::ids::ToolCallId,
+    pub provider_tool_call_id: Option<String>,
+    pub tool_id: String,
+    pub args_summary: String,
+    pub args_digest: String,
+    pub provider_call_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderProvenance {
+    pub provider_id: String,
+    pub model_id: String,
+    pub request_id: crate::ids::ProviderRequestId,
+    pub response_id: Option<String>,
+    pub stop_reason: Option<String>,
+    pub usage: Option<harness_providers::CompletionUsage>,
+    pub runtime_selection: Option<Box<CanonicalRuntimeSelection>>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CanonicalRuntimeSelection {
+    pub profile: Option<String>,
+    pub provider_id: String,
+    pub model_id: String,
+    pub variant: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub text_verbosity: Option<String>,
+    pub reasoning_summary: Option<String>,
+    pub thinking: Option<serde_json::Value>,
+    pub resolved_limits: crate::config::ResolvedModelLimits,
+    pub profile_tool_shape_digest: String,
+}

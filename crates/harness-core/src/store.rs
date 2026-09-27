@@ -1,31 +1,24 @@
-// allow: SIZE_OK — event store (JSONL persistence + append sequencing)
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, ErrorKind, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard};
-
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-use tokio::sync::broadcast;
-use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream};
-use tokio_stream::{Stream, StreamExt};
-
 use crate::event::{EventActor, EventEnvelopeV1, EventV1, LiveEventEnvelope, RuntimeEvent};
-use crate::path_display::display_path;
-use crate::session_paths::{
-    ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, META_FILE_NAME, WRITER_LOCK_FILE_NAME,
+use serde::{Deserialize, Serialize};
+use std::{
+    fs::{self, File, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::{Mutex, MutexGuard},
 };
-
-const SUBSCRIBER_BUFFER: usize = 1024;
-const WRITER_LOCK_RECOVERY_FILE_NAME: &str = ".writer.lock.recovering";
-const WRITER_LOCK_RECOVERY_MUTEX_FILE_NAME: &str = ".writer.lock.recovery-mutex";
-static NEXT_WRITER_LOCK_TOKEN: AtomicU64 = AtomicU64::new(1);
-
-pub type EventStream = Pin<Box<dyn Stream<Item = Result<EventEnvelopeV1, EventStoreError>> + Send>>;
-pub type RuntimeEventStream =
-    Pin<Box<dyn Stream<Item = Result<RuntimeEvent, EventStoreError>> + Send>>;
+use tokio::sync::broadcast;
+use tokio_stream::{wrappers::BroadcastStream, Stream, StreamExt};
+mod lock;
+mod observer;
+mod private;
+pub(crate) use lock::existing_writer_lock;
+pub(crate) use private::{lock_private_parent, read_private_bytes, validate_private_path};
+pub use private::{open_private_append, open_private_file};
+mod reader;
+mod recovery;
+pub(crate) use observer::observer;
+pub use reader::{read_events, JournalReader};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventEnvelopeWithoutSeqV1 {
@@ -33,25 +26,38 @@ pub struct EventEnvelopeWithoutSeqV1 {
     pub event_id: String,
     pub run_id: crate::ids::RunId,
     pub mono_ms: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub ts: Option<String>,
     pub actor: EventActor,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub correlation_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub causation_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_key: Option<String>,
     pub payload: EventV1,
 }
 
+impl From<EventEnvelopeV1> for EventEnvelopeWithoutSeqV1 {
+    fn from(e: EventEnvelopeV1) -> Self {
+        Self {
+            schema_version: e.schema_version,
+            event_id: e.event_id,
+            run_id: e.run_id,
+            mono_ms: e.mono_ms,
+            ts: e.ts,
+            actor: e.actor,
+            correlation_id: e.correlation_id,
+            causation_id: e.causation_id,
+            stream_key: e.stream_key,
+            payload: e.payload,
+        }
+    }
+}
+
 impl EventEnvelopeWithoutSeqV1 {
-    fn with_seq(self, seq: u64) -> EventEnvelopeV1 {
+    fn sequence(self, seq: u64) -> EventEnvelopeV1 {
         EventEnvelopeV1 {
             schema_version: self.schema_version,
             event_id: self.event_id,
-            seq,
             run_id: self.run_id,
+            seq,
             mono_ms: self.mono_ms,
             ts: self.ts,
             actor: self.actor,
@@ -62,22 +68,22 @@ impl EventEnvelopeWithoutSeqV1 {
         }
     }
 }
+pub type EventStream = Pin<Box<dyn Stream<Item = Result<EventEnvelopeV1, EventStoreError>> + Send>>;
+pub type RuntimeEventStream =
+    Pin<Box<dyn Stream<Item = Result<RuntimeEvent, EventStoreError>> + Send>>;
 
-impl From<EventEnvelopeV1> for EventEnvelopeWithoutSeqV1 {
-    fn from(value: EventEnvelopeV1) -> Self {
-        Self {
-            schema_version: value.schema_version,
-            event_id: value.event_id,
-            run_id: value.run_id,
-            mono_ms: value.mono_ms,
-            ts: value.ts,
-            actor: value.actor,
-            correlation_id: value.correlation_id,
-            causation_id: value.causation_id,
-            stream_key: value.stream_key,
-            payload: value.payload,
-        }
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum EventStoreError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error("{0}")]
+    Invalid(&'static str),
+    #[error("subscriber lagged by {0} events")]
+    SubscriberLagged(u64),
+    #[error("event store lock poisoned")]
+    LockPoisoned,
 }
 
 pub trait EventStore: Send + Sync {
@@ -89,891 +95,379 @@ pub trait EventStore: Send + Sync {
     fn subscribe(&self, from_seq: u64) -> Result<EventStream, EventStoreError>;
     fn subscribe_runtime(&self, from_seq: u64) -> Result<RuntimeEventStream, EventStoreError>;
     fn publish_live(&self, envelope: LiveEventEnvelope);
+    fn close_writer(&self) -> Result<(), EventStoreError>;
 }
 
-#[derive(Debug, Error)]
-pub enum EventStoreError {
-    #[error("failed to create event directory {path}: {source}")]
-    CreateDirectory {
-        path: String,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("failed to open event log {path}: {source}")]
-    OpenLog {
-        path: String,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("failed to acquire event writer lock {path}: {source}")]
-    AcquireWriterLock {
-        path: String,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("run directory does not exist: {path}")]
-    RunDirectoryMissing { path: String },
-    #[error("failed to read event log {path}: {source}")]
-    ReadLog {
-        path: String,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("failed to write event log {path}: {source}")]
-    WriteLog {
-        path: String,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("failed to serialize event envelope: {0}")]
-    SerializeEnvelope(#[source] serde_json::Error),
-    #[error("invalid JSONL event at line {line}: {source}")]
-    InvalidJsonLine {
-        line: usize,
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("non-monotonic event sequence at line {line}: expected {expected}, got {actual}")]
-    NonMonotonicSequence {
-        line: usize,
-        expected: u64,
-        actual: u64,
-    },
-    #[error("subscriber lagged by {0} messages")]
-    SubscriberLagged(u64),
-    #[error("event store lock poisoned")]
-    LockPoisoned,
+pub struct Journal {
+    state: Mutex<State>,
+    tx: broadcast::Sender<RuntimeEvent>,
+    file_path: PathBuf,
 }
-
-#[derive(Debug)]
-pub struct InMemoryEventStore {
-    state: Mutex<InMemoryState>,
-    tx: broadcast::Sender<EventEnvelopeV1>,
-    runtime_tx: broadcast::Sender<RuntimeEvent>,
-}
-
-#[derive(Debug)]
-struct InMemoryState {
+struct State {
+    file: Option<File>,
+    writer_lock: Option<File>,
+    memory: Vec<EventEnvelopeV1>,
     next_seq: u64,
-    events: Vec<EventEnvelopeV1>,
+    run_id: Option<String>,
+    length: u64,
+    needs_newline: bool,
+    failed: bool,
+    closed: bool,
+}
+pub type JsonlFileEventStore = Journal;
+pub type InMemoryEventStore = Journal;
+
+impl Journal {
+    pub fn new() -> Self {
+        Self {
+            state: Mutex::new(State {
+                file: None,
+                writer_lock: None,
+                memory: Vec::new(),
+                next_seq: 1,
+                run_id: None,
+                length: 0,
+                needs_newline: false,
+                failed: false,
+                closed: false,
+            }),
+            tx: broadcast::channel(256).0,
+            file_path: PathBuf::new(),
+        }
+    }
+    pub fn open(
+        root: impl AsRef<Path>,
+        id: impl AsRef<str>,
+        _deterministic: bool,
+    ) -> Result<Self, EventStoreError> {
+        Self::open_file(root.as_ref(), id.as_ref(), true, false, false)
+    }
+    pub fn open_existing(
+        root: impl AsRef<Path>,
+        id: impl AsRef<str>,
+        _deterministic: bool,
+    ) -> Result<Self, EventStoreError> {
+        Self::open_file(root.as_ref(), id.as_ref(), false, false, false)
+    }
+    pub(crate) fn open_for_recovery(root: &Path, id: &str) -> Result<Self, EventStoreError> {
+        Self::open_file(root, id, false, true, false)
+    }
+    pub(crate) fn open_child_projection(root: &Path, id: &str) -> Result<Self, EventStoreError> {
+        let mut journal = Self::open_file(root, id, true, true, true)?;
+        journal.tx = broadcast::channel(1).0;
+        Ok(journal)
+    }
+    fn open_file(
+        root: &Path,
+        id: &str,
+        create: bool,
+        recover: bool,
+        child_projection: bool,
+    ) -> Result<Self, EventStoreError> {
+        validate_session_id(id)?;
+        let dir = root.join(id);
+        reject_symlink(&dir)?;
+        if create {
+            create_private_dir(&dir)?;
+        }
+        if !dir.is_dir() {
+            return Err(EventStoreError::Invalid("session directory does not exist"));
+        }
+        let lock = lock::acquire(&dir)?;
+        if !child_projection {
+            lock::check_parent(root, &dir)?;
+        }
+        let file_path = dir.join("events.jsonl");
+        reject_symlink(&file_path)?;
+        let file = private_options()
+            .read(true)
+            .append(true)
+            .create(create)
+            .open(&file_path)?;
+        if !file.metadata()?.is_file() {
+            return Err(EventStoreError::Invalid("journal is not a regular file"));
+        }
+        let mut length = file.metadata()?.len();
+        let mut reader = JournalReader::open(&file_path, length)?;
+        let mut next_seq = 1;
+        let mut repaired = false;
+        while let Some(event) = reader.next() {
+            let event = match event {
+                Ok(event) => event,
+                Err(error)
+                    if recover
+                        && reader.needs_newline()
+                        && matches!(&error,EventStoreError::Json(e) if e.is_eof()) =>
+                {
+                    length = reader.validated_length();
+                    recovery::preserve_tail(&file_path, &file, length)?;
+                    repaired = true;
+                    break;
+                }
+                Err(error) => return Err(error),
+            };
+            if event.run_id.as_str() != id {
+                return Err(EventStoreError::Invalid("journal belongs to another run"));
+            }
+            next_seq = event
+                .seq
+                .checked_add(1)
+                .ok_or(EventStoreError::Invalid("event sequence exhausted"))?;
+        }
+        let needs_newline = !repaired && reader.needs_newline();
+        Ok(Self {
+            state: Mutex::new(State {
+                file: Some(file),
+                writer_lock: Some(lock),
+                memory: Vec::new(),
+                next_seq,
+                run_id: Some(id.into()),
+                length,
+                needs_newline,
+                failed: false,
+                closed: false,
+            }),
+            tx: broadcast::channel(256).0,
+            file_path,
+        })
+    }
+    pub fn file_path(&self) -> &Path {
+        &self.file_path
+    }
+    pub fn next_seq(&self) -> Result<u64, EventStoreError> {
+        Ok(self.state()?.next_seq)
+    }
+    fn state(&self) -> Result<MutexGuard<'_, State>, EventStoreError> {
+        self.state.lock().map_err(|_| EventStoreError::LockPoisoned)
+    }
+    fn history(&self, state: &State, from: u64) -> Result<EventStream, EventStoreError> {
+        if from >= state.next_seq {
+            return Ok(Box::pin(tokio_stream::empty()));
+        }
+        if !self.file_path.as_os_str().is_empty() {
+            Ok(Box::pin(
+                tokio_stream::iter(JournalReader::open(&self.file_path, state.length)?)
+                    .filter(move |item| item.as_ref().map_or(true, |e| e.seq >= from)),
+            ))
+        } else {
+            let events: Vec<_> = state
+                .memory
+                .iter()
+                .filter(|e| e.seq >= from)
+                .cloned()
+                .map(Ok)
+                .collect();
+            Ok(Box::pin(tokio_stream::iter(events)))
+        }
+    }
 }
 
-impl Default for InMemoryEventStore {
+impl Default for Journal {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl InMemoryEventStore {
-    pub fn new() -> Self {
-        let (tx, _) = broadcast::channel(SUBSCRIBER_BUFFER);
-        let (runtime_tx, _) = broadcast::channel(SUBSCRIBER_BUFFER);
-        Self {
-            state: Mutex::new(InMemoryState {
-                next_seq: 1,
-                events: Vec::new(),
-            }),
-            tx,
-            runtime_tx,
-        }
-    }
-}
-
-impl EventStore for InMemoryEventStore {
+impl EventStore for Journal {
     fn append(
         &self,
         envelope: EventEnvelopeWithoutSeqV1,
     ) -> Result<EventEnvelopeV1, EventStoreError> {
-        let mut state = lock_state(&self.state)?;
-        let envelope = envelope.with_seq(state.next_seq);
-        state.next_seq += 1;
-        let event = envelope.clone();
-        state.events.push(event.clone());
-        let _ = self.tx.send(event.clone());
-        let _ = self.runtime_tx.send(RuntimeEvent::Durable(Box::new(event)));
-        Ok(envelope)
+        if matches!(
+            envelope.payload,
+            EventV1::ProviderStreamDelta(_) | EventV1::ProviderReasoningDelta(_)
+        ) || matches!(&envelope.payload, EventV1::AssistantMessageFinished(e)
+            if e.parts.iter().any(|part| matches!(part, crate::session::AssistantPart::Reasoning { .. })))
+            || matches!(&envelope.payload, EventV1::ProviderRequestFinished(e)
+                if e.metadata.as_ref().and_then(|m| m.thinking.as_ref()).is_some_and(|t| t.summary.is_some() || t.signature.is_some()))
+        {
+            return Err(EventStoreError::Invalid(
+                "provider fragments and reasoning are live data and cannot be persisted",
+            ));
+        }
+        let mut state = self.state()?;
+        if state.closed {
+            return Err(EventStoreError::Invalid("journal writer is closed"));
+        }
+        if state.failed {
+            return Err(EventStoreError::Invalid(
+                "journal write failed; reopen before writing",
+            ));
+        }
+        if envelope.schema_version != crate::event::SCHEMA_VERSION
+            || envelope.event_id.is_empty()
+            || envelope.run_id.as_str().is_empty()
+            || state
+                .run_id
+                .as_ref()
+                .is_some_and(|id| id != envelope.run_id.as_str())
+        {
+            return Err(EventStoreError::Invalid("invalid event identity or schema"));
+        }
+        let next = state
+            .next_seq
+            .checked_add(1)
+            .ok_or(EventStoreError::Invalid("event sequence exhausted"))?;
+        let event = envelope.sequence(state.next_seq);
+        let mut bytes = Vec::new();
+        if state.needs_newline {
+            bytes.push(b'\n');
+        }
+        serde_json::to_writer(&mut bytes, &event)?;
+        bytes.push(b'\n');
+        if bytes.len() > reader::MAX_RECORD_BYTES {
+            return Err(EventStoreError::Invalid(
+                "event exceeds journal record limit",
+            ));
+        }
+        if let Some(file) = &mut state.file {
+            if let Err(error) = file.write_all(&bytes).and_then(|()| file.sync_data()) {
+                state.failed = true;
+                return Err(error.into());
+            }
+        } else {
+            state.memory.push(event.clone());
+        }
+        state.length +=
+            u64::try_from(bytes.len()).map_err(|_| EventStoreError::Invalid("event too large"))?;
+        state.needs_newline = false;
+        state.next_seq = next;
+        state.run_id.get_or_insert_with(|| event.run_id.to_string());
+        let _ = self.tx.send(RuntimeEvent::Durable(Box::new(event.clone())));
+        Ok(event)
     }
-
     fn replay(&self, from_seq: u64) -> Result<EventStream, EventStoreError> {
-        let state = lock_state(&self.state)?;
-        let replayed: Vec<_> = state
-            .events
-            .iter()
-            .filter(|event| event.seq >= from_seq)
-            .cloned()
-            .collect();
-        Ok(Box::pin(tokio_stream::iter(replayed.into_iter().map(Ok))))
+        self.history(&*self.state()?, from_seq)
     }
-
     fn subscribe(&self, from_seq: u64) -> Result<EventStream, EventStoreError> {
-        let (replayed, max_replayed_seq, rx) = {
-            let state = lock_state(&self.state)?;
-            let replayed: Vec<_> = state
-                .events
-                .iter()
-                .filter(|event| event.seq >= from_seq)
-                .cloned()
-                .collect();
-            let max_replayed_seq = replayed
-                .last()
-                .map(|event| event.seq)
-                .unwrap_or_else(|| from_seq.saturating_sub(1));
-            (replayed, max_replayed_seq, self.tx.subscribe())
-        };
-
-        let replay_stream = tokio_stream::iter(replayed.into_iter().map(Ok));
-        let live_stream = broadcast_stream(rx, max_replayed_seq);
-        Ok(Box::pin(replay_stream.chain(live_stream)))
+        Ok(Box::pin(self.subscribe_runtime(from_seq)?.filter_map(
+            |event| match event {
+                Ok(RuntimeEvent::Durable(e)) => Some(Ok(*e)),
+                Ok(RuntimeEvent::Live(_)) => None,
+                Err(e) => Some(Err(e)),
+            },
+        )))
     }
-
     fn subscribe_runtime(&self, from_seq: u64) -> Result<RuntimeEventStream, EventStoreError> {
-        let (replayed, max_replayed_seq, rx) = {
-            let state = lock_state(&self.state)?;
-            let replayed: Vec<_> = state
-                .events
-                .iter()
-                .filter(|event| event.seq >= from_seq)
-                .cloned()
-                .collect();
-            let max_replayed_seq = replayed
-                .last()
-                .map(|event| event.seq)
-                .unwrap_or_else(|| from_seq.saturating_sub(1));
-            (replayed, max_replayed_seq, self.runtime_tx.subscribe())
-        };
-
-        let replay_stream = tokio_stream::iter(
-            replayed
-                .into_iter()
-                .map(Box::new)
-                .map(RuntimeEvent::Durable)
-                .map(Ok),
-        );
-        let live_stream = runtime_broadcast_stream(rx, max_replayed_seq);
-        Ok(Box::pin(replay_stream.chain(live_stream)))
+        let state = self.state()?;
+        let rx = self.tx.subscribe();
+        let history = self
+            .history(&state, from_seq)?
+            .map(|event| event.map(|e| RuntimeEvent::Durable(Box::new(e))));
+        let live = BroadcastStream::new(rx)
+            .map(|event| {
+                event.map_err(|e| match e {
+                    tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(n) => {
+                        EventStoreError::SubscriberLagged(n)
+                    }
+                })
+            })
+            .filter(
+                move |event| !matches!(event, Ok(RuntimeEvent::Durable(e)) if e.seq < from_seq),
+            );
+        Ok(Box::pin(history.chain(live)))
     }
-
-    fn publish_live(&self, envelope: LiveEventEnvelope) {
-        let _ = self.runtime_tx.send(RuntimeEvent::Live(Box::new(envelope)));
+    fn publish_live(&self, event: LiveEventEnvelope) {
+        let _ = self.tx.send(RuntimeEvent::Live(Box::new(event)));
+    }
+    fn close_writer(&self) -> Result<(), EventStoreError> {
+        let mut state = self.state()?;
+        state.closed = true;
+        state.file.take();
+        state.writer_lock.take();
+        Ok(())
     }
 }
 
-#[derive(Debug)]
-pub struct JsonlFileEventStore {
-    _writer_lock: WriterLock,
-    file_path: PathBuf,
-    deterministic: bool,
-    state: Mutex<JsonlState>,
-    tx: broadcast::Sender<EventEnvelopeV1>,
-    runtime_tx: broadcast::Sender<RuntimeEvent>,
+fn reject_symlink(path: &Path) -> Result<(), EventStoreError> {
+    match fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_symlink() => {
+            Err(EventStoreError::Invalid("session paths cannot be symlinks"))
+        }
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+        _ => Ok(()),
+    }
+}
+
+fn private_options() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options
 }
 
 pub trait EventStoreOpener: Send + Sync {
-    fn open(
-        &self,
-        session_dir: &Path,
-        run_id: &str,
-        deterministic: bool,
-    ) -> Result<JsonlFileEventStore, EventStoreError>;
-
+    fn open(&self, root: &Path, id: &str, deterministic: bool) -> Result<Journal, EventStoreError>;
     fn open_existing(
         &self,
-        session_dir: &Path,
-        run_id: &str,
+        root: &Path,
+        id: &str,
         deterministic: bool,
-    ) -> Result<JsonlFileEventStore, EventStoreError>;
+    ) -> Result<Journal, EventStoreError>;
 }
-
 #[derive(Debug, Default)]
 pub struct JsonlEventStoreOpener;
-
 impl EventStoreOpener for JsonlEventStoreOpener {
-    fn open(
-        &self,
-        session_dir: &Path,
-        run_id: &str,
-        deterministic: bool,
-    ) -> Result<JsonlFileEventStore, EventStoreError> {
-        JsonlFileEventStore::open(session_dir, run_id, deterministic)
+    fn open(&self, root: &Path, id: &str, deterministic: bool) -> Result<Journal, EventStoreError> {
+        Journal::open(root, id, deterministic)
     }
-
     fn open_existing(
         &self,
-        session_dir: &Path,
-        run_id: &str,
+        root: &Path,
+        id: &str,
         deterministic: bool,
-    ) -> Result<JsonlFileEventStore, EventStoreError> {
-        JsonlFileEventStore::open_existing(session_dir, run_id, deterministic)
+    ) -> Result<Journal, EventStoreError> {
+        Journal::open_existing(root, id, deterministic)
     }
-}
-
-#[derive(Debug)]
-struct WriterLock {
-    path: PathBuf,
-    contents: String,
-    _file: File,
-}
-
-#[derive(Debug)]
-pub(crate) struct WriterLockRecoveryGuard {
-    path: PathBuf,
-    contents: String,
-    _file: File,
-    _mutex: File,
-}
-
-impl WriterLock {
-    fn acquire(run_dir: &Path) -> Result<Self, EventStoreError> {
-        let path = run_dir.join(WRITER_LOCK_FILE_NAME);
-        match create_writer_lock(&path) {
-            Ok((file, contents)) => Ok(Self {
-                path,
-                contents,
-                _file: file,
-            }),
-            Err(source) if source.kind() == ErrorKind::AlreadyExists => {
-                let _recovery_guard = WriterLockRecoveryGuard::acquire(run_dir, &path)?;
-                if stale_writer_lock(run_dir, &path) {
-                    let _ = fs::remove_file(&path);
-                    let (file, contents) = create_writer_lock(&path).map_err(|source| {
-                        EventStoreError::AcquireWriterLock {
-                            path: display_path(&path),
-                            source,
-                        }
-                    })?;
-                    Ok(Self {
-                        path,
-                        contents,
-                        _file: file,
-                    })
-                } else {
-                    Err(EventStoreError::AcquireWriterLock {
-                        path: display_path(&path),
-                        source,
-                    })
-                }
-            }
-            Err(source) => Err(EventStoreError::AcquireWriterLock {
-                path: display_path(&path),
-                source,
-            }),
-        }
-    }
-}
-
-impl WriterLockRecoveryGuard {
-    pub(crate) fn acquire(
-        run_dir: &Path,
-        writer_lock_path: &Path,
-    ) -> Result<Self, EventStoreError> {
-        let lock_error = |source| EventStoreError::AcquireWriterLock {
-            path: display_path(writer_lock_path),
-            source,
-        };
-        // Never unlink this file: every claimant must lock the same inode, including
-        // while the owned recovery marker is removed in Drop.
-        let mutex = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(run_dir.join(WRITER_LOCK_RECOVERY_MUTEX_FILE_NAME))
-            .map_err(lock_error)?;
-        mutex.try_lock().map_err(|err| lock_error(err.into()))?;
-
-        let path = run_dir.join(WRITER_LOCK_RECOVERY_FILE_NAME);
-        if fs::read_to_string(&path)
-            .ok()
-            .and_then(|contents| writer_lock_pid(&contents))
-            .is_some_and(|pid| !process_exists(pid))
-        {
-            fs::remove_file(&path).map_err(lock_error)?;
-        }
-        let (file, contents) = create_writer_lock(&path).map_err(lock_error)?;
-        Ok(Self {
-            path,
-            contents,
-            _file: file,
-            _mutex: mutex,
-        })
-    }
-}
-
-fn create_writer_lock(path: &Path) -> Result<(File, String), std::io::Error> {
-    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-    let token = NEXT_WRITER_LOCK_TOKEN.fetch_add(1, Ordering::Relaxed);
-    let contents = format!("pid={}\ntoken={token}\n", std::process::id());
-    file.write_all(contents.as_bytes())?;
-    file.sync_all()?;
-    Ok((file, contents))
-}
-
-fn stale_writer_lock(run_dir: &Path, path: &Path) -> bool {
-    let Ok(contents) = fs::read_to_string(path) else {
-        return false;
-    };
-    if contents.trim().is_empty() {
-        return unborn_run_dir(run_dir);
-    }
-    let Some(pid) = writer_lock_pid(&contents) else {
-        return unborn_run_dir(run_dir);
-    };
-
-    !process_exists(pid)
-}
-
-fn writer_lock_pid(contents: &str) -> Option<u32> {
-    contents.lines().find_map(|line| {
-        line.strip_prefix("pid=")
-            .and_then(|pid| pid.parse::<u32>().ok())
-    })
-}
-
-pub(crate) fn unborn_run_dir(run_dir: &Path) -> bool {
-    if run_dir.join(EVENTS_FILE_NAME).exists()
-        || run_dir.join(META_FILE_NAME).exists()
-        || run_dir.join(ARTIFACTS_DIR_NAME).exists()
-    {
-        return false;
-    }
-
-    let Ok(entries) = fs::read_dir(run_dir) else {
-        return false;
-    };
-    entries.into_iter().all(|entry| {
-        entry
-            .ok()
-            .and_then(|entry| entry.file_name().into_string().ok())
-            .is_some_and(|name| {
-                name == WRITER_LOCK_FILE_NAME
-                    || name == WRITER_LOCK_RECOVERY_FILE_NAME
-                    || name == WRITER_LOCK_RECOVERY_MUTEX_FILE_NAME
-            })
-    })
-}
-
-#[cfg(target_os = "linux")]
-fn process_exists(pid: u32) -> bool {
-    Path::new("/proc").join(pid.to_string()).exists()
-}
-
-#[cfg(not(target_os = "linux"))]
-fn process_exists(_pid: u32) -> bool {
-    true
-}
-
-impl Drop for WriterLock {
-    fn drop(&mut self) {
-        if fs::read_to_string(&self.path).is_ok_and(|contents| contents == self.contents) {
-            let _ = fs::remove_file(&self.path);
-        }
-    }
-}
-
-impl Drop for WriterLockRecoveryGuard {
-    fn drop(&mut self) {
-        if fs::read_to_string(&self.path).is_ok_and(|contents| contents == self.contents) {
-            let _ = fs::remove_file(&self.path);
-        }
-    }
-}
-
-#[derive(Debug)]
-struct JsonlState {
-    file: File,
-    next_seq: u64,
-    replay_index: Vec<EventLogIndexEntry>,
-    indexed_len: u64,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct EventLogIndexEntry {
-    seq: u64,
-    line: usize,
-    offset: u64,
-}
-
-fn serialize_jsonl_line(envelope: &EventEnvelopeV1) -> Result<Vec<u8>, EventStoreError> {
-    let mut line = serde_json::to_vec(envelope).map_err(EventStoreError::SerializeEnvelope)?;
-    line.push(b'\n');
-    Ok(line)
-}
-
-impl JsonlFileEventStore {
-    pub fn open(
-        session_dir: impl AsRef<Path>,
-        run_id: impl AsRef<str>,
-        deterministic: bool,
-    ) -> Result<Self, EventStoreError> {
-        Self::open_internal(session_dir, run_id, deterministic, true)
-    }
-
-    pub fn open_existing(
-        session_dir: impl AsRef<Path>,
-        run_id: impl AsRef<str>,
-        deterministic: bool,
-    ) -> Result<Self, EventStoreError> {
-        Self::open_internal(session_dir, run_id, deterministic, false)
-    }
-
-    fn open_internal(
-        session_dir: impl AsRef<Path>,
-        run_id: impl AsRef<str>,
-        deterministic: bool,
-        create_run_dir: bool,
-    ) -> Result<Self, EventStoreError> {
-        let run_dir = session_dir.as_ref().join(run_id.as_ref());
-        if create_run_dir {
-            fs::create_dir_all(&run_dir).map_err(|source| EventStoreError::CreateDirectory {
-                path: display_path(&run_dir),
-                source,
-            })?;
-        } else if !run_dir.is_dir() {
-            return Err(EventStoreError::RunDirectoryMissing {
-                path: display_path(&run_dir),
-            });
-        }
-
-        let writer_lock = WriterLock::acquire(&run_dir)?;
-
-        let file_path = run_dir.join(EVENTS_FILE_NAME);
-        let mut options = OpenOptions::new();
-        options.append(true);
-        if create_run_dir {
-            options.create(true);
-        }
-        let file = options
-            .open(&file_path)
-            .map_err(|source| EventStoreError::OpenLog {
-                path: display_path(&file_path),
-                source,
-            })?;
-
-        let scan = scan_events_from_file(&file_path)?;
-        let (tx, _) = broadcast::channel(SUBSCRIBER_BUFFER);
-        let (runtime_tx, _) = broadcast::channel(SUBSCRIBER_BUFFER);
-
-        Ok(Self {
-            _writer_lock: writer_lock,
-            file_path,
-            deterministic,
-            state: Mutex::new(JsonlState {
-                file,
-                next_seq: scan.next_seq,
-                replay_index: scan.index,
-                indexed_len: scan.file_len,
-            }),
-            tx,
-            runtime_tx,
-        })
-    }
-
-    pub fn file_path(&self) -> &Path {
-        &self.file_path
-    }
-
-    pub fn next_seq(&self) -> Result<u64, EventStoreError> {
-        let state = lock_state(&self.state)?;
-        Ok(state.next_seq)
-    }
-}
-
-impl EventStore for JsonlFileEventStore {
-    fn append(
-        &self,
-        envelope: EventEnvelopeWithoutSeqV1,
-    ) -> Result<EventEnvelopeV1, EventStoreError> {
-        let mut state = lock_state(&self.state)?;
-        let envelope = envelope.with_seq(state.next_seq);
-        let record = serialize_jsonl_line(&envelope)?;
-        let offset = state.indexed_len;
-
-        state
-            .file
-            .write_all(&record)
-            .map_err(|source| EventStoreError::WriteLog {
-                path: display_path(&self.file_path),
-                source,
-            })?;
-
-        if self.deterministic {
-            state
-                .file
-                .flush()
-                .and_then(|_| state.file.sync_data())
-                .map_err(|source| EventStoreError::WriteLog {
-                    path: display_path(&self.file_path),
-                    source,
-                })?;
-        }
-
-        state.next_seq += 1;
-        let line = state.replay_index.len() + 1;
-        state.replay_index.push(EventLogIndexEntry {
-            seq: envelope.seq,
-            line,
-            offset,
-        });
-        state.indexed_len = state
-            .indexed_len
-            .saturating_add(u64::try_from(record.len()).unwrap_or(0));
-        drop(state);
-
-        let _ = self.tx.send(envelope.clone());
-        let _ = self
-            .runtime_tx
-            .send(RuntimeEvent::Durable(Box::new(envelope.clone())));
-        Ok(envelope)
-    }
-
-    fn replay(&self, from_seq: u64) -> Result<EventStream, EventStoreError> {
-        let replayed = {
-            let mut state = lock_state(&self.state)?;
-            replay_events_from_index(&self.file_path, &mut state, from_seq)?
-        };
-
-        Ok(Box::pin(tokio_stream::iter(replayed.into_iter().map(Ok))))
-    }
-
-    fn subscribe(&self, from_seq: u64) -> Result<EventStream, EventStoreError> {
-        let (replayed, max_replayed_seq, rx) = {
-            let mut state = lock_state(&self.state)?;
-            let replayed = replay_events_from_index(&self.file_path, &mut state, from_seq)?;
-            let max_replayed_seq = replayed
-                .last()
-                .map(|event| event.seq)
-                .unwrap_or_else(|| from_seq.saturating_sub(1));
-            (replayed, max_replayed_seq, self.tx.subscribe())
-        };
-
-        let replay_stream = tokio_stream::iter(replayed.into_iter().map(Ok));
-        let live_stream = broadcast_stream(rx, max_replayed_seq);
-        Ok(Box::pin(replay_stream.chain(live_stream)))
-    }
-
-    fn subscribe_runtime(&self, from_seq: u64) -> Result<RuntimeEventStream, EventStoreError> {
-        let (replayed, max_replayed_seq, rx) = {
-            let mut state = lock_state(&self.state)?;
-            let replayed = replay_events_from_index(&self.file_path, &mut state, from_seq)?;
-            let max_replayed_seq = replayed
-                .last()
-                .map(|event| event.seq)
-                .unwrap_or_else(|| from_seq.saturating_sub(1));
-            (replayed, max_replayed_seq, self.runtime_tx.subscribe())
-        };
-
-        let replay_stream = tokio_stream::iter(
-            replayed
-                .into_iter()
-                .map(Box::new)
-                .map(RuntimeEvent::Durable)
-                .map(Ok),
-        );
-        let live_stream = runtime_broadcast_stream(rx, max_replayed_seq);
-        Ok(Box::pin(replay_stream.chain(live_stream)))
-    }
-
-    fn publish_live(&self, envelope: LiveEventEnvelope) {
-        let _ = self.runtime_tx.send(RuntimeEvent::Live(Box::new(envelope)));
-    }
-}
-
-fn runtime_broadcast_stream(
-    rx: broadcast::Receiver<RuntimeEvent>,
-    min_durable_seq_exclusive: u64,
-) -> impl Stream<Item = Result<RuntimeEvent, EventStoreError>> {
-    BroadcastStream::new(rx).filter_map(move |item| match item {
-        Ok(RuntimeEvent::Durable(event)) if event.seq > min_durable_seq_exclusive => {
-            Some(Ok(RuntimeEvent::Durable(event)))
-        }
-        Ok(RuntimeEvent::Durable(_)) => None,
-        Ok(RuntimeEvent::Live(event)) => Some(Ok(RuntimeEvent::Live(event))),
-        Err(BroadcastStreamRecvError::Lagged(skipped)) => {
-            Some(Err(EventStoreError::SubscriberLagged(skipped)))
-        }
-    })
-}
-
-fn broadcast_stream(
-    rx: broadcast::Receiver<EventEnvelopeV1>,
-    min_seq_exclusive: u64,
-) -> impl Stream<Item = Result<EventEnvelopeV1, EventStoreError>> {
-    BroadcastStream::new(rx).filter_map(move |item| match item {
-        Ok(event) if event.seq > min_seq_exclusive => Some(Ok(event)),
-        Ok(_) => None,
-        Err(BroadcastStreamRecvError::Lagged(skipped)) => {
-            Some(Err(EventStoreError::SubscriberLagged(skipped)))
-        }
-    })
-}
-
-fn lock_state<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>, EventStoreError> {
-    mutex.lock().map_err(|_| EventStoreError::LockPoisoned)
-}
-
-struct ScanResult {
-    index: Vec<EventLogIndexEntry>,
-    next_seq: u64,
-    file_len: u64,
-}
-
-fn scan_events_from_file(file_path: &Path) -> Result<ScanResult, EventStoreError> {
-    scan_events_from_cursor(
-        file_path,
-        ScanCursor {
-            offset: 0,
-            next_seq: 1,
-            line: 0,
-        },
-    )
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ScanCursor {
-    offset: u64,
-    next_seq: u64,
-    line: usize,
-}
-
-fn scan_events_from_cursor(
-    file_path: &Path,
-    cursor: ScanCursor,
-) -> Result<ScanResult, EventStoreError> {
-    let mut file = File::open(file_path).map_err(|source| EventStoreError::ReadLog {
-        path: display_path(file_path),
-        source,
-    })?;
-    let mut file_len = file
-        .metadata()
-        .map(|metadata| metadata.len())
-        .map_err(|source| EventStoreError::ReadLog {
-            path: display_path(file_path),
-            source,
-        })?;
-
-    file.seek(SeekFrom::Start(cursor.offset))
-        .map_err(|source| EventStoreError::ReadLog {
-            path: display_path(file_path),
-            source,
-        })?;
-
-    let mut index = Vec::new();
-    let mut expected_seq = cursor.next_seq;
-    let mut offset = cursor.offset;
-
-    let mut reader = BufReader::new(file);
-    let mut raw_line = Vec::new();
-    let mut line_number = cursor.line;
-    loop {
-        raw_line.clear();
-        let bytes_read =
-            reader
-                .read_until(b'\n', &mut raw_line)
-                .map_err(|source| EventStoreError::ReadLog {
-                    path: display_path(file_path),
-                    source,
-                })?;
-        if bytes_read == 0 {
-            break;
-        }
-
-        line_number += 1;
-        let line_offset = offset;
-        offset = offset.saturating_add(u64::try_from(bytes_read).unwrap_or(0));
-        let terminated = raw_line.ends_with(b"\n");
-        let line = match decode_jsonl_line(&raw_line, file_path) {
-            Ok(line) => line,
-            Err(_) if !terminated => {
-                repair_truncated_jsonl_tail(file_path, line_offset)?;
-                file_len = line_offset;
-                break;
-            }
-            Err(err) => return Err(err),
-        };
-
-        let event: EventEnvelopeV1 = match serde_json::from_str(&line) {
-            Ok(event) => event,
-            Err(_) if !terminated => {
-                repair_truncated_jsonl_tail(file_path, line_offset)?;
-                file_len = line_offset;
-                break;
-            }
-            Err(source) => {
-                return Err(EventStoreError::InvalidJsonLine {
-                    line: line_number,
-                    source,
-                })
-            }
-        };
-
-        if event.seq != expected_seq {
-            return Err(EventStoreError::NonMonotonicSequence {
-                line: line_number,
-                expected: expected_seq,
-                actual: event.seq,
-            });
-        }
-
-        index.push(EventLogIndexEntry {
-            seq: event.seq,
-            line: line_number,
-            offset: line_offset,
-        });
-
-        expected_seq += 1;
-
-        if !terminated {
-            append_missing_jsonl_newline(file_path)?;
-            file_len = file_len.saturating_add(1);
-            break;
-        }
-    }
-
-    Ok(ScanResult {
-        index,
-        next_seq: expected_seq,
-        file_len,
-    })
-}
-
-fn repair_truncated_jsonl_tail(file_path: &Path, len: u64) -> Result<(), EventStoreError> {
-    let file = OpenOptions::new()
-        .write(true)
-        .open(file_path)
-        .map_err(|source| EventStoreError::WriteLog {
-            path: display_path(file_path),
-            source,
-        })?;
-    file.set_len(len)
-        .and_then(|_| file.sync_data())
-        .map_err(|source| EventStoreError::WriteLog {
-            path: display_path(file_path),
-            source,
-        })
-}
-
-fn append_missing_jsonl_newline(file_path: &Path) -> Result<(), EventStoreError> {
-    let mut file = OpenOptions::new()
-        .append(true)
-        .open(file_path)
-        .map_err(|source| EventStoreError::WriteLog {
-            path: display_path(file_path),
-            source,
-        })?;
-    file.write_all(b"\n")
-        .and_then(|_| file.sync_data())
-        .map_err(|source| EventStoreError::WriteLog {
-            path: display_path(file_path),
-            source,
-        })
-}
-
-fn decode_jsonl_line<'line>(
-    raw_line: &'line [u8],
-    file_path: &Path,
-) -> Result<&'line str, EventStoreError> {
-    let mut line = raw_line;
-    if let Some(stripped) = line.strip_suffix(b"\n") {
-        line = stripped;
-        if let Some(stripped) = line.strip_suffix(b"\r") {
-            line = stripped;
-        }
-    }
-
-    std::str::from_utf8(line).map_err(|source| EventStoreError::ReadLog {
-        path: display_path(file_path),
-        source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
-    })
-}
-
-fn replay_events_from_index(
-    file_path: &Path,
-    state: &mut JsonlState,
-    from_seq: u64,
-) -> Result<Vec<EventEnvelopeV1>, EventStoreError> {
-    let current_len = state
-        .file
-        .metadata()
-        .map(|metadata| metadata.len())
-        .map_err(|source| EventStoreError::ReadLog {
-            path: display_path(file_path),
-            source,
-        })?;
-
-    if current_len < state.indexed_len {
-        let scan = scan_events_from_file(file_path)?;
-        state.next_seq = scan.next_seq;
-        state.replay_index = scan.index;
-        state.indexed_len = scan.file_len;
-    } else if current_len > state.indexed_len {
-        let scan = scan_events_from_cursor(
-            file_path,
-            ScanCursor {
-                offset: state.indexed_len,
-                next_seq: state.next_seq,
-                line: state.replay_index.len(),
-            },
-        )?;
-        state.next_seq = scan.next_seq;
-        state.replay_index.extend(scan.index);
-        state.indexed_len = scan.file_len;
-    }
-
-    let start_index = state
-        .replay_index
-        .partition_point(|entry| entry.seq < from_seq);
-
-    let Some(first_entry) = state.replay_index.get(start_index).copied() else {
-        return Ok(Vec::new());
-    };
-
-    let mut file = File::open(file_path).map_err(|source| EventStoreError::ReadLog {
-        path: display_path(file_path),
-        source,
-    })?;
-    file.seek(SeekFrom::Start(first_entry.offset))
-        .map_err(|source| EventStoreError::ReadLog {
-            path: display_path(file_path),
-            source,
-        })?;
-
-    let mut events = Vec::new();
-    let mut expected_seq = first_entry.seq;
-    let mut line_number = first_entry.line.saturating_sub(1);
-    let mut reader = BufReader::new(file);
-    let mut raw_line = Vec::new();
-    loop {
-        raw_line.clear();
-        let bytes_read =
-            reader
-                .read_until(b'\n', &mut raw_line)
-                .map_err(|source| EventStoreError::ReadLog {
-                    path: display_path(file_path),
-                    source,
-                })?;
-        if bytes_read == 0 {
-            break;
-        }
-        line_number += 1;
-        let line = decode_jsonl_line(&raw_line, file_path)?;
-        let event: EventEnvelopeV1 =
-            serde_json::from_str(line).map_err(|source| EventStoreError::InvalidJsonLine {
-                line: line_number,
-                source,
-            })?;
-        if event.seq != expected_seq {
-            return Err(EventStoreError::NonMonotonicSequence {
-                line: line_number,
-                expected: expected_seq,
-                actual: event.seq,
-            });
-        }
-        events.push(event);
-        expected_seq += 1;
-    }
-
-    Ok(events)
 }
 
 #[cfg(test)]
 mod tests;
+
+/// Atomically replaces a private derived file; the journal remains authoritative.
+pub fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), std::io::Error> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    temp.write_all(bytes)?;
+    temp.as_file().sync_all()?;
+    temp.persist(path).map_err(|error| error.error)?;
+    #[cfg(unix)]
+    File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+pub fn create_private_dir(path: &Path) -> Result<(), std::io::Error> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(path)?;
+    if !fs::symlink_metadata(path)?.is_dir() {
+        return Err(std::io::Error::other(
+            "private directory must not be a symlink",
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_session_id(id: &str) -> Result<(), EventStoreError> {
+    if id.is_empty()
+        || id.len() > 128
+        || matches!(id, "." | "..")
+        || !id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
+    {
+        return Err(EventStoreError::Invalid("invalid session directory name"));
+    }
+    Ok(())
+}

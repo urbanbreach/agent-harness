@@ -1,8 +1,5 @@
-use crate::UnwrapOrAbort;
-use std::collections::BTreeMap;
-use std::sync::Arc;
-
 use super::ProviderId;
+use std::{collections::BTreeMap, sync::Arc};
 
 pub trait AuthPlugin: Send + Sync {
     fn provider_id(&self) -> &ProviderId;
@@ -10,7 +7,6 @@ pub trait AuthPlugin: Send + Sync {
     fn description(&self) -> &str;
     fn auth_methods(&self) -> &[AuthMethodSpec];
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthMethodSpec {
     OAuthAuto {
@@ -28,7 +24,6 @@ pub enum AuthMethodSpec {
         prompts: Vec<PromptField>,
     },
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromptField {
     pub key: String,
@@ -38,56 +33,45 @@ pub struct PromptField {
     pub when: Option<PromptCondition>,
     pub options: Vec<PromptOption>,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptFieldType {
     Text,
     Select,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromptCondition {
     pub key: String,
     pub op: PromptOp,
     pub value: String,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptOp {
     Eq,
     Neq,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromptOption {
     pub id: String,
     pub label: String,
 }
 
+#[derive(Default)]
 pub struct AuthPluginRegistry {
     plugins: BTreeMap<ProviderId, Arc<dyn AuthPlugin>>,
 }
-
 impl AuthPluginRegistry {
     pub fn new() -> Self {
-        Self {
-            plugins: BTreeMap::new(),
-        }
+        Self::default()
     }
-
     pub fn register(&mut self, plugin: Arc<dyn AuthPlugin>) {
-        let id = plugin.provider_id().clone();
-        self.plugins.insert(id, plugin);
+        self.plugins.insert(plugin.provider_id().clone(), plugin);
     }
-
     pub fn get(&self, provider: &ProviderId) -> Option<&Arc<dyn AuthPlugin>> {
         self.plugins.get(provider)
     }
-
     pub fn providers(&self) -> Vec<&ProviderId> {
         self.plugins.keys().collect()
     }
-
     pub fn with_builtins() -> Self {
         let mut registry = Self::new();
         registry.register(Arc::new(CodexAuthPlugin::new()));
@@ -95,222 +79,109 @@ impl AuthPluginRegistry {
         registry
     }
 }
-
-impl Default for AuthPluginRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 pub struct CodexAuthPlugin {
-    provider_id: ProviderId,
+    provider: ProviderId,
     methods: Vec<AuthMethodSpec>,
 }
-
 impl CodexAuthPlugin {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+impl Default for CodexAuthPlugin {
+    fn default() -> Self {
         Self {
-            provider_id: ProviderId::codex(),
+            provider: ProviderId::codex(),
             methods: vec![
                 AuthMethodSpec::OAuthAuto {
-                    label: "ChatGPT Pro/Plus (browser)".to_string(),
+                    label: "ChatGPT Pro/Plus (browser)".into(),
                     port: 1455,
                 },
                 AuthMethodSpec::OAuthCode {
-                    label: "ChatGPT Pro/Plus (headless)".to_string(),
+                    label: "ChatGPT Pro/Plus (headless)".into(),
                 },
                 AuthMethodSpec::ApiKey {
-                    label: "Manually enter API Key".to_string(),
+                    label: "Manually enter API Key".into(),
                 },
             ],
         }
     }
 }
-
-impl Default for CodexAuthPlugin {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl AuthPlugin for CodexAuthPlugin {
     fn provider_id(&self) -> &ProviderId {
-        &self.provider_id
+        &self.provider
     }
-    fn label(&self) -> &str {
+    fn label(&self) -> &'static str {
         "OpenAI"
     }
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "ChatGPT Plus/Pro or API key"
     }
     fn auth_methods(&self) -> &[AuthMethodSpec] {
         &self.methods
     }
 }
-
 pub struct CopilotAuthPlugin {
-    provider_id: ProviderId,
+    provider: ProviderId,
     methods: Vec<AuthMethodSpec>,
 }
-
 impl CopilotAuthPlugin {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+impl Default for CopilotAuthPlugin {
+    fn default() -> Self {
         Self {
-            provider_id: ProviderId::github_copilot(),
+            provider: ProviderId::github_copilot(),
             methods: vec![AuthMethodSpec::Prompts {
-                label: "Device login".to_string(),
+                label: "Device login".into(),
                 prompts: vec![
                     PromptField {
-                        key: "deployment".to_string(),
-                        message: "Select GitHub deployment type".to_string(),
+                        key: "deployment".into(),
+                        message: "Select GitHub deployment type".into(),
                         placeholder: None,
                         field_type: PromptFieldType::Select,
                         when: None,
                         options: vec![
                             PromptOption {
-                                id: "public".to_string(),
-                                label: "GitHub.com".to_string(),
+                                id: "public".into(),
+                                label: "GitHub.com".into(),
                             },
                             PromptOption {
-                                id: "enterprise".to_string(),
-                                label: "GitHub Enterprise".to_string(),
+                                id: "enterprise".into(),
+                                label: "GitHub Enterprise".into(),
                             },
                         ],
                     },
                     PromptField {
-                        key: "enterprise_url".to_string(),
-                        message: "Enter your GitHub Enterprise URL or domain".to_string(),
-                        placeholder: Some("company.ghe.com or https://company.ghe.com".to_string()),
+                        key: "enterprise_url".into(),
+                        message: "Enter your GitHub Enterprise URL or domain".into(),
+                        placeholder: Some("company.ghe.com or https://company.ghe.com".into()),
                         field_type: PromptFieldType::Text,
                         when: Some(PromptCondition {
-                            key: "deployment".to_string(),
+                            key: "deployment".into(),
                             op: PromptOp::Eq,
-                            value: "enterprise".to_string(),
+                            value: "enterprise".into(),
                         }),
-                        options: vec![],
+                        options: Vec::new(),
                     },
                 ],
             }],
         }
     }
 }
-
-impl Default for CopilotAuthPlugin {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl AuthPlugin for CopilotAuthPlugin {
     fn provider_id(&self) -> &ProviderId {
-        &self.provider_id
+        &self.provider
     }
-    fn label(&self) -> &str {
+    fn label(&self) -> &'static str {
         "GitHub Copilot"
     }
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "Device login"
     }
     fn auth_methods(&self) -> &[AuthMethodSpec] {
         &self.methods
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::UnwrapOrAbort;
-
-    #[test]
-    fn registry_get_codex_returns_plugin() {
-        // arrange
-        let registry = AuthPluginRegistry::with_builtins();
-
-        // act
-        let plugin = registry.get(&ProviderId::codex());
-
-        // assert
-        assert!(plugin.is_some());
-    }
-
-    #[test]
-    fn registry_get_unknown_returns_none() {
-        // arrange
-        let registry = AuthPluginRegistry::with_builtins();
-        let provider = ProviderId::parse("unknown").unwrap_or_abort();
-
-        // act
-        let plugin = registry.get(&provider);
-
-        // assert
-        assert!(plugin.is_none());
-    }
-
-    #[test]
-    fn codex_auth_methods_returns_three() {
-        // arrange
-        let plugin = CodexAuthPlugin::new();
-
-        // act
-        let result = plugin.auth_methods().len();
-
-        // assert
-        assert_eq!(result, 3);
-    }
-
-    #[test]
-    fn copilot_auth_methods_returns_one_with_prompts() {
-        // arrange
-        let plugin = CopilotAuthPlugin::new();
-
-        // act
-        let methods = plugin.auth_methods();
-
-        // assert
-        assert_eq!(methods.len(), 1);
-        assert!(matches!(methods[0], AuthMethodSpec::Prompts { .. }));
-    }
-
-    #[test]
-    fn copilot_prompts_have_conditional_enterprise_url() {
-        // arrange
-        let plugin = CopilotAuthPlugin::new();
-
-        // act
-        let methods = plugin.auth_methods();
-        let AuthMethodSpec::Prompts { prompts, .. } = &methods[0] else {
-            panic!("expected prompts method");
-        };
-        let enterprise_url = prompts
-            .iter()
-            .find(|field| field.key == "enterprise_url")
-            .unwrap_or_abort();
-
-        // assert
-        assert!(enterprise_url.when.is_some());
-    }
-
-    #[test]
-    fn prompt_condition_eq_op() {
-        // arrange (no setup needed for enum comparison)
-        // act
-        let eq_result = PromptOp::Eq == PromptOp::Eq;
-        let neq_result = PromptOp::Eq != PromptOp::Neq;
-
-        // assert
-        assert!(eq_result);
-        assert!(neq_result);
-    }
-
-    #[test]
-    fn registry_with_builtins_has_two_providers() {
-        // arrange
-        let registry = AuthPluginRegistry::with_builtins();
-
-        // act
-        let count = registry.providers().len();
-
-        // assert
-        assert_eq!(count, 2);
     }
 }

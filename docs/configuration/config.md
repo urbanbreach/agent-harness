@@ -886,7 +886,7 @@ On successful compaction, the coordinator appends a single `SessionCompaction` e
 
 Manual `/compact` summarizes older completed turns now, preserves the latest completed turn verbatim, and appends a `SessionCompaction` event. The success notice reports the active-context estimate delta when available, or says the estimate was unchanged. The default summary contract uses the Harness sections for goal, constraints, progress, key decisions, next steps, and critical context, with operational memory and source facts added as replay-derived context; it is still lossy. Sessions with only one completed turn no-op because there is no older turn to summarize.
 
-Lifecycle hooks may use `event = "compaction_requested"` to observe or cancel compaction. A critical hook failure cancels compaction. `CompactionFailed` remains a legacy read format, not an active writer. A successful hook can replace the summary by emitting output prefixed with `compaction_summary:`; hook overrides take precedence over the deterministic structured summary.
+Lifecycle hooks can veto compaction before its summary is committed. Hook output does not replace the summary. The journal writes `SessionCompaction`; older compaction event variants remain readable. See [hook execution](../operations/hooks.md).
 
 If the provider rejects a request because it exceeds the context window, the coordinator may compact and retry once when the retry can prove it shrank the provider-visible payload. Estimated pre-prompt compaction uses the same `SessionCompaction` path before provider request construction. If a pre-prompt compaction cannot reduce the estimated active context, the coordinator records the failure and does not loop on the same turn.
 

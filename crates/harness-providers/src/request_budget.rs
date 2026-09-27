@@ -1,15 +1,7 @@
+use crate::CompletionRequest;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
-
-use crate::openai::{prepare_tool_result, PreparedImage};
-use crate::{CompletionMessage, CompletionRequest, MessageRole, ToolDef};
-
-mod framing;
-
-pub(crate) use framing::OpenAiBudgetMode;
-use framing::{framing_tokens, FramingKind};
-
-const BYTES_PER_TOKEN: u32 = 4;
+mod images;
+pub(crate) use images::check_limits as check_image_limits;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderRequestCost {
@@ -32,9 +24,8 @@ impl ProviderRequestCost {
             self.pending_prompt_tokens,
         ]
         .into_iter()
-        .try_fold(0_u32, |total, component| {
-            total
-                .checked_add(component)
+        .try_fold(0_u32, |sum, n| {
+            sum.checked_add(n)
                 .ok_or(ProviderRequestCostError::ArithmeticOverflow)
         })
     }
@@ -55,22 +46,28 @@ pub struct ProviderBudgetSemantics {
     pub output_cap_disposition: ProviderOutputCapDisposition,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ProviderRequestCostError {
     #[error("pending prompt index {pending_prompt_index} is outside {message_count} messages")]
     PendingPromptOutOfBounds {
         pending_prompt_index: usize,
         message_count: usize,
     },
-    #[error("message at pending prompt index {pending_prompt_index} is not a user message")]
+    #[error("pending prompt at {pending_prompt_index} is not a user message")]
     PendingPromptNotUser { pending_prompt_index: usize },
-    #[error("provider cannot represent attachment at message {message_index} with MIME {mime}")]
+    #[error("unsupported attachment at message {message_index}: {mime}")]
     UnsupportedAttachment { message_index: usize, mime: String },
-    #[error("provider request cost arithmetic overflowed")]
+    #[error("image budget is unknown for the selected model")]
+    UnknownImageBudget,
+    #[error("invalid attachment: {0}")]
+    InvalidAttachment(&'static str),
+    #[error("request exceeds 128 tool definitions; reduce the profile's toolset")]
+    TooManyTools,
+    #[error("request cost overflow")]
     ArithmeticOverflow,
-    #[error("provider router could not resolve the requested provider")]
+    #[error("provider unavailable")]
     ProviderUnavailable,
-    #[error("tool schema could not be serialized for request costing")]
+    #[error("request cannot be serialized for budgeting")]
     ToolSchemaSerialization,
 }
 
@@ -78,51 +75,24 @@ pub fn generic_request_budget_semantics(
     request: &CompletionRequest,
     pending_prompt_index: usize,
 ) -> Result<ProviderBudgetSemantics, ProviderRequestCostError> {
-    request_budget_semantics(request, pending_prompt_index, BudgetProtocol::Generic)
+    request_budget_semantics(request, pending_prompt_index, crate::Protocol::Chat)
 }
 
-pub(crate) fn openai_request_budget_semantics(
+pub(crate) fn request_budget_semantics(
     request: &CompletionRequest,
     pending_prompt_index: usize,
-    mode: OpenAiBudgetMode,
-    provider_controlled_output: bool,
+    protocol: crate::Protocol,
 ) -> Result<ProviderBudgetSemantics, ProviderRequestCostError> {
-    request_budget_semantics(
-        request,
-        pending_prompt_index,
-        BudgetProtocol::OpenAi {
-            mode,
-            provider_controlled_output,
-        },
-    )
-}
-
-pub(crate) fn anthropic_request_budget_semantics(
-    request: &CompletionRequest,
-    pending_prompt_index: usize,
-) -> Result<ProviderBudgetSemantics, ProviderRequestCostError> {
-    request_budget_semantics(request, pending_prompt_index, BudgetProtocol::Anthropic)
-}
-
-#[derive(Debug, Clone, Copy)]
-enum BudgetProtocol {
-    Generic,
-    OpenAi {
-        mode: OpenAiBudgetMode,
-        provider_controlled_output: bool,
-    },
-    Anthropic,
-}
-
-fn request_budget_semantics(
-    request: &CompletionRequest,
-    pending_prompt_index: usize,
-    protocol: BudgetProtocol,
-) -> Result<ProviderBudgetSemantics, ProviderRequestCostError> {
-    // A compacted tool continuation can have its user message in the checkpoint.
-    // The end index then means all messages belong to history, with no new prompt.
+    use crate::{MessageRole, Protocol};
+    if request
+        .tools
+        .as_ref()
+        .is_some_and(|tools| tools.len() > crate::MAX_TOOL_DEFINITIONS)
+    {
+        return Err(ProviderRequestCostError::TooManyTools);
+    }
     match request.messages.get(pending_prompt_index) {
-        Some(pending) if pending.role == MessageRole::User => {}
+        Some(message) if message.role == MessageRole::User => {}
         Some(_) => {
             return Err(ProviderRequestCostError::PendingPromptNotUser {
                 pending_prompt_index,
@@ -132,7 +102,7 @@ fn request_budget_semantics(
             && request
                 .messages
                 .last()
-                .is_some_and(|message| message.role == MessageRole::Tool) => {}
+                .is_some_and(|m| m.role == MessageRole::Tool) => {}
         None => {
             return Err(ProviderRequestCostError::PendingPromptOutOfBounds {
                 pending_prompt_index,
@@ -140,118 +110,199 @@ fn request_budget_semantics(
             })
         }
     }
-
-    let (framing, attachments_supported, provider_controlled_output, provider_default_output) =
-        match protocol {
-            BudgetProtocol::Generic => (FramingKind::Generic, true, false, None),
-            BudgetProtocol::OpenAi {
-                mode,
-                provider_controlled_output,
-            } => (
-                match mode {
-                    OpenAiBudgetMode::Chat => FramingKind::Chat,
-                    OpenAiBudgetMode::Responses => FramingKind::Responses,
-                    OpenAiBudgetMode::Auto => FramingKind::Auto,
-                },
-                true,
-                provider_controlled_output,
-                None,
-            ),
-            BudgetProtocol::Anthropic => (FramingKind::Anthropic, false, false, Some(4_096)),
-        };
-    let mut system_bytes = 0_usize;
-    let mut history_bytes = 0_usize;
-    let mut pending_bytes = 0_usize;
-    let mut attachment_bytes = 0_usize;
+    let mut cost = ProviderRequestCost::default();
     for (index, message) in request.messages.iter().enumerate() {
-        let (text_bytes, images) = message_cost_shape(message)?;
-        if !attachments_supported {
-            if let Some(image) = images.first() {
-                return Err(ProviderRequestCostError::UnsupportedAttachment {
-                    message_index: index,
-                    mime: image.mime.clone(),
-                });
-            }
-        }
-        for image in &images {
-            attachment_bytes = checked_add(attachment_bytes, image.url.len())?;
-        }
-        if message.role == MessageRole::System {
-            system_bytes = checked_add(system_bytes, text_bytes)?;
+        let bytes = message.assistant_tool_calls.iter().flatten().try_fold(
+            message.content.len(),
+            |sum, call| {
+                sum.checked_add(call.arguments_json.len())
+                    .ok_or(ProviderRequestCostError::ArithmeticOverflow)
+            },
+        )?;
+        let component = if message.role == MessageRole::System {
+            &mut cost.system_tokens
         } else if index == pending_prompt_index {
-            pending_bytes = checked_add(pending_bytes, text_bytes)?;
+            &mut cost.pending_prompt_tokens
         } else {
-            history_bytes = checked_add(history_bytes, text_bytes)?;
+            &mut cost.history_tokens
+        };
+        *component = component
+            .checked_add(estimate_tokens(bytes)?)
+            .ok_or(ProviderRequestCostError::ArithmeticOverflow)?;
+    }
+    if let Some(tools) = &request.tools {
+        let bytes = serde_json::to_vec(tools)
+            .map_err(|_| ProviderRequestCostError::ToolSchemaSerialization)?
+            .len();
+        cost.tools_tokens = estimate_tokens(bytes)?;
+    }
+    crate::attachment_protocol::validate_request(request, protocol)
+        .map_err(|e| ProviderRequestCostError::InvalidAttachment(e.0))?;
+    for (index, attachments) in &request.attachments {
+        for attachment in attachments {
+            let bytes = attachment.bytes().map_err(|_| {
+                ProviderRequestCostError::UnsupportedAttachment {
+                    message_index: *index,
+                    mime: attachment.mime.clone(),
+                }
+            })?;
+            let tokens = if attachment.mime == "text/plain" {
+                estimate_tokens(bytes.len())?
+            } else {
+                let dimensions =
+                    crate::attachment_protocol::image_dimensions(&attachment.mime, bytes).map_err(
+                        |_| ProviderRequestCostError::UnsupportedAttachment {
+                            message_index: *index,
+                            mime: attachment.mime.clone(),
+                        },
+                    )?;
+                images::tokens(&request.model_id, dimensions)
+                    .ok_or(ProviderRequestCostError::UnknownImageBudget)?
+            };
+            cost.attachments_tokens = cost
+                .attachments_tokens
+                .checked_add(tokens)
+                .ok_or(ProviderRequestCostError::ArithmeticOverflow)?;
         }
     }
-
-    let output_cap_disposition = if provider_controlled_output {
-        ProviderOutputCapDisposition::ProviderControlled
-    } else {
-        match (request.max_tokens, provider_default_output) {
-            (Some(tokens), _) => ProviderOutputCapDisposition::Emitted(tokens),
-            (None, Some(tokens)) => ProviderOutputCapDisposition::ProviderDefaulted(tokens),
-            (None, None) => ProviderOutputCapDisposition::UnspecifiedUnknownLimit,
+    // ponytail: fixed framing allowance avoids serializing/base64-encoding the request twice.
+    let mut framing = 32usize;
+    for message in &request.messages {
+        framing = framing
+            .checked_add(20)
+            .ok_or(ProviderRequestCostError::ArithmeticOverflow)?;
+        for call in message.assistant_tool_calls.iter().flatten() {
+            framing = framing
+                .checked_add(
+                    16 + call.function_name.len().div_ceil(4) + call.tool_call_id.len().div_ceil(4),
+                )
+                .ok_or(ProviderRequestCostError::ArithmeticOverflow)?;
         }
+    }
+    cost.framing_tokens =
+        u32::try_from(framing).map_err(|_| ProviderRequestCostError::ArithmeticOverflow)?;
+    let output_cap_disposition = match (request.max_tokens, protocol) {
+        (Some(n), _) => ProviderOutputCapDisposition::Emitted(n),
+        (None, Protocol::Anthropic) => ProviderOutputCapDisposition::ProviderDefaulted(4096),
+        (None, _) => ProviderOutputCapDisposition::UnspecifiedUnknownLimit,
     };
     Ok(ProviderBudgetSemantics {
-        request_cost: ProviderRequestCost {
-            system_tokens: estimate_bytes(system_bytes)?,
-            tools_tokens: estimate_tools(request.tools.as_deref().unwrap_or_default())?,
-            history_tokens: estimate_bytes(history_bytes)?,
-            attachments_tokens: estimate_bytes(attachment_bytes)?,
-            framing_tokens: framing_tokens(request, framing)?,
-            pending_prompt_tokens: estimate_bytes(pending_bytes)?,
-        },
+        request_cost: cost,
         output_cap_disposition,
     })
 }
 
-fn message_cost_shape(
-    message: &CompletionMessage,
-) -> Result<(usize, Vec<PreparedImage>), ProviderRequestCostError> {
-    let prepared = (message.role == MessageRole::Tool)
-        .then(|| prepare_tool_result(&message.content))
-        .flatten();
-    let mut bytes = prepared
-        .as_ref()
-        .map_or(message.content.len(), |result| result.text.len());
-    bytes = checked_add(bytes, message.name.as_deref().map_or(0, str::len))?;
-    bytes = checked_add(bytes, message.tool_call_id.as_deref().map_or(0, str::len))?;
-    if let Some(tool_calls) = &message.assistant_tool_calls {
-        for tool_call in tool_calls {
-            bytes = checked_add(bytes, tool_call.tool_call_id.len())?;
-            bytes = checked_add(bytes, tool_call.function_name.len())?;
-            bytes = checked_add(bytes, tool_call.arguments_json.len())?;
+fn estimate_tokens(bytes: usize) -> Result<u32, ProviderRequestCostError> {
+    // ponytail: byte estimates are approximate; use model tokenizers when exact admission is required.
+    u32::try_from(bytes.div_ceil(4)).map_err(|_| ProviderRequestCostError::ArithmeticOverflow)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{CompletionMessage, MessageRole};
+
+    #[test]
+    fn budgets_charge_each_message_once_and_reject_overflow() -> Result<(), ProviderRequestCostError>
+    {
+        let request = CompletionRequest {
+            model_id: "test".into(),
+            max_tokens: Some(100),
+            messages: vec![
+                CompletionMessage::text(MessageRole::System, "sys"),
+                CompletionMessage::text(MessageRole::User, "prompt"),
+            ],
+            ..Default::default()
+        };
+        let budget = generic_request_budget_semantics(&request, 1)?;
+        assert!(
+            budget.request_cost.system_tokens > 0 && budget.request_cost.pending_prompt_tokens > 0
+        );
+        assert_eq!(budget.request_cost.history_tokens, 0);
+        assert_eq!(
+            budget.output_cap_disposition,
+            ProviderOutputCapDisposition::Emitted(100)
+        );
+        assert!(generic_request_budget_semantics(&request, 0).is_err());
+        assert!(generic_request_budget_semantics(&request, 2).is_err());
+        assert!(ProviderRequestCost {
+            system_tokens: u32::MAX,
+            history_tokens: 1,
+            ..Default::default()
         }
+        .total_input_tokens()
+        .is_err());
+        Ok(())
     }
-    Ok((
-        bytes,
-        prepared.map_or_else(Vec::new, |result| result.images),
-    ))
-}
 
-fn estimate_tools(tools: &[ToolDef]) -> Result<u32, ProviderRequestCostError> {
-    let mut bytes = 0_usize;
-    for tool in tools {
-        bytes = checked_add(bytes, tool.function_name.len())?;
-        bytes = checked_add(bytes, tool.description.as_deref().map_or(0, str::len))?;
-        bytes = checked_add(
-            bytes,
-            serde_json::to_vec(&tool.parameters)
-                .map_err(|_| ProviderRequestCostError::ToolSchemaSerialization)?
-                .len(),
-        )?;
+    #[test]
+    fn image_budgets_use_resolution_and_keep_unknown_models_unavailable(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::attachment_protocol::AttachmentMetadata;
+        use base64::Engine;
+        let mut png = base64::engine::general_purpose::STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC")?;
+        let mut request = CompletionRequest {
+            model_id: "gpt-4o".into(),
+            messages: vec![CompletionMessage::text(MessageRole::User, "Look")],
+            ..Default::default()
+        };
+        request.attachments.insert(
+            0,
+            vec![AttachmentMetadata::from_bytes(
+                "image",
+                "image/png",
+                None,
+                &png,
+                None,
+            )],
+        );
+        for (protocol, model, expected) in [
+            (crate::Protocol::Chat, "gpt-4o", 255),
+            (crate::Protocol::Responses, "gpt-5.4-mini", 2),
+            (crate::Protocol::Anthropic, "claude-sonnet-4-5-20250929", 1),
+        ] {
+            request.model_id = model.into();
+            let cost = request_budget_semantics(&request, 0, protocol)?.request_cost;
+            assert_eq!(cost.attachments_tokens, expected);
+            assert!(cost.framing_tokens < 256);
+        }
+        let before = generic_request_budget_semantics(&request, 0)?.request_cost;
+        png.resize(64 * 1024, 0);
+        request.attachments.insert(
+            0,
+            vec![AttachmentMetadata::from_bytes(
+                "image",
+                "image/png",
+                None,
+                &png,
+                None,
+            )],
+        );
+        assert_eq!(
+            generic_request_budget_semantics(&request, 0)?.request_cost,
+            before
+        );
+        request.model_id = "future-unknown-model".into();
+        assert!(generic_request_budget_semantics(&request, 0)
+            .is_err_and(|e| e.to_string().contains("unknown")));
+        request.attachments.get_mut(&0).ok_or("missing image")?[0].dimensions = Some(
+            crate::attachment_protocol::AttachmentDimensions::new(500, 500),
+        );
+        assert!(crate::wire::encode(&request, crate::Protocol::Chat).is_err());
+        for (model, width, height, expected) in [
+            ("gpt-4o", 4096, 2048, 1105),
+            ("gpt-4o", 2048, 2048, 765),
+            ("gpt-5.4", 1024, 1024, 1229),
+            ("claude-opus-4-7-20250929", 4000, 2000, 4784),
+        ] {
+            assert_eq!(
+                images::tokens(
+                    model,
+                    crate::attachment_protocol::AttachmentDimensions::new(width, height)
+                ),
+                Some(expected)
+            );
+        }
+        Ok(())
     }
-    estimate_bytes(bytes)
-}
-
-fn estimate_bytes(bytes: usize) -> Result<u32, ProviderRequestCostError> {
-    let bytes = u32::try_from(bytes).map_err(|_| ProviderRequestCostError::ArithmeticOverflow)?;
-    Ok(bytes.div_ceil(BYTES_PER_TOKEN))
-}
-
-fn checked_add(left: usize, right: usize) -> Result<usize, ProviderRequestCostError> {
-    left.checked_add(right)
-        .ok_or(ProviderRequestCostError::ArithmeticOverflow)
 }

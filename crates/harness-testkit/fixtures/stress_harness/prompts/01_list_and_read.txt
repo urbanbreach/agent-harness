@@ -1,3 +1,0 @@
-Use list on . first.
-Then use read on README.md.
-Summarize the top-level entries and note the README marker.

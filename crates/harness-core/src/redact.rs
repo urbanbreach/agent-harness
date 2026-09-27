@@ -1,697 +1,399 @@
-use crate::UnwrapOrAbort;
-use regex::Regex;
-use serde_json::{Map, Value};
+use regex::{Captures, Regex};
+use serde_json::Value;
 use std::sync::LazyLock;
 
+static SECRETS: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"(?P<private>(?s:-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\z)))",
+        r"|(?P<cookie>(?i:\b(?:set-cookie|cookie):)[^\r\n]+)",
+        r"|(?P<bearer>(?i:\bbearer\s+)[A-Za-z0-9._~+/=-]+)",
+        r"|(?P<key>\bsk-[A-Za-z0-9._-]{10,}|AIza[0-9A-Za-z_-]{20,})",
+        r"|(?P<aws>AKIA[0-9A-Z]{16})",
+        r"|(?P<github>github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,})",
+        r"|(?P<url>(?i:https?://)[^/@\s]+@)",
+        r#"|(?P<query>(?i:[?&](?:api[_-]?key|(?:access|refresh|id)[_-]?token|token|password|secret)=)[^&\s"'<>]+)"#,
+        r#"|(?P<assignment>(?i:\b[A-Za-z0-9_-]*(?:api[_-]?key|(?:access|refresh|id)[_-]?token|password|passwd|client[_-]?secret))["']?[ \t]*[:=][ \t]*(?:"(?:[^"\\\r\n]|\\.)*"|'(?:[^'\\\r\n]|\\.)*'|[^\s,;"'}]+))"#,
+    ))
+});
+
 pub trait Redactor {
-    fn redact_text(&self, s: &str) -> String;
+    fn redact_text(&self, text: &str) -> String;
+    /// Bytes that future fragments cannot turn into a redaction match.
+    /// Custom redactors defer output until completion unless they implement this.
+    fn streaming_prefix(&self, _text: &str) -> usize {
+        0
+    }
 }
-
-#[derive(Debug)]
-pub struct DefaultRedactor {
-    api_key_re: Regex,
-    google_api_key_re: Regex,
-    aws_access_key_re: Regex,
-    github_pat_re: Regex,
-    github_token_re: Regex,
-    bearer_re: Regex,
-    cookie_header_re: Regex,
-    pem_private_key_re: Regex,
-    url_userinfo_re: Regex,
-    sensitive_query_re: Regex,
+pub struct SecretRedactor {
+    inner: std::sync::Arc<dyn Redactor + Send + Sync>,
+    secrets: std::sync::Arc<SecretRegistry>,
 }
-
-static API_KEY_RE: LazyLock<Result<Regex, regex::Error>> =
-    LazyLock::new(|| Regex::new(r"(^|[^A-Za-z0-9])(sk-[A-Za-z0-9._-]{10,})"));
-static GOOGLE_API_KEY_RE: LazyLock<Result<Regex, regex::Error>> =
-    LazyLock::new(|| Regex::new(r"AIza[0-9A-Za-z_-]{20,}"));
-static AWS_ACCESS_KEY_RE: LazyLock<Result<Regex, regex::Error>> =
-    LazyLock::new(|| Regex::new(r"AKIA[0-9A-Z]{16}"));
-static GITHUB_PAT_RE: LazyLock<Result<Regex, regex::Error>> =
-    LazyLock::new(|| Regex::new(r"github_pat_[A-Za-z0-9_]{20,}"));
-static GITHUB_TOKEN_RE: LazyLock<Result<Regex, regex::Error>> =
-    LazyLock::new(|| Regex::new(r"ghp_[A-Za-z0-9]{20,}"));
-static BEARER_RE: LazyLock<Result<Regex, regex::Error>> =
-    LazyLock::new(|| Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"));
-static COOKIE_HEADER_RE: LazyLock<Result<Regex, regex::Error>> =
-    LazyLock::new(|| Regex::new(r"(?i)\b(?:Set-Cookie|Cookie):\s*[^\r\n]+"));
-static PEM_PRIVATE_KEY_RE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
-    Regex::new(r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----")
-});
-static PEM_PRIVATE_KEY_BOUNDARY_RE: LazyLock<Result<Regex, regex::Error>> =
-    LazyLock::new(|| Regex::new(r"-----(?:BEGIN|END) [A-Z ]*PRIVATE KEY-----"));
-const PRIVATE_KEY_MARKER: &str = "[REDACTED_PRIVATE_KEY]";
-static URL_USERINFO_RE: LazyLock<Result<Regex, regex::Error>> =
-    LazyLock::new(|| Regex::new(r"(?i)(https?://)[^/@\s]+@"));
-static SENSITIVE_QUERY_RE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)([?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|token|password|secret)=)[^&\s]+",
-    )
-});
-
-fn regex_or_fallback(result: Result<Regex, regex::Error>) -> Regex {
-    match result {
-        Ok(re) => re,
-        Err(_) => Regex::new("$^").unwrap_or_abort(),
+impl SecretRedactor {
+    pub fn new(
+        inner: std::sync::Arc<dyn Redactor + Send + Sync>,
+        secrets: std::sync::Arc<SecretRegistry>,
+    ) -> Self {
+        Self { inner, secrets }
     }
 }
 
-impl Default for DefaultRedactor {
-    fn default() -> Self {
-        Self {
-            api_key_re: regex_or_fallback(API_KEY_RE.clone()),
-            google_api_key_re: regex_or_fallback(GOOGLE_API_KEY_RE.clone()),
-            aws_access_key_re: regex_or_fallback(AWS_ACCESS_KEY_RE.clone()),
-            github_pat_re: regex_or_fallback(GITHUB_PAT_RE.clone()),
-            github_token_re: regex_or_fallback(GITHUB_TOKEN_RE.clone()),
-            bearer_re: regex_or_fallback(BEARER_RE.clone()),
-            cookie_header_re: regex_or_fallback(COOKIE_HEADER_RE.clone()),
-            pem_private_key_re: regex_or_fallback(PEM_PRIVATE_KEY_RE.clone()),
-            url_userinfo_re: regex_or_fallback(URL_USERINFO_RE.clone()),
-            sensitive_query_re: regex_or_fallback(SENSITIVE_QUERY_RE.clone()),
+/// Credentials learned during a run remain redacted after rotation.
+#[derive(Default)]
+pub struct SecretRegistry(std::sync::RwLock<Vec<String>>);
+impl SecretRegistry {
+    pub fn register(&self, values: impl IntoIterator<Item = String>) -> Result<(), &'static str> {
+        let mut secrets = self
+            .0
+            .write()
+            .map_err(|_| "secret registry lock poisoned")?;
+        let mut bytes: usize = secrets.iter().map(String::len).sum();
+        let mut added = Vec::new();
+        for value in values
+            .into_iter()
+            .flat_map(|value| {
+                let token = value
+                    .split_once(' ')
+                    .filter(|(scheme, _)| {
+                        scheme.eq_ignore_ascii_case("bearer")
+                            || scheme.eq_ignore_ascii_case("basic")
+                    })
+                    .map(|(_, token)| token.to_owned());
+                std::iter::once(value).chain(token)
+            })
+            .filter(|s| !s.is_empty())
+        {
+            if secrets.contains(&value) || added.contains(&value) {
+                continue;
+            }
+            bytes = bytes.saturating_add(value.len());
+            if secrets.len() + added.len() >= 1024 || bytes > 4 * 1024 * 1024 {
+                return Err("secret registry exceeds 1024 values or 4 MiB; start a new run");
+            }
+            added.push(value);
         }
+        secrets.extend(added);
+        secrets.sort_unstable_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        Ok(())
     }
 }
-
-impl DefaultRedactor {
-    pub fn secret_finding_count(&self, s: &str) -> usize {
-        non_redacted_match_count(&self.api_key_re, s)
-            + non_redacted_match_count(&self.google_api_key_re, s)
-            + non_redacted_match_count(&self.aws_access_key_re, s)
-            + non_redacted_match_count(&self.github_pat_re, s)
-            + non_redacted_match_count(&self.github_token_re, s)
-            + non_redacted_match_count(&self.bearer_re, s)
-            + non_redacted_match_count(&self.cookie_header_re, s)
-            + non_redacted_match_count(&self.pem_private_key_re, s)
-            + non_redacted_match_count(&self.url_userinfo_re, s)
-            + non_redacted_match_count(&self.sensitive_query_re, s)
+impl Redactor for SecretRedactor {
+    fn redact_text(&self, text: &str) -> String {
+        let mut text = self.inner.redact_text(text);
+        let Ok(secrets) = self.secrets.0.read() else {
+            return "[REDACTED]".into();
+        };
+        // ponytail: one scan per credential; use multi-pattern matching if this profiles hot.
+        for secret in secrets.iter() {
+            if text.contains(secret) {
+                text = text.replace(secret, "[REDACTED]");
+            }
+        }
+        text
+    }
+    fn streaming_prefix(&self, text: &str) -> usize {
+        let limit = self.inner.streaming_prefix(text);
+        let Ok(secrets) = self.secrets.0.read() else {
+            return 0;
+        };
+        if limit == 0 || secrets.iter().any(|s| s.trim().is_empty()) {
+            return 0;
+        }
+        word_prefix(text, |word| {
+            secrets.iter().any(|s| {
+                s.split_whitespace()
+                    .next()
+                    .is_some_and(|prefix| word.contains(prefix))
+            })
+        })
+        .min(limit)
     }
 }
-
-fn non_redacted_match_count(regex: &Regex, s: &str) -> usize {
-    regex
-        .find_iter(s)
-        .filter(|matched| !is_redacted_match_without_raw_prefix(matched.as_str()))
-        .count()
-}
-
-fn is_redacted_match_without_raw_prefix(text: &str) -> bool {
-    let Some(marker_start) = text.find("[REDACTED") else {
-        return false;
-    };
-    let prefix = text[..marker_start].trim_end().to_ascii_lowercase();
-    if prefix.ends_with('=') || prefix.ends_with("://") {
-        return true;
-    }
-    prefix.ends_with("cookie:") || prefix.ends_with("set-cookie:")
+#[derive(Debug, Default)]
+pub struct DefaultRedactor {
+    _private: (),
 }
 
 impl Redactor for DefaultRedactor {
-    fn redact_text(&self, s: &str) -> String {
-        let without_pems = self.pem_private_key_re.replace_all(s, PRIVATE_KEY_MARKER);
-        let without_cookies = self
-            .cookie_header_re
-            .replace_all(without_pems.as_ref(), "Cookie: [REDACTED_COOKIE]");
-        let without_bearers = self
-            .bearer_re
-            .replace_all(without_cookies.as_ref(), "Bearer [REDACTED]");
-        let without_keys = self
-            .api_key_re
-            .replace_all(without_bearers.as_ref(), "${1}[REDACTED_API_KEY]");
-        let without_google_keys = self
-            .google_api_key_re
-            .replace_all(without_keys.as_ref(), "[REDACTED_API_KEY]");
-        let without_aws_keys = self
-            .aws_access_key_re
-            .replace_all(without_google_keys.as_ref(), "[REDACTED_AWS_ACCESS_KEY]");
-        let without_github_pats = self
-            .github_pat_re
-            .replace_all(without_aws_keys.as_ref(), "[REDACTED_GITHUB_TOKEN]");
-        let without_github_tokens = self
-            .github_token_re
-            .replace_all(without_github_pats.as_ref(), "[REDACTED_GITHUB_TOKEN]");
-        let without_userinfo = self
-            .url_userinfo_re
-            .replace_all(without_github_tokens.as_ref(), "${1}[REDACTED]@");
-        self.sensitive_query_re
-            .replace_all(without_userinfo.as_ref(), "${1}[REDACTED]")
-            .into_owned()
+    fn redact_text(&self, text: &str) -> String {
+        match SECRETS.as_ref() {
+            Ok(regex) => regex.replace_all(text, replace_secret).into_owned(),
+            Err(_) => "[REDACTED]".into(),
+        }
+    }
+    fn streaming_prefix(&self, text: &str) -> usize {
+        static PREFIX: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
+            Regex::new(concat!(
+                r"(?i:bearer|cookie|api[_-]?key|(?:access|refresh|id)[_-]?token|password|passwd|client[_-]?secret|[?&](?:token|secret)=|https?://)",
+                r"|sk-|AIza|AKIA|github_pat_|gh[pousr]_|-----BEGIN"
+            ))
+        });
+        PREFIX.as_ref().map_or(0, |pattern| {
+            word_prefix(text, |word| pattern.is_match(word))
+        })
     }
 }
 
-/// Redact diagnostic text, preserving sensitive-key context in complete JSON/JSON5 bodies.
-/// Non-sensitive bodies retain their original bytes, including whitespace and comments.
-pub fn redact_artifact_text(contents: &str) -> String {
-    let redactor = DefaultRedactor::default();
-    let text = redactor.redact_text(contents);
-    if let Ok(value) = json5::from_str::<Value>(contents) {
-        let redacted = redact_value(&redactor, &value);
-        if redacted != value || text != contents {
-            // Serialize the structured result: text regexes can consume JSON delimiters.
-            return redacted.to_string();
+// Keep incomplete words and whitespace after the last emitted word. A stored
+// credential can start with spaces, which must stay with the following word.
+fn word_prefix(text: &str, suspect: impl Fn(&str) -> bool) -> usize {
+    let (mut start, mut safe) = (0, 0);
+    for (end, separator) in text.char_indices().filter(|(_, c)| c.is_whitespace()) {
+        if end > start {
+            if suspect(&text[start..end]) {
+                break;
+            }
+            safe = end;
         }
+        start = end + separator.len_utf8();
     }
-    text
+    safe
+}
+impl DefaultRedactor {
+    pub fn secret_finding_count(&self, text: &str) -> usize {
+        SECRETS.as_ref().map_or(1, |re| {
+            re.captures_iter(text)
+                .filter(|c| replace_secret(c) != c[0])
+                .count()
+        })
+    }
 }
 
-pub const MCP_MEDIA_OMITTED: &str = "[MCP media omitted]";
+fn replace_secret(c: &Captures<'_>) -> String {
+    if c.name("url").is_some() {
+        return format!(
+            "{}://[REDACTED]@",
+            c[0].split("://").next().unwrap_or("https")
+        );
+    }
+    if c.name("query").is_some() {
+        return format!("{}=[REDACTED]", c[0].split('=').next().unwrap_or("secret"));
+    }
+    if c.name("assignment").is_some() {
+        let Some(index) = c[0].find([':', '=']) else {
+            return "[REDACTED]".into();
+        };
+        let (prefix, value) = c[0].split_at(index + 1);
+        if value.trim().trim_matches(['\'', '"']) == "[REDACTED]" {
+            return c[0].into();
+        }
+        return format!("{prefix}\"[REDACTED]\"");
+    }
+    for (group, replacement) in [
+        ("private", "[REDACTED_PRIVATE_KEY]"),
+        ("cookie", "Cookie: [REDACTED_COOKIE]"),
+        ("bearer", "Bearer [REDACTED]"),
+        ("key", "[REDACTED_API_KEY]"),
+        ("aws", "[REDACTED_AWS_ACCESS_KEY]"),
+        ("github", "[REDACTED_GITHUB_TOKEN]"),
+    ] {
+        if c.name(group).is_some() {
+            return replacement.into();
+        }
+    }
+    "[REDACTED]".into()
+}
 
-/// Omit encoded media in an MCP call/read/prompt result, returning the removed
-/// payloads so support exports can also sanitize historical summary copies.
-///
-/// Application data (including structuredContent) is deliberately not traversed.
-pub fn omit_mcp_result_media(result: &mut Value) -> Vec<String> {
-    let mut omitted = Vec::new();
-    if let Some(content) = result.get_mut("content").and_then(Value::as_array_mut) {
-        for entry in content {
-            omit_mcp_content_media(entry, &mut omitted);
-        }
-    }
-    if let Some(contents) = result.get_mut("contents").and_then(Value::as_array_mut) {
-        for resource in contents {
-            omit_mcp_media_field(resource, "blob", &mut omitted);
-        }
-    }
-    if let Some(messages) = result.get_mut("messages").and_then(Value::as_array_mut) {
-        for message in messages {
-            match message.get_mut("content") {
-                Some(Value::Array(content)) => {
-                    for entry in content {
-                        omit_mcp_content_media(entry, &mut omitted);
+pub fn redact_value(redactor: &(impl Redactor + ?Sized), value: &Value) -> Value {
+    let mut value = value.clone();
+    redact_in_place(redactor, &mut value);
+    value
+}
+
+/// Scan semantic strings and keys, so a JSON null credential is not a secret.
+pub fn has_unredacted_secret(redactor: &(impl Redactor + ?Sized), value: &Value) -> bool {
+    let scanner = DefaultRedactor::default();
+    let secret =
+        |text: &str| redactor.redact_text(text) != text || scanner.secret_finding_count(text) != 0;
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::String(text) if secret(text) => return true,
+            Value::Array(values) => pending.extend(values),
+            Value::Object(values) => {
+                for (key, value) in values {
+                    if secret(key) {
+                        return true;
                     }
+                    pending.push(value);
                 }
-                Some(content) => omit_mcp_content_media(content, &mut omitted),
-                None => {}
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+pub(crate) fn redact_event_payload(
+    redactor: &(impl Redactor + ?Sized),
+    payload: crate::event::EventV1,
+) -> Result<crate::event::EventV1, serde_json::Error> {
+    let mut value = serde_json::to_value(payload)?;
+    redact_in_place(redactor, &mut value);
+    serde_json::from_value(value)
+}
+
+pub fn redact_in_place(redactor: &(impl Redactor + ?Sized), value: &mut Value) {
+    match value {
+        Value::String(text) => *text = redactor.redact_text(text),
+        Value::Array(items) => {
+            for item in items {
+                redact_in_place(redactor, item);
             }
         }
-    }
-    omitted
-}
-
-fn omit_mcp_content_media(entry: &mut Value, omitted: &mut Vec<String>) {
-    match entry.get("type").and_then(Value::as_str) {
-        Some("image" | "audio") => omit_mcp_media_field(entry, "data", omitted),
-        Some("resource") => {
-            if let Some(resource) = entry.get_mut("resource") {
-                omit_mcp_media_field(resource, "blob", omitted);
+        Value::Object(map) => {
+            for (key, value) in map {
+                let normalized: String = key
+                    .chars()
+                    .filter(char::is_ascii_alphanumeric)
+                    .flat_map(char::to_lowercase)
+                    .collect();
+                if [
+                    "apikey",
+                    "apisecret",
+                    "accesstoken",
+                    "refreshtoken",
+                    "idtoken",
+                    "password",
+                    "passwd",
+                    "authorization",
+                    "cookie",
+                    "secret",
+                    "privatekey",
+                ]
+                .iter()
+                .any(|suffix| normalized.ends_with(suffix))
+                    || normalized == "token"
+                {
+                    if !value.is_null() {
+                        *value = "[REDACTED]".into();
+                    }
+                } else {
+                    redact_in_place(redactor, value);
+                }
             }
         }
         _ => {}
     }
 }
 
-fn omit_mcp_media_field(entry: &mut Value, field: &str, omitted: &mut Vec<String>) {
-    if let Some(Value::String(data)) = entry.get_mut(field) {
-        if data != MCP_MEDIA_OMITTED {
-            let data = std::mem::replace(data, MCP_MEDIA_OMITTED.to_string());
-            if !data.is_empty() {
-                omitted.push(data);
-            }
-        }
+pub fn redact_map(
+    redactor: &(impl Redactor + ?Sized),
+    map: &serde_json::Map<String, Value>,
+) -> serde_json::Map<String, Value> {
+    match redact_value(redactor, &Value::Object(map.clone())) {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
     }
 }
 
-/// Redact raw lines in order without buffering private-key blocks. Feed skipped
-/// lines too: an offset may begin inside a block, including an unterminated one.
+pub fn redact_artifact_text(text: &str) -> String {
+    let redactor = DefaultRedactor::default();
+    if let Ok(value) = json5::from_str::<Value>(text) {
+        let safe = redact_value(&redactor, &value);
+        if safe != value {
+            return safe.to_string();
+        }
+    }
+    redactor.redact_text(text)
+}
+
+#[derive(Default)]
 pub struct LineRedactor {
-    redactor: DefaultRedactor,
-    boundary_re: Regex,
     in_private_key: bool,
-}
-
-impl Default for LineRedactor {
-    fn default() -> Self {
-        Self {
-            redactor: DefaultRedactor::default(),
-            boundary_re: regex_or_fallback(PEM_PRIVATE_KEY_BOUNDARY_RE.clone()),
-            in_private_key: false,
-        }
-    }
+    redactor: DefaultRedactor,
 }
 
 impl LineRedactor {
     pub fn redact_line(&mut self, line: &str) -> String {
-        let mut visible = String::new();
-        let mut cursor = 0;
-        for boundary in self.boundary_re.find_iter(line) {
-            if self.in_private_key {
-                if boundary.as_str().starts_with("-----END ") {
-                    self.in_private_key = false;
-                }
-            } else {
-                visible.push_str(&line[cursor..boundary.start()]);
-                if boundary.as_str().starts_with("-----BEGIN ") {
-                    visible.push_str(PRIVATE_KEY_MARKER);
-                    self.in_private_key = true;
-                } else {
-                    visible.push_str(boundary.as_str());
-                }
+        if line.contains("-----BEGIN ") && line.contains("PRIVATE KEY-----") {
+            self.in_private_key = true;
+        }
+        if self.in_private_key {
+            if line.contains("-----END ") && line.contains("PRIVATE KEY-----") {
+                self.in_private_key = false;
             }
-            cursor = boundary.end();
+            "[REDACTED_PRIVATE_KEY]".into()
+        } else {
+            self.redactor.redact_text(line)
         }
-        if !self.in_private_key {
-            visible.push_str(&line[cursor..]);
-        }
-        self.redactor.redact_text(&visible)
     }
-}
-
-pub fn redact_value<R: Redactor + ?Sized>(redactor: &R, value: &Value) -> Value {
-    match value {
-        Value::Null | Value::Bool(_) | Value::Number(_) => value.clone(),
-        Value::String(s) => Value::String(redactor.redact_text(s)),
-        Value::Array(items) => {
-            Value::Array(items.iter().map(|v| redact_value(redactor, v)).collect())
-        }
-        Value::Object(obj) => Value::Object(redact_map(redactor, obj)),
-    }
-}
-
-pub fn redact_map<R: Redactor + ?Sized>(
-    redactor: &R,
-    map: &Map<String, Value>,
-) -> Map<String, Value> {
-    map.iter()
-        .map(|(k, v)| {
-            let key = redactor.redact_text(k);
-            let value = if let Some(marker) = redaction_marker_for_sensitive_key(k) {
-                match v {
-                    Value::String(_) => Value::String(marker.to_string()),
-                    _ => redact_value(redactor, v),
-                }
-            } else {
-                redact_value(redactor, v)
-            };
-            (key, value)
-        })
-        .collect()
-}
-
-fn redaction_marker_for_sensitive_key(key: &str) -> Option<&'static str> {
-    let normalized = key
-        .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
-        .flat_map(|character| character.to_lowercase())
-        .collect::<String>();
-    if normalized == "credentials" {
-        return None;
-    }
-    let segments = key
-        .split(|character: char| !character.is_ascii_alphanumeric())
-        .filter(|segment| !segment.is_empty())
-        .map(|segment| segment.to_ascii_lowercase())
-        .collect::<Vec<_>>();
-
-    if normalized == "apikey"
-        || normalized.ends_with("apikey")
-        || adjacent_segments(&segments, "api", "key")
-    {
-        return Some("[REDACTED_API_KEY]");
-    }
-    if normalized == "auth" || normalized.contains("authorization") {
-        return Some("Bearer [REDACTED]");
-    }
-    if normalized.contains("cookie") {
-        return Some("[REDACTED_COOKIE]");
-    }
-    if normalized.contains("privatekey") || adjacent_segments(&segments, "private", "key") {
-        return Some("[REDACTED_PRIVATE_KEY]");
-    }
-    if normalized.contains("password")
-        || normalized.contains("passwd")
-        || normalized.contains("secret")
-        || normalized.contains("token")
-        || normalized.contains("credential")
-        || credential_key_segments(&segments)
-    {
-        return Some("[REDACTED_SECRET]");
-    }
-
-    None
-}
-
-fn adjacent_segments(segments: &[String], left: &str, right: &str) -> bool {
-    segments
-        .windows(2)
-        .any(|window| window[0] == left && window[1] == right)
-}
-
-fn key_segments_contain(segments: &[String], needle: &str) -> bool {
-    segments.iter().any(|segment| segment == needle)
-}
-
-fn credential_key_segments(segments: &[String]) -> bool {
-    if !key_segments_contain(segments, "key") {
-        return false;
-    }
-    segments.iter().any(|segment| {
-        matches!(
-            segment.as_str(),
-            "access"
-                | "api"
-                | "auth"
-                | "bearer"
-                | "client"
-                | "credential"
-                | "github"
-                | "google"
-                | "openai"
-                | "private"
-                | "provider"
-                | "secret"
-                | "token"
-                | "aws"
-        )
-    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{redact_map, redact_value, DefaultRedactor, Redactor};
-    use crate::UnwrapOrAbort;
+    use super::*;
     use serde_json::json;
-    use std::fs;
-    use std::path::Path;
 
     #[test]
-    fn redacts_known_secret_patterns() {
-        let redactor = DefaultRedactor::default();
-        let input = "key=sk-AbCdEf0123456789 and Authorization: Bearer abc.def-ghi_123";
-
-        let redacted = redactor.redact_text(input);
-
-        assert!(!redacted.contains("sk-AbCdEf0123456789"));
-        assert!(!redacted.contains("Bearer abc.def-ghi_123"));
-        assert!(redacted.contains("[REDACTED_API_KEY]"));
-        assert!(redacted.contains("Bearer [REDACTED]"));
-    }
-
-    #[test]
-    fn leaves_non_secret_text_unchanged() {
-        let redactor = DefaultRedactor::default();
-        let input = "normal output with status=ok and no credentials";
-
-        assert_eq!(redactor.redact_text(input), input);
-    }
-
-    #[test]
-    fn redacts_structured_values_for_event_payloads() {
-        let redactor = DefaultRedactor::default();
-        let value = json!({
-            "message": "token sk-ABCDE12345ABCDE and Bearer token.abc",
-            "nested": {
-                "arr": [
-                    "sk-ABCDE12345ABCDE",
-                    "Bearer another.token"
-                ]
-            }
-        });
-
-        let redacted = redact_value(&redactor, &value);
-        let as_text = redacted.to_string();
-        assert!(!as_text.contains("sk-ABCDE12345ABCDE"));
-        assert!(!as_text.contains("Bearer another.token"));
-        assert!(as_text.contains("[REDACTED_API_KEY]"));
-        assert!(as_text.contains("Bearer [REDACTED]"));
-
-        let map = value.as_object().unwrap_or_abort();
-        let redacted_map = redact_map(&redactor, map);
-        let as_map_text = serde_json::Value::Object(redacted_map).to_string();
-        assert!(!as_map_text.contains("sk-ABCDE12345ABCDE"));
-    }
-
-    #[test]
-    fn redacts_support_bundle_secret_shapes() {
-        // arrange
-        let redactor = DefaultRedactor::default();
-        let value = json!({
-            "base_url": "https://user:pass@example.test/v1?api_key=AIzaSyA1234567890abcdefghi",
-            "summary": "sk-proj-output_secret_0123456789abcdef Cookie: sid=sessionid-abc123\n-----BEGIN PRIVATE KEY-----\nprivate-key-material\n-----END PRIVATE KEY-----\nAKIA1234567890ABCDEF",
-            "authorization": "Bearer abc.def-ghi_123",
-            "mixed_header": "Authorization: bearer abc+/def==~ ghp_1234567890ABCDEFGHIJ github_pat_1234567890ABCDEFGHIJ",
-            "token": "plain-token-value",
-            "password": "hunter2",
-            "sk-proj-key_name_0123456789abcdef": "secret in key name"
-        });
-
-        // act
-        let redacted = redact_value(&redactor, &value);
-        let text = redacted.to_string();
-
-        // assert
-        for forbidden in [
-            "user:pass@",
-            "api_key=AIzaSyA1234567890abcdefghi",
-            "sk-proj-output_secret_0123456789abcdef",
-            "sessionid-abc123",
-            "BEGIN PRIVATE KEY",
-            "private-key-material",
-            "AKIA1234567890ABCDEF",
-            "Bearer abc.def-ghi_123",
-            "bearer abc+/def==~",
-            "abc+/def==~",
-            "ghp_1234567890ABCDEFGHIJ",
-            "github_pat_1234567890ABCDEFGHIJ",
-            "plain-token-value",
-            "hunter2",
-            "sk-proj-key_name_0123456789abcdef",
+    fn streamed_prefix_stays_safe_across_character_boundaries() -> Result<(), &'static str> {
+        let registry = std::sync::Arc::new(SecretRegistry::default());
+        registry.register([
+            "opaque two-word secret".into(),
+            "  leading-space-token".into(),
+        ])?;
+        let redactor =
+            SecretRedactor::new(std::sync::Arc::new(DefaultRedactor::default()), registry);
+        for text in [
+            "Visible text with Unicode λ and more words. ",
+            "Visible Bearer\nabc.def tail ",
+            "Visible -----BEGIN PRIVATE KEY-----\nbody\n-----END PRIVATE KEY----- tail ",
+            "Visible CLIENTſECRET = 'hidden value' tail ",
+            "Visible coo\u{212a}ie: session=hidden\r\n tail ",
+            "Visible https://name:password@example.test/?token=private tail ",
+            "Visible sk-1234567890123456 tail ",
+            "Visible opaque two-word secret tail ",
+            "Visible  leading-space-token tail ",
         ] {
-            assert!(
-                !text.contains(forbidden),
-                "redacted value leaked {forbidden}"
-            );
+            let expected = redactor.redact_text(text);
+            let (mut pending, mut emitted) = (String::new(), String::new());
+            for character in text.chars() {
+                pending.push(character);
+                let count = redactor.streaming_prefix(&pending);
+                emitted.extend(pending.drain(..count));
+                assert!(
+                    expected.starts_with(&emitted),
+                    "streamed prefix changed after completion"
+                );
+            }
+            assert!(emitted.starts_with("Visible"));
         }
-        assert_eq!(redactor.secret_finding_count(&text), 0);
-        assert!(text.contains("[REDACTED_API_KEY]"));
-        assert!(text.contains("[REDACTED_PRIVATE_KEY]"));
-        assert!(text.contains("[REDACTED_GITHUB_TOKEN]"));
-        assert!(text.contains("[REDACTED_SECRET]"));
+        Ok(())
     }
 
     #[test]
-    fn redacts_composite_sensitive_key_names() {
-        // arrange
+    fn redaction_removes_structured_credentials_and_is_idempotent() {
         let redactor = DefaultRedactor::default();
-        let value = json!({
-            "client_secret": "plain-client-secret-value",
-            "github_token": "plain-github-token-value",
-            "x-api-key": "plain-api-key-value",
-            "openai_api_key": "plain-openai-key-value",
-            "secret_access_key": "plain-access-key-value",
-            "password_hash": "plain-password-hash-value",
-            "metadata": "keep me"
-        });
-
-        // act
-        let redacted = redact_value(&redactor, &value);
-        let text = redacted.to_string();
-
-        // assert
-        for forbidden in [
-            "plain-client-secret-value",
-            "plain-github-token-value",
-            "plain-api-key-value",
-            "plain-openai-key-value",
-            "plain-access-key-value",
-            "plain-password-hash-value",
+        let value = json!({"OPENAI_API_KEY":"opaque-credential", "nested":[{"password":"private-value"}],
+            "prompt_tokens":123, "text":"Bearer abc.def.ghi https://alice:password@example.test/?token=private-query"});
+        let safe = redact_value(&redactor, &value);
+        for secret in [
+            "opaque-credential",
+            "private-value",
+            "abc.def.ghi",
+            "alice:password",
+            "private-query",
         ] {
+            assert!(!safe.to_string().contains(secret));
+        }
+        assert_eq!(safe["prompt_tokens"], 123);
+        assert_eq!(redact_value(&redactor, &safe), safe);
+        let text = "sk-1234567890abcdefgh\nCookie: session=hidden\n-----BEGIN PRIVATE KEY-----\nsecret-body";
+        assert!(redactor.secret_finding_count(text) > 0);
+        let safe = redactor.redact_text(text);
+        assert_eq!(redactor.secret_finding_count(&safe), 0);
+        assert_eq!(redactor.redact_text(&safe), safe);
+        assert!(!safe.contains("secret-body"));
+        for text in [
+            "API_KEY=\"private-quoted\"",
+            "PASSWORD='private-quoted'",
+            "+  \"client_secret\": \"private-quoted\",",
+        ] {
+            let safe = redactor.redact_text(text);
             assert!(
-                !text.contains(forbidden),
-                "redacted value leaked {forbidden}"
+                !safe.contains("private-quoted"),
+                "unredacted assignment: {safe}"
             );
+            assert_eq!(redactor.redact_text(&safe), safe);
         }
-        assert!(text.contains("keep me"));
-    }
-
-    #[test]
-    fn preserves_typed_token_count_fields() {
-        // arrange
-        let redactor = DefaultRedactor::default();
-        let value = json!({
-            "usage": {
-                "input_tokens": 123,
-                "output_tokens": 45,
-                "token": "plain-token-secret"
-            }
-        });
-
-        // act
-        let redacted = redact_value(&redactor, &value);
-
-        // assert
-        assert_eq!(redacted["usage"]["input_tokens"], 123);
-        assert_eq!(redacted["usage"]["output_tokens"], 45);
-        assert_eq!(redacted["usage"]["token"], "[REDACTED_SECRET]");
-    }
-
-    #[test]
-    fn scanner_counts_raw_cookie_even_when_later_marker_exists() {
-        // arrange
-        let redactor = DefaultRedactor::default();
-        let text = r#"{"summary":"Cookie: sid=raw-session","other":"[REDACTED_API_KEY]"}"#;
-
-        // act
-        let finding_count = redactor.secret_finding_count(text);
-
-        // assert
-        assert_eq!(finding_count, 1);
-    }
-
-    struct SecretScan;
-
-    impl SecretScan {
-        fn should_scan_file(path: &Path) -> bool {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-                return false;
-            };
-
-            if path
-                .components()
-                .filter_map(|component| component.as_os_str().to_str())
-                .any(|component| component == "snapshots")
-            {
-                return true;
-            }
-
-            if name.contains("snapshot") {
-                return true;
-            }
-
-            matches!(
-                path.extension().and_then(|ext| ext.to_str()),
-                Some("json" | "jsonl" | "txt" | "snap")
-            )
-        }
-
-        fn assert_no_sk_in_file(path: &Path) {
-            if !path.is_file() {
-                return;
-            }
-
-            if !Self::should_scan_file(path) {
-                return;
-            }
-
-            let text = fs::read_to_string(path).unwrap_or_default();
-            assert!(
-                !text.contains("sk-"),
-                "secret-like token found in persisted file {}",
-                path.display()
-            );
-        }
-
-        fn assert_no_sk_in_dir(path: &Path) {
-            if !path.exists() {
-                return;
-            }
-
-            let entries = fs::read_dir(path).unwrap_or_abort();
-            for entry in entries {
-                let entry = entry.unwrap_or_abort();
-                let entry_path = entry.path();
-                if entry_path.is_dir() {
-                    Self::assert_no_sk_in_dir(&entry_path);
-                } else {
-                    Self::assert_no_sk_in_file(&entry_path);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn secret_scan_helper_fails_when_jsonl_contains_sk_prefix() {
-        let dir = tempfile::tempdir().unwrap_or_abort();
-        let file = dir.path().join("events.jsonl");
-        fs::write(&file, "{\"line\":\"sk-should-not-be-here\"}").unwrap_or_abort();
-
-        let panic = std::panic::catch_unwind(|| SecretScan::assert_no_sk_in_dir(dir.path()));
-        assert!(panic.is_err(), "secret scan should fail for sk- leakage");
-    }
-
-    #[test]
-    fn secret_scan_helper_allows_redacted_jsonl() {
-        let dir = tempfile::tempdir().unwrap_or_abort();
-        let file = dir.path().join("events.jsonl");
-        fs::write(&file, "{\"line\":\"[REDACTED_API_KEY]\"}").unwrap_or_abort();
-
-        SecretScan::assert_no_sk_in_dir(dir.path());
-    }
-
-    #[test]
-    fn secret_scan_helper_fails_when_artifact_contains_sk_prefix() {
-        let dir = tempfile::tempdir().unwrap_or_abort();
-        let file = dir
-            .path()
-            .join("artifacts")
-            .join("toolcalls")
-            .join("call_1")
-            .join("result.redacted.json");
-        fs::create_dir_all(file.parent().unwrap_or_abort()).unwrap_or_abort();
-        fs::write(&file, "{\"display_text\":\"sk-should-not-be-here\"}").unwrap_or_abort();
-
-        let panic = std::panic::catch_unwind(|| SecretScan::assert_no_sk_in_dir(dir.path()));
-        assert!(
-            panic.is_err(),
-            "secret scan should fail for sk- leakage in artifacts"
-        );
-    }
-
-    #[test]
-    fn secret_scan_helper_allows_redacted_artifact_files() {
-        let dir = tempfile::tempdir().unwrap_or_abort();
-        let result = dir
-            .path()
-            .join("artifacts")
-            .join("toolcalls")
-            .join("call_1")
-            .join("result.redacted.json");
-        let display = dir
-            .path()
-            .join("artifacts")
-            .join("toolcalls")
-            .join("call_1")
-            .join("display.redacted.txt");
-        fs::create_dir_all(result.parent().unwrap_or_abort()).unwrap_or_abort();
-
-        fs::write(&result, "{\"display_text\":\"[REDACTED_API_KEY]\"}").unwrap_or_abort();
-        fs::write(&display, "token=[REDACTED_API_KEY]").unwrap_or_abort();
-
-        SecretScan::assert_no_sk_in_dir(dir.path());
-    }
-
-    #[test]
-    fn secret_scan_helper_fails_when_snap_file_contains_sk_prefix() {
-        let dir = tempfile::tempdir().unwrap_or_abort();
-        let file = dir
-            .path()
-            .join("crates")
-            .join("harness-tui")
-            .join("tests")
-            .join("snapshots")
-            .join("pty_after_tool_call.snap");
-        fs::create_dir_all(file.parent().unwrap_or_abort()).unwrap_or_abort();
-        fs::write(&file, "tool output: sk-should-not-be-here").unwrap_or_abort();
-
-        let panic = std::panic::catch_unwind(|| SecretScan::assert_no_sk_in_dir(dir.path()));
-        assert!(
-            panic.is_err(),
-            "secret scan should fail for sk- leakage in .snap files"
-        );
-    }
-
-    #[test]
-    fn secret_scan_helper_allows_redacted_snap_file() {
-        let dir = tempfile::tempdir().unwrap_or_abort();
-        let file = dir
-            .path()
-            .join("crates")
-            .join("harness-tui")
-            .join("tests")
-            .join("snapshots")
-            .join("pty_after_tool_call.snap");
-        fs::create_dir_all(file.parent().unwrap_or_abort()).unwrap_or_abort();
-        fs::write(&file, "tool output: [REDACTED_API_KEY]").unwrap_or_abort();
-
-        SecretScan::assert_no_sk_in_dir(dir.path());
     }
 }

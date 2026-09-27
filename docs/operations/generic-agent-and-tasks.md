@@ -103,3 +103,47 @@ minutes (larger values are clamped), and wait expiry leaves children running.
 The coordinator owns event appends, scheduling, child ownership, cancellation,
 permissions, and tool execution. Prompt text and TUI labels cannot grant access
 or bypass those checks.
+
+## Background history
+
+`background_output` accepts `full_session`, `message_limit` (0–200),
+`since_message_id`, `from_end`, and `include_tool_results` for one owned child.
+`since_message_id` must identify that child's message; the result starts after it.
+`from_end` returns the newest events and messages first. Each result includes
+counts and truncation flags. Event summaries share the session-inspection redactor
+and omit tool arguments and reasoning.
+
+History queries inspect at most a 64 MiB parent journal. A returned page holds at
+most 1,000 event summaries and 2 MiB of serialized events; message and tool-result
+subsets keep the combined history below 4 MiB. Large tool results use the normal
+private artifact path. `include_thinking` returns an explicit unavailable result:
+reasoning is not retained. `thinking_max_chars` is accepted for compatibility.
+
+Blocking reads report `timed_out` and accept either `timeout_ms` or `timeout`.
+Multiple selectors require `wait_mode: "any"` or `"all"`; history options require
+a single child. A wait timeout leaves the child running. Inspection after resume
+reads committed history and does not call the provider again.
+
+Background work initiated by an agent reserves one slot in the parent's prompt
+queue until its completion notification is queued. New prompts and manual
+compactions respect those reservations. A background launch or demotion is
+rejected when no slot remains. This keeps the queue bounded without dropping
+notifications from accepted children.
+
+Outstanding tool requests, including permission waits and orchestration tools,
+are capped at `command_buffer + tool_concurrency`. Further calls return a queue
+error before being scheduled. Cancellation releases that capacity after cleanup;
+the execution semaphore separately bounds active I/O.
+
+The child concurrency limit counts active work. Completed children do not consume
+execution capacity; their small ownership records remain available for inspection
+and continuation. Completed conversation buffers are released, and immutable
+profiles are shared between children. Continuing a child reloads its history.
+
+Each child also has an `events.jsonl` and private artifacts in its own session
+directory. The coordinator publishes committed child events there for TUI history,
+inspection, and standalone continuation. It keeps the child's writer locked until
+the parent run closes. Parent and sibling conversation text is excluded.
+Compaction positions are translated to the child's event sequence. Resume fills
+missing records from the parent journal without repeating tools, hooks, or provider
+calls; an incomplete final write is preserved separately before repair.

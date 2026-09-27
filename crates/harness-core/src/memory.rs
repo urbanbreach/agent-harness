@@ -1,393 +1,323 @@
-//! Durable cross-session memory MVP.
-//!
-//! Persists key/value notes under `.agent-harness/memory/entries.json` for a
-//! workspace root. Values are redacted on write using the same secret patterns
-//! as the rest of the runtime. This is separate from provider-context
-//! operational memory (compaction facts).
-
-pub mod scope;
-pub use scope::{MemoryScope, ScopedMemoryEntry};
-
-use std::collections::BTreeMap;
-use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-
 use crate::redact::{DefaultRedactor, Redactor};
-
-/// Relative directory under a workspace root that holds durable memory.
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::{self, Read},
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 pub const MEMORY_RELATIVE_DIR: &str = ".agent-harness/memory";
-/// Default JSON document name inside [`MEMORY_RELATIVE_DIR`].
 pub const MEMORY_ENTRIES_FILE: &str = "entries.json";
+const MAX_BYTES: usize = 4 * 1024 * 1024;
 
-const STORE_VERSION: u32 = 1;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MemoryDocument {
-    version: u32,
-    entries: BTreeMap<String, MemoryEntryRecord>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryScope {
+    Global,
+    #[default]
+    Workspace,
+    Session,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct MemoryEntryRecord {
-    value: String,
-    updated_at_unix_ms: u64,
-    #[serde(default)]
-    scope: MemoryScope,
-}
-
-impl MemoryDocument {
-    fn empty() -> Self {
-        Self {
-            version: STORE_VERSION,
-            entries: BTreeMap::new(),
+impl MemoryScope {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Global => "global",
+            Self::Workspace => "workspace",
+            Self::Session => "session",
         }
     }
 }
-
-/// One durable memory entry (already redacted if loaded from store).
+pub mod scope {
+    pub use super::{MemoryScope, ScopedMemoryEntry};
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryEntry {
     pub key: String,
     pub value: String,
     pub updated_at_unix_ms: u64,
 }
-
-/// Failures loading or updating durable memory.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScopedMemoryEntry {
+    pub key: String,
+    pub value: String,
+    pub updated_at_unix_ms: u64,
+    pub scope: MemoryScope,
+}
+impl From<ScopedMemoryEntry> for MemoryEntry {
+    fn from(entry: ScopedMemoryEntry) -> Self {
+        Self {
+            key: entry.key,
+            value: entry.value,
+            updated_at_unix_ms: entry.updated_at_unix_ms,
+        }
+    }
+}
+#[derive(Debug, thiserror::Error)]
 pub enum MemoryError {
     #[error("memory key must be non-empty after trim")]
     EmptyKey,
-    #[error("failed to create durable memory parent directory {path}: {source}")]
-    CreateParent {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to read durable memory store {path}: {source}")]
-    Read {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to parse durable memory store {path}: {detail}")]
-    Parse { path: String, detail: String },
-    #[error("unsupported durable memory store version {version} in {path}")]
-    UnsupportedVersion { path: String, version: u32 },
-    #[error("failed to write durable memory store {path}: {source}")]
-    Write {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to replace durable memory store {path}: {source}")]
-    Replace {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
     #[error("memory key not found: {key}")]
     NotFound { key: String },
+    #[error("unsupported durable memory store version {version} in {path}")]
+    UnsupportedVersion { path: String, version: u32 },
+    #[error("{0}")]
+    Invalid(&'static str),
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
 }
-
-/// Workspace-scoped durable memory store (atomic JSON, redacted on write).
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Document {
+    version: u32,
+    entries: BTreeMap<String, Record>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+struct Record {
+    value: String,
+    updated_at_unix_ms: u64,
+    #[serde(default)]
+    scope: MemoryScope,
+}
+impl Record {
+    fn entry(self, key: String) -> ScopedMemoryEntry {
+        ScopedMemoryEntry {
+            key,
+            value: self.value,
+            updated_at_unix_ms: self.updated_at_unix_ms,
+            scope: self.scope,
+        }
+    }
+}
 #[derive(Debug, Clone)]
 pub struct DurableMemoryStore {
     path: PathBuf,
 }
-
 impl DurableMemoryStore {
-    /// Open a store at an explicit entries file path.
-    pub fn open(store_path: impl Into<PathBuf>) -> Self {
-        Self {
-            path: store_path.into(),
-        }
+    pub fn open(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
     }
-
-    /// Default entries path for a workspace root.
-    pub fn default_path_for_workspace(workspace_root: &Path) -> PathBuf {
-        workspace_root
-            .join(MEMORY_RELATIVE_DIR)
-            .join(MEMORY_ENTRIES_FILE)
+    pub fn default_path_for_workspace(root: &Path) -> PathBuf {
+        root.join(MEMORY_RELATIVE_DIR).join(MEMORY_ENTRIES_FILE)
     }
-
-    /// Open the default workspace-scoped store.
-    pub fn for_workspace(workspace_root: &Path) -> Self {
-        Self::open(Self::default_path_for_workspace(workspace_root))
+    pub fn for_workspace(root: &Path) -> Self {
+        Self::open(Self::default_path_for_workspace(root))
     }
-
     pub fn path(&self) -> &Path {
         &self.path
     }
-
-    /// Insert or update `key` with redacted `value` and flush to disk.
     pub fn put(&self, key: &str, value: &str) -> Result<MemoryEntry, MemoryError> {
-        let key = normalize_key(key)?;
-        let redactor = DefaultRedactor::default();
-        let value = redactor.redact_text(value);
-        let updated_at_unix_ms = now_unix_ms();
-        let mut doc = self.load_or_empty()?;
-        doc.entries.insert(
-            key.clone(),
-            MemoryEntryRecord {
-                value: value.clone(),
-                updated_at_unix_ms,
-                scope: MemoryScope::default(),
-            },
-        );
-        self.flush(&doc)?;
-        Ok(MemoryEntry {
-            key,
-            value,
-            updated_at_unix_ms,
+        self.put_scoped(key, value, MemoryScope::Workspace)
+            .map(Into::into)
+    }
+    pub fn put_scoped(
+        &self,
+        key: &str,
+        value: &str,
+        scope: MemoryScope,
+    ) -> Result<ScopedMemoryEntry, MemoryError> {
+        let key = normalize_key(key)?.to_owned();
+        if value.len() > 64 * 1024 {
+            return Err(MemoryError::Invalid("memory value exceeds 64 KiB"));
+        }
+        let record = Record {
+            value: crate::redact::redact_artifact_text(value),
+            updated_at_unix_ms: now(),
+            scope,
+        };
+        self.update(move |entries| {
+            entries.insert(key.clone(), record.clone());
+            Ok((record.entry(key), true))
         })
     }
-
-    /// Load one entry by exact key.
     pub fn get(&self, key: &str) -> Result<Option<MemoryEntry>, MemoryError> {
-        let key = normalize_key(key)?;
-        let doc = self.load_or_empty()?;
-        Ok(doc.entries.get(&key).map(|record| MemoryEntry {
-            key: key.clone(),
-            value: record.value.clone(),
-            updated_at_unix_ms: record.updated_at_unix_ms,
-        }))
+        self.get_scoped(key).map(|entry| entry.map(Into::into))
     }
-
-    /// Search by key prefix or case-insensitive substring match on key/value.
-    pub fn search(&self, query: &str) -> Result<Vec<MemoryEntry>, MemoryError> {
-        let query = query.trim();
-        let doc = self.load_or_empty()?;
-        if query.is_empty() {
-            return Ok(doc
-                .entries
-                .iter()
-                .map(|(key, record)| MemoryEntry {
-                    key: key.clone(),
-                    value: record.value.clone(),
-                    updated_at_unix_ms: record.updated_at_unix_ms,
-                })
-                .collect());
-        }
-
-        let query_lower = query.to_ascii_lowercase();
-        Ok(doc
+    pub fn get_scoped(&self, key: &str) -> Result<Option<ScopedMemoryEntry>, MemoryError> {
+        let key = normalize_key(key)?;
+        Ok(self
+            .load()?
             .entries
-            .iter()
-            .filter(|(key, record)| {
-                key.starts_with(query)
-                    || key.to_ascii_lowercase().contains(&query_lower)
-                    || record.value.to_ascii_lowercase().contains(&query_lower)
-            })
-            .map(|(key, record)| MemoryEntry {
-                key: key.clone(),
-                value: record.value.clone(),
-                updated_at_unix_ms: record.updated_at_unix_ms,
-            })
+            .remove(key)
+            .map(|record| record.entry(key.into())))
+    }
+    pub fn search(&self, query: &str) -> Result<Vec<MemoryEntry>, MemoryError> {
+        Ok(self
+            .search_scoped(query, None)?
+            .into_iter()
+            .map(Into::into)
             .collect())
     }
-
-    /// Force-load and rewrite the store (no-op when empty/missing).
+    pub fn search_scoped(
+        &self,
+        query: &str,
+        scope_filter: Option<MemoryScope>,
+    ) -> Result<Vec<ScopedMemoryEntry>, MemoryError> {
+        let query = query.trim().to_ascii_lowercase();
+        Ok(self
+            .load()?
+            .entries
+            .into_iter()
+            .filter(|(key, record)| {
+                scope_filter.is_none_or(|scope| scope == record.scope)
+                    && (query.is_empty()
+                        || key.to_ascii_lowercase().contains(&query)
+                        || record.value.to_ascii_lowercase().contains(&query))
+            })
+            .map(|(key, record)| record.entry(key))
+            .collect())
+    }
     pub fn flush_existing(&self) -> Result<(), MemoryError> {
-        let doc = self.load_or_empty()?;
-        if doc.entries.is_empty() && !self.path.exists() {
+        if !self.path.try_exists()? {
             return Ok(());
         }
-        self.flush(&doc)
+        self.update(|_| Ok(((), true)))
     }
-
-    fn load_or_empty(&self) -> Result<MemoryDocument, MemoryError> {
-        match fs::read_to_string(&self.path) {
-            Ok(raw) => {
-                let doc: MemoryDocument =
-                    serde_json::from_str(&raw).map_err(|err| MemoryError::Parse {
-                        path: self.path.display().to_string(),
-                        detail: err.to_string(),
-                    })?;
-                if doc.version != STORE_VERSION {
-                    return Err(MemoryError::UnsupportedVersion {
-                        path: self.path.display().to_string(),
-                        version: doc.version,
-                    });
-                }
-                Ok(doc)
+    pub fn consolidate(
+        &self,
+        source: MemoryScope,
+        target: MemoryScope,
+    ) -> Result<usize, MemoryError> {
+        self.update(|entries| {
+            let mut count = 0;
+            let timestamp = now();
+            for record in entries.values_mut().filter(|r| r.scope == source) {
+                record.scope = target;
+                record.updated_at_unix_ms = timestamp;
+                count += 1;
             }
-            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(MemoryDocument::empty()),
-            Err(err) => Err(MemoryError::Read {
-                path: self.path.display().to_string(),
-                source: err,
-            }),
-        }
+            Ok((count, count > 0))
+        })
     }
-
-    fn flush(&self, doc: &MemoryDocument) -> Result<(), MemoryError> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent).map_err(|source| MemoryError::CreateParent {
-                path: parent.display().to_string(),
-                source,
-            })?;
+    pub fn trace(&self, key: &str) -> Result<ScopedMemoryEntry, MemoryError> {
+        let key = normalize_key(key)?.to_owned();
+        self.update(|entries| {
+            let record = entries
+                .get_mut(&key)
+                .ok_or_else(|| MemoryError::NotFound { key: key.clone() })?;
+            record.updated_at_unix_ms = now().max(record.updated_at_unix_ms.saturating_add(1));
+            Ok((record.clone().entry(key), true))
+        })
+    }
+    pub fn release(&self, key: &str) -> Result<bool, MemoryError> {
+        let key = normalize_key(key)?;
+        self.update(|entries| {
+            let removed = entries.remove(key).is_some();
+            Ok((removed, removed))
+        })
+    }
+    pub fn release_scope(&self, scope: MemoryScope) -> Result<usize, MemoryError> {
+        self.update(|entries| {
+            let before = entries.len();
+            entries.retain(|_, r| r.scope != scope);
+            let removed = before - entries.len();
+            Ok((removed, removed > 0))
+        })
+    }
+    pub fn list_by_scope(
+        &self,
+    ) -> Result<BTreeMap<MemoryScope, Vec<ScopedMemoryEntry>>, MemoryError> {
+        let mut groups: BTreeMap<_, Vec<_>> = BTreeMap::new();
+        for entry in self.search_scoped("", None)? {
+            groups.entry(entry.scope).or_default().push(entry);
         }
-
-        let body = serde_json::to_vec_pretty(doc).map_err(|err| MemoryError::Write {
-            path: self.path.display().to_string(),
-            source: io::Error::other(err),
-        })?;
-
-        let unique = now_unix_ms();
-        let temp_path =
-            self.path
-                .with_extension(format!("json.tmp.{}.{}", std::process::id(), unique));
-        write_file_atomically(&temp_path, &self.path, &body)
+        Ok(groups)
+    }
+    fn validate_path(&self) -> Result<(), MemoryError> {
+        for path in self.path.ancestors() {
+            match fs::symlink_metadata(path) {
+                Ok(meta) if meta.is_symlink() => {
+                    return Err(MemoryError::Invalid("memory paths cannot be symlinks"))
+                }
+                Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error.into()),
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    fn load(&self) -> Result<Document, MemoryError> {
+        self.validate_path()?;
+        let metadata = match fs::symlink_metadata(&self.path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return Ok(Document {
+                    version: 1,
+                    entries: BTreeMap::new(),
+                })
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if !metadata.is_file() || metadata.len() > MAX_BYTES as u64 {
+            return Err(MemoryError::Invalid(
+                "memory store must be a regular file under 4 MiB",
+            ));
+        }
+        let mut bytes = Vec::new();
+        fs::File::open(&self.path)?
+            .take(MAX_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > MAX_BYTES {
+            return Err(MemoryError::Invalid("memory store exceeds 4 MiB"));
+        }
+        let mut document: Document = serde_json::from_slice(&bytes)?;
+        if document.version != 1 {
+            return Err(MemoryError::UnsupportedVersion {
+                path: self.path.display().to_string(),
+                version: document.version,
+            });
+        }
+        for (key, record) in &mut document.entries {
+            normalize_key(key)?;
+            record.value = crate::redact::redact_artifact_text(&record.value);
+        }
+        Ok(document)
+    }
+    fn update<T>(
+        &self,
+        edit: impl FnOnce(&mut BTreeMap<String, Record>) -> Result<(T, bool), MemoryError>,
+    ) -> Result<T, MemoryError> {
+        self.validate_path()?;
+        let parent = self
+            .path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        crate::store::create_private_dir(parent)?;
+        let lock = fs::File::open(parent)?;
+        lock.lock()?;
+        let mut document = self.load()?;
+        let (result, changed) = edit(&mut document.entries)?;
+        if changed {
+            let bytes = serde_json::to_vec(&document)?;
+            if bytes.len() > MAX_BYTES {
+                return Err(MemoryError::Invalid("memory store exceeds 4 MiB"));
+            }
+            crate::store::write_private_atomic(&self.path, &bytes)?;
+        }
+        Ok(result)
     }
 }
-
-fn normalize_key(key: &str) -> Result<String, MemoryError> {
-    let trimmed = key.trim();
-    if trimmed.is_empty() {
+fn normalize_key(key: &str) -> Result<&str, MemoryError> {
+    let key = key.trim();
+    if key.is_empty() {
         return Err(MemoryError::EmptyKey);
     }
-    Ok(trimmed.to_string())
+    if key.len() > 1024
+        || key.chars().any(char::is_control)
+        || DefaultRedactor::default().redact_text(key) != key
+    {
+        return Err(MemoryError::Invalid(
+            "memory key is too long, contains controls, or contains a credential",
+        ));
+    }
+    Ok(key)
 }
-
-fn now_unix_ms() -> u64 {
+fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .ok()
-        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
         .unwrap_or(0)
-}
-
-fn redact_value(value: &str) -> String {
-    let redactor = DefaultRedactor::default();
-    redactor.redact_text(value)
-}
-
-fn write_file_atomically(
-    temp_path: &Path,
-    final_path: &Path,
-    body: &[u8],
-) -> Result<(), MemoryError> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(temp_path)
-        .map_err(|source| MemoryError::Write {
-            path: temp_path.display().to_string(),
-            source,
-        })?;
-    restrict_file_permissions(temp_path).map_err(|source| MemoryError::Write {
-        path: temp_path.display().to_string(),
-        source,
-    })?;
-    file.write_all(body)
-        .and_then(|_| file.sync_all())
-        .map_err(|source| MemoryError::Write {
-            path: temp_path.display().to_string(),
-            source,
-        })?;
-    drop(file);
-    fs::rename(temp_path, final_path).map_err(|source| MemoryError::Replace {
-        path: final_path.display().to_string(),
-        source,
-    })?;
-    restrict_file_permissions(final_path).map_err(|source| MemoryError::Write {
-        path: final_path.display().to_string(),
-        source,
-    })?;
-    Ok(())
-}
-
-#[cfg(unix)]
-fn restrict_file_permissions(path: &Path) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
-}
-
-#[cfg(windows)]
-fn restrict_file_permissions(_path: &Path) -> io::Result<()> {
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::UnwrapOrAbort;
-
-    #[test]
-    fn put_get_survives_store_drop_and_reload() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let workspace = temp.path();
-
-        {
-            let store = DurableMemoryStore::for_workspace(workspace);
-            let written = store
-                .put("project.preference", "prefer nextest")
-                .unwrap_or_abort();
-            assert_eq!(written.key, "project.preference");
-            assert_eq!(written.value, "prefer nextest");
-            assert!(store.path().is_file());
-        }
-
-        let reloaded = DurableMemoryStore::for_workspace(workspace);
-        let entry = reloaded
-            .get("project.preference")
-            .unwrap_or_abort()
-            .expect("entry should survive process restart");
-        assert_eq!(entry.value, "prefer nextest");
-    }
-
-    #[test]
-    fn put_updates_existing_key() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let store = DurableMemoryStore::for_workspace(temp.path());
-        store.put("note", "v1").unwrap_or_abort();
-        store.put("note", "v2").unwrap_or_abort();
-        let entry = store.get("note").unwrap_or_abort().unwrap_or_abort();
-        assert_eq!(entry.value, "v2");
-    }
-
-    #[test]
-    fn search_matches_key_prefix_and_substring() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let store = DurableMemoryStore::for_workspace(temp.path());
-        store.put("prefs.editor", "helix").unwrap_or_abort();
-        store.put("prefs.shell", "zsh").unwrap_or_abort();
-        store.put("todo", "fix helix config").unwrap_or_abort();
-
-        let prefix = store.search("prefs.").unwrap_or_abort();
-        assert_eq!(prefix.len(), 2);
-
-        let substring = store.search("helix").unwrap_or_abort();
-        assert_eq!(substring.len(), 2);
-        assert!(substring.iter().any(|entry| entry.key == "prefs.editor"));
-        assert!(substring.iter().any(|entry| entry.key == "todo"));
-    }
-
-    #[test]
-    fn put_redacts_secret_like_values() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let store = DurableMemoryStore::for_workspace(temp.path());
-        let written = store
-            .put("creds", "token sk-abcdefghijklmnopqrstuvwxyz")
-            .unwrap_or_abort();
-        assert!(!written.value.contains("sk-abcdefghijklmnopqrstuvwxyz"));
-        assert!(written.value.contains("[REDACTED_API_KEY]"));
-
-        let raw = fs::read_to_string(store.path()).unwrap_or_abort();
-        assert!(!raw.contains("sk-abcdefghijklmnopqrstuvwxyz"));
-        assert!(raw.contains("[REDACTED_API_KEY]"));
-    }
-
-    #[test]
-    fn empty_key_is_rejected() {
-        let temp = tempfile::tempdir().unwrap_or_abort();
-        let store = DurableMemoryStore::for_workspace(temp.path());
-        let err = store.put("   ", "x").expect_err("empty key");
-        assert!(matches!(err, MemoryError::EmptyKey));
-    }
 }
