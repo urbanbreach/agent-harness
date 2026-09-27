@@ -1,0 +1,7 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.74s
+────────────
+ Nextest run ID 826c4f6c-0e44-4f76-bea1-7056adbedf79 with nextest profile: ci
+    Starting 2 tests across 1 binary (1387 tests skipped)
+────────────
+     Summary [   0.016s] 2 tests run: 2 passed, 1387 skipped

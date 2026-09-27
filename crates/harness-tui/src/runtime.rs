@@ -4,15 +4,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+pub use crate::terminal::session::close_preserved_terminal_session;
 use anyhow::{Context, Result};
 use crossterm::cursor::Show;
-use crossterm::event::{
-    DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
-    EnableFocusChange, EnableMouseCapture, KeyModifiers, KeyboardEnhancementFlags, MouseButton,
-    MouseEvent, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
-};
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
 use harness_core::event::{EventEnvelopeV1, RuntimeEvent};
-use ratatui::buffer::Buffer;
 use ratatui::Terminal;
 
 use crate::app::{AppState, LaunchMetadata, SessionHistoryEntry, TogglesConfig, UiIntent};
@@ -42,8 +39,7 @@ use crate::scheduling::{
     WheelSample,
 };
 use crate::terminal::{
-    FrameKind, FrameOutput, FrameOutputBackend, FrameSubmission, Presenter,
-    ProductionTerminalSession,
+    FrameKind, FrameOutput, FrameOutputBackend, FrameSubmission, Presenter, TerminalProfile,
 };
 use crate::ui;
 
@@ -140,82 +136,6 @@ const fn runtime_quit_ready(app_should_quit: bool, presenter: &Presenter) -> boo
     app_should_quit && !presenter.has_pending_redraw()
 }
 
-/// Explicit model of terminal features the TUI may enable or rely on.
-///
-/// Interactive I/O features (keyboard enhancement, paste, mouse, alt-screen) are
-/// enabled only when setup succeeds. Static probes (truecolor, OSC52 suitability)
-/// come from the environment and never force setup. Restore undoes only what was
-/// successfully enabled and always attempts fail-safe raw-mode/alt-screen exit.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct TerminalCapabilityState {
-    pub keyboard_enhancement: bool,
-    pub truecolor: bool,
-    pub bracketed_paste: bool,
-    pub mouse_capture: bool,
-    pub osc52_clipboard: bool,
-    pub alternate_screen: bool,
-    pub focus_reporting: bool,
-}
-
-/// Ordered restore steps derived from capability state (pure; no I/O).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct TerminalTeardownPlan {
-    pub disable_raw_mode: bool,
-    pub disable_mouse_capture: bool,
-    pub disable_bracketed_paste: bool,
-    pub disable_focus_change: bool,
-    pub pop_keyboard_enhancement: bool,
-    pub leave_alternate_screen: bool,
-}
-
-impl TerminalCapabilityState {
-    pub const fn absent() -> Self {
-        Self {
-            keyboard_enhancement: false,
-            truecolor: false,
-            bracketed_paste: false,
-            mouse_capture: false,
-            osc52_clipboard: false,
-            alternate_screen: false,
-            focus_reporting: false,
-        }
-    }
-
-    /// Full capability-present fixture for tests (not used as a live default).
-    pub const fn present() -> Self {
-        Self {
-            keyboard_enhancement: true,
-            truecolor: true,
-            bracketed_paste: true,
-            mouse_capture: true,
-            osc52_clipboard: true,
-            alternate_screen: true,
-            focus_reporting: true,
-        }
-    }
-
-    /// Static environment probes that do not require terminal I/O setup.
-    pub fn from_environment() -> Self {
-        let mut caps = Self::absent();
-        caps.truecolor = truecolor_from_colorterm(std::env::var("COLORTERM").ok().as_deref());
-        caps.osc52_clipboard = std::io::IsTerminal::is_terminal(&std::io::stdout());
-        caps
-    }
-
-    /// Fail-safe restore plan: always leave alt-screen/raw mode; reverse only
-    /// optional features that were successfully enabled during setup.
-    pub const fn teardown_plan(self) -> TerminalTeardownPlan {
-        TerminalTeardownPlan {
-            disable_raw_mode: true,
-            disable_mouse_capture: self.mouse_capture,
-            disable_bracketed_paste: self.bracketed_paste,
-            disable_focus_change: self.focus_reporting,
-            pop_keyboard_enhancement: self.keyboard_enhancement,
-            leave_alternate_screen: true,
-        }
-    }
-}
-
 pub(crate) fn apply_startup_capability_notice(
     app: &mut AppState,
     clipboard_warning_required: bool,
@@ -231,12 +151,6 @@ fn is_ssh_session() -> bool {
         .any(|name| std::env::var_os(name).is_some())
 }
 
-fn truecolor_from_colorterm(value: Option<&str>) -> bool {
-    value
-        .map(str::to_ascii_lowercase)
-        .is_some_and(|lower| lower.contains("truecolor") || lower.contains("24bit"))
-}
-
 fn reduced_motion_from_env(value: Option<&str>) -> bool {
     value.is_some_and(|value| {
         matches!(
@@ -246,33 +160,6 @@ fn reduced_motion_from_env(value: Option<&str>) -> bool {
     })
 }
 
-/// Merge static env probes with interactive setup success flags.
-fn apply_interactive_setup_results(
-    base: TerminalCapabilityState,
-    keyboard_ok: bool,
-    paste_ok: bool,
-    mouse_ok: bool,
-    alt_screen_ok: bool,
-    focus_ok: bool,
-) -> TerminalCapabilityState {
-    TerminalCapabilityState {
-        keyboard_enhancement: keyboard_ok,
-        truecolor: base.truecolor,
-        bracketed_paste: paste_ok,
-        mouse_capture: mouse_ok,
-        osc52_clipboard: base.osc52_clipboard,
-        alternate_screen: alt_screen_ok,
-        focus_reporting: focus_ok,
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-struct PreservedTerminalSession {
-    active: bool,
-    capabilities: TerminalCapabilityState,
-    buffer: Option<Buffer>,
-}
-
 fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     match mutex.lock() {
         Ok(guard) => guard,
@@ -280,52 +167,9 @@ fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     }
 }
 
-pub(crate) struct TerminalRestoreGuard {
-    capabilities: TerminalCapabilityState,
-    restored: bool,
-}
-
-impl TerminalRestoreGuard {
-    pub(crate) fn new(capabilities: TerminalCapabilityState) -> Self {
-        Self {
-            capabilities,
-            restored: false,
-        }
-    }
-
-    pub(crate) fn mark_restored(&mut self) {
-        self.restored = true;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn restored(&self) -> bool {
-        self.restored
-    }
-
-    #[cfg(test)]
-    pub(crate) fn capabilities(&self) -> TerminalCapabilityState {
-        self.capabilities
-    }
-}
-
-impl Drop for TerminalRestoreGuard {
-    fn drop(&mut self) {
-        if self.restored {
-            return;
-        }
-        let mut stdout = std::io::stdout();
-        let _ = teardown_terminal_session(&mut stdout, self.capabilities);
-    }
-}
-
 fn pending_replay_launch_metadata() -> &'static Mutex<Option<LaunchMetadata>> {
     static PENDING: OnceLock<Mutex<Option<LaunchMetadata>>> = OnceLock::new();
     PENDING.get_or_init(|| Mutex::new(None))
-}
-
-fn preserved_terminal_session() -> &'static Mutex<PreservedTerminalSession> {
-    static PRESERVED: OnceLock<Mutex<PreservedTerminalSession>> = OnceLock::new();
-    PRESERVED.get_or_init(|| Mutex::new(PreservedTerminalSession::default()))
 }
 
 pub fn set_pending_replay_launch_metadata(launch_metadata: Option<LaunchMetadata>) {
@@ -554,85 +398,16 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     app.configure_rewind();
     app.maybe_set_no_provider_banner();
 
-    let mut terminal_session = ProductionTerminalSession::negotiate();
+    let terminal_profile = TerminalProfile::negotiate();
     let mut experience = RuntimeExperience::new();
 
-    let preserved_terminal = recover_mutex_lock(preserved_terminal_session()).clone();
-    let reusing_terminal = preserved_terminal.active;
-    let mut capabilities = if reusing_terminal {
-        preserved_terminal.capabilities
-    } else {
-        let mut capabilities = TerminalCapabilityState::from_environment();
-        capabilities.osc52_clipboard = terminal_session.capabilities.osc52_clipboard;
-        capabilities
-    };
-
-    if !reusing_terminal {
-        crossterm::terminal::enable_raw_mode().context("failed to enable terminal raw mode")?;
-    }
-    let mut stdout = std::io::stdout();
-    if !reusing_terminal {
-        let mut keyboard_ok = false;
-        let mut paste_ok = false;
-        let mut mouse_ok = false;
-        let mut alt_screen_ok = false;
-        let mut focus_ok = false;
-        let setup_result = (|| -> Result<()> {
-            if !skip_alternate_screen {
-                crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)
-                    .context("failed to enter alternate screen before launching TUI")?;
-                alt_screen_ok = true;
-            }
-
-            if crossterm::execute!(
-                stdout,
-                PushKeyboardEnhancementFlags(
-                    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                        | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
-                )
-            )
-            .is_ok()
-            {
-                keyboard_ok = true;
-            }
-
-            crossterm::execute!(stdout, EnableBracketedPaste)
-                .context("failed to enable bracketed paste before launching TUI")?;
-            paste_ok = true;
-
-            crossterm::execute!(stdout, EnableMouseCapture)
-                .context("failed to enable mouse capture before launching TUI")?;
-            mouse_ok = true;
-
-            if crossterm::execute!(stdout, EnableFocusChange).is_ok() {
-                focus_ok = true;
-            }
-            Ok(())
-        })();
-
-        capabilities = apply_interactive_setup_results(
-            capabilities,
-            keyboard_ok,
-            paste_ok,
-            mouse_ok,
-            alt_screen_ok,
-            focus_ok,
-        );
-
-        if let Err(err) = setup_result {
-            let _ = teardown_terminal_session(&mut stdout, capabilities);
-            return Err(err);
-        }
-        terminal_session.record_setup(
-            true,
-            capabilities.alternate_screen,
-            capabilities.bracketed_paste,
-        );
-    }
+    let mut restore_guard = crate::terminal::session::Session::enter(skip_alternate_screen)
+        .context("failed to set up terminal")?;
+    let stdout = std::io::stdout();
 
     let clipboard_warning_required =
         crate::terminal::startup_diagnostics::clipboard_warning_required(
-            terminal_session.context,
+            terminal_profile.context,
             is_ssh_session(),
         );
     apply_startup_capability_notice(&mut app, clipboard_warning_required);
@@ -642,7 +417,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         std::env::var("COLORTERM").ok().as_deref(),
         std::env::var("TERM").ok().as_deref(),
     ));
-    app.set_glyph_mode(terminal_session.matrix.classified_by().glyph_mode());
+    app.set_glyph_mode(terminal_profile.matrix.classified_by().glyph_mode());
     let reduced_motion = std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_some()
         || reduced_motion_from_env(std::env::var("HARNESS_TUI_REDUCED_MOTION").ok().as_deref());
     app.set_reduced_motion(reduced_motion);
@@ -655,8 +430,6 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     let presentation_clock = presentation_session
         .as_ref()
         .map_or_else(PresentationClock::new, PresentationTelemetrySession::clock);
-
-    let mut restore_guard = TerminalRestoreGuard::new(capabilities);
 
     let (mut frame_output, frame_writer, frame_receiver) =
         FrameOutput::bounded_with_clock(FRAME_OUTPUT_QUEUE_CAPACITY, presentation_clock);
@@ -683,8 +456,8 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             invert_scroll.as_deref(),
         );
         let scroll_config = ScrollNormalizerConfig::for_terminal(
-            terminal_session.context.brand,
-            terminal_session.context.multiplexer,
+            terminal_profile.context.brand,
+            terminal_profile.context.multiplexer,
         )
         .with_overrides(scroll_overrides);
         let mut scroll_normalizer = ScrollNormalizer::new(scroll_config);
@@ -884,7 +657,6 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 event,
                 &mut app,
                 &mut terminal,
-                &mut terminal_session,
                 &mut experience,
                 &mut pacer,
                 &mut presenter,
@@ -903,7 +675,6 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         event: event::TuiEvent,
         app: &mut AppState,
         terminal: &mut Terminal<FrameOutputBackend>,
-        terminal_session: &mut ProductionTerminalSession,
         experience: &mut RuntimeExperience,
         mut pacer: &mut RuntimePacer,
         mut presenter: &mut Presenter,
@@ -1068,14 +839,10 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             }
             event::TuiEvent::Resize(_, _) => true,
             event::TuiEvent::FocusGained => {
-                terminal_session.set_focus(true);
-                terminal_session.restore();
                 experience.set_focus(true, terminal.backend_mut());
                 true
             }
             event::TuiEvent::FocusLost => {
-                terminal_session.set_focus(false);
-                terminal_session.suspend();
                 experience.set_focus(false, terminal.backend_mut());
                 true
             }
@@ -1108,9 +875,10 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
     if let Some(session) = presentation_session.as_mut() {
         if let Some(demand) = session.take_render_demand() {
-            session
+            let recorded = session
                 .record_no_visible_change(&demand)
-                .context("failed to close unpresented shutdown demand")?;
+                .context("failed to close unpresented shutdown demand");
+            run_result = run_result.and(recorded);
         }
     }
     if terminal_reader.stop_and_join().is_err() && run_result.is_ok() {
@@ -1137,35 +905,34 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     drop(frame_output);
     let writer_result = writer_worker.join();
     if let Some(session) = presentation_session.take() {
-        session
+        let finished = session
             .finish()
-            .context("failed to persist local presentation telemetry")?;
+            .context("failed to persist local presentation telemetry");
+        run_result = run_result.and(finished);
     }
     if let Some(session) = scheduling_session.take() {
-        session
+        let finished = session
             .finish()
-            .context("failed to persist local scheduling telemetry")?;
+            .context("failed to persist local scheduling telemetry");
+        run_result = run_result.and(finished);
     }
-    let mut stdout = writer_result.context("terminal frame writer failed")?;
-    crossterm::execute!(stdout, Show).context("failed to restore terminal cursor after TUI")?;
+    if let Err(error) = writer_result {
+        run_result = run_result.and(Err(error).context("terminal frame writer failed"));
+    }
+    let mut stdout = std::io::stdout();
+    let shown =
+        crossterm::execute!(stdout, Show).context("failed to restore terminal cursor after TUI");
+    run_result = run_result.and(shown);
     experience.cleanup(&mut stdout);
 
     if run_result.is_ok() && preserve_terminal_on_exit {
-        *recover_mutex_lock(preserved_terminal_session()) = PreservedTerminalSession {
-            active: true,
-            capabilities,
-            buffer: None,
-        };
-        restore_guard.mark_restored();
+        restore_guard.preserve();
         return run_result;
     }
-
-    *recover_mutex_lock(preserved_terminal_session()) = PreservedTerminalSession::default();
-    teardown_terminal_session(&mut stdout, capabilities)?;
-    terminal_session.finish();
-    restore_guard.mark_restored();
-
-    run_result
+    let restored = restore_guard
+        .finish(&mut stdout)
+        .context("failed to restore terminal");
+    run_result.and(restored)
 }
 
 fn expire_quit_confirmation(
@@ -1350,53 +1117,6 @@ fn apply_runtime_wake(
             return Err(anyhow::anyhow!("terminal ingress reader disconnected"))
         }
         RuntimeWake::Terminal(_) | RuntimeWake::Deadline => {}
-    }
-    Ok(())
-}
-
-pub fn close_preserved_terminal_session() -> Result<()> {
-    let preserved = std::mem::take(&mut *recover_mutex_lock(preserved_terminal_session()));
-    if !preserved.active {
-        return Ok(());
-    }
-
-    // This handoff is intentionally process-global and stdout-backed: the startup launcher
-    // preserves the active terminal long enough for the next TUI invocation in the same process
-    // to reuse it, and the interactive workflow closes it after the handoff completes or fails.
-    let mut stdout = std::io::stdout();
-    teardown_terminal_session(&mut stdout, preserved.capabilities)
-}
-
-fn teardown_terminal_session(
-    writer: &mut impl std::io::Write,
-    capabilities: TerminalCapabilityState,
-) -> Result<()> {
-    let plan = capabilities.teardown_plan();
-
-    if plan.disable_raw_mode {
-        crossterm::terminal::disable_raw_mode()
-            .context("failed to disable terminal raw mode after TUI")?;
-    }
-
-    if plan.disable_mouse_capture {
-        crossterm::execute!(writer, DisableMouseCapture)
-            .context("failed to disable mouse capture after TUI")?;
-    }
-    if plan.disable_bracketed_paste {
-        crossterm::execute!(writer, DisableBracketedPaste)
-            .context("failed to disable bracketed paste after TUI")?;
-    }
-    if plan.disable_focus_change {
-        crossterm::execute!(writer, DisableFocusChange)
-            .context("failed to disable focus change reporting after TUI")?;
-    }
-    if plan.pop_keyboard_enhancement {
-        crossterm::execute!(writer, PopKeyboardEnhancementFlags)
-            .context("failed to pop keyboard enhancement flags after TUI")?;
-    }
-    if plan.leave_alternate_screen {
-        crossterm::execute!(writer, crossterm::terminal::LeaveAlternateScreen)
-            .context("failed to leave alternate screen after TUI")?;
     }
     Ok(())
 }
@@ -2112,190 +1832,6 @@ mod tests {
     }
 
     #[test]
-    fn terminal_restore_guard_marks_restored_on_normal_teardown() {
-        // arrange
-        let mut guard = TerminalRestoreGuard::new(TerminalCapabilityState::present());
-        assert!(!guard.restored());
-        // act
-        guard.mark_restored();
-        // assert
-        assert!(guard.restored());
-    }
-
-    #[test]
-    fn terminal_capability_state_absent_disables_all_features() {
-        // arrange
-        let caps = TerminalCapabilityState::absent();
-        // assert
-        assert_eq!(
-            caps,
-            TerminalCapabilityState {
-                keyboard_enhancement: false,
-                truecolor: false,
-                bracketed_paste: false,
-                mouse_capture: false,
-                osc52_clipboard: false,
-                alternate_screen: false,
-                focus_reporting: false,
-            }
-        );
-        // act
-        let plan = caps.teardown_plan();
-        // assert
-        assert!(plan.disable_raw_mode);
-        assert!(!plan.disable_mouse_capture);
-        assert!(!plan.disable_bracketed_paste);
-        assert!(!plan.disable_focus_change);
-        assert!(!plan.pop_keyboard_enhancement);
-        assert!(plan.leave_alternate_screen);
-    }
-
-    #[test]
-    fn terminal_capability_state_present_enables_core_features() {
-        // arrange — present path (kitty keyboard / truecolor / paste / mouse / OSC52)
-        let present = TerminalCapabilityState::present();
-        // assert present detection
-        assert!(present.keyboard_enhancement);
-        assert!(present.truecolor);
-        assert!(present.bracketed_paste);
-        assert!(present.mouse_capture);
-        assert!(present.osc52_clipboard);
-        assert!(present.alternate_screen);
-        assert!(present.focus_reporting);
-
-        // act — present teardown restores only features that were enabled
-        let present_plan = present.teardown_plan();
-        // assert present teardown
-        assert!(present_plan.disable_raw_mode);
-        assert!(present_plan.disable_mouse_capture);
-        assert!(present_plan.disable_bracketed_paste);
-        assert!(present_plan.disable_focus_change);
-        assert!(present_plan.pop_keyboard_enhancement);
-        assert!(present_plan.leave_alternate_screen);
-    }
-
-    #[test]
-    fn terminal_capability_state_absent_preserves_fallback_teardown() {
-        // arrange — absent fallback path (no enhanced capabilities)
-        let absent = TerminalCapabilityState::absent();
-        // assert absent detection (safe degradation)
-        assert!(!absent.keyboard_enhancement);
-        assert!(!absent.truecolor);
-        assert!(!absent.bracketed_paste);
-        assert!(!absent.mouse_capture);
-        assert!(!absent.osc52_clipboard);
-        assert!(!absent.alternate_screen);
-        assert!(!absent.focus_reporting);
-
-        // act — absent teardown must not disable features that were never enabled
-        let absent_plan = absent.teardown_plan();
-        // assert absent fallback teardown
-        assert!(absent_plan.disable_raw_mode);
-        assert!(!absent_plan.disable_mouse_capture);
-        assert!(!absent_plan.disable_bracketed_paste);
-        assert!(!absent_plan.pop_keyboard_enhancement);
-        assert!(absent_plan.leave_alternate_screen);
-    }
-
-    #[test]
-    fn terminal_capability_state_partial_preserves_successful_setup() {
-        // arrange — partial capability path (keyboard+paste+alt ok; mouse failed)
-        let partial = apply_interactive_setup_results(
-            TerminalCapabilityState {
-                truecolor: true,
-                osc52_clipboard: false,
-                ..TerminalCapabilityState::absent()
-            },
-            true,
-            true,
-            false,
-            true,
-            false,
-        );
-        // assert partial: only successfully applied features are sticky
-        assert!(partial.keyboard_enhancement);
-        assert!(partial.truecolor);
-        assert!(partial.bracketed_paste);
-        assert!(!partial.mouse_capture);
-        assert!(!partial.osc52_clipboard);
-        assert!(partial.alternate_screen);
-        assert!(!partial.focus_reporting);
-        let partial_plan = partial.teardown_plan();
-        assert!(partial_plan.pop_keyboard_enhancement);
-        assert!(!partial_plan.disable_mouse_capture);
-        assert!(partial_plan.disable_bracketed_paste);
-    }
-
-    #[test]
-    fn terminal_restore_guard_carries_capability_state() {
-        // arrange
-        let caps = apply_interactive_setup_results(
-            TerminalCapabilityState {
-                truecolor: true,
-                osc52_clipboard: false,
-                ..TerminalCapabilityState::absent()
-            },
-            true,
-            true,
-            false,
-            true,
-            false,
-        );
-        // act
-        let guard = TerminalRestoreGuard::new(caps);
-        // assert
-        assert_eq!(guard.capabilities(), caps);
-        assert!(guard.capabilities().keyboard_enhancement);
-        assert!(guard.capabilities().bracketed_paste);
-        assert!(!guard.capabilities().mouse_capture);
-        assert!(guard.capabilities().alternate_screen);
-        assert!(guard.capabilities().truecolor);
-        assert!(!guard.capabilities().osc52_clipboard);
-    }
-
-    #[test]
-    fn partial_setup_failure_keeps_only_successfully_enabled_capabilities() {
-        // arrange
-        let base = TerminalCapabilityState {
-            truecolor: true,
-            osc52_clipboard: true,
-            ..TerminalCapabilityState::absent()
-        };
-        // act
-        let caps = apply_interactive_setup_results(base, true, true, false, true, false);
-
-        // assert
-        assert!(caps.keyboard_enhancement);
-        assert!(caps.bracketed_paste);
-        assert!(!caps.mouse_capture);
-        assert!(caps.alternate_screen);
-        assert!(caps.truecolor);
-        assert!(caps.osc52_clipboard);
-
-        // act
-        let plan = caps.teardown_plan();
-        // assert
-        assert!(plan.pop_keyboard_enhancement);
-        assert!(plan.disable_bracketed_paste);
-        assert!(!plan.disable_mouse_capture);
-        assert!(plan.leave_alternate_screen);
-        assert!(plan.disable_raw_mode);
-    }
-
-    #[test]
-    fn truecolor_detection_accepts_colorterm_truecolor_and_24bit() {
-        // arrange (no setup needed)
-        // act (function calls below)
-        // assert
-        assert!(truecolor_from_colorterm(Some("truecolor")));
-        assert!(truecolor_from_colorterm(Some("24bit")));
-        assert!(truecolor_from_colorterm(Some("TRUECOLOR")));
-        assert!(!truecolor_from_colorterm(Some("")));
-        assert!(!truecolor_from_colorterm(Some("xterm-256color")));
-        assert!(!truecolor_from_colorterm(None));
-    }
-
-    #[test]
     fn reduced_motion_override_accepts_only_explicit_enabled_values() {
         assert!(reduced_motion_from_env(Some("1")));
         assert!(reduced_motion_from_env(Some("true")));
@@ -2304,16 +1840,5 @@ mod tests {
         assert!(!reduced_motion_from_env(Some("0")));
         assert!(!reduced_motion_from_env(Some("false")));
         assert!(!reduced_motion_from_env(None));
-    }
-
-    #[test]
-    fn terminal_restore_guard_mark_restored_skips_drop_teardown_path() {
-        // arrange
-        let mut guard = TerminalRestoreGuard::new(TerminalCapabilityState::present());
-        // act
-        guard.mark_restored();
-        // assert
-        assert!(guard.restored());
-        drop(guard);
     }
 }

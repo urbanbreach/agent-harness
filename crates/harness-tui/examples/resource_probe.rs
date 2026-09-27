@@ -8,7 +8,7 @@ use harness_tui::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scenario = std::env::args().nth(1).unwrap_or_else(|| "idle".into());
     let (sender, update_rx) = live_update_channel();
-    let mode = if scenario == "idle" {
+    let mode = if matches!(scenario.as_str(), "idle" | "handoff_failure") {
         TuiMode::Replay {
             run_dir: std::env::current_dir()?,
             events: Vec::new(),
@@ -53,9 +53,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         on_ui_intent: None,
         keybindings: None,
         toggles: None,
-        preserve_terminal_on_exit: false,
+        preserve_terminal_on_exit: scenario == "handoff_failure",
         skip_alternate_screen: false,
     })?;
+    if scenario == "handoff_failure" {
+        std::env::set_var(
+            "HARNESS_TUI_PRESENTATION_TRACE",
+            std::env::var_os("HARNESS_RESTORE_TRACE").ok_or("missing injected trace path")?,
+        );
+        run_tui_with_options(TuiOptions {
+            mode: TuiMode::Replay {
+                run_dir: std::env::current_dir()?,
+                events: Vec::new(),
+            },
+            exit_on_finish: false,
+            on_ui_intent: None,
+            keybindings: None,
+            toggles: None,
+            preserve_terminal_on_exit: false,
+            skip_alternate_screen: false,
+        })?;
+    }
     if let Some(worker) = worker {
         let _ = worker.join();
     }

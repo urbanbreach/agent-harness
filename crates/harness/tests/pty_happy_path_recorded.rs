@@ -101,7 +101,8 @@ fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_
             "permission approval",
             "tool call",
             "edit",
-            "resume picker",
+            "resume picker and terminal handoff",
+            "resumed submission and response",
             "quit"
         ],
         "runs": {
@@ -120,7 +121,7 @@ fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_
     fs::write(
         &summary_path,
         format!(
-            "# TUI PTY happy-path recording\n\n- lane: signoff-pty\n- manifest: {}\n- prompt events: {}\n- scenario events: {}\n- covered: start, prompt, permission approval, tool call, edit, resume picker, quit\n",
+            "# TUI PTY happy-path recording\n\n- lane: signoff-pty\n- manifest: {}\n- prompt events: {}\n- scenario events: {}\n- covered: start, prompt, permission approval, tool call, edit, resume handoff, resumed response, quit\n",
             manifest_path.display(),
             prompt_events_artifact.display(),
             scenario_events_artifact.display()
@@ -258,6 +259,43 @@ fn record_resume_picker_and_quit(session_dir: &Path) -> serde_json::Value {
     screens.push(helper.wait_until_absent("↑↓ nav", "resume picker dismissed"));
     pty_phase("resume:wait_composer_return");
     screens.push(helper.wait_for("❯", "composer focus after picker dismiss"));
+    pty_phase("resume:handoff");
+    helper.write_text("/sessions");
+    helper.send_key(b'\r');
+    screens.push(helper.wait_for("↑↓ nav", "resume picker reopened"));
+    assert!(helper.parser.screen().alternate_screen());
+    helper.send_key(b'\r');
+    screens.push(helper.wait_for("Hello world", "saved session entered"));
+    assert!(
+        helper.parser.screen().alternate_screen(),
+        "handoff left alternate screen"
+    );
+    assert!(
+        helper.parser.screen().bracketed_paste(),
+        "handoff disabled paste"
+    );
+    helper.write_text("Continued from PTY");
+    screens.push(helper.wait_for("Continued from PTY", "resumed draft"));
+    helper.send_key(b'\r');
+    let events_path = newest_run_dir(session_dir)
+        .unwrap_or_abort()
+        .join("events.jsonl");
+    let deadline = Instant::now() + MARKER_TIMEOUT;
+    loop {
+        let events = fs::read_to_string(&events_path).unwrap_or_default();
+        if events
+            .matches("\"event_type\":\"assistant_message_finished\"")
+            .count()
+            >= 2
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "resumed provider did not finish");
+        if let Ok(chunk) = helper.output_rx.recv_timeout(READ_POLL_TIMEOUT) {
+            helper.parser.process(&chunk);
+        }
+    }
+    screens.push(helper.wait_for("Hello world", "resumed response"));
     pty_phase("resume:quit");
     quit_helper(&mut helper, &mut screens);
     pty_phase("resume:wait_success");
@@ -265,7 +303,7 @@ fn record_resume_picker_and_quit(session_dir: &Path) -> serde_json::Value {
     pty_phase("resume:done");
 
     json!({
-        "stage": "resume_picker_and_quit",
+        "stage": "resume_handoff_and_quit",
         "command": format!("harness tui --mock --session-dir {}", session_dir.display()),
         "screens": screens,
     })
@@ -339,6 +377,22 @@ impl SpawnedHarness {
             match self.child.try_wait() {
                 Ok(Some(status)) => {
                     assert!(status.success(), "{label} exited with {status:?}");
+                    while let Ok(chunk) = self.output_rx.recv_timeout(READ_POLL_TIMEOUT) {
+                        self.parser.process(&chunk);
+                    }
+                    let restored = !self.parser.screen().alternate_screen()
+                        && !self.parser.screen().bracketed_paste();
+                    assert!(
+                        restored
+                            || (label == "scenario PTY child"
+                                && std::env::var_os("HARNESS_TUI_RECORD_REFERENCE_DEFECTS")
+                                    .is_some()),
+                        "{label} left terminal modes active"
+                    );
+                    assert!(
+                        !self.parser.screen().hide_cursor(),
+                        "{label} left cursor hidden"
+                    );
                     return;
                 }
                 Ok(None) => {}

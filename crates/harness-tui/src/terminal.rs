@@ -18,6 +18,7 @@ pub mod key;
 pub mod lifecycle;
 pub mod multiplexer;
 pub mod presenter;
+pub(crate) mod session;
 pub(crate) mod startup_diagnostics;
 pub mod unicode_width;
 pub mod writer;
@@ -53,16 +54,12 @@ pub use writer::{
     SyncFrameGuard, SynchronizedWriter, BEGIN_SYNCHRONIZED_UPDATE, END_SYNCHRONIZED_UPDATE,
 };
 
-pub(crate) struct ProductionTerminalSession {
+pub(crate) struct TerminalProfile {
     pub context: TerminalContext,
-    pub capabilities: TerminalCapabilityLeaf,
     pub matrix: CapabilityMatrix,
-    pub lifecycle: TerminalLifecycle,
-    pub focused: bool,
-    pub suspended: bool,
 }
 
-impl ProductionTerminalSession {
+impl TerminalProfile {
     pub fn negotiate() -> Self {
         let env = TerminalEnv {
             term_program: std::env::var("TERM_PROGRAM").ok(),
@@ -87,11 +84,6 @@ impl ProductionTerminalSession {
         };
         let is_tty = std::io::stdout().is_terminal();
         let context = TerminalContext::probe(&env, is_tty);
-        let color_mode = ColorMode::from_env(
-            std::env::var("COLORTERM").ok().as_deref(),
-            env.term.as_deref(),
-        );
-        let capabilities = context.resolve(color_mode);
         let classifier = CapabilityClassifier::new(
             env.term.clone().unwrap_or_default(),
             env.term_program.clone().unwrap_or_default(),
@@ -107,59 +99,7 @@ impl ProductionTerminalSession {
         );
         Self {
             context,
-            capabilities,
             matrix: CapabilityMatrix::new(classifier),
-            lifecycle: TerminalLifecycle::new(),
-            focused: true,
-            suspended: false,
         }
-    }
-
-    pub fn record_setup(&mut self, raw_mode: bool, alternate_screen: bool, paste: bool) {
-        let lifecycle_caps = TerminalCapabilities {
-            raw_mode,
-            alternate_screen,
-            synchronized_output: true,
-            bracketed_paste: paste,
-        };
-        if raw_mode {
-            let _ = self.lifecycle.enter_raw_mode(&lifecycle_caps);
-        }
-        if alternate_screen {
-            let _ = self
-                .lifecycle
-                .enter_alternate_screen(&lifecycle_caps, AltScreenMode::Always);
-        }
-        let _ = self.lifecycle.enable_synchronized_output(&lifecycle_caps);
-        if paste {
-            let _ = self.lifecycle.enable_bracketed_paste(&lifecycle_caps);
-        }
-    }
-
-    pub fn set_focus(&mut self, focused: bool) {
-        self.focused = focused;
-        self.suspended = !focused;
-    }
-
-    pub fn suspend(&mut self) {
-        self.suspended = true;
-    }
-
-    pub fn restore(&mut self) {
-        self.suspended = false;
-    }
-
-    pub fn finish(&mut self) {
-        if self.lifecycle.is_bracketed_paste_active() {
-            let _ = self.lifecycle.disable_bracketed_paste();
-        }
-        if self.lifecycle.is_synchronized_active() {
-            let _ = self.lifecycle.disable_synchronized_output();
-        }
-        if self.lifecycle.is_raw_mode_active() {
-            let _ = self.lifecycle.exit_raw_mode();
-        }
-        self.lifecycle.leave_alternate_screen();
-        self.suspended = false;
     }
 }

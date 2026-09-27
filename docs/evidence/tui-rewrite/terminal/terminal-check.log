@@ -1,0 +1,31 @@
+    Checking tokio v1.52.3
+    Checking string_cache v0.9.0
+    Checking landlock v0.4.7
+    Checking plist v1.10.1
+    Checking zbus v5.16.0
+    Checking web_atoms v0.2.6
+    Checking syntect v5.3.0
+    Checking markup5ever v0.38.0
+    Checking html5ever v0.38.0
+    Checking xml5ever v0.38.0
+    Checking markup5ever_rcdom v0.38.0+unofficial
+    Checking two-face v0.4.5
+    Checking htmd v0.5.5
+    Checking tokio-util v0.7.18
+    Checking hyper v1.10.1
+    Checking tower v0.5.3
+    Checking async-compression v0.4.48
+    Checking tokio-rustls v0.26.4
+    Checking tower-http v0.6.11
+    Checking tokio-stream v0.1.18
+    Checking hyper-util v0.1.20
+    Checking hyper-rustls v0.27.9
+    Checking reqwest v0.13.5
+    Checking harness-providers v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-providers)
+    Checking rmcp v3.4.1
+    Checking harness-core v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-core)
+    Checking harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Checking harness-tools v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tools)
+    Checking harness-testkit v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-testkit)
+    Checking harness v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 37.09s

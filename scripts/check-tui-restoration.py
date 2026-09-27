@@ -27,12 +27,13 @@ def check(binary, scenario):
     with tempfile.TemporaryDirectory(prefix="harness-restore-") as root:
         env = {key: os.environ[key] for key in ("PATH", "HOME", "USER", "LANG") if key in os.environ}
         env.update(TERM="xterm-256color", COLORTERM="truecolor", HARNESS_DISABLE_ANIMATIONS="1")
-        if scenario == "telemetry_failure":
+        if scenario in ("telemetry_failure", "handoff_failure"):
             blocker = Path(root) / "not-a-directory"
             blocker.write_text("fixture\n")
-            env["HARNESS_TUI_PRESENTATION_TRACE"] = str(blocker / "trace.json")
+            key = "HARNESS_RESTORE_TRACE" if scenario == "handoff_failure" else "HARNESS_TUI_PRESENTATION_TRACE"
+            env[key] = str(blocker / "trace.json")
         with open("/dev/full", "wb", buffering=0) as full:
-            child = subprocess.Popen([str(binary), "idle"], stdin=slave,
+            child = subprocess.Popen([str(binary), "handoff_failure" if scenario == "handoff_failure" else "idle"], stdin=slave,
                 stdout=full if scenario == "output_failure" else slave, stderr=slave,
                 cwd=root, env=env, preexec_fn=attach_terminal)
             start = time.monotonic()
@@ -43,7 +44,7 @@ def check(binary, scenario):
                         raise RuntimeError(f"{scenario}: child failed to exit")
                     if select.select([master], [], [], .01)[0]:
                         raw.extend(os.read(master, 65536))
-                    if scenario == "normal" and not sent and b"\x1b[?2026l" in raw:
+                    if scenario in ("normal", "handoff_failure") and not sent and b"\x1b[?2026l" in raw:
                         os.write(master, b"\x11\x11")
                         sent = True
                 while select.select([master], [], [], 0)[0]:
@@ -73,7 +74,7 @@ def main():
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     reports = []
-    for scenario in ("normal", "telemetry_failure", "output_failure"):
+    for scenario in ("normal", "telemetry_failure", "output_failure", "handoff_failure"):
         result, raw = check(args.binary.resolve(), scenario)
         reports.append(result)
         (args.output / f"{scenario}.ansi").write_bytes(raw)
@@ -83,6 +84,9 @@ def main():
     assert all(reports[0]["protocol_exit"].values())
     if not args.record_reference_defects:
         assert all(result["termios_restored"] for result in reports), "terminal restoration failed"
+        assert all(result["exit_code"] != 0 for result in reports[1:]), "failure injection did not fail"
+        for result in (reports[1], reports[3]):
+            assert all(result["protocol_exit"].values()), "initialization failure left terminal protocols active"
 
 
 if __name__ == "__main__":
