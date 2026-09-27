@@ -1,0 +1,16 @@
+{
+  "before_commit": "584c7251d86559a81e659b1b0df47e8e1b95984c",
+  "before_stop_probe": "apply before-fixture.patch, then build rewrite_probe with the unmodified predecessor production source",
+  "browser_fixture_identical": true,
+  "resource_fixture_difference": "candidate adds an unused handoff scenario; measured idle branches and inputs are identical",
+  "files": {
+    "resource_probe.rs": {
+      "before_tracked_sha256": "e26b8b1d13ee955390a36a4a9863c39b276eed7232be51d5b44c55a550b816f1",
+      "current_sha256": "20652c2e7f0a487d8ec9e91b99e3cb407bb2ea297afa81e5c062e898ebbb40fb"
+    },
+    "rewrite_probe.rs": {
+      "before_tracked_sha256": "c4cf6da4e4cc06f10fe54101c7913b054cb7db0e41e14a22ce3f682c95c07c24",
+      "current_sha256": "b0d55857b23f02a201abe40b20ba8bf118a2a8b35a9228fe8887fcffbf1a281f"
+    }
+  }
+}

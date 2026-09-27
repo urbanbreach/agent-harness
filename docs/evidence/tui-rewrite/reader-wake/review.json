@@ -1,0 +1,36 @@
+{
+  "reviewer": "/root/tui_review",
+  "reviewed_at": "2026-09-27T20:53:32.080831+00:00",
+  "decision": "approved",
+  "scope": "bounded Unix terminal reader wake and joined shutdown",
+  "whole_rewrite_signoff": false,
+  "blocking_findings": [],
+  "source_patch_sha256": "d3213ffbded78782b5db74e97e65e9152de6a37e6459de1a421ecde0fc4fefba",
+  "vendor_patch_sha256": "c32bc6dc4d607bae37e4d779eeccc2c897550631294f13714d3d1c1293edd18a",
+  "verified": {
+    "artifact_hashes_before_review_receipt": 73,
+    "source_hashes": 75,
+    "browser_latency_gates": 6,
+    "browser_runs_restored_and_cleaned": 7,
+    "elapsed_clock_changed_cells": 2,
+    "elapsed_clock_changed_rgba_pixels": 176,
+    "candidate_workspace_failures_reproduced_before": 20,
+    "isolated_cli_failures_match": 5
+  },
+  "review_statement": "Approved for committing this bounded Unix reader slice. No remaining blocking findings. Source/vendor patches, executable receipts, raw measurements, screenshot exception, ownership checks and pre-existing workspace failures verified. This approval does not establish completion of the broader rewrite.",
+  "resolved_findings": [
+    "Rejected the finite outer parser drain because it could strand privately buffered input.",
+    "Allocate the wake pipe before SIGWINCH registration so failed setup does not retain a signal action.",
+    "Capture hangup stderr and require a typed reader error with normal error exit.",
+    "Cap fixture quit bursts so a teardown frame is not mistaken for another session.",
+    "Retain and explain the two elapsed-clock digit differences; do not replace raw captures."
+  ],
+  "remaining": [
+    "50% source reduction and remaining state/text implementation replacement",
+    "sustained runtime CPU targets and long-duration resources",
+    "original startup animation cadence discrepancy",
+    "five stale CLI fixture failures with isolated configuration",
+    "non-Unix timed reader and unverified other platforms",
+    "full feature, live-provider and legacy-removal review"
+  ]
+}

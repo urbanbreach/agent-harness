@@ -1,0 +1,65 @@
+{
+  "before": {
+    "summary": [
+      "     Summary [  10.492s] 1949 tests run: 1927 passed (8 slow), 22 failed, 8 skipped"
+    ],
+    "failures": [
+      "harness tui::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login",
+      "harness tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection",
+      "harness tui::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog",
+      "harness tui::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state",
+      "harness tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection",
+      "harness-tui::p1_03_pty_recorded artifact_guard_test::p1_03_artifact_root_rejects_unsanctioned_canonical_roots",
+      "harness-tui::p1_04_pty_recorded artifact_guard_test::p1_04_artifact_root_rejects_unsanctioned_canonical_roots",
+      "harness::archives archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_files",
+      "harness::operators agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_credentials",
+      "harness::rewind saved_snapshot_rewind_validates_before_writes_and_keeps_the_journal_unchanged",
+      "harness::run scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace",
+      "harness::sessions session_branch_import_and_recovery_keep_source_history_intact",
+      "harness::sessions session_navigation_filters_pages_and_reports_corruption_without_writing",
+      "harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_explicit_launch_reuses_no_config_startup",
+      "harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_legacy_tui_alias_reuses_no_config_startup",
+      "harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_without_config_reaches_connect_startup",
+      "harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher",
+      "harness::tui_cli_test tui_impl::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login",
+      "harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection",
+      "harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog",
+      "harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state",
+      "harness::tui_cli_test tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection"
+    ]
+  },
+  "candidate": {
+    "summary": [
+      "     Summary [  10.833s] 1949 tests run: 1929 passed (8 slow), 20 failed, 8 skipped"
+    ],
+    "failures": [
+      "harness tui::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login",
+      "harness tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection",
+      "harness tui::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog",
+      "harness tui::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state",
+      "harness tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection",
+      "harness::archives archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_files",
+      "harness::operators agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_credentials",
+      "harness::rewind saved_snapshot_rewind_validates_before_writes_and_keeps_the_journal_unchanged",
+      "harness::run scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace",
+      "harness::sessions session_branch_import_and_recovery_keep_source_history_intact",
+      "harness::sessions session_navigation_filters_pages_and_reports_corruption_without_writing",
+      "harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_explicit_launch_reuses_no_config_startup",
+      "harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_legacy_tui_alias_reuses_no_config_startup",
+      "harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_without_config_reaches_connect_startup",
+      "harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher",
+      "harness::tui_cli_test tui_impl::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login",
+      "harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection",
+      "harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog",
+      "harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state",
+      "harness::tui_cli_test tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection"
+    ]
+  },
+  "same_failures": false,
+  "candidate_failures_also_fail_before": true,
+  "before_only": [
+    "harness-tui::p1_03_pty_recorded artifact_guard_test::p1_03_artifact_root_rejects_unsanctioned_canonical_roots",
+    "harness-tui::p1_04_pty_recorded artifact_guard_test::p1_04_artifact_root_rejects_unsanctioned_canonical_roots"
+  ],
+  "before_only_explanation": "Two unchanged artifact-root guards reject a checkout under /tmp; the source archive location is inside their sanctioned temporary-root prefix."
+}

@@ -1,0 +1,522 @@
+diff --git c/.gitattributes w/.gitattributes
+index 364cfbae..73fbe4b5 100644
+--- c/.gitattributes
++++ w/.gitattributes
+@@ -4,3 +4,8 @@
+ *.snap -whitespace
+ # Raw terminal and allocator receipts preserve their original spacing.
+ docs/evidence/**/*.log -whitespace
++# Preserve the vendored release's original line endings and spacing.
++vendor/crossterm/** -text -whitespace
++# Raw terminal bytes and unified-diff context are evidence, not formatted prose.
++docs/evidence/tui-rewrite/reader-wake/**/*.ansi -text -diff -whitespace
++docs/evidence/tui-rewrite/reader-wake/*.patch -whitespace
+diff --git c/Cargo.lock w/Cargo.lock
+index c1a6e3fb..2b75f626 100644
+--- c/Cargo.lock
++++ w/Cargo.lock
+@@ -841,14 +841,13 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
+ [[package]]
+ name = "crossterm"
+ version = "0.29.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "d8b9f2e4c67f833b660cdb0a3523065869fb35570177239812ed4c905aeff87b"
+ dependencies = [
+  "bitflags 2.13.0",
+  "crossterm_winapi",
+  "derive_more",
+  "document-features",
+  "filedescriptor",
++ "futures-core",
+  "mio",
+  "parking_lot",
+  "rustix",
+diff --git c/Cargo.toml w/Cargo.toml
+index 8e733198..d56bb46b 100644
+--- c/Cargo.toml
++++ w/Cargo.toml
+@@ -8,11 +8,13 @@ members = [
+     "crates/harness-testkit",
+ ]
+ resolver = "2"
+-exclude = ["vendor/filedescriptor"]
++exclude = ["vendor/filedescriptor", "vendor/crossterm"]
+ 
+ [patch.crates-io]
+ # Keep Crossterm's level-triggered reader from spinning on sub-millisecond waits.
+ filedescriptor = { path = "vendor/filedescriptor" }
++# Expose the existing wake pipe to our owned reader; keep incomplete reads interruptible.
++crossterm = { path = "vendor/crossterm" }
+ 
+ [workspace.package]
+ edition = "2021"
+diff --git c/crates/harness-tui/Cargo.toml w/crates/harness-tui/Cargo.toml
+index aad5db23..04c552b2 100644
+--- c/crates/harness-tui/Cargo.toml
++++ w/crates/harness-tui/Cargo.toml
+@@ -34,6 +34,10 @@ unicode-width = "0.2"
+ vte = "0.15"
+ unicode-segmentation = "1.12"
+ 
++[target.'cfg(unix)'.dependencies]
++# Use the wake pipe, without constructing EventStream or its detached worker.
++crossterm = { workspace = true, features = ["event-stream"] }
++
+ [dev-dependencies]
+ harness-providers = { path = "../harness-providers" }
+ image = { version = "0.25", default-features = false, features = ["png"] }
+diff --git c/crates/harness-tui/examples/resource_probe.rs w/crates/harness-tui/examples/resource_probe.rs
+index 8664485a..da01b228 100644
+--- c/crates/harness-tui/examples/resource_probe.rs
++++ w/crates/harness-tui/examples/resource_probe.rs
+@@ -8,7 +8,7 @@ use harness_tui::{
+ fn main() -> Result<(), Box<dyn std::error::Error>> {
+     let scenario = std::env::args().nth(1).unwrap_or_else(|| "idle".into());
+     let (sender, update_rx) = live_update_channel();
+-    let mode = if matches!(scenario.as_str(), "idle" | "handoff_failure") {
++    let mode = if matches!(scenario.as_str(), "idle" | "handoff" | "handoff_failure") {
+         TuiMode::Replay {
+             run_dir: std::env::current_dir()?,
+             events: Vec::new(),
+@@ -53,14 +53,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+         on_ui_intent: None,
+         keybindings: None,
+         toggles: None,
+-        preserve_terminal_on_exit: scenario == "handoff_failure",
++        preserve_terminal_on_exit: matches!(scenario.as_str(), "handoff" | "handoff_failure"),
+         skip_alternate_screen: false,
+     })?;
+-    if scenario == "handoff_failure" {
+-        std::env::set_var(
+-            "HARNESS_TUI_PRESENTATION_TRACE",
+-            std::env::var_os("HARNESS_RESTORE_TRACE").ok_or("missing injected trace path")?,
+-        );
++    let handoffs = match scenario.as_str() {
++        "handoff" => 3,
++        "handoff_failure" => 1,
++        _ => 0,
++    };
++    for index in 0..handoffs {
++        if scenario == "handoff_failure" {
++            std::env::set_var(
++                "HARNESS_TUI_PRESENTATION_TRACE",
++                std::env::var_os("HARNESS_RESTORE_TRACE").ok_or("missing injected trace path")?,
++            );
++        }
+         run_tui_with_options(TuiOptions {
+             mode: TuiMode::Replay {
+                 run_dir: std::env::current_dir()?,
+@@ -70,7 +77,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+             on_ui_intent: None,
+             keybindings: None,
+             toggles: None,
+-            preserve_terminal_on_exit: false,
++            preserve_terminal_on_exit: index + 1 < handoffs,
+             skip_alternate_screen: false,
+         })?;
+     }
+diff --git c/crates/harness-tui/examples/rewrite_probe.rs w/crates/harness-tui/examples/rewrite_probe.rs
+index 8a155007..7b398ae3 100644
+--- c/crates/harness-tui/examples/rewrite_probe.rs
++++ w/crates/harness-tui/examples/rewrite_probe.rs
+@@ -36,7 +36,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+             }
+             for line in std::io::BufReader::new(stream).lines() {
+                 let value: Value = serde_json::from_str(&line?)?;
+-                let update = if let Some(response) = value.get("rewind_points") {
++                let update = if value.get("stop").and_then(Value::as_bool) == Some(true) {
++                    LiveUpdate::ContinueSession {
++                        run_id: "reader-stop-fixture".to_owned(),
++                        run_dir: PathBuf::new(),
++                        prompt_draft: String::new(),
++                    }
++                } else if let Some(response) = value.get("rewind_points") {
+                     LiveUpdate::RewindPoints {
+                         generation: serde_json::from_value(response["generation"].clone())?,
+                         result: serde_json::from_value(response["result"].clone())?,
+diff --git c/crates/harness-tui/src/input/terminal_reader.rs w/crates/harness-tui/src/input/terminal_reader.rs
+index e9f9ad7d..80fe8220 100644
+--- c/crates/harness-tui/src/input/terminal_reader.rs
++++ w/crates/harness-tui/src/input/terminal_reader.rs
+@@ -53,10 +53,21 @@ pub struct TerminalIngress {
+ pub struct TerminalIngressReader {
+     stop: Sender<()>,
+     join: Option<JoinHandle<()>>,
++    #[cfg(unix)]
++    wake: Option<Receiver<crossterm::event::PollWaker>>,
+ }
+ 
+ impl TerminalIngressReader {
+     pub fn spawn(capacity: usize) -> (Self, TerminalIngress) {
++        #[cfg(unix)]
++        {
++            let (ready, wake) = bounded(1);
++            let (mut reader, ingress) =
++                Self::spawn_with_source(capacity, BlockingCrosstermSource(Some(ready)));
++            reader.wake = Some(wake);
++            (reader, ingress)
++        }
++        #[cfg(not(unix))]
+         Self::spawn_with_source(capacity, CrosstermEventSource)
+     }
+ 
+@@ -80,6 +91,8 @@ impl TerminalIngressReader {
+             Self {
+                 stop: stop_tx,
+                 join: Some(join),
++                #[cfg(unix)]
++                wake: None,
+             },
+             TerminalIngress {
+                 queue: TerminalQueue::new(events_rx),
+@@ -89,11 +102,47 @@ impl TerminalIngressReader {
+     }
+ 
+     pub fn stop_and_join(mut self) -> thread::Result<()> {
++        self.stop_reader()
++    }
++
++    fn stop_reader(&mut self) -> thread::Result<()> {
++        let Some(join) = self.join.take() else {
++            return Ok(());
++        };
+         let _ = self.stop.try_send(());
+-        match self.join.take() {
+-            Some(join) => join.join(),
+-            None => Ok(()),
++        #[cfg(unix)]
++        if let Some(wake) = self.wake.take() {
++            // Setup either publishes the waker or closes this channel on failure.
++            if let Ok(waker) = wake.recv() {
++                let _ = waker.wake();
++            }
+         }
++        join.join()
++    }
++}
++
++impl Drop for TerminalIngressReader {
++    fn drop(&mut self) {
++        let _ = self.stop_reader();
++    }
++}
++
++#[cfg(unix)]
++struct BlockingCrosstermSource(Option<Sender<crossterm::event::PollWaker>>);
++
++#[cfg(unix)]
++impl TerminalEventSource for BlockingCrosstermSource {
++    fn poll(&mut self, _timeout: Duration) -> io::Result<bool> {
++        if let Some(ready) = self.0.take() {
++            ready.send(crossterm::event::poll_waker()?).map_err(|_| {
++                io::Error::new(io::ErrorKind::BrokenPipe, "reader owner disconnected")
++            })?;
++        }
++        crossterm::event::poll_blocking()
++    }
++
++    fn read(&mut self) -> io::Result<Event> {
++        crossterm::event::read()
+     }
+ }
+ 
+diff --git c/crates/harness-tui/tests/terminal_input_reader_test.rs w/crates/harness-tui/tests/terminal_input_reader_test.rs
+index 8d55a4f6..66409142 100644
+--- c/crates/harness-tui/tests/terminal_input_reader_test.rs
++++ w/crates/harness-tui/tests/terminal_input_reader_test.rs
+@@ -11,6 +11,15 @@ use harness_tui::input::{
+ 
+ struct FakeSource {
+     events: VecDeque<io::Result<Event>>,
++    dropped: Option<crossbeam_channel::Sender<()>>,
++}
++
++impl Drop for FakeSource {
++    fn drop(&mut self) {
++        if let Some(dropped) = &self.dropped {
++            let _ = dropped.try_send(());
++        }
++    }
+ }
+ 
+ impl TerminalEventSource for FakeSource {
+@@ -39,6 +48,7 @@ fn ordered_input_filters_non_press_keys_and_preserves_focus_and_paste() {
+     // arrange
+     // act
+     let source = FakeSource {
++        dropped: None,
+         events: VecDeque::from([
+             Ok(key('x', KeyEventKind::Release)),
+             Ok(key('a', KeyEventKind::Press)),
+@@ -64,27 +74,40 @@ fn ordered_input_filters_non_press_keys_and_preserves_focus_and_paste() {
+ 
+ #[test]
+ fn terminal_queue_backpressures_without_drop_and_shutdown_interrupts_full_send() {
+-    // arrange
+-    // act
+-    let events = (0..129)
+-        .map(|_| Ok(key('x', KeyEventKind::Press)))
+-        .collect();
+-    let source = FakeSource { events };
+-    let (reader, mut ingress) = TerminalIngressReader::spawn_with_source(128, source);
+-    let deadline = Instant::now() + Duration::from_millis(50);
+-    while ingress.queue.receiver().len() < 128 && Instant::now() < deadline {
+-        std::thread::yield_now();
++    for drop_owner in [false, true] {
++        // arrange
++        // act
++        let events = (0..129)
++            .map(|_| Ok(key('x', KeyEventKind::Press)))
++            .collect();
++        let (dropped_tx, dropped_rx) = crossbeam_channel::bounded(1);
++        let source = FakeSource {
++            events,
++            dropped: Some(dropped_tx),
++        };
++        let (reader, mut ingress) = TerminalIngressReader::spawn_with_source(128, source);
++        let deadline = Instant::now() + Duration::from_millis(50);
++        while ingress.queue.receiver().len() < 128 && Instant::now() < deadline {
++            std::thread::yield_now();
++        }
++        // assert
++        assert_eq!(ingress.queue.receiver().len(), 128);
++        let started = Instant::now();
++        if drop_owner {
++            drop(reader);
++        } else {
++            reader.stop_and_join().expect("reader joins");
++        }
++        assert!(started.elapsed() < Duration::from_millis(100));
++        dropped_rx
++            .try_recv()
++            .expect("source dropped before join returned");
++        let sequences: Vec<_> = std::iter::from_fn(|| ingress.queue.try_recv().ok())
++            .flat_map(|event| event.source_sequences)
++            .map(|sequence| sequence.get())
++            .collect();
++        assert_eq!(sequences, (1..=128).collect::<Vec<_>>());
+     }
+-    // assert
+-    assert_eq!(ingress.queue.receiver().len(), 128);
+-    let started = Instant::now();
+-    reader.stop_and_join().expect("reader joins");
+-    assert!(started.elapsed() < Duration::from_millis(100));
+-    let sequences: Vec<_> = std::iter::from_fn(|| ingress.queue.try_recv().ok())
+-        .flat_map(|event| event.source_sequences)
+-        .map(|sequence| sequence.get())
+-        .collect();
+-    assert_eq!(sequences, (1..=128).collect::<Vec<_>>());
+ }
+ 
+ #[test]
+@@ -92,6 +115,7 @@ fn reader_failure_is_typed_and_lossless() {
+     // arrange
+     // act
+     let source = FakeSource {
++        dropped: None,
+         events: VecDeque::from([Err(io::Error::other("read defect"))]),
+     };
+     let (reader, ingress) = TerminalIngressReader::spawn_with_source(128, source);
+diff --git c/scripts/check-tui-restoration.py w/scripts/check-tui-restoration.py
+index 65c5a821..d896a2f7 100644
+--- c/scripts/check-tui-restoration.py
++++ w/scripts/check-tui-restoration.py
+@@ -7,6 +7,8 @@ import os
+ from pathlib import Path
+ import pty
+ import select
++import signal
++import socket
+ import struct
+ import subprocess
+ import tempfile
+@@ -19,6 +21,107 @@ def attach_terminal():
+     fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+ 
+ 
++def attach_reader_terminal():
++    attach_terminal()
++    # Exercise reader EOF handling, independently of the default SIGHUP action.
++    signal.signal(signal.SIGHUP, signal.SIG_IGN)
++
++
++def thread_switches(pid):
++    result = {}
++    for task in Path(f"/proc/{pid}/task").iterdir():
++        fields = dict(line.split(":", 1) for line in (task / "status").read_text().splitlines())
++        result[task.name] = int(fields["voluntary_ctxt_switches"])
++    assert result, "thread accounting unavailable"
++    return result
++
++
++def check_reader(binary, scenario):
++    master, slave = pty.openpty()
++    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
++    before = termios.tcgetattr(slave)
++    raw = bytearray()
++    report = {"scenario": scenario}
++    with tempfile.TemporaryDirectory(prefix="harness-reader-") as root:
++        address = str(Path(root) / "control.sock")
++        env = {key: os.environ[key] for key in ("PATH", "HOME", "USER", "LANG") if key in os.environ}
++        env.update(TERM="xterm-256color", COLORTERM="truecolor", HARNESS_DISABLE_ANIMATIONS="1")
++        error_path = Path(root) / "stderr.log"
++        with error_path.open("wb") as errors:
++            child = subprocess.Popen([str(binary), address], stdin=slave, stdout=slave,
++                stderr=errors if scenario == "hangup" else slave,
++                cwd=root, env=env, preexec_fn=attach_reader_terminal)
++        control = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
++
++        def drain(seconds):
++            deadline = time.monotonic() + seconds
++            while time.monotonic() < deadline and child.poll() is None:
++                if select.select([master], [], [], min(.01, max(0, deadline - time.monotonic())))[0]:
++                    raw.extend(os.read(master, 65536))
++
++        try:
++            deadline = time.monotonic() + 5
++            while b"\x1b[?2026l" not in raw and time.monotonic() < deadline:
++                assert child.poll() is None, "reader fixture exited during startup"
++                drain(.01)
++            assert b"\x1b[?2026l" in raw, "reader fixture did not present a frame"
++            control.connect(address)
++            drain(.2)
++            start_switches = thread_switches(child.pid)
++            start_bytes = len(raw)
++            sample_start = time.monotonic()
++            drain(1)
++            sample_seconds = time.monotonic() - sample_start
++            end_switches = thread_switches(child.pid)
++            assert start_switches.keys() == end_switches.keys(), "idle worker set changed"
++            report.update(idle_seconds=sample_seconds,
++                switches_before=start_switches, switches_after=end_switches,
++                idle_switches_per_second={tid: (end_switches[tid] - count) / sample_seconds
++                    for tid, count in start_switches.items()},
++                idle_output_bytes=len(raw) - start_bytes)
++            partial = {"split_utf8": b"\xe2", "unterminated_paste": b"\x1b[200~partial"}.get(scenario)
++            if partial:
++                os.write(master, partial)
++                drain(.1)
++            if scenario == "resize":
++                frame_count = raw.count(b"\x1b[?2026l")
++                fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
++                drain(.5)
++                report["resize_presented"] = raw.count(b"\x1b[?2026l") > frame_count
++            stop_start = time.monotonic()
++            if scenario == "hangup":
++                os.close(master)
++                master = None
++            else:
++                control.sendall(b'{"stop":true}\n')
++            limit = 2 if scenario == "hangup" else 1
++            while child.poll() is None and time.monotonic() - stop_start < limit:
++                if master is None:
++                    time.sleep(.01)
++                else:
++                    drain(.01)
++            report["shutdown_ms"] = (time.monotonic() - stop_start) * 1000
++            report["timed_out"] = child.poll() is None
++            report["exit_code"] = child.poll()
++            if scenario == "hangup":
++                report["stderr"] = error_path.read_text()
++            if master is not None:
++                while select.select([master], [], [], 0)[0]:
++                    raw.extend(os.read(master, 65536))
++                report["termios_restored"] = termios.tcgetattr(slave) == before
++                report["protocol_exit"] = all(sequence in raw for sequence in
++                    (b"\x1b[?1049l", b"\x1b[?2004l", b"\x1b[?1000l"))
++        finally:
++            control.close()
++            if child.poll() is None:
++                child.kill()
++                child.wait()
++            if master is not None:
++                os.close(master)
++            os.close(slave)
++    return report, raw
++
++
+ def check(binary, scenario):
+     master, slave = pty.openpty()
+     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+@@ -33,20 +136,25 @@ def check(binary, scenario):
+             key = "HARNESS_RESTORE_TRACE" if scenario == "handoff_failure" else "HARNESS_TUI_PRESENTATION_TRACE"
+             env[key] = str(blocker / "trace.json")
+         with open("/dev/full", "wb", buffering=0) as full:
+-            child = subprocess.Popen([str(binary), "handoff_failure" if scenario == "handoff_failure" else "idle"], stdin=slave,
++            child = subprocess.Popen([str(binary), scenario if scenario.startswith("handoff") else "idle"], stdin=slave,
+                 stdout=full if scenario == "output_failure" else slave, stderr=slave,
+                 cwd=root, env=env, preexec_fn=attach_terminal)
+             start = time.monotonic()
+-            sent = False
++            sent_frames = 0
++            exits_sent = 0
+             try:
+                 while child.poll() is None:
+                     if time.monotonic() - start > 10:
+                         raise RuntimeError(f"{scenario}: child failed to exit")
+                     if select.select([master], [], [], .01)[0]:
+                         raw.extend(os.read(master, 65536))
+-                    if scenario in ("normal", "handoff_failure") and not sent and b"\x1b[?2026l" in raw:
++                    frames = raw.count(b"\x1b[?2026l")
++                    expected_exits = 4 if scenario == "handoff" else 1
++                    if (scenario in ("normal", "handoff", "handoff_failure")
++                            and exits_sent < expected_exits and frames > sent_frames):
+                         os.write(master, b"\x11\x11")
+-                        sent = True
++                        sent_frames = frames
++                        exits_sent += 1
+                 while select.select([master], [], [], 0)[0]:
+                     raw.extend(os.read(master, 65536))
+                 after = termios.tcgetattr(slave)
+@@ -59,6 +167,7 @@ def check(binary, scenario):
+     flags = lambda attrs: [attrs[index] for index in range(6)]
+     restored = before == after
+     return {"scenario": scenario, "exit_code": child.returncode, "termios_restored": restored,
++            "exits_sent": exits_sent,
+             "flags_before": flags(before), "flags_after": flags(after),
+             "control_chars_restored": before[6] == after[6],
+             "protocol_exit": {"alternate_screen_left": b"\x1b[?1049l" in raw,
+@@ -71,20 +180,41 @@ def main():
+     parser.add_argument("--binary", type=Path, required=True)
+     parser.add_argument("--output", type=Path, required=True)
+     parser.add_argument("--record-reference-defects", action="store_true")
++    parser.add_argument("--live-binary", type=Path, help="also check Linux reader wakeups and joined shutdown")
+     args = parser.parse_args()
+     args.output.mkdir(parents=True, exist_ok=True)
+     reports = []
+-    for scenario in ("normal", "telemetry_failure", "output_failure", "handoff_failure"):
++    for scenario in ("normal", "telemetry_failure", "output_failure", "handoff_failure", "handoff"):
+         result, raw = check(args.binary.resolve(), scenario)
+         reports.append(result)
+         (args.output / f"{scenario}.ansi").write_bytes(raw)
+         print(json.dumps(result), flush=True)
+     (args.output / "restoration.json").write_text(json.dumps(reports, indent=2) + "\n")
++    reader_reports = []
++    if args.live_binary:
++        for scenario in ("idle", "split_utf8", "unterminated_paste", "resize", "hangup"):
++            result, raw = check_reader(args.live_binary.resolve(), scenario)
++            reader_reports.append(result)
++            (args.output / f"reader-{scenario}.ansi").write_bytes(raw)
++            print(json.dumps(result), flush=True)
++        (args.output / "reader.json").write_text(json.dumps(reader_reports, indent=2) + "\n")
+     assert reports[0]["exit_code"] == 0 and reports[0]["termios_restored"]
+     assert all(reports[0]["protocol_exit"].values())
+     if not args.record_reference_defects:
++        for result in reader_reports:
++            assert max(result["idle_switches_per_second"].values()) <= 2, "periodic idle wakeups"
++            assert result["idle_output_bytes"] == 0, "idle redraw"
++            assert not result["timed_out"], "reader shutdown timed out"
++            if result["scenario"] == "hangup":
++                assert result["exit_code"] == 1, "terminal hangup did not return a normal error"
++                assert "terminal event poll failed:" in result["stderr"], "missing typed reader failure"
++            else:
++                assert result["exit_code"] == 0 and result["termios_restored"] and result["protocol_exit"]
++            if result["scenario"] == "resize":
++                assert result["resize_presented"], "resize without input did not redraw"
+         assert all(result["termios_restored"] for result in reports), "terminal restoration failed"
+-        assert all(result["exit_code"] != 0 for result in reports[1:]), "failure injection did not fail"
++        assert all(result["exit_code"] != 0 for result in reports[1:4]), "failure injection did not fail"
++        assert reports[4]["exit_code"] == 0 and reports[4]["exits_sent"] == 4, "preserved handoffs failed"
+         for result in (reports[1], reports[3]):
+             assert all(result["protocol_exit"].values()), "initialization failure left terminal protocols active"
+ 

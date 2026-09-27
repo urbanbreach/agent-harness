@@ -34,6 +34,10 @@ unicode-width = "0.2"
 vte = "0.15"
 unicode-segmentation = "1.12"
 
+[target.'cfg(unix)'.dependencies]
+# Use the wake pipe, without constructing EventStream or its detached worker.
+crossterm = { workspace = true, features = ["event-stream"] }
+
 [dev-dependencies]
 harness-providers = { path = "../harness-providers" }
 image = { version = "0.25", default-features = false, features = ["png"] }

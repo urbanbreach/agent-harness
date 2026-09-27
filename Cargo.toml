@@ -8,11 +8,13 @@ members = [
     "crates/harness-testkit",
 ]
 resolver = "2"
-exclude = ["vendor/filedescriptor"]
+exclude = ["vendor/filedescriptor", "vendor/crossterm"]
 
 [patch.crates-io]
 # Keep Crossterm's level-triggered reader from spinning on sub-millisecond waits.
 filedescriptor = { path = "vendor/filedescriptor" }
+# Expose the existing wake pipe to our owned reader; keep incomplete reads interruptible.
+crossterm = { path = "vendor/crossterm" }
 
 [workspace.package]
 edition = "2021"

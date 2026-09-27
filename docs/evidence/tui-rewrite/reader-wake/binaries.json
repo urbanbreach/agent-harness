@@ -1,0 +1,18 @@
+{
+  "before-resource_probe": {
+    "path": "/tmp/tui-reader-wake/before-resource_probe",
+    "sha256": "193084ee473ee840c4c06e52acca54c77e2a5fe203ef52a824bc5188f954763a"
+  },
+  "before-stop-probe": {
+    "path": "/tmp/tui-reader-wake/before-stop-probe",
+    "sha256": "1d8f7163d86b3fd00d596da61a8f7c4f4c0746d7ac6caf19eeb5bad6da1afaef"
+  },
+  "resource_probe": {
+    "path": "/tmp/tui-reader-wake/resource_probe",
+    "sha256": "95de1f348552021ca712581b968ec4e0efe3ad88d59407a64dc93d59a6269c75"
+  },
+  "rewrite_probe": {
+    "path": "/tmp/tui-reader-wake/rewrite_probe",
+    "sha256": "98a8e27f980bb5c4898fcbfc8f9f06fcc1001538682c61a7737d062d26f7a0ee"
+  }
+}

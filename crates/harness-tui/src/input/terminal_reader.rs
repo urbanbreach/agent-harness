@@ -53,10 +53,21 @@ pub struct TerminalIngress {
 pub struct TerminalIngressReader {
     stop: Sender<()>,
     join: Option<JoinHandle<()>>,
+    #[cfg(unix)]
+    wake: Option<Receiver<crossterm::event::PollWaker>>,
 }
 
 impl TerminalIngressReader {
     pub fn spawn(capacity: usize) -> (Self, TerminalIngress) {
+        #[cfg(unix)]
+        {
+            let (ready, wake) = bounded(1);
+            let (mut reader, ingress) =
+                Self::spawn_with_source(capacity, BlockingCrosstermSource(Some(ready)));
+            reader.wake = Some(wake);
+            (reader, ingress)
+        }
+        #[cfg(not(unix))]
         Self::spawn_with_source(capacity, CrosstermEventSource)
     }
 
@@ -80,6 +91,8 @@ impl TerminalIngressReader {
             Self {
                 stop: stop_tx,
                 join: Some(join),
+                #[cfg(unix)]
+                wake: None,
             },
             TerminalIngress {
                 queue: TerminalQueue::new(events_rx),
@@ -89,11 +102,47 @@ impl TerminalIngressReader {
     }
 
     pub fn stop_and_join(mut self) -> thread::Result<()> {
+        self.stop_reader()
+    }
+
+    fn stop_reader(&mut self) -> thread::Result<()> {
+        let Some(join) = self.join.take() else {
+            return Ok(());
+        };
         let _ = self.stop.try_send(());
-        match self.join.take() {
-            Some(join) => join.join(),
-            None => Ok(()),
+        #[cfg(unix)]
+        if let Some(wake) = self.wake.take() {
+            // Setup either publishes the waker or closes this channel on failure.
+            if let Ok(waker) = wake.recv() {
+                let _ = waker.wake();
+            }
         }
+        join.join()
+    }
+}
+
+impl Drop for TerminalIngressReader {
+    fn drop(&mut self) {
+        let _ = self.stop_reader();
+    }
+}
+
+#[cfg(unix)]
+struct BlockingCrosstermSource(Option<Sender<crossterm::event::PollWaker>>);
+
+#[cfg(unix)]
+impl TerminalEventSource for BlockingCrosstermSource {
+    fn poll(&mut self, _timeout: Duration) -> io::Result<bool> {
+        if let Some(ready) = self.0.take() {
+            ready.send(crossterm::event::poll_waker()?).map_err(|_| {
+                io::Error::new(io::ErrorKind::BrokenPipe, "reader owner disconnected")
+            })?;
+        }
+        crossterm::event::poll_blocking()
+    }
+
+    fn read(&mut self) -> io::Result<Event> {
+        crossterm::event::read()
     }
 }
 
