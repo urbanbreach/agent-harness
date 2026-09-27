@@ -2026,6 +2026,16 @@ mod tests {
                 .map(|position| (position.index, position.total)),
             Some((1, 2))
         );
+
+        app.scroll_goto_bottom();
+        app.handle_key(KeyEvent::new(KeyCode::Char('K'), KeyModifiers::SHIFT));
+        assert_eq!(
+            app.transcript_view
+                .response_position
+                .map(|position| (position.index, position.total)),
+            Some((2, 2)),
+            "manual scrolling resumes navigation from the viewport"
+        );
     }
 
     #[test]

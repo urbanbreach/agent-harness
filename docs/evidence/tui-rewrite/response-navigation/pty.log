@@ -1,0 +1,9 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.92s
+────────────
+ Nextest run ID 943c15b6-9176-414e-9ab8-df36b16aea15 with nextest profile: ci
+    Starting 3 tests across 1 binary
+        SLOW [>  2.000s] (───) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+────────────
+     Summary [   2.766s] 3 tests run: 3 passed (1 slow), 0 skipped
+        SLOW [   2.766s] (3/3) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append

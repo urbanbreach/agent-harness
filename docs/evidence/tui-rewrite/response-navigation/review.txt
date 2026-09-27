@@ -1,0 +1,4 @@
+Independent reviewer: /root/tui_review
+Read-only review: no blocking correctness findings; approval limited to R4.
+Sticky-adjusted viewport identity advances and clamps; manual scrolling falls back to position.
+Suggested manual-scroll coverage was added to the existing keyboard journey and passed. Reviewer did not rerun tests.
