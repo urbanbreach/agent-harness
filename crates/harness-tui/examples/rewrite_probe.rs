@@ -3,7 +3,8 @@
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use harness_core::event::RuntimeEvent;
     use harness_tui::{
-        live_update_channel, run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent,
+        live_update_channel, run_tui_with_options, LiveUpdate, OperatorNoticeLevel, TuiMode,
+        TuiOptions, UiIntent,
     };
     use serde_json::{json, Value};
     use std::{
@@ -45,6 +46,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         generation: serde_json::from_value(response["generation"].clone())?,
                         result: serde_json::from_value(response["result"].clone())?,
                     }
+                } else if let Some(message) = value.get("notice").and_then(Value::as_str) {
+                    LiveUpdate::OperatorNotice {
+                        message: message.to_owned(),
+                        level: OperatorNoticeLevel::Info,
+                    }
                 } else {
                     LiveUpdate::Event(Box::new(serde_json::from_value::<RuntimeEvent>(value)?))
                 };
@@ -75,6 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     generation,
                     request_id,
                 } => json!({"rewind_conversation": generation, "request_id": request_id}),
+                UiIntent::QuitRequested => json!({"quit": true}),
                 _ => return,
             };
             if let Some(stream) = intent_connection

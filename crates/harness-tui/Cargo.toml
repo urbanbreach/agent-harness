@@ -17,7 +17,8 @@ textwrap = { version = "=0.16.2", default-features = false, features = ["unicode
 tree-sitter = "=0.25.10"
 tree-sitter-bash = "=0.25.0"
 tui-scrollbar = "=0.2.2"
-crossterm = { workspace = true, features = ["event-stream"] }
+# The level-triggered reader continues draining input after large terminal bursts.
+crossterm = { workspace = true, features = ["use-dev-tty"] }
 crossbeam-channel.workspace = true
 fuzzy-matcher = "0.3"
 harness-core = { path = "../harness-core" }

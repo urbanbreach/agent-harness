@@ -1,0 +1,51 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 45.00s
+────────────
+ Nextest run ID b6b5f647-2ed2-4965-8ca8-58119e37ec32 with nextest profile: ci
+    Starting 1802 tests across 80 binaries (7 tests and 1 binary skipped, including 5 tests and 1 binary via profile.default.default-filter)
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::context_group_disclosure_preserves_detached_anchor
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::diff_hunk_navigation_advances_and_retreats_between_hunks
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::mouse_click_toggles_apply_patch_file_disclosure
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  4.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  2.000s] (─────────) harness-tui::grok_parity_render_test chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text
+        SLOW [>  2.000s] (─────────) harness-tui::grok_parity_render_test welcome_geometry_and_animation_use_immediate_controls_and_exact_clock
+        SLOW [>  2.000s] (─────────) harness-tui::grok_parity_render_test grok_alignment::all_tool_families_keep_grok_columns_through_streaming_and_disclosure
+        SLOW [>  2.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  6.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  2.000s] (─────────) harness-tui::tool_body_capture_test production_tool_body_captures
+        SLOW [>  2.000s] (─────────) harness-tui::tool_order_capture_test production_ordering_capture
+        SLOW [>  2.000s] (─────────) harness-tui::transcript_block_viewer_test viewer_scroll_is_independent_and_survives_resize_with_anchor_identity
+        SLOW [>  2.000s] (─────────) harness-tui::transcript_incremental_performance_test token_update_touches_one_activity_and_block_after_ten_thousand_settle
+        SLOW [>  2.000s] (─────────) harness-tui::transcript_incremental_performance_test tool_update_touches_one_activity_and_block_after_ten_thousand_settle
+        SLOW [>  4.000s] (─────────) harness-tui::grok_parity_render_test grok_alignment::all_tool_families_keep_grok_columns_through_streaming_and_disclosure
+        SLOW [>  4.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  8.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  4.000s] (─────────) harness-tui::tool_body_capture_test production_tool_body_captures
+        SLOW [>  4.000s] (─────────) harness-tui::transcript_block_viewer_test viewer_scroll_is_independent_and_survives_resize_with_anchor_identity
+        SLOW [>  4.000s] (─────────) harness-tui::transcript_incremental_performance_test token_update_touches_one_activity_and_block_after_ten_thousand_settle
+        SLOW [>  4.000s] (─────────) harness-tui::transcript_incremental_performance_test tool_update_touches_one_activity_and_block_after_ten_thousand_settle
+        SLOW [>  6.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [> 10.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  6.000s] (─────────) harness-tui::tool_body_capture_test production_tool_body_captures
+        SLOW [>  6.000s] (─────────) harness-tui::transcript_block_viewer_test viewer_scroll_is_independent_and_survives_resize_with_anchor_identity
+        SLOW [>  8.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [> 12.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  8.000s] (─────────) harness-tui::tool_body_capture_test production_tool_body_captures
+        SLOW [> 10.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [> 12.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+────────────
+     Summary [  17.809s] 1802 tests run: 1802 passed (13 slow), 7 skipped
+        SLOW [   2.543s] ( 777/1802) harness-tui app::tests::diff_hunk_navigation_advances_and_retreats_between_hunks
+        SLOW [   2.668s] ( 819/1802) harness-tui app::tests::context_group_disclosure_preserves_detached_anchor
+        SLOW [   2.521s] ( 887/1802) harness-tui app::tests::mouse_click_toggles_apply_patch_file_disclosure
+        SLOW [   2.995s] (1793/1802) harness-tui::grok_parity_render_test welcome_geometry_and_animation_use_immediate_controls_and_exact_clock
+        SLOW [   2.898s] (1794/1802) harness-tui::tool_order_capture_test production_ordering_capture
+        SLOW [   3.911s] (1795/1802) harness-tui::grok_parity_render_test chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text
+        SLOW [   4.391s] (1796/1802) harness-tui::grok_parity_render_test grok_alignment::all_tool_families_keep_grok_columns_through_streaming_and_disclosure
+        SLOW [   4.288s] (1797/1802) harness-tui::transcript_incremental_performance_test tool_update_touches_one_activity_and_block_after_ten_thousand_settle
+        SLOW [   4.623s] (1798/1802) harness-tui::transcript_incremental_performance_test token_update_touches_one_activity_and_block_after_ten_thousand_settle
+        SLOW [   6.351s] (1799/1802) harness-tui::transcript_block_viewer_test viewer_scroll_is_independent_and_survives_resize_with_anchor_identity
+        SLOW [   8.391s] (1800/1802) harness-tui::tool_body_capture_test production_tool_body_captures
+        SLOW [  13.945s] (1801/1802) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [  12.684s] (1802/1802) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents

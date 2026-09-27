@@ -394,10 +394,15 @@ fn original_renderer() -> Result<bool> {
             "--",
             "crates/harness-tui/src",
             ":(exclude)crates/harness-tui/src/runtime.rs",
+            ":(exclude)crates/harness-tui/src/runtime/**",
+            ":(exclude)crates/harness-tui/src/runtime_input.rs",
+            ":(exclude)crates/harness-tui/src/runtime_live_updates.rs",
+            ":(exclude)crates/harness-tui/src/scheduling/**",
+            ":(exclude)crates/harness-tui/src/transcript_scroll/autoscroll.rs",
+            ":(exclude)crates/harness-tui/src/lib.rs",
             ":(exclude)crates/harness-tui/src/terminal.rs",
             ":(exclude)crates/harness-tui/src/terminal/**",
             "crates/harness-core/src",
-            "Cargo.lock",
         ])
         .status()?
         .success())

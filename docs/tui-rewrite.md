@@ -208,8 +208,58 @@ The writer-failure checks, four PTY restoration scenarios, resumed CLI journey,
 writer regressions were observed failing before their fixes. Raw results are in
 [`evidence/tui-rewrite/terminal`](evidence/tui-rewrite/terminal).
 The oracle still permits the documented R3 settled-frame comparison while the
-original renderer is unchanged. This is a migration step; the renderer, state
-engine, and event loop still need replacement.
+original renderer is unchanged. This is a migration step; the renderer and state
+engine still need replacement.
+
+## Event loop replacement
+
+The new runtime waits on terminal input, live updates, frame acknowledgements,
+and the next required deadline. Input and live work each have bounded turns;
+submission, resize, and clicks paint before provider work. A completed input
+barrier gives queued live work a turn, then returns to input. Queued input keeps
+its order across that handoff. Idle waits without drawing; animation keeps the
+existing motion deadlines. Wheel batches that change nothing skip rendering.
+
+This replaces the old runtime loop, input dispatcher, pacer, arbiter, presenter,
+and scheduler. Their structural tests are removed; the public cell oracle,
+input/resize/motion PTY journeys, frame-writer behavior, and terminal restoration
+checks remain. The original state engine and renderer are still present during
+this migration and must be replaced before completion.
+
+Review found and corrected acknowledgement/readiness ordering, starvation in
+both directions, prefetched-input ordering, expiry wakes during quit, and final
+write-error precedence. A real PTY/xterm check queues 1,000 clicks, delivers a
+live notice, and then quits. Disabling the live-work handoff delayed that notice
+2,149 ms and failed its 1,000 ms bound.
+
+The same check exposed a separate issue in the unchanged Crossterm Mio reader:
+it could wait in edge-triggered epoll with 2,821 bytes still unread from the TTY.
+Quit keys in that tail never reached the application. Enabling Crossterm's
+existing `use-dev-tty` feature selects its level-triggered reader and fixes the
+burst. The unused `event-stream` feature is removed. No package version changed;
+`filedescriptor` was already locked. This is terminal-adapter compatibility,
+not a coordinator or backend change.
+
+Reproduce the added workflow after building the examples:
+
+```sh
+cargo build -p harness-tui --example rewrite_probe --example resource_probe
+node scripts/qa/measure-rewrite-latency.mjs target/debug/examples/rewrite_probe .omo/evidence/tui-rewrite/runtime --workflow-only
+```
+
+The burst timing is a regression bound in a debug-build workflow, not the final
+release performance comparison. Runtime review does not establish completion
+of the state and renderer rewrite.
+
+Validation passed: 1,802 deterministic TUI tests, including the 539-frame oracle;
+16 native PTY input/Unicode/resize/motion checks; all four restoration scenarios;
+the resumed CLI workflow; scoped all-target Clippy; workspace check; and test-suite
+gates. The independent reviewer found no remaining issues in this runtime slice.
+The final browser workflow delivered the live notice in 64.77 ms and exited
+naturally with terminal modes and fixture resources restored.
+Raw results, ANSI recordings, and the click-burst PNG are published under
+[`evidence/tui-rewrite/runtime`](evidence/tui-rewrite/runtime), with hashes in
+[`files.json`](evidence/tui-rewrite/runtime/files.json).
 
 ## Verification sequence
 

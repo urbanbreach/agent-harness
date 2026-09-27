@@ -1,6 +1,6 @@
 use harness_core::clock::{Clock, FakeClock};
 
-use super::scheduler::active_animation_period_ms;
+use super::active_animation_period_ms;
 use super::FLUSH_DEADLINE_MS;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

@@ -1,1135 +1,436 @@
-// allow: SIZE_OK — TUI runtime loop (poll interval + event dispatch + terminal resize + shutdown handling)
-use crate::UnwrapOrAbort;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+//! Event-driven terminal runtime. State changes precede painting; I/O stays here.
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
-pub use crate::terminal::session::close_preserved_terminal_session;
 use anyhow::{Context, Result};
 use crossterm::cursor::Show;
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-
-use harness_core::event::{EventEnvelopeV1, RuntimeEvent};
 use ratatui::Terminal;
 
-use crate::app::{AppState, LaunchMetadata, SessionHistoryEntry, TogglesConfig, UiIntent};
-use crate::event;
-use crate::input::{
-    RuntimeInputIngress, ScrollConfigOverrides, ScrollNormalizer, ScrollNormalizerConfig,
-    ScrollSampleDirection, TerminalIngressReader, TerminalReaderStatus,
+use crate::{
+    app::AppState,
+    input::{
+        RuntimeInputIngress, ScrollNormalizer, TerminalIngress, TerminalIngressReader,
+        TerminalReaderStatus,
+    },
+    presentation::{PresentationCauseKind as Cause, PresentationClock, RenderReason as Reason},
+    runtime_integration::RuntimeExperience,
+    runtime_live_updates::{apply_live_update_quantum, live_update_channel, LiveUpdateReceiver},
+    runtime_presentation::PresentationTelemetrySession,
+    runtime_scheduling::{
+        SchedulingLiveReadiness, SchedulingReadinessSignal, SchedulingTelemetrySession,
+    },
+    runtime_wait_set::{FrameRuntimeEvent, RuntimeWaitSet, RuntimeWake},
+    terminal::{FrameOutput, FrameOutputBackend, TerminalProfile},
 };
-use crate::presentation::{
-    CauseId, InteractionId, PresentationCauseKind, PresentationClock, RenderDemand, RenderReason,
-};
-use crate::runtime_input::{should_apply_live_update, InputPresentation};
-use crate::runtime_integration::RuntimeExperience;
-use crate::runtime_live_updates::{
-    apply_live_update_quantum, live_update_channel, LiveUpdateDrainState, LiveUpdateReceiver,
+
+mod contracts;
+mod input;
+mod paint;
+mod setup;
+
+pub use crate::terminal::session::close_preserved_terminal_session;
+pub use contracts::{
+    set_pending_replay_launch_metadata, LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions,
 };
 #[cfg(test)]
-use crate::runtime_live_updates::{drain_live_updates, LIVE_UPDATE_DRAIN_MAX_PER_FRAME};
-use crate::runtime_presentation::{InteractionEventClass, PresentationTelemetrySession};
-use crate::runtime_scheduling::{
-    SchedulingLiveReadiness, SchedulingReadinessSignal, SchedulingTelemetrySession,
-};
-use crate::runtime_wait_set::{FrameRuntimeEvent, RuntimeWaitSet, RuntimeWake};
-use crate::scheduling::{
-    runtime_flush_interval_ms, BatchBudget, FairnessTurn, FrameNow, MotionPlan, RuntimeArbiter,
-    RuntimeDecision, RuntimePacer, RuntimePacerAction, RuntimeReady, WheelBatch, WheelDirection,
-    WheelSample,
-};
-use crate::terminal::{
-    FrameKind, FrameOutput, FrameOutputBackend, FrameSubmission, Presenter, TerminalProfile,
-};
-use crate::ui;
+pub(crate) use setup::apply_startup_capability_notice;
 
-const FRAME_OUTPUT_QUEUE_CAPACITY: usize = 1;
-const CURRENT_DIRECTORY_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const DIRECTORY_REFRESH: Duration = Duration::from_secs(5);
+const INPUT_QUANTUM: Duration = Duration::from_millis(2);
 
-fn refresh_current_directory_if_due(
-    app: &mut AppState,
-    deadline: &mut Instant,
-    now: Instant,
-) -> bool {
-    if app.replay_mode || now < *deadline {
-        return false;
-    }
-    *deadline = now + CURRENT_DIRECTORY_REFRESH_INTERVAL;
-    app.refresh_current_directory_label()
-}
-
-fn refresh_current_directory_display(
-    app: &mut AppState,
-    deadline: &mut Instant,
-    now: Instant,
-    presenter: &mut Presenter,
-    pacer: &mut RuntimePacer,
-    mut telemetry: Option<&mut PresentationTelemetrySession>,
-) {
-    if refresh_current_directory_if_due(app, deadline, now) {
-        record_runtime_cause(
-            telemetry.as_deref_mut(),
-            PresentationCauseKind::Expiry,
-            RenderReason::Expiry,
-        );
-        request_runtime_redraw(presenter, telemetry);
-        pacer.request_flush();
-    }
-}
-
-fn select_runtime_decision(arbiter: &RuntimeArbiter, ready: RuntimeReady) -> RuntimeDecision {
-    arbiter.decide(ready)
-}
-
-fn record_scheduling_decision(
-    session: Option<&mut SchedulingTelemetrySession>,
-    interaction_id: Option<&InteractionId>,
-    cause_id: Option<&CauseId>,
-    live: SchedulingLiveReadiness,
-    fairness_yield: bool,
-) {
-    if let (Some(session), Some(cause_id)) = (session, cause_id) {
-        session.record_terminal_ready(
-            interaction_id,
-            cause_id,
-            live,
-            fairness_yield,
-            Some(runtime_flush_interval_ms()),
-        );
-    }
-}
-
-fn has_canonical_render_demand(telemetry_enabled: bool, demand: Option<&RenderDemand>) -> bool {
-    !telemetry_enabled || demand.is_some()
-}
-
-fn mouse_presentation_kind(
-    kind: MouseEventKind,
-) -> (InteractionEventClass, PresentationCauseKind, RenderReason) {
-    if matches!(
-        kind,
-        MouseEventKind::ScrollDown
-            | MouseEventKind::ScrollLeft
-            | MouseEventKind::ScrollRight
-            | MouseEventKind::ScrollUp
-    ) {
-        (
-            InteractionEventClass::Wheel,
-            PresentationCauseKind::Wheel,
-            RenderReason::Wheel,
-        )
-    } else {
-        (
-            InteractionEventClass::Mouse,
-            PresentationCauseKind::Mouse,
-            RenderReason::Mouse,
-        )
-    }
-}
-
-fn refresh_motion_plan(app: &mut AppState) -> MotionPlan {
-    app.refresh_motion_state();
-    app.motion_plan()
-}
-
-const fn runtime_quit_ready(app_should_quit: bool, presenter: &Presenter) -> bool {
-    app_should_quit && !presenter.has_pending_redraw()
-}
-
-pub(crate) fn apply_startup_capability_notice(
-    app: &mut AppState,
-    clipboard_warning_required: bool,
-) {
-    if app.startup_shell_visible() && clipboard_warning_required && app.status_banner.is_none() {
-        app.set_status_banner(Some("Clipboard may be unreachable.".to_owned()));
-    }
-}
-
-fn is_ssh_session() -> bool {
-    ["SSH_CONNECTION", "SSH_TTY", "SSH_CLIENT"]
-        .iter()
-        .any(|name| std::env::var_os(name).is_some())
-}
-
-fn reduced_motion_from_env(value: Option<&str>) -> bool {
-    value.is_some_and(|value| {
-        matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        )
-    })
-}
-
-fn recover_mutex_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    match mutex.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    }
-}
-
-fn pending_replay_launch_metadata() -> &'static Mutex<Option<LaunchMetadata>> {
-    static PENDING: OnceLock<Mutex<Option<LaunchMetadata>>> = OnceLock::new();
-    PENDING.get_or_init(|| Mutex::new(None))
-}
-
-pub fn set_pending_replay_launch_metadata(launch_metadata: Option<LaunchMetadata>) {
-    *recover_mutex_lock(pending_replay_launch_metadata()) = launch_metadata;
-}
-
-fn take_pending_replay_launch_metadata() -> Option<LaunchMetadata> {
-    recover_mutex_lock(pending_replay_launch_metadata()).take()
-}
-
-pub enum LiveUpdate {
-    RewindPoints {
-        generation: u64,
-        result: Result<Vec<harness_core::conversation_rewind::RewindPoint>, String>,
-    },
-    RewindComplete {
-        generation: u64,
-        result: Result<harness_core::conversation_rewind::RewindPoint, String>,
-    },
-    Event(Box<RuntimeEvent>),
-    AlwaysApproveModeChanged {
-        enabled: bool,
-    },
-    AlwaysApproveModeChangeFailed,
-    Status(String),
-    ModelPromptNotice(String),
-    SessionHistory(Vec<SessionHistoryEntry>),
-    ContinueSession {
-        run_id: String,
-        run_dir: PathBuf,
-        prompt_draft: String,
-    },
-    OperatorNotice {
-        message: String,
-        level: OperatorNoticeLevel,
-    },
-    AuthBackendResult {
-        success: bool,
-        message: String,
-    },
-    AuthProviderCatalogRefreshed {
-        launch_metadata: Box<LaunchMetadata>,
-    },
-    PluginLifecycleSummary(harness_core::integrations::PluginLifecycleSummary),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OperatorNoticeLevel {
-    Info,
-    Error,
-}
-
-pub enum TuiMode {
-    Startup {
-        session_history_entries: Vec<SessionHistoryEntry>,
-        prompt_history_path: Option<PathBuf>,
-        update_rx: LiveUpdateReceiver,
-    },
-    Replay {
-        run_dir: PathBuf,
-        events: Vec<EventEnvelopeV1>,
-    },
-    Live {
-        run_dir: PathBuf,
-        historical_events: Vec<EventEnvelopeV1>,
-        session_history_entries: Vec<SessionHistoryEntry>,
-        prompt_history_path: Option<PathBuf>,
-        update_rx: LiveUpdateReceiver,
-        compact_session_supported: bool,
-    },
-}
-
-pub struct TuiOptions {
-    pub mode: TuiMode,
-    pub exit_on_finish: bool,
-    pub on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
-    pub keybindings: Option<std::collections::BTreeMap<String, String>>,
-    pub toggles: Option<TogglesConfig>,
-    pub preserve_terminal_on_exit: bool,
-    pub skip_alternate_screen: bool,
-}
-
-impl TuiOptions {
-    fn take_external_keybindings(&mut self) -> Option<std::collections::BTreeMap<String, String>> {
-        self.keybindings
-            .take()
-            .filter(|bindings| !bindings.is_empty())
-    }
-}
-
-fn render_terminal_frame(
-    terminal: &mut Terminal<FrameOutputBackend>,
-    output: &mut FrameOutput,
-    demand: Option<RenderDemand>,
-    render: impl FnOnce(&mut Terminal<FrameOutputBackend>) -> Result<()>,
-) -> Result<FrameSubmission> {
-    let kind = match demand {
-        Some(demand) => output.begin_frame_for(demand)?,
-        None => output.begin_frame()?,
-    };
-    let render_result = (|| -> Result<()> {
-        if matches!(kind, FrameKind::FullRepaint) {
-            terminal.backend_mut().invalidate_cursor_state();
-            terminal
-                .clear()
-                .context("failed to clear terminal for full repaint")?;
-        }
-        render(terminal)
-    })();
-    match render_result {
-        Ok(()) => output.finish_frame().map_err(Into::into),
-        Err(error) => {
-            output.abort_frame();
-            Err(error)
-        }
-    }
+struct Runtime {
+    app: AppState,
+    terminal: Terminal<FrameOutputBackend>,
+    output: FrameOutput,
+    experience: RuntimeExperience,
+    trace: Option<PresentationTelemetrySession>,
+    scheduling: Option<SchedulingTelemetrySession>,
+    readiness: Option<SchedulingReadinessSignal>,
+    scroll: ScrollNormalizer,
+    wheel: input::Wheel,
+    epoch: Instant,
+    suggestion_at: Instant,
+    directory_at: Instant,
+    frame_at: Option<Instant>,
+    motion_at: Option<Instant>,
+    flush_interval: Duration,
+    reduced_motion: bool,
+    urgent: bool,
+    live_turn: bool,
 }
 
 pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
-    let keybindings = options.take_external_keybindings();
-    let TuiOptions {
-        mode,
-        exit_on_finish,
-        on_ui_intent,
-        keybindings: _,
-        toggles,
-        preserve_terminal_on_exit,
-        skip_alternate_screen,
-    } = options;
-
-    fn app_for_mode(
-        mode: TuiMode,
-        exit_on_finish: bool,
-        on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
-        keybindings: Option<&std::collections::BTreeMap<String, String>>,
-    ) -> (AppState, Option<LiveUpdateReceiver>) {
-        match mode {
-            TuiMode::Startup {
-                session_history_entries,
-                prompt_history_path,
-                update_rx,
-            } => {
-                let mut app = AppState::new_startup_with_prompt_history_path(
-                    session_history_entries,
-                    on_ui_intent,
-                    prompt_history_path,
-                );
-                app.should_quit = exit_on_finish;
-                if let Some(bindings) = keybindings {
-                    app.apply_keybindings(bindings.clone());
-                }
-                (app, Some(update_rx))
-            }
-            TuiMode::Replay { run_dir, events } => {
-                let mut app = AppState::new_replay(run_dir, events);
-                // Replay workspace authority comes exclusively from replayed RunStarted events.
-                // The CWD-based workspace root provider must never substitute missing event authority.
-                app.disable_cwd_workspace_root_provider();
-                if let Some(on_ui_intent) = on_ui_intent {
-                    app.enable_replay_navigation_handoff(on_ui_intent);
-                }
-                if let Some(launch_metadata) = take_pending_replay_launch_metadata() {
-                    app.set_launch_metadata(launch_metadata);
-                }
-                if let Some(bindings) = keybindings {
-                    app.apply_keybindings(bindings.clone());
-                }
-                (app, None)
-            }
-            TuiMode::Live {
-                run_dir,
-                historical_events,
-                session_history_entries,
-                prompt_history_path,
-                update_rx,
-                compact_session_supported,
-            } => {
-                let crash_report = harness_core::crash_recovery::inspect_previous_crash(&run_dir);
-                let starting_session_seed = historical_events.is_empty();
-                let mut app = AppState::new_live_with_session_history_and_prompt_history_path(
-                    Some(run_dir.clone()),
-                    exit_on_finish,
-                    on_ui_intent,
-                    session_history_entries,
-                    prompt_history_path,
-                );
-                app.set_starting_session_seed(
-                    starting_session_seed && app.composer.prompt_buffer.is_empty(),
-                );
-                app.set_compact_session_supported(compact_session_supported);
-                if let Some(launch_metadata) = take_pending_replay_launch_metadata() {
-                    app.set_launch_metadata(launch_metadata);
-                }
-                if let Some(bindings) = keybindings {
-                    app.apply_keybindings(bindings.clone());
-                }
-                for event in historical_events {
-                    app.ingest_historical_event(event);
-                }
-                // History can supply parent lineage when session metadata is unavailable.
-                app.load_session_lineage();
-                if let Some(message) = crash_report.recovery_message {
-                    let banner = match crash_report.recovery_action {
-                        Some(action) => {
-                            let run_id = run_dir
-                                .file_name()
-                                .and_then(|name| name.to_str())
-                                .unwrap_or("session");
-                            format!("{message} Action: {}", action.operator_hint(run_id))
-                        }
-                        None => message,
-                    };
-                    app.set_status_banner(Some(banner));
-                }
-                (app, Some(update_rx))
-            }
-        }
-    }
-    let (mut app, mut live_updates) =
-        app_for_mode(mode, exit_on_finish, on_ui_intent, keybindings.as_ref());
-
-    if let Some(toggles) = toggles {
+    let bindings = options
+        .keybindings
+        .take()
+        .filter(|bindings| !bindings.is_empty());
+    let (mut app, live) = setup::app_for_mode(
+        options.mode,
+        options.exit_on_finish,
+        options.on_ui_intent,
+        bindings.as_ref(),
+    );
+    if let Some(toggles) = options.toggles {
         app.set_toggles_config(toggles);
     }
-
     app.configure_rewind();
     app.maybe_set_no_provider_banner();
-
-    let terminal_profile = TerminalProfile::negotiate();
-    let mut experience = RuntimeExperience::new();
-
-    let mut restore_guard = crate::terminal::session::Session::enter(skip_alternate_screen)
+    let profile = TerminalProfile::negotiate();
+    let mut session = crate::terminal::session::Session::enter(options.skip_alternate_screen)
         .context("failed to set up terminal")?;
-    let stdout = std::io::stdout();
-
-    let clipboard_warning_required =
-        crate::terminal::startup_diagnostics::clipboard_warning_required(
-            terminal_profile.context,
-            is_ssh_session(),
-        );
-    apply_startup_capability_notice(&mut app, clipboard_warning_required);
-
-    app.set_color_level(crate::theme::detect_color_level(
-        std::env::var("NO_COLOR").ok().as_deref(),
-        std::env::var("COLORTERM").ok().as_deref(),
-        std::env::var("TERM").ok().as_deref(),
-    ));
-    app.set_glyph_mode(terminal_profile.matrix.classified_by().glyph_mode());
-    let reduced_motion = std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_some()
-        || reduced_motion_from_env(std::env::var("HARNESS_TUI_REDUCED_MOTION").ok().as_deref());
-    app.set_reduced_motion(reduced_motion);
-    let mut presentation_session = PresentationTelemetrySession::from_env()
+    let reduced_motion = setup::configure(&mut app, &profile);
+    let trace = PresentationTelemetrySession::from_env()
         .context("failed to initialize local presentation telemetry")?;
-    let mut scheduling_session = SchedulingTelemetrySession::from_env()
+    let scheduling = SchedulingTelemetrySession::from_env()
         .context("failed to initialize local scheduling telemetry")?;
-    let mut scheduling_readiness = SchedulingReadinessSignal::from_env()
+    let readiness = SchedulingReadinessSignal::from_env()
         .context("failed to initialize local scheduling readiness signal")?;
-    let presentation_clock = presentation_session
+    let clock = trace
         .as_ref()
         .map_or_else(PresentationClock::new, PresentationTelemetrySession::clock);
+    let (mut output, writer, receiver) = FrameOutput::bounded_with_clock(1, clock);
+    output.require_full_repaint();
+    let terminal = Terminal::new(FrameOutputBackend::new(writer))?;
+    let writer = receiver.spawn(std::io::stdout())?;
+    let (reader, ingress) = TerminalIngressReader::spawn(128);
+    let epoch = Instant::now();
+    let mut runtime = Runtime {
+        app,
+        terminal,
+        output,
+        trace,
+        scheduling,
+        readiness,
+        reduced_motion,
+        urgent: false,
+        live_turn: false,
+        experience: RuntimeExperience::new(),
+        scroll: input::scroll_normalizer(&profile),
+        wheel: input::Wheel::default(),
+        epoch,
+        suggestion_at: epoch,
+        directory_at: epoch + DIRECTORY_REFRESH,
+        frame_at: Some(epoch),
+        motion_at: None,
+        flush_interval: Duration::from_millis(crate::scheduling::runtime_flush_interval_ms()),
+    };
+    runtime.cause(Cause::Startup, Reason::Startup);
+    let mut result = runtime.run(ingress, live);
 
-    let (mut frame_output, frame_writer, frame_receiver) =
-        FrameOutput::bounded_with_clock(FRAME_OUTPUT_QUEUE_CAPACITY, presentation_clock);
-    frame_output.require_full_repaint();
-    let backend = FrameOutputBackend::new(frame_writer);
-    let mut terminal = Terminal::new(backend)?;
-    let writer_worker = frame_receiver.spawn(stdout)?;
-    let (terminal_reader, mut terminal_ingress) = TerminalIngressReader::spawn(128);
-
-    let mut run_result = (|| -> Result<()> {
-        let pacing_epoch = Instant::now();
-        let mut pacer = RuntimePacer::with_reduced_motion_and_flush_interval_ms(
-            reduced_motion,
-            runtime_flush_interval_ms(),
-        );
-        let scroll_mode = std::env::var("HARNESS_TUI_SCROLL_MODE").ok();
-        let scroll_lines = std::env::var("HARNESS_TUI_SCROLL_LINES").ok();
-        let scroll_speed = std::env::var("HARNESS_TUI_SCROLL_SPEED").ok();
-        let invert_scroll = std::env::var("HARNESS_TUI_INVERT_SCROLL").ok();
-        let scroll_overrides = ScrollConfigOverrides::from_values(
-            scroll_mode.as_deref(),
-            scroll_lines.as_deref(),
-            scroll_speed.as_deref(),
-            invert_scroll.as_deref(),
-        );
-        let scroll_config = ScrollNormalizerConfig::for_terminal(
-            terminal_profile.context.brand,
-            terminal_profile.context.multiplexer,
-        )
-        .with_overrides(scroll_overrides);
-        let mut scroll_normalizer = ScrollNormalizer::new(scroll_config);
-        let mut presenter = Presenter::new();
-        let mut runtime_input = RuntimeInputIngress::default();
-        let mut pending_terminal = None;
-        let mut arbiter = RuntimeArbiter::default();
-        let mut input_budget = None;
-        record_runtime_cause(
-            presentation_session.as_mut(),
-            PresentationCauseKind::Startup,
-            RenderReason::Startup,
-        );
-
-        let mut suggestion_poll_at = Instant::now();
-        let mut current_directory_refresh_at =
-            suggestion_poll_at + CURRENT_DIRECTORY_REFRESH_INTERVAL;
-        loop {
-            let suggestion_poll_now = Instant::now();
-            refresh_current_directory_display(
-                &mut app,
-                &mut current_directory_refresh_at,
-                suggestion_poll_now,
-                &mut presenter,
-                &mut pacer,
-                presentation_session.as_mut(),
-            );
-            let suggestion_elapsed_ms = u64::try_from(
-                suggestion_poll_now
-                    .saturating_duration_since(suggestion_poll_at)
-                    .as_millis(),
-            )
-            .unwrap_or(u64::MAX);
-            suggestion_poll_at = suggestion_poll_now;
-            if app.poll_local_ghost_suggestion(suggestion_elapsed_ms) {
-                presenter.request_redraw(suggestion_poll_now);
-                pacer.request_flush();
-            }
-            let motion_plan = refresh_motion_plan(&mut app);
-            let frame_ready = poll_frame_output(&mut frame_output, presentation_session.as_mut())?;
-            if pending_terminal.is_none() {
-                pending_terminal = runtime_input.take_ready(
-                    &mut terminal_ingress.queue,
-                    pacing_epoch,
-                    Instant::now(),
-                );
-            }
-            if let Some(signal) = scheduling_readiness.as_mut() {
-                let stream_active = app.active_turn_in_progress();
-                let live = live_updates.as_ref().map_or(
-                    SchedulingLiveReadiness {
-                        stream_active,
-                        ..SchedulingLiveReadiness::default()
-                    },
-                    |receiver| receiver.scheduling_readiness(stream_active),
-                );
-                signal
-                    .publish_if_changed(live)
-                    .context("failed to publish local scheduling readiness")?;
-            }
-            let now = Instant::now();
-            if input_budget
-                .as_ref()
-                .is_some_and(|budget: &BatchBudget| budget.exhausted(now))
-            {
-                arbiter.input_quantum_exhausted();
-            }
-            let pacing_due = pacer.needs_poll(runtime_frame_now(pacing_epoch, now), motion_plan);
-            let decision = select_runtime_decision(
-                &arbiter,
-                RuntimeReady {
-                    quit: runtime_quit_ready(app.should_quit, &presenter),
-                    terminal_input: pending_terminal.is_some(),
-                    pacer_deadline: pacing_due,
-                    live_update: live_updates
-                        .as_ref()
-                        .is_some_and(|receiver| !receiver.is_empty()),
-                    ..RuntimeReady::default()
-                },
-            );
-            let mut input_priority = matches!(decision, RuntimeDecision::TerminalInput);
-            if let Some(update_rx) = live_updates
-                .as_ref()
-                .filter(|_| should_apply_live_update(decision, &presenter, frame_ready))
-            {
-                let drain_state = apply_live_update_quantum(&mut app, update_rx, &mut experience);
-                if drain_state.changed {
-                    record_runtime_cause(
-                        presentation_session.as_mut(),
-                        PresentationCauseKind::LiveUpdate,
-                        RenderReason::LiveUpdate,
-                    );
-                    // Coalesce provider bursts on the same cadence as input. A final
-                    // update must remain pending until painted before the quit gate.
-                    InputPresentation::Immediate.request(
-                        app.should_quit,
-                        &mut presenter,
-                        &mut pacer,
-                        Instant::now(),
-                    );
-                    pacer.request_flush();
-                }
-                if drain_state.disconnected {
-                    live_updates = None;
-                }
-                arbiter.live_applied();
-                input_budget = None;
-            }
-            expire_quit_confirmation(&mut app, presentation_session.as_mut(), &mut pacer);
-
-            advance_runtime_pacing(
-                &mut pacer,
-                pacing_epoch,
-                motion_plan,
-                decision,
-                &mut arbiter,
-                &mut app,
-                &mut terminal,
-                presentation_session.as_mut(),
-                &mut presenter,
-            )?;
-            if !input_priority && pending_terminal.is_none() {
-                pending_terminal = runtime_input.take_ready(
-                    &mut terminal_ingress.queue,
-                    pacing_epoch,
-                    Instant::now(),
-                );
-                input_priority = pending_terminal.is_some();
-            }
-            if !input_priority && presenter.should_present(frame_ready) {
-                if present_runtime_frame(
-                    &mut terminal,
-                    &mut frame_output,
-                    &mut app,
-                    &mut experience,
-                    &mut presenter,
-                    &mut pacer,
-                    &mut presentation_session,
-                    motion_plan,
-                )? {
-                    continue;
-                }
-            } else if presenter.scheduled_at().is_some() {
-                pacer.request_flush();
-            }
-
-            if matches!(decision, RuntimeDecision::Quit)
-                || runtime_quit_ready(app.should_quit, &presenter)
-            {
-                break;
-            }
-
-            let event = if input_priority {
-                let envelope = pending_terminal.take();
-                let budget = input_budget.get_or_insert_with(|| BatchBudget::input(Instant::now()));
-                budget.consume();
-                envelope.map(|envelope| envelope.event)
-            } else if matches!(decision, RuntimeDecision::Park) {
-                let now = Instant::now();
-                let pacing_deadline = pacer
-                    .next_wait_ms(runtime_frame_now(pacing_epoch, now))
-                    .map(|millis| now + Duration::from_millis(millis));
-                let resize_deadline = runtime_input
-                    .deadline()
-                    .map(|elapsed| pacing_epoch + elapsed);
-                let deadline = pacing_deadline
-                    .into_iter()
-                    .chain(resize_deadline)
-                    .chain((!app.replay_mode).then_some(current_directory_refresh_at))
-                    .min();
-                let wait_set = RuntimeWaitSet {
-                    frame: frame_output.acknowledgement_receiver(),
-                    reader: &terminal_ingress.status,
-                    terminal: terminal_ingress.queue.receiver(),
-                    live: live_updates.as_ref().map(LiveUpdateReceiver::receiver),
-                };
-                match wait_set.wait(deadline) {
-                    RuntimeWake::Terminal(envelope) => {
-                        let received_at =
-                            envelope.received_at.saturating_duration_since(pacing_epoch);
-                        pending_terminal = runtime_input.ingest_at(received_at, envelope);
-                        None
-                    }
-                    wake => {
-                        apply_runtime_wake(wake, &mut app, &mut live_updates, &mut frame_output)?;
-                        None
-                    }
-                }
-            } else {
-                None
-            };
-
-            let Some(event) = event else {
-                continue;
-            };
-            dispatch_terminal_input(
-                event,
-                &mut app,
-                &mut terminal,
-                &mut experience,
-                &mut pacer,
-                &mut presenter,
-                &mut scroll_normalizer,
-                pacing_epoch,
-                live_updates.as_ref(),
-                &mut presentation_session,
-                &mut scheduling_session,
-                matches!(arbiter.fairness(), FairnessTurn::OneLiveAfterInputQuantum),
-            )?;
-        }
-        Ok(())
-    })();
-
-    fn dispatch_terminal_input(
-        event: event::TuiEvent,
-        app: &mut AppState,
-        terminal: &mut Terminal<FrameOutputBackend>,
-        experience: &mut RuntimeExperience,
-        mut pacer: &mut RuntimePacer,
-        mut presenter: &mut Presenter,
-        scroll_normalizer: &mut ScrollNormalizer,
-        pacing_epoch: Instant,
-        live_updates: Option<&LiveUpdateReceiver>,
-        presentation_session: &mut Option<PresentationTelemetrySession>,
-        scheduling_session: &mut Option<SchedulingTelemetrySession>,
-        fairness_yield: bool,
-    ) -> Result<()> {
-        let input_presentation = InputPresentation::for_event(&event);
-        let event_class = match &event {
-            event::TuiEvent::Key(_) => InteractionEventClass::Key,
-            event::TuiEvent::Paste(_) => InteractionEventClass::Paste,
-            event::TuiEvent::Mouse(mouse) => mouse_presentation_kind(mouse.kind).0,
-            event::TuiEvent::Resize(_, _) => InteractionEventClass::Resize,
-            event::TuiEvent::FocusGained | event::TuiEvent::FocusLost => {
-                InteractionEventClass::Focus
-            }
-        };
-        let interaction_id = match presentation_session.as_mut() {
-            Some(session) => session
-                .take_interaction_id(event_class)
-                .context("failed to read runner interaction identity")?,
-            None => None,
-        };
-        let stream_active = app.active_turn_in_progress();
-        let live_readiness = live_updates.as_ref().map_or(
-            SchedulingLiveReadiness {
-                stream_active,
-                ..SchedulingLiveReadiness::default()
-            },
-            |receiver| receiver.scheduling_readiness(stream_active),
-        );
-        let (cause_kind, render_reason) = match &event {
-            event::TuiEvent::Resize(_, _) => (PresentationCauseKind::Resize, RenderReason::Resize),
-            event::TuiEvent::FocusGained | event::TuiEvent::FocusLost => {
-                (PresentationCauseKind::Focus, RenderReason::Focus)
-            }
-            event::TuiEvent::Mouse(mouse) => {
-                let (_, cause, reason) = mouse_presentation_kind(mouse.kind);
-                (cause, reason)
-            }
-            event::TuiEvent::Key(_) | event::TuiEvent::Paste(_) => (
-                PresentationCauseKind::TerminalInput,
-                RenderReason::TerminalInput,
-            ),
-        };
-        let event_changed = match event {
-            event::TuiEvent::Key(key) => {
-                let size = terminal.size()?;
-                let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                app.set_frame_area(frame_area);
-                app.handle_key(key);
-                true
-            }
-            event::TuiEvent::Paste(text) => {
-                let size = terminal.size()?;
-                let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                app.set_frame_area(frame_area);
-                app.handle_paste(&text);
-                true
-            }
-            event::TuiEvent::Mouse(mouse) => {
-                if !mouse_event_requires_handling(mouse.kind, app.slash_visible) {
-                    let cause_id = match presentation_session.as_mut() {
-                        Some(session) => Some(
-                            session
-                                .record_no_visible_cause(cause_kind, interaction_id.clone())
-                                .context("failed to record ignored terminal input")?,
-                        ),
-                        None => None,
-                    };
-                    record_scheduling_decision(
-                        scheduling_session.as_mut(),
-                        cause_id.as_ref().and(interaction_id.as_ref()),
-                        cause_id.as_ref(),
-                        live_readiness,
-                        fairness_yield,
-                    );
-                    return Ok(());
-                }
-
-                let scroll_direction = match mouse.kind {
-                    MouseEventKind::ScrollUp => Some(ScrollSampleDirection::Up),
-                    MouseEventKind::ScrollDown => Some(ScrollSampleDirection::Down),
-                    _ => None,
-                };
-                if let Some(direction) = scroll_direction {
-                    let size = terminal.size()?;
-                    let normalized = scroll_normalizer.push(
-                        Instant::now().saturating_duration_since(pacing_epoch),
-                        direction,
-                        mouse.column,
-                        mouse.row,
-                        size.height,
-                    );
-                    if normalized.lines != 0 {
-                        let direction = match normalized.lines {
-                            ..0 => WheelDirection::Up,
-                            _ => WheelDirection::Down,
-                        };
-                        let steps =
-                            u8::try_from(normalized.lines.unsigned_abs()).unwrap_or(u8::MAX);
-                        pacer.queue_wheel(WheelSample::logical(
-                            direction,
-                            steps,
-                            normalized.column,
-                            normalized.row,
-                        ));
-                    }
-                    let cause_id = match (presentation_session.as_mut(), normalized.lines) {
-                        (Some(session), 0) => Some(
-                            session
-                                .record_no_visible_cause(cause_kind, interaction_id.clone())
-                                .context("failed to record unchanged wheel input")?,
-                        ),
-                        (Some(session), _) => Some(session.record_visible_cause(
-                            cause_kind,
-                            render_reason,
-                            interaction_id.clone(),
-                        )),
-                        (None, _) => None,
-                    };
-                    record_scheduling_decision(
-                        scheduling_session.as_mut(),
-                        cause_id.as_ref().and(interaction_id.as_ref()),
-                        cause_id.as_ref(),
-                        live_readiness,
-                        fairness_yield,
-                    );
-                    return Ok(());
-                }
-
-                let size = terminal.size()?;
-                let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                app.set_frame_area(frame_area);
-                let (
-                    hovered_wheel_target,
-                    clicked_operator_sidebar_section,
-                    transcript_scrollbar_hit,
-                ) = match mouse.kind {
-                    MouseEventKind::Down(MouseButton::Left) => (
-                        None,
-                        ui::operator_sidebar_section_hit_target(
-                            &app,
-                            frame_area,
-                            mouse.column,
-                            mouse.row,
-                        ),
-                        ui::transcript_scrollbar_hit(&app, frame_area, mouse.column, mouse.row),
-                    ),
-                    _ => (None, None, None),
-                };
-                app.handle_mouse(
-                    mouse,
-                    frame_area,
-                    hovered_wheel_target,
-                    clicked_operator_sidebar_section,
-                    transcript_scrollbar_hit,
-                )
-            }
-            event::TuiEvent::Resize(_, _) => true,
-            event::TuiEvent::FocusGained => {
-                experience.set_focus(true, terminal.backend_mut());
-                true
-            }
-            event::TuiEvent::FocusLost => {
-                experience.set_focus(false, terminal.backend_mut());
-                true
-            }
-        };
-        let input_presentation =
-            input_presentation.for_turn_start(stream_active, app.active_turn_in_progress());
-        let cause_id = if event_changed {
-            input_presentation.request(true, &mut presenter, &mut pacer, Instant::now());
-            presentation_session.as_mut().map(|session| {
-                session.record_visible_cause(cause_kind, render_reason, interaction_id.clone())
-            })
-        } else if let Some(session) = presentation_session.as_mut() {
-            Some(
-                session
-                    .record_no_visible_cause(cause_kind, interaction_id.clone())
-                    .context("failed to record unchanged terminal input")?,
-            )
-        } else {
-            None
-        };
-        record_scheduling_decision(
-            scheduling_session.as_mut(),
-            interaction_id.as_ref(),
-            cause_id.as_ref(),
-            live_readiness,
-            fairness_yield,
-        );
-        Ok(())
+    // Always stop producers and drain the writer before restoring stdout modes.
+    if reader.stop_and_join().is_err() {
+        result = result.and(Err(anyhow::anyhow!("terminal ingress reader panicked")));
     }
-
-    if let Some(session) = presentation_session.as_mut() {
-        if let Some(demand) = session.take_render_demand() {
-            let recorded = session
-                .record_no_visible_change(&demand)
-                .context("failed to close unpresented shutdown demand");
-            run_result = run_result.and(recorded);
-        }
-    }
-    if terminal_reader.stop_and_join().is_err() && run_result.is_ok() {
-        run_result = Err(anyhow::anyhow!("terminal ingress reader panicked"));
-    }
-    terminal.backend_mut().prepare_for_terminal_drop();
-    drop(terminal);
-    while frame_output.has_in_flight_frame() {
-        match frame_output.acknowledgement_receiver().recv() {
-            Ok(ack) => frame_output.accept_acknowledgement(ack),
+    runtime.terminal.backend_mut().prepare_for_terminal_drop();
+    drop(runtime.terminal);
+    while runtime.output.has_in_flight_frame() {
+        match runtime.output.acknowledgement_receiver().recv() {
+            Ok(ack) => runtime.output.accept_acknowledgement(ack),
             Err(_) => {
-                if run_result.is_ok() {
-                    run_result = Err(anyhow::anyhow!(
-                        "terminal frame writer acknowledgement disconnected"
-                    ));
-                }
+                result = result.and(Err(anyhow::anyhow!(
+                    "terminal frame writer acknowledgement disconnected"
+                )));
                 break;
             }
         }
     }
-    if let Some(session) = presentation_session.as_mut() {
-        session.record_acknowledgements(frame_output.take_acknowledgements());
+    if let Some(error) = runtime.output.take_fatal_failure() {
+        result = result.and(Err(error.into()));
     }
-    drop(frame_output);
-    let writer_result = writer_worker.join();
-    if let Some(session) = presentation_session.take() {
-        let finished = session
-            .finish()
-            .context("failed to persist local presentation telemetry");
-        run_result = run_result.and(finished);
+    if let Some(mut trace) = runtime.trace {
+        trace.record_acknowledgements(runtime.output.take_acknowledgements());
+        if let Some(demand) = trace.take_render_demand() {
+            result = result.and(
+                trace
+                    .record_no_visible_change(&demand)
+                    .context("failed to close unpresented shutdown demand"),
+            );
+        }
+        result = result.and(
+            trace
+                .finish()
+                .context("failed to persist local presentation telemetry"),
+        );
     }
-    if let Some(session) = scheduling_session.take() {
-        let finished = session
-            .finish()
-            .context("failed to persist local scheduling telemetry");
-        run_result = run_result.and(finished);
-    }
-    if let Err(error) = writer_result {
-        run_result = run_result.and(Err(error).context("terminal frame writer failed"));
+    drop(runtime.output);
+    result = result.and(
+        writer
+            .join()
+            .map(|_| ())
+            .context("terminal frame writer failed"),
+    );
+    if let Some(trace) = runtime.scheduling {
+        result = result.and(
+            trace
+                .finish()
+                .context("failed to persist local scheduling telemetry"),
+        );
     }
     let mut stdout = std::io::stdout();
-    let shown =
-        crossterm::execute!(stdout, Show).context("failed to restore terminal cursor after TUI");
-    run_result = run_result.and(shown);
-    experience.cleanup(&mut stdout);
-
-    if run_result.is_ok() && preserve_terminal_on_exit {
-        restore_guard.preserve();
-        return run_result;
-    }
-    let restored = restore_guard
-        .finish(&mut stdout)
-        .context("failed to restore terminal");
-    run_result.and(restored)
-}
-
-fn expire_quit_confirmation(
-    app: &mut AppState,
-    session: Option<&mut PresentationTelemetrySession>,
-    pacer: &mut RuntimePacer,
-) {
-    if app.clear_expired_quit_confirmation() {
-        record_runtime_cause(session, PresentationCauseKind::Expiry, RenderReason::Expiry);
-        pacer.request_flush();
-    }
-}
-
-fn advance_runtime_pacing(
-    pacer: &mut RuntimePacer,
-    epoch: Instant,
-    motion_plan: MotionPlan,
-    decision: RuntimeDecision,
-    arbiter: &mut RuntimeArbiter,
-    app: &mut AppState,
-    terminal: &mut Terminal<FrameOutputBackend>,
-    mut session: Option<&mut PresentationTelemetrySession>,
-    presenter: &mut Presenter,
-) -> Result<()> {
-    let action = if matches!(
-        decision,
-        RuntimeDecision::PacerDeadline | RuntimeDecision::AnimationDeadline
-    ) {
-        let action = pacer.poll(runtime_frame_now(epoch, Instant::now()), motion_plan);
-        arbiter.deadline_served();
-        action
+    result = result.and(
+        crossterm::execute!(stdout, Show).context("failed to restore terminal cursor after TUI"),
+    );
+    runtime.experience.cleanup(&mut stdout);
+    if result.is_ok() && options.preserve_terminal_on_exit {
+        session.preserve();
     } else {
-        RuntimePacerAction::default()
-    };
-    if action.advance_animation {
-        app.sample_motion_clock();
-        record_runtime_cause(
-            session.as_deref_mut(),
-            PresentationCauseKind::AnimationTimer,
-            RenderReason::Animation,
+        result = result.and(
+            session
+                .finish(&mut stdout)
+                .context("failed to restore terminal"),
         );
     }
-    let wheel_changed = if let Some(batch) = action.wheel_batch {
-        let size = terminal.size()?;
-        let area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-        app.set_frame_area(area);
-        dispatch_wheel_batch(app, area, batch)
-    } else {
-        false
-    };
-    if action.should_paint(wheel_changed) {
-        request_runtime_redraw(presenter, session);
-    }
-    Ok(())
+    result
 }
 
-fn record_runtime_cause(
-    session: Option<&mut PresentationTelemetrySession>,
-    kind: PresentationCauseKind,
-    reason: RenderReason,
-) {
-    if let Some(session) = session {
-        session.record_visible_cause(kind, reason, None);
-    }
-}
-
-fn poll_frame_output(
-    output: &mut FrameOutput,
-    session: Option<&mut PresentationTelemetrySession>,
-) -> Result<bool> {
-    let ready = output.is_ready_for_frame();
-    if let Some(failure) = output.take_fatal_failure() {
-        return Err(failure.into());
-    }
-    let acknowledgements = output.take_acknowledgements();
-    if let Some(session) = session {
-        session.record_acknowledgements(acknowledgements);
-    }
-    Ok(ready)
-}
-
-fn request_runtime_redraw(
-    presenter: &mut Presenter,
-    session: Option<&mut PresentationTelemetrySession>,
-) {
-    match session {
-        Some(session) => {
-            if let Some(demand) = session.take_render_demand() {
-                presenter.request_redraw_for(demand, Instant::now());
+impl Runtime {
+    fn run(
+        &mut self,
+        mut ingress: TerminalIngress,
+        mut live: Option<LiveUpdateReceiver>,
+    ) -> Result<()> {
+        let mut input = RuntimeInputIngress::default();
+        let mut selected = None;
+        let stopped_input = crossbeam_channel::never();
+        loop {
+            let acknowledgements = self.output.take_acknowledgements();
+            let writer_ready = !self.output.has_in_flight_frame();
+            if let Some(error) = self.output.take_fatal_failure() {
+                return Err(error.into());
+            }
+            if let Some(trace) = self.trace.as_mut() {
+                trace.record_acknowledgements(acknowledgements);
+            }
+            match ingress.status.try_recv() {
+                Ok(TerminalReaderStatus::Failed(error)) => return Err(error.into()),
+                Ok(TerminalReaderStatus::Stopped) => {
+                    anyhow::bail!("terminal ingress reader stopped")
+                }
+                Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                    anyhow::bail!("terminal ingress reader disconnected")
+                }
+                Err(crossbeam_channel::TryRecvError::Empty) => {}
+            }
+            let readiness = self.live_readiness(live.as_ref());
+            if let Some(signal) = self.readiness.as_mut() {
+                signal
+                    .publish_if_changed(readiness)
+                    .context("failed to publish local scheduling readiness")?;
+            }
+            // A bounded input batch gets priority; live events and due frames get a turn
+            // after it. Submit/resize/click form a paint barrier before provider work.
+            let live_turn = std::mem::take(&mut self.live_turn)
+                && live.as_ref().is_some_and(|receiver| !receiver.is_empty());
+            let started = Instant::now();
+            let mut consumed = 0;
+            while !self.app.should_quit
+                && !live_turn
+                && consumed < 16
+                && (consumed == 0 || started.elapsed() < INPUT_QUANTUM)
+            {
+                let ready = selected
+                    .take()
+                    .or_else(|| input.take_ready(&mut ingress.queue, self.epoch, Instant::now()));
+                let Some(envelope) = ready else {
+                    break;
+                };
+                consumed += 1;
+                let immediate = self.input(envelope.event, self.live_readiness(live.as_ref()))?;
+                if immediate {
+                    break;
+                }
+            }
+            if let Some(receiver) = live
+                .as_ref()
+                .filter(|_| !self.urgent && !self.app.should_quit)
+            {
+                let batch =
+                    apply_live_update_quantum(&mut self.app, receiver, &mut self.experience);
+                if batch.changed {
+                    self.cause(Cause::LiveUpdate, Reason::LiveUpdate);
+                    self.request_frame(self.app.should_quit, Instant::now());
+                }
+                if batch.disconnected {
+                    live = None;
+                }
+            }
+            if !self.app.should_quit {
+                self.timers(Instant::now());
+            }
+            let frame_due = self.frame_at.is_some_and(|at| at <= Instant::now());
+            let wheel_due = self.wheel.at.is_some_and(|at| at <= Instant::now());
+            if (frame_due || wheel_due) && writer_ready {
+                if self.apply_wheel()? || frame_due {
+                    self.paint()?;
+                } else if self.frame_at.is_none() {
+                    self.finish_unchanged_demand()?;
+                }
+            }
+            // A reserved live turn yields back to input even when animation painted.
+            if live_turn {
+                self.live_turn = false;
+            }
+            if self.app.should_quit && self.frame_at.is_none() {
+                return Ok(());
+            }
+            if consumed != 0
+                || live_turn
+                || (selected.is_some() && !self.app.should_quit)
+                || (!self.urgent
+                    && !self.app.should_quit
+                    && live.as_ref().is_some_and(|receiver| !receiver.is_empty()))
+            {
+                continue;
+            }
+            let frame_deadline = [self.frame_at, self.wheel.at]
+                .into_iter()
+                .flatten()
+                .min()
+                .filter(|_| writer_ready);
+            let deadline = if self.app.should_quit {
+                frame_deadline
+            } else {
+                [
+                    frame_deadline,
+                    self.motion_at,
+                    input.deadline().map(|at| self.epoch + at),
+                    (!self.app.replay_mode).then_some(self.directory_at),
+                ]
+                .into_iter()
+                .flatten()
+                .min()
+            };
+            let wake = RuntimeWaitSet {
+                frame: self.output.acknowledgement_receiver(),
+                reader: &ingress.status,
+                terminal: if self.app.should_quit {
+                    &stopped_input
+                } else {
+                    ingress.queue.receiver()
+                },
+                live: live
+                    .as_ref()
+                    .filter(|_| !self.urgent && !self.app.should_quit)
+                    .map(LiveUpdateReceiver::receiver),
+            }
+            .wait(deadline);
+            match wake {
+                RuntimeWake::Terminal(envelope) => {
+                    selected = input.ingest_at(
+                        envelope.received_at.saturating_duration_since(self.epoch),
+                        envelope,
+                    );
+                }
+                RuntimeWake::Live(update) => {
+                    if let Some(receiver) = live.as_ref() {
+                        receiver.defer_selected(update);
+                    }
+                }
+                RuntimeWake::LiveDisconnected => {
+                    if self.app.apply_runtime_event_stream_closed() {
+                        self.cause(Cause::LiveUpdate, Reason::LiveUpdate);
+                        self.request_frame(self.app.should_quit, Instant::now());
+                    }
+                    live = None;
+                }
+                RuntimeWake::Frame(FrameRuntimeEvent::Acknowledged(ack)) => {
+                    self.output.accept_acknowledgement(ack)
+                }
+                RuntimeWake::Frame(FrameRuntimeEvent::Failed { ack, stage }) => {
+                    self.output.accept_acknowledgement(ack);
+                    return Err(crate::terminal::FrameOutputFailure::Write(stage).into());
+                }
+                RuntimeWake::Frame(FrameRuntimeEvent::Disconnected) => {
+                    anyhow::bail!("terminal frame writer disconnected")
+                }
+                RuntimeWake::Reader(TerminalReaderStatus::Failed(error)) => {
+                    return Err(error.into())
+                }
+                RuntimeWake::Reader(_)
+                | RuntimeWake::ReaderDisconnected
+                | RuntimeWake::TerminalDisconnected => {
+                    anyhow::bail!("terminal ingress reader disconnected")
+                }
+                RuntimeWake::Deadline => {}
             }
         }
-        None => presenter.request_redraw(Instant::now()),
     }
-}
 
-fn present_runtime_frame(
-    terminal: &mut Terminal<FrameOutputBackend>,
-    frame_output: &mut FrameOutput,
-    app: &mut AppState,
-    experience: &mut RuntimeExperience,
-    presenter: &mut Presenter,
-    pacer: &mut RuntimePacer,
-    presentation_session: &mut Option<PresentationTelemetrySession>,
-    motion_plan: MotionPlan,
-) -> Result<bool> {
-    let demand = presenter.take_render_demand().or_else(|| {
-        presentation_session
-            .as_mut()
-            .and_then(PresentationTelemetrySession::take_render_demand)
-    });
-    if !has_canonical_render_demand(presentation_session.is_some(), demand.as_ref()) {
-        let submission = FrameSubmission::Unchanged;
-        pacer.record_submission(submission, motion_plan);
-        presenter.record_submission(submission, Instant::now());
-        return Ok(true);
+    fn live_readiness(&self, live: Option<&LiveUpdateReceiver>) -> SchedulingLiveReadiness {
+        let stream_active = self.app.active_turn_in_progress();
+        live.map_or(
+            SchedulingLiveReadiness {
+                stream_active,
+                ..Default::default()
+            },
+            |receiver| receiver.scheduling_readiness(stream_active),
+        )
     }
-    let size = terminal.size()?;
-    app.set_frame_area(ratatui::layout::Rect::new(0, 0, size.width, size.height));
-    experience.tick();
-    let submission = render_terminal_frame(terminal, frame_output, demand.clone(), |terminal| {
-        terminal.draw(|frame| ui::render_app(frame, app))?;
-        experience.post_flush(terminal.backend_mut());
-        Ok(())
-    })?;
-    if matches!(submission, FrameSubmission::ResyncRequired) {
-        pacer.request_flush();
-    }
-    pacer.record_submission(submission, motion_plan);
-    if let (Some(session), Some(demand)) = (presentation_session.as_mut(), demand.as_ref()) {
-        record_frame_submission(session, demand, submission)?;
-    }
-    presenter.record_submission(submission, Instant::now());
-    Ok(false)
-}
 
-fn record_frame_submission(
-    session: &mut PresentationTelemetrySession,
-    demand: &RenderDemand,
-    submission: FrameSubmission,
-) -> Result<()> {
-    match submission {
-        FrameSubmission::Accepted(_) => Ok(()),
-        FrameSubmission::Unchanged => session
-            .record_no_visible_change(demand)
-            .context("failed to record unchanged presentation"),
-        FrameSubmission::ResyncRequired => session
-            .record_resync(demand)
-            .context("failed to record presentation resync"),
+    fn cause(&mut self, kind: Cause, reason: Reason) {
+        if let Some(trace) = self.trace.as_mut() {
+            trace.record_visible_cause(kind, reason, None);
+        }
     }
-}
 
-fn apply_runtime_wake(
-    wake: RuntimeWake,
-    app: &mut AppState,
-    live_updates: &mut Option<LiveUpdateReceiver>,
-    frame_output: &mut FrameOutput,
-) -> Result<()> {
-    match wake {
-        RuntimeWake::Live(update) => {
-            if let Some(update_rx) = live_updates.as_ref() {
-                update_rx.defer_selected(update);
-            }
-        }
-        RuntimeWake::Frame(FrameRuntimeEvent::Acknowledged(ack)) => {
-            frame_output.accept_acknowledgement(ack)
-        }
-        RuntimeWake::Frame(FrameRuntimeEvent::Failed { ack, stage }) => {
-            frame_output.accept_acknowledgement(ack);
-            return Err(crate::terminal::FrameOutputFailure::Write(stage).into());
-        }
-        RuntimeWake::Frame(FrameRuntimeEvent::Disconnected) => {
-            return Err(crate::terminal::FrameOutputFailure::Disconnected.into())
-        }
-        RuntimeWake::Reader(TerminalReaderStatus::Failed(error)) => return Err(error.into()),
-        RuntimeWake::LiveDisconnected => {
-            app.apply_runtime_event_stream_closed();
-            *live_updates = None;
-        }
-        RuntimeWake::Reader(TerminalReaderStatus::Stopped)
-        | RuntimeWake::ReaderDisconnected
-        | RuntimeWake::TerminalDisconnected => {
-            return Err(anyhow::anyhow!("terminal ingress reader disconnected"))
-        }
-        RuntimeWake::Terminal(_) | RuntimeWake::Deadline => {}
+    fn request_frame(&mut self, immediate: bool, now: Instant) {
+        self.urgent |= immediate;
+        let at = if immediate || self.reduced_motion {
+            now
+        } else {
+            now + self.flush_interval
+        };
+        self.frame_at = Some(self.frame_at.map_or(at, |current| current.min(at)));
     }
-    Ok(())
+
+    fn timers(&mut self, now: Instant) {
+        let elapsed = u64::try_from(
+            now.saturating_duration_since(self.suggestion_at)
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX);
+        self.suggestion_at = now;
+        let mut changed = self.app.poll_local_ghost_suggestion(elapsed);
+        changed |= self.app.refresh_motion_state();
+        changed |= self.app.clear_expired_quit_confirmation();
+        if !self.app.replay_mode && now >= self.directory_at {
+            self.directory_at = now + DIRECTORY_REFRESH;
+            changed |= self.app.refresh_current_directory_label();
+        }
+        if changed {
+            self.cause(Cause::Expiry, Reason::Expiry);
+            self.request_frame(false, now);
+        }
+        if self.motion_at.is_some_and(|at| at <= now) {
+            self.motion_at = None;
+            self.app.sample_motion_clock();
+            self.cause(Cause::AnimationTimer, Reason::Animation);
+            self.request_frame(true, now);
+        }
+        let motion = self.app.motion_plan();
+        self.motion_at = motion
+            .until()
+            .or_else(|| motion.cadence().interval())
+            .map(|delay| {
+                let millis =
+                    u64::try_from(delay.as_nanos().div_ceil(1_000_000)).unwrap_or(u64::MAX);
+                let at = now + Duration::from_millis(millis);
+                self.motion_at.map_or(at, |previous| previous.min(at))
+            });
+    }
 }
 
 pub fn run_tui() -> Result<()> {
-    let (_tx, rx) = live_update_channel();
+    let (_sender, receiver) = live_update_channel();
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: PathBuf::from("."),
             historical_events: Vec::new(),
             session_history_entries: Vec::new(),
             prompt_history_path: None,
-            update_rx: rx,
+            update_rx: receiver,
             compact_session_supported: false,
         },
         exit_on_finish: false,
@@ -1139,706 +440,4 @@ pub fn run_tui() -> Result<()> {
         preserve_terminal_on_exit: false,
         skip_alternate_screen: false,
     })
-}
-
-fn runtime_frame_now(epoch: Instant, now: Instant) -> FrameNow {
-    let elapsed_ms =
-        u64::try_from(now.saturating_duration_since(epoch).as_millis()).unwrap_or(u64::MAX);
-    FrameNow {
-        animation_ms: elapsed_ms,
-        flush_ms: elapsed_ms,
-    }
-}
-
-#[cfg(test)]
-fn poll_timeout(pacer: &RuntimePacer, now: FrameNow) -> Option<Duration> {
-    pacer.next_wait_ms(now).map(Duration::from_millis)
-}
-
-fn dispatch_wheel_batch(
-    app: &mut AppState,
-    frame_area: ratatui::layout::Rect,
-    batch: WheelBatch,
-) -> bool {
-    let kind = match batch.direction() {
-        WheelDirection::Up => MouseEventKind::ScrollUp,
-        WheelDirection::Down => MouseEventKind::ScrollDown,
-    };
-    let hovered_wheel_target =
-        ui::hovered_wheel_target(app, frame_area, batch.column(), batch.row());
-    let mut changed = false;
-    for _ in 0..batch.steps() {
-        changed |= app.handle_mouse(
-            MouseEvent {
-                kind,
-                column: batch.column(),
-                row: batch.row(),
-                modifiers: KeyModifiers::NONE,
-            },
-            frame_area,
-            hovered_wheel_target,
-            None,
-            None,
-        );
-    }
-    changed
-}
-
-fn mouse_event_requires_handling(_kind: MouseEventKind, _slash_visible: bool) -> bool {
-    true
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::app::{AppState, ToastVariant};
-    use crate::scheduling::INPUT_BATCH_LIMIT;
-    use crate::UnwrapOrAbort;
-    use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
-
-    #[test]
-    fn current_directory_refresh_is_bounded_and_skips_replay() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        // Given: an injected discovery source that changes branch on each refresh.
-        let mut app = AppState::new_live(None, false, None);
-        let calls = Arc::new(AtomicUsize::new(0));
-        let probe_calls = Arc::clone(&calls);
-        app.set_current_directory_probe_for_test(Arc::new(move || {
-            let call = probe_calls.fetch_add(1, Ordering::Relaxed);
-            harness_core::workspace::WorkspaceEnvironment {
-                working_directory: "/workspace/current".into(),
-                workspace_root: "/workspace/current".into(),
-                is_git_repository: true,
-                git_branch: Some(format!("branch-{call}")),
-            }
-        }));
-        let epoch = Instant::now();
-        let mut deadline = epoch + Duration::from_secs(5);
-
-        // When: runtime checks before, at, and after a delayed deadline, or in replay.
-        for (seconds, replay, changed, discoveries) in [
-            (4, false, false, 1),
-            (5, false, true, 2),
-            (5, false, false, 2),
-            (25, false, true, 3),
-            (26, false, false, 3),
-            (30, true, false, 3),
-            (30, false, true, 4),
-        ] {
-            app.replay_mode = replay;
-            let refreshed = refresh_current_directory_if_due(
-                &mut app,
-                &mut deadline,
-                epoch + Duration::from_secs(seconds),
-            );
-
-            // Then: one due probe runs without catch-up bursts or replay polling.
-            assert_eq!(
-                (refreshed, calls.load(Ordering::Relaxed)),
-                (changed, discoveries)
-            );
-        }
-    }
-
-    #[test]
-    fn frame_acknowledgements_are_retired_without_telemetry() -> Result<()> {
-        use std::io::Write;
-
-        let (mut output, mut writer, receiver) = FrameOutput::bounded(1);
-        let frames = std::env::var("HARNESS_PERF_ACK_FRAMES")
-            .ok()
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(64);
-        let before = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
-        for _ in 0..frames {
-            output.begin_frame()?;
-            writer.write_all(b"x")?;
-            output.finish_frame()?;
-            receiver.write_next(&mut std::io::sink())?;
-            assert!(poll_frame_output(&mut output, None)?);
-        }
-        let after = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
-        let retained = output.take_acknowledgements().len();
-        println!(
-            "frames={frames} retained={retained} before={:?} after={:?}",
-            before.lines().find(|line| line.starts_with("VmRSS:")),
-            after.lines().find(|line| line.starts_with("VmRSS:"))
-        );
-        assert_eq!(
-            retained, 0,
-            "ordinary runtime must not retain frame history"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn mouse_and_wheel_have_distinct_native_taxonomy() {
-        // arrange
-        let click = mouse_presentation_kind(MouseEventKind::Down(MouseButton::Left));
-        let wheel = mouse_presentation_kind(MouseEventKind::ScrollDown);
-
-        // act
-        // assert
-        assert_eq!(click.0, InteractionEventClass::Mouse);
-        assert_eq!(click.1, PresentationCauseKind::Mouse);
-        assert_eq!(click.2, RenderReason::Mouse);
-        assert_eq!(wheel.0, InteractionEventClass::Wheel);
-        assert_eq!(wheel.1, PresentationCauseKind::Wheel);
-        assert_eq!(wheel.2, RenderReason::Wheel);
-    }
-
-    #[test]
-    fn auto_exit_waits_for_the_final_pending_redraw() {
-        // arrange
-        // Given: a terminal event requests exit while the final visible state is still dirty.
-        let mut presenter = Presenter::new();
-
-        // When: runtime exit readiness is checked before and after frame submission.
-        let before_submission = runtime_quit_ready(true, &presenter);
-        presenter.record_submission(
-            FrameSubmission::Accepted(FrameKind::Differential),
-            Instant::now(),
-        );
-        let after_submission = runtime_quit_ready(true, &presenter);
-
-        // act
-        // Then: the runtime keeps running until the final frame reaches the writer queue.
-        // assert
-        assert!(!before_submission);
-        assert!(after_submission);
-    }
-
-    #[test]
-    fn production_selector_observes_arbiter_fairness_mutation() {
-        // arrange
-        // act
-        let ready = RuntimeReady {
-            terminal_input: true,
-            live_update: true,
-            ..RuntimeReady::default()
-        };
-        let mut arbiter = RuntimeArbiter::default();
-
-        // assert
-        assert_eq!(
-            select_runtime_decision(&arbiter, ready),
-            RuntimeDecision::TerminalInput
-        );
-        arbiter.input_quantum_exhausted();
-        assert_eq!(
-            select_runtime_decision(&arbiter, ready),
-            RuntimeDecision::LiveUpdate
-        );
-        arbiter.live_applied();
-        assert_eq!(
-            select_runtime_decision(&arbiter, ready),
-            RuntimeDecision::TerminalInput
-        );
-    }
-
-    #[test]
-    fn active_stream_does_not_synthesize_live_readiness() {
-        // arrange
-        // act
-        let active_without_work = SchedulingLiveReadiness {
-            stream_active: true,
-            ..SchedulingLiveReadiness::default()
-        };
-        // assert
-        assert_eq!(active_without_work.ready_depth(), 0);
-        assert_eq!(
-            SchedulingLiveReadiness {
-                queued_depth: 7,
-                deferred_ready: true,
-                stream_active: true,
-            }
-            .ready_depth(),
-            8
-        );
-    }
-
-    #[test]
-    fn native_telemetry_never_synthesizes_an_unrecorded_frame_cause() {
-        assert!(!has_canonical_render_demand(true, None));
-        assert!(has_canonical_render_demand(false, None));
-    }
-
-    #[test]
-    fn production_selector_preempts_sustained_live_backlog_with_bounded_fairness() {
-        // arrange
-        let ready = RuntimeReady {
-            terminal_input: true,
-            live_update: true,
-            ..RuntimeReady::default()
-        };
-        let mut arbiter = RuntimeArbiter::default();
-        let now = Instant::now();
-        let mut budget = BatchBudget::input(now);
-        let mut terminal_decisions = 0_usize;
-        let mut live_decisions = 0_usize;
-
-        // act
-        for _ in 0..(INPUT_BATCH_LIMIT * 4 + 4) {
-            if budget.exhausted(now) {
-                arbiter.input_quantum_exhausted();
-            }
-            match select_runtime_decision(&arbiter, ready) {
-                RuntimeDecision::TerminalInput => {
-                    terminal_decisions = terminal_decisions.saturating_add(1);
-                    budget.consume();
-                }
-                RuntimeDecision::LiveUpdate => {
-                    live_decisions = live_decisions.saturating_add(1);
-                    arbiter.live_applied();
-                    budget = BatchBudget::input(now);
-                }
-                decision => panic!("unexpected scheduling decision: {decision:?}"),
-            }
-        }
-
-        // assert
-        assert_eq!(terminal_decisions, INPUT_BATCH_LIMIT * 4);
-        assert_eq!(live_decisions, 4);
-    }
-
-    #[test]
-    fn due_pacer_rotates_to_a_bounded_live_quantum() {
-        // arrange
-        // Given: motion is continuously due and more live work is queued than one quantum.
-        let (sender, receiver) = live_update_channel();
-        for index in 0..(LIVE_UPDATE_DRAIN_MAX_PER_FRAME + 3) {
-            sender
-                .send(LiveUpdate::Status(format!("status {index}")))
-                .expect("live receiver remains connected");
-        }
-        let ready = RuntimeReady {
-            pacer_deadline: true,
-            live_update: true,
-            ..RuntimeReady::default()
-        };
-        let mut arbiter = RuntimeArbiter::default();
-
-        // When: one natural deadline is served and production applies the live turn.
-        assert_eq!(
-            select_runtime_decision(&arbiter, ready),
-            RuntimeDecision::PacerDeadline
-        );
-        arbiter.deadline_served();
-        assert_eq!(
-            select_runtime_decision(&arbiter, ready),
-            RuntimeDecision::LiveUpdate
-        );
-        let mut app = AppState::default();
-        let mut experience = RuntimeExperience::new();
-        let drained = apply_live_update_quantum(&mut app, &receiver, &mut experience);
-
-        // act
-        // Then: the bounded quantum progresses sixteen items, rather than one item per frame.
-        // assert
-        assert!(drained.changed);
-        assert!(drained.budget_exhausted);
-        assert_eq!(receiver.ready_depth(), 3);
-    }
-
-    #[test]
-    fn terminal_arrival_after_arbitration_preempts_dirty_frame_build() {
-        // arrange
-        // Given: lower-priority work won arbitration just before a click reaches ingress.
-        let (sender, receiver) = crossbeam_channel::bounded(2);
-        let mut queue = crate::input::TerminalQueue::new(receiver);
-        sender
-            .send(crate::input::TerminalEnvelope::new(
-                crate::input::TerminalSequence::new(1),
-                Instant::now(),
-                event::TuiEvent::Mouse(crossterm::event::MouseEvent {
-                    kind: MouseEventKind::Down(MouseButton::Left),
-                    column: 6,
-                    row: 8,
-                    modifiers: crossterm::event::KeyModifiers::NONE,
-                }),
-            ))
-            .expect("terminal queue remains connected");
-
-        // When: production reaches the last boundary before an expensive frame build.
-        let mut ingress = RuntimeInputIngress::default();
-        let now = Instant::now();
-        let pending = ingress.take_ready(&mut queue, now, now);
-        let input_priority = pending.is_some();
-
-        // act
-        // Then: the click is dispatched before lower-priority rendering starts.
-        // assert
-        assert!(input_priority);
-        assert!(matches!(
-            pending.map(|envelope| envelope.event),
-            Some(event::TuiEvent::Mouse(_))
-        ));
-    }
-
-    #[test]
-    fn poll_timeout_parks_when_runtime_pacer_is_idle() {
-        // arrange
-        // Given: an idle runtime pacer.
-        let pacer = RuntimePacer::new();
-
-        // When: the terminal asks how long it may park.
-        let timeout = poll_timeout(&pacer, FrameNow::default());
-
-        // act
-        // Then: no paint deadline shortens the idle interval.
-        // assert
-        assert_eq!(timeout, None);
-    }
-
-    #[test]
-    fn poll_timeout_tracks_runtime_pacer_animation_deadline() {
-        // arrange
-        // Given: an active runtime pacer armed at zero.
-        let mut pacer = RuntimePacer::new();
-        pacer.poll(FrameNow::default(), true);
-
-        // When: the terminal checks before and at the animation deadline.
-        let pending = poll_timeout(&pacer, FrameNow::default());
-        let due = poll_timeout(
-            &pacer,
-            FrameNow {
-                animation_ms: crate::scheduling::ANIMATION_PERIOD_MS,
-                flush_ms: 0,
-            },
-        );
-
-        // act
-        // Then: the scheduler's active-animation deadline is the poll authority.
-        // assert
-        assert_eq!(
-            (pending, due),
-            (
-                Some(Duration::from_millis(
-                    crate::scheduling::ANIMATION_PERIOD_MS
-                )),
-                Some(Duration::ZERO),
-            )
-        );
-    }
-
-    #[test]
-    fn plain_mouse_movement_reaches_hover_handling() {
-        assert!(mouse_event_requires_handling(MouseEventKind::Moved, false));
-        assert!(mouse_event_requires_handling(MouseEventKind::Moved, true));
-        assert!(mouse_event_requires_handling(
-            MouseEventKind::ScrollDown,
-            false
-        ));
-    }
-
-    #[test]
-    fn drain_live_updates_marks_disconnect_once() {
-        let (tx, rx) = live_update_channel();
-        drop(tx);
-        let mut app = AppState::default();
-
-        let first = drain_live_updates(&mut app, &rx);
-        assert_eq!(
-            first,
-            LiveUpdateDrainState {
-                changed: true,
-                disconnected: true,
-                budget_exhausted: false,
-            }
-        );
-        assert_eq!(
-            app.status_banner.as_deref(),
-            Some("live event stream disconnected")
-        );
-
-        let second = drain_live_updates(&mut app, &rx);
-        assert_eq!(
-            second,
-            LiveUpdateDrainState {
-                changed: false,
-                disconnected: true,
-                budget_exhausted: false,
-            }
-        );
-    }
-
-    #[test]
-    fn app_toast_counts_as_active_animation() {
-        let mut app = AppState::default();
-        assert!(!app.has_active_animations());
-
-        app.set_toast_for_test("Copied", ToastVariant::Info);
-
-        assert!(app.has_active_animations());
-    }
-
-    #[test]
-    fn overlay_pause_is_applied_before_runtime_arms_toast_deadline() {
-        // arrange
-        // Given: an active toast becomes occluded before the next runtime loop.
-        let mut app = AppState::default();
-        app.set_toast_for_test("Copied", ToastVariant::Info);
-        assert!(app.motion_plan().until().is_some());
-        app.palette_visible = true;
-
-        // When: the production runtime refresh-and-plan boundary is evaluated.
-        let plan = refresh_motion_plan(&mut app);
-
-        // act
-        // Then: the paused toast contributes no stale wake deadline.
-        // assert
-        assert!(plan.is_none());
-        let pacer = RuntimePacer::new();
-        assert!(!pacer.needs_poll(FrameNow::default(), plan));
-    }
-
-    #[test]
-    fn drain_live_updates_routes_operator_notice_to_toast() {
-        let (tx, rx) = live_update_channel();
-        tx.send(LiveUpdate::OperatorNotice {
-            message: "manual compaction skipped: need at least two completed turns".to_string(),
-            level: OperatorNoticeLevel::Info,
-        })
-        .unwrap_or_abort();
-
-        let mut app = AppState::default();
-        let state = drain_live_updates(&mut app, &rx);
-
-        assert_eq!(
-            state,
-            LiveUpdateDrainState {
-                changed: true,
-                disconnected: false,
-                budget_exhausted: false,
-            }
-        );
-        assert_eq!(app.status_banner.as_deref(), None);
-        assert_eq!(
-            app.toast()
-                .map(|toast| (toast.message.as_str(), toast.variant)),
-            Some((
-                "manual compaction skipped: need at least two completed turns",
-                ToastVariant::Info,
-            ))
-        );
-    }
-
-    #[test]
-    fn drain_live_updates_keeps_error_operator_notice_persistent() {
-        let (tx, rx) = live_update_channel();
-        tx.send(LiveUpdate::OperatorNotice {
-            message: "manual compaction failed: boom".to_string(),
-            level: OperatorNoticeLevel::Error,
-        })
-        .unwrap_or_abort();
-
-        let mut app = AppState::default();
-        let state = drain_live_updates(&mut app, &rx);
-
-        assert_eq!(
-            state,
-            LiveUpdateDrainState {
-                changed: true,
-                disconnected: false,
-                budget_exhausted: false,
-            }
-        );
-        assert_eq!(
-            app.status_banner.as_deref(),
-            Some("manual compaction failed: boom")
-        );
-        assert_eq!(
-            app.toast()
-                .map(|toast| (toast.message.as_str(), toast.variant)),
-            Some(("manual compaction failed: boom", ToastVariant::Error))
-        );
-    }
-
-    #[test]
-    fn drain_live_updates_applies_session_history_refresh() {
-        let entry = SessionHistoryEntry {
-            run_dir: PathBuf::from("/tmp/session-history-refresh"),
-            catalog: SessionCatalogEntry {
-                run_id: "session-history-refresh".into(),
-                run_name: Some("session history refresh".to_string()),
-                status: Some(RunStatus::Finished),
-                last_updated_at: Some("2026-05-04T00:00:00Z".to_string()),
-                workspace_root: Some("/workspace".to_string()),
-                profile_preset: Some("worker".to_string()),
-                provider_model: Some("mock:model".to_string()),
-                mode_source: SessionModeSource::InteractiveLive,
-                is_resumable: true,
-                resume_disabled_reason: None,
-                artifact_count: 0,
-                child_session_count: 0,
-                parent_session_id: None,
-            },
-        };
-        let (tx, rx) = live_update_channel();
-        tx.send(LiveUpdate::SessionHistory(vec![entry.clone()]))
-            .unwrap_or_abort();
-
-        let mut app = AppState::default();
-        let state = drain_live_updates(&mut app, &rx);
-
-        assert_eq!(
-            state,
-            LiveUpdateDrainState {
-                changed: true,
-                disconnected: false,
-                budget_exhausted: false,
-            }
-        );
-        assert_eq!(app.session_history_entries, vec![entry]);
-    }
-
-    #[test]
-    fn run_started_clears_the_new_session_bootstrap_status() {
-        // arrange
-        // Given: new-live bootstrap posted a transient status before runtime events arrived.
-        let (tx, rx) = live_update_channel();
-        tx.send(LiveUpdate::Status("starting new session".to_string()))
-            .unwrap_or_abort();
-        tx.send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(
-            Box::new(EventEnvelopeV1 {
-                schema_version: harness_core::event::SCHEMA_VERSION,
-                event_id: "evt-bootstrap-started".to_string(),
-                seq: 1,
-                run_id: "run-bootstrap-started".into(),
-                mono_ms: 1,
-                ts: None,
-                actor: harness_core::event::EventActor::new(
-                    harness_core::event::ActorKind::System,
-                    Some("coordinator".to_string()),
-                ),
-                correlation_id: None,
-                causation_id: None,
-                stream_key: Some("run:run-bootstrap-started".to_string()),
-                payload: harness_core::event::EventV1::RunStarted(
-                    harness_core::event::RunStartedEvent {
-                        run_name: "bootstrap started".into(),
-                        workspace_root: "/workspace".to_string(),
-                    },
-                ),
-            }),
-        ))))
-        .unwrap_or_abort();
-        let mut app = AppState::new_live(None, false, None);
-
-        // When: the live-update quantum applies the bootstrap status and first runtime event.
-        drain_live_updates(&mut app, &rx);
-
-        // act
-        // Then: the transient bootstrap banner no longer overrides live turn state.
-        // assert
-        assert_eq!(app.status_banner, None);
-    }
-
-    #[test]
-    fn drain_live_updates_applies_auth_backend_result_to_status_banner() {
-        let (tx, rx) = live_update_channel();
-        let mut app = AppState::new_startup(Vec::new(), None);
-        app.set_status_banner(Some("No provider connected. Use /connect.".to_string()));
-        tx.send(LiveUpdate::AuthBackendResult {
-            success: true,
-            message: "auth backend completed".to_string(),
-        })
-        .unwrap_or_abort();
-
-        let state = drain_live_updates(&mut app, &rx);
-
-        assert_eq!(
-            state,
-            LiveUpdateDrainState {
-                changed: true,
-                disconnected: false,
-                budget_exhausted: false,
-            }
-        );
-        assert_eq!(app.status_banner, None);
-    }
-
-    #[test]
-    fn drain_live_updates_preserves_streamed_auth_failure_detail() {
-        // arrange
-        let (tx, rx) = live_update_channel();
-        let mut app = AppState::new_startup(Vec::new(), None);
-        tx.send(LiveUpdate::OperatorNotice {
-            message:
-                "auth backend error: auth login failed: could not bind Codex loopback callback"
-                    .to_string(),
-            level: OperatorNoticeLevel::Error,
-        })
-        .unwrap_or_abort();
-        tx.send(LiveUpdate::OperatorNotice {
-            message: "auth backend failed (exit 1): harness auth login openai".to_string(),
-            level: OperatorNoticeLevel::Error,
-        })
-        .unwrap_or_abort();
-        tx.send(LiveUpdate::AuthBackendResult {
-            success: false,
-            message: "auth backend failed (exit 1): harness auth login openai".to_string(),
-        })
-        .unwrap_or_abort();
-
-        // act
-        drain_live_updates(&mut app, &rx);
-
-        // assert
-        assert_eq!(
-            app.status_banner.as_deref(),
-            Some("auth backend error: auth login failed: could not bind Codex loopback callback")
-        );
-    }
-
-    #[test]
-    fn drain_live_updates_yields_after_frame_budget() {
-        let (tx, rx) = live_update_channel();
-        for index in 0..=LIVE_UPDATE_DRAIN_MAX_PER_FRAME {
-            tx.send(LiveUpdate::Status(format!("status {index}")))
-                .unwrap_or_abort();
-        }
-
-        let mut app = AppState::default();
-        let first = drain_live_updates(&mut app, &rx);
-
-        assert_eq!(
-            first,
-            LiveUpdateDrainState {
-                changed: true,
-                disconnected: false,
-                budget_exhausted: true,
-            }
-        );
-        assert_eq!(
-            app.status_banner.as_deref(),
-            Some(format!("status {}", LIVE_UPDATE_DRAIN_MAX_PER_FRAME - 1).as_str())
-        );
-
-        let second = drain_live_updates(&mut app, &rx);
-        assert_eq!(
-            second,
-            LiveUpdateDrainState {
-                changed: true,
-                disconnected: false,
-                budget_exhausted: false,
-            }
-        );
-        assert_eq!(
-            app.status_banner.as_deref(),
-            Some(format!("status {LIVE_UPDATE_DRAIN_MAX_PER_FRAME}").as_str())
-        );
-    }
-
-    #[test]
-    fn reduced_motion_override_accepts_only_explicit_enabled_values() {
-        assert!(reduced_motion_from_env(Some("1")));
-        assert!(reduced_motion_from_env(Some("true")));
-        assert!(reduced_motion_from_env(Some("YES")));
-        assert!(reduced_motion_from_env(Some("on")));
-        assert!(!reduced_motion_from_env(Some("0")));
-        assert!(!reduced_motion_from_env(Some("false")));
-        assert!(!reduced_motion_from_env(None));
-    }
 }
