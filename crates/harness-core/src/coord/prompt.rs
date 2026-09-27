@@ -6,6 +6,7 @@ mod tags;
 #[derive(Default)]
 pub(super) struct Prompt {
     pub reserved_id: Option<String>,
+    pub child_completion: Option<String>,
     pub text: String,
     pub tags: SelectedPromptTags,
     pub attachments: Vec<AttachmentMetadata>,
@@ -81,6 +82,7 @@ impl CoordinatorHandle {
             agent.into(),
             Prompt {
                 reserved_id: None,
+                child_completion: None,
                 text: text.into(),
                 tags,
                 attachments,
@@ -102,6 +104,7 @@ impl CoordinatorHandle {
             agent.into(),
             Prompt {
                 reserved_id: None,
+                child_completion: None,
                 text: text.into(),
                 tags,
                 attachments,

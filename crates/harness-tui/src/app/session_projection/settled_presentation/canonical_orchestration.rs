@@ -6,6 +6,13 @@ pub(super) fn apply_canonical_background_notifications(
     activities: &mut VecDeque<ActivityEntry>,
     tasks: &mut BTreeMap<String, OrchestrationTaskRow>,
 ) {
+    let cancelled = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::TaskCancelled(task) if !task.failure => Some(task.task_id.as_str()),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
     for notification in events {
         let EventV1::BackgroundTaskNotification(data) = &notification.payload else {
             continue;
@@ -14,7 +21,16 @@ pub(super) fn apply_canonical_background_notifications(
             .delivered_turn_request_id
             .as_deref()
             .unwrap_or(data.child_request_id.as_str());
-        if let Some(activity) = activities
+        if data
+            .delivered_turn_request_id
+            .as_deref()
+            .is_some_and(|id| cancelled.contains(id))
+            && !activities.iter().any(|activity| {
+                activity.request_id == request_id && activity.request_data.is_some()
+            })
+        {
+            activities.retain(|activity| activity.request_id != request_id);
+        } else if let Some(activity) = activities
             .iter_mut()
             .find(|activity| activity.request_id == request_id)
         {
