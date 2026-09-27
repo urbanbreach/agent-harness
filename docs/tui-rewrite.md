@@ -39,8 +39,8 @@ came from stale fixtures. Correcting them also exposed R4 below. The fixtures no
 canonical completed-assistant events, expand collapsed errors before inspecting
 them, check the current Settings footer, and wait for a complete resize frame.
 Markdown checks assert rendered emphasis; xterm supplies grapheme-aware visual
-evidence that the small VT100 test parser cannot provide. R4 below remains a
-separate failing behavior check, exempted only while recording the reference.
+evidence that the small VT100 test parser cannot provide. R4 was exempted only
+while recording the reference; the candidate now passes the full journey.
 
 The CLI journey now enters the saved session and submits another prompt after
 the startup-to-live terminal handoff. The runtime probe also exercises rewind
@@ -308,7 +308,39 @@ Raw reports are in [`evidence/tui-rewrite/viewport`](evidence/tui-rewrite/viewpo
 
 This is a state-ownership migration, not completion of the renderer rewrite.
 Whole-history projection, global layout caches, and the original rendering engine
-remain. R4 response navigation still fails its PTY check and needs replacement.
+remain.
+
+## Response navigation correction (R4)
+
+Shift-K/J now positions the selected answer below its sticky prompt. Repeated
+jumps use the selected response while the viewport remains at its navigation
+position, so clamping cannot select the same answer repeatedly. Manual scrolling
+resumes position-based navigation. This is the documented R4 correction; the
+reference cells for working behavior remain unchanged.
+
+The real PTY journey previously failed waiting for `Harness 2/3`. It now passes
+without the reference-defect exemption and requires the first answer to be visible,
+advancement in both directions, and clamping at both ends. All 287 scoped
+transcript/response checks pass, including the 539-frame oracle; scoped Clippy
+passes. The existing keyboard journey also checks navigation after manual scrolling.
+Independent review found no blocking issue.
+
+An xterm.js run captures all three selected responses and the return to the first.
+Its terminal metadata shows restored modes after palette exit, and cleanup removed
+the process group, browser profile, and temporary directory. This used a debug
+fixture built from the uncommitted change, with source and executable receipts;
+it is not release performance evidence.
+
+```sh
+HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run --profile ci --run-ignored all \
+  -p harness-tui --all-features --test p0_02_pty_recorded
+cargo nextest run --profile ci -p harness-tui --all-features \
+  -E 'test(response) | test(transcript) | test(recorded_terminal_journeys)'
+```
+
+Raw checks, browser actions, ANSI, cell buffers, screenshots, and hashes are in
+[`evidence/tui-rewrite/response-navigation`](evidence/tui-rewrite/response-navigation).
+The red PTY report is in [`viewport/pty.log`](evidence/tui-rewrite/viewport/pty.log).
 
 ## Verification sequence
 

@@ -57,21 +57,21 @@ fn p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append() {
     helper.send(shifted('K').as_bytes());
     helper.wait_for("Harness 1/3");
 
-    // R4: the reference clips the selected answer and cannot reliably advance from it.
-    if std::env::var_os("HARNESS_TUI_RECORD_REFERENCE_DEFECTS").is_none() {
-        // Then: first and last response navigation clamp rather than wrap.
-        helper.send(shifted('K').as_bytes());
-        helper.send(shifted('J').as_bytes());
-        helper.wait_for("Harness 2/3");
-        helper.wait_for("P0-02 completed response two");
-        helper.send(shifted('J').as_bytes());
-        helper.wait_for("Harness 3/3");
-        helper.send(shifted('J').as_bytes());
-        helper.send(shifted('K').as_bytes());
-        helper.wait_for("Harness 2/3");
-        helper.send(shifted('K').as_bytes());
-        helper.wait_for("Harness 1/3");
-    }
+    // Then: the selected answer remains below its sticky prompt, and response
+    // navigation advances by identity even when several answers share a viewport.
+    helper.wait_for("P0-02 completed response one");
+    helper.send(shifted('K').as_bytes());
+    helper.send(shifted('J').as_bytes());
+    helper.wait_for("Harness 2/3");
+    helper.wait_for("P0-02 completed response two");
+    helper.send(shifted('J').as_bytes());
+    helper.wait_for("Harness 3/3");
+    helper.send(shifted('J').as_bytes());
+    helper.send(shifted('K').as_bytes());
+    helper.wait_for("Harness 2/3");
+    helper.send(shifted('K').as_bytes());
+    helper.wait_for("Harness 1/3");
+    helper.wait_for("P0-02 completed response one");
 
     // assert
     // And: response navigation and group selection are separate gestures.

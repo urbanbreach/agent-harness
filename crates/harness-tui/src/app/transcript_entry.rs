@@ -20,10 +20,8 @@ impl AppState {
     }
 
     pub(crate) fn jump_transcript_response(&mut self, forward: bool) -> bool {
-        let entries = ui::transcript_navigation_entries(
-            self,
-            self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24)),
-        );
+        let area = self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24));
+        let entries = ui::transcript_navigation_entries(self, area);
         let responses = entries
             .iter()
             .enumerate()
@@ -35,37 +33,47 @@ impl AppState {
             })
             .map(|(_, entry)| entry)
             .collect::<Vec<_>>();
-        let top = self.transcript_view.measured_viewport().top();
-        let target = if forward {
-            responses
-                .iter()
-                .find(|entry| entry.top > top)
-                .or_else(|| responses.last())
-        } else {
-            responses
-                .iter()
-                .rev()
-                .find(|entry| entry.top < top)
-                .or_else(|| responses.first())
-        };
-        let Some(entry) = target else {
+        if responses.is_empty() {
             return false;
+        }
+        let viewport = self.transcript_view.measured_viewport();
+        // Several responses can share a clamped viewport. Repeated jumps keep
+        // their selected identity; scrolling elsewhere starts from that position.
+        let current = self
+            .transcript_view
+            .response_position
+            .and_then(|_| {
+                responses
+                    .iter()
+                    .position(|entry| Some(entry.id) == self.transcript_view.selected_entry)
+            })
+            .filter(|index| {
+                ui::transcript_entry_scroll_top(self, area, responses[*index].top)
+                    .is_some_and(|top| top.min(viewport.max_scroll()) == viewport.top())
+            });
+        let index = match (current, forward) {
+            (Some(index), true) => (index + 1).min(responses.len() - 1),
+            (Some(index), false) => index.saturating_sub(1),
+            (None, true) => responses
+                .iter()
+                .position(|entry| entry.top > viewport.top())
+                .unwrap_or(responses.len() - 1),
+            (None, false) => responses
+                .iter()
+                .rposition(|entry| entry.top < viewport.top())
+                .unwrap_or(0),
         };
-        self.transcript_view.response_position = responses
-            .iter()
-            .position(|response| response.id == entry.id)
-            .map(|index| crate::transcript_timeline::ResponsePosition {
+        let entry = responses[index];
+        let top = ui::transcript_entry_scroll_top(self, area, entry.top).unwrap_or(entry.top);
+        self.select_transcript_entry(entry);
+        self.transcript_view.set_measured_viewport(
+            super::transcript_viewport::TranscriptViewport::detached(top, entry.max_scroll),
+        );
+        self.transcript_view.response_position =
+            Some(crate::transcript_timeline::ResponsePosition {
                 index: index + 1,
                 total: responses.len(),
             });
-        self.select_transcript_entry(entry);
-        let viewport = self.transcript_view.measured_viewport();
-        self.transcript_view.set_measured_viewport(
-            super::transcript_viewport::TranscriptViewport::detached(
-                entry.top,
-                viewport.max_scroll(),
-            ),
-        );
         true
     }
 

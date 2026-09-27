@@ -1,0 +1,7 @@
+{
+  "path": "/home/urbanbreach/Projects/agent-harness/target/debug/deps/p0_02_pty_recorded-08d74c1e5394dcec",
+  "bytes": 124766483,
+  "sha256": "23814f939763786aae17d4a78cc8f1f395730e9df7f4a3dd8cbc851876248642",
+  "build": "cargo nextest list --profile ci -p harness-tui --all-features --test p0_02_pty_recorded --message-format json",
+  "qualification": "Debug helper built from the uncommitted R4 change; browser driver records the dirty source-tree hash. No shipped release provenance claim."
+}

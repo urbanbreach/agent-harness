@@ -1,0 +1,1 @@
+PASS scenario=transcript-response-navigation evidence=/home/urbanbreach/Projects/agent-harness/.omo/evidence/tui-rewrite/response-navigation manifest=/home/urbanbreach/Projects/agent-harness/.omo/evidence/tui-rewrite/response-navigation/artifact-manifest.json
