@@ -1105,7 +1105,7 @@ impl AppState {
 
     fn build_dashboard_integration(&self, viewport: Rect) -> Result<DashboardIntegration, String> {
         let mut events_by_run = BTreeMap::<String, Vec<EventEnvelopeV1>>::new();
-        for event in &self.events {
+        for event in self.events() {
             events_by_run
                 .entry(event.run_id.to_string())
                 .or_default()
@@ -1720,12 +1720,12 @@ impl AppState {
         self.resume_live_turn_timing_from_projection();
         self.sync_transcript_state(false);
 
-        if self.projection.events.is_empty() {
+        if self.projection.event_count() == 0 {
             self.selected_event_index = 0;
         } else {
             self.selected_event_index = self
                 .selected_event_index
-                .min(self.projection.events.len() - 1);
+                .min(self.projection.event_count() - 1);
         }
         self.details_scroll = 0;
         self.transcript_view.set_offset(0);
@@ -1856,8 +1856,8 @@ impl AppState {
             .min(self.projection.activities.len().saturating_sub(1));
         self.selected_event_index = self.selected_event_index.saturating_sub(trimmed_events);
 
-        if self.transcript_view.viewport.is_following() && !self.projection.events.is_empty() {
-            self.selected_event_index = self.projection.events.len() - 1;
+        if self.transcript_view.viewport.is_following() && self.projection.event_count() != 0 {
+            self.selected_event_index = self.projection.event_count() - 1;
             self.transcript_view.selected_activity_index =
                 self.projection.activities.len().saturating_sub(1);
             self.details_scroll = 0;
@@ -2173,7 +2173,7 @@ impl AppState {
         use std::path::Path;
 
         let mut applied: BTreeMap<String, String> = BTreeMap::new();
-        for event in &self.events {
+        for event in self.events() {
             if let EventV1::EditApplied(edit) = &event.payload {
                 applied.insert(edit.path.clone(), edit.new_file_digest.clone());
             }
@@ -3668,13 +3668,13 @@ impl AppState {
     }
 
     pub fn selected_event(&self) -> Option<&EventEnvelopeV1> {
-        self.projection.events.get(self.selected_event_index)
+        self.projection.events().nth(self.selected_event_index)
     }
 
     pub fn run_id(&self) -> Option<&str> {
         self.projection
-            .events
-            .first()
+            .events()
+            .next()
             .map(|event| event.run_id.as_str())
     }
 

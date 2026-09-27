@@ -33,6 +33,7 @@ use crate::view_model;
 
 #[path = "session_projection/background_notification.rs"]
 mod background_notification;
+mod event_history;
 mod event_ingest;
 mod live_lifecycle;
 mod live_orchestration;
@@ -113,7 +114,8 @@ struct ReasoningTiming {
 #[derive(Default)]
 pub struct SessionProjection {
     live_compactions: BTreeMap<String, LiveCompaction>,
-    pub(crate) events: Vec<EventEnvelopeV1>,
+    // Incomplete child slices and rejected histories retain their inspection buffer.
+    pub(crate) inspection_events: Option<Vec<EventEnvelopeV1>>,
     canonical_projection: Option<CanonicalSessionProjection>,
     canonical_projection_error: Option<String>,
     unsettled_durable_events: Vec<EventEnvelopeV1>,
@@ -146,7 +148,7 @@ pub struct SessionProjection {
 impl SessionProjection {
     pub(crate) fn reset(&mut self) {
         self.live_compactions.clear();
-        self.events.clear();
+        self.inspection_events = None;
         self.canonical_projection = None;
         self.canonical_projection_error = None;
         self.unsettled_durable_events.clear();
@@ -449,10 +451,14 @@ impl SessionProjection {
     }
 
     pub(crate) fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
-        self.unsettled_durable_events.push(event.clone());
         let should_settle = canonical_projection_update_for_event(&event.payload)
             == CanonicalProjectionUpdate::Settle;
-        let trimmed = self.ingest_transient_view_event(event, historical);
+        self.update_transient_view_event(&event, historical);
+        if let Some(events) = self.inspection_events.as_mut() {
+            events.push(event.clone());
+        }
+        self.unsettled_durable_events.push(event);
+        let trimmed = self.enforce_event_memory_cap();
         if should_settle && !self.settle_durable_events() {
             self.transcript_delta = ProjectionDelta::FullRebuild;
         }
@@ -502,19 +508,22 @@ impl SessionProjection {
         event: EventEnvelopeV1,
         historical: bool,
     ) -> usize {
+        self.update_transient_view_event(&event, historical);
+        self.store_inspection_event(event)
+    }
+
+    fn update_transient_view_event(&mut self, event: &EventEnvelopeV1, historical: bool) {
         let previous_activity_count = self.activities.len();
         let previous_trimmed_count = self.transcript_trimmed_count;
-        self.finish_transient_state_for_event(&event);
+        self.finish_transient_state_for_event(event);
         self.seen_seqs.insert(event.seq);
-        self.note_agent_ownership(&event);
-        self.update_live_presentation_for_event(&event, historical);
+        self.note_agent_ownership(event);
+        self.update_live_presentation_for_event(event, historical);
         self.transcript_delta = if historical {
             ProjectionDelta::ReplayPending
         } else {
-            self.transcript_delta_for_event(&event, previous_activity_count, previous_trimmed_count)
+            self.transcript_delta_for_event(event, previous_activity_count, previous_trimmed_count)
         };
-        self.events.push(event);
-        self.enforce_event_memory_cap()
     }
 
     pub(crate) fn cache_event_details(
@@ -530,8 +539,7 @@ impl SessionProjection {
         } else {
             ProjectionDelta::None
         };
-        self.events.push(event);
-        self.enforce_event_memory_cap()
+        self.store_inspection_event(event)
     }
 
     pub(crate) fn replace_settled_projection(&mut self, events: &[EventEnvelopeV1], inline: bool) {
@@ -551,6 +559,7 @@ impl SessionProjection {
         match CanonicalSessionProjection::from_event_history(events) {
             Ok(projection) => {
                 self.canonical_projection = Some(projection);
+                self.inspection_events = None;
                 self.canonical_projection_error = None;
                 self.unsettled_durable_events.clear();
                 self.canonical_projection_generation =
@@ -578,6 +587,7 @@ impl SessionProjection {
         };
         match result {
             Ok(()) => {
+                self.inspection_events = None;
                 self.canonical_projection_error = None;
                 self.unsettled_durable_events.clear();
                 self.canonical_projection_generation =
@@ -586,6 +596,9 @@ impl SessionProjection {
                 true
             }
             Err(error) => {
+                if self.inspection_events.is_none() {
+                    self.inspection_events = Some(self.events().cloned().collect());
+                }
                 self.canonical_projection_error = Some(error.to_string());
                 false
             }
@@ -1324,7 +1337,7 @@ impl SessionProjection {
             .and_then(|lineage| lineage.child_request_id.clone())
             .or_else(|| task_child_request_id_from_output(tool.output_json.as_ref()))
             .or_else(|| {
-                self.events.iter().rev().find_map(|event| {
+                self.events().rev().find_map(|event| {
                     let EventV1::TaskScheduled(data) = &event.payload else {
                         return None;
                     };
@@ -1342,7 +1355,7 @@ impl SessionProjection {
                 })
             })?;
         harness_core::proj::project_background_request(
-            &self.events,
+            self.events(),
             &harness_core::proj::BackgroundRequestRef {
                 request_id: request_id.into(),
                 session_id_hint: None,
@@ -1488,21 +1501,6 @@ impl SessionProjection {
                 label: "system".to_string(),
                 profile: "n/a".to_string(),
             },
-        }
-    }
-
-    fn enforce_event_memory_cap(&mut self) -> usize {
-        let max_events = self.memory_caps.max_events;
-        if self.events.len() > max_events {
-            let to_remove = self.events.len() - max_events;
-            self.events.drain(0..to_remove);
-            if let Some(oldest) = self.events.first() {
-                self.reasoning_timings.retain(|seq, _| *seq >= oldest.seq);
-            }
-            self.events_trimmed_count += to_remove;
-            to_remove
-        } else {
-            0
         }
     }
 
@@ -1724,8 +1722,7 @@ impl AppState {
         }
 
         let has_generated_session_title = self
-            .events
-            .iter()
+            .events()
             .any(|event| matches!(event.payload, EventV1::SessionTitleUpdated(_)));
         let has_user_message_title = self.activities.iter().any(|activity| {
             activity
@@ -1740,16 +1737,14 @@ impl AppState {
                 .iter()
                 .any(|activity| activity.user_message.is_some())
             && !self
-                .events
-                .iter()
+                .events()
                 .any(|event| matches!(event.payload, EventV1::ProviderRequestStarted(_)));
         let has_usage = self
             .activities
             .iter()
             .any(|activity| activity.usage.is_some());
         let has_modified_files = self
-            .events
-            .iter()
+            .events()
             .any(|event| matches!(event.payload, EventV1::EditApplied(_)));
         let has_integrations = harness_core::config::registered_integrations_config().is_some();
         let lsp = harness_core::config::registered_lsp_config();

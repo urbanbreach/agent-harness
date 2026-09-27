@@ -85,7 +85,7 @@ impl AppState {
                 .selected_entry
                 .and_then(|_| self.selected_transcript_entry())
                 .and_then(|entry| {
-                    harness_core::conversation_rewind::rewind_points(&self.events)
+                    harness_core::conversation_rewind::rewind_points(&self.retained_events())
                         .iter()
                         .position(|point| point.seq == entry.activity_first_seq)
                 }),
@@ -351,7 +351,7 @@ impl AppState {
             || self.startup_shell_visible()
             || self.composer.shell_mode
             || !self.composer.prompt_buffer.is_empty()
-            || harness_core::conversation_rewind::rewind_points(&self.events).is_empty()
+            || harness_core::conversation_rewind::rewind_points(&self.retained_events()).is_empty()
         {
             return false;
         }

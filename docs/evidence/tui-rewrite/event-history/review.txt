@@ -1,0 +1,16 @@
+Independent reviewer: /root/tui_review
+
+Source review: retention offsets remain stable across settlement, rejected history
+keeps its inspection view, inline children retain sparse owned history, and activity
+lookups retain per-slice partition points. Reuse the Cow used by clone validation
+for dispatch; this finding was resolved and rechecked. No remaining correctness
+findings.
+
+Final evidence review: approved to commit this storage migration slice.
+All 196 artifact hashes, 32 source hashes, archived patch and five executable
+receipts matched. Recomputed all 54 timing runs and 18 allocation reports;
+medians, comparisons and acceptance flags agreed. Verified identical fixtures,
+pinned original production, 551 complete records and both visual pairs. Both
+candidate screenshots were inspected. RSS reductions and nearly unchanged
+allocation totals are supported. Regressions and frozen CPU/timing failures are
+explicit. This approval covers the slice; the whole rewrite remains unfinished.

@@ -1576,7 +1576,7 @@ impl AppState {
     }
 
     pub fn next_event(&mut self) {
-        if !self.events.is_empty() && self.selected_event_index < self.events.len() - 1 {
+        if self.event_count() != 0 && self.selected_event_index < self.event_count() - 1 {
             self.selected_event_index += 1;
             self.transcript_view.set_following(false);
             self.details_scroll = 0;

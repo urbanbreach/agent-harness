@@ -625,6 +625,29 @@ row regression; retained red/green checks cover both. This slice makes no new
 performance or end-to-end terminal claim. Evidence is in
 [`evidence/tui-rewrite/plan-geometry`](evidence/tui-rewrite/plan-geometry).
 
+## Borrowed event inspection
+
+Healthy sessions now borrow canonical events and the pending tail instead of
+retaining an event mirror after settlement. Inline child slices and rejected
+histories keep their inspection buffer. Prefix offsets preserve the existing
+retention cap; navigation, snapshots and intents still expose the retained view.
+The backend's canonical validation and event history remain unchanged.
+
+All 1,681 TUI tests and seven gated PTY checks pass. The 543 main and eight plan
+records remain exact matches; both fresh xterm PNGs and their ANSI match the
+original. The wide browser capture differs only by one asynchronous render.
+Two existing behavior tests now cover retention through settlement/rejection
+and navigation through invalid replacement histories.
+
+Streaming RSS falls from 39,464 to 35,732 KiB versus the preceding candidate;
+resize falls from 45,916 to 42,136 KiB. Both now pass the frozen 30% RSS reduction
+limits. Allocation totals barely change because loading still constructs the
+temporary inspection buffer. Scrolling and resize timing/CPU regressions are
+reported; frozen absolute timing and CPU limits, source reduction, sustained
+runtime targets and the remaining implementation rewrite are still outstanding.
+Evidence is in
+[`evidence/tui-rewrite/event-history`](evidence/tui-rewrite/event-history).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

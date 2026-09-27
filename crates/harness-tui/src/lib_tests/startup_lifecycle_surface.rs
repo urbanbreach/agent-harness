@@ -682,7 +682,7 @@ pub(super) fn new_session_resets_transcript_but_keeps_unsent_draft() {
     }
     app.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    assert!(app.events.is_empty());
+    assert_eq!(app.event_count(), 0);
     assert!(app.activities.is_empty());
     assert_eq!(app.composer.prompt_history, vec!["older sent prompt"]);
     assert_eq!(app.composer.prompt_buffer, "unsent startup draft");

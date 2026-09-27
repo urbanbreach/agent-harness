@@ -685,7 +685,7 @@ fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> Strin
         }
         let replay_identity = format!(
             "Replay · read-only · run {run_id} · {} ev",
-            app.events.len()
+            app.event_count()
         );
         return if app.review_surface().is_some() {
             let session_path = app
@@ -695,7 +695,7 @@ fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> Strin
                 .unwrap_or_else(|| "unknown".to_string());
             format!(
                 "Replay · read-only · run {run_id} · {session_path} · {} ev",
-                app.events.len()
+                app.event_count()
             )
         } else {
             replay_identity

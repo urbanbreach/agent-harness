@@ -1,0 +1,18 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.54s
+────────────
+ Nextest run ID 61e41dd2-cbb2-4cbe-a2dd-c3a2c7a867dc with nextest profile: ci
+    Starting 1681 tests across 78 binaries (7 tests and 1 binary skipped, including 5 tests and 1 binary via profile.default.default-filter)
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::completed_stream_more_below_affordance_is_actionable
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  4.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  6.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  8.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [> 10.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [> 12.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+  Cancelling due to interrupt: 1 test still running
+      SIGINT [   0.380s] ( 911/1681) harness-tui tests::tool_call_failed_renders_error
+────────────
+     Summary [  48.670s] 911/1681 tests run: 910 passed (2 slow), 1 failed, 7 skipped
+warning: 770/1681 tests were not run due to interrupt
+error: test run failed

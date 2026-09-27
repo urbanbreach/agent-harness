@@ -107,7 +107,7 @@ pub(crate) fn live_empty_state_visible(app: &AppState) -> bool {
 
 pub(crate) fn live_empty_composer_guidance_visible(app: &AppState) -> bool {
     live_empty_state_visible(app)
-        && app.events.is_empty()
+        && app.event_count() == 0
         && !app.completed_session_shell_active()
         && !app.composer_disabled()
         && app.review_surface().is_none()

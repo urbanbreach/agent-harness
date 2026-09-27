@@ -167,7 +167,7 @@ impl AppState {
         let task = parent_snapshot
             .and_then(|snapshot| child_task_info_from_events(&snapshot.events, current_session_id))
             .or_else(|| self.session_lineage.parent_task.clone());
-        let child_agent = child_agent_info_from_events(&self.events, current_session_id);
+        let child_agent = child_agent_info_from_events(self.events(), current_session_id);
         let label = task
             .as_ref()
             .and_then(|task| task.label.as_deref())
@@ -275,18 +275,18 @@ impl AppState {
         self.session_lineage
             .parent_run_id
             .clone()
-            .or_else(|| first_lineage_parent_session_id(&self.events).map(str::to_string))
+            .or_else(|| first_lineage_parent_session_id(self.events()).map(str::to_string))
     }
 
     fn current_session_snapshot(&self) -> Option<SessionNavigationSnapshot> {
         Some(SessionNavigationSnapshot {
             session_path: self.session_path.clone()?,
             lineage: self.session_lineage.clone(),
-            events: self.events.clone(),
+            events: self.events().cloned().collect::<Vec<_>>(),
             launch_metadata: if self.launch_metadata.model().is_some() {
                 self.launch_metadata.clone()
             } else {
-                infer_launch_metadata_from_events(&self.events, &self.launch_metadata)
+                infer_launch_metadata_from_events(self.events(), &self.launch_metadata)
             },
             child_session_ids: self.child_session_ids(),
             replay_mode: self.replay_mode,
@@ -407,17 +407,17 @@ impl AppState {
 
         // An inline view omits sibling/descendant transcripts. Their events
         // remain in the ancestor snapshots for navigation into a nested child.
-        let events = std::iter::once(self.events.as_slice())
+        let events = std::iter::once(self.event_slices())
             .chain(
                 self.session_navigation_stack
                     .iter()
                     .rev()
-                    .map(|snapshot| snapshot.events.as_slice()),
+                    .map(|snapshot| [snapshot.events.as_slice(), &[]]),
             )
             .find_map(|source| {
-                let requests = child_request_ids_for_session(source, session_id);
+                let source = source.into_iter().flatten();
+                let requests = child_request_ids_for_session(source.clone(), session_id);
                 let events = source
-                    .iter()
                     .filter(|event| {
                         matches!(event.payload, EventV1::RunStarted(_))
                             || event_belongs_to_child_session(event, &requests, session_id)
@@ -560,19 +560,20 @@ impl AppState {
     }
 }
 
-fn infer_launch_metadata_from_events(
-    events: &[EventEnvelopeV1],
+fn infer_launch_metadata_from_events<'a>(
+    events: impl IntoIterator<Item = &'a EventEnvelopeV1> + Clone,
     fallback: &LaunchMetadata,
 ) -> LaunchMetadata {
     let profile = events
-        .iter()
+        .clone()
+        .into_iter()
         .find_map(|event| match &event.payload {
             EventV1::AgentSpawned(payload) => Some(payload.profile.clone()),
             _ => None,
         })
         .unwrap_or_else(|| fallback.profile().to_string());
     let (provider, model) = events
-        .iter()
+        .into_iter()
         .find_map(|event| match &event.payload {
             EventV1::ProviderRequestStarted(payload) => {
                 Some((payload.provider_id.clone(), Some(payload.model_id.clone())))
@@ -1046,8 +1047,7 @@ mod tests {
             }),
         ));
         let journal = parent
-            .events
-            .iter()
+            .events()
             .map(|event| serde_json::to_string(event).unwrap_or_abort() + "\n")
             .collect::<String>();
         fs::write(parent_dir.join("events.jsonl"), journal).unwrap_or_abort();

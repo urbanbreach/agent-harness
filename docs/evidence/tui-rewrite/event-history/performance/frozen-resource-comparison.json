@@ -1,0 +1,45 @@
+{
+  "reference": "../../reference/performance/summary.json",
+  "metrics": {
+    "stream-1000": {
+      "cpu_ms_per_frame": {
+        "frozen_reference": 2.2,
+        "limit": 1.54,
+        "candidate": 1.65,
+        "passes": false
+      },
+      "rss_kib": {
+        "frozen_reference": 51604,
+        "limit": 36122.799999999996,
+        "candidate": 35732,
+        "passes": true
+      },
+      "allocated_bytes": {
+        "frozen_reference": 741881764,
+        "limit": 519317234.79999995,
+        "candidate": 378157979,
+        "passes": true
+      }
+    },
+    "resize-1000": {
+      "cpu_ms_per_frame": {
+        "frozen_reference": 2.8,
+        "limit": 1.9599999999999997,
+        "candidate": 2.1,
+        "passes": false
+      },
+      "rss_kib": {
+        "frozen_reference": 66064,
+        "limit": 46244.799999999996,
+        "candidate": 42136,
+        "passes": true
+      },
+      "allocated_bytes": {
+        "frozen_reference": 668453171,
+        "limit": 467917219.7,
+        "candidate": 364755885,
+        "passes": true
+      }
+    }
+  }
+}

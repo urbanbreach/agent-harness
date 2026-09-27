@@ -1,0 +1,17 @@
+    Checking harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+error: used `assert!` with an equality comparison
+   --> crates/harness-tui/src/lib_tests/startup_lifecycle_surface.rs:685:5
+    |
+685 |     assert!(app.event_count() == 0);
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#manual_assert_eq
+    = note: `-D clippy::manual-assert-eq` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::manual_assert_eq)]`
+help: replace it with `assert_eq!(..)`
+    |
+685 -     assert!(app.event_count() == 0);
+685 +     assert_eq!(app.event_count(), 0);
+    |
+
+error: could not compile `harness-tui` (lib test) due to 1 previous error

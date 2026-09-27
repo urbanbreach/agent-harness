@@ -97,11 +97,11 @@ pub(super) fn child_task_info_from_events(
     })
 }
 
-pub(super) fn child_agent_info_from_events(
-    events: &[EventEnvelopeV1],
+pub(super) fn child_agent_info_from_events<'a>(
+    events: impl IntoIterator<Item = &'a EventEnvelopeV1>,
     current_session_id: &str,
 ) -> Option<ChildTaskInfo> {
-    events.iter().find_map(|event| {
+    events.into_iter().find_map(|event| {
         let EventV1::AgentSpawned(agent) = &event.payload else {
             return None;
         };

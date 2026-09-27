@@ -610,8 +610,8 @@ impl AppState {
             lifecycle_shell_state: self.lifecycle_shell_state(),
             continue_disabled_banner: self.continue_disabled_banner.as_deref(),
             status_banner: self.status_banner.as_deref(),
-            event_count: self.events.len(),
-            last_event: self.events.last().map(|event| &event.payload),
+            event_count: self.event_count(),
+            last_event: self.events().next_back().map(|event| &event.payload),
             latest_activity: self.runtime_state_activity(),
             activity_count: self.runtime_state_activity_count(),
             active_permission,
@@ -840,7 +840,7 @@ impl AppState {
     }
 
     pub fn most_recent_workspace_snapshot_request_id(&self) -> Option<String> {
-        self.events.iter().rev().find_map(|envelope| {
+        self.events().rev().find_map(|envelope| {
             if let harness_core::event::EventV1::WorkspaceSnapshot(snapshot) = &envelope.payload {
                 Some(snapshot.request_id.to_string())
             } else {

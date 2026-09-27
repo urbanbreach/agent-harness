@@ -123,12 +123,12 @@ pub(super) fn event_belongs_to_child_session(
         .is_some_and(|request_id| child_request_ids.contains(request_id))
 }
 
-pub(super) fn child_request_ids_for_session(
-    events: &[EventEnvelopeV1],
+pub(super) fn child_request_ids_for_session<'a>(
+    events: impl IntoIterator<Item = &'a EventEnvelopeV1>,
     child_session_id: &str,
 ) -> BTreeSet<String> {
     events
-        .iter()
+        .into_iter()
         .filter_map(|event| child_request_id_from_event(event, child_session_id))
         .collect()
 }
