@@ -72,77 +72,6 @@ use session_history::{
 };
 use settings_editor::render_settings_editor_overlay;
 pub(crate) use status_dialog::render_status_dashboard_surface;
-use status_dialog::render_status_dialog_overlay;
-#[cfg(test)]
-pub(crate) use status_dialog::{
-    exact_test_status_dialog_edit_attribution_counts_external_on_disk_drift,
-    exact_test_status_dialog_edit_attribution_event_only_without_workspace,
-    exact_test_status_dialog_edit_attribution_keeps_matching_agent_tool,
-    exact_test_status_dialog_formatters_section_disabled_when_none,
-    exact_test_status_dialog_formatters_section_lists_enabled_language,
-    exact_test_status_dialog_mcp_rows_match_harness_states,
-    exact_test_status_dialog_operator_summary_surfaces_acp_connect_bind,
-    exact_test_status_dialog_operator_summary_surfaces_acp_connection,
-    exact_test_status_dialog_operator_summary_surfaces_acp_session,
-    exact_test_status_dialog_operator_summary_surfaces_auto_fallback_chain,
-    exact_test_status_dialog_operator_summary_surfaces_binary_update_counts,
-    exact_test_status_dialog_operator_summary_surfaces_binary_update_policy,
-    exact_test_status_dialog_operator_summary_surfaces_binary_version,
-    exact_test_status_dialog_operator_summary_surfaces_bound_settings_counts,
-    exact_test_status_dialog_operator_summary_surfaces_browser_oidc_availability,
-    exact_test_status_dialog_operator_summary_surfaces_cow_clone_last,
-    exact_test_status_dialog_operator_summary_surfaces_cow_clone_outcomes,
-    exact_test_status_dialog_operator_summary_surfaces_cow_fastpath,
-    exact_test_status_dialog_operator_summary_surfaces_crash_recovery_action,
-    exact_test_status_dialog_operator_summary_surfaces_crash_recovery_banner,
-    exact_test_status_dialog_operator_summary_surfaces_crash_recovery_next,
-    exact_test_status_dialog_operator_summary_surfaces_crash_scan_counts,
-    exact_test_status_dialog_operator_summary_surfaces_cron_register,
-    exact_test_status_dialog_operator_summary_surfaces_cron_remove,
-    exact_test_status_dialog_operator_summary_surfaces_cron_schedule_counts,
-    exact_test_status_dialog_operator_summary_surfaces_dashboard,
-    exact_test_status_dialog_operator_summary_surfaces_demote_last,
-    exact_test_status_dialog_operator_summary_surfaces_demote_last_task,
-    exact_test_status_dialog_operator_summary_surfaces_demote_outcome_counts,
-    exact_test_status_dialog_operator_summary_surfaces_edit_attribution,
-    exact_test_status_dialog_operator_summary_surfaces_edit_attribution_first_last,
-    exact_test_status_dialog_operator_summary_surfaces_fallback_and_none_demote,
-    exact_test_status_dialog_operator_summary_surfaces_fallback_banner,
-    exact_test_status_dialog_operator_summary_surfaces_fallback_models,
-    exact_test_status_dialog_operator_summary_surfaces_fallback_outcome,
-    exact_test_status_dialog_operator_summary_surfaces_foreign_discover_counts,
-    exact_test_status_dialog_operator_summary_surfaces_foreign_import_last,
-    exact_test_status_dialog_operator_summary_surfaces_foreign_import_next,
-    exact_test_status_dialog_operator_summary_surfaces_graph_batch_first,
-    exact_test_status_dialog_operator_summary_surfaces_graph_query_batch,
-    exact_test_status_dialog_operator_summary_surfaces_graph_query_last,
-    exact_test_status_dialog_operator_summary_surfaces_jujutsu_components,
-    exact_test_status_dialog_operator_summary_surfaces_jujutsu_last_command,
-    exact_test_status_dialog_operator_summary_surfaces_jujutsu_probe,
-    exact_test_status_dialog_operator_summary_surfaces_landlock_support,
-    exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_remote_availability,
-    exact_test_status_dialog_operator_summary_surfaces_os_sandbox_first_prepare,
-    exact_test_status_dialog_operator_summary_surfaces_os_sandbox_profiles,
-    exact_test_status_dialog_operator_summary_surfaces_persistent_graph,
-    exact_test_status_dialog_operator_summary_surfaces_plan_view,
-    exact_test_status_dialog_operator_summary_surfaces_sandbox_fs_plan,
-    exact_test_status_dialog_operator_summary_surfaces_sleep_wake_availability,
-    exact_test_status_dialog_operator_summary_surfaces_sleep_wake_observations,
-    exact_test_status_dialog_operator_summary_surfaces_sleep_wake_policy,
-    exact_test_status_dialog_operator_summary_surfaces_team_add_cancel,
-    exact_test_status_dialog_operator_summary_surfaces_team_create,
-    exact_test_status_dialog_operator_summary_surfaces_team_registry_counts,
-    exact_test_status_dialog_operator_summary_surfaces_team_send,
-    exact_test_status_dialog_operator_summary_surfaces_workspace_hub_availability,
-    exact_test_status_dialog_plugins_section_surfaces_extension_descriptor,
-    exact_test_status_dialog_plugins_section_surfaces_extension_discover,
-    exact_test_status_dialog_plugins_section_surfaces_lifecycle_summary,
-    exact_test_status_dialog_plugins_section_surfaces_plugin_activate,
-    exact_test_status_dialog_plugins_section_surfaces_plugin_deactivate,
-    exact_test_status_dialog_plugins_section_surfaces_plugin_install,
-    exact_test_status_dialog_plugins_section_surfaces_plugin_remove,
-    exact_test_status_dialog_render_snapshot_covers_harness_sections,
-};
 use theme_dialog::render_theme_dialog_overlay;
 use toggles_menu::{render_toggles_menu_list, render_yolo_warning_popup};
 use worktree_picker::render_worktree_picker_overlay;
@@ -194,7 +123,7 @@ pub(super) fn render_overlays(
                     plan.palette_overlay,
                 )
             }
-            OverlayKind::StatusDialog => render_status_dialog_overlay(frame, app, theme, plan.root),
+            OverlayKind::StatusDialog => {}
             OverlayKind::SubagentActions => {
                 render_subagent_actions_overlay(frame, app, theme, plan.root)
             }

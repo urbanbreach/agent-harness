@@ -1,0 +1,11 @@
+--- crates/harness-tui/src/ui_overlays/status_dialog.rs
++++ crates/harness-tui/src/ui_overlays/status_dialog.rs
+@@ -287,7 +287,7 @@
+         app.jujutsu_workspace().is_some(),
+         app.jujutsu_last_command().is_some(),
+         app.sandbox_fs_plan_summary().is_some(),
+-        app.landlock_support().is_some(),
++        false, // Deliberate mutation: wrongly treat unavailable Landlock as unbound.
+         app.os_sandbox_profiles_summary().is_some(),
+         app.os_sandbox_first_profile_line().is_some(),
+         app.sandbox_last_prepare().is_some(),

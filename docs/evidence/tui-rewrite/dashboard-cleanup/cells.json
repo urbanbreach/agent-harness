@@ -1,0 +1,8 @@
+{
+  "frames": 543,
+  "preceding_candidate_differences": [],
+  "candidate_sha256": "3ba090388367678cbfa2d005fcd199869e06bcae67514a2c0a2bc031a5702710",
+  "existing_reference": "../selection-layout/cells.json.gz",
+  "existing_frames": 539,
+  "new_original_frames": "details.cells.json.gz"
+}

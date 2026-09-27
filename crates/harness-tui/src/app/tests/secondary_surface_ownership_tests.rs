@@ -251,6 +251,20 @@ pub(super) fn status_dashboard_renders_populated_sections_from_app_state() {
 
     let mut app = AppState::new_live(None, false, None);
     app.seed_operator_host_probes(Some(root.as_path()));
+    app.set_landlock_support(None);
+    for (seq, path) in (1..).zip(["notes.txt", "notes.txt", "./notes.txt"]) {
+        app.ingest_event(envelope(
+            seq,
+            "dashboard",
+            EventV1::EditApplied(EditAppliedEvent {
+                edit_id: format!("edit-{seq}"),
+                path: path.into(),
+                new_file_digest: "recorded-digest".into(),
+                diff_rel_path: None,
+                diff_digest: None,
+            }),
+        ));
+    }
     app.set_plugin_lifecycle_summary(Some(harness_core::integrations::PluginLifecycleSummary {
         installed: 2,
         enabled: 1,
@@ -290,6 +304,28 @@ pub(super) fn status_dashboard_renders_populated_sections_from_app_state() {
             || rendered.contains("Fallback chain:"),
         "expected fallback projection lines:\n{rendered}"
     );
+
+    // Empty strings and unavailable probes are still bound; absence is not.
+    assert!(rendered.contains("Edit attribution: 2 edits"), "{rendered}");
+    let bound = rendered
+        .split_once("operator dashboard: ")
+        .expect("dashboard count")
+        .1
+        .split_whitespace()
+        .next()
+        .expect("bound count")
+        .parse::<usize>()
+        .expect("numeric bound count");
+    let expected = format!("operator dashboard: {bound} bound of 68 probes");
+    app.set_auto_fallback_last_banner(Some(String::new()));
+    assert!(render_text(&app, 100, 40).contains(&expected));
+    app.set_auto_fallback_last_banner(None);
+    let one_less = format!("operator dashboard: {} bound of 68 probes", bound - 1);
+    assert!(render_text(&app, 100, 40).contains(&one_less));
+    app.set_landlock_support(Some(harness_core::sandbox::LandlockSupport::Unavailable {
+        reason: "fixture has no Landlock".into(),
+    }));
+    assert!(render_text(&app, 100, 40).contains(&expected));
 
     // When
     app.handle_key(key(KeyCode::Esc));
