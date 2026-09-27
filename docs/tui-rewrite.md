@@ -873,6 +873,27 @@ sustained runtime resource work and final feature review are unfinished. Raw
 samples, reproduction commands, source receipts and limitations are in
 [`evidence/tui-rewrite/tool-assembly`](evidence/tui-rewrite/tool-assembly).
 
+## Tool-disclosure selection cost
+
+Release profiling attributed about 6.9 ms of each disclosed tool frame to preparing
+selection rows. The shared row builder now copies printable ASCII spans in row-sized
+slices; Unicode/control spans retain grapheme handling. Prepared selection ownership
+remains unchanged, preserving bounded drag queries on long surfaces. No cache or
+index is added, and no intended UI behavior changes.
+
+All 1,668 TUI tests, seven gated PTY checks and quality checks pass. A temporary
+independent old/new oracle matches 41,120 row projections. The 555 reference records,
+733 animation records and six xterm captures remain exact. Paired real-terminal
+selection captures preserve highlighting, terminal restoration and resource cleanup.
+
+Final paired tool p99 falls from 15,639 to 10,031 µs and CPU from 10.70 to 7.10 ms per
+frame, closing the original-relative disclosure gap. Allocation/RSS savings are
+small. All six tool limits and fourteen existing general-workload limits pass;
+measurements exclude keyboard/emulator latency. Source grows by 32 lines, leaving
+the total only 7.82% below the original. The remaining implementation replacement,
+sustained runtime targets and final feature/removal review are still outstanding.
+Evidence is in [`evidence/tui-rewrite/tool-layout`](evidence/tui-rewrite/tool-layout).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

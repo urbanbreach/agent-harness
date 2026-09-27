@@ -25,19 +25,6 @@ impl Row {
         self.width += 1;
     }
 
-    fn ascii(&mut self, text: &str) {
-        if self.leading == self.width {
-            self.leading += text.len() - text.trim_start_matches(' ').len();
-        }
-        let end = text.trim_end_matches(' ').len();
-        if end > 0 {
-            self.end = Some(self.width + end - 1);
-        }
-        self.text.push_str(text);
-        self.width += text.len();
-        self.last = Some(self.width - 1);
-    }
-
     fn combining(&mut self, text: &str) {
         if let Some(last) = self.last {
             self.text.push_str(text);
@@ -66,25 +53,6 @@ fn line_rows(line: &Line<'_>, width: usize, rail: Option<&str>) -> Vec<Selection
     let mut row = Row::default();
     let mut rows = Vec::new();
     for span in &line.spans {
-        // Printable ASCII has one cell per byte; copy padding and text in row-sized slices.
-        let mut text = span.content.as_ref();
-        if text.bytes().all(|byte| (b' '..=b'~').contains(&byte)) {
-            while !text.is_empty() {
-                if let Some(rail) = rail.filter(|_| row.width == 0) {
-                    row.cell(rail);
-                    text = &text[1..];
-                }
-                let take = (width - row.width).min(text.len());
-                if take > 0 {
-                    row.ascii(&text[..take]);
-                    text = &text[take..];
-                }
-                if row.width == width {
-                    row.finish(&mut rows);
-                }
-            }
-            continue;
-        }
         for cluster in span.content.graphemes(true) {
             let cells = cluster.width();
             if cells == 0 {

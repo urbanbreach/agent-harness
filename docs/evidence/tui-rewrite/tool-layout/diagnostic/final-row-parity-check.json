@@ -1,0 +1,19 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--all-features",
+    "--lib",
+    "-E",
+    "test(diagnostic_ascii_selection_rows_match_previous) | test(selection) | test(hyperlink) | test(clipboard)",
+    "--success-output",
+    "immediate"
+  ],
+  "exit_code": 0,
+  "rows_sha256": "7b4eb43f91b9f56c4ac1bbe2eb807fad6799126922a9375f7d202ea94c5a4638"
+}

@@ -1,0 +1,10 @@
+{
+  "before": {
+    "path": "/tmp/tui-tool-assembly-rewrite_probe.bin",
+    "sha256": "e05472f189ac459235069f7ced436e0bd9ef200dd61cee792d4e3db227a76625"
+  },
+  "candidate": {
+    "path": "/tmp/tui-tool-layout/rewrite_probe",
+    "sha256": "ee4556d3c5e40de43fa4eb537981fcdbe1aeced0cafc30eab54fd6e5af11dff2"
+  }
+}
