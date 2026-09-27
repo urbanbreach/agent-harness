@@ -21,6 +21,8 @@ mod journey;
 mod plan_geometry;
 #[path = "support/rewrite_workflows.rs"]
 mod workflows;
+#[path = "support/rewrite_wrapping_geometry.rs"]
+mod wrapping_geometry;
 use journey::{Journey, Result};
 
 const BASE: &str = "1bb0f98988670a5f4b48cdf749b455a79cfdaa82";

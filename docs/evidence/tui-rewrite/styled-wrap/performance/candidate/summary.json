@@ -1,0 +1,86 @@
+{
+  "schema": "tui-rewrite-renderer-v1",
+  "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+  "commit": "dafd4ed9dcc29d9556a030ceddfc226466ff0fb3",
+  "binary_sha256": "edc52c1fafa047b899188cf6e09483e282ff80c02e1dd32148c3a54773d303a8",
+  "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--release",
+    "-p",
+    "harness-tui",
+    "--all-features",
+    "--test",
+    "rewrite_performance_test",
+    "--profile",
+    "perf",
+    "-j",
+    "1",
+    "--success-output",
+    "immediate"
+  ],
+  "scenarios": {
+    "startup-0": {
+      "construction_us": 195,
+      "cold_us": 1159,
+      "p50_us": 338,
+      "p95_us": 455,
+      "p99_us": 461,
+      "bytes": 5200,
+      "rss_kib": 11852,
+      "cpu_ms_per_frame": 0.35
+    },
+    "idle-1000": {
+      "construction_us": 48628,
+      "cold_us": 49165,
+      "p50_us": 309,
+      "p95_us": 315,
+      "p99_us": 323,
+      "bytes": 5200,
+      "rss_kib": 34876,
+      "cpu_ms_per_frame": 0.3
+    },
+    "typing-1000": {
+      "construction_us": 49883,
+      "cold_us": 49138,
+      "p50_us": 324,
+      "p95_us": 335,
+      "p99_us": 349,
+      "bytes": 7600,
+      "rss_kib": 35020,
+      "cpu_ms_per_frame": 0.3
+    },
+    "stream-1000": {
+      "construction_us": 49727,
+      "cold_us": 49222,
+      "p50_us": 1707,
+      "p95_us": 2617,
+      "p99_us": 2709,
+      "bytes": 183623,
+      "rss_kib": 35688,
+      "cpu_ms_per_frame": 1.7
+    },
+    "scroll-1000": {
+      "construction_us": 53083,
+      "cold_us": 49741,
+      "p50_us": 386,
+      "p95_us": 402,
+      "p99_us": 405,
+      "bytes": 704350,
+      "rss_kib": 35000,
+      "cpu_ms_per_frame": 0.4
+    },
+    "resize-1000": {
+      "construction_us": 48719,
+      "cold_us": 49088,
+      "p50_us": 4404,
+      "p95_us": 5586,
+      "p99_us": 5921,
+      "bytes": 2320100,
+      "rss_kib": 42232,
+      "cpu_ms_per_frame": 2.05
+    }
+  }
+}

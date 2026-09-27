@@ -1,0 +1,22 @@
+Independent reviewer: /root/tui_review
+
+Source approved for release build. Review caught selection widths that did not
+match painted VS16 cells and extra rows for zero-width prefixes within tokens
+and across styled spans. These findings were fixed and rechecked. Tab expansion
+preserves prior newline semantics. The flattened token loop and no-link early
+return preserve behavior. Moved animation tests are byte-identical. No remaining
+correctness or complexity findings.
+
+Final evidence review: approved to commit this wrapping slice. All 213 reviewed
+artifacts, seven source hashes, archived patch and three release executable
+receipts matched. The frozen temporary source receipt differs from the published
+one only by added benchmark metadata. Recomputed all 54 timing runs and 18
+allocation reports, including exact reuse of event-history's candidate set;
+summaries, percentage changes and frozen acceptance flags agree.
+
+Inspected all four visual pairs and independently decoded both cell streams and
+PNG pixels. Corrections stay in reply rows, pixel bounds are half-open, and cursor
+and modes match. All 551 existing complete records remain exact. The report
+accurately discloses timing regressions, the reused preceding baseline and unmet
+frozen limits. This approval covers this slice; the whole rewrite remains open.
+The artifact manifest was regenerated after adding this receipt.

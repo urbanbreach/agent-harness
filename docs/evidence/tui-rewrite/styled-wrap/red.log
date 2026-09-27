@@ -1,0 +1,50 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.99s
+────────────
+ Nextest run ID 412bb9eb-e199-4035-b4ce-a3f385fe2f65 with nextest profile: ci
+    Starting 1 test across 1 binary (2 tests skipped)
+        FAIL [   0.114s] (1/1) harness-tui::rewrite_reference_test wrapping_geometry::transcript_wrap_keeps_emoji_presentation_cells
+  stdout ───
+
+    running 1 test
+    test wrapping_geometry::transcript_wrap_keeps_emoji_presentation_cells ... FAILED
+
+    failures:
+
+    failures:
+        wrapping_geometry::transcript_wrap_keeps_emoji_presentation_cells
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.11s
+
+  stderr ───
+
+    thread 'wrapping_geometry::transcript_wrap_keeps_emoji_presentation_cells' (2598480) panicked at crates/harness-tui/tests/support/rewrite_wrapping_geometry.rs:40:13:
+    assertion `left == right` failed: all graphemes remain visible at 40 columns
+      left: 29
+     right: 40
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.114s] 1 test run: 0 passed, 1 failed, 2 skipped
+        FAIL [   0.114s] (1/1) harness-tui::rewrite_reference_test wrapping_geometry::transcript_wrap_keeps_emoji_presentation_cells
+  stdout ───
+
+    running 1 test
+    test wrapping_geometry::transcript_wrap_keeps_emoji_presentation_cells ... FAILED
+
+    failures:
+
+    failures:
+        wrapping_geometry::transcript_wrap_keeps_emoji_presentation_cells
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.11s
+
+  stderr ───
+
+    thread 'wrapping_geometry::transcript_wrap_keeps_emoji_presentation_cells' (2598480) panicked at crates/harness-tui/tests/support/rewrite_wrapping_geometry.rs:40:13:
+    assertion `left == right` failed: all graphemes remain visible at 40 columns
+      left: 29
+     right: 40
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

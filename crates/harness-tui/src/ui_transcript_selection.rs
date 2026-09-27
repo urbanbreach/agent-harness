@@ -8,8 +8,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::composer_atoms::measured_graphemes;
 use crate::theme::Theme;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use super::ui_chrome::display_width;
 use super::ui_fenced_text::{
@@ -342,8 +343,8 @@ pub(super) fn selection_row_line_text(row: &TranscriptSelectionRow) -> String {
 fn extract_text_by_display_columns(text: &str, start_col: usize, end_col: usize) -> String {
     let mut result = String::new();
     let mut cell = 0usize;
-    for (cluster, width) in measured_graphemes(text) {
-        let cluster_width = usize::from(width);
+    for cluster in text.graphemes(true) {
+        let cluster_width = cluster.width();
         let cluster_end = cell.saturating_add(cluster_width);
         if cell <= end_col && cluster_end > start_col {
             result.push_str(cluster);
@@ -364,8 +365,8 @@ pub(super) fn transcript_selection_line_rows(
     let mut rows = Vec::new();
 
     for span in &line.spans {
-        for (cluster, cells) in measured_graphemes(span.content.as_ref()) {
-            let cell_width = usize::from(cells);
+        for cluster in span.content.graphemes(true) {
+            let cell_width = cluster.width();
             if cell_width == 0 {
                 if let Some(cell) = row.iter_mut().rev().find(|cell| !cell.is_empty()) {
                     cell.push_str(cluster);
@@ -1147,9 +1148,9 @@ mod tests {
 
     #[test]
     fn inline_link_ranges_survive_repeated_labels_wrapping_and_wide_graphemes() {
-        // Given: plain duplicate text, repeated linked labels, whitespace, CJK, and a ZWJ emoji.
+        // Given: duplicate labels, whitespace, CJK, joined emoji and emoji presentation.
         let rows = selection_rows_for_markdownish_text_block(
-            "same [same](https://example.com/one) 👩‍💻中 [same](https://example.com/two) [two words](https://example.com/words)",
+            "same [same](https://example.com/one) 👩‍💻中#\u{fe0f} [same](https://example.com/two) [two words](https://example.com/words)",
             Color::White,
             "",
             &Theme::default(),
@@ -1178,6 +1179,8 @@ mod tests {
         for (row, link) in links {
             assert!(link.start_cell < link.end_cell);
             assert!(link.end_cell <= row.cells.len());
+            let label = row.cells[link.start_cell..link.end_cell].concat();
+            assert!(matches!(label.as_str(), "same" | "two " | "words"));
         }
     }
 

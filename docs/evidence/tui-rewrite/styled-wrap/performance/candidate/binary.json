@@ -1,0 +1,7 @@
+{
+  "path": "/tmp/tui-styled-wrap-candidate.bin",
+  "bytes": 15018808,
+  "sha256": "edc52c1fafa047b899188cf6e09483e282ff80c02e1dd32148c3a54773d303a8",
+  "source": "dafd4ed9 + source.patch.gz",
+  "note": "unchanged public benchmark; builds and checks finished before measurement"
+}

@@ -1,0 +1,27 @@
+[
+  {
+    "side": "before",
+    "path": "/tmp/tui-event-history-candidate.bin",
+    "bytes": 15020368,
+    "sha256": "8d5529e0f8fa92e1897be371203c2490ec516eafc9cac83cc912793e6533192f",
+    "source": "6b732a691c90423857fca126bbfe4468627ba942 + source.patch.gz",
+    "clean": false,
+    "note": "final reviewed source patch; no source changes during measurement"
+  },
+  {
+    "side": "reference",
+    "path": "/tmp/tui-styled-wrap-reference.bin",
+    "bytes": 15518744,
+    "sha256": "bddeb9916e8b64b9f015690eece455cd1266561e72f55df97232e2b5e9bd3508",
+    "source": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+    "note": "unchanged public benchmark; builds and checks finished before measurement"
+  },
+  {
+    "side": "candidate",
+    "path": "/tmp/tui-styled-wrap-candidate.bin",
+    "bytes": 15018808,
+    "sha256": "edc52c1fafa047b899188cf6e09483e282ff80c02e1dd32148c3a54773d303a8",
+    "source": "dafd4ed9 + source.patch.gz",
+    "note": "unchanged public benchmark; builds and checks finished before measurement"
+  }
+]

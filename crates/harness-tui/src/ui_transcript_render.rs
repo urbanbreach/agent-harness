@@ -1,4 +1,5 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
+use super::super::ui_chrome::take_width_prefix;
 use super::super::ui_transcript_selection::selection_rows_for_rich_text_block;
 use super::ui_streaming_markdown::append_streaming_rich_text_block;
 use super::ui_transcript_style::pending_diamond_color;
@@ -8,7 +9,6 @@ use super::ui_transcript_tool_render::{
 };
 use super::*;
 use crate::app::ToolCallPresentationStatus;
-use crate::composer_atoms::measured_graphemes;
 use harness_core::event::ProviderRequestRetryMetadata;
 use std::time::Duration;
 
@@ -333,7 +333,7 @@ fn collapse_user_surface_body(
         .saturating_sub(display_width(&prefix))
         .max(1);
     let ellipsis = " …";
-    let prefix_text = take_grapheme_width_prefix(
+    let prefix_text = take_width_prefix(
         body.trim_end(),
         body_width.saturating_sub(display_width(ellipsis)),
     );
@@ -351,20 +351,6 @@ fn collapse_user_surface_body(
             surface,
         );
     }
-}
-
-fn take_grapheme_width_prefix(text: &str, max_width: usize) -> String {
-    let mut prefix = String::new();
-    let mut used = 0usize;
-    for (cluster, cells) in measured_graphemes(text) {
-        let width = usize::from(cells);
-        if used.saturating_add(width) > max_width {
-            break;
-        }
-        prefix.push_str(cluster);
-        used = used.saturating_add(width);
-    }
-    prefix
 }
 
 fn append_user_row_wall_clock(
@@ -419,9 +405,9 @@ pub(super) fn truncate_line_to_width(line: &mut Line<'static>, width: usize) {
             remaining = remaining.saturating_sub(span_width);
             continue;
         }
-        let prefix = take_grapheme_width_prefix(span.content.as_ref(), remaining);
+        let prefix = take_width_prefix(span.content.as_ref(), remaining);
         if !prefix.is_empty() {
-            clipped.push(Span::styled(prefix, span.style));
+            clipped.push(Span::styled(prefix.to_owned(), span.style));
         }
         break;
     }
