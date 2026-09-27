@@ -13,7 +13,6 @@ use crate::{
 
 use super::{
     ui_chrome::{display_width, truncate_plain_text},
-    ui_context_budget::ContextBudget,
     ui_transcript_style::{glyph_routed_monitor_pulse_frame, glyph_routed_streaming_spinner_frame},
 };
 
@@ -238,27 +237,6 @@ pub(super) fn render_live_turn_status(
     let reserved_left = spinner_width
         .saturating_add(full_label_width)
         .saturating_add(phase_width);
-    let context_budget = ContextBudget::from_app(app);
-    let mut context_label = None;
-    if send_now.is_none() {
-        if let Some(budget) = context_budget.as_ref() {
-            for candidate in [budget.full_label(), budget.compact_label()] {
-                if context_label.as_deref() == Some(candidate) {
-                    continue;
-                }
-                right_parts.insert(0, candidate.to_string());
-                if reserved_left
-                    .saturating_add(right_width(&right_parts))
-                    .saturating_add(1)
-                    <= usize::from(area.width)
-                {
-                    context_label = Some(candidate.to_string());
-                    break;
-                }
-                right_parts.remove(0);
-            }
-        }
-    }
     let right_width = right_width(&right_parts);
     let send_now_visible = send_now.as_ref().is_some_and(|hint| {
         reserved_left
@@ -324,8 +302,6 @@ pub(super) fn render_live_turn_status(
         stop_visible,
         background_hovered: app.live_turn_background_hovered(),
         stop_hovered: app.live_turn_stop_hovered(),
-        context_label: context_label.as_deref(),
-        context_tone: context_budget.as_ref().map(ContextBudget::tone),
     }
     .into_spans(theme);
     frame.render_widget(

@@ -103,7 +103,7 @@ fn clear_confirmation_keeps_context_budget_disclosure_stable() {
 }
 
 #[test]
-fn live_turn_status_renders_context_budget_meter() {
+fn live_turn_status_omits_context_budget_meter() {
     // Given: a streaming live turn with known critical context pressure.
     let mut app = app_with_context_budget(116_000);
     let snapshot = app.current_request_budget_snapshot().unwrap_or_abort();
@@ -124,14 +124,13 @@ fn live_turn_status_renders_context_budget_meter() {
     ));
     app.active_context_usage = Some(crate::app::ActiveContextUsage::estimate(116_000));
 
-    // When: only the live-turn status owner renders at full width.
-    let debug = render_live_status_debug(&app, 140);
-
-    // Then: live-turn chrome shows the same meter and critical percentage.
-    assert!(
-        debug.contains("ctx ~116000/128000 91%"),
-        "live status context budget snapshot should remain visible\n{debug}"
-    );
+    for width in [80, 140] {
+        let debug = render_live_status_debug(&app, width);
+        assert!(
+            !debug.contains("ctx ~") && debug.contains("Waiting for response"),
+            "live status keeps its activity without a context counter\n{debug}"
+        );
+    }
 }
 
 #[test]

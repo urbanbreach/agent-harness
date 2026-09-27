@@ -5,8 +5,6 @@ use ratatui::{
 
 use crate::theme::Theme;
 
-use super::super::ui_context_budget::ContextBudgetTone;
-
 pub(super) struct RightStatusInput<'a> {
     pub(super) parts: &'a [String],
     pub(super) background_label: &'static str,
@@ -14,8 +12,6 @@ pub(super) struct RightStatusInput<'a> {
     pub(super) stop_visible: bool,
     pub(super) background_hovered: bool,
     pub(super) stop_hovered: bool,
-    pub(super) context_label: Option<&'a str>,
-    pub(super) context_tone: Option<ContextBudgetTone>,
 }
 
 impl RightStatusInput<'_> {
@@ -27,16 +23,10 @@ impl RightStatusInput<'_> {
             if !spans.is_empty() {
                 spans.push(Span::raw(" "));
             }
-            let color = if self.context_label == Some(part.as_str()) {
-                self.context_tone
-                    .map_or(theme.live_turn_timer_color(), |tone| tone.color(theme))
-            } else {
-                theme.live_turn_timer_color()
-            };
             spans.push(Span::styled(
                 part.clone(),
                 Style::default()
-                    .fg(color)
+                    .fg(theme.live_turn_timer_color())
                     .bg(theme.live_turn_background_color())
                     .remove_modifier(Modifier::all()),
             ));
