@@ -1,0 +1,13 @@
+{
+  "records": 4,
+  "before": "/tmp/tui-surface-painter-final-wrap",
+  "candidate": "/tmp/tui-assistant-parts-capacity-wrap",
+  "equal": true,
+  "files": {
+    "cells.json": "1efc94ddebc1a9b3a8034f1ab69954fc496faa2a1815d5c52e362c1e59ac0a27",
+    "transcript-wrap-vs16-160x50-reduced-0ms.ansi": "ae9e08c2843a2bb050b2bc1668a46e72aebe8fd7e4fa1db85b11f4296e5c2e40",
+    "transcript-wrap-vs16-120x40-reduced-0ms.ansi": "435ab7ae417f9402a7443ebf017c6063a42a4a1e5bd7dd1f92f6044ba38d65a2",
+    "transcript-wrap-vs16-80x24-reduced-0ms.ansi": "fdb5cf563a05a531e4a8aa89f7539868d1a08ca78b6cbcb5d051550b58f89d0d",
+    "transcript-wrap-vs16-40x24-reduced-0ms.ansi": "bb90d3dee9bc1b47ef923b22c4cf771537d1eec68d5afdaf0bcff02cfdb511b8"
+  }
+}

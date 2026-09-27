@@ -767,6 +767,30 @@ lines. This is dependency maintenance, not source reduction. TUI source remains
 unverified. Raw samples, source provenance, comparisons and commands are in
 [`evidence/tui-rewrite/poll-timeout`](evidence/tui-rewrite/poll-timeout).
 
+## Assistant-part assembly replacement
+
+The 401-line assembler consumes tool sections, builds fallback text only when
+needed, and checks rendered prefixes without concatenating temporary Strings.
+Stable sequence sorting replaces manual insertion indices. The old assembler
+and argument bundle are removed; the surrounding turn-header and edit-coalescing
+code remains. The change removes 351 production lines and three test-formatting
+lines. Whole TUI source is 167,614 lines, a 7.85% reduction.
+
+All 1,666 tests, 555 complete frame records, 733 exact-clock chat/tool captures
+and seven gated PTY checks pass. Six paired xterm screenshots match. Independent
+source review confirms fallback/event order, live suffixes, reasoning identities
+and error placement. The initial collector reserved spare vector capacity;
+measurements caught its roughly 288 KiB heap increase over 1,000 turns. Explicit
+output capacities remove that regression. Initial samples remain published.
+
+Final streaming p99 is 996 µs versus 993 µs for the preceding build; resize p99
+is 2,751 versus 2,766 µs. Allocated bytes fall 0.10% and 0.08%, with essentially
+unchanged peak heap. All fourteen frozen renderer limits pass. This is a code
+simplification with small allocation savings, not a substantial speed or memory
+improvement. Sustained typing/burst CPU and the broader rewrite remain open.
+Raw evidence and commands are in
+[`evidence/tui-rewrite/assistant-parts`](evidence/tui-rewrite/assistant-parts).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

@@ -1,0 +1,4 @@
+Error: failed to set up terminal
+
+Caused by:
+    No space left on device (os error 28)

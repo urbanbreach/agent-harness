@@ -481,23 +481,6 @@ pub(super) struct ToolSectionRender {
     pub(super) diff_hunk_offsets: Vec<usize>,
 }
 
-pub(super) struct BuildTurnSectionArgs<'a> {
-    pub(super) activity_first_seq: u64,
-    pub(super) activity: &'a ActivityEntry,
-    pub(super) notifications: Vec<TranscriptOrderedToolCallSection>,
-    pub(super) queued_user_message: bool,
-    pub(super) is_selected: bool,
-    pub(super) is_latest: bool,
-    pub(super) thinking_visible: bool,
-    pub(super) timestamps_visible: bool,
-    pub(super) show_tool_details: bool,
-    pub(super) show_generic_tool_output: bool,
-    pub(super) stacked_diffs: bool,
-    pub(super) motion_enabled: bool,
-    pub(super) session_path: Option<&'a Path>,
-    pub(super) app: &'a AppState,
-}
-
 #[derive(Debug, Clone)]
 pub(super) struct TranscriptOrderedToolCallSection {
     pub(super) tool_call_id: String,

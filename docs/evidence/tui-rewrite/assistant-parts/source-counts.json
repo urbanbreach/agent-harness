@@ -1,0 +1,9 @@
+{
+  "base": "f5bd55e507de5e26f042d3156ad057eb2e8c3845",
+  "tui_source_lines": 167614,
+  "tui_source_files": 562,
+  "source_line_delta": -354,
+  "production_line_delta": -351,
+  "test_line_delta": -3,
+  "accounting": "The four tests moved unchanged except formatting. Test lines include their cfg/mod declarations. Vendor source is outside the TUI total."
+}

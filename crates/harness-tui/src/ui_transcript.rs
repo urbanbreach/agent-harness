@@ -131,6 +131,9 @@ mod ui_transcript_tool_sections;
 #[path = "ui_transcript_subagent.rs"]
 mod ui_transcript_subagent;
 
+#[path = "ui_transcript_parts.rs"]
+mod ui_transcript_parts;
+
 #[path = "ui_transcript_sections.rs"]
 mod ui_transcript_sections;
 

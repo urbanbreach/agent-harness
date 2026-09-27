@@ -1,0 +1,15 @@
+{
+  "base": "f5bd55e507de5e26f042d3156ad057eb2e8c3845",
+  "files": {
+    "crates/harness-tui/src/ui_transcript.rs": "52d5ff3fe0e59a9154b39f324105ac74c37a6203b48f6077ad4f0b536706cd5a",
+    "crates/harness-tui/src/ui_transcript_parts.rs": "63e29438702087b21f3095fa4cb475baa0e4d60487c8022aa8b649eaaf346865",
+    "crates/harness-tui/src/ui_transcript_sections.rs": "7718f7f9a1fbb68ebe0bcedae6c19ce6f13a7219e5eff0d519b96981deaaf393",
+    "crates/harness-tui/src/ui_transcript_sections_tests.rs": "ab523ecb8429a9a200055d3358328ba968613ef2f12817dd3cce1131f5df9bf2",
+    "crates/harness-tui/src/ui_transcript_types.rs": "ffc0521b6f7c992015ce3f029dac468144f211e928494681bb7e8784912cab9d"
+  },
+  "fixtures": {
+    "crates/harness-tui/tests/rewrite_performance_test.rs": "9928404a38cc966814620c26b90332d90500123575a7be9ff909df2bbd03e9d9",
+    "crates/harness-tui/tests/support/rewrite_journey.rs": "a3e48bb45948409ca6d4e4c9a695f7ba8900920a1d17613cb22b889815473b74"
+  },
+  "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)"
+}

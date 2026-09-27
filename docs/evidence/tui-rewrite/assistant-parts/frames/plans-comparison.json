@@ -1,0 +1,17 @@
+{
+  "records": 8,
+  "before": "/tmp/tui-surface-painter-final-plans",
+  "candidate": "/tmp/tui-assistant-parts-capacity-plans",
+  "equal": true,
+  "files": {
+    "cells.json": "0fdad77d4163956f985c4560b7dfb0e0cb70ad622cd072a04583c9df12f5047f",
+    "plan-unicode-preview-160x50-reduced-0ms.ansi": "7074749f5b23d93479d44f6e739c53fba44b4876ac3a09cb2f2c4e24830a7f72",
+    "plan-unicode-list-160x50-reduced-0ms.ansi": "6fe2c6d41ddf45e579380935e299701d290c03bca26c38f78a954fb10ae5acde",
+    "plan-unicode-preview-120x40-reduced-0ms.ansi": "778a449b78db08ae41e8dd6a4f9145dc2eb7066b4bd894e06162ced7c9f31dab",
+    "plan-unicode-list-120x40-reduced-0ms.ansi": "381a3ec8c5dc4d8b3b04bfe3dccc036b638e9173b0b760920401f394742ace32",
+    "plan-unicode-preview-80x24-reduced-0ms.ansi": "ed2e06d7f40ceabe4d47968076fa35e1fb327aa64d327bdbbad400b76c577006",
+    "plan-unicode-list-80x24-reduced-0ms.ansi": "3b32f686d29bac73dc9d5f0e43d31a64ebbda0ceb3dfc5ffa8a1cd65083cbe06",
+    "plan-unicode-preview-40x24-reduced-0ms.ansi": "2da2c2601778426f1687fc4b1f298df8252fed39d32e5b698dce90f0d0609994",
+    "plan-unicode-list-40x24-reduced-0ms.ansi": "33fcb8a402f4a827bed99df6148324d37856b151ea940e4f933a7ecfabdbf01f"
+  }
+}
