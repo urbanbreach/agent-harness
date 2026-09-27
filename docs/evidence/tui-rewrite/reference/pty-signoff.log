@@ -1,0 +1,387 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.36s
+────────────
+ Nextest run ID 315035ac-d172-4f54-a833-75095df44007 with nextest profile: ci
+    Starting 22 tests across 8 binaries
+        SLOW [>  2.000s] (─────) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+        SLOW [>  4.000s] (─────) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+        SLOW [>  6.000s] (─────) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+        SLOW [>  8.000s] (─────) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+        SLOW [> 10.000s] (─────) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+        SLOW [> 12.000s] (─────) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+        FAIL [  12.126s] ( 5/22) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+  stdout ───
+
+    running 1 test
+    test p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append ... FAILED
+
+    failures:
+
+    failures:
+        p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 12.12s
+
+  stderr ───
+
+    thread 'p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append' (1980616) panicked at crates/harness-tui/tests/p0_02_pty_recorded.rs:230:51:
+    timed out waiting for "deterministic active failure" present=true
+
+      git:test-workspace /workspace/agent-harness
+
+         P0-02 completed response two confirms deterministic response navigation.          12:00 PM  │
+                                                                                                     │
+                                                                                                     │
+                                                                                                     │
+                                                                                                     │
+         ❯ P0-02 deterministic prompt 3                                                    12:00 PM  │
+                                                                                                     │
+                                                                                                     │
+         P0-02 completed response three confirms final-response clamping.                  12:00 PM  │
+                                                                                                     │
+                                                                                                     │
+                                                                                                     █
+                                                                                                     █
+         ❯ P0-02 active streaming prompt                                                   12:00 PM  █
+                                                                                                     █
+                                                                                                     █
+         P0-02 active streaming block remains open.                                        12:00 PM  █
+                                                                                                     █
+         ◆ Run false                                                                                 █
+                                                                                                     █
+
+      ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+      │ ❯                                                                                            │
+      ╰───────────────────────────────────────────────────────────────────────────────── p0-02-model ╯
+
+      ctrl+c interrupt
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.573s] ( 7/22) harness-tui::p0_03_pty_recorded p0_03_real_pty_records_markdown_and_event_driven_fence
+  stdout ───
+
+    running 1 test
+    test p0_03_real_pty_records_markdown_and_event_driven_fence ... FAILED
+
+    failures:
+
+    failures:
+        p0_03_real_pty_records_markdown_and_event_driven_fence
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.56s
+
+  stderr ───
+
+    thread 'p0_03_real_pty_records_markdown_and_event_driven_fence' (1980959) panicked at crates/harness-tui/tests/p0_03_pty_recorded.rs:47:5:
+    nested emphasis must remain visible
+
+      git:test-workspace /workspace/agent-harness
+
+
+         ❯ P0-03 deterministic recorded fixture                                             12:00 PM
+
+
+         P0-03 boxed markdown fixture                                                       12:00 PM
+
+         ┌─────────────────┬─────────┐
+         │ Signal          │ Payload │
+         ├─────────────────┼─────────┤
+         │ nested emphasis │ 東京 👩‍ │
+         │ valid           │ unsafe  │
+         └─────────────────┴─────────┘
+
+         CJK: 東京 · ZWJ: 👩‍ QA-P0-03-READY
+
+         fn p0_03_fixture() {
+
+
+
+        ⠋ Responding… 0.0s                                                                        0.2s
+
+      ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+      │ ❯                                                                                            │
+      ╰───────────────────────────────────────────────────────────────────────────────── p0-03-model ╯
+
+      Enter:queue  │  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        SLOW [>  2.000s] (─────) harness-tui::p0_04_pty_recorded p0_04_real_pty_records_multiline_composer_shortcuts
+        SLOW [>  2.000s] (─────) harness-tui::p1_02_pty_recorded p1_02_real_pty_records_modal_chrome_at_canonical_sizes
+        SLOW [>  4.000s] (─────) harness-tui::p1_02_pty_recorded p1_02_real_pty_records_modal_chrome_at_canonical_sizes
+        SLOW [>  6.000s] (─────) harness-tui::p1_02_pty_recorded p1_02_real_pty_records_modal_chrome_at_canonical_sizes
+        SLOW [>  8.000s] (─────) harness-tui::p1_02_pty_recorded p1_02_real_pty_records_modal_chrome_at_canonical_sizes
+        SLOW [> 10.000s] (─────) harness-tui::p1_02_pty_recorded p1_02_real_pty_records_modal_chrome_at_canonical_sizes
+        SLOW [> 12.000s] (─────) harness-tui::p1_02_pty_recorded p1_02_real_pty_records_modal_chrome_at_canonical_sizes
+        FAIL [  12.146s] (12/22) harness-tui::p1_02_pty_recorded p1_02_real_pty_records_modal_chrome_at_canonical_sizes
+  stdout ───
+
+    running 1 test
+    test p1_02_real_pty_records_modal_chrome_at_canonical_sizes ... FAILED
+
+    failures:
+
+    failures:
+        p1_02_real_pty_records_modal_chrome_at_canonical_sizes
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 12.14s
+
+  stderr ───
+
+    thread 'p1_02_real_pty_records_modal_chrome_at_canonical_sizes' (1981196) panicked at crates/harness-tui/tests/support/p1_02_pty_support_recorded.rs:258:21:
+    timed out waiting for complete 80x24 Settings frame
+    ┌─ Settings ───────────────────────────────────────────────────────────── [✗] ─┐
+    │ Commands / Settings                                                          │
+    │ [Runtime]  TUI                                                               │
+    │ / to search                                                                  │
+    │   Model                                                          read only█  │
+    │   Small model                                                    read only█  │
+    │   Agent                                                          read only█  │
+    │   Provider                                                       read only█  │
+    │   Skills                                                         read only█  │
+    │   Mcp                                                            read only█  │
+    │   Formatter                                                      read only█  │
+    │   Instructions                                                   read only█  │
+    │   Model profile                                                  read only   │
+    │   Lsp                                                            read only   │
+    │   Disabled providers                                             read only   │
+    │   Enabled providers                                              read only   │
+    │   Shell                                                          read only   │
+    │   Logging                                                        read only   │
+    │   Ui                                                             read only   │
+    │   Permission bash                                                read only   │
+    │   Permission edit                                                read only   │
+    │   Permission question                                            read only   │
+    │         ↑↓ navigate · / search · Tab switch · Enter edit · Esc close         │
+    └──────────────────────────────────────────────────────────────────────────────┘
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        SLOW [> 30.000s] (─────) harness-tui::p1_03_pty_recorded p1_03_native_pty_owner_records_startup_reveal_terminal_states
+        FAIL [  12.234s] (21/22) harness-tui::p1_04_pty_recorded p1_04_native_pty_owner_records_responsive_terminal_states
+  stdout ───
+
+    running 1 test
+    test p1_04_native_pty_owner_records_responsive_terminal_states ... FAILED
+
+    failures:
+
+    failures:
+        p1_04_native_pty_owner_records_responsive_terminal_states
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 12.22s
+
+  stderr ───
+
+    thread 'p1_04_native_pty_owner_records_responsive_terminal_states' (1982455) panicked at crates/harness-tui/tests/support/p1_04_session.rs:225:21:
+    timed out waiting for P1-04 responsive ready 中文 emoji 🧭
+                                                                                    
+      git:test-workspace /workspace/agent-harness                                   
+                                                                                    
+                                                                                 │  
+         ❯ Harness responsive prompt 12                                12:00 PM  │  
+                                                                                 │  
+                                                                                 │  
+         Harness response 12: stable resize anchor with Unicode 中文   12:00 PM  │  
+         and terminal-safe status feedback.                                      │  
+                                                                                 │  
+                                                                                 │  
+                                                                                 │  
+                                                                                 █  
+         ❯ Harness active responsive prompt                            12:00 PM  █  
+                                                                                 █  
+                                           ▼                                        
+        ⠋ Responding… 0.0s                                                    0.2s  
+                                                                                    
+      ╭──────────────────────────────────────────────────────────────────────────╮  
+      │ ❯                                                                        │  
+      ╰────────────────────────────────────────────────────── harness-responsive ╯  
+                                                                                    
+      Enter:queue  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts                            
+                                                                                    
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [  99.330s] 22 tests run: 18 passed (2 slow), 4 failed, 0 skipped
+        SLOW [   2.120s] ( 9/22) harness-tui::p0_04_pty_recorded p0_04_real_pty_records_multiline_composer_shortcuts
+        SLOW [  58.334s] (16/22) harness-tui::p1_03_pty_recorded p1_03_native_pty_owner_records_startup_reveal_terminal_states
+        FAIL [  12.126s] ( 5/22) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+  stdout ───
+
+    running 1 test
+    test p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append ... FAILED
+
+    failures:
+
+    failures:
+        p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 12.12s
+
+  stderr ───
+
+    thread 'p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append' (1980616) panicked at crates/harness-tui/tests/p0_02_pty_recorded.rs:230:51:
+    timed out waiting for "deterministic active failure" present=true
+
+      git:test-workspace /workspace/agent-harness
+
+         P0-02 completed response two confirms deterministic response navigation.          12:00 PM  │
+                                                                                                     │
+                                                                                                     │
+                                                                                                     │
+                                                                                                     │
+         ❯ P0-02 deterministic prompt 3                                                    12:00 PM  │
+                                                                                                     │
+                                                                                                     │
+         P0-02 completed response three confirms final-response clamping.                  12:00 PM  │
+                                                                                                     │
+                                                                                                     │
+                                                                                                     █
+                                                                                                     █
+         ❯ P0-02 active streaming prompt                                                   12:00 PM  █
+                                                                                                     █
+                                                                                                     █
+         P0-02 active streaming block remains open.                                        12:00 PM  █
+                                                                                                     █
+         ◆ Run false                                                                                 █
+                                                                                                     █
+
+      ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+      │ ❯                                                                                            │
+      ╰───────────────────────────────────────────────────────────────────────────────── p0-02-model ╯
+
+      ctrl+c interrupt
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.573s] ( 7/22) harness-tui::p0_03_pty_recorded p0_03_real_pty_records_markdown_and_event_driven_fence
+  stdout ───
+
+    running 1 test
+    test p0_03_real_pty_records_markdown_and_event_driven_fence ... FAILED
+
+    failures:
+
+    failures:
+        p0_03_real_pty_records_markdown_and_event_driven_fence
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.56s
+
+  stderr ───
+
+    thread 'p0_03_real_pty_records_markdown_and_event_driven_fence' (1980959) panicked at crates/harness-tui/tests/p0_03_pty_recorded.rs:47:5:
+    nested emphasis must remain visible
+
+      git:test-workspace /workspace/agent-harness
+
+
+         ❯ P0-03 deterministic recorded fixture                                             12:00 PM
+
+
+         P0-03 boxed markdown fixture                                                       12:00 PM
+
+         ┌─────────────────┬─────────┐
+         │ Signal          │ Payload │
+         ├─────────────────┼─────────┤
+         │ nested emphasis │ 東京 👩‍ │
+         │ valid           │ unsafe  │
+         └─────────────────┴─────────┘
+
+         CJK: 東京 · ZWJ: 👩‍ QA-P0-03-READY
+
+         fn p0_03_fixture() {
+
+
+
+        ⠋ Responding… 0.0s                                                                        0.2s
+
+      ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+      │ ❯                                                                                            │
+      ╰───────────────────────────────────────────────────────────────────────────────── p0-03-model ╯
+
+      Enter:queue  │  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [  12.146s] (12/22) harness-tui::p1_02_pty_recorded p1_02_real_pty_records_modal_chrome_at_canonical_sizes
+  stdout ───
+
+    running 1 test
+    test p1_02_real_pty_records_modal_chrome_at_canonical_sizes ... FAILED
+
+    failures:
+
+    failures:
+        p1_02_real_pty_records_modal_chrome_at_canonical_sizes
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 12.14s
+
+  stderr ───
+
+    thread 'p1_02_real_pty_records_modal_chrome_at_canonical_sizes' (1981196) panicked at crates/harness-tui/tests/support/p1_02_pty_support_recorded.rs:258:21:
+    timed out waiting for complete 80x24 Settings frame
+    ┌─ Settings ───────────────────────────────────────────────────────────── [✗] ─┐
+    │ Commands / Settings                                                          │
+    │ [Runtime]  TUI                                                               │
+    │ / to search                                                                  │
+    │   Model                                                          read only█  │
+    │   Small model                                                    read only█  │
+    │   Agent                                                          read only█  │
+    │   Provider                                                       read only█  │
+    │   Skills                                                         read only█  │
+    │   Mcp                                                            read only█  │
+    │   Formatter                                                      read only█  │
+    │   Instructions                                                   read only█  │
+    │   Model profile                                                  read only   │
+    │   Lsp                                                            read only   │
+    │   Disabled providers                                             read only   │
+    │   Enabled providers                                              read only   │
+    │   Shell                                                          read only   │
+    │   Logging                                                        read only   │
+    │   Ui                                                             read only   │
+    │   Permission bash                                                read only   │
+    │   Permission edit                                                read only   │
+    │   Permission question                                            read only   │
+    │         ↑↓ navigate · / search · Tab switch · Enter edit · Esc close         │
+    └──────────────────────────────────────────────────────────────────────────────┘
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [  12.234s] (21/22) harness-tui::p1_04_pty_recorded p1_04_native_pty_owner_records_responsive_terminal_states
+  stdout ───
+
+    running 1 test
+    test p1_04_native_pty_owner_records_responsive_terminal_states ... FAILED
+
+    failures:
+
+    failures:
+        p1_04_native_pty_owner_records_responsive_terminal_states
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 12.22s
+
+  stderr ───
+
+    thread 'p1_04_native_pty_owner_records_responsive_terminal_states' (1982455) panicked at crates/harness-tui/tests/support/p1_04_session.rs:225:21:
+    timed out waiting for P1-04 responsive ready 中文 emoji 🧭
+                                                                                    
+      git:test-workspace /workspace/agent-harness                                   
+                                                                                    
+                                                                                 │  
+         ❯ Harness responsive prompt 12                                12:00 PM  │  
+                                                                                 │  
+                                                                                 │  
+         Harness response 12: stable resize anchor with Unicode 中文   12:00 PM  │  
+         and terminal-safe status feedback.                                      │  
+                                                                                 │  
+                                                                                 │  
+                                                                                 │  
+                                                                                 █  
+         ❯ Harness active responsive prompt                            12:00 PM  █  
+                                                                                 █  
+                                           ▼                                        
+        ⠋ Responding… 0.0s                                                    0.2s  
+                                                                                    
+      ╭──────────────────────────────────────────────────────────────────────────╮  
+      │ ❯                                                                        │  
+      ╰────────────────────────────────────────────────────── harness-responsive ╯  
+                                                                                    
+      Enter:queue  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts                            
+                                                                                    
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

@@ -1,0 +1,19 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.68s
+────────────
+ Nextest run ID ffa1f42e-611d-4013-87e2-b0b0944b5fc4 with nextest profile: ci
+    Starting 1881 tests across 83 binaries (6 tests and 1 binary skipped, including 4 tests and 1 binary via profile.default.default-filter)
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  4.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  2.000s] (─────────) harness-tui::grok_parity_render_test grok_alignment::all_tool_families_keep_grok_columns_through_streaming_and_disclosure
+        SLOW [>  2.000s] (─────────) harness-tui::tool_body_capture_test production_tool_body_captures
+        SLOW [>  2.000s] (─────────) harness-tui::transcript_block_viewer_test viewer_scroll_is_independent_and_survives_resize_with_anchor_identity
+        SLOW [>  2.000s] (─────────) harness-tui::transcript_incremental_performance_test tool_update_touches_one_activity_and_block_after_ten_thousand_settle
+        SLOW [>  6.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+────────────
+     Summary [   7.002s] 1881 tests run: 1881 passed (5 slow), 6 skipped
+        SLOW [   2.257s] (1877/1881) harness-tui::grok_parity_render_test grok_alignment::all_tool_families_keep_grok_columns_through_streaming_and_disclosure
+        SLOW [   2.564s] (1878/1881) harness-tui::transcript_block_viewer_test viewer_scroll_is_independent_and_survives_resize_with_anchor_identity
+        SLOW [   2.613s] (1879/1881) harness-tui::transcript_incremental_performance_test tool_update_touches_one_activity_and_block_after_ten_thousand_settle
+        SLOW [   6.156s] (1880/1881) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [   3.906s] (1881/1881) harness-tui::tool_body_capture_test production_tool_body_captures

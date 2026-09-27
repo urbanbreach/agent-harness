@@ -80,6 +80,19 @@ export async function openBrowserTerminal(settings) {
       await waitForWrites();
       return this.snapshot();
     },
+    async waitForPaintedText(text, parsedCountBefore = null) {
+      await page.waitForFunction(
+        ({ expected, previous }) => {
+          const screen = document.querySelector(".xterm-rows");
+          return screen?.textContent.includes(expected)
+            && (previous == null || window.qaTerminal.snapshot().parsedCount > previous);
+        },
+        { expected: text, previous: parsedCountBefore },
+        { timeout: settings.timeoutMs },
+      );
+      // Two frame callbacks include a browser paint without forcing a TUI redraw.
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    },
     async waitForTextAbsent(needle) {
       await waitForWrites();
       await page.waitForFunction(

@@ -2,3 +2,5 @@
 # whitespace (spaces filling the terminal width). Tell git to ignore
 # whitespace errors for these files so `git diff --check` stays clean.
 *.snap -whitespace
+# Raw terminal and allocator receipts preserve their original spacing.
+docs/evidence/**/*.log -whitespace
