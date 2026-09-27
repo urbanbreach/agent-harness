@@ -1,0 +1,86 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -387,6 +387,39 @@
+     poll_impl(pfd, duration)
+ }
+ 
++#[cfg(not(target_os = "macos"))]
++fn poll_timeout_ms(duration: Option<Duration>) -> libc::c_int {
++    use std::convert::TryFrom;
++
++    duration.map_or(-1, |wait| {
++        // A positive remainder must block, not spin until its deadline.
++        libc::c_int::try_from(wait.as_nanos().div_ceil(1_000_000)).unwrap_or(libc::c_int::MAX)
++    })
++}
++
++#[cfg(all(test, not(target_os = "macos")))]
++mod poll_timeout_tests {
++    use super::{poll_timeout_ms, Duration};
++
++    #[test]
++    fn finite_poll_waits_round_up_without_becoming_infinite() {
++        for (duration, expected) in [
++            (None, -1),
++            (Some(Duration::ZERO), 0),
++            (Some(Duration::from_nanos(1)), 1),
++            (Some(Duration::from_nanos(999_999)), 1),
++            (Some(Duration::from_millis(1)), 1),
++            (Some(Duration::from_nanos(1_000_001)), 2),
++            (Some(Duration::from_millis(50)), 50),
++            (Some(Duration::from_millis(2_147_483_647)), libc::c_int::MAX),
++            (Some(Duration::from_millis(2_147_483_648)), libc::c_int::MAX),
++            (Some(Duration::MAX), libc::c_int::MAX),
++        ] {
++            assert_eq!(poll_timeout_ms(duration), expected, "{duration:?}");
++        }
++    }
++}
++
+ /// Create a pair of connected sockets
+ ///
+ /// This implementation creates a pair of SOCK_STREAM sockets.
+--- a/src/unix.rs
++++ b/src/unix.rs
+@@ -62,7 +62,7 @@
+ }
+ 
+ impl std::os::fd::AsFd for OwnedHandle {
+-    fn as_fd(&self) -> std::os::fd::BorrowedFd {
++    fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+         unsafe { std::os::fd::BorrowedFd::borrow_raw(self.handle) }
+     }
+ }
+@@ -231,7 +231,7 @@
+ }
+ 
+ impl std::os::fd::AsFd for FileDescriptor {
+-    fn as_fd(&self) -> std::os::fd::BorrowedFd {
++    fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+         self.handle.as_fd()
+     }
+ }
+@@ -448,9 +448,7 @@
+         libc::poll(
+             pfd.as_mut_ptr(),
+             pfd.len() as _,
+-            duration
+-                .map(|wait| wait.as_millis() as libc::c_int)
+-                .unwrap_or(-1),
++            crate::poll_timeout_ms(duration),
+         )
+     };
+     if poll_result < 0 {
+--- a/src/windows.rs
++++ b/src/windows.rs
+@@ -557,9 +557,7 @@
+         WSAPoll(
+             pfd.as_mut_ptr(),
+             pfd.len() as _,
+-            duration
+-                .map(|wait| wait.as_millis() as libc::c_int)
+-                .unwrap_or(-1),
++            crate::poll_timeout_ms(duration),
+         )
+     };
+     if poll_result < 0 {

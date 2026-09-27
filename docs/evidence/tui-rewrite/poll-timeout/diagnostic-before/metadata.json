@@ -1,0 +1,23 @@
+{
+  "candidate_commit": "90739ad29213be5289341f049b2ab6bc9c64c352",
+  "reference_commit": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+  "binaries": {
+    "reference": {
+      "path": "/home/urbanbreach/.codex/worktrees/tui-reference/agent-harness/target/release/examples/resource_probe",
+      "sha256": "a1ae1b8e8e7844ff4883f9d2cecfcd441b69b9642e4012236eaac8b8d50eead2",
+      "bytes": 14548880
+    },
+    "candidate": {
+      "path": "/tmp/tui-runtime-90739ad2-resource-probe.bin",
+      "sha256": "f741b67d384e752817c86565c8245ac2c094572f7bf919da91296705936cb5f8",
+      "bytes": 13998816
+    }
+  },
+  "runner_sha256": "36d58ffa2066319267e3a8c63dfa5902d6bc394f1741fe7fd42eea39bdc25506",
+  "fixture_sha256": "e26b8b1d13ee955390a36a4a9863c39b276eed7232be51d5b44c55a550b816f1",
+  "started_utc": "2026-09-27T15:23:06Z",
+  "seconds": 4,
+  "warmup_seconds": 1.5,
+  "repetitions": 3,
+  "cadence_override": null
+}

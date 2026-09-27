@@ -1,0 +1,62 @@
+[
+  {
+    "workload": "input",
+    "percentile": "p95_ms",
+    "frozen_reference_ms": 89.93687799999861,
+    "paired_reference_ms": 70.38309800000025,
+    "candidate_ms": 69.41285599999901,
+    "allowed_increase_ms": 16.7,
+    "frozen_pass": true,
+    "paired_pass": true
+  },
+  {
+    "workload": "input",
+    "percentile": "p99_ms",
+    "frozen_reference_ms": 93.85725399999865,
+    "paired_reference_ms": 73.18229000000065,
+    "candidate_ms": 69.81575299999895,
+    "allowed_increase_ms": 16.7,
+    "frozen_pass": true,
+    "paired_pass": true
+  },
+  {
+    "workload": "stream",
+    "percentile": "p95_ms",
+    "frozen_reference_ms": 67.11613900000157,
+    "paired_reference_ms": 66.97354199999972,
+    "candidate_ms": 66.93553200000315,
+    "allowed_increase_ms": 16.7,
+    "frozen_pass": true,
+    "paired_pass": true
+  },
+  {
+    "workload": "stream",
+    "percentile": "p99_ms",
+    "frozen_reference_ms": 67.64864300000045,
+    "paired_reference_ms": 67.16261999999915,
+    "candidate_ms": 67.17972100000043,
+    "allowed_increase_ms": 16.7,
+    "frozen_pass": true,
+    "paired_pass": true
+  },
+  {
+    "workload": "resize",
+    "percentile": "p95_ms",
+    "frozen_reference_ms": 78.91972799999348,
+    "paired_reference_ms": 65.62303500000053,
+    "candidate_ms": 70.6021480000054,
+    "allowed_increase_ms": 16.7,
+    "frozen_pass": true,
+    "paired_pass": true
+  },
+  {
+    "workload": "resize",
+    "percentile": "p99_ms",
+    "frozen_reference_ms": 81.68516800001089,
+    "paired_reference_ms": 72.95643900000141,
+    "candidate_ms": 75.76382500000182,
+    "allowed_increase_ms": 16.7,
+    "frozen_pass": true,
+    "paired_pass": true
+  }
+]

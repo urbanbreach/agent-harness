@@ -1,0 +1,18 @@
+Independent reviewer: /root/tui_review
+Date: 2026-09-27
+Decision: approved to commit this poll-timeout slice; no blocking findings.
+
+The reviewer checked the conversion, both callers, unchanged reader ownership,
+ordering and shutdown, published crate provenance, all 65 evidence hashes and
+sizes, the tracked patch, complete upstream delta, 10 vendor hashes and shared
+fixture receipts. Runtime medians, diagnostic poll counts, browser quantiles,
+paired medians and cleanup receipts reproduce the published results. The nine
+screenshot sets match across all six runs; resize and click-burst images were
+also inspected visually.
+
+The evidence accurately retains the limits: 50 ms shutdown polling, unmet
+typing/burst CPU targets, unequal input counts, unproven cadence parity, added
+vendor maintenance and unverified Windows/macOS behavior.
+
+This approves the bounded correction, not whole-rewrite completion. This review
+record was added after the 65-file manifest audit; the final manifest includes it.
