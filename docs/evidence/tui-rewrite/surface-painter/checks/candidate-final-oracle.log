@@ -1,0 +1,20 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+warning: use of deprecated field `ratatui::buffer::Cell::skip`: use `set_diff_option(CellDiffOption::Skip)` instead
+  --> /tmp/tui-surface-paint-oracle.rs:52:89
+   |
+52 |         "cells": buffer.content.iter().map(|c| (c.symbol(), format!("{:?}", c.style()), c.skip)).collect::<Vec<_>>() }));
+   |                                                                                         ^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: `harness-tui` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.32s
+────────────
+ Nextest run ID 3ebf7348-d19f-4209-a365-c4288ed7d5f0 with nextest profile: ci
+    Starting 2 tests across 1 binary (1249 tests skipped)
+        SLOW [>  2.000s] (───) harness-tui ui::ui_transcript_surface::diagnostic::diagnostic_painter_parity
+        SLOW [>  4.000s] (───) harness-tui ui::ui_transcript_surface::diagnostic::diagnostic_painter_parity
+        SLOW [>  6.000s] (───) harness-tui ui::ui_transcript_surface::diagnostic::diagnostic_painter_parity
+────────────
+     Summary [   6.175s] 2 tests run: 2 passed (1 slow), 1249 skipped
+        SLOW [   6.173s] (2/2) harness-tui ui::ui_transcript_surface::diagnostic::diagnostic_painter_parity

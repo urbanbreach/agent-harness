@@ -1,0 +1,50 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.72s
+────────────
+ Nextest run ID acdd6a6d-c9e0-40cb-8529-afce2b824c94 with nextest profile: ci
+    Starting 1 test across 1 binary (1254 tests skipped)
+        FAIL [   0.004s] (1/1) harness-tui ui::ui_transcript_surface::paint_tests::cached_transcript_motion_changes_markers_without_changing_text_or_labels
+  stdout ───
+
+    running 1 test
+    test ui::ui_transcript_surface::paint_tests::cached_transcript_motion_changes_markers_without_changing_text_or_labels ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_transcript_surface::paint_tests::cached_transcript_motion_changes_markers_without_changing_text_or_labels
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1254 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'ui::ui_transcript_surface::paint_tests::cached_transcript_motion_changes_markers_without_changing_text_or_labels' (2722419) panicked at crates/harness-tui/src/ui_transcript_surface/paint_tests.rs:62:13:
+    assertion `left != right` failed: Preferred User
+      left: Rgb(70, 60, 88)
+     right: Rgb(70, 60, 88)
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.007s] 1 test run: 0 passed, 1 failed, 1254 skipped
+        FAIL [   0.004s] (1/1) harness-tui ui::ui_transcript_surface::paint_tests::cached_transcript_motion_changes_markers_without_changing_text_or_labels
+  stdout ───
+
+    running 1 test
+    test ui::ui_transcript_surface::paint_tests::cached_transcript_motion_changes_markers_without_changing_text_or_labels ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_transcript_surface::paint_tests::cached_transcript_motion_changes_markers_without_changing_text_or_labels
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1254 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'ui::ui_transcript_surface::paint_tests::cached_transcript_motion_changes_markers_without_changing_text_or_labels' (2722419) panicked at crates/harness-tui/src/ui_transcript_surface/paint_tests.rs:62:13:
+    assertion `left != right` failed: Preferred User
+      left: Rgb(70, 60, 88)
+     right: Rgb(70, 60, 88)
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

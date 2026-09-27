@@ -1,0 +1,50 @@
+[
+  {
+    "frame": "chat-runningopen-120x40-motion-0ms.screen",
+    "different_fields": [],
+    "all_cells_equal": true,
+    "png_byte_equal": true,
+    "png_sha256": "06fc8df5a13eb2b005f673ed0c89d58f520106f7ef48a0defe6f5cc9d1436e4a"
+  },
+  {
+    "frame": "chat-runningopen-120x40-motion-330ms.screen",
+    "different_fields": [],
+    "all_cells_equal": true,
+    "png_byte_equal": true,
+    "png_sha256": "284ed7efeab05086d8e055763b8882afdc0ce99fb52f477e2730b728bfeeefed"
+  },
+  {
+    "frame": "chat-runningopen-120x40-motion-660ms.screen",
+    "different_fields": [],
+    "all_cells_equal": true,
+    "png_byte_equal": true,
+    "png_sha256": "4f18d891445a1f9f4eb83d5f3f2c9a214e4e2ec9c753769a3c7ef70037dd81b8"
+  },
+  {
+    "frame": "chat-thinking-120x40-motion-0ms.screen",
+    "different_fields": [
+      "renderCount"
+    ],
+    "all_cells_equal": true,
+    "png_byte_equal": true,
+    "png_sha256": "8afeb045cbcad1e9daa1cbca1c3f380e7a1baaa979100e8ea33e728f3e2f7840"
+  },
+  {
+    "frame": "chat-thinking-120x40-motion-330ms.screen",
+    "different_fields": [
+      "renderCount"
+    ],
+    "all_cells_equal": true,
+    "png_byte_equal": true,
+    "png_sha256": "a5a59c4c1985e7794ad4210dd4133aec0ddd156881bc9d99f04473304807d2ba"
+  },
+  {
+    "frame": "chat-thinking-120x40-motion-660ms.screen",
+    "different_fields": [
+      "renderCount"
+    ],
+    "all_cells_equal": true,
+    "png_byte_equal": true,
+    "png_sha256": "7229f5f9ac266a8840195a98798e0a24dba5f26b265ebc8e36ed6d37efabe3aa"
+  }
+]

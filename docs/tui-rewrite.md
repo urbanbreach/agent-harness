@@ -709,6 +709,33 @@ is only 7.61% smaller than the original, and the broader implementation rewrite
 remains open. Evidence is in
 [`evidence/tui-rewrite/compact-selection`](evidence/tui-rewrite/compact-selection).
 
+## Borrowed transcript painter
+
+The transcript painter reads prepared spans directly into the frame buffer.
+It removes visible-row/String clones, mutable animation copies, temporary
+Paragraph/rail buffers and repeated style fills. The 317-line replacement keeps
+Ratatui clipping/alignment and animation precedence. Existing row formatters
+remain in a 445-line module and still need replacement.
+
+Independent review caught a halfwidth dakuten/handakuten regression in the first
+version. Text and rail clipping now use Ratatui's CellWidth. The extended paint
+check fails on the rejected version and passes on both the preceding painter
+and the fixed version. All 10,788 diagnostic cell records, 555 full frames and
+733 exact-clock chat/tool captures match. Six paired xterm screenshots are
+byte-identical; the gated PTY checks and all 1,666 TUI tests pass.
+
+Fresh paired release measurements put streaming p99 at 998 µs versus 1,098 µs
+for the preceding build, with 3.8% fewer allocated bytes. Resize p99 is essentially
+unchanged, with 1.3% fewer allocated bytes. All fourteen frozen main-workload
+limits pass. RSS stays within 0.5% of the preceding build. These are counting-
+sink measurements; sustained runtime CPU and end-to-end latency remain open.
+The rejected version's measurements are retained and excluded from acceptance.
+
+The change removes 20 production and 55 test lines. Whole TUI source remains
+167,968 lines, a 7.65% reduction. The state engine, retained formatters, broader
+source reduction and final signoff are unfinished. Raw evidence is in
+[`evidence/tui-rewrite/surface-painter`](evidence/tui-rewrite/surface-painter).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

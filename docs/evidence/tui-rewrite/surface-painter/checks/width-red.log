@@ -1,0 +1,50 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.72s
+────────────
+ Nextest run ID f9367c8f-ecb1-4178-9479-20dacb514e32 with nextest profile: ci
+    Starting 1 test across 1 binary (1249 tests skipped)
+        FAIL [   0.006s] (1/1) harness-tui ui::ui_transcript_surface::paint_tests::cached_transcript_paint_preserves_motion_and_terminal_cells
+  stdout ───
+
+    running 1 test
+    test ui::ui_transcript_surface::paint_tests::cached_transcript_paint_preserves_motion_and_terminal_cells ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_transcript_surface::paint_tests::cached_transcript_paint_preserves_motion_and_terminal_cells
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1249 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'ui::ui_transcript_surface::paint_tests::cached_transcript_paint_preserves_motion_and_terminal_cells' (2746426) panicked at crates/harness-tui/src/ui_transcript_surface/paint_tests.rs:156:17:
+    assertion `left == right` failed: ｶﾞX split=false Left
+      left: " "
+     right: "X"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.009s] 1 test run: 0 passed, 1 failed, 1249 skipped
+        FAIL [   0.006s] (1/1) harness-tui ui::ui_transcript_surface::paint_tests::cached_transcript_paint_preserves_motion_and_terminal_cells
+  stdout ───
+
+    running 1 test
+    test ui::ui_transcript_surface::paint_tests::cached_transcript_paint_preserves_motion_and_terminal_cells ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_transcript_surface::paint_tests::cached_transcript_paint_preserves_motion_and_terminal_cells
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1249 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'ui::ui_transcript_surface::paint_tests::cached_transcript_paint_preserves_motion_and_terminal_cells' (2746426) panicked at crates/harness-tui/src/ui_transcript_surface/paint_tests.rs:156:17:
+    assertion `left == right` failed: ｶﾞX split=false Left
+      left: " "
+     right: "X"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

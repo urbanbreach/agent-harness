@@ -157,7 +157,7 @@ pub(super) use ui_transcript_types::{
 };
 
 #[cfg(test)]
-use super::ui_transcript_surface::{render_transcript_surface_lines, visible_surface_lines};
+use super::ui_transcript_surface::render_transcript_surface_lines;
 
 #[cfg(test)]
 use super::ui_transcript_selection::TranscriptSelectionDebugSnapshot;

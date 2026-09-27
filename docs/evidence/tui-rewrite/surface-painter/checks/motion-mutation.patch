@@ -1,0 +1,11 @@
+--- crates/harness-tui/src/ui_transcript_surface.rs
++++ crates/harness-tui/src/ui_transcript_surface.rs
+@@ -75,7 +75,7 @@
+         &mut visible_lines,
+         surface,
+         local_scroll,
+-        animation_phase,
++        0,
+         theme,
+     );
+     let paragraph = Paragraph::new(Text::from(visible_lines))

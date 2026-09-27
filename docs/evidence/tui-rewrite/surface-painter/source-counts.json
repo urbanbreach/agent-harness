@@ -1,0 +1,39 @@
+{
+  "method": "physical lines; test module files and cfg(test) items with trailing separators count as test source",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/ui_transcript.rs",
+      "production_delta": 0,
+      "test_delta": 0,
+      "total_delta": 0
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_surface.rs",
+      "production_delta": -439,
+      "test_delta": -245,
+      "total_delta": -684
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_surface/paint_tests.rs",
+      "production_delta": 0,
+      "test_delta": 164,
+      "total_delta": 164
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_surface/rows.rs",
+      "production_delta": 419,
+      "test_delta": 26,
+      "total_delta": 445
+    }
+  ],
+  "totals": {
+    "production_delta": -20,
+    "test_delta": -55,
+    "total_delta": -75
+  },
+  "whole_tui": {
+    "files": 560,
+    "lines": 167968,
+    "original_lines": 181882
+  }
+}
