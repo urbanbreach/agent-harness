@@ -1,0 +1,66 @@
+{
+  "schema": "tui-rewrite-viewer-v1",
+  "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+  "commit": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+  "binary_sha256": "48ca8847e0f59377564b4b72245b704a470f963d333d718add1a6badcfe0c813",
+  "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--release",
+    "-p",
+    "harness-tui",
+    "--all-features",
+    "--test",
+    "rewrite_viewer_performance_test",
+    "--profile",
+    "perf",
+    "-j",
+    "1",
+    "--success-output",
+    "immediate"
+  ],
+  "scenarios": {
+    "idle-2000": {
+      "construction_us": 6863,
+      "cold_us": 513128,
+      "p50_us": 3183,
+      "p95_us": 3250,
+      "p99_us": 3456,
+      "bytes": 3800,
+      "rss_kib": 90692,
+      "cpu_ms_per_frame": 3.2
+    },
+    "scroll-2000": {
+      "construction_us": 7303,
+      "cold_us": 515685,
+      "p50_us": 3257,
+      "p95_us": 3327,
+      "p99_us": 3600,
+      "bytes": 64765,
+      "rss_kib": 90668,
+      "cpu_ms_per_frame": 3.3
+    },
+    "search-2000": {
+      "construction_us": 7053,
+      "cold_us": 517860,
+      "p50_us": 39102,
+      "p95_us": 40216,
+      "p99_us": 41199,
+      "bytes": 89400,
+      "rss_kib": 90764,
+      "cpu_ms_per_frame": 38.6
+    },
+    "resize-2000": {
+      "construction_us": 6504,
+      "cold_us": 510076,
+      "p50_us": 63959,
+      "p95_us": 71036,
+      "p99_us": 86976,
+      "bytes": 1877700,
+      "rss_kib": 90672,
+      "cpu_ms_per_frame": 57.25
+    }
+  }
+}

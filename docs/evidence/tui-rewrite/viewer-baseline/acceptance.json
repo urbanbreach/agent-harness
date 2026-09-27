@@ -1,0 +1,39 @@
+{
+  "fixture_sha256": "103cdff460fedd4b6fe6f643fb5472006c2c9ba196494a03efb37997698a0ecd",
+  "basis": "reference release samples before further viewer implementation changes",
+  "source_baseline": "706d00bf",
+  "lines": 2000,
+  "frames": 200,
+  "repetitions": 3,
+  "scope": "forced viewer frame/process diagnostics; not runtime-idle or end-to-end latency",
+  "limits": {
+    "idle-2000": {
+      "p95_us": 2275.0,
+      "p99_us": 2419.2,
+      "cpu_ms_per_frame": 2.2399999999999998,
+      "rss_kib": 63484.399999999994,
+      "allocated_bytes": 472458873.59999996
+    },
+    "scroll-2000": {
+      "p95_us": 2328.8999999999996,
+      "p99_us": 2520.0,
+      "cpu_ms_per_frame": 2.3099999999999996,
+      "rss_kib": 63467.6,
+      "allocated_bytes": 474767728.4
+    },
+    "search-2000": {
+      "p95_us": 28151.199999999997,
+      "p99_us": 28839.3,
+      "cpu_ms_per_frame": 27.02,
+      "rss_kib": 63534.799999999996,
+      "allocated_bytes": 6952680336.7
+    },
+    "resize-2000": {
+      "p95_us": 49725.2,
+      "p99_us": 60883.2,
+      "cpu_ms_per_frame": 40.074999999999996,
+      "rss_kib": 63470.399999999994,
+      "allocated_bytes": 11292616736.8
+    }
+  }
+}

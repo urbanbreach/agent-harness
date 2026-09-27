@@ -1,0 +1,8 @@
+Independent reviewer: /root/tui_review
+Result: approved to commit the diagnostic baseline; no remaining findings.
+
+Verified all 80 pre-receipt artifact hashes, fixture/driver receipts, release binary hashes, 32 raw reports, logs, percentiles, phase sums, allocations, recovered resize summary and output equality. The new opt-in timeout and 70% limits are correctly scoped. Resize RSS remains above its limit.
+
+Resolved finding: comparison phase medians initially pooled 600 samples while prose used the median of three per-run medians. Comparison now uses the latter consistently.
+
+Production source unchanged. Reviewer performed no builds, tests or edits. This approves the baseline only, not whole-rewrite completion.

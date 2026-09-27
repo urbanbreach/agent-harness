@@ -1,0 +1,15 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.23s
+idle-2000: p95=3250us RSS=90692KiB
+scroll-2000: p95=3327us RSS=90668KiB
+search-2000: p95=40216us RSS=90764KiB
+Traceback (most recent call last):
+  File "/home/urbanbreach/Projects/agent-harness/scripts/measure-tui-rewrite.py", line 74, in <module>
+    main()
+    ~~~~^^
+  File "/home/urbanbreach/Projects/agent-harness/scripts/measure-tui-rewrite.py", line 59, in main
+    subprocess.run(run, cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/urbanbreach/.local/share/mise/installs/python/3.13.15/lib/python3.13/subprocess.py", line 577, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['memusage', '-n', 'rewrite_viewer_performance_test-b265f26a46eacb6a', '--no-timer', 'cargo', 'nextest', 'run', '--release', '-p', 'harness-tui', '--all-features', '--test', 'rewrite_viewer_performance_test', '--profile', 'perf', '-j', '1', '--success-output', 'immediate']' returned non-zero exit status 100.
