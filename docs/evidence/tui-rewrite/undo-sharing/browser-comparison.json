@@ -1,0 +1,170 @@
+{
+  "comparisons": [
+    {
+      "name": "01-prompt.png",
+      "pixels_equal": true,
+      "png_sha256": "390fd0e558c2caa77fa1cd4d65a569cbed16e5b8dbef814b8f80a5d9f2f9728c",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 3,
+          "candidate": 4
+        }
+      }
+    },
+    {
+      "name": "02-unicode-draft.png",
+      "pixels_equal": true,
+      "png_sha256": "fb64f3944d3d84fe7c91768f2761fa42c7508fc7093413e154d5cc5eb85163da",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 4,
+          "candidate": 5
+        }
+      }
+    },
+    {
+      "name": "03-insert.png",
+      "pixels_equal": true,
+      "png_sha256": "a12bf800ec2f428dae01fc913a16e601f869b9605475a405a092a9aa4c73428f",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 5,
+          "candidate": 6
+        }
+      }
+    },
+    {
+      "name": "04-delete.png",
+      "pixels_equal": true,
+      "png_sha256": "fb64f3944d3d84fe7c91768f2761fa42c7508fc7093413e154d5cc5eb85163da",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 6,
+          "candidate": 7
+        }
+      }
+    },
+    {
+      "name": "05-middle-edit.png",
+      "pixels_equal": true,
+      "png_sha256": "b24ce505c3c92c1b99d34001c5cec21fac76afbd5862e7d6dda19edda9617bdc",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 7,
+          "candidate": 8
+        }
+      }
+    },
+    {
+      "name": "06-undo.png",
+      "pixels_equal": true,
+      "png_sha256": "1b6f76277dc19e67b536daf1c65c512ac93457de99e5c36e4c7162de32449fd9",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 8,
+          "candidate": 9
+        }
+      }
+    },
+    {
+      "name": "06b-ctrl-y-conflict.png",
+      "pixels_equal": true,
+      "png_sha256": "1b6f76277dc19e67b536daf1c65c512ac93457de99e5c36e4c7162de32449fd9",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 8,
+          "candidate": 9
+        }
+      }
+    },
+    {
+      "name": "07-redo.png",
+      "pixels_equal": true,
+      "png_sha256": "b24ce505c3c92c1b99d34001c5cec21fac76afbd5862e7d6dda19edda9617bdc",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 9,
+          "candidate": 10
+        }
+      }
+    },
+    {
+      "name": "08-select-all.png",
+      "pixels_equal": true,
+      "png_sha256": "a269919fb85a1749a069637ed237a3728ece6699cd415c1079a92cb483624c7d",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 10,
+          "candidate": 11
+        }
+      }
+    },
+    {
+      "name": "09-replace-selection.png",
+      "pixels_equal": true,
+      "png_sha256": "7fd52deb21aa444182517995dcf258bb7851dd80a38208899e206b805f6ceeae",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 11,
+          "candidate": 12
+        }
+      }
+    },
+    {
+      "name": "10-undo-selection.png",
+      "pixels_equal": true,
+      "png_sha256": "a269919fb85a1749a069637ed237a3728ece6699cd415c1079a92cb483624c7d",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 12,
+          "candidate": 13
+        }
+      }
+    },
+    {
+      "name": "11-redo-selection.png",
+      "pixels_equal": true,
+      "png_sha256": "7fd52deb21aa444182517995dcf258bb7851dd80a38208899e206b805f6ceeae",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 13,
+          "candidate": 14
+        }
+      }
+    },
+    {
+      "name": "12-escape.png",
+      "pixels_equal": true,
+      "png_sha256": "7fd52deb21aa444182517995dcf258bb7851dd80a38208899e206b805f6ceeae",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 15,
+          "candidate": 16
+        }
+      }
+    },
+    {
+      "name": "13-multiline-paste.png",
+      "pixels_equal": true,
+      "png_sha256": "40eebcd6c805f0470b2453fb48f5565f34e472bb3f12c1fad91d8e71068877b4",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 16,
+          "candidate": 17
+        }
+      }
+    },
+    {
+      "name": "14-expanded-paste.png",
+      "pixels_equal": true,
+      "png_sha256": "c37ff52bf9a22346d070e0e2797b0aa72bcfef139e1b246e4a1489b50ba0b7ba",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 17,
+          "candidate": 18
+        }
+      }
+    }
+  ],
+  "both_runs_restore_and_cleanup": true
+}

@@ -1,0 +1,34 @@
+{
+  "tui": {
+    "run": 1668,
+    "passed": 1668,
+    "skipped": 7
+  },
+  "pty": {
+    "run": 7,
+    "passed": 7
+  },
+  "editor_before": {
+    "run": 6,
+    "passed": 6
+  },
+  "selection_mutation": {
+    "run": 6,
+    "passed": 5,
+    "failed": 1
+  },
+  "editor_final": {
+    "run": 6,
+    "passed": 6
+  },
+  "workspace_check": "passed",
+  "clippy": "passed",
+  "fmt": "passed",
+  "suite_gates": "passed",
+  "performance_frozen_limits": "14 passed",
+  "paired_browser_frames": 15,
+  "browser_exact_cells_styles_cursor_modes_scrollback": true,
+  "browser_exact_pngs": true,
+  "terminal_and_resource_cleanup": "both passed",
+  "workspace_test_suite": "not rerun; earlier predecessor CLI failures remain"
+}

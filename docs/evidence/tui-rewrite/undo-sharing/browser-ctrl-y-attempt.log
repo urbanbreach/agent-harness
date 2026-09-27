@@ -1,0 +1,110 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: redo text
++ actual - expected
+... Skipped lines
+
+  '                                                                                                                                            \n' +
+    '  git:test-workspace /workspace/agent-harness                                                                                               \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+...
+    '  │   plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻      │  \n' +
++   '  │   plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é                                                                 │  \n' +
+-   '  │   plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 界                                                              │  \n' +
+    '  ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── unknown ╯  \n' +
+    '                                                                                                                                            \n' +
+    '  Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts                                                                                        \n' +
+    '                                                                                                                                            '
+
+    at file:///tmp/tui-undo-sharing/capture-composer.mjs:71:12 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: '                                                                                                                                            \n' +
+    '  git:test-workspace /workspace/agent-harness                                                                                               \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  \n' +
+    '  │ ❯ plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻      │  \n' +
+    '  │   plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻      │  \n' +
+    '  │   plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻      │  \n' +
+    '  │   plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é                                                                 │  \n' +
+    '  ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── unknown ╯  \n' +
+    '                                                                                                                                            \n' +
+    '  Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts                                                                                        \n' +
+    '                                                                                                                                            ',
+  expected: '                                                                                                                                            \n' +
+    '  git:test-workspace /workspace/agent-harness                                                                                               \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '                                                                                                                                            \n' +
+    '  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  \n' +
+    '  │ ❯ plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻      │  \n' +
+    '  │   plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻      │  \n' +
+    '  │   plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻      │  \n' +
+    '  │   plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 👩‍💻 plain 界 é 界                                                              │  \n' +
+    '  ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── unknown ╯  \n' +
+    '                                                                                                                                            \n' +
+    '  Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts                                                                                        \n' +
+    '                                                                                                                                            ',
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v26.7.0

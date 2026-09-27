@@ -95,6 +95,30 @@ fn attachment_insertion_is_one_undo_group() {
         assert!(editor.undo());
         assert_eq!(editor.text(), "a");
         assert!(editor.redo());
+
+        let snapshot = |editor: &ComposerEditor| {
+            let state = editor.state();
+            (state.buffer, state.cursor, state.selection, state.history)
+        };
+        let prepare: [fn(&mut ComposerEditor); 3] = [
+            ComposerEditor::move_left,
+            ComposerEditor::select_all,
+            |editor| editor.set_history(vec!["saved prompt".into()]),
+        ];
+        for prepare in prepare {
+            let mut branch = editor.clone();
+            prepare(&mut branch);
+            let before = snapshot(&branch);
+            branch.insert_text("界").expect("branch edit");
+            let after = snapshot(&branch);
+            assert!(branch.undo());
+            assert_eq!(snapshot(&branch), before);
+            assert!(branch.redo());
+            assert_eq!(snapshot(&branch), after);
+            assert!(branch.undo());
+            branch.insert_text("new").expect("replace redo branch");
+            assert!(!branch.redo());
+        }
         editor.state()
     });
 }

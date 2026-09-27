@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::composer_atoms::{AtomBuffer, AtomCursor};
 
 use super::history::PromptHistory;
@@ -23,8 +25,8 @@ pub enum EditGroup {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct UndoEntry {
-    before: EditorSnapshot,
-    after: EditorSnapshot,
+    before: Arc<EditorSnapshot>,
+    after: Arc<EditorSnapshot>,
     group: EditGroup,
 }
 
@@ -36,6 +38,19 @@ pub struct UndoStack {
 
 impl UndoStack {
     pub fn record(&mut self, before: EditorSnapshot, after: EditorSnapshot, group: EditGroup) {
+        self.record_shared(Arc::new(before), Arc::new(after), group);
+    }
+
+    pub(super) fn latest(&self) -> Option<&Arc<EditorSnapshot>> {
+        self.undo.last().map(|entry| &entry.after)
+    }
+
+    pub(super) fn record_shared(
+        &mut self,
+        before: Arc<EditorSnapshot>,
+        after: Arc<EditorSnapshot>,
+        group: EditGroup,
+    ) {
         if before == after {
             return;
         }
@@ -59,9 +74,15 @@ impl UndoStack {
     }
 
     pub fn undo(&mut self, current: &EditorSnapshot) -> Option<EditorSnapshot> {
+        self.undo.last()?;
+        self.undo_shared(Arc::new(current.clone()))
+            .map(Arc::unwrap_or_clone)
+    }
+
+    fn undo_shared(&mut self, current: Arc<EditorSnapshot>) -> Option<Arc<EditorSnapshot>> {
         let entry = self.undo.pop()?;
         self.redo.push(UndoEntry {
-            before: current.clone(),
+            before: current,
             after: entry.after,
             group: entry.group,
         });
@@ -69,10 +90,16 @@ impl UndoStack {
     }
 
     pub fn redo(&mut self, current: &EditorSnapshot) -> Option<EditorSnapshot> {
+        self.redo.last()?;
+        self.redo_shared(Arc::new(current.clone()))
+            .map(Arc::unwrap_or_clone)
+    }
+
+    fn redo_shared(&mut self, current: Arc<EditorSnapshot>) -> Option<Arc<EditorSnapshot>> {
         let entry = self.redo.pop()?;
         self.undo.push(UndoEntry {
-            before: current.clone(),
-            after: entry.after.clone(),
+            before: current,
+            after: Arc::clone(&entry.after),
             group: entry.group,
         });
         Some(entry.after)
@@ -90,7 +117,7 @@ impl UndoStack {
 impl super::ComposerEditor {
     pub fn undo(&mut self) -> bool {
         let current = self.snapshot();
-        let Some(snapshot) = self.undo.undo(&current) else {
+        let Some(snapshot) = self.undo.undo_shared(current) else {
             return false;
         };
         self.restore(snapshot);
@@ -99,7 +126,7 @@ impl super::ComposerEditor {
 
     pub fn redo(&mut self) -> bool {
         let current = self.snapshot();
-        let Some(snapshot) = self.undo.redo(&current) else {
+        let Some(snapshot) = self.undo.redo_shared(current) else {
             return false;
         };
         self.restore(snapshot);

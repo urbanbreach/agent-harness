@@ -1,0 +1,53 @@
+[
+  {
+    "name": "workspace-check",
+    "command": [
+      "cargo",
+      "check",
+      "--workspace"
+    ],
+    "environment": {},
+    "exit": 0
+  },
+  {
+    "name": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "environment": {},
+    "exit": 0
+  },
+  {
+    "name": "suite-gates",
+    "command": [
+      "python3",
+      "scripts/check-test-suite-gates.py"
+    ],
+    "environment": {},
+    "exit": 0
+  },
+  {
+    "name": "pty",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--profile",
+      "ci",
+      "-p",
+      "harness-tui",
+      "--all-features",
+      "--ignore-default-filter",
+      "-E",
+      "binary(p0_04_pty_recorded) | binary(p1_04_pty_recorded)"
+    ],
+    "environment": {
+      "HARNESS_TUI_PTY_SIGNOFF": "1"
+    },
+    "exit": 0
+  }
+]
