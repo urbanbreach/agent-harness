@@ -1,0 +1,50 @@
+{
+  "before": {
+    "typing-long": {
+      "p50_us": 431,
+      "p95_us": 467,
+      "p99_us": 492,
+      "bytes": 20000,
+      "rss_kib": 40564,
+      "cpu_ms_per_frame": 0.44,
+      "allocated_bytes": 380621446,
+      "peak_heap_bytes": 21895564,
+      "malloc_calls": 8775352
+    },
+    "typing": {
+      "p50_us": 109,
+      "p95_us": 123,
+      "p99_us": 188,
+      "bytes": 140750,
+      "rss_kib": 9624,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 9745899,
+      "peak_heap_bytes": 2097595,
+      "malloc_calls": 110873
+    }
+  },
+  "candidate": {
+    "typing-long": {
+      "p50_us": 384,
+      "p95_us": 412,
+      "p99_us": 434,
+      "bytes": 20000,
+      "rss_kib": 40604,
+      "cpu_ms_per_frame": 0.38,
+      "allocated_bytes": 372702031,
+      "peak_heap_bytes": 21892879,
+      "malloc_calls": 5440072
+    },
+    "typing": {
+      "p50_us": 107,
+      "p95_us": 124,
+      "p99_us": 187,
+      "bytes": 140750,
+      "rss_kib": 9520,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 9766267,
+      "peak_heap_bytes": 2097598,
+      "malloc_calls": 110880
+    }
+  }
+}

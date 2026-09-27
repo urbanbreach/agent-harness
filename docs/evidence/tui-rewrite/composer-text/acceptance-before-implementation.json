@@ -1,0 +1,26 @@
+{
+  "recorded_at": "2026-09-27T21:28:37.391130+00:00",
+  "source": "92bd235d0d8a70e84ee3a7f333fcbb7a10f8aa30",
+  "limits": {
+    "typing-long": {
+      "p95_us": 524.7,
+      "p99_us": 554.4000000000001,
+      "rss_kib": 44536.8,
+      "peak_heap_bytes": 24082797.200000003,
+      "cpu_ms_per_frame": 0.46,
+      "allocated_bytes": 388229550.12,
+      "malloc_calls": 6142745.699999999
+    },
+    "typing": {
+      "p95_us": 135.3,
+      "p99_us": 179.3,
+      "rss_kib": 10810.800000000001,
+      "peak_heap_bytes": 2309677.7,
+      "cpu_ms_per_frame": 0.12000000000000001,
+      "allocated_bytes": 9948128.34,
+      "malloc_calls": 113099.64
+    }
+  },
+  "content": "Exact matching bytes, visible content, input frame counts and final draft across all before/candidate runs. Existing pinned frame, public composer and gated PTY checks pass.",
+  "scope": "500 measured frames after 10 warmups, zero history, long fixed Unicode draft versus one-character typing. CPU allowance is one 10ms process tick over 500 frames. No end-to-end terminal latency claim. Existing rewrite limits unchanged."
+}

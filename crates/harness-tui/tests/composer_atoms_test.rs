@@ -142,6 +142,7 @@ fn serialization_preserves_atom_identity_and_typed_nontext_kinds() {
     assert!(matches!(restored.atoms()[0].kind, AtomKind::FileMention(_)));
     assert!(matches!(restored.atoms()[1].kind, AtomKind::Attachment(_)));
     assert!(matches!(restored.atoms()[2].kind, AtomKind::Newline));
+    assert_eq!(restored.text(), "@mention:9[attachment:11]\n");
 }
 
 #[test]

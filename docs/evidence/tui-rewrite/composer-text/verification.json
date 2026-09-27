@@ -1,0 +1,28 @@
+{
+  "all": {
+    "command": "cargo nextest run --profile ci -p harness-tui --all-features",
+    "exit": 0,
+    "result": "1668 passed, 7 skipped"
+  },
+  "before": {
+    "command": "cargo nextest run --profile ci -p harness-tui --all-features --test composer_atoms_test",
+    "exit": 0,
+    "result": "7 passed"
+  },
+  "red": {
+    "command": "same atom command with red.patch.gz applied temporarily",
+    "exit": 100,
+    "result": "4 passed, 3 failed as intended; restored before implementation"
+  },
+  "performance": {
+    "initial": "3 timing and 1 allocation runs per workload; limits frozen before implementation",
+    "paired_first": "3 paired timing and 1 paired allocation runs per workload; short-draft p95 and p99 limits failed",
+    "confirmation": "3 paired timing and 1 paired allocation runs per workload; short-draft p99 limit failed"
+  },
+  "browser": {
+    "before_source": "410779f3818e97b91efbcaa24421fcd581177a4c",
+    "before": "node /tmp/tui-composer-text/capture-composer.mjs /tmp/tui-focus/rewrite_probe .omo/evidence/tui-rewrite/composer-text/before",
+    "candidate": "node /tmp/tui-composer-text/capture-composer.mjs /tmp/tui-composer-text/rewrite_probe .omo/evidence/tui-rewrite/composer-text/candidate",
+    "result": "9 matching PNG/cell/cursor captures; natural exit and restoration/cleanup on both"
+  }
+}

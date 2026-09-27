@@ -1,0 +1,28 @@
+[
+  {
+    "name": "clippy-final",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "harness-tui",
+      "--all-targets",
+      "--all-features",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "fmt-final",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0
+  }
+]
