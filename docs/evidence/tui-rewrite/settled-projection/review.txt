@@ -1,0 +1,23 @@
+Independent reviewer: /root/tui_review
+Scope: settled-projection borrowing slice, read-only source and evidence review.
+No builds or tests run by the reviewer.
+
+No blockers. Approved to commit this migration slice.
+
+Verified:
+- All 116 artifact hashes, 562 source receipts and both release binary hashes.
+- Settlement ordering, inline error behavior, compaction reset and fallback,
+  and retention order are preserved. The event wrapper was private and only
+  forwarded Vec operations.
+- All 48 raw reports match their logs; percentiles, medians, allocation totals
+  and comparison percentages recompute correctly.
+- Timed bytes and retained content match, except the documented R8 post-timing
+  diagnostic screen.
+- All 539 buffers equal the previous candidate. Logs support five settlement
+  checks, 1,738 deterministic tests and seven PTY passes.
+- Frozen timing accounting is correct: streaming passes; the other five
+  workloads fail. Successive-run allocation savings are not isolated proof.
+
+The README accurately leaves whole-rewrite acceptance open. This receipt and
+its review-status sentence were added after the reviewed artifacts; the final
+manifest includes both.
