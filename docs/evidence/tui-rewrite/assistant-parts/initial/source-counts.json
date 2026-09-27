@@ -1,0 +1,9 @@
+{
+  "base": "f5bd55e507de5e26f042d3156ad057eb2e8c3845",
+  "tui_source_lines": 167608,
+  "tui_source_files": 562,
+  "source_line_delta": -360,
+  "production_line_delta": -357,
+  "test_line_delta": -3,
+  "accounting": "The four existing tests moved unchanged except whitespace. Test counts include cfg/mod declarations. Only TUI Rust source is included; prior dependency vendor cost is separate."
+}

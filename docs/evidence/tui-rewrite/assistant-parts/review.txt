@@ -1,0 +1,25 @@
+Independent reviewer: /root/tui_review
+Date: 2026-09-27
+Decision: approved to commit this assistant-part slice; no blocking findings.
+
+Source review found no semantic regression against f5bd55e5. The replacement
+preserves event filtering, fallback order, committed text-before-tools, legacy
+fragments, live suffix placement, reasoning timing/source IDs and error placement.
+Stable sequence sorting matches explicit insertion-index ordering. Sequential
+prefix stripping matches concatenated-prefix checks, including empty parts and
+mismatches. The extracted committed method preserves operation order. Explicit
+collector capacities remove spare retention without changing part/source-ID order.
+
+The reviewer verified the source patch and hashes, all 375 artifact receipts,
+both 72-run datasets, reported medians, binary hashes and all 14 frozen gates.
+The 555 complete frame records, 733 motion pairs, six browser pairs and cleanup
+receipts agree with the evidence. Existing behavioral tests are appropriate;
+no extra fixture was requested.
+
+Documentation accurately distinguishes initial workflow captures from final
+source validation and retains negligible resource gains, startup regression and
+unfinished whole-goal requirements. The requested wording correction from
+"unused" to "redundant" argument bundle is applied. The final manifest includes
+that correction and this record, which followed the 375-file audit.
+
+Approval applies to this slice, not whole-rewrite completion.
