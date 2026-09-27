@@ -195,6 +195,22 @@ candidate must pass without that exemption. Preliminary browser runs used to
 debug the observer overlapped builds and are diagnostic only; authoritative
 latency samples must be collected without concurrent compilation or capture.
 
+## Terminal ownership replacement
+
+`terminal/session.rs` owns enabled modes from the first setup call through exit
+or explicit handoff. It replaces the duplicate capability/teardown state and
+unused preserved frame buffer. Shutdown joins the reader and writer before
+restoring the terminal, attempts every cleanup, and keeps the original error.
+The shared CLI exit closes preserved sessions, including the scenario route.
+
+The writer-failure checks, four PTY restoration scenarios, resumed CLI journey,
+539-frame oracle, scoped Clippy run, and workspace check pass. The two injected
+writer regressions were observed failing before their fixes. Raw results are in
+[`evidence/tui-rewrite/terminal`](evidence/tui-rewrite/terminal).
+The oracle still permits the documented R3 settled-frame comparison while the
+original renderer is unchanged. This is a migration step; the renderer, state
+engine, and event loop still need replacement.
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

@@ -385,7 +385,8 @@ pub(crate) fn execute_with_io(
         }
     };
 
-    match run_result {
+    let restored = close_preserved_terminal_session().map_err(|err| err.to_string());
+    match run_result.and(restored) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             let _ = writeln!(stderr, "tui failed: {err}");
@@ -498,7 +499,6 @@ async fn run_interactive_mode(
             &settings.config_digest,
         );
     }
-    close_preserved_terminal_session().map_err(|err| err.to_string())?;
     result
 }
 
@@ -620,7 +620,6 @@ async fn run_direct_continue_mode(
             &settings.config_digest,
         );
     }
-    close_preserved_terminal_session().map_err(|err| err.to_string())?;
     result
 }
 

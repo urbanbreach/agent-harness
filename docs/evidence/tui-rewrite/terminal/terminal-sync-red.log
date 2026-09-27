@@ -1,0 +1,50 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.36s
+────────────
+ Nextest run ID c3d36494-210e-49f6-a47a-9025e4c02cd7 with nextest profile: ci
+    Starting 2 tests across 1 binary (1387 tests skipped)
+        FAIL [   0.008s] (1/2) harness-tui terminal::session::tests::teardown_attempts_remaining_protocols_after_writer_failure
+  stdout ───
+
+    running 1 test
+    test terminal::session::tests::teardown_attempts_remaining_protocols_after_writer_failure ... FAILED
+
+    failures:
+
+    failures:
+        terminal::session::tests::teardown_attempts_remaining_protocols_after_writer_failure
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1388 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'terminal::session::tests::teardown_attempts_remaining_protocols_after_writer_failure' (2008926) panicked at crates/harness-tui/src/terminal/session.rs:174:9:
+    assertion `left == right` failed
+      left: [27, 91, 63, 49, 48, 52, 57, 108, 27, 91, 63, 50, 53, 104]
+     right: [27, 91, 63, 50, 48, 50, 54, 108, 27, 91, 63, 49, 48, 52, 57, 108, 27, 91, 63, 50, 53, 104]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.015s] 2 tests run: 1 passed, 1 failed, 1387 skipped
+        FAIL [   0.008s] (1/2) harness-tui terminal::session::tests::teardown_attempts_remaining_protocols_after_writer_failure
+  stdout ───
+
+    running 1 test
+    test terminal::session::tests::teardown_attempts_remaining_protocols_after_writer_failure ... FAILED
+
+    failures:
+
+    failures:
+        terminal::session::tests::teardown_attempts_remaining_protocols_after_writer_failure
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1388 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'terminal::session::tests::teardown_attempts_remaining_protocols_after_writer_failure' (2008926) panicked at crates/harness-tui/src/terminal/session.rs:174:9:
+    assertion `left == right` failed
+      left: [27, 91, 63, 49, 48, 52, 57, 108, 27, 91, 63, 50, 53, 104]
+     right: [27, 91, 63, 50, 48, 50, 54, 108, 27, 91, 63, 49, 48, 52, 57, 108, 27, 91, 63, 50, 53, 104]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed
