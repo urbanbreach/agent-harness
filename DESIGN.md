@@ -129,8 +129,7 @@ background controls take priority over metadata. Distinguish foreground, parked,
 background-only, recovery, reconnection, and cancellation states.
 
 The top-right context counter shows compact token counts and a rounded percentage,
-such as `96K / 128K 75%`. The footer does not repeat this counter. Live status may
-show context during work, with warning styling at 75% and critical styling at 90%.
+such as `96K / 128K 75%`. The footer and live status do not repeat this counter.
 Unknown and compacted-pending-refresh states must not claim a known budget. Hide
 live status metadata before controls when space runs out.
 
