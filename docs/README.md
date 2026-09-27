@@ -9,10 +9,15 @@ The [Finnish README](README.fi.md) covers the same setup.
 | --- | --- |
 | [Configuration](configuration/config.md) | Runtime keys, keyboard settings, model selection, and config precedence |
 | [Providers](configuration/provider-support.md) | Implemented transports, credentials, model limits, and errors |
+| [Prompt CLI](operations/prompt.md) | Input, model and tool overrides, permissions, resume, and output |
 | [Agents and tasks](operations/generic-agent-and-tasks.md) | Parent and child roles, delegation, and skill loading |
 | [Permissions](permissions/permissions.md) | Rule order, approval prompts, shared policy, and limits |
 | [Native tools](tools/native-tool-catalog.md) | Tool IDs, permissions, output, and prerequisites |
+| [File formatting](tools/formatting.md) | Formatter discovery, overrides, edit receipts and cancellation |
 | [Sessions and replay](architecture/sessions-and-replay.md) | Inspection, resume, branching, and support exports |
+| [Session commands](operations/sessions.md) | Listing, branching, recovery, foreign import, and safe exports |
+| [Workspace data](operations/workspace-data.md) | Memory, code index, attribution, schedules, teams, queues, worktrees and plugins |
+| [Operator commands](operations/operators.md) | Local binary updates and stdio peer diagnostics |
 | [Privacy and local data](permissions/privacy-and-local-data.md) | Storage, outgoing requests, and redaction |
 | [Troubleshooting](operations/troubleshooting.md) | Config, authentication, tools, and recovery failures |
 | [Starter skills](configuration/starter-skills.md) | Bundled skill instructions and activation rules |
@@ -24,6 +29,7 @@ The [Finnish README](README.fi.md) covers the same setup.
 | Guide | What it covers |
 | --- | --- |
 | [Architecture](architecture/architecture.md) | Crate boundaries, runtime ownership, and event flow |
+| [Backend rewrite](architecture/backend-rewrite.md) | Replacement scope, resource changes and verification results |
 | [Terminal design](../DESIGN.md) | Layout, color, input, motion, and accessibility |
 | [Testing](testing/testing.md) | Test commands, suite ownership, and evidence requirements |
 | [Performance budgets](testing/budgets.md) | Measured limits and release-mode checks |
@@ -41,6 +47,7 @@ the guides above for current commands and configuration.
   [settings](ui-settings-polish-2026-09-15.md),
   [implementation record](grok-build-parity-implementation.md),
   [chat rendering](chat-tool-render-parity.md), and [alignment](chat-alignment-tool-arguments.md).
-- Measurements: [TUI fluidity](performance/tui-fluidity-2026-09-13.md) and
+- Measurements: [backend rewrite](performance/backend-rewrite-2026-09-26.md),
+  [TUI fluidity](performance/tui-fluidity-2026-09-13.md) and
   [performance audit](../plans/performance-audit/README.md).
 - [Implementation plans and delivery records](../plans/README.md).

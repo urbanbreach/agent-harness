@@ -40,6 +40,9 @@ configured environment and inline credential fallbacks in place.
 ## Redaction and sharing
 
 The redactor lives in [`crates/harness-core/src/redact.rs`](../../crates/harness-core/src/redact.rs).
+Live output is redacted before reaching CLI or TUI subscribers. Incomplete words
+and possible credentials are held until safe, including credentials split across
+provider fragments. Reasoning remains transient and shares the response byte limit.
 Support export redacts API keys, bearer tokens, cookies, PEM blocks, provider
 credentials, and hidden prompt or config instruction values. It includes a
 redaction manifest and refuses to write a bundle if the final secret scan fails.
