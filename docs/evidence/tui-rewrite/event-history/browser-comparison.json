@@ -1,0 +1,24 @@
+[
+  {
+    "name": "stream-markdown-40x24-reduced-0ms",
+    "ansi_equal": true,
+    "png_equal": true,
+    "screen_fields_differ": [],
+    "renderCount": {
+      "reference": 4,
+      "candidate": 4
+    }
+  },
+  {
+    "name": "stream-markdown-120x40-reduced-0ms",
+    "ansi_equal": true,
+    "png_equal": true,
+    "screen_fields_differ": [
+      "renderCount"
+    ],
+    "renderCount": {
+      "reference": 4,
+      "candidate": 5
+    }
+  }
+]

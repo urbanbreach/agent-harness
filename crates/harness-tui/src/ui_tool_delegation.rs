@@ -72,8 +72,7 @@ pub(super) fn agent_spawn_subtitle(tool: &ToolCallEntry, app: &AppState) -> Stri
     let output = tool.output_json.as_ref();
     let route = output.and_then(|value| value.get("route"));
     let agent = app
-        .events
-        .iter()
+        .events()
         .rev()
         .find_map(|event| match &event.payload {
             EventV1::AgentSpawned(data) if child_session == Some(data.agent_id.as_str()) => {
@@ -91,8 +90,7 @@ pub(super) fn agent_spawn_subtitle(tool: &ToolCallEntry, app: &AppState) -> Stri
         })
         .unwrap_or_else(|| "Subagent".into());
     let model = app
-        .events
-        .iter()
+        .events()
         .rev()
         .find_map(|event| match &event.payload {
             EventV1::ProviderRequestStarted(data)

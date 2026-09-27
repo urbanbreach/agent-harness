@@ -415,7 +415,7 @@ impl AppState {
         self.palette_focus_return.get_or_insert(self.focus);
         self.palette_input.clear();
         self.palette_cursor = 0;
-        let events = self.events.clone();
+        let events = self.events().cloned().collect::<Vec<_>>();
         let filter_input = self.palette_input.clone();
         self.fork_selector.rebuild(&events, &filter_input);
         self.fork_selector_visible = true;

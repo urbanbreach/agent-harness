@@ -96,7 +96,7 @@ fn inject_compaction_events(
     turn_sections: &mut [Arc<TranscriptTurnSection>],
     dirty_from: usize,
 ) {
-    for event in &app.events {
+    for event in app.events() {
         let compaction_section = match &event.payload {
             harness_core::event::EventV1::SessionCompaction(data) => TranscriptCompactionSection {
                 expanded: app.transcript_view.compaction_details_expanded,
@@ -147,15 +147,16 @@ fn turn_supports_assistant_footer(turn: &TranscriptTurnSection, app: &AppState) 
 fn events_for_activity<'a>(
     app: &'a AppState,
     activity: &ActivityEntry,
-) -> &'a [harness_core::event::EventEnvelopeV1] {
+) -> impl DoubleEndedIterator<Item = &'a harness_core::event::EventEnvelopeV1> + Clone {
     // Durable history is ordered by sequence; unrelated turns need no scan.
-    let start = app
-        .events
-        .partition_point(|event| event.seq < activity.first_seq);
-    let end = app
-        .events
-        .partition_point(|event| event.seq <= activity.last_seq);
-    app.events.get(start..end).unwrap_or_default()
+    app.event_slices()
+        .map(|events| {
+            let start = events.partition_point(|event| event.seq < activity.first_seq);
+            let end = events.partition_point(|event| event.seq <= activity.last_seq);
+            events.get(start..end).unwrap_or_default()
+        })
+        .into_iter()
+        .flatten()
 }
 
 fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
@@ -331,8 +332,8 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
                 Some(TranscriptMouseTarget::Reasoning { request_id })
                     if request_id == &activity.request_id
             ),
-            provider_request_open: events_for_activity(app, activity).iter().rev().find_map(
-                |event| match &event.payload {
+            provider_request_open: events_for_activity(app, activity).rev().find_map(|event| {
+                match &event.payload {
                     harness_core::event::EventV1::ProviderRequestStarted(data)
                         if provider_event_matches_activity(
                             event,
@@ -352,8 +353,8 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
                         Some(false)
                     }
                     _ => None,
-                },
-            ) == Some(true),
+                }
+            }) == Some(true),
             profile_label: activity.profile_label.clone(),
             model_id: activity.model_id.clone(),
             duration_ms: app
@@ -688,7 +689,7 @@ fn build_ordered_assistant_parts_from_events(
     // position still belongs to that response, after the text already streamed.
     let events = events_for_activity(app, activity);
     let committed_tool_ids = events
-        .iter()
+        .clone()
         .filter_map(|event| match &event.payload {
             harness_core::event::EventV1::AssistantMessageFinished(data)
                 if provider_event_matches_activity(
@@ -709,10 +710,7 @@ fn build_ordered_assistant_parts_from_events(
         .flatten()
         .collect::<std::collections::BTreeSet<_>>();
 
-    for event in events
-        .iter()
-        .filter(|event| turn_event_matches_activity(event, &activity.request_id))
-    {
+    for event in events.filter(|event| turn_event_matches_activity(event, &activity.request_id)) {
         if let Some(fragment) = harness_core::session::canonical_provider_fragment_for_event(event)
         {
             saw_turn_event = true;

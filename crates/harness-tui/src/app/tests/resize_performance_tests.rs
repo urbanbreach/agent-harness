@@ -91,7 +91,7 @@ fn perf_interactive_resources_under_load() -> TestResult {
         app.activities = (0..history_count).map(settled_assistant_block).collect();
     }
     if long_selection {
-        app.events.push(envelope(
+        app.inspection_events = Some(vec![envelope(
             1,
             "resize-perf-0",
             EventV1::SessionCompaction(harness_core::event::SessionCompactionEvent {
@@ -115,7 +115,7 @@ fn perf_interactive_resources_under_load() -> TestResult {
                 read_files: Vec::new(),
                 modified_files: Vec::new(),
             }),
-        ));
+        )]);
         app.transcript_view.compaction_details_expanded = true;
     }
     if matches!(
@@ -152,7 +152,7 @@ fn perf_interactive_resources_under_load() -> TestResult {
                 "model",
             )
         });
-        app.events.splice(..0, history);
+        app.inspection_events = Some(history.chain(app.events().cloned()).collect());
     }
     let (mut output, writer, receiver) = FrameOutput::bounded(1);
     let mut terminal = Terminal::with_options(

@@ -315,8 +315,7 @@ fn render_dashboard_summary(frame: &mut Frame, app: &AppState, theme: &Theme, ar
         plugins.map_or(0, |value| value.disabled),
     );
     let edits = app
-        .events
-        .iter()
+        .events()
         .filter_map(|event| match &event.payload {
             EventV1::EditApplied(edit) => Some(edit.path.as_str()),
             _ => None,

@@ -203,7 +203,7 @@ pub(crate) fn parent_transcript_hides_child_prompt_before_task_tool_finishes() {
     assert!(!parent_text.contains("Inspect child prompt"));
     let replay = AppState::new_replay(
         app.session_path.clone().unwrap_or_abort(),
-        app.events.clone(),
+        app.events().cloned().collect::<Vec<_>>(),
     );
     assert!(!render_text(&replay, 140, 40).contains("Child followup"));
     app.navigate_to_child_session_id("agent_child".to_string());

@@ -1,0 +1,8 @@
+{
+  "path": "/tmp/tui-event-history-reference.bin",
+  "bytes": 15518744,
+  "sha256": "bddeb9916e8b64b9f015690eece455cd1266561e72f55df97232e2b5e9bd3508",
+  "source": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+  "clean": false,
+  "note": "reference production is pinned; only test instrumentation differs"
+}

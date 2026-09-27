@@ -42,7 +42,7 @@ impl SessionProjection {
         data: &UserMessageSubmittedEvent,
     ) {
         // Coordinator wakeups are system activity, never queued user prompts.
-        if background_notification_for_request(&self.events, data.request_id.as_str()).is_some() {
+        if background_notification_for_request(self.events(), data.request_id.as_str()).is_some() {
             return;
         }
         if let Some(index) = self.activity_index_for_user_message(data, event.seq) {

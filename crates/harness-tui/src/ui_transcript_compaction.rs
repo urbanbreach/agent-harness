@@ -253,28 +253,10 @@ mod tests {
     }
 
     #[test]
-    fn compaction_event_injected_into_transcript_sections() {
-        let mut app = AppState::default();
-        app.activities = std::collections::VecDeque::from(vec![make_test_activity("request-1", 1)]);
-        app.events = vec![make_session_compaction_event(2)];
-
-        let sections = super::super::ui_transcript_sections::build_transcript_sections(&app);
-
-        assert_eq!(sections.len(), 1);
-        let turn = &sections[0];
-        assert!(
-            turn.assistant_parts
-                .iter()
-                .any(|part| matches!(part, super::super::TranscriptAssistantPart::Compaction(_))),
-            "expected a Compaction part in assistant_parts"
-        );
-    }
-
-    #[test]
     fn compaction_event_renders_badge_and_summary() {
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![make_test_activity("request-1", 1)]);
-        app.events = vec![make_session_compaction_event(2)];
+        app.inspection_events = Some(vec![make_session_compaction_event(2)]);
 
         let theme = Theme::default();
         let sections = super::super::ui_transcript_sections::build_transcript_sections(&app);

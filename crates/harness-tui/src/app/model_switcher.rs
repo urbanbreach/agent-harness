@@ -403,7 +403,7 @@ impl AppState {
         let refresh_runtime_context = self.startup_mode
             || self.replay_mode
             || self.runtime_context_metadata.is_none()
-            || (self.events.is_empty() && self.activities.is_empty());
+            || (self.event_count() == 0 && self.activities.is_empty());
         self.launch_metadata = launch_metadata.clone();
         self.seed_toggles_from_launch_metadata();
         self.seed_toggles_from_formatter_config();

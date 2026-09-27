@@ -1,0 +1,50 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.71s
+────────────
+ Nextest run ID 432b1acc-9ea8-4719-b7d6-057341535fe5 with nextest profile: ci
+    Starting 1 test across 1 binary (4 tests skipped)
+        FAIL [   0.018s] (1/1) harness-tui::typed_runtime_event_settle_test live_settlement_projects_once_without_replaying_each_durable_event
+  stdout ───
+
+    running 1 test
+    test live_settlement_projects_once_without_replaying_each_durable_event ... FAILED
+
+    failures:
+
+    failures:
+        live_settlement_projects_once_without_replaying_each_durable_event
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'live_settlement_projects_once_without_replaying_each_durable_event' (2564231) panicked at crates/harness-tui/tests/typed_runtime_event_settle_test.rs:454:9:
+    assertion `left == right` failed
+      left: Some(EventEnvelopeV1 { schema_version: 1, event_id: "duplicate-sequence", seq: 1, run_id: RunId("run-typed-runtime"), mono_ms: 1, ts: None, actor: EventActor { kind: Worker, agent_id: Some("agent-1") }, correlation_id: Some("turn-1"), causation_id: None, stream_key: Some("agent:agent-1"), payload: UserMessageSubmitted(UserMessageSubmittedEvent { request_id: RequestId("turn-1"), text: "question" }) })
+     right: Some(EventEnvelopeV1 { schema_version: 1, event_id: "evt-durable-2", seq: 2, run_id: RunId("run-typed-runtime"), mono_ms: 2, ts: None, actor: EventActor { kind: Worker, agent_id: Some("agent-1") }, correlation_id: Some("turn-1"), causation_id: None, stream_key: Some("agent:agent-1"), payload: ProviderRequestStarted(ProviderRequestStartedEvent { request_id: RequestId("provider-1"), provider_id: "mock", model_id: "model", prompt_summary: "question", request_digest: "request-digest", metadata: None }) })
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.019s] 1 test run: 0 passed, 1 failed, 4 skipped
+        FAIL [   0.018s] (1/1) harness-tui::typed_runtime_event_settle_test live_settlement_projects_once_without_replaying_each_durable_event
+  stdout ───
+
+    running 1 test
+    test live_settlement_projects_once_without_replaying_each_durable_event ... FAILED
+
+    failures:
+
+    failures:
+        live_settlement_projects_once_without_replaying_each_durable_event
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'live_settlement_projects_once_without_replaying_each_durable_event' (2564231) panicked at crates/harness-tui/tests/typed_runtime_event_settle_test.rs:454:9:
+    assertion `left == right` failed
+      left: Some(EventEnvelopeV1 { schema_version: 1, event_id: "duplicate-sequence", seq: 1, run_id: RunId("run-typed-runtime"), mono_ms: 1, ts: None, actor: EventActor { kind: Worker, agent_id: Some("agent-1") }, correlation_id: Some("turn-1"), causation_id: None, stream_key: Some("agent:agent-1"), payload: UserMessageSubmitted(UserMessageSubmittedEvent { request_id: RequestId("turn-1"), text: "question" }) })
+     right: Some(EventEnvelopeV1 { schema_version: 1, event_id: "evt-durable-2", seq: 2, run_id: RunId("run-typed-runtime"), mono_ms: 2, ts: None, actor: EventActor { kind: Worker, agent_id: Some("agent-1") }, correlation_id: Some("turn-1"), causation_id: None, stream_key: Some("agent:agent-1"), payload: ProviderRequestStarted(ProviderRequestStartedEvent { request_id: RequestId("provider-1"), provider_id: "mock", model_id: "model", prompt_summary: "question", request_digest: "request-digest", metadata: None }) })
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

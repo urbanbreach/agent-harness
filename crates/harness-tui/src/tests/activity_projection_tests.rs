@@ -183,22 +183,66 @@ pub(super) fn activity_status_error_on_run_failed() {
 }
 
 pub(super) fn memory_cap_enforces_max_events() {
-    let mut app = AppState::new_live(None, false, None);
-    app.memory_caps.max_events = 5;
+    for max_events in [0, 5] {
+        let mut app = AppState::new_live(None, false, None);
+        app.memory_caps.max_events = max_events;
 
-    for i in 1..=10 {
-        app.ingest_event(envelope(
-            i,
-            None,
-            EventV1::RunStarted(RunStartedEvent {
-                run_name: format!("run-{}", i).into(),
-                workspace_root: "/tmp".to_string(),
-            }),
-        ));
+        for i in 1..=10 {
+            app.ingest_event(envelope(
+                i,
+                None,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: format!("run-{}", i).into(),
+                    workspace_root: "/tmp".to_string(),
+                }),
+            ));
+        }
+
+        assert_eq!(app.event_count(), max_events);
+        assert_eq!(app.events_trimmed_count, 10 - max_events);
+
+        for seq in 11..=13 {
+            let payload = if seq == 12 {
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "next".into(),
+                    workspace_root: "/tmp".into(),
+                })
+            } else {
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "settled".into(),
+                })
+            };
+            let mut event = envelope(seq, None, payload);
+            if seq == 13 {
+                event.event_id = app
+                    .canonical_projection()
+                    .unwrap_or_abort()
+                    .source_events()
+                    .last()
+                    .unwrap_or_abort()
+                    .event_id
+                    .clone();
+            }
+            app.ingest_event(event);
+            assert_eq!(
+                app.events().map(|event| event.seq).collect::<Vec<_>>(),
+                (seq + 1 - u64::try_from(max_events).unwrap_or_abort()..=seq).collect::<Vec<_>>()
+            );
+            assert_eq!(
+                app.selected_event().map(|event| event.seq),
+                (max_events > 0).then_some(seq)
+            );
+        }
+        assert!(app.canonical_projection_error().is_some());
+        assert_eq!(
+            app.canonical_projection()
+                .unwrap_or_abort()
+                .source_events()
+                .last()
+                .map(|event| event.seq),
+            Some(11)
+        );
     }
-
-    assert_eq!(app.events.len(), 5);
-    assert_eq!(app.events_trimmed_count, 5);
 }
 
 pub(super) fn memory_cap_enforces_max_transcript_chars() {

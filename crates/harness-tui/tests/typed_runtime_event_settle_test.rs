@@ -430,6 +430,30 @@ fn live_settlement_projects_once_without_replaying_each_durable_event() {
     assert_eq!(app.canonical_projection_error(), Some(error.as_str()));
     assert_eq!(app.canonical_projection_generation(), generation);
     assert_eq!(app.canonical_projection(), before.as_ref());
+
+    for event in attempted.iter().rev() {
+        assert_eq!(app.selected_event(), Some(event));
+        app.previous_event();
+    }
+
+    // Invalid replacement still exposes the first event at each sequence for inspection.
+    let mut replacement = events.clone();
+    let mut duplicate = events[0].clone();
+    duplicate.event_id = "duplicate-sequence".into();
+    replacement.insert(1, duplicate);
+    let error = CanonicalSessionProjection::from_event_history(&replacement)
+        .expect_err("duplicate sequence must fail")
+        .to_string();
+    app.replace_events(replacement);
+    assert_eq!(app.canonical_projection_error(), Some(error.as_str()));
+    assert!(app.canonical_projection().is_none());
+    for _ in 0..events.len() {
+        app.previous_event();
+    }
+    for event in &events {
+        assert_eq!(app.selected_event(), Some(event));
+        app.next_event();
+    }
 }
 
 #[test]

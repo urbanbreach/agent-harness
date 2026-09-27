@@ -1,0 +1,60 @@
+diff --git i/crates/harness-tui/src/tests/activity_projection_tests.rs w/crates/harness-tui/src/tests/activity_projection_tests.rs
+index 6d9fdd1e..b510b04e 100644
+--- i/crates/harness-tui/src/tests/activity_projection_tests.rs
++++ w/crates/harness-tui/src/tests/activity_projection_tests.rs
+@@ -199,6 +199,55 @@ pub(super) fn memory_cap_enforces_max_events() {
+ 
+     assert_eq!(app.events.len(), 5);
+     assert_eq!(app.events_trimmed_count, 5);
++
++    for (seq, payload) in [
++        (
++            11,
++            EventV1::RunFinished(RunFinishedEvent {
++                summary: "settled".into(),
++            }),
++        ),
++        (
++            12,
++            EventV1::RunStarted(RunStartedEvent {
++                run_name: "next".into(),
++                workspace_root: "/tmp".into(),
++            }),
++        ),
++        (
++            13,
++            EventV1::RunFinished(RunFinishedEvent {
++                summary: "rejected".into(),
++            }),
++        ),
++    ] {
++        let mut event = envelope(seq, None, payload);
++        if seq == 13 {
++            event.event_id = app
++                .canonical_projection()
++                .unwrap_or_abort()
++                .source_events()
++                .last()
++                .unwrap_or_abort()
++                .event_id
++                .clone();
++        }
++        app.ingest_event(event);
++        assert_eq!(
++            app.events.iter().map(|event| event.seq).collect::<Vec<_>>(),
++            (seq - 4..=seq).collect::<Vec<_>>()
++        );
++        assert_eq!(app.selected_event().map(|event| event.seq), Some(seq));
++    }
++    assert!(app.canonical_projection_error().is_some());
++    assert_eq!(
++        app.canonical_projection()
++            .unwrap_or_abort()
++            .source_events()
++            .last()
++            .map(|event| event.seq),
++        Some(11)
++    );
+ }
+ 
+ pub(super) fn memory_cap_enforces_max_transcript_chars() {

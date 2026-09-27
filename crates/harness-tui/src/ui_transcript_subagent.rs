@@ -83,7 +83,7 @@ pub(super) fn notification_sections(
     app: &AppState,
 ) -> std::collections::BTreeMap<&str, Vec<TranscriptOrderedToolCallSection>> {
     let mut sections = std::collections::BTreeMap::<_, Vec<_>>::new();
-    for event in &app.events {
+    for event in app.events() {
         let EventV1::BackgroundTaskNotification(data) = &event.payload else {
             continue;
         };

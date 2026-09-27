@@ -605,7 +605,7 @@ impl AppState {
         let source_run_dir = self.source_run_dir_for_lineage_write()?;
         self.emit_ui_intent(UiIntent::ForkSession {
             source_run_dir,
-            events: self.events.clone(),
+            events: self.events().cloned().collect::<Vec<_>>(),
             stable_prefix,
             prompt_text,
         });
@@ -613,7 +613,8 @@ impl AppState {
     }
 
     fn execute_clone_from_latest_stable_prefix(&mut self) {
-        let stable_prefix = match latest_clone_stable_prefix(&self.events) {
+        let events = self.retained_events();
+        let stable_prefix = match latest_clone_stable_prefix(&events) {
             Ok(prefix) if prefix.event_count > 0 => prefix,
             Ok(_) => {
                 self.set_status_banner(Some(
@@ -631,7 +632,7 @@ impl AppState {
             Ok(source_run_dir) => {
                 self.emit_ui_intent(UiIntent::CloneSession {
                     source_run_dir,
-                    events: self.events.clone(),
+                    events: events.into_owned(),
                     stable_prefix,
                 });
             }

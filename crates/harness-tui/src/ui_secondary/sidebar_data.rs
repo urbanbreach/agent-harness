@@ -63,17 +63,12 @@ pub(super) fn build_operator_rail_model(app: &AppState) -> OperatorRailModel {
 }
 
 fn operator_sidebar_session_title(app: &AppState) -> Option<OperatorRailTitle> {
-    if let Some(title) = app
-        .events
-        .iter()
-        .rev()
-        .find_map(|event| match &event.payload {
-            harness_core::event::EventV1::SessionTitleUpdated(data) => {
-                Some(sanitize_operator_sidebar_line(&data.title))
-            }
-            _ => None,
-        })
-    {
+    if let Some(title) = app.events().rev().find_map(|event| match &event.payload {
+        harness_core::event::EventV1::SessionTitleUpdated(data) => {
+            Some(sanitize_operator_sidebar_line(&data.title))
+        }
+        _ => None,
+    }) {
         if !title.is_empty() {
             return Some(OperatorRailTitle::Generated(title));
         }
@@ -90,7 +85,7 @@ fn operator_sidebar_session_title(app: &AppState) -> Option<OperatorRailTitle> {
         .activities
         .iter()
         .any(|activity| activity.user_message.is_some());
-    let provider_started = app.events.iter().any(|event| {
+    let provider_started = app.events().any(|event| {
         matches!(
             event.payload,
             harness_core::event::EventV1::ProviderRequestStarted(_)
@@ -286,7 +281,7 @@ fn background_notification_for_orchestration_row<'a>(
     app: &'a AppState,
     row: &crate::app::OrchestrationTaskRow,
 ) -> Option<&'a harness_core::event::BackgroundTaskNotificationEvent> {
-    app.events.iter().rev().find_map(|event| {
+    app.events().rev().find_map(|event| {
         let harness_core::event::EventV1::BackgroundTaskNotification(data) = &event.payload else {
             return None;
         };
@@ -298,7 +293,7 @@ fn background_notification_for_orchestration_row<'a>(
 }
 
 fn subagent_profile_for_agent_id(app: &AppState, agent_id: &str) -> Option<String> {
-    app.events.iter().rev().find_map(|event| {
+    app.events().rev().find_map(|event| {
         let harness_core::event::EventV1::AgentSpawned(data) = &event.payload else {
             return None;
         };
@@ -309,7 +304,7 @@ fn subagent_profile_for_agent_id(app: &AppState, agent_id: &str) -> Option<Strin
 }
 
 fn child_subagent_profile_for_agent_id(app: &AppState, agent_id: &str) -> Option<String> {
-    app.events.iter().rev().find_map(|event| {
+    app.events().rev().find_map(|event| {
         let harness_core::event::EventV1::AgentSpawned(data) = &event.payload else {
             return None;
         };
@@ -648,7 +643,7 @@ fn operator_sidebar_modified_file_rows(app: &AppState) -> Vec<OperatorRailItem> 
     let mut seen = std::collections::BTreeSet::new();
     let mut items = Vec::new();
 
-    for event in app.events.iter().rev() {
+    for event in app.events().rev() {
         let harness_core::event::EventV1::EditApplied(edit) = &event.payload else {
             continue;
         };

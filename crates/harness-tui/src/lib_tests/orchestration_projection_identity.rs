@@ -204,7 +204,7 @@ pub(super) fn orchestration_projection_ignores_duplicate_seq_events() {
         }),
     ));
 
-    assert_eq!(app.events.len(), 3);
+    assert_eq!(app.event_count(), 3);
     assert_eq!(
         app.orchestration_summary(),
         crate::app::OrchestrationSummary {

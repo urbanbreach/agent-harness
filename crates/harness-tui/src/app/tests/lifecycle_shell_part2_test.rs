@@ -100,7 +100,7 @@ pub(super) fn historical_terminal_events_stay_in_session_shell_after_live_finish
     assert!(!app.post_run_handoff_visible());
     assert!(!app.completed_session_shell_active());
     assert!(!app.should_quit);
-    assert_eq!(app.events.len(), 1);
+    assert_eq!(app.event_count(), 1);
 
     app.ingest_event(envelope(
         2,

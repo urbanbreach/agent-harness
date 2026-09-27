@@ -1,0 +1,28 @@
+[
+  {
+    "side": "before",
+    "path": "/tmp/tui-event-history-before.bin",
+    "bytes": 14995792,
+    "sha256": "975af9ab0d57da0fc9759879a737d58c6309be052064857a4a2c892665ba646c",
+    "source": "6b732a691c90423857fca126bbfe4468627ba942",
+    "clean": true
+  },
+  {
+    "side": "reference",
+    "path": "/tmp/tui-event-history-reference.bin",
+    "bytes": 15518744,
+    "sha256": "bddeb9916e8b64b9f015690eece455cd1266561e72f55df97232e2b5e9bd3508",
+    "source": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+    "clean": false,
+    "note": "reference production is pinned; only test instrumentation differs"
+  },
+  {
+    "side": "candidate",
+    "path": "/tmp/tui-event-history-candidate.bin",
+    "bytes": 15020368,
+    "sha256": "8d5529e0f8fa92e1897be371203c2490ec516eafc9cac83cc912793e6533192f",
+    "source": "6b732a691c90423857fca126bbfe4468627ba942 + source.patch.gz",
+    "clean": false,
+    "note": "final reviewed source patch; no source changes during measurement"
+  }
+]

@@ -36,7 +36,7 @@ impl SessionProjection {
         // which accepts ordered slices without weakening history validation.
         let inline_projection;
         let (events, transcript, run_summary) = if inline {
-            let events = self.events.as_slice();
+            let events = self.inspection_events.as_deref().unwrap_or_default();
             inline_projection = match (
                 harness_core::transcript_projection::project_transcript(events),
                 harness_core::proj::project_run_summary(events),
@@ -257,8 +257,7 @@ impl SessionProjection {
         self.latest_request_budget = latest_request_budget;
         if provider_context_usage.is_some()
             || self
-                .events
-                .iter()
+                .events()
                 .any(|event| matches!(event.payload, EventV1::ConversationRewound(_)))
         {
             self.active_context_usage = provider_context_usage;

@@ -1,0 +1,10 @@
+--- a/crates/harness-tui/src/app/session_projection.rs
++++ b/crates/harness-tui/src/app/session_projection.rs
+@@ -570,6 +570,7 @@
+                 self.canonical_projection = None;
+                 self.canonical_projection_error = Some(error.to_string());
+                 self.unsettled_durable_events = events.to_vec();
++                self.inspection_events = None;
+             }
+         }
+     }

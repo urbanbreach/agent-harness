@@ -1,0 +1,380 @@
+{
+  "startup-0": {
+    "metrics": {
+      "construction_us": {
+        "before": 197,
+        "candidate": 213,
+        "change_percent": 8.12
+      },
+      "cold_us": {
+        "before": 1239,
+        "candidate": 1055,
+        "change_percent": -14.85
+      },
+      "p50_us": {
+        "before": 346,
+        "candidate": 331,
+        "change_percent": -4.34
+      },
+      "p95_us": {
+        "before": 425,
+        "candidate": 430,
+        "change_percent": 1.18
+      },
+      "p99_us": {
+        "before": 440,
+        "candidate": 435,
+        "change_percent": -1.14
+      },
+      "cpu_ms_per_frame": {
+        "before": 0.35,
+        "candidate": 0.35,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "before": 11780,
+        "candidate": 11640,
+        "change_percent": -1.19
+      },
+      "allocated_bytes": {
+        "before": 11894562,
+        "candidate": 11888293,
+        "change_percent": -0.05
+      },
+      "peak_heap_bytes": {
+        "before": 1909543,
+        "candidate": 1909543,
+        "change_percent": 0.0
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "idle-1000": {
+    "metrics": {
+      "construction_us": {
+        "before": 48045,
+        "candidate": 52117,
+        "change_percent": 8.48
+      },
+      "cold_us": {
+        "before": 46407,
+        "candidate": 46685,
+        "change_percent": 0.6
+      },
+      "p50_us": {
+        "before": 307,
+        "candidate": 312,
+        "change_percent": 1.63
+      },
+      "p95_us": {
+        "before": 312,
+        "candidate": 316,
+        "change_percent": 1.28
+      },
+      "p99_us": {
+        "before": 315,
+        "candidate": 326,
+        "change_percent": 3.49
+      },
+      "cpu_ms_per_frame": {
+        "before": 0.3,
+        "candidate": 0.3,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "before": 38736,
+        "candidate": 34852,
+        "change_percent": -10.03
+      },
+      "allocated_bytes": {
+        "before": 206029583,
+        "candidate": 206025594,
+        "change_percent": -0.0
+      },
+      "peak_heap_bytes": {
+        "before": 23172247,
+        "candidate": 19970722,
+        "change_percent": -13.82
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "typing-1000": {
+    "metrics": {
+      "construction_us": {
+        "before": 47234,
+        "candidate": 47658,
+        "change_percent": 0.9
+      },
+      "cold_us": {
+        "before": 47858,
+        "candidate": 46914,
+        "change_percent": -1.97
+      },
+      "p50_us": {
+        "before": 323,
+        "candidate": 326,
+        "change_percent": 0.93
+      },
+      "p95_us": {
+        "before": 360,
+        "candidate": 336,
+        "change_percent": -6.67
+      },
+      "p99_us": {
+        "before": 370,
+        "candidate": 349,
+        "change_percent": -5.68
+      },
+      "cpu_ms_per_frame": {
+        "before": 0.35,
+        "candidate": 0.35,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "before": 38716,
+        "candidate": 35064,
+        "change_percent": -9.43
+      },
+      "allocated_bytes": {
+        "before": 206482617,
+        "candidate": 206480076,
+        "change_percent": -0.0
+      },
+      "peak_heap_bytes": {
+        "before": 23260491,
+        "candidate": 20058966,
+        "change_percent": -13.76
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "stream-1000": {
+    "metrics": {
+      "construction_us": {
+        "before": 47452,
+        "candidate": 48235,
+        "change_percent": 1.65
+      },
+      "cold_us": {
+        "before": 46390,
+        "candidate": 46651,
+        "change_percent": 0.56
+      },
+      "p50_us": {
+        "before": 1667,
+        "candidate": 1679,
+        "change_percent": 0.72
+      },
+      "p95_us": {
+        "before": 2580,
+        "candidate": 2555,
+        "change_percent": -0.97
+      },
+      "p99_us": {
+        "before": 2696,
+        "candidate": 2639,
+        "change_percent": -2.11
+      },
+      "cpu_ms_per_frame": {
+        "before": 1.65,
+        "candidate": 1.65,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "before": 39464,
+        "candidate": 35732,
+        "change_percent": -9.46
+      },
+      "allocated_bytes": {
+        "before": 378161672,
+        "candidate": 378157979,
+        "change_percent": -0.0
+      },
+      "peak_heap_bytes": {
+        "before": 23470459,
+        "candidate": 20268798,
+        "change_percent": -13.64
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "scroll-1000": {
+    "metrics": {
+      "construction_us": {
+        "before": 47431,
+        "candidate": 49796,
+        "change_percent": 4.99
+      },
+      "cold_us": {
+        "before": 46344,
+        "candidate": 46929,
+        "change_percent": 1.26
+      },
+      "p50_us": {
+        "before": 380,
+        "candidate": 392,
+        "change_percent": 3.16
+      },
+      "p95_us": {
+        "before": 393,
+        "candidate": 417,
+        "change_percent": 6.11
+      },
+      "p99_us": {
+        "before": 399,
+        "candidate": 435,
+        "change_percent": 9.02
+      },
+      "cpu_ms_per_frame": {
+        "before": 0.35,
+        "candidate": 0.4,
+        "change_percent": 14.29
+      },
+      "rss_kib": {
+        "before": 38716,
+        "candidate": 35016,
+        "change_percent": -9.56
+      },
+      "allocated_bytes": {
+        "before": 205652894,
+        "candidate": 205648905,
+        "change_percent": -0.0
+      },
+      "peak_heap_bytes": {
+        "before": 23170125,
+        "candidate": 19968600,
+        "change_percent": -13.82
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "resize-1000": {
+    "metrics": {
+      "construction_us": {
+        "before": 48815,
+        "candidate": 49844,
+        "change_percent": 2.11
+      },
+      "cold_us": {
+        "before": 46479,
+        "candidate": 46712,
+        "change_percent": 0.5
+      },
+      "p50_us": {
+        "before": 4418,
+        "candidate": 4439,
+        "change_percent": 0.48
+      },
+      "p95_us": {
+        "before": 5544,
+        "candidate": 5684,
+        "change_percent": 2.53
+      },
+      "p99_us": {
+        "before": 5807,
+        "candidate": 5890,
+        "change_percent": 1.43
+      },
+      "cpu_ms_per_frame": {
+        "before": 2.0,
+        "candidate": 2.1,
+        "change_percent": 5.0
+      },
+      "rss_kib": {
+        "before": 45916,
+        "candidate": 42136,
+        "change_percent": -8.23
+      },
+      "allocated_bytes": {
+        "before": 364756066,
+        "candidate": 364755885,
+        "change_percent": -0.0
+      },
+      "peak_heap_bytes": {
+        "before": 29192767,
+        "candidate": 25991242,
+        "change_percent": -10.97
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  }
+}

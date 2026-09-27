@@ -22,14 +22,14 @@ fn sample_user_message_event(seq: u64) -> EventEnvelopeV1 {
 }
 
 fn projection_fingerprint(app: &AppState) -> (usize, Vec<u64>, Vec<String>, Option<String>) {
-    let event_seqs: Vec<u64> = app.events.iter().map(|event| event.seq).collect();
+    let event_seqs: Vec<u64> = app.events().map(|event| event.seq).collect();
     let activity_ids: Vec<String> = app
         .activities
         .iter()
         .map(|activity| activity.request_id.clone())
         .collect();
     (
-        app.events.len(),
+        app.event_count(),
         event_seqs,
         activity_ids,
         app.status_banner.clone(),
