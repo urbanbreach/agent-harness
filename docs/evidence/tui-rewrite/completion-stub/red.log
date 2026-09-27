@@ -1,0 +1,106 @@
+warning: unnecessary parentheses around closure body
+  --> vendor/crossterm/src/terminal/sys/unix.rs:87:50
+   |
+87 |     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+   |                                                  ^                            ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+87 -     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+87 +     let file = File::open("/dev/tty").map(|file| FileDesc::Owned(file.into()));
+   |
+
+warning: `crossterm` (lib) generated 1 warning (run `cargo fix --lib -p crossterm` to apply 1 suggestion)
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.14s
+────────────
+ Nextest run ID 0bfeaeef-0c0d-45cc-8275-de925a794cdc with nextest profile: ci
+    Starting 19 tests across 78 binaries (1656 tests and 1 binary skipped, including 1 binary via profile.default.default-filter)
+        FAIL [   0.003s] ( 2/19) harness-tui::completion_controller_test completion_insertion_preserves_attachment_identity
+  stdout ───
+
+    running 1 test
+    test completion_insertion_preserves_attachment_identity ... FAILED
+
+    failures:
+
+    failures:
+        completion_insertion_preserves_attachment_identity
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'completion_insertion_preserves_attachment_identity' (3377815) panicked at crates/harness-tui/tests/completion_controller_test.rs:138:5:
+    assertion `left == right` failed
+      left: "[attachment:77]x"
+     right: "[attachment:77]é"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.006s] (15/19) harness-tui::production_composer_reachability_test production_app_state_routes_completion_and_queue_actions
+  stdout ───
+
+    running 1 test
+    test production_app_state_routes_completion_and_queue_actions ... FAILED
+
+    failures:
+
+    failures:
+        production_app_state_routes_completion_and_queue_actions
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'production_app_state_routes_completion_and_queue_actions' (3377826) panicked at crates/harness-tui/tests/production_composer_reachability_test.rs:67:5:
+    assertion `left == right` failed
+      left: ""
+     right: "status"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.009s] 19 tests run: 17 passed, 2 failed, 1656 skipped
+        FAIL [   0.003s] ( 2/19) harness-tui::completion_controller_test completion_insertion_preserves_attachment_identity
+  stdout ───
+
+    running 1 test
+    test completion_insertion_preserves_attachment_identity ... FAILED
+
+    failures:
+
+    failures:
+        completion_insertion_preserves_attachment_identity
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'completion_insertion_preserves_attachment_identity' (3377815) panicked at crates/harness-tui/tests/completion_controller_test.rs:138:5:
+    assertion `left == right` failed
+      left: "[attachment:77]x"
+     right: "[attachment:77]é"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.006s] (15/19) harness-tui::production_composer_reachability_test production_app_state_routes_completion_and_queue_actions
+  stdout ───
+
+    running 1 test
+    test production_app_state_routes_completion_and_queue_actions ... FAILED
+
+    failures:
+
+    failures:
+        production_app_state_routes_completion_and_queue_actions
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'production_app_state_routes_completion_and_queue_actions' (3377826) panicked at crates/harness-tui/tests/production_composer_reachability_test.rs:67:5:
+    assertion `left == right` failed
+      left: ""
+     right: "status"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

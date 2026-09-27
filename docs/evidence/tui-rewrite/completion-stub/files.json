@@ -1,0 +1,82 @@
+[
+  {
+    "path": "README.md",
+    "bytes": 2371,
+    "sha256": "789104039e93ac18d1e8c8a04fc200e798b76e4bd276f7b8cadf12ab56e1b01b"
+  },
+  {
+    "path": "all.log",
+    "bytes": 2582,
+    "sha256": "4ad1859508c8d9115cf1ed54b7bef13e2aeff6c8d9204fb8b8acfcc4987e5aeb"
+  },
+  {
+    "path": "before-complete.log",
+    "bytes": 1105,
+    "sha256": "2af27d1c0e98ccf9a4eda5e830b96958a285be66b340ecf256003f17857c58d5"
+  },
+  {
+    "path": "checks.json",
+    "bytes": 808,
+    "sha256": "e800b98d6f705287a03425282ee1a1b11f991cafbb8fc5db45e41d8ec6265ef9"
+  },
+  {
+    "path": "checks.py",
+    "bytes": 889,
+    "sha256": "e5b0d6e3386602e8e4f8907ad4a7132c5ae3b4e7a90c2660e1a45dfddca0574c"
+  },
+  {
+    "path": "clippy.log",
+    "bytes": 963,
+    "sha256": "d64b616ae30311b40cda4068fc5678374f49ee29fb3be743bfbfc73f3e2d1459"
+  },
+  {
+    "path": "fmt.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "red.json",
+    "bytes": 319,
+    "sha256": "2cbb70efea6bf9721b93f210d3c05b14c406b1e934c8c05e578a1dbaf935b2b0"
+  },
+  {
+    "path": "red.log",
+    "bytes": 4381,
+    "sha256": "c0dca94602a3612fbc0837283cc4f7450694391523a42229aa01416339aae5ca"
+  },
+  {
+    "path": "red.patch.gz",
+    "bytes": 261,
+    "sha256": "2f5b717d1c48db5fa8e812cb3270f6c83e659c5ea7d2f854ad697dbe513e9a9b"
+  },
+  {
+    "path": "red.py",
+    "bytes": 1031,
+    "sha256": "5cad174b2a64f6f3923d0b6832be50d6ee538aaf7ba66d3643a96e17eb49e5c5"
+  },
+  {
+    "path": "review.json",
+    "bytes": 725,
+    "sha256": "dded9d1b61f0f795403a3b6af63a68a93eddafbd0688438490f8d39efaba3dd9"
+  },
+  {
+    "path": "source.json",
+    "bytes": 483,
+    "sha256": "5d8e4f0443286ecf49fbf3e13d9828835577feba81102deb9cbc10eb76c44fc1"
+  },
+  {
+    "path": "source.patch.gz",
+    "bytes": 2851,
+    "sha256": "f70fec2a507dcb1203dac4510b90c78c5398199d21ec8b719be0e5534a7b6d3b"
+  },
+  {
+    "path": "suite-gates.log",
+    "bytes": 38,
+    "sha256": "9dbaeda37da424493a0057a1d54b636bc8c9da7e77a14322d41d4e63b18196d9"
+  },
+  {
+    "path": "workspace-check.log",
+    "bytes": 939,
+    "sha256": "9bd54e862a6a7c072c0f233d49057679221a9bf23e38c3de3e7fc92ddb5551f2"
+  }
+]

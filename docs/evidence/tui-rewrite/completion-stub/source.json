@@ -1,0 +1,13 @@
+{
+  "base": "fdeee80bfee91d0c66be899b75988878c2d97307",
+  "path": "crates/harness-tui/src/app/composer_editing.rs",
+  "before_sha256": "dce73075d4bb65d3dbdbfe7082521b601ba996855ba5bd7991227673e62a8588",
+  "after_sha256": "f24794c0473d356f6371fa03ed8bb1fdc3d60f4e3f09efff4d42f63592742c9a",
+  "before_lines": 642,
+  "after_lines": 293,
+  "removed_lines": 349,
+  "removed_tests": 10,
+  "production_lines_changed": 0,
+  "non_test_prefix_identical": true,
+  "all_tui_src_lines": 166604
+}
