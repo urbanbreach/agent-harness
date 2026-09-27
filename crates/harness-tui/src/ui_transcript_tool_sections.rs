@@ -4,7 +4,6 @@ use super::ui_tool_paths::tool_id_matches;
 use super::ui_tool_visibility::{
     tool_call_has_transcript_disclosure, tool_error_hidden_inline, tool_output_is_viewer_only,
 };
-use super::ui_transcript_block_grammar::{tool_family, TranscriptToolFamily};
 use super::*;
 
 const HARNESS_GENERIC_OUTPUT_LINE_CLAMP: usize = 3;

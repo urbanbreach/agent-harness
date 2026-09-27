@@ -1,0 +1,7 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.23s
+startup-0: p95=425us RSS=12508KiB
+idle-1000: p95=315us RSS=40716KiB
+typing-1000: p95=330us RSS=40696KiB
+stream-1000: p95=8634us RSS=41852KiB
+scroll-1000: p95=403us RSS=40256KiB
+resize-1000: p95=9798us RSS=48772KiB

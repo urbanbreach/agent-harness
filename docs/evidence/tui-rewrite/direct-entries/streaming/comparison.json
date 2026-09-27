@@ -1,0 +1,14 @@
+{
+  "stream-markdown-120x40-reduced-0ms": {
+    "cells_equal": true,
+    "text_equal": true,
+    "cursor_equal": true,
+    "png_bytes_equal": true
+  },
+  "stream-markdown-40x24-reduced-0ms": {
+    "cells_equal": true,
+    "text_equal": true,
+    "cursor_equal": true,
+    "png_bytes_equal": true
+  }
+}

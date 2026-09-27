@@ -1,0 +1,51 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.26s
+────────────
+ Nextest run ID 3d47bb16-90de-4bee-aeeb-1afc4eac9ccd with nextest profile: ci
+    Starting 182 tests across 2 binaries (1147 tests skipped, including 1 test via profile.default.default-filter)
+        SLOW [>  2.000s] (───────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  4.000s] (───────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  6.000s] (───────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  8.000s] (───────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [> 10.000s] (───────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        FAIL [  10.490s] (182/182) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+  stdout ───
+
+    running 1 test
+    test recorded_terminal_journeys_match_reference_cells_and_intents ... FAILED
+
+    failures:
+
+    failures:
+        recorded_terminal_journeys_match_reference_cells_and_intents
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.47s
+
+  stderr ───
+
+    thread 'recorded_terminal_journeys_match_reference_cells_and_intents' (2202931) panicked at crates/harness-tui/tests/rewrite_reference_test.rs:384:17:
+    reference drift in "stream-markdown-40x24-reduced-0ms": cells
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [  16.444s] 182 tests run: 181 passed, 1 failed, 1147 skipped
+        FAIL [  10.490s] (182/182) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+  stdout ───
+
+    running 1 test
+    test recorded_terminal_journeys_match_reference_cells_and_intents ... FAILED
+
+    failures:
+
+    failures:
+        recorded_terminal_journeys_match_reference_cells_and_intents
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.47s
+
+  stderr ───
+
+    thread 'recorded_terminal_journeys_match_reference_cells_and_intents' (2202931) panicked at crates/harness-tui/tests/rewrite_reference_test.rs:384:17:
+    reference drift in "stream-markdown-40x24-reduced-0ms": cells
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

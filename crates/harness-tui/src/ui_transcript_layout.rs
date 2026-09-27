@@ -11,19 +11,16 @@ use ratatui::{
 use crate::theme::Theme;
 
 use super::ui_transcript::{
-    IntoResolvedTranscriptVisualEntryDraft, ResolvedTranscriptVisualEntryDraft, ToolRailMotion,
-    TranscriptBlockPlacement, TranscriptRenderSurfaceKind, TranscriptVisualEntryAccent,
-    TranscriptVisualEntryDisplayMode, TranscriptVisualEntryDraft, TranscriptVisualEntryGroup,
-    TranscriptVisualEntryHitRegion, TranscriptVisualEntryId, TranscriptVisualEntryLifecycle,
-    TranscriptVisualEntryMetadata,
+    ResolvedTranscriptVisualEntryDraft, ToolRailMotion, TranscriptBlockPlacement,
+    TranscriptRenderSurfaceKind, TranscriptVisualEntryDisplayMode, TranscriptVisualEntryDraft,
+    TranscriptVisualEntryHitRegion, TranscriptVisualEntryId, TranscriptVisualEntryMetadata,
 };
 use super::ui_transcript_interaction::TranscriptInteractionRow;
 use super::ui_transcript_selection::{
     compact_selection_row, surface_selection_rows, SelectionRow, TranscriptSelectionCell,
 };
 use super::ui_transcript_surface::{
-    render_transcript_surface, render_transcript_surface_lines, transcript_surface_content_width,
-    transcript_surface_render_width,
+    render_transcript_surface, transcript_surface_content_width, transcript_surface_render_width,
 };
 
 const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 2;
@@ -35,7 +32,6 @@ pub(super) struct MeasuredTranscriptSection {
     pub(super) leading_gap_height: usize,
     pub(super) content_height: usize,
     pub(super) surfaces: Vec<TranscriptVisualEntry>,
-    pub(super) lines: Vec<Line<'static>>,
 }
 
 impl MeasuredTranscriptSection {
@@ -188,13 +184,26 @@ impl MeasuredTranscriptLayout {
         start..end
     }
 
+    #[cfg(test)]
     fn rendered_lines(&self) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
         for section in &self.sections {
             if section.leading_gap_height > 0 {
                 lines.push(Line::default());
             }
-            lines.extend(section.lines.iter().cloned());
+            let mut end = 0;
+            for surface in &section.surfaces {
+                lines.extend(std::iter::repeat_n(
+                    Line::default(),
+                    surface.top_offset.saturating_sub(end),
+                ));
+                lines.extend(surface.lines.iter().cloned());
+                end = surface.top_offset.saturating_add(surface.height);
+            }
+            lines.extend(std::iter::repeat_n(
+                Line::default(),
+                section.content_height.saturating_sub(end),
+            ));
         }
         lines
     }
@@ -409,18 +418,20 @@ pub(super) struct TranscriptVisualEntry {
     pub(super) hit_region: TranscriptVisualEntryHitRegion,
 }
 
-pub(super) fn measure_transcript_layout<Section, Entry>(
+pub(super) fn measure_transcript_layout<Section>(
     sections: &[Section],
     theme: &Theme,
     width: u16,
     base_surface: Color,
     mut activity_first_seq: impl FnMut(&Section) -> u64,
     mut cached_section: impl FnMut(usize, &Section) -> Option<Arc<MeasuredTranscriptSection>>,
-    mut render_surfaces: impl FnMut(&Section, &Theme, u16, Color) -> Vec<Entry>,
-) -> MeasuredTranscriptLayout
-where
-    Entry: IntoResolvedTranscriptVisualEntryDraft,
-{
+    mut render_surfaces: impl FnMut(
+        &Section,
+        &Theme,
+        u16,
+        Color,
+    ) -> Vec<ResolvedTranscriptVisualEntryDraft>,
+) -> MeasuredTranscriptLayout {
     let mut top_row = 0;
     let mut measured_sections = Vec::with_capacity(sections.len());
 
@@ -435,12 +446,7 @@ where
             continue;
         }
         let activity_first_seq = activity_first_seq(section);
-        let surfaces = render_surfaces(section, theme, width, base_surface)
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, entry)| entry.into_resolved(activity_first_seq, ordinal))
-            .collect::<Vec<_>>();
-        let lines = render_transcript_surface_lines(&surfaces);
+        let surfaces = render_surfaces(section, theme, width, base_surface);
         let mut content_height = 0usize;
         let mut measured_surfaces = Vec::with_capacity(surfaces.len());
         for surface in surfaces {
@@ -520,7 +526,6 @@ where
             leading_gap_height,
             content_height,
             surfaces: measured_surfaces,
-            lines,
         };
         top_row += measured_section.total_height();
         measured_sections.push(Arc::new(measured_section));
@@ -532,6 +537,7 @@ where
     }
 }
 
+#[cfg(test)]
 pub(super) fn transcript_layout_lines(
     layout: &MeasuredTranscriptLayout,
     _animation_phase: usize,
@@ -1124,11 +1130,7 @@ mod pin_tests {
                     semantic_key: u64::try_from(ordinal).unwrap_or(u64::MAX),
                 },
             },
-            kind,
-            group: TranscriptVisualEntryGroup::Standalone,
             display_mode: TranscriptVisualEntryDisplayMode::Flow,
-            lifecycle: TranscriptVisualEntryLifecycle::Settled,
-            accent: TranscriptVisualEntryAccent::Hidden,
         }
     }
 
@@ -1201,10 +1203,6 @@ mod pin_tests {
                         hit_region: test_hit_region(body_height, 120, 1),
                     },
                 ],
-                lines: vec![
-                    Line::from("Creating demo.txt"),
-                    Line::from("     ◆ Run Write `demo.txt` 19s"),
-                ],
             })],
             total_height: total_content_rows,
         }
@@ -1266,11 +1264,6 @@ mod pin_tests {
                 leading_gap_height: 0,
                 content_height: 3,
                 surfaces: vec![body, inserted, footer],
-                lines: vec![
-                    Line::from("Creating demo.txt"),
-                    Line::from("new entry"),
-                    Line::from("     ◆ Run Write `demo.txt` 19s"),
-                ],
             })],
             total_height: 3,
         };
@@ -1294,123 +1287,6 @@ mod pin_tests {
         // assert
         assert!(typed_footer_pin_delta(&layout, 20, 0).is_some());
         assert_eq!(outdent, 1);
-    }
-
-    #[test]
-    fn typed_gap_rows_determine_measured_top_offset_once() {
-        // arrange
-        // act
-        let theme = Theme::default();
-        let layout = measure_transcript_layout(
-            &[()],
-            &theme,
-            80,
-            Color::Reset,
-            |_| 0,
-            |_, _| None,
-            |_, _, _, _| vec![test_render_surface(3, None)],
-        );
-
-        // assert
-        assert_eq!(layout.sections[0].surfaces[0].top_offset, 3);
-        assert_eq!(layout.sections[0].surfaces[0].leading_gap_rows, 3);
-    }
-
-    #[test]
-    fn typed_sticky_placement_survives_measurement() {
-        // arrange
-        // act
-        let theme = Theme::default();
-        let mut surface = test_render_surface(0, None);
-        surface.kind = TranscriptRenderSurfaceKind::User;
-        surface.placement = TranscriptBlockPlacement::StickyPromptCandidate;
-        let layout = measure_transcript_layout(
-            &[()],
-            &theme,
-            80,
-            Color::Reset,
-            |_| 0,
-            |_, _| None,
-            |_, _, _, _| vec![surface.clone()],
-        );
-
-        // assert
-        assert_eq!(
-            layout.sections[0].surfaces[0].placement,
-            TranscriptBlockPlacement::StickyPromptCandidate
-        );
-    }
-
-    #[test]
-    fn typed_layout_rejects_row_mismatch() {
-        // arrange
-        // act
-        use crate::ui::ui_transcript::ui_transcript_block_grammar::{
-            resolve_block_surface, test_spec, TranscriptBlockContent, TranscriptBlockRole,
-            TranscriptGrammarError,
-        };
-        let spec = test_spec(
-            TranscriptBlockRole::AssistantBody,
-            TranscriptBlockContent::AssistantBody {
-                text: String::new(),
-                streaming: false,
-                wall_clock: None,
-            },
-        );
-        let surface = test_render_surface(0, Some(vec![None, None]));
-
-        // assert
-        assert!(matches!(
-            resolve_block_surface(&spec, surface),
-            Err(TranscriptGrammarError::RowMismatch)
-        ));
-    }
-
-    #[test]
-    fn typed_layout_rejects_invalid_pin() {
-        // arrange
-        // act
-        use crate::ui::ui_transcript::ui_transcript_block_grammar::{
-            test_spec, validate_block_spec, TranscriptBlockContent, TranscriptBlockRole,
-            TranscriptGrammarError,
-        };
-        let mut spec = test_spec(
-            TranscriptBlockRole::AssistantBody,
-            TranscriptBlockContent::AssistantBody {
-                text: String::new(),
-                streaming: false,
-                wall_clock: None,
-            },
-        );
-        spec.placement = TranscriptBlockPlacement::PinnedFooter { outdent_cells: 1 };
-
-        // assert
-        assert_eq!(
-            validate_block_spec(&spec),
-            Err(TranscriptGrammarError::InvalidPlacement)
-        );
-    }
-
-    fn test_render_surface(
-        leading_gap_rows: usize,
-        interaction_rows: Option<Vec<Option<TranscriptInteractionRow>>>,
-    ) -> TranscriptVisualEntryDraft {
-        TranscriptVisualEntryDraft {
-            kind: TranscriptRenderSurfaceKind::AssistantBody,
-            leading_gap_rows,
-            trailing_gap_rows: 0,
-            placement: TranscriptBlockPlacement::Flow,
-            show_outer_rail: false,
-            rail_glyph: " ",
-            rail_color: Color::Reset,
-            surface: Color::Reset,
-            lines: vec![Line::from("body")],
-            interaction_rows,
-            selection_rows: None,
-            diff_hunk_offsets: Vec::new(),
-            selected_rail: false,
-            tool_rail_motion: None,
-        }
     }
 
     fn scroll_turn_layout(user_height: usize, body_height: usize) -> MeasuredTranscriptLayout {
@@ -1473,10 +1349,6 @@ mod pin_tests {
                         hit_region: test_hit_region(user_height, 120, body_height),
                     },
                 ],
-                lines: (0..user_height)
-                    .map(|i| Line::from(format!("user line {i}")))
-                    .chain((0..body_height).map(|i| Line::from(format!("body line {i}"))))
-                    .collect(),
             })],
             total_height: content_height,
         }
@@ -1659,7 +1531,6 @@ mod pin_tests {
             activity_first_seq: 0,
             semantic_key: 2,
         };
-        streaming.metadata.lifecycle = TranscriptVisualEntryLifecycle::Active;
         streaming.height = 1;
         streaming.top_offset = 7;
         streaming.lines = vec![Line::from("streaming")];

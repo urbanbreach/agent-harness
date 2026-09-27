@@ -397,6 +397,36 @@ The original composite state engine and render-surface builders remain during
 migration. Streaming and resize resource acceptance is still outstanding; this
 slice does not establish completion of the rewrite.
 
+## Direct transcript entry construction
+
+Turn rendering now borrows semantic parts and scans tool groups once. Ten grammar
+modules, repeated owned specifications, unused lifecycle/accent/group metadata,
+and the identity-conversion trait are removed. Measured sections no longer retain
+a second flattened copy of their rows. Nine tests for the removed grammar and
+field forwarding are deleted; the behavioral checks remain.
+
+The existing oracle caught an introduced streaming-prose rail. The correction
+keeps the original blank accent column, and all 539 checkpoints pass with only the
+previously approved R8 corrections. The two xterm streaming PNGs are byte-identical
+to the reference. A live PTY selection capture matches the prior approved
+candidate and confirms natural exit, terminal restoration and resource cleanup.
+
+Validation passes: 1,774 serial deterministic tests, seven gated PTY checks,
+all-target/all-feature TUI Clippy, workspace check, formatting, and test-suite
+gates. The independent source review finds no remaining correctness issues.
+
+Paired release measurements show 36.5% fewer streaming allocations and 18.5% less
+streaming RSS. Resize RSS falls 26.2%, but resize CPU rises 2.7% and tail latency
+is roughly unchanged. Cold preparation remains about 5–6% slower. Typing CPU also
+remains above the paired reference. Resource acceptance is still unmet; the
+original frozen limits are unchanged.
+
+This slice removes 2,033 Rust source lines, including the obsolete tests. The
+source tree now contains 176,400 lines, 3.0% below the original 181,882. The old
+composite state engine and lower-level formatters remain during migration. Raw
+samples, source/binary receipts, red/green logs and browser comparisons are in
+[`evidence/tui-rewrite/direct-entries`](evidence/tui-rewrite/direct-entries).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

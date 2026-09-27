@@ -1,10 +1,7 @@
+#[cfg(test)]
 use std::borrow::Borrow;
 use std::ops::{Deref, DerefMut};
 
-use super::ui_transcript_block_grammar::{
-    TranscriptBlockContent, TranscriptBlockRole, TranscriptBlockSpec, TranscriptLifecycleState,
-    TranscriptPromptState, TranscriptToolFamily, TranscriptToolGroupClass, TranscriptToolStatus,
-};
 use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -25,12 +22,6 @@ pub(crate) enum TranscriptVisualEntryId {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(in crate::ui) enum TranscriptVisualEntryGroup {
-    Standalone,
-    ToolRun(u64),
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum TranscriptVisualEntryDisplayMode {
     Flow,
@@ -41,30 +32,11 @@ pub(in crate::ui) enum TranscriptVisualEntryDisplayMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::ui) enum TranscriptVisualEntryLifecycle {
-    Settled,
-    Active,
-    Failed,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::ui) enum TranscriptVisualEntryAccent {
-    Hidden,
-    Active,
-    Selected,
-    Animated(ToolRailMotion),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct TranscriptVisualEntryMetadata {
     pub(in crate::ui) foldable: bool,
     pub(in crate::ui) context_group: bool,
     pub(in crate::ui) id: TranscriptVisualEntryId,
-    pub(in crate::ui) kind: TranscriptRenderSurfaceKind,
-    pub(in crate::ui) group: TranscriptVisualEntryGroup,
     pub(in crate::ui) display_mode: TranscriptVisualEntryDisplayMode,
-    pub(in crate::ui) lifecycle: TranscriptVisualEntryLifecycle,
-    pub(in crate::ui) accent: TranscriptVisualEntryAccent,
 }
 
 impl TranscriptVisualEntryMetadata {
@@ -72,7 +44,6 @@ impl TranscriptVisualEntryMetadata {
     pub(in crate::ui) fn settled(
         activity_first_seq: u64,
         ordinal: usize,
-        kind: TranscriptRenderSurfaceKind,
         display_mode: TranscriptVisualEntryDisplayMode,
     ) -> Self {
         Self {
@@ -82,180 +53,135 @@ impl TranscriptVisualEntryMetadata {
                 activity_first_seq,
                 semantic_key: u64::try_from(ordinal).unwrap_or(u64::MAX),
             },
-            kind,
-            group: TranscriptVisualEntryGroup::Standalone,
             display_mode,
-            lifecycle: TranscriptVisualEntryLifecycle::Settled,
-            accent: TranscriptVisualEntryAccent::Hidden,
         }
     }
+}
 
-    pub(in crate::ui) fn from_spec(
-        activity_first_seq: u64,
-        spec: &TranscriptBlockSpec,
-        draft: &TranscriptVisualEntryDraft,
+impl ResolvedTranscriptVisualEntryDraft {
+    pub(super) fn new(
+        id: TranscriptVisualEntryId,
+        draft: TranscriptVisualEntryDraft,
+        source: Option<&str>,
     ) -> Self {
-        let tool_key = match &spec.content {
-            TranscriptBlockContent::Tool { ids, .. } => {
-                Some(semantic_key(ids.iter().take(1).map(String::as_str)))
+        let display_mode = match draft.placement {
+            TranscriptBlockPlacement::Flow => TranscriptVisualEntryDisplayMode::Flow,
+            TranscriptBlockPlacement::StickyPromptCandidate => {
+                TranscriptVisualEntryDisplayMode::StickyPrompt
             }
-            TranscriptBlockContent::UserMessage { .. }
-            | TranscriptBlockContent::AssistantBody { .. }
-            | TranscriptBlockContent::Reasoning { .. }
-            | TranscriptBlockContent::Footer { .. }
-            | TranscriptBlockContent::Error { .. }
-            | TranscriptBlockContent::Compaction { .. } => None,
-            #[cfg(test)]
-            TranscriptBlockContent::Synthetic { .. } => None,
-        };
-        let id = match spec.role {
-            TranscriptBlockRole::UserPrompt => TranscriptVisualEntryId::User { activity_first_seq },
-            TranscriptBlockRole::Footer => TranscriptVisualEntryId::Footer { activity_first_seq },
-            TranscriptBlockRole::Tool
-                if matches!(
-                    &spec.content,
-                    TranscriptBlockContent::Tool {
-                        family: TranscriptToolFamily::Group,
-                        ..
-                    }
-                ) =>
-            {
-                TranscriptVisualEntryId::ToolGroup {
-                    activity_first_seq,
-                    semantic_key: tool_key.unwrap_or_else(|| semantic_key([spec.id.0.as_str()])),
-                }
+            TranscriptBlockPlacement::PinnedFooter { .. } => {
+                TranscriptVisualEntryDisplayMode::PinnedFooter
             }
-            TranscriptBlockRole::AssistantBody
-            | TranscriptBlockRole::Reasoning
-            | TranscriptBlockRole::Tool
-            | TranscriptBlockRole::Error
-            | TranscriptBlockRole::Compaction => TranscriptVisualEntryId::Part {
-                activity_first_seq,
-                semantic_key: tool_key.unwrap_or_else(|| semantic_key([spec.id.0.as_str()])),
-            },
-            #[cfg(test)]
-            TranscriptBlockRole::Synthetic => TranscriptVisualEntryId::Part {
-                activity_first_seq,
-                semantic_key: semantic_key([spec.id.0.as_str()]),
-            },
-        };
-        let group = match tool_key {
-            Some(key) => TranscriptVisualEntryGroup::ToolRun(key),
-            None => TranscriptVisualEntryGroup::Standalone,
-        };
-        let display_mode = entry_display_mode(spec, draft);
-        let lifecycle = match &spec.content {
-            TranscriptBlockContent::UserMessage { queued, state, .. } => {
-                if *queued || matches!(state, TranscriptPromptState::ActiveThinking) {
-                    TranscriptVisualEntryLifecycle::Active
-                } else {
-                    TranscriptVisualEntryLifecycle::Settled
-                }
-            }
-            TranscriptBlockContent::AssistantBody { streaming, .. }
-            | TranscriptBlockContent::Reasoning {
-                active: streaming, ..
-            } => {
-                if *streaming {
-                    TranscriptVisualEntryLifecycle::Active
-                } else {
-                    TranscriptVisualEntryLifecycle::Settled
-                }
-            }
-            TranscriptBlockContent::Tool { policy, .. } => match policy.status {
-                TranscriptToolStatus::Queued
-                | TranscriptToolStatus::Running
-                | TranscriptToolStatus::Waiting => TranscriptVisualEntryLifecycle::Active,
-                TranscriptToolStatus::Failed => TranscriptVisualEntryLifecycle::Failed,
-                TranscriptToolStatus::Succeeded | TranscriptToolStatus::Cancelled => {
-                    TranscriptVisualEntryLifecycle::Settled
-                }
-            },
-            TranscriptBlockContent::Footer { state, .. } => match state {
-                TranscriptLifecycleState::Queued
-                | TranscriptLifecycleState::Responding
-                | TranscriptLifecycleState::Retrying { .. } => {
-                    TranscriptVisualEntryLifecycle::Active
-                }
-                TranscriptLifecycleState::Cancelled | TranscriptLifecycleState::Failed => {
-                    TranscriptVisualEntryLifecycle::Failed
-                }
-                TranscriptLifecycleState::Recovered | TranscriptLifecycleState::Completed => {
-                    TranscriptVisualEntryLifecycle::Settled
-                }
-            },
-            TranscriptBlockContent::Error { .. } => TranscriptVisualEntryLifecycle::Failed,
-            TranscriptBlockContent::Compaction { .. } => TranscriptVisualEntryLifecycle::Settled,
-            #[cfg(test)]
-            TranscriptBlockContent::Synthetic { .. } => TranscriptVisualEntryLifecycle::Settled,
-        };
-        let accent = if draft.selected_rail {
-            TranscriptVisualEntryAccent::Selected
-        } else if lifecycle == TranscriptVisualEntryLifecycle::Settled
-            && matches!(&id, TranscriptVisualEntryId::ToolGroup { .. })
-        {
-            TranscriptVisualEntryAccent::Hidden
-        } else if let Some(motion) = draft.tool_rail_motion {
-            TranscriptVisualEntryAccent::Animated(motion)
-        } else if draft.show_outer_rail {
-            TranscriptVisualEntryAccent::Active
-        } else {
-            TranscriptVisualEntryAccent::Hidden
         };
         Self {
-            foldable: entry_foldable(spec),
-            context_group: matches!(&spec.content, TranscriptBlockContent::Tool { policy, .. }
-                if policy.group_class == Some(TranscriptToolGroupClass::Context)),
-            id,
-            kind: draft.kind,
-            group,
-            display_mode,
-            lifecycle,
-            accent,
+            metadata: TranscriptVisualEntryMetadata {
+                id,
+                foldable: false,
+                context_group: false,
+                display_mode,
+            },
+            source_text: source.map(std::sync::Arc::from),
+            draft,
         }
     }
-}
 
-fn entry_foldable(spec: &TranscriptBlockSpec) -> bool {
-    match &spec.content {
-        TranscriptBlockContent::Tool {
-            family: TranscriptToolFamily::Group,
-            ..
-        } => spec.fold.foldable,
-        _ => spec.fold.foldable || spec.disclosure.available,
-    }
-}
-
-fn entry_display_mode(
-    spec: &TranscriptBlockSpec,
-    draft: &TranscriptVisualEntryDraft,
-) -> TranscriptVisualEntryDisplayMode {
-    match draft.placement {
-        TranscriptBlockPlacement::StickyPromptCandidate => {
-            TranscriptVisualEntryDisplayMode::StickyPrompt
-        }
-        TranscriptBlockPlacement::PinnedFooter { .. } => {
-            TranscriptVisualEntryDisplayMode::PinnedFooter
-        }
-        TranscriptBlockPlacement::Flow
-            if matches!(
-                draft.kind,
-                TranscriptRenderSurfaceKind::AssistantReasoning
-                    | TranscriptRenderSurfaceKind::AssistantTool
-                    | TranscriptRenderSurfaceKind::AssistantCommandTool
-            ) =>
-        {
-            if spec.disclosure.expanded
-                || matches!(&spec.content,
-                TranscriptBlockContent::Tool { family: TranscriptToolFamily::Task, policy, .. }
-                    if policy.status == TranscriptToolStatus::Running)
-            {
+    pub(super) fn part(
+        turn: &TranscriptTurnSection,
+        index: usize,
+        draft: TranscriptVisualEntryDraft,
+    ) -> Self {
+        let part = &turn.assistant_parts[index];
+        let (role, source, foldable, expanded) = match part {
+            TranscriptAssistantPart::Reasoning(reasoning) => (
+                "reasoning",
+                Some(reasoning.text.as_str()),
+                true,
+                turn.reasoning_expanded,
+            ),
+            TranscriptAssistantPart::Body(
+                TranscriptBodyBlock::RichText(text) | TranscriptBodyBlock::StreamingRichText(text),
+            ) => ("body", Some(text.as_str()), false, false),
+            TranscriptAssistantPart::ToolCall(tool) => (
+                "tool",
+                None,
+                tool.header.disclosure_state.is_some(),
+                tool.header.disclosure_state == Some(TranscriptToolCallDisclosureState::Expanded)
+                    || (tool_family(tool) == TranscriptToolFamily::Task
+                        && tool.header.presentation.status == ToolCallPresentationStatus::Running),
+            ),
+            TranscriptAssistantPart::Error(error) => {
+                ("error", Some(error.text.as_str()), false, false)
+            }
+            TranscriptAssistantPart::Compaction(compaction) => {
+                ("compaction", Some(compaction.summary.as_str()), true, false)
+            }
+        };
+        let key = if let TranscriptAssistantPart::ToolCall(tool) = part {
+            semantic_key([tool.tool_call_id.as_str()])
+        } else {
+            let source_seq = (turn.assistant_part_source_ids.len() == turn.assistant_parts.len())
+                .then(|| turn.assistant_part_source_ids[index].0);
+            let id = source_seq.map_or_else(
+                || {
+                    format!(
+                        "{}:{role}:fixture:{:016x}",
+                        turn.request_id,
+                        semantic_key([source.unwrap_or("")])
+                    )
+                },
+                |seq| format!("{}:{role}:event:{seq}", turn.request_id),
+            );
+            semantic_key([id.as_str()])
+        };
+        let mut entry = Self::new(
+            TranscriptVisualEntryId::Part {
+                activity_first_seq: turn.activity_first_seq,
+                semantic_key: key,
+            },
+            draft,
+            source,
+        );
+        entry.metadata.foldable = foldable;
+        if matches!(
+            part,
+            TranscriptAssistantPart::ToolCall(_) | TranscriptAssistantPart::Reasoning(_)
+        ) {
+            entry.metadata.display_mode = if expanded {
                 TranscriptVisualEntryDisplayMode::Expanded
             } else {
                 TranscriptVisualEntryDisplayMode::Compact
-            }
+            };
         }
-        TranscriptBlockPlacement::Flow => TranscriptVisualEntryDisplayMode::Flow,
+        entry
+    }
+
+    pub(super) fn group(
+        turn: &TranscriptTurnSection,
+        group: &super::ui_transcript_groups::TranscriptToolGroup,
+        draft: TranscriptVisualEntryDraft,
+    ) -> Self {
+        let mut entry = Self::new(
+            TranscriptVisualEntryId::ToolGroup {
+                activity_first_seq: turn.activity_first_seq,
+                semantic_key: semantic_key(group.target_ids.iter().take(1).map(String::as_str)),
+            },
+            draft,
+            None,
+        );
+        entry.metadata.foldable =
+            turn.assistant_parts[group.start]
+                .tool_call()
+                .is_none_or(|tool| {
+                    tool.header.visual_style != TranscriptToolCallVisualStyle::TaskInline
+                });
+        entry.metadata.context_group = group.summary.kind == TranscriptToolGroupKind::Context;
+        entry.metadata.display_mode =
+            if group.summary.disclosure == TranscriptToolDisclosureMode::Expanded {
+                TranscriptVisualEntryDisplayMode::Expanded
+            } else {
+                TranscriptVisualEntryDisplayMode::Compact
+            };
+        entry
     }
 }
 
@@ -290,73 +216,10 @@ impl DerefMut for ResolvedTranscriptVisualEntryDraft {
     }
 }
 
+#[cfg(test)]
 impl Borrow<TranscriptVisualEntryDraft> for ResolvedTranscriptVisualEntryDraft {
     fn borrow(&self) -> &TranscriptVisualEntryDraft {
         &self.draft
-    }
-}
-
-pub(in crate::ui) trait IntoResolvedTranscriptVisualEntryDraft {
-    fn into_resolved(
-        self,
-        activity_first_seq: u64,
-        ordinal: usize,
-    ) -> ResolvedTranscriptVisualEntryDraft;
-}
-
-impl IntoResolvedTranscriptVisualEntryDraft for ResolvedTranscriptVisualEntryDraft {
-    fn into_resolved(
-        self,
-        _activity_first_seq: u64,
-        _ordinal: usize,
-    ) -> ResolvedTranscriptVisualEntryDraft {
-        self
-    }
-}
-
-#[cfg(test)]
-impl IntoResolvedTranscriptVisualEntryDraft for TranscriptVisualEntryDraft {
-    fn into_resolved(
-        self,
-        activity_first_seq: u64,
-        ordinal: usize,
-    ) -> ResolvedTranscriptVisualEntryDraft {
-        let display_mode = match self.placement {
-            TranscriptBlockPlacement::Flow => TranscriptVisualEntryDisplayMode::Flow,
-            TranscriptBlockPlacement::StickyPromptCandidate => {
-                TranscriptVisualEntryDisplayMode::StickyPrompt
-            }
-            TranscriptBlockPlacement::PinnedFooter { .. } => {
-                TranscriptVisualEntryDisplayMode::PinnedFooter
-            }
-        };
-        let mut metadata = TranscriptVisualEntryMetadata::settled(
-            activity_first_seq,
-            ordinal,
-            self.kind,
-            display_mode,
-        );
-        metadata.lifecycle = if self.kind == TranscriptRenderSurfaceKind::AssistantError {
-            TranscriptVisualEntryLifecycle::Failed
-        } else if self.show_outer_rail || self.tool_rail_motion.is_some() {
-            TranscriptVisualEntryLifecycle::Active
-        } else {
-            TranscriptVisualEntryLifecycle::Settled
-        };
-        metadata.accent = if self.selected_rail {
-            TranscriptVisualEntryAccent::Selected
-        } else if let Some(motion) = self.tool_rail_motion {
-            TranscriptVisualEntryAccent::Animated(motion)
-        } else if self.show_outer_rail {
-            TranscriptVisualEntryAccent::Active
-        } else {
-            TranscriptVisualEntryAccent::Hidden
-        };
-        ResolvedTranscriptVisualEntryDraft {
-            metadata,
-            draft: self,
-            source_text: None,
-        }
     }
 }
 

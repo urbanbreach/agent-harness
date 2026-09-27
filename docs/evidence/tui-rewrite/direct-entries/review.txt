@@ -1,0 +1,10 @@
+Independent reviewer: /root/tui_review
+Scope: uncommitted direct transcript entry construction based on 3b16dab6.
+
+Approved to commit this migration slice. No blocking source or evidence findings.
+
+I independently verified all manifest/source/binary hashes, identical benchmark fixtures, and recomputed every reported percentile, median, CPU/RSS value, allocation total, and percentage change. Timed bytes and oldest text match in every run; only the documented post-timing R8 scroll screen differs.
+
+The evidence README accurately reports the regressions and unmet targets. The source count is confirmed at 176,400 lines. Whole-rewrite acceptance remains open.
+
+No edits, builds, or tests run.
