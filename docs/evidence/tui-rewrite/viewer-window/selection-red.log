@@ -1,0 +1,56 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.72s
+────────────
+ Nextest run ID 881d27e7-9bbd-4dee-84f8-538483d2e89a with nextest profile: ci
+    Starting 1 test across 1 binary (1324 tests skipped)
+        SLOW [>  2.000s] (───) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  4.000s] (───) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  6.000s] (───) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  8.000s] (───) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [> 10.000s] (───) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [> 12.000s] (───) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        FAIL [  13.052s] (1/1) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+  stdout ───
+
+    running 1 test
+    test app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1324 filtered out; finished in 13.04s
+
+  stderr ───
+
+    thread 'app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler' (2409800) panicked at crates/harness-tui/src/app/tests/tool_runtime_capture_tests.rs:462:13:
+    assertion `left == right` failed: selection window at 5,3
+      left: Cell { symbol: Some("l"), fg: Rgb(225, 225, 225), bg: Rgb(28, 28, 28), underline_color: Reset, modifier: NONE, diff_option: None, skip: false }
+     right: Cell { symbol: Some("l"), fg: Rgb(225, 225, 225), bg: Rgb(54, 54, 54), underline_color: Reset, modifier: NONE, diff_option: None, skip: false }
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [  13.058s] 1 test run: 0 passed, 1 failed, 1324 skipped
+        FAIL [  13.052s] (1/1) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+  stdout ───
+
+    running 1 test
+    test app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1324 filtered out; finished in 13.04s
+
+  stderr ───
+
+    thread 'app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler' (2409800) panicked at crates/harness-tui/src/app/tests/tool_runtime_capture_tests.rs:462:13:
+    assertion `left == right` failed: selection window at 5,3
+      left: Cell { symbol: Some("l"), fg: Rgb(225, 225, 225), bg: Rgb(28, 28, 28), underline_color: Reset, modifier: NONE, diff_option: None, skip: false }
+     right: Cell { symbol: Some("l"), fg: Rgb(225, 225, 225), bg: Rgb(54, 54, 54), underline_color: Reset, modifier: NONE, diff_option: None, skip: false }
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

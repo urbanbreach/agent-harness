@@ -1,0 +1,17 @@
+[
+  {
+    "name": "runtime-viewer-long-select-40x32-motion-0ms.screen",
+    "png_equal": true,
+    "different_snapshot_fields": {}
+  },
+  {
+    "name": "runtime-viewer-search-120x40-motion-0ms.screen",
+    "png_equal": true,
+    "different_snapshot_fields": {
+      "renderCount": {
+        "reference": 3,
+        "candidate": 4
+      }
+    }
+  }
+]

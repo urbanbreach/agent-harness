@@ -263,13 +263,7 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
             render_review_surface(frame, app, theme, &plan, surface);
         }
         if let Some(viewer) = app.transcript_viewer() {
-            let surface = viewer.render_surface(area);
-            crate::transcript_block_viewer::render_to_buffer(
-                frame.buffer_mut(),
-                area,
-                &surface,
-                theme,
-            );
+            crate::transcript_block_viewer::render_viewer(frame.buffer_mut(), area, viewer, theme);
         }
     }
     render_overlays(frame, app, theme, &plan);

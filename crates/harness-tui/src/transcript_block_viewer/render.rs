@@ -10,39 +10,32 @@ use unicode_width::UnicodeWidthStr;
 use crate::theme::Theme;
 
 use super::state::ViewerState;
-use super::ViewerMode;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RenderedLine {
-    pub text: String,
-    pub styled: Option<ratatui::text::Line<'static>>,
-    pub selected: bool,
-    pub current_match: bool,
-    pub match_ranges: Vec<Range<usize>>,
-    pub selection_range: Option<Range<usize>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ViewerRenderSurface {
-    pub mode: ViewerMode,
-    pub title: String,
-    pub status: String,
-    pub lines: Vec<RenderedLine>,
-    pub scroll_top: usize,
-    pub body_start: usize,
-    pub cursor_rows: Range<usize>,
-    pub output_panel: bool,
-    pub copy_path: bool,
-    pub markdown: bool,
-    pub close_hovered: bool,
-    pub search_active: bool,
-    pub editing: bool,
-    pub filtering: bool,
-    pub visual_mode: bool,
-    pub wrap_enabled: bool,
-}
+use super::{RenderedLine, ViewerMode, ViewerRenderSurface};
+use crate::transcript_selection::CellPoint;
 
 pub fn render_surface(state: &ViewerState, _area: Rect) -> ViewerRenderSurface {
+    project_rows(state, 0..state.wrapped.row_count())
+}
+
+pub(crate) fn render_viewer(buffer: &mut Buffer, area: Rect, state: &ViewerState, theme: &Theme) {
+    let body = super::viewer_layout(area).content_body(state.input_active() || state.visual_mode);
+    let first = state.scroll_top();
+    let rows = first
+        ..first
+            .saturating_add(usize::from(body.height))
+            .min(state.wrapped.row_count());
+    let surface = project_rows(state, rows);
+    paint(
+        buffer,
+        area,
+        &surface,
+        first,
+        state.wrapped.row_count(),
+        theme,
+    );
+}
+
+fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface {
     let mut filter_search = super::SearchState::new();
     if state.filter_editing {
         let _ = filter_search.set_query(&state.display_text, &regex::escape(&state.filter_query));
@@ -52,27 +45,19 @@ pub fn render_surface(state: &ViewerState, _area: Rect) -> ViewerRenderSurface {
     } else {
         state.search()
     };
-    let mut match_ranges = vec![Vec::new(); state.wrapped.row_count()];
+    let mut match_ranges = vec![Vec::new(); rows.len()];
     for item in highlights.matches() {
         let start = state.wrapped.point_for_byte(item.byte_range.start);
         let end = state
             .wrapped
             .point_for_byte(item.byte_range.end.saturating_sub(1));
-        for (row, ranges) in match_ranges
-            .iter_mut()
-            .enumerate()
-            .take(end.row + 1)
-            .skip(start.row)
-        {
-            ranges.push(
-                (if start.row == row { start.cell } else { 0 })..(if end.row == row {
-                    end.cell + 1
-                } else {
-                    usize::MAX
-                }),
-            );
+        for row in start.row.max(rows.start)..end.row.saturating_add(1).min(rows.end) {
+            if let Some(range) = cells_in_row(start, end, row) {
+                match_ranges[row - rows.start].push(range);
+            }
         }
     }
+
     let current = state.search().current_match().map(|item| {
         (
             state.wrapped.point_for_byte(item.byte_range.start),
@@ -81,41 +66,22 @@ pub fn render_surface(state: &ViewerState, _area: Rect) -> ViewerRenderSurface {
                 .point_for_byte(item.byte_range.end.saturating_sub(1)),
         )
     });
-    let selection = state.selection().map(|selection| {
-        (
-            selection.anchor.row.min(selection.focus.row),
-            selection.anchor.row.max(selection.focus.row),
-        )
-    });
-    let lines = (0..state.wrapped.row_count())
-        .map(|line_index| {
-            let line = state.wrapped.row_text(line_index);
-            let current_match = current
-                .as_ref()
-                .is_some_and(|(start, end)| (start.row..=end.row).contains(&line_index));
+    let selection = state.selection().map(|selection| selection.normalized());
+    let lines = rows
+        .zip(match_ranges)
+        .map(|(row, match_ranges)| {
+            let selection_range = selection.and_then(|(start, end)| cells_in_row(start, end, row));
             RenderedLine {
-                match_ranges: match_ranges.get(line_index).cloned().unwrap_or_default(),
-                text: line,
-                styled: state.styled_lines.get(line_index).cloned(),
-                selected: selection.is_some_and(|(start, end)| (start..=end).contains(&line_index)),
-                current_match,
-                selection_range: state.selection().and_then(|selection| {
-                    let (start, end) = selection.normalized();
-                    (start.row..=end.row).contains(&line_index).then_some(
-                        if line_index == start.row {
-                            start.cell
-                        } else {
-                            0
-                        }..if line_index == end.row {
-                            end.cell.saturating_add(1)
-                        } else {
-                            usize::MAX
-                        },
-                    )
-                }),
+                text: state.wrapped.row_text(row),
+                styled: state.styled_lines.get(row).cloned(),
+                selected: selection_range.is_some(),
+                current_match: current
+                    .is_some_and(|(start, end)| (start.row..=end.row).contains(&row)),
+                match_ranges,
+                selection_range,
             }
         })
-        .collect::<Vec<_>>();
+        .collect();
     let query = state.search().query();
     let filtering = state.filter_editing || !state.filter_query.is_empty();
     let editing = state.search_editing() || state.filter_editing;
@@ -133,9 +99,9 @@ pub fn render_surface(state: &ViewerState, _area: Rect) -> ViewerRenderSurface {
         }
     } else if state.visual_mode {
         let count = selection.map_or(1, |(start, end)| {
-            (start..=end)
+            (start.row..=end.row)
                 .filter(|row| {
-                    *row == start
+                    *row == start.row
                         || state
                             .row_joiners
                             .get(row - 1)
@@ -155,9 +121,7 @@ pub fn render_surface(state: &ViewerState, _area: Rect) -> ViewerRenderSurface {
         title: format!("Block Viewer · {}", mode_label(state.mode())),
         status,
         lines,
-        scroll_top: state
-            .scroll_anchor()
-            .map_or(0, |anchor| scroll_offset(anchor.within_block())),
+        scroll_top: state.scroll_top(),
         body_start: state.body_start,
         cursor_rows: state.logical_rows(state.cursor.row),
         output_panel: matches!(
@@ -178,10 +142,31 @@ pub fn render_surface(state: &ViewerState, _area: Rect) -> ViewerRenderSurface {
     }
 }
 
+fn cells_in_row(start: CellPoint, end: CellPoint, row: usize) -> Option<Range<usize>> {
+    (start.row..=end.row).contains(&row).then_some(
+        (if row == start.row { start.cell } else { 0 })..(if row == end.row {
+            end.cell.saturating_add(1)
+        } else {
+            usize::MAX
+        }),
+    )
+}
+
 pub fn render_to_buffer(
     buffer: &mut Buffer,
     area: Rect,
     surface: &ViewerRenderSurface,
+    theme: &Theme,
+) {
+    paint(buffer, area, surface, 0, surface.lines.len(), theme);
+}
+
+fn paint(
+    buffer: &mut Buffer,
+    area: Rect,
+    surface: &ViewerRenderSurface,
+    first_row: usize,
+    row_count: usize,
     theme: &Theme,
 ) {
     let layout = super::viewer_layout(area);
@@ -221,7 +206,7 @@ pub fn render_to_buffer(
     for (offset, line) in surface
         .lines
         .iter()
-        .skip(surface.scroll_top)
+        .skip(surface.scroll_top.saturating_sub(first_row))
         .take(usize::from(body.height))
         .enumerate()
     {
@@ -230,7 +215,7 @@ pub fn render_to_buffer(
             body.x,
             body.y + u16::try_from(offset).unwrap_or(u16::MAX),
             body.width
-                + if surface.filtering && surface.lines.len() <= usize::from(body.height) {
+                + if surface.filtering && row_count <= usize::from(body.height) {
                     2
                 } else {
                     0
@@ -256,7 +241,7 @@ pub fn render_to_buffer(
             buffer[(row.right() - 1, row.y)].set_symbol("…");
         }
     }
-    render_scrollbar(buffer, body, surface, theme);
+    render_scrollbar(buffer, body, surface.scroll_top, row_count, theme);
     if surface.search_active || surface.visual_mode {
         let y = layout.body.bottom().saturating_sub(2);
         let divider = Rect::new(
@@ -330,16 +315,22 @@ fn dim(color: Color, base: Color) -> Color {
     }
 }
 
-fn render_scrollbar(buffer: &mut Buffer, body: Rect, surface: &ViewerRenderSurface, theme: &Theme) {
-    if surface.lines.len() <= usize::from(body.height) || body.is_empty() {
+fn render_scrollbar(
+    buffer: &mut Buffer,
+    body: Rect,
+    scroll_top: usize,
+    row_count: usize,
+    theme: &Theme,
+) {
+    if row_count <= usize::from(body.height) || body.is_empty() {
         return;
     }
     let area = Rect::new(body.right() + 1, body.y, 1, body.height);
     let scrollbar = tui_scrollbar::ScrollBar::vertical(tui_scrollbar::ScrollLengths {
-        content_len: surface.lines.len(),
+        content_len: row_count,
         viewport_len: usize::from(body.height),
     })
-    .offset(surface.scroll_top)
+    .offset(scroll_top)
     .glyph_set(tui_scrollbar::GlyphSet {
         thumb_vertical_lower: ['█'; 8],
         thumb_vertical_upper: ['█'; 8],
@@ -352,10 +343,10 @@ fn render_scrollbar(buffer: &mut Buffer, body: Rect, surface: &ViewerRenderSurfa
             .bg(theme.surface.selected_card),
     );
     (&scrollbar).render(area, buffer);
-    if surface.scroll_top > 0 {
+    if scroll_top > 0 {
         place_indicator(buffer, body, body.y, "▲", theme);
     }
-    if surface.scroll_top + usize::from(body.height) < surface.lines.len() {
+    if scroll_top + usize::from(body.height) < row_count {
         place_indicator(buffer, body, body.bottom() - 1, "▼", theme);
     }
 }
@@ -429,11 +420,11 @@ fn render_shortcuts(buffer: &mut Buffer, area: Rect, surface: &ViewerRenderSurfa
     }
 }
 
-fn render_line(
-    line: &RenderedLine,
+fn render_line<'a>(
+    line: &'a RenderedLine,
     visual_mode: bool,
     theme: &Theme,
-) -> ratatui::text::Line<'static> {
+) -> ratatui::text::Line<'a> {
     let mut column = 0;
     let spans = line
         .text
@@ -458,7 +449,7 @@ fn render_line(
             {
                 style = style.bg(theme.text.accent).fg(theme.surface.canvas);
             }
-            ratatui::text::Span::styled(grapheme.to_string(), style)
+            ratatui::text::Span::styled(grapheme, style)
         })
         .collect::<Vec<_>>();
     ratatui::text::Line::from(spans)

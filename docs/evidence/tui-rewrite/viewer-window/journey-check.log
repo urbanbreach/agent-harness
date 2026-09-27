@@ -1,0 +1,14 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.98s
+────────────
+ Nextest run ID fe83fba0-bc85-404b-83d2-1d5615cda555 with nextest profile: ci
+    Starting 1 test across 1 binary (1324 tests skipped)
+        SLOW [>  2.000s] (───) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  4.000s] (───) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  6.000s] (───) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  8.000s] (───) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [> 10.000s] (───) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [> 12.000s] (───) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+────────────
+     Summary [  12.697s] 1 test run: 1 passed (1 slow), 1324 skipped
+        SLOW [  12.693s] (1/1) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler

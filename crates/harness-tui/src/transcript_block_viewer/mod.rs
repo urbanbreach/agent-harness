@@ -22,6 +22,36 @@ pub enum ViewerMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderedLine {
+    pub text: String,
+    pub styled: Option<ratatui::text::Line<'static>>,
+    pub selected: bool,
+    pub current_match: bool,
+    pub match_ranges: Vec<std::ops::Range<usize>>,
+    pub selection_range: Option<std::ops::Range<usize>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ViewerRenderSurface {
+    pub mode: ViewerMode,
+    pub title: String,
+    pub status: String,
+    pub lines: Vec<RenderedLine>,
+    pub scroll_top: usize,
+    pub body_start: usize,
+    pub cursor_rows: std::ops::Range<usize>,
+    pub output_panel: bool,
+    pub copy_path: bool,
+    pub markdown: bool,
+    pub close_hovered: bool,
+    pub search_active: bool,
+    pub editing: bool,
+    pub filtering: bool,
+    pub visual_mode: bool,
+    pub wrap_enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ViewerBlockContent {
     content: String,
     raw: Option<String>,
@@ -332,6 +362,7 @@ impl state::ViewerState {
 }
 
 pub(crate) use layout::viewer_layout;
-pub use render::{render_surface, render_to_buffer, RenderedLine, ViewerRenderSurface};
+pub(crate) use render::render_viewer;
+pub use render::{render_surface, render_to_buffer};
 pub use search::{SearchDirection, SearchMatch, SearchNavigation, SearchState};
 pub use state::ViewerState;

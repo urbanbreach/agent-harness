@@ -421,5 +421,54 @@ fn native_tool_viewer_capture_uses_the_enter_handler() -> CaptureResult<()> {
             assert!(app.transcript_viewer().is_none());
         }
     }
+    selected_viewer_window(&config)
+}
+
+fn selected_viewer_window(config: &Value) -> CaptureResult<()> {
+    // Keep a selection's endpoints offscreen while painting its middle rows.
+    let area = Rect::new(0, 0, 80, 32);
+    let mut app = scroll_app(config)?;
+    draw(&mut app, area)?;
+    assert!(app.select_transcript_tool("runtime-scroll"));
+    for code in [KeyCode::Enter, KeyCode::Char('v')] {
+        app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+    for _ in 0..50 {
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    }
+    for _ in 0..10 {
+        app.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+    }
+    app.set_frame_area(area);
+    let viewer = app
+        .transcript_viewer()
+        .ok_or("viewer closed during selection")?;
+    let selected = viewer.selection().ok_or("selection disappeared")?;
+    let body = crate::transcript_block_viewer::viewer_layout(area).content_body(true);
+    assert!(selected.anchor.row < viewer.scroll_top());
+    assert!(viewer.scroll_top() + usize::from(body.height) < selected.focus.row);
+    let copied = viewer.copy_selection_text()?;
+    assert_eq!(copied.lines().count(), 51);
+    assert!(copied.starts_with("line_001 ") && copied.contains("line_051 "));
+    let painted = crate::render_test::render_to_buffer(&app, area, |app, frame, _| {
+        render_app(frame, app);
+    });
+    let mut expected = ratatui::buffer::Buffer::empty(area);
+    crate::transcript_block_viewer::render_to_buffer(
+        &mut expected,
+        area,
+        &viewer.render_surface(area),
+        app.theme(),
+    );
+    let popup = crate::transcript_block_viewer::viewer_layout(area).popup;
+    for y in popup.y..popup.bottom() {
+        for x in popup.x..popup.right() {
+            assert_eq!(
+                painted[(x, y)],
+                expected[(x, y)],
+                "selection window at {x},{y}"
+            );
+        }
+    }
     Ok(())
 }
