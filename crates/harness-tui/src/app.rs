@@ -109,6 +109,7 @@ mod child_session;
 mod composer;
 mod composer_editing;
 mod file_mentions;
+mod focus;
 mod foreign_import;
 mod ghost_suggestion;
 mod help_browser;

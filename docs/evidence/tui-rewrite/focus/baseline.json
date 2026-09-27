@@ -1,0 +1,6 @@
+{
+  "commit": "7e720aebb22f1e062f0e1bf91d8c31bb69b8ceb4",
+  "source_sha256": "4635196189c8bc11ef599d728cd009d607a2d2adadbea38d7ab08a8c0ba90cbf",
+  "limits": "Exact observable focus/draft/overlay behavior and existing reference frames; no performance speedup claim for branch consolidation. Existing overall resource limits remain unchanged.",
+  "retained_release_probe": "/tmp/tui-reader-wake/rewrite_probe"
+}

@@ -126,6 +126,12 @@ summary; the existing Ctrl+O permission action retains its binding.
 
 ## Input-first TUI runtime scheduling
 
+Pane focus transitions live in `app/focus.rs`; keyboard and overlay dispatch keep
+their priority in `app/key_interaction.rs`. Startup transitions update the welcome
+selection, and closing Help restores its saved focus. Replay consumes default Tab
+keys before action dispatch, while a remapped reverse-focus action can reach a
+visible terminal pane.
+
 Interactive input has one producer: a terminal-reader thread feeds a bounded 128-event FIFO. The
 runtime arbiter orders fatal writer failure, frame acknowledgement, quit/cancel, terminal input,
 pacer and animation deadlines, then live provider updates. An input quantum is bounded to 16

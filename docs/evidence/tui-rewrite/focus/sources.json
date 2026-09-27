@@ -1,0 +1,39 @@
+{
+  "base": "7e720aebb22f1e062f0e1bf91d8c31bb69b8ceb4",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/app.rs",
+      "sha256": "93c64f612c1f1106ba5aa62fa6857529fd915b60f751e1916fa7238222798256",
+      "lines": 3901
+    },
+    {
+      "path": "crates/harness-tui/src/app/focus.rs",
+      "sha256": "f8ae7564fb2b636311c8aec4005b67d9cd33302698a3ddb5ffeb4356908067d3",
+      "lines": 82
+    },
+    {
+      "path": "crates/harness-tui/src/app/key_interaction.rs",
+      "sha256": "6b9b01ebb39ba01adba2def75c53bce70da6f8d893e9c6886e422c71fef5f05d",
+      "lines": 1876
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests.rs",
+      "sha256": "23e1183a1d06d500920ec12d35e2ec8f4eab69e8a2737b3611b9afc2886fd83e",
+      "lines": 1491
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/session_navigation_tests.rs",
+      "sha256": "1dbfce96d77ed148489a6f90b786b39f169fed20f5667ada3e0cc534056bf480",
+      "lines": 634
+    },
+    {
+      "path": "crates/harness-tui/tests/help_browser_test.rs",
+      "sha256": "0f381836f4ff7eac416bea838fb201c77fc3d046d617a0748af1b18a4b41b0fc",
+      "lines": 287
+    }
+  ],
+  "production_lines_removed_net": 137,
+  "source_test_lines_added_net": 53,
+  "integration_test_lines_added_net": 27,
+  "all_tui_src_lines": 167047
+}

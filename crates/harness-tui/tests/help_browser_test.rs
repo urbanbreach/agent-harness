@@ -257,4 +257,31 @@ fn help_preempts_palette_and_close_restores_original_focus() {
     assert!(!help.contains("Command Palette"), "{help}");
     assert!(!app.palette_visible);
     assert_eq!(app.focus, Focus::Prompt);
+
+    for replay in [false, true] {
+        let mut app = if replay {
+            AppState::new_replay("/tmp/help-replay".into(), Vec::new())
+        } else {
+            AppState::new_live(None, false, None)
+        };
+        app.apply_keybindings(BTreeMap::from([
+            ("toggle_terminal_panel".into(), "F9".into()),
+            ("focus_prev".into(), "F12".into()),
+        ]));
+        app.handle_key(key(KeyCode::F(9)));
+        app.handle_key(key(KeyCode::F(12)));
+        assert_eq!(app.focus, Focus::Terminal);
+        open_help(&mut app);
+        assert_eq!(
+            app.focus,
+            if replay {
+                Focus::Terminal
+            } else {
+                Focus::Details
+            }
+        );
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.review_surface(), None);
+        assert_eq!(app.focus, Focus::Terminal);
+    }
 }

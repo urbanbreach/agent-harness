@@ -942,6 +942,24 @@ platform verification remain open, along with state/text replacement, sustained
 resource targets, startup cadence and final feature/removal review. Evidence is
 in [`evidence/tui-rewrite/reader-wake`](evidence/tui-rewrite/reader-wake).
 
+## Focus transition replacement
+
+An 82-line focus module replaces the duplicated forward/backward handlers and
+normalization. Unreachable PostRun and replay operator-rail branches are removed.
+Startup welcome selection, drawer transitions, remapped shortcuts and Help's
+saved focus retain their behavior. Production shrinks by 137 lines; extending two
+existing behavioral tests adds 80 test lines. Whole TUI source is 167,047 lines,
+only 8.16% below the original.
+
+All 1,668 TUI tests and seven gated PTY checks pass. Fresh before/after runs match
+543 complete frames and ANSI outputs, 288 diagnostic transitions, and ten actual
+PTY/xterm screenshots with identical cells, styles and cursor states. Both browser
+runs restore terminal state and clean up their processes and sockets. Clippy,
+workspace compilation and suite gates pass. This consolidation makes no new
+resource improvement claim; the remaining state engine and full rewrite targets
+are unfinished. Evidence is in
+[`evidence/tui-rewrite/focus`](evidence/tui-rewrite/focus).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

@@ -1,0 +1,14 @@
+[
+  {
+    "side": "before",
+    "path": "/tmp/tui-reader-wake/rewrite_probe",
+    "sha256": "98a8e27f980bb5c4898fcbfc8f9f06fcc1001538682c61a7737d062d26f7a0ee",
+    "bytes": 15205352
+  },
+  {
+    "side": "candidate",
+    "path": "/tmp/tui-focus/rewrite_probe",
+    "sha256": "214018c6acc78cb81a0287d7baa3bcc76a3b0ed387838a7a2d9a8860a6caef05",
+    "bytes": 15205192
+  }
+]

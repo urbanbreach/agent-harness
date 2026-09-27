@@ -9,3 +9,4 @@ vendor/crossterm/** -text -whitespace
 # Raw terminal bytes and unified-diff context are evidence, not formatted prose.
 docs/evidence/tui-rewrite/reader-wake/**/*.ansi -text -diff -whitespace
 docs/evidence/tui-rewrite/reader-wake/*.patch -whitespace
+docs/evidence/tui-rewrite/focus/*.patch -whitespace
