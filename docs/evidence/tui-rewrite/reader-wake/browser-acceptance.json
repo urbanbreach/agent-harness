@@ -1,0 +1,62 @@
+[
+  {
+    "workload": "input",
+    "percentile": "p95_ms",
+    "candidate_ms": 69.0826560000005,
+    "before_ms": 69.04781700000058,
+    "frozen_reference_ms": 89.93687799999861,
+    "allowance_ms": 16.7,
+    "before_pass": true,
+    "frozen_pass": true
+  },
+  {
+    "workload": "input",
+    "percentile": "p99_ms",
+    "candidate_ms": 69.56851199999983,
+    "before_ms": 69.61841500000082,
+    "frozen_reference_ms": 93.85725399999865,
+    "allowance_ms": 16.7,
+    "before_pass": true,
+    "frozen_pass": true
+  },
+  {
+    "workload": "stream",
+    "percentile": "p95_ms",
+    "candidate_ms": 67.06467100000009,
+    "before_ms": 67.03355699999884,
+    "frozen_reference_ms": 67.11613900000157,
+    "allowance_ms": 16.7,
+    "before_pass": true,
+    "frozen_pass": true
+  },
+  {
+    "workload": "stream",
+    "percentile": "p99_ms",
+    "candidate_ms": 67.20890999999938,
+    "before_ms": 67.16430099999707,
+    "frozen_reference_ms": 67.64864300000045,
+    "allowance_ms": 16.7,
+    "before_pass": true,
+    "frozen_pass": true
+  },
+  {
+    "workload": "resize",
+    "percentile": "p95_ms",
+    "candidate_ms": 68.905872000003,
+    "before_ms": 70.851714000004,
+    "frozen_reference_ms": 78.91972799999348,
+    "allowance_ms": 16.7,
+    "before_pass": true,
+    "frozen_pass": true
+  },
+  {
+    "workload": "resize",
+    "percentile": "p99_ms",
+    "candidate_ms": 71.30864999999903,
+    "before_ms": 72.72603099999833,
+    "frozen_reference_ms": 81.68516800001089,
+    "allowance_ms": 16.7,
+    "before_pass": true,
+    "frozen_pass": true
+  }
+]

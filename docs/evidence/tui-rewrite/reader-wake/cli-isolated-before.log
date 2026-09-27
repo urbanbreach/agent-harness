@@ -1,0 +1,233 @@
+   Compiling harness-providers v0.1.0 (/tmp/tui-reader-wake/baseline-src/crates/harness-providers)
+   Compiling harness-core v0.1.0 (/tmp/tui-reader-wake/baseline-src/crates/harness-core)
+   Compiling harness-tools v0.1.0 (/tmp/tui-reader-wake/baseline-src/crates/harness-tools)
+   Compiling harness-tui v0.1.0 (/tmp/tui-reader-wake/baseline-src/crates/harness-tui)
+   Compiling harness-testkit v0.1.0 (/tmp/tui-reader-wake/baseline-src/crates/harness-testkit)
+   Compiling harness v0.1.0 (/tmp/tui-reader-wake/baseline-src/crates/harness)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.72s
+────────────
+ Nextest run ID 395afef4-2f69-4c76-98f6-0004a55c58c9 with nextest profile: ci
+    Starting 162 tests across 18 binaries (1 test and 1 binary skipped, including 1 binary via profile.default.default-filter)
+        FAIL [   0.011s] ( 26/162) harness tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection' (3241590) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.673s] ( 58/162) harness tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.65s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection' (3241582) panicked at crates/harness/src/tui/tests/live_settings_tests.rs:138:5:
+    assertion `left == right` failed
+      left: Some("gpt-6-astra")
+     right: Some("gpt-5.4-mini")
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.637s] (111/162) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher
+  stdout ───
+
+    running 1 test
+    test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher ... FAILED
+
+    failures:
+
+    failures:
+        part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.62s
+
+  stderr ───
+
+    thread 'part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher' (3241765) panicked at crates/harness/tests/tui_cli/02_replay_bootstrap_falls_back_when_recorded_test.rs:260:5:
+    expected --mock to reach the interactive TUI boundary, got stdout:
+
+    stderr:
+    tui failed: startup launcher error: failed to set up terminal
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.013s] (114/162) harness::tui_cli_test tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection' (3241866) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.672s] (149/162) harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.66s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection' (3241858) panicked at crates/harness/tests/common/../../src/tui/tests/live_settings_tests.rs:138:5:
+    assertion `left == right` failed
+      left: Some("gpt-6-astra")
+     right: Some("gpt-5.4-mini")
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        SLOW [>  2.000s] (───────) harness archives::tests::aggregate_limit_leaves_previous_archive_intact
+        SLOW [>  2.000s] (───────) harness::archives archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_files
+        SLOW [>  2.000s] (───────) harness::inspect inspection_is_offline_redacted_and_reports_unknown_model_limits
+        SLOW [>  2.000s] (───────) harness::operators agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_credentials
+        SLOW [>  2.000s] (───────) harness::prompt_models model_fallback_changes_prompt_family_and_keeps_explicit_instructions
+        SLOW [>  2.000s] (───────) harness::rewind saved_snapshot_rewind_validates_before_writes_and_keeps_the_journal_unchanged
+        SLOW [>  2.000s] (───────) harness::sessions session_navigation_filters_pages_and_reports_corruption_without_writing
+────────────
+     Summary [   3.797s] 162 tests run: 157 passed (7 slow), 5 failed, 1 skipped
+        SLOW [   2.082s] (152/162) harness::operators agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_credentials
+        SLOW [   2.097s] (153/162) harness::inspect inspection_is_offline_redacted_and_reports_unknown_model_limits
+        SLOW [   2.186s] (154/162) harness archives::tests::aggregate_limit_leaves_previous_archive_intact
+        SLOW [   2.238s] (159/162) harness::sessions session_navigation_filters_pages_and_reports_corruption_without_writing
+        SLOW [   2.691s] (160/162) harness::prompt_models model_fallback_changes_prompt_family_and_keeps_explicit_instructions
+        SLOW [   3.220s] (161/162) harness::archives archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_files
+        SLOW [   3.687s] (162/162) harness::rewind saved_snapshot_rewind_validates_before_writes_and_keeps_the_journal_unchanged
+        FAIL [   0.011s] ( 26/162) harness tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection' (3241590) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.673s] ( 58/162) harness tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.65s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection' (3241582) panicked at crates/harness/src/tui/tests/live_settings_tests.rs:138:5:
+    assertion `left == right` failed
+      left: Some("gpt-6-astra")
+     right: Some("gpt-5.4-mini")
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.637s] (111/162) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher
+  stdout ───
+
+    running 1 test
+    test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher ... FAILED
+
+    failures:
+
+    failures:
+        part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.62s
+
+  stderr ───
+
+    thread 'part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher' (3241765) panicked at crates/harness/tests/tui_cli/02_replay_bootstrap_falls_back_when_recorded_test.rs:260:5:
+    expected --mock to reach the interactive TUI boundary, got stdout:
+
+    stderr:
+    tui failed: startup launcher error: failed to set up terminal
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.013s] (114/162) harness::tui_cli_test tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection' (3241866) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.672s] (149/162) harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.66s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection' (3241858) panicked at crates/harness/tests/common/../../src/tui/tests/live_settings_tests.rs:138:5:
+    assertion `left == right` failed
+      left: Some("gpt-6-astra")
+     right: Some("gpt-5.4-mini")
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

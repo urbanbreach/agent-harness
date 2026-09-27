@@ -1,0 +1,340 @@
+{
+  "screenshots": [
+    {
+      "image": "resized.png",
+      "equal_across_six_runs": false,
+      "sha256": [
+        "7a2ae7efb60cb05b2ce07a410674ed25b4d6b71b8f85ac8e0d15569e18edbc68",
+        "7a2ae7efb60cb05b2ce07a410674ed25b4d6b71b8f85ac8e0d15569e18edbc68",
+        "abd1db365b61f55c00034b3488f1d4872c869fa7731cb969822c8f6d42ce9255",
+        "7a2ae7efb60cb05b2ce07a410674ed25b4d6b71b8f85ac8e0d15569e18edbc68",
+        "7a2ae7efb60cb05b2ce07a410674ed25b4d6b71b8f85ac8e0d15569e18edbc68",
+        "7a2ae7efb60cb05b2ce07a410674ed25b4d6b71b8f85ac8e0d15569e18edbc68"
+      ]
+    },
+    {
+      "image": "rewind-failure-pending.png",
+      "equal_across_six_runs": true,
+      "sha256": [
+        "e40ff25323d0c376247c8dace609c635b5fa9c2cc34f4f6f772736b028506fdc",
+        "e40ff25323d0c376247c8dace609c635b5fa9c2cc34f4f6f772736b028506fdc",
+        "e40ff25323d0c376247c8dace609c635b5fa9c2cc34f4f6f772736b028506fdc",
+        "e40ff25323d0c376247c8dace609c635b5fa9c2cc34f4f6f772736b028506fdc",
+        "e40ff25323d0c376247c8dace609c635b5fa9c2cc34f4f6f772736b028506fdc",
+        "e40ff25323d0c376247c8dace609c635b5fa9c2cc34f4f6f772736b028506fdc"
+      ]
+    },
+    {
+      "image": "rewind-failure-picker.png",
+      "equal_across_six_runs": true,
+      "sha256": [
+        "bbb00578b891d1e080375c0a58327f185ff2be3a7d24c4b9d26da5b8b17ab5e8",
+        "bbb00578b891d1e080375c0a58327f185ff2be3a7d24c4b9d26da5b8b17ab5e8",
+        "bbb00578b891d1e080375c0a58327f185ff2be3a7d24c4b9d26da5b8b17ab5e8",
+        "bbb00578b891d1e080375c0a58327f185ff2be3a7d24c4b9d26da5b8b17ab5e8",
+        "bbb00578b891d1e080375c0a58327f185ff2be3a7d24c4b9d26da5b8b17ab5e8",
+        "bbb00578b891d1e080375c0a58327f185ff2be3a7d24c4b9d26da5b8b17ab5e8"
+      ]
+    },
+    {
+      "image": "rewind-failure-result.png",
+      "equal_across_six_runs": true,
+      "sha256": [
+        "e49da8ca961f1755b34181fc69cd4389a3b5b97459fbea88ef2de7ffe35c140a",
+        "e49da8ca961f1755b34181fc69cd4389a3b5b97459fbea88ef2de7ffe35c140a",
+        "e49da8ca961f1755b34181fc69cd4389a3b5b97459fbea88ef2de7ffe35c140a",
+        "e49da8ca961f1755b34181fc69cd4389a3b5b97459fbea88ef2de7ffe35c140a",
+        "e49da8ca961f1755b34181fc69cd4389a3b5b97459fbea88ef2de7ffe35c140a",
+        "e49da8ca961f1755b34181fc69cd4389a3b5b97459fbea88ef2de7ffe35c140a"
+      ]
+    },
+    {
+      "image": "rewind-success-pending.png",
+      "equal_across_six_runs": true,
+      "sha256": [
+        "e40ff25323d0c376247c8dace609c635b5fa9c2cc34f4f6f772736b028506fdc",
+        "e40ff25323d0c376247c8dace609c635b5fa9c2cc34f4f6f772736b028506fdc",
+        "e40ff25323d0c376247c8dace609c635b5fa9c2cc34f4f6f772736b028506fdc",
+        "e40ff25323d0c376247c8dace609c635b5fa9c2cc34f4f6f772736b028506fdc",
+        "e40ff25323d0c376247c8dace609c635b5fa9c2cc34f4f6f772736b028506fdc",
+        "e40ff25323d0c376247c8dace609c635b5fa9c2cc34f4f6f772736b028506fdc"
+      ]
+    },
+    {
+      "image": "rewind-success-picker.png",
+      "equal_across_six_runs": true,
+      "sha256": [
+        "bbb00578b891d1e080375c0a58327f185ff2be3a7d24c4b9d26da5b8b17ab5e8",
+        "bbb00578b891d1e080375c0a58327f185ff2be3a7d24c4b9d26da5b8b17ab5e8",
+        "bbb00578b891d1e080375c0a58327f185ff2be3a7d24c4b9d26da5b8b17ab5e8",
+        "bbb00578b891d1e080375c0a58327f185ff2be3a7d24c4b9d26da5b8b17ab5e8",
+        "bbb00578b891d1e080375c0a58327f185ff2be3a7d24c4b9d26da5b8b17ab5e8",
+        "bbb00578b891d1e080375c0a58327f185ff2be3a7d24c4b9d26da5b8b17ab5e8"
+      ]
+    },
+    {
+      "image": "rewind-success-result.png",
+      "equal_across_six_runs": true,
+      "sha256": [
+        "91f2796af8da97ae80c69726428ec2cebe22ba25ffd836e47ddf6940095bd094",
+        "91f2796af8da97ae80c69726428ec2cebe22ba25ffd836e47ddf6940095bd094",
+        "91f2796af8da97ae80c69726428ec2cebe22ba25ffd836e47ddf6940095bd094",
+        "91f2796af8da97ae80c69726428ec2cebe22ba25ffd836e47ddf6940095bd094",
+        "91f2796af8da97ae80c69726428ec2cebe22ba25ffd836e47ddf6940095bd094",
+        "91f2796af8da97ae80c69726428ec2cebe22ba25ffd836e47ddf6940095bd094"
+      ]
+    },
+    {
+      "image": "startup.png",
+      "equal_across_six_runs": true,
+      "sha256": [
+        "d101752b5ab38d3ee0845f28592e7e4045cbc5c46da6835b765e59bcf47c97c1",
+        "d101752b5ab38d3ee0845f28592e7e4045cbc5c46da6835b765e59bcf47c97c1",
+        "d101752b5ab38d3ee0845f28592e7e4045cbc5c46da6835b765e59bcf47c97c1",
+        "d101752b5ab38d3ee0845f28592e7e4045cbc5c46da6835b765e59bcf47c97c1",
+        "d101752b5ab38d3ee0845f28592e7e4045cbc5c46da6835b765e59bcf47c97c1",
+        "d101752b5ab38d3ee0845f28592e7e4045cbc5c46da6835b765e59bcf47c97c1"
+      ]
+    },
+    {
+      "image": "stream.png",
+      "equal_across_six_runs": true,
+      "sha256": [
+        "c513898ab7269e31d06e52a53bcb83b622d1282b1754db07a0ea4c418cfae745",
+        "c513898ab7269e31d06e52a53bcb83b622d1282b1754db07a0ea4c418cfae745",
+        "c513898ab7269e31d06e52a53bcb83b622d1282b1754db07a0ea4c418cfae745",
+        "c513898ab7269e31d06e52a53bcb83b622d1282b1754db07a0ea4c418cfae745",
+        "c513898ab7269e31d06e52a53bcb83b622d1282b1754db07a0ea4c418cfae745",
+        "c513898ab7269e31d06e52a53bcb83b622d1282b1754db07a0ea4c418cfae745"
+      ]
+    }
+  ],
+  "raw_terminal_fields_equal": {
+    "cols": true,
+    "rows": true,
+    "title": true,
+    "titleHistory": true,
+    "activeBuffer": true,
+    "cursor": true,
+    "modes": true,
+    "text": false,
+    "cells": false,
+    "wrappedRows": true,
+    "scrollback": false,
+    "lines": false
+  },
+  "elapsed_clock_difference": {
+    "run": "before-2",
+    "row_zero_based": 32,
+    "columns_zero_based": [
+      19,
+      116
+    ],
+    "before_text": "53s",
+    "other_runs_text": "54s",
+    "all_other_terminal_properties_equal": true,
+    "different_pixels": 176,
+    "pixel_bounds": [
+      183,
+      642,
+      1123,
+      655
+    ]
+  },
+  "observers": [
+    {
+      "run": "before-1",
+      "parsed_count": 549,
+      "output_bytes": 1048124
+    },
+    {
+      "run": "candidate-1",
+      "parsed_count": 551,
+      "output_bytes": 1048124
+    },
+    {
+      "run": "before-2",
+      "parsed_count": 556,
+      "output_bytes": 1048124
+    },
+    {
+      "run": "candidate-2",
+      "parsed_count": 540,
+      "output_bytes": 1048124
+    },
+    {
+      "run": "before-3",
+      "parsed_count": 543,
+      "output_bytes": 1048124
+    },
+    {
+      "run": "candidate-3",
+      "parsed_count": 554,
+      "output_bytes": 1048124
+    }
+  ],
+  "cleanup": [
+    {
+      "exit": {
+        "code": 0,
+        "signal": null,
+        "at": "2026-09-27T20:35:17.872Z"
+      },
+      "termios_restored": true,
+      "protocol_restored": true,
+      "cleanup": {
+        "at": "2026-09-27T20:35:17.892Z",
+        "childPid": 3245817,
+        "childExited": true,
+        "processGroupAlive": false,
+        "stdinClosed": true,
+        "terminatedByCleanup": false,
+        "temporarySockets": []
+      },
+      "browser_cleanup": {
+        "pageClosed": true,
+        "contextClosed": true,
+        "browserConnectedAfterClose": false,
+        "profileRemoved": true,
+        "profilePath": "/tmp/harness-xterm-latency-hIWfIz/browser",
+        "boundPorts": []
+      },
+      "temporary_root_removed": true
+    },
+    {
+      "exit": {
+        "code": 0,
+        "signal": null,
+        "at": "2026-09-27T20:36:30.636Z"
+      },
+      "termios_restored": true,
+      "protocol_restored": true,
+      "cleanup": {
+        "at": "2026-09-27T20:36:30.657Z",
+        "childPid": 3247158,
+        "childExited": true,
+        "processGroupAlive": false,
+        "stdinClosed": true,
+        "terminatedByCleanup": false,
+        "temporarySockets": []
+      },
+      "browser_cleanup": {
+        "pageClosed": true,
+        "contextClosed": true,
+        "browserConnectedAfterClose": false,
+        "profileRemoved": true,
+        "profilePath": "/tmp/harness-xterm-latency-KE6Hc8/browser",
+        "boundPorts": []
+      },
+      "temporary_root_removed": true
+    },
+    {
+      "exit": {
+        "code": 0,
+        "signal": null,
+        "at": "2026-09-27T20:38:55.780Z"
+      },
+      "termios_restored": true,
+      "protocol_restored": true,
+      "cleanup": {
+        "at": "2026-09-27T20:38:55.805Z",
+        "childPid": 3249398,
+        "childExited": true,
+        "processGroupAlive": false,
+        "stdinClosed": true,
+        "terminatedByCleanup": false,
+        "temporarySockets": []
+      },
+      "browser_cleanup": {
+        "pageClosed": true,
+        "contextClosed": true,
+        "browserConnectedAfterClose": false,
+        "profileRemoved": true,
+        "profilePath": "/tmp/harness-xterm-latency-9hwryw/browser",
+        "boundPorts": []
+      },
+      "temporary_root_removed": true
+    },
+    {
+      "exit": {
+        "code": 0,
+        "signal": null,
+        "at": "2026-09-27T20:37:43.533Z"
+      },
+      "termios_restored": true,
+      "protocol_restored": true,
+      "cleanup": {
+        "at": "2026-09-27T20:37:43.554Z",
+        "childPid": 3248434,
+        "childExited": true,
+        "processGroupAlive": false,
+        "stdinClosed": true,
+        "terminatedByCleanup": false,
+        "temporarySockets": []
+      },
+      "browser_cleanup": {
+        "pageClosed": true,
+        "contextClosed": true,
+        "browserConnectedAfterClose": false,
+        "profileRemoved": true,
+        "profilePath": "/tmp/harness-xterm-latency-JpCwcF/browser",
+        "boundPorts": []
+      },
+      "temporary_root_removed": true
+    },
+    {
+      "exit": {
+        "code": 0,
+        "signal": null,
+        "at": "2026-09-27T20:40:08.743Z"
+      },
+      "termios_restored": true,
+      "protocol_restored": true,
+      "cleanup": {
+        "at": "2026-09-27T20:40:08.763Z",
+        "childPid": 3250586,
+        "childExited": true,
+        "processGroupAlive": false,
+        "stdinClosed": true,
+        "terminatedByCleanup": false,
+        "temporarySockets": []
+      },
+      "browser_cleanup": {
+        "pageClosed": true,
+        "contextClosed": true,
+        "browserConnectedAfterClose": false,
+        "profileRemoved": true,
+        "profilePath": "/tmp/harness-xterm-latency-9InLUv/browser",
+        "boundPorts": []
+      },
+      "temporary_root_removed": true
+    },
+    {
+      "exit": {
+        "code": 0,
+        "signal": null,
+        "at": "2026-09-27T20:41:21.858Z"
+      },
+      "termios_restored": true,
+      "protocol_restored": true,
+      "cleanup": {
+        "at": "2026-09-27T20:41:21.876Z",
+        "childPid": 3251948,
+        "childExited": true,
+        "processGroupAlive": false,
+        "stdinClosed": true,
+        "terminatedByCleanup": false,
+        "temporarySockets": []
+      },
+      "browser_cleanup": {
+        "pageClosed": true,
+        "contextClosed": true,
+        "browserConnectedAfterClose": false,
+        "profileRemoved": true,
+        "profilePath": "/tmp/harness-xterm-latency-cRz2sK/browser",
+        "boundPorts": []
+      },
+      "temporary_root_removed": true
+    }
+  ]
+}

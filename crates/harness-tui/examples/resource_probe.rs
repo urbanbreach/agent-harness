@@ -8,7 +8,7 @@ use harness_tui::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scenario = std::env::args().nth(1).unwrap_or_else(|| "idle".into());
     let (sender, update_rx) = live_update_channel();
-    let mode = if matches!(scenario.as_str(), "idle" | "handoff_failure") {
+    let mode = if matches!(scenario.as_str(), "idle" | "handoff" | "handoff_failure") {
         TuiMode::Replay {
             run_dir: std::env::current_dir()?,
             events: Vec::new(),
@@ -53,14 +53,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         on_ui_intent: None,
         keybindings: None,
         toggles: None,
-        preserve_terminal_on_exit: scenario == "handoff_failure",
+        preserve_terminal_on_exit: matches!(scenario.as_str(), "handoff" | "handoff_failure"),
         skip_alternate_screen: false,
     })?;
-    if scenario == "handoff_failure" {
-        std::env::set_var(
-            "HARNESS_TUI_PRESENTATION_TRACE",
-            std::env::var_os("HARNESS_RESTORE_TRACE").ok_or("missing injected trace path")?,
-        );
+    let handoffs = match scenario.as_str() {
+        "handoff" => 3,
+        "handoff_failure" => 1,
+        _ => 0,
+    };
+    for index in 0..handoffs {
+        if scenario == "handoff_failure" {
+            std::env::set_var(
+                "HARNESS_TUI_PRESENTATION_TRACE",
+                std::env::var_os("HARNESS_RESTORE_TRACE").ok_or("missing injected trace path")?,
+            );
+        }
         run_tui_with_options(TuiOptions {
             mode: TuiMode::Replay {
                 run_dir: std::env::current_dir()?,
@@ -70,7 +77,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             on_ui_intent: None,
             keybindings: None,
             toggles: None,
-            preserve_terminal_on_exit: false,
+            preserve_terminal_on_exit: index + 1 < handoffs,
             skip_alternate_screen: false,
         })?;
     }

@@ -137,6 +137,14 @@ glyphs retain their slower wall-clock periods. Scroll gesture classification ret
 window. The writer keeps at most one frame in flight, and completed acknowledgements are
 retired even when telemetry is disabled. Idle state without visible motion parks.
 
+On Unix, the reader waits for terminal input, SIGWINCH or its shutdown wake pipe
+without a periodic timeout. Shutdown signals the pipe and joins the owned thread
+before restoring terminal state; dropping the reader uses the same path. A narrow
+Crossterm patch exposes its existing parser and wake pipe without constructing an
+`EventStream` worker. Partial input returns to the readiness wait, and EOF or
+descriptor failures reach the runtime as typed reader errors. Other platforms
+retain the timed reader path.
+
 Runtime scheduling QA exercises typing, wheel input, disclosure open/close, resizes, and semantic
 cancellation while live work remains pending. Its
 Harness-only scheduling sidecar records decisions, depths, preemptions, deadlines, action IDs, and

@@ -36,7 +36,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
             for line in std::io::BufReader::new(stream).lines() {
                 let value: Value = serde_json::from_str(&line?)?;
-                let update = if let Some(response) = value.get("rewind_points") {
+                let update = if value.get("stop").and_then(Value::as_bool) == Some(true) {
+                    LiveUpdate::ContinueSession {
+                        run_id: "reader-stop-fixture".to_owned(),
+                        run_dir: PathBuf::new(),
+                        prompt_draft: String::new(),
+                    }
+                } else if let Some(response) = value.get("rewind_points") {
                     LiveUpdate::RewindPoints {
                         generation: serde_json::from_value(response["generation"].clone())?,
                         result: serde_json::from_value(response["result"].clone())?,

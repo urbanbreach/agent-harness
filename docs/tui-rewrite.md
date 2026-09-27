@@ -914,6 +914,34 @@ is 167,082 lines, only 8.14% below the original. State/text replacement, runtime
 and polling work, and final feature/removal review remain unfinished. Evidence is in
 [`evidence/tui-rewrite/tool-paint`](evidence/tui-rewrite/tool-paint).
 
+## Interruptible Unix input wait
+
+The terminal reader now uses Crossterm's existing wake pipe to join on shutdown
+without a periodic Unix timeout. One read per readiness event keeps incomplete
+UTF-8 and paste interruptible; EOF returns a typed error. A small vendored API
+exposes the existing parser and blocking wait without starting an EventStream
+worker. Raw mode, input normalization and bounded delivery remain unchanged.
+
+Real PTY checks change roughly 20 idle reader wakeups per second to zero. Partial
+input and hangup shutdown complete in about 10 ms, and preserved handoffs restore
+terminal state. Both builds already record zero CPU ticks and redraws in six
+serial eight-second idle samples. Three paired browser runs pass all six frozen
+latency limits. Eight screenshots match exactly; one resized baseline capture
+has a documented 53-versus-54-second label difference confined to two digit cells.
+
+All TUI tests, seven gated PTY checks, workspace Clippy and suite gates pass.
+The workspace run still has 20 CLI failures, all reproduced on the predecessor.
+Isolating global configuration leaves the same five stale fixture failures in
+both versions. Their raw results are retained; the full suite is not reported
+green. No user configuration or backend implementation was changed.
+
+This adds 49 owned TUI lines and 66 local dependency lines. The 12,332-line
+upstream copy is additional maintenance, not source reduction. Whole TUI source
+is 167,131 lines, only 8.11% below the original. The non-Unix timed path and other
+platform verification remain open, along with state/text replacement, sustained
+resource targets, startup cadence and final feature/removal review. Evidence is
+in [`evidence/tui-rewrite/reader-wake`](evidence/tui-rewrite/reader-wake).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

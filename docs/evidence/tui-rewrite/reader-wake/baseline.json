@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-09-27T20:05:30.889206+00:00",
+  "before_commit": "584c7251d86559a81e659b1b0df47e8e1b95984c",
+  "goal_turn_classification": "previous turn made progress: committed tool painter replacement",
+  "scope": "Unix terminal readiness and interruptible joined shutdown",
+  "limits": {
+    "idle_voluntary_switches_per_thread_per_second": 2,
+    "reader_shutdown_ms": 1000,
+    "hangup_exit_ms": 2000,
+    "new_idle_output_bytes": 0
+  },
+  "existing_browser_limits": "docs/evidence/tui-rewrite/poll-timeout/browser/paired-summary.json",
+  "before_binaries": {
+    "before-rewrite_probe": "44e545f765bae0cb52bbb04ff3521ee8efab77aa3de846b53a53a1f74b809170",
+    "before-resource_probe": "193084ee473ee840c4c06e52acca54c77e2a5fe203ef52a824bc5188f954763a"
+  }
+}

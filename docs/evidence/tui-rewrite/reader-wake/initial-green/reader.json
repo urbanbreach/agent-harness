@@ -1,0 +1,142 @@
+[
+  {
+    "scenario": "idle",
+    "idle_seconds": 1.0003115779836662,
+    "switches_before": {
+      "3188425": 3,
+      "3188426": 2,
+      "3188427": 2,
+      "3188428": 1
+    },
+    "switches_after": {
+      "3188425": 3,
+      "3188426": 2,
+      "3188427": 2,
+      "3188428": 1
+    },
+    "idle_switches_per_second": {
+      "3188425": 0.0,
+      "3188426": 0.0,
+      "3188427": 0.0,
+      "3188428": 0.0
+    },
+    "idle_output_bytes": 0,
+    "shutdown_ms": 10.36065601510927,
+    "timed_out": false,
+    "exit_code": 0,
+    "termios_restored": true,
+    "protocol_exit": true
+  },
+  {
+    "scenario": "split_utf8",
+    "idle_seconds": 1.0003217330086045,
+    "switches_before": {
+      "3188430": 2,
+      "3188431": 2,
+      "3188432": 2,
+      "3188433": 1
+    },
+    "switches_after": {
+      "3188430": 2,
+      "3188431": 2,
+      "3188432": 2,
+      "3188433": 1
+    },
+    "idle_switches_per_second": {
+      "3188430": 0.0,
+      "3188431": 0.0,
+      "3188432": 0.0,
+      "3188433": 0.0
+    },
+    "idle_output_bytes": 0,
+    "shutdown_ms": 10.469897009897977,
+    "timed_out": false,
+    "exit_code": 0,
+    "termios_restored": true,
+    "protocol_exit": true
+  },
+  {
+    "scenario": "unterminated_paste",
+    "idle_seconds": 1.0003036939888261,
+    "switches_before": {
+      "3188435": 2,
+      "3188436": 2,
+      "3188437": 2,
+      "3188438": 1
+    },
+    "switches_after": {
+      "3188435": 2,
+      "3188436": 2,
+      "3188437": 2,
+      "3188438": 1
+    },
+    "idle_switches_per_second": {
+      "3188435": 0.0,
+      "3188436": 0.0,
+      "3188437": 0.0,
+      "3188438": 0.0
+    },
+    "idle_output_bytes": 0,
+    "shutdown_ms": 10.194361995672807,
+    "timed_out": false,
+    "exit_code": 0,
+    "termios_restored": true,
+    "protocol_exit": true
+  },
+  {
+    "scenario": "resize",
+    "idle_seconds": 1.0000597920152359,
+    "switches_before": {
+      "3188441": 4,
+      "3188442": 2,
+      "3188443": 2,
+      "3188444": 1
+    },
+    "switches_after": {
+      "3188441": 4,
+      "3188442": 2,
+      "3188443": 2,
+      "3188444": 1
+    },
+    "idle_switches_per_second": {
+      "3188441": 0.0,
+      "3188442": 0.0,
+      "3188443": 0.0,
+      "3188444": 0.0
+    },
+    "idle_output_bytes": 0,
+    "resize_presented": true,
+    "shutdown_ms": 10.471625020727515,
+    "timed_out": false,
+    "exit_code": 0,
+    "termios_restored": true,
+    "protocol_exit": true
+  },
+  {
+    "scenario": "hangup",
+    "idle_seconds": 1.0003696709754877,
+    "switches_before": {
+      "3188473": 2,
+      "3188474": 2,
+      "3188475": 2,
+      "3188476": 1
+    },
+    "switches_after": {
+      "3188473": 2,
+      "3188474": 2,
+      "3188475": 2,
+      "3188476": 1
+    },
+    "idle_switches_per_second": {
+      "3188473": 0.0,
+      "3188474": 0.0,
+      "3188475": 0.0,
+      "3188476": 0.0
+    },
+    "idle_output_bytes": 0,
+    "shutdown_ms": 10.357845982071012,
+    "timed_out": false,
+    "exit_code": 1,
+    "stderr": "Error: terminal event poll failed: terminal input closed\n"
+  }
+]

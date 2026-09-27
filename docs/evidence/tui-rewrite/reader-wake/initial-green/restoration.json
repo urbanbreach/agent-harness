@@ -1,0 +1,142 @@
+[
+  {
+    "scenario": "normal",
+    "exit_code": 0,
+    "termios_restored": true,
+    "exits_sent": 2,
+    "flags_before": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "flags_after": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "control_chars_restored": true,
+    "protocol_exit": {
+      "alternate_screen_left": true,
+      "paste_disabled": true,
+      "mouse_disabled": true
+    }
+  },
+  {
+    "scenario": "telemetry_failure",
+    "exit_code": 1,
+    "termios_restored": true,
+    "exits_sent": 0,
+    "flags_before": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "flags_after": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "control_chars_restored": true,
+    "protocol_exit": {
+      "alternate_screen_left": true,
+      "paste_disabled": true,
+      "mouse_disabled": true
+    }
+  },
+  {
+    "scenario": "output_failure",
+    "exit_code": 1,
+    "termios_restored": true,
+    "exits_sent": 0,
+    "flags_before": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "flags_after": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "control_chars_restored": true,
+    "protocol_exit": {
+      "alternate_screen_left": false,
+      "paste_disabled": false,
+      "mouse_disabled": false
+    }
+  },
+  {
+    "scenario": "handoff_failure",
+    "exit_code": 1,
+    "termios_restored": true,
+    "exits_sent": 2,
+    "flags_before": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "flags_after": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "control_chars_restored": true,
+    "protocol_exit": {
+      "alternate_screen_left": true,
+      "paste_disabled": true,
+      "mouse_disabled": true
+    }
+  },
+  {
+    "scenario": "handoff",
+    "exit_code": 0,
+    "termios_restored": true,
+    "exits_sent": 5,
+    "flags_before": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "flags_after": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "control_chars_restored": true,
+    "protocol_exit": {
+      "alternate_screen_left": true,
+      "paste_disabled": true,
+      "mouse_disabled": true
+    }
+  }
+]

@@ -202,6 +202,27 @@ scripts/test-lanes.sh all-deterministic
 pass. Its PTY gate requires `cargo` on `PATH`, both PTY test files to exist, and
 `HARNESS_TEST_LANES_SKIP_PTY` not set to `1`.
 
+## Reader shutdown and terminal restoration
+
+The offline Linux PTY check covers idle reader wakeups, shutdown during incomplete
+UTF-8 and paste input, resize without keyboard input, terminal hangup, preserved
+session handoffs, and initialization failures. It records raw terminal output and
+termios comparisons. Hangup must return a typed reader error rather than exit by
+signal; restoration cannot be inspected after the PTY master has closed.
+
+```bash
+cargo build --release -p harness-tui --all-features --example resource_probe --example rewrite_probe
+python3 scripts/check-tui-restoration.py --binary target/release/examples/resource_probe \
+  --live-binary target/release/examples/rewrite_probe --output /tmp/tui-restoration
+```
+
+Use `--record-reference-defects` only to retain a failing reference observation.
+Zero context switches alone does not establish low CPU use: pair this check with
+the serial runtime-resource measurements described in `docs/tui-rewrite.md`.
+The reader's existing ordered-burst and bounded-queue nextest checks remain part
+of verification. The new wake path has Linux evidence; other systems require
+their own terminal checks.
+
 ## Live provider checks
 
 ```bash

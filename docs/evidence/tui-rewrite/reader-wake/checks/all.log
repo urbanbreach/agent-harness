@@ -1,0 +1,867 @@
+   Compiling filedescriptor v0.8.3 (/home/urbanbreach/Projects/agent-harness/vendor/filedescriptor)
+   Compiling harness-core v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-core)
+   Compiling crossterm v0.29.0 (/home/urbanbreach/Projects/agent-harness/vendor/crossterm)
+   Compiling portable-pty v0.9.0
+warning: unnecessary parentheses around closure body
+  --> vendor/crossterm/src/terminal/sys/unix.rs:87:50
+   |
+87 |     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+   |                                                  ^                            ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+87 -     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+87 +     let file = File::open("/dev/tty").map(|file| FileDesc::Owned(file.into()));
+   |
+
+   Compiling ratatui-crossterm v0.1.2
+   Compiling ratatui v0.30.2
+warning: `crossterm` (lib) generated 1 warning (run `cargo fix --lib -p crossterm` to apply 1 suggestion)
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+   Compiling harness-tools v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tools)
+   Compiling harness-testkit v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-testkit)
+   Compiling harness v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 34.83s
+────────────
+ Nextest run ID ac9e533f-f1a7-47f3-ac31-c31f1e7d5b5b with nextest profile: ci
+    Starting 1949 tests across 130 binaries (8 tests and 7 binaries skipped, including 5 tests and 7 binaries via profile.default.default-filter)
+        FAIL [   0.015s] (  26/1949) harness tui::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login' (3204483) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.010s] (  31/1949) harness tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection' (3204501) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.017s] (  32/1949) harness tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection' (3204495) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] (  37/1949) harness tui::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog' (3204496) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.017s] (  39/1949) harness tui::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state' (3204504) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] (  50/1949) harness::operators agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_credentials
+  stdout ───
+
+    running 1 test
+    test agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_credentials ... FAILED
+
+    failures:
+
+    failures:
+        agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_credentials
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_credentials' (3204558) panicked at crates/harness/tests/operators.rs:24:9:
+    assertion `left == right` failed: error: configuration: missing field `type`
+
+      left: false
+     right: true
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.058s] (  54/1949) harness::archives archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_files
+  stdout ───
+
+    running 1 test
+    test archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_files ... FAILED
+
+    failures:
+
+    failures:
+        archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_files
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+  stderr ───
+
+    thread 'archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_files' (3204532) panicked at crates/harness/tests/archives.rs:69:5:
+    assertion `left == right` failed: error: configuration: missing field `type`
+
+      left: 1
+     right: 0
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.019s] (  57/1949) harness::run scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace
+  stdout ───
+
+    running 1 test
+    test scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace ... FAILED
+
+    failures:
+
+    failures:
+        scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace' (3204574) panicked at crates/harness/tests/run.rs:31:9:
+    assertion `left == right` failed: error: configuration: missing field `type`
+
+      left: false
+     right: true
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.050s] (  58/1949) harness::rewind saved_snapshot_rewind_validates_before_writes_and_keeps_the_journal_unchanged
+  stdout ───
+
+    running 1 test
+    test saved_snapshot_rewind_validates_before_writes_and_keeps_the_journal_unchanged ... FAILED
+
+    failures:
+
+    failures:
+        saved_snapshot_rewind_validates_before_writes_and_keeps_the_journal_unchanged
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+  stderr ───
+
+    thread 'saved_snapshot_rewind_validates_before_writes_and_keeps_the_journal_unchanged' (3204568) panicked at crates/harness/tests/rewind.rs:60:5:
+    assertion `left == right` failed: error: configuration: missing field `type`
+
+      left: 1
+     right: 0
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] (  59/1949) harness::sessions session_navigation_filters_pages_and_reports_corruption_without_writing
+  stdout ───
+
+    running 1 test
+    test session_navigation_filters_pages_and_reports_corruption_without_writing ... FAILED
+
+    failures:
+
+    failures:
+        session_navigation_filters_pages_and_reports_corruption_without_writing
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'session_navigation_filters_pages_and_reports_corruption_without_writing' (3204583) panicked at crates/harness/tests/sessions.rs:24:5:
+    assertion `left == right` failed: error: configuration: missing field `type`
+
+      left: 1
+     right: 0
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.062s] (  70/1949) harness::sessions session_branch_import_and_recovery_keep_source_history_intact
+  stdout ───
+
+    running 1 test
+    test session_branch_import_and_recovery_keep_source_history_intact ... FAILED
+
+    failures:
+
+    failures:
+        session_branch_import_and_recovery_keep_source_history_intact
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.05s
+
+  stderr ───
+
+    thread 'session_branch_import_and_recovery_keep_source_history_intact' (3204581) panicked at crates/harness/tests/sessions.rs:24:5:
+    assertion `left == right` failed: error: configuration: missing field `type`
+
+      left: 1
+     right: 0
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.017s] (  75/1949) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_explicit_launch_reuses_no_config_startup
+  stdout ───
+
+    running 1 test
+    test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_explicit_launch_reuses_no_config_startup ... FAILED
+
+    failures:
+
+    failures:
+        part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_explicit_launch_reuses_no_config_startup
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_explicit_launch_reuses_no_config_startup' (3204619) panicked at crates/harness/tests/tui_cli/02_replay_bootstrap_falls_back_when_recorded_test.rs:211:5:
+    explicit tui launch should use the built-in connect state without config, got:
+    tui setup failed: configuration: missing field `type`
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.016s] (  77/1949) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_legacy_tui_alias_reuses_no_config_startup
+  stdout ───
+
+    running 1 test
+    test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_legacy_tui_alias_reuses_no_config_startup ... FAILED
+
+    failures:
+
+    failures:
+        part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_legacy_tui_alias_reuses_no_config_startup
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_legacy_tui_alias_reuses_no_config_startup' (3204620) panicked at crates/harness/tests/tui_cli/02_replay_bootstrap_falls_back_when_recorded_test.rs:211:5:
+    legacy tui alias should use the built-in connect state without config, got:
+    tui setup failed: configuration: missing field `type`
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] (  80/1949) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_without_config_reaches_connect_startup
+  stdout ───
+
+    running 1 test
+    test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_without_config_reaches_connect_startup ... FAILED
+
+    failures:
+
+    failures:
+        part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_without_config_reaches_connect_startup
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_without_config_reaches_connect_startup' (3204669) panicked at crates/harness/tests/tui_cli/02_replay_bootstrap_falls_back_when_recorded_test.rs:211:5:
+    no-config interactive startup should use the built-in connect state without config, got:
+    tui setup failed: configuration: missing field `type`
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.013s] ( 104/1949) harness::tui_cli_test tui_impl::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login' (3204748) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.015s] ( 112/1949) harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection' (3204762) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] ( 113/1949) harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog' (3204763) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.015s] ( 114/1949) harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state' (3204764) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.012s] ( 115/1949) harness::tui_cli_test tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection' (3204768) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   1.083s] ( 254/1949) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher
+  stdout ───
+
+    running 1 test
+    test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher ... FAILED
+
+    failures:
+
+    failures:
+        part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 1.07s
+
+  stderr ───
+
+    thread 'part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher' (3204670) panicked at crates/harness/tests/tui_cli/02_replay_bootstrap_falls_back_when_recorded_test.rs:260:5:
+    expected --mock to reach the interactive TUI boundary, got stdout:
+
+    stderr:
+    tui failed: startup launcher error: failed to set up terminal
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        SLOW [>  2.000s] (─────────) harness archives::tests::aggregate_limit_leaves_previous_archive_intact
+        SLOW [>  2.000s] (─────────) harness::inspect inspection_is_offline_redacted_and_reports_unknown_model_limits
+        SLOW [>  2.000s] (─────────) harness::prompt_models model_fallback_changes_prompt_family_and_keeps_explicit_instructions
+        SLOW [>  2.000s] (─────────) harness-providers wire::tests::image_limits_are_checked_before_base64_encoding
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::completed_stream_more_below_affordance_is_actionable
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  4.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  2.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  2.000s] (─────────) harness-tui::tool_body_capture_test production_tool_body_captures
+        SLOW [>  6.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  4.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  6.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+────────────
+     Summary [  10.833s] 1949 tests run: 1929 passed (8 slow), 20 failed, 8 skipped
+        SLOW [   2.122s] ( 573/1949) harness::inspect inspection_is_offline_redacted_and_reports_unknown_model_limits
+        SLOW [   2.210s] ( 596/1949) harness archives::tests::aggregate_limit_leaves_previous_archive_intact
+        SLOW [   2.425s] (1178/1949) harness-providers wire::tests::image_limits_are_checked_before_base64_encoding
+        SLOW [   3.715s] (1344/1949) harness::prompt_models model_fallback_changes_prompt_family_and_keeps_explicit_instructions
+        SLOW [   2.875s] (1673/1949) harness-tui app::tests::completed_stream_more_below_affordance_is_actionable
+        SLOW [   3.864s] (1947/1949) harness-tui::tool_body_capture_test production_tool_body_captures
+        SLOW [   6.559s] (1948/1949) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [   6.269s] (1949/1949) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        FAIL [   0.015s] (  26/1949) harness tui::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login' (3204483) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.010s] (  31/1949) harness tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection' (3204501) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.017s] (  32/1949) harness tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection' (3204495) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] (  37/1949) harness tui::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog' (3204496) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.017s] (  39/1949) harness tui::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state
+  stdout ───
+
+    running 1 test
+    test tui::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state ... FAILED
+
+    failures:
+
+    failures:
+        tui::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state' (3204504) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] (  50/1949) harness::operators agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_credentials
+  stdout ───
+
+    running 1 test
+    test agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_credentials ... FAILED
+
+    failures:
+
+    failures:
+        agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_credentials
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_credentials' (3204558) panicked at crates/harness/tests/operators.rs:24:9:
+    assertion `left == right` failed: error: configuration: missing field `type`
+
+      left: false
+     right: true
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.058s] (  54/1949) harness::archives archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_files
+  stdout ───
+
+    running 1 test
+    test archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_files ... FAILED
+
+    failures:
+
+    failures:
+        archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_files
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+  stderr ───
+
+    thread 'archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_files' (3204532) panicked at crates/harness/tests/archives.rs:69:5:
+    assertion `left == right` failed: error: configuration: missing field `type`
+
+      left: 1
+     right: 0
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.019s] (  57/1949) harness::run scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace
+  stdout ───
+
+    running 1 test
+    test scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace ... FAILED
+
+    failures:
+
+    failures:
+        scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace' (3204574) panicked at crates/harness/tests/run.rs:31:9:
+    assertion `left == right` failed: error: configuration: missing field `type`
+
+      left: false
+     right: true
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.050s] (  58/1949) harness::rewind saved_snapshot_rewind_validates_before_writes_and_keeps_the_journal_unchanged
+  stdout ───
+
+    running 1 test
+    test saved_snapshot_rewind_validates_before_writes_and_keeps_the_journal_unchanged ... FAILED
+
+    failures:
+
+    failures:
+        saved_snapshot_rewind_validates_before_writes_and_keeps_the_journal_unchanged
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+  stderr ───
+
+    thread 'saved_snapshot_rewind_validates_before_writes_and_keeps_the_journal_unchanged' (3204568) panicked at crates/harness/tests/rewind.rs:60:5:
+    assertion `left == right` failed: error: configuration: missing field `type`
+
+      left: 1
+     right: 0
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] (  59/1949) harness::sessions session_navigation_filters_pages_and_reports_corruption_without_writing
+  stdout ───
+
+    running 1 test
+    test session_navigation_filters_pages_and_reports_corruption_without_writing ... FAILED
+
+    failures:
+
+    failures:
+        session_navigation_filters_pages_and_reports_corruption_without_writing
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'session_navigation_filters_pages_and_reports_corruption_without_writing' (3204583) panicked at crates/harness/tests/sessions.rs:24:5:
+    assertion `left == right` failed: error: configuration: missing field `type`
+
+      left: 1
+     right: 0
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.062s] (  70/1949) harness::sessions session_branch_import_and_recovery_keep_source_history_intact
+  stdout ───
+
+    running 1 test
+    test session_branch_import_and_recovery_keep_source_history_intact ... FAILED
+
+    failures:
+
+    failures:
+        session_branch_import_and_recovery_keep_source_history_intact
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.05s
+
+  stderr ───
+
+    thread 'session_branch_import_and_recovery_keep_source_history_intact' (3204581) panicked at crates/harness/tests/sessions.rs:24:5:
+    assertion `left == right` failed: error: configuration: missing field `type`
+
+      left: 1
+     right: 0
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.017s] (  75/1949) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_explicit_launch_reuses_no_config_startup
+  stdout ───
+
+    running 1 test
+    test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_explicit_launch_reuses_no_config_startup ... FAILED
+
+    failures:
+
+    failures:
+        part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_explicit_launch_reuses_no_config_startup
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_explicit_launch_reuses_no_config_startup' (3204619) panicked at crates/harness/tests/tui_cli/02_replay_bootstrap_falls_back_when_recorded_test.rs:211:5:
+    explicit tui launch should use the built-in connect state without config, got:
+    tui setup failed: configuration: missing field `type`
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.016s] (  77/1949) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_legacy_tui_alias_reuses_no_config_startup
+  stdout ───
+
+    running 1 test
+    test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_legacy_tui_alias_reuses_no_config_startup ... FAILED
+
+    failures:
+
+    failures:
+        part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_legacy_tui_alias_reuses_no_config_startup
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_legacy_tui_alias_reuses_no_config_startup' (3204620) panicked at crates/harness/tests/tui_cli/02_replay_bootstrap_falls_back_when_recorded_test.rs:211:5:
+    legacy tui alias should use the built-in connect state without config, got:
+    tui setup failed: configuration: missing field `type`
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] (  80/1949) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_without_config_reaches_connect_startup
+  stdout ───
+
+    running 1 test
+    test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_without_config_reaches_connect_startup ... FAILED
+
+    failures:
+
+    failures:
+        part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_without_config_reaches_connect_startup
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_without_config_reaches_connect_startup' (3204669) panicked at crates/harness/tests/tui_cli/02_replay_bootstrap_falls_back_when_recorded_test.rs:211:5:
+    no-config interactive startup should use the built-in connect state without config, got:
+    tui setup failed: configuration: missing field `type`
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.013s] ( 104/1949) harness::tui_cli_test tui_impl::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::auth_refresh_reloads_no_config_builtin_catalog_after_login' (3204748) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.015s] ( 112/1949) harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection' (3204762) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] ( 113/1949) harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::no_config_tui_with_stored_codex_launches_connected_catalog' (3204763) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.015s] ( 114/1949) harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::no_config_tui_without_credentials_enters_connect_state' (3204764) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.012s] ( 115/1949) harness::tui_cli_test tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+  stdout ───
+
+    running 1 test
+    test tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection ... FAILED
+
+    failures:
+
+    failures:
+        tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection' (3204768) panicked at crates/harness-providers/src/lib.rs:60:5:
+    required test value is absent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   1.083s] ( 254/1949) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher
+  stdout ───
+
+    running 1 test
+    test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher ... FAILED
+
+    failures:
+
+    failures:
+        part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 71 filtered out; finished in 1.07s
+
+  stderr ───
+
+    thread 'part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher' (3204670) panicked at crates/harness/tests/tui_cli/02_replay_bootstrap_falls_back_when_recorded_test.rs:260:5:
+    expected --mock to reach the interactive TUI boundary, got stdout:
+
+    stderr:
+    tui failed: startup launcher error: failed to set up terminal
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

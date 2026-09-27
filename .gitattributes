@@ -4,3 +4,8 @@
 *.snap -whitespace
 # Raw terminal and allocator receipts preserve their original spacing.
 docs/evidence/**/*.log -whitespace
+# Preserve the vendored release's original line endings and spacing.
+vendor/crossterm/** -text -whitespace
+# Raw terminal bytes and unified-diff context are evidence, not formatted prose.
+docs/evidence/tui-rewrite/reader-wake/**/*.ansi -text -diff -whitespace
+docs/evidence/tui-rewrite/reader-wake/*.patch -whitespace

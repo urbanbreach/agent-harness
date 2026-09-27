@@ -11,6 +11,15 @@ use harness_tui::input::{
 
 struct FakeSource {
     events: VecDeque<io::Result<Event>>,
+    dropped: Option<crossbeam_channel::Sender<()>>,
+}
+
+impl Drop for FakeSource {
+    fn drop(&mut self) {
+        if let Some(dropped) = &self.dropped {
+            let _ = dropped.try_send(());
+        }
+    }
 }
 
 impl TerminalEventSource for FakeSource {
@@ -39,6 +48,7 @@ fn ordered_input_filters_non_press_keys_and_preserves_focus_and_paste() {
     // arrange
     // act
     let source = FakeSource {
+        dropped: None,
         events: VecDeque::from([
             Ok(key('x', KeyEventKind::Release)),
             Ok(key('a', KeyEventKind::Press)),
@@ -64,27 +74,40 @@ fn ordered_input_filters_non_press_keys_and_preserves_focus_and_paste() {
 
 #[test]
 fn terminal_queue_backpressures_without_drop_and_shutdown_interrupts_full_send() {
-    // arrange
-    // act
-    let events = (0..129)
-        .map(|_| Ok(key('x', KeyEventKind::Press)))
-        .collect();
-    let source = FakeSource { events };
-    let (reader, mut ingress) = TerminalIngressReader::spawn_with_source(128, source);
-    let deadline = Instant::now() + Duration::from_millis(50);
-    while ingress.queue.receiver().len() < 128 && Instant::now() < deadline {
-        std::thread::yield_now();
+    for drop_owner in [false, true] {
+        // arrange
+        // act
+        let events = (0..129)
+            .map(|_| Ok(key('x', KeyEventKind::Press)))
+            .collect();
+        let (dropped_tx, dropped_rx) = crossbeam_channel::bounded(1);
+        let source = FakeSource {
+            events,
+            dropped: Some(dropped_tx),
+        };
+        let (reader, mut ingress) = TerminalIngressReader::spawn_with_source(128, source);
+        let deadline = Instant::now() + Duration::from_millis(50);
+        while ingress.queue.receiver().len() < 128 && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        // assert
+        assert_eq!(ingress.queue.receiver().len(), 128);
+        let started = Instant::now();
+        if drop_owner {
+            drop(reader);
+        } else {
+            reader.stop_and_join().expect("reader joins");
+        }
+        assert!(started.elapsed() < Duration::from_millis(100));
+        dropped_rx
+            .try_recv()
+            .expect("source dropped before join returned");
+        let sequences: Vec<_> = std::iter::from_fn(|| ingress.queue.try_recv().ok())
+            .flat_map(|event| event.source_sequences)
+            .map(|sequence| sequence.get())
+            .collect();
+        assert_eq!(sequences, (1..=128).collect::<Vec<_>>());
     }
-    // assert
-    assert_eq!(ingress.queue.receiver().len(), 128);
-    let started = Instant::now();
-    reader.stop_and_join().expect("reader joins");
-    assert!(started.elapsed() < Duration::from_millis(100));
-    let sequences: Vec<_> = std::iter::from_fn(|| ingress.queue.try_recv().ok())
-        .flat_map(|event| event.source_sequences)
-        .map(|sequence| sequence.get())
-        .collect();
-    assert_eq!(sequences, (1..=128).collect::<Vec<_>>());
 }
 
 #[test]
@@ -92,6 +115,7 @@ fn reader_failure_is_typed_and_lossless() {
     // arrange
     // act
     let source = FakeSource {
+        dropped: None,
         events: VecDeque::from([Err(io::Error::other("read defect"))]),
     };
     let (reader, ingress) = TerminalIngressReader::spawn_with_source(128, source);
