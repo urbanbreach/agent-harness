@@ -570,6 +570,7 @@ impl AppState {
             self.todo_pane.invalidate_pointer();
         }
         self.last_frame_area = Some(area);
+        self.prepare_plan_view();
         if let Some(dashboard) = self.dashboard.as_mut() {
             let viewport =
                 crate::dashboard_integration::dashboard_content_viewport(area).unwrap_or(area);

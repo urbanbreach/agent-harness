@@ -1,0 +1,14 @@
+Independent reviewer: /root/tui_review
+Result: approved to commit the plan-preparation slice; no remaining blockers.
+
+Verified all 45 pre-receipt artifacts, eight source hashes, exact diff,
+binary receipts, 1,681 passing tests and final focused checks. The hidden
+visibility regression is fixed and covered by the counted-provider journey.
+
+All 543 frame records, 20 original ANSI captures and four paired PNGs match.
+Two captures were visually inspected. Browser callback-count differences
+are accurately disclosed. Fresh queries, clipboard fallback, preview limits
+and deletion boundaries retain their behavior.
+
+Unicode truncation and whole-rewrite acceptance remain unfinished.
+No new performance claim is made. Reviewer ran no builds/tests or edits.

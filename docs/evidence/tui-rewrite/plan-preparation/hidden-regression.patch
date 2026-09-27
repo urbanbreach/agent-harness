@@ -1,0 +1,9 @@
+--- a/crates/harness-tui/src/app/plan_view.rs
++++ b/crates/harness-tui/src/app/plan_view.rs
+@@ -290,5 +290,5 @@
+     /// Read the filesystem once before paint and hit testing share these entries.
+     pub(super) fn prepare_plan_view(&mut self) {
+-        if self.plan_view_visible || self.status_dashboard_is_active() {
++        if self.plan_view_visible || self.dashboard.is_some() {
+             self.plan_entries = self.plan_view_entries();
+         } else {

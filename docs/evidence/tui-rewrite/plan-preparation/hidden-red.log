@@ -1,0 +1,50 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.15s
+────────────
+ Nextest run ID 22296ffd-6003-4702-838a-df9be8b1417b with nextest profile: ci
+    Starting 1 test across 1 binary (1266 tests skipped)
+        FAIL [   0.025s] (1/1) harness-tui app::tests::plan_view_multi_plan_open_select_activate_product_path
+  stdout ───
+
+    running 1 test
+    test app::tests::plan_view_multi_plan_open_select_activate_product_path ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::plan_view_multi_plan_open_select_activate_product_path
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1266 filtered out; finished in 0.02s
+
+  stderr ───
+
+    thread 'app::tests::plan_view_multi_plan_open_select_activate_product_path' (2488517) panicked at crates/harness-tui/src/app/tests/plan_view_tests.rs:406:5:
+    assertion `left == right` failed: hidden plans must not query disk
+      left: 15
+     right: 14
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.030s] 1 test run: 0 passed, 1 failed, 1266 skipped
+        FAIL [   0.025s] (1/1) harness-tui app::tests::plan_view_multi_plan_open_select_activate_product_path
+  stdout ───
+
+    running 1 test
+    test app::tests::plan_view_multi_plan_open_select_activate_product_path ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::plan_view_multi_plan_open_select_activate_product_path
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1266 filtered out; finished in 0.02s
+
+  stderr ───
+
+    thread 'app::tests::plan_view_multi_plan_open_select_activate_product_path' (2488517) panicked at crates/harness-tui/src/app/tests/plan_view_tests.rs:406:5:
+    assertion `left == right` failed: hidden plans must not query disk
+      left: 15
+     right: 14
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

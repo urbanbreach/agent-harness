@@ -47,7 +47,7 @@ pub(super) fn render_plan_view_overlay(
     }
 
     let preview = app.plan_view_preview();
-    let summary = app.plan_view_summary();
+    let summary = app.prepared_plan_summary();
     let title = if preview.is_some() {
         "Plan preview"
     } else {
@@ -103,7 +103,7 @@ pub(super) fn render_plan_view_overlay(
         return;
     }
 
-    let rows = app.plan_view_rows();
+    let rows = &app.plan_entries;
 
     if rows.is_empty() {
         if list_height == 0 {

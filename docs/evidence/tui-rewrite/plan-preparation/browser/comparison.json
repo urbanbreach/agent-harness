@@ -1,0 +1,42 @@
+[
+  {
+    "frame": "activated-view-plan-120x40-reduced-0ms",
+    "png_sha256": "b7d1695f75fd48f408012e336eed7106f090160dfbd5f39374a137276c5859a1",
+    "different_screen_fields": {
+      "renderCount": {
+        "reference": 3,
+        "candidate": 4
+      }
+    }
+  },
+  {
+    "frame": "activated-view-plan-40x24-reduced-0ms",
+    "png_sha256": "bca6908c6fce97c32b762a8f84412ef49afd72e011ae027bc7d2e17604b9620e",
+    "different_screen_fields": {
+      "renderCount": {
+        "reference": 4,
+        "candidate": 3
+      }
+    }
+  },
+  {
+    "frame": "populated-view-plan-120x40-reduced-0ms",
+    "png_sha256": "77edd7f01803fd27b9ec0d0dd3b6fcbdfd60eaf302fdf150d1cbe4406848f3c4",
+    "different_screen_fields": {
+      "renderCount": {
+        "reference": 5,
+        "candidate": 6
+      }
+    }
+  },
+  {
+    "frame": "populated-view-plan-40x24-reduced-0ms",
+    "png_sha256": "d094b34f2346cbc430141264feaf1fe22bd46b3456551c49d6e3e39a4b144f99",
+    "different_screen_fields": {
+      "renderCount": {
+        "reference": 6,
+        "candidate": 5
+      }
+    }
+  }
+]
