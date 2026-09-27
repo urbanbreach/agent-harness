@@ -1031,6 +1031,33 @@ TUI source is 166,604 lines, including tests under `src`, only 8.4% below the
 original. The source target and full implementation replacement remain unmet.
 Evidence is in [`evidence/tui-rewrite/completion-stub`](evidence/tui-rewrite/completion-stub).
 
+## Atom parsing and composer reflow
+
+Text construction and insertion now share a parser over borrowed line slices and
+lazy graphemes. Atom-ID validation replaces repeated scans with set membership,
+preserving the first conflicting ID in errors. Reflow moves its validated atoms,
+and bordered rendering reuses its prepared editor model. Public contracts,
+geometry and text behavior remain unchanged. This removes 23 production lines;
+whole TUI source is 166,579 lines, only 8.41% below the original.
+
+All 1,659 TUI tests, seven gated PTY checks and quality checks pass. Sixteen paired
+actual-runtime xterm captures match exactly with terminal/resource cleanup. An
+initial capture crossed the 800 ms Escape confirmation deadline between its cell
+snapshot and PNG; it is retained. Explicit state waits resolve the fixture race,
+and the corrected journey verifies the cursor resets after two acknowledged
+Escape events. The cleared text returns as an italic history suggestion; captured
+styles and the next unprefixed paste distinguish it from retained draft text. No production timer or expected cell value was changed.
+
+Two identical release comparisons reduce long-draft CPU from 0.38 to 0.32 ms/frame
+(15.8%), malloc calls by 7.7% and allocated bytes by 6.4%. All seven long-draft
+bounds pass. Short-draft p99 fails both comparisons: 196 and 186 µs against the
+unchanged 179.3 µs bound. All 62 runs, including baseline, intermediate and separate
+CPU-affinity diagnostics, remain available. The diagnostic does not establish a
+cause or clear the failed gate. These input/render/encoding timings exclude
+terminal-emulator latency and do not establish the sustained runtime target.
+The short-draft gate, state/text replacement and full rewrite remain unfinished.
+Evidence is in [`evidence/tui-rewrite/atom-buffer`](evidence/tui-rewrite/atom-buffer).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

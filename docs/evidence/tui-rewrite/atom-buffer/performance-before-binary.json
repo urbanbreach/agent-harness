@@ -1,0 +1,55 @@
+{
+  "base": "ae0fdaab99e2d1c88f9e141253075a76065f6b9f",
+  "fixture_sha256": "fa5b0c431ab96ba012a01486bbbf6fc485ef899f9ac2ef92d3fccfb3563bb51d",
+  "sha256": "5f38cfc5d42ef2597d2e208ad32574b3ca222ee4618463279ee5175efb4e8953",
+  "sources": [
+    {
+      "path": "crates/harness-tui/src/composer_editing/mod.rs",
+      "sha256": "386d65281b23d46af9602de0725f6521723bdb5dc5bbec24a97dcd84895ea486"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_editing/undo.rs",
+      "sha256": "6ecb20ad3f0fa9fe4b7e98e9b60ae81da581a8ce46f601564900e87bf86dc7ab"
+    },
+    {
+      "path": "crates/harness-tui/tests/composer_editing_test.rs",
+      "sha256": "d232ba2eef684a9055e78f4d57899357d6698d06da036440be9e48a5fa627ebb"
+    },
+    {
+      "path": "crates/harness-tui/tests/rewrite_performance_test.rs",
+      "sha256": "fa5b0c431ab96ba012a01486bbbf6fc485ef899f9ac2ef92d3fccfb3563bb51d"
+    }
+  ],
+  "source": "7918123b2e2946a8b87a94a9c03fe9b594a13b58",
+  "source_note": "Retained fdeee80b release executable; intervening7918123b deletes only cfg(test) stub, verified identical non-test prefix.",
+  "production_sources": [
+    {
+      "path": "crates/harness-tui/src/composer_atoms/buffer.rs",
+      "sha256": "5800199d4dcdcf498e32ec660e51db7e4b5b57aad67bd3138aa155a105cceba7"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_atoms/grapheme.rs",
+      "sha256": "e803ada0488ddda548294c584de696f924231f676cd6a24de62d38278a6489ec"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/presentation.rs",
+      "sha256": "e95e73d5a99141daaee25ed5050af8ce839454e0bb908d28c963e14d5639df10"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/bordered.rs",
+      "sha256": "1f104b305e5525e238badccf8dfe8db1242f891f5f8eab9fa54963ae93a0dfb4"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/collapsed.rs",
+      "sha256": "4c44e2f46c1fe7772ea1fba4cf9d0c007cfb75a518b1c9fdd4c5ec173009bf09"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/document.rs",
+      "sha256": "7b17cc4a229df3597954c324f35931dd6e93da6ab5109a8e27553e567b81ccc4"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/presentation.rs",
+      "sha256": "cb6a27a4defb0181e0fc1a2b703b0374bb99a6a95de03ad714ac394049748c06"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "reviewer": "/root/tui_review",
+  "decision": "approved for this intermediate atomic commit; full rewrite not approved",
+  "blocking_findings": [],
+  "verified_artifacts_before_review_receipt": 42,
+  "verified_source_files": 11,
+  "verified_performance_reports": 62,
+  "verified": [
+    "source.patch.gz matches current source diff and all source/file hashes",
+    "all final/confirmation raw medians and13/14 frozen checks in each",
+    "16 final exact paired PNGs and terminal states except disclosed observer counters",
+    "15 initial exact paired PNGs with one documented row38 footer snapshot difference",
+    "natural exit, terminal restoration and child/socket/browser cleanup",
+    "1659 TUI checks,7 gated PTY checks and recorded quality checks"
+  ],
+  "resolved_finding": {
+    "finding": "Original clear assertion did not distinguish captured history suggestion text from retained draft text",
+    "resolution": "Final comparer asserts reset cursor, all11 old-text glyphs change to italic ghost styling, and subsequent collapsed/expanded paste has no old prefix. Documentation explains the distinction. Raw captures and production code unchanged."
+  },
+  "limits_retained": [
+    "Short-draft p99 fails both final pairs:196 and186 us versus179.3 us",
+    "Cause is unverified; fixed-CPU diagnostic does not waive acceptance",
+    "Unique undo history, duplicate editor state and legacy engines remain",
+    "Whole-rewrite source, sustained runtime, cadence, environment and final review criteria remain incomplete"
+  ],
+  "reviewer_actions": "Read-only; no builds, tests or edits."
+}

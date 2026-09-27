@@ -1,0 +1,338 @@
+[
+  {
+    "side": "before",
+    "sample": "typing-long-1",
+    "started_at": "2026-09-27T22:35:43.028777+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-long-1",
+    "started_at": "2026-09-27T22:35:43.282523+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-long-2",
+    "started_at": "2026-09-27T22:35:43.507158+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-long-2",
+    "started_at": "2026-09-27T22:35:43.734468+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-long-3",
+    "started_at": "2026-09-27T22:35:43.988184+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-long-3",
+    "started_at": "2026-09-27T22:35:44.244742+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-long-alloc",
+    "started_at": "2026-09-27T22:35:44.478322+00:00",
+    "command": [
+      "memusage",
+      "-n",
+      "before.bin",
+      "--no-timer",
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-long-alloc",
+    "started_at": "2026-09-27T22:35:44.931718+00:00",
+    "command": [
+      "memusage",
+      "-n",
+      "candidate.bin",
+      "--no-timer",
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-1",
+    "started_at": "2026-09-27T22:35:45.335619+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-1",
+    "started_at": "2026-09-27T22:35:45.444620+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-2",
+    "started_at": "2026-09-27T22:35:45.559101+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-2",
+    "started_at": "2026-09-27T22:35:45.667722+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-3",
+    "started_at": "2026-09-27T22:35:45.773307+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-3",
+    "started_at": "2026-09-27T22:35:45.883018+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-alloc",
+    "started_at": "2026-09-27T22:35:45.989649+00:00",
+    "command": [
+      "memusage",
+      "-n",
+      "before.bin",
+      "--no-timer",
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-alloc",
+    "started_at": "2026-09-27T22:35:46.109294+00:00",
+    "command": [
+      "memusage",
+      "-n",
+      "candidate.bin",
+      "--no-timer",
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-atom-buffer/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-atom-buffer/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--all-features",
+    "--test",
+    "composer_atoms_test",
+    "--no-fail-fast"
+  ],
+  "exit": 100
+}

@@ -1,0 +1,45 @@
+{
+  "tui": {
+    "run": 1659,
+    "passed": 1659,
+    "skipped": 7
+  },
+  "pty": {
+    "run": 7,
+    "passed": 7
+  },
+  "atoms_before": {
+    "run": 8,
+    "passed": 8
+  },
+  "mutation": {
+    "run": 8,
+    "passed": 5,
+    "failed": 3
+  },
+  "workspace_check": "passed",
+  "clippy": "passed",
+  "fmt": "passed",
+  "suite_gates": "passed",
+  "performance_runs_retained": 62,
+  "performance_final_and_confirmation": "13/14 limits passed in each; short p99 failed in both",
+  "long_cpu_ms_per_frame": {
+    "before": 0.38,
+    "candidate": 0.32,
+    "limit": 0.324
+  },
+  "short_p99_us": {
+    "first": 196,
+    "confirmation": 186,
+    "limit": 179.3
+  },
+  "affinity_diagnostic": "Does not replace failed acceptance or establish cause",
+  "paired_browser_frames": 16,
+  "browser_exact_pngs": true,
+  "browser_exact_terminal_state_except_observer_counts": true,
+  "browser_initial_pair": "15 exact PNGs; frame12 footer cells differ across confirmation expiry; retained",
+  "terminal_and_resource_cleanup": "both passed",
+  "workspace_test_suite": "not rerun; earlier predecessor CLI failures remain",
+  "whole_rewrite": "unfinished",
+  "clear_behavior": "Captured cursor resets, old text has ghost styling, following paste has no old prefix; assertions strengthened after review"
+}

@@ -26,8 +26,8 @@ impl GraphemeCluster {
     }
 }
 
-pub(crate) fn split_graphemes(text: &str) -> Vec<GraphemeCluster> {
-    text.graphemes(true).map(GraphemeCluster::new).collect()
+pub(crate) fn split_graphemes(text: &str) -> impl Iterator<Item = GraphemeCluster> + '_ {
+    text.graphemes(true).map(GraphemeCluster::new)
 }
 
 pub(crate) fn measured_graphemes(text: &str) -> impl Iterator<Item = (&str, u16)> {

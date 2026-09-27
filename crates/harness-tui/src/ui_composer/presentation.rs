@@ -10,6 +10,7 @@ pub(super) struct ResolvedComposer {
 
 pub(super) fn resolve_composer(
     app: &AppState,
+    actual: &crate::composer_integration::ComposerEditorModel,
     text: &str,
     focused: bool,
     disabled: bool,
@@ -20,15 +21,8 @@ pub(super) fn resolve_composer(
     available_rows: u16,
     show_cursor: bool,
 ) -> Option<ResolvedComposer> {
-    let actual = app.composer_view_model_for_area(Rect::new(
-        0,
-        0,
-        u16::try_from(body_width).unwrap_or(u16::MAX).max(1),
-        u16::try_from(max_text_rows).unwrap_or(u16::MAX).max(1),
-    ));
-    let editor = if actual.editor.text() == text {
+    let editor = if actual.text() == text {
         actual
-            .editor
             .reflow(
                 u16::try_from(body_width).unwrap_or(u16::MAX).max(1),
                 max_text_rows.max(1),
