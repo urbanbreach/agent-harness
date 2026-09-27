@@ -1,0 +1,10 @@
+{
+  "before_assembler_lines": 1641,
+  "before_assembler_production_lines": 1435,
+  "candidate_assembler_lines": 1263,
+  "candidate_assembler_production_lines": 1063,
+  "candidate_source_lines": 167627,
+  "candidate_source_files": 569,
+  "original_source_lines": 181882,
+  "note": "Assembler total includes co-located/moved tests. New main contains test module registration; production count includes that registration."
+}

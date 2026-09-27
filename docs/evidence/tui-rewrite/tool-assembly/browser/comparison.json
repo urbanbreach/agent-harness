@@ -1,0 +1,90 @@
+{
+  "baseline_artifact": "docs/evidence/tui-rewrite/edit-owner/browser/captures.tar.gz",
+  "baseline_source": "fce58731, whose captures were made from 27df3ab7 plus its committed edit-owner source patch",
+  "comparisons": [
+    {
+      "name": "chat-runningopen-120x40-motion-0ms.png",
+      "sha256": "06fc8df5a13eb2b005f673ed0c89d58f520106f7ef48a0defe6f5cc9d1436e4a",
+      "pixels_equal": true,
+      "cells_and_modes_equal": true,
+      "before_counts": {
+        "renderCount": 3,
+        "parsedCount": 2
+      },
+      "candidate_counts": {
+        "renderCount": 3,
+        "parsedCount": 2
+      }
+    },
+    {
+      "name": "chat-runningopen-120x40-motion-330ms.png",
+      "sha256": "284ed7efeab05086d8e055763b8882afdc0ce99fb52f477e2730b728bfeeefed",
+      "pixels_equal": true,
+      "cells_and_modes_equal": true,
+      "before_counts": {
+        "renderCount": 5,
+        "parsedCount": 4
+      },
+      "candidate_counts": {
+        "renderCount": 4,
+        "parsedCount": 4
+      }
+    },
+    {
+      "name": "chat-runningopen-120x40-motion-660ms.png",
+      "sha256": "4f18d891445a1f9f4eb83d5f3f2c9a214e4e2ec9c753769a3c7ef70037dd81b8",
+      "pixels_equal": true,
+      "cells_and_modes_equal": true,
+      "before_counts": {
+        "renderCount": 7,
+        "parsedCount": 6
+      },
+      "candidate_counts": {
+        "renderCount": 6,
+        "parsedCount": 6
+      }
+    },
+    {
+      "name": "chat-thinking-120x40-motion-0ms.png",
+      "sha256": "8afeb045cbcad1e9daa1cbca1c3f380e7a1baaa979100e8ea33e728f3e2f7840",
+      "pixels_equal": true,
+      "cells_and_modes_equal": true,
+      "before_counts": {
+        "renderCount": 9,
+        "parsedCount": 8
+      },
+      "candidate_counts": {
+        "renderCount": 8,
+        "parsedCount": 8
+      }
+    },
+    {
+      "name": "chat-thinking-120x40-motion-330ms.png",
+      "sha256": "a5a59c4c1985e7794ad4210dd4133aec0ddd156881bc9d99f04473304807d2ba",
+      "pixels_equal": true,
+      "cells_and_modes_equal": true,
+      "before_counts": {
+        "renderCount": 11,
+        "parsedCount": 10
+      },
+      "candidate_counts": {
+        "renderCount": 10,
+        "parsedCount": 10
+      }
+    },
+    {
+      "name": "chat-thinking-120x40-motion-660ms.png",
+      "sha256": "7229f5f9ac266a8840195a98798e0a24dba5f26b265ebc8e36ed6d37efabe3aa",
+      "pixels_equal": true,
+      "cells_and_modes_equal": true,
+      "before_counts": {
+        "renderCount": 13,
+        "parsedCount": 12
+      },
+      "candidate_counts": {
+        "renderCount": 12,
+        "parsedCount": 12
+      }
+    }
+  ]
+}

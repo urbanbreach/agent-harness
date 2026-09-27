@@ -1,0 +1,105 @@
+{
+  "acceptance": {
+    "p95_us": {
+      "candidate": 15359,
+      "limit": 16547.300000000003,
+      "passes": true
+    },
+    "p99_us": {
+      "candidate": 15445,
+      "limit": 16672.7,
+      "passes": true
+    },
+    "rss_kib": {
+      "candidate": 39464,
+      "limit": 43428.0,
+      "passes": true
+    },
+    "cpu_ms_per_frame": {
+      "candidate": 10.65,
+      "limit": 11.55,
+      "passes": true
+    },
+    "allocated_bytes": {
+      "candidate": 7956018736,
+      "limit": 8785050485.2,
+      "passes": true
+    },
+    "peak_heap_bytes": {
+      "candidate": 25619429,
+      "limit": 28183691.8,
+      "passes": true
+    }
+  },
+  "content": [
+    {
+      "sample": "1",
+      "equal_for": [
+        "reference",
+        "before",
+        "candidate"
+      ],
+      "checked": [
+        "scenario",
+        "frames",
+        "history_turns",
+        "history_events",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "sample": "2",
+      "equal_for": [
+        "reference",
+        "before",
+        "candidate"
+      ],
+      "checked": [
+        "scenario",
+        "frames",
+        "history_turns",
+        "history_events",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "sample": "3",
+      "equal_for": [
+        "reference",
+        "before",
+        "candidate"
+      ],
+      "checked": [
+        "scenario",
+        "frames",
+        "history_turns",
+        "history_events",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "sample": "alloc",
+      "equal_for": [
+        "reference",
+        "before",
+        "candidate"
+      ],
+      "checked": [
+        "scenario",
+        "frames",
+        "history_turns",
+        "history_events",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    }
+  ],
+  "all_limits_pass": true
+}

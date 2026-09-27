@@ -1,0 +1,17 @@
+{
+  "reviewer": "/root/tui_review",
+  "recorded_at": "2026-09-27T18:56:37.651293+00:00",
+  "verdict": "Approved for this slice\u2019s atomic commit; no blockers.",
+  "scope": "Independent source and evidence review of the tool-row assembly replacement. Whole-rewrite approval remains open.",
+  "verified": [
+    "All 33 published artifact hashes, seven source receipts and source patch match the staged changes against fce5873140fa0cf4e9cf9448194113f4505ce541.",
+    "Both published measurement fixtures match current and pinned-reference copies; probe and release binary hashes verify.",
+    "All 12 raw runs reconstruct the reported quantiles, medians and allocation totals. Cross-build output, count and terminal-byte comparisons match.",
+    "All six unchanged limits pass. Their acceptance hash and timestamp precede the implementation-start receipt.",
+    "Production assembler count is 1435 to 1063 lines; including moved tests it is 1641 to 1263. Whole source is 167627 lines across 569 files. Five moved tests are semantically unchanged.",
+    "555 records and ANSI captures, 733 motion pairs and six PNG/snapshot pairs match. Five browser renderCount differences of minus one are disclosed.",
+    "Seven PTY checks pass, six children are cleaned up, and the real workflow and four restoration outcomes support the documented claims.",
+    "README distinguishes preceding-build regression limits from the remaining original-relative p99 and CPU gaps, and identifies R17 as source-traced rather than a syscall measurement."
+  ],
+  "source_receipts_sha256": "10d8d025a7bf6d50fc2d84863b6e9d32fdf497d79d0709addb1700c670238805"
+}

@@ -1,0 +1,145 @@
+[
+  {
+    "name": "all",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--profile",
+      "ci",
+      "-p",
+      "harness-tui",
+      "--all-features"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "harness-tui",
+      "--all-targets",
+      "--all-features",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "workspace",
+    "command": [
+      "cargo",
+      "check",
+      "--workspace"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "gates",
+    "command": [
+      "python3",
+      "scripts/check-test-suite-gates.py"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "frames",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--profile",
+      "ci",
+      "-p",
+      "harness-tui",
+      "--all-features",
+      "--test",
+      "rewrite_reference_test"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "motion",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--profile",
+      "ci",
+      "-p",
+      "harness-tui",
+      "--all-features",
+      "--test",
+      "grok_parity_render_test",
+      "-E",
+      "test(chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text) | test(all_tool_families_keep_grok_columns_through_streaming_and_disclosure)"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "pty",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--profile",
+      "ci",
+      "-p",
+      "harness-tui",
+      "--all-features",
+      "--ignore-default-filter",
+      "-E",
+      "binary(p0_03_pty_recorded) | binary(p1_04_pty_recorded)"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "performance-build",
+    "command": [
+      "cargo",
+      "nextest",
+      "list",
+      "--release",
+      "-p",
+      "harness-tui",
+      "--all-features",
+      "--test",
+      "rewrite_performance_test",
+      "--list-type",
+      "binaries-only",
+      "--message-format",
+      "json"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "probes-build",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "-p",
+      "harness-tui",
+      "--all-features",
+      "--example",
+      "rewrite_probe",
+      "--example",
+      "resource_probe"
+    ],
+    "exit_code": 0
+  }
+]

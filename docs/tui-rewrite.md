@@ -130,6 +130,7 @@ before changing the implementation.
 | R14 | Long transcript tokens undercount VS16 cells, whitespace tokenization splits combining clusters, and selection uses different widths from painting | Replace styled wrapping with borrowed grapheme tokens and align selection with Ratatui widths. Four paired records restore all missing clusters; copy/highlight checks use painted coordinates. Zero-width prefixes remain on their content row. |
 | R15 | A first local file/subagent mention can remain absent from a warmed empty transcript until another update invalidates it | Preserve the recorded first-echo timing during the settlement optimization. Explicitly invalidate later local echoes, whose changed selection index previously caused the refresh. A separate correction needs an intentional first-echo behavior change; the original and unconditional-invalidation captures are retained under `evidence/tui-rewrite/settlement-suffix/diagnostics`. |
 | R16 | Rewinding a later turn can leave a retained older tool labeled Patch or showing a discarded rejection, because prior display state overwrites the active-history edit proposal | Fold edit state from active events after successful complete-history or untrimmed-inline reconstruction. The pinned original fails the public rewind check. Capped inline child histories retain their prior edit state because the proposal may no longer be available; exact edit rewind there remains unverified. |
+| R17 | Tool-row assembly eagerly parses todo data for every visible tool and may read unrelated JSON/text artifacts before discarding the result | Remove the eager todo call and unreachable todo row branches. Production transcript dispatch already hides todo calls; retain the active todo pane parser. This is a source-traced side-effect correction with unchanged visible output, not a syscall-count claim. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -842,6 +843,35 @@ original. The source-reduction target, remaining state/formatter replacement,
 polling removal and runtime resource targets are unfinished. Evidence and
 commands are in
 [`evidence/tui-rewrite/edit-owner`](evidence/tui-rewrite/edit-owner).
+
+## Tool-row assembly replacement
+
+Tool-row construction now fills one section and applies shared detail and subtitle
+rules. The nested six-value tuple builder, duplicated output construction, six
+uncalled subagent helpers and unreachable todo branches are removed. Diff/error
+helpers retain their behavior in focused files. R17 records the removed eager
+todo artifact read. The todo pane's own parser remains.
+
+Production assembly falls from 1,435 to 1,063 lines. Every replacement file is
+below 500 lines. Including moved tests and one removed import, TUI source falls
+by 379 lines to 167,627, 7.84% below the original. Five existing checks move without
+changed assertions. All 1,668 deterministic tests, 555 reference records, 733
+controlled animation frames and seven gated PTY checks pass. Six xterm screenshots
+match pixels/cells/modes. The real rewind/click workflow and restoration checks
+also pass, with the documented output-failure limitation.
+
+A new tool-disclosure workload uses the same fixture on original, preceding and
+candidate release executables. Its six limits were frozen before implementation;
+all pass. Allocations fall 0.38% from the preceding build, while memory and CPU
+are essentially unchanged. Candidate p99 is 15.45 ms versus 15.16 ms immediately
+before this change and 12.05 ms on the original. The original-relative tool-heavy
+latency/CPU gap remains open. These forced projection/renderer measurements do
+not establish input-to-visible-response latency or a speedup for this slice.
+
+The remaining state/formatter replacement, source target, polling removal,
+sustained runtime resource work and final feature review are unfinished. Raw
+samples, reproduction commands, source receipts and limitations are in
+[`evidence/tui-rewrite/tool-assembly`](evidence/tui-rewrite/tool-assembly).
 
 ## Verification sequence
 

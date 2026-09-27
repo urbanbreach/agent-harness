@@ -1,0 +1,30 @@
+{
+  "crates/harness-tui/src/ui_transcript.rs": {
+    "sha256": "3fd2930d40f6bd4754641f557f6b9b0bb615b899e31d9425eb5ef9c78e5bb52c",
+    "lines": 1400
+  },
+  "crates/harness-tui/src/ui_transcript_tool_sections.rs": {
+    "sha256": "1269a65bdc68a6554ee776218bcc802caa23f04df3b397f102927807ef6311ec",
+    "lines": 228
+  },
+  "crates/harness-tui/src/ui_transcript_tool_sections/content.rs": {
+    "sha256": "26bd3b873d32815e02077fb5291a6ef6dea96f28e4005e446fde5029aa1d3ea1",
+    "lines": 425
+  },
+  "crates/harness-tui/src/ui_transcript_tool_sections/details.rs": {
+    "sha256": "93365b62f0fcd96876b56a2ce270c8457cda40f5590c324b137d5a8b8ce935a8",
+    "lines": 184
+  },
+  "crates/harness-tui/src/ui_transcript_tool_sections/diffs.rs": {
+    "sha256": "24523d3cc3bddc7730195df813b52a7d6539bb9b85ad78199dffff48cbd56118",
+    "lines": 226
+  },
+  "crates/harness-tui/src/ui_transcript_tool_sections/tests.rs": {
+    "sha256": "d0ad2eaad4b013d5b16d354091905a88c374670523bcc1115881f0f6f235f53a",
+    "lines": 200
+  },
+  "crates/harness-tui/tests/rewrite_performance_test.rs": {
+    "sha256": "72caa81e03d5f90a5f5642fda350263dd476aca075752868bc4c1781c06fd9a8",
+    "lines": 328
+  }
+}

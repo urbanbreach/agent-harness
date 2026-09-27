@@ -1,0 +1,25 @@
+[
+  {
+    "name": "workflow",
+    "command": [
+      "node",
+      "scripts/qa/measure-rewrite-latency.mjs",
+      "/tmp/tui-tool-assembly-rewrite_probe.bin",
+      ".omo/evidence/tui-rewrite/tool-assembly/workflow",
+      "--workflow-only"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "restoration",
+    "command": [
+      "python3",
+      "scripts/check-tui-restoration.py",
+      "--binary",
+      "/tmp/tui-tool-assembly-resource_probe.bin",
+      "--output",
+      "/tmp/tui-tool-assembly-restoration"
+    ],
+    "exit_code": 0
+  }
+]

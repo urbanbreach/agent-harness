@@ -1,0 +1,38 @@
+{
+  "reference": {
+    "construction_us": 5634,
+    "cold_us": 8466,
+    "p50_us": 8526,
+    "p95_us": 11856,
+    "p99_us": 12046,
+    "bytes": 772800,
+    "rss_kib": 45500,
+    "cpu_ms_per_frame": 9.9,
+    "allocated_bytes": 9251009010,
+    "peak_heap_bytes": 30279848
+  },
+  "before": {
+    "construction_us": 5793,
+    "cold_us": 6361,
+    "p50_us": 6567,
+    "p95_us": 15043,
+    "p99_us": 15157,
+    "bytes": 772800,
+    "rss_kib": 39480,
+    "cpu_ms_per_frame": 10.5,
+    "allocated_bytes": 7986409532,
+    "peak_heap_bytes": 25621538
+  },
+  "candidate": {
+    "construction_us": 4645,
+    "cold_us": 6181,
+    "p50_us": 6725,
+    "p95_us": 15359,
+    "p99_us": 15445,
+    "bytes": 772800,
+    "rss_kib": 39464,
+    "cpu_ms_per_frame": 10.65,
+    "allocated_bytes": 7956018736,
+    "peak_heap_bytes": 25619429
+  }
+}
