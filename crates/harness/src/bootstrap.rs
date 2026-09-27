@@ -1,897 +1,420 @@
-// allow: SIZE_OK — CLI bootstrap (runtime catalog + profile + provider assembly)
-use std::collections::BTreeMap;
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use harness_core::agent::AgentProfile;
-use harness_core::auth::codex::{
-    AuthHttpClient, AuthHttpMethod, AuthHttpRequest, AuthHttpResponse, CodexOAuthClient,
-    CodexOAuthError,
+#[path = "bootstrap/secrets.rs"]
+mod secrets;
+use harness::CliDeps;
+use harness_core::{
+    agent::AgentProfile,
+    auth::{CredentialStore, ProviderCredentialManager, ProviderId},
+    config::{
+        resolve_model_selection, HarnessConfig, OpenAiApiMode, PermissionRuleSet, ProviderConfig,
+    },
+    coord::CoordinatorConfig,
+    perm::{PermissionPolicy, PermissionRule, PermissionRuleset},
 };
-use harness_core::auth::{AuthProviderId, CredentialStore, ProviderCredentialManager};
-use harness_core::config::{
-    refresh_profile_model_metadata_registry, resolve_model_selection, AgentMode, HarnessConfig,
-    OpenAiApiMode as CoreOpenAiApiMode, ProviderConfig,
-};
-use harness_core::coord::CoordinatorConfig;
-use harness_core::perm::{PermissionKind, PermissionPolicy, PermissionRuleRequest, PolicyDecision};
-use harness_core::tool::ToolRegistry;
-use harness_providers::openai::{
-    OpenAiApiMode as ProviderOpenAiApiMode, OpenAiAuthProfile, OpenAiCompatibleProvider,
-    OpenAiCompatibleProviderConfig,
-};
-use harness_providers::{Provider, ProviderRouter};
-use harness_tools::{
-    coordinator_registry_with_mcp_and_editing, discover_skill_catalog_with_config,
-    EditingToolSurfaceConfig, SkillCatalogEntry, SkillCatalogStatus,
+use harness_providers::{HttpProvider, Protocol, Provider, ProviderRouter};
+pub(crate) use secrets::secret_values;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+    time::Duration,
 };
 
-use crate::dynamic_prompt;
-use crate::UnwrapOrAbort;
-
-pub const DEFAULT_INTERACTIVE_PROFILE: &str = "default";
-
-const CONFIG_SEARCH_LOCATIONS: [&str; 4] = [
-    "./harness.jsonc",
-    "./harness.json",
-    "$XDG_CONFIG_HOME/harness/harness.jsonc (fallback: ~/.config/harness/harness.jsonc)",
-    "$XDG_CONFIG_HOME/harness/harness.json (fallback: ~/.config/harness/harness.json)",
-];
-
-pub fn interactive_config_guidance() -> String {
-    format!(
-        "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and uses the generic agent. If you want the demo/mock UI instead, re-run with --mock",
-        CONFIG_SEARCH_LOCATIONS.join(" or ")
-    )
+pub(crate) fn interactive_profile_name(config: &HarnessConfig) -> String {
+    config
+        .ui
+        .default_profile
+        .clone()
+        .unwrap_or_else(|| "default".into())
 }
-
-pub fn build_interactive_coordinator_config(
-    cfg: &HarnessConfig,
-) -> Result<CoordinatorConfig, String> {
-    let mut coordinator_config = CoordinatorConfig::new(cfg.paths.session_dir.clone());
-    coordinator_config.permission_policy = PermissionPolicy::from_config(cfg);
-    coordinator_config.always_approve_on_start = cfg.runtime.always_approve;
-    let mut tool_registry = coordinator_registry_with_mcp_and_editing(
-        cfg.permissions.shell_allowlist.clone(),
-        cfg.integrations.mcp.clone(),
-        EditingToolSurfaceConfig {
-            hashline_edit: cfg.hashline_edit,
-        },
-    );
-    install_task_tool_subagent_descriptions(&mut tool_registry, cfg);
-    install_skill_tool_descriptions(&mut tool_registry, cfg);
-    let auto_tool_ids = auto_mcp_tool_ids(&tool_registry);
-    coordinator_config.tool_registry = Arc::new(tool_registry);
-    coordinator_config.tool_concurrency = cfg.background_task.default_concurrency;
-    coordinator_config.provider_model_concurrency = cfg.background_task.model_concurrency;
-    coordinator_config.stale_timeout_ms = cfg.background_task.stale_timeout_ms;
-    coordinator_config.compaction = cfg.runtime.compaction.clone();
-    coordinator_config.provider_retry = cfg.runtime.provider_retry;
-    coordinator_config.provider = Arc::new(build_provider_router(cfg)?);
-    coordinator_config.title_model_ref = cfg.small_model.clone();
-    let (agent_profiles, agent_model_targets, agent_model_fallbacks) =
-        interactive_agent_profiles_with_extra_tools(cfg, &auto_tool_ids)?;
-    coordinator_config.agent_profiles = agent_profiles;
-    coordinator_config.agent_model_targets = agent_model_targets;
-    coordinator_config.agent_model_fallbacks = agent_model_fallbacks;
-    for (name, profile) in &cfg.agents {
-        coordinator_config.agent_prompt_templates.insert(
-            name.clone(),
-            interactive_prompt_template(
-                cfg,
-                name,
-                profile,
-                &coordinator_config.agent_model_targets[name],
-            ),
-        );
-    }
-    coordinator_config.formatter = cfg.formatter.clone();
-    Ok(coordinator_config)
+pub(crate) fn interactive_config_guidance() -> String {
+    "Configure a provider and model, connect with `harness auth login`, or use --mock.".into()
 }
-
-pub fn interactive_profile_name(cfg: &HarnessConfig) -> String {
-    let _ = cfg;
-    DEFAULT_INTERACTIVE_PROFILE.to_string()
-}
-
-fn install_task_tool_subagent_descriptions(tool_registry: &mut ToolRegistry, cfg: &HarnessConfig) {
-    let Some(task_tool) = tool_registry.get("task") else {
-        return;
-    };
-    let base_description = task_tool.description().to_string();
-    let permission_policy = PermissionPolicy::from_config(cfg);
-
-    for parent_profile in cfg.agents.keys() {
-        let description = task_tool_description_for_profile(
-            &base_description,
-            cfg,
-            &permission_policy,
-            parent_profile,
-        );
-        tool_registry.set_profile_tool_description("task", parent_profile, description);
-    }
-}
-
-fn install_skill_tool_descriptions(tool_registry: &mut ToolRegistry, cfg: &HarnessConfig) {
-    if tool_registry.get("skill").is_none() {
-        return;
-    }
-
-    let workspace_root = harness_core::workspace::WorkspaceEnvironment::current().workspace_root;
-    let available_skills = available_skills_prompt(cfg, &workspace_root);
-    let description = skill_tool_description(&available_skills);
-
-    for (profile_name, profile) in &cfg.agents {
-        if profile.tools.iter().any(|tool| tool == "skill") {
-            tool_registry.set_profile_tool_description("skill", profile_name, description.clone());
-        }
-    }
-}
-
-fn available_skills_prompt(cfg: &HarnessConfig, workspace_root: &std::path::Path) -> String {
-    let Ok(catalog) = discover_skill_catalog_with_config(workspace_root, &cfg.skills) else {
-        return "No skills are currently available.".to_string();
-    };
-    format_available_skills(catalog.entries.iter())
-}
-
-fn format_available_skills<'a>(entries: impl Iterator<Item = &'a SkillCatalogEntry>) -> String {
-    let mut skills = entries
-        .filter(|entry| entry.status == SkillCatalogStatus::Loadable)
-        .collect::<Vec<_>>();
-    skills.sort_by(|left, right| left.name.cmp(&right.name));
-
-    if skills.is_empty() {
-        return "No skills are currently available.".to_string();
-    }
-
-    let mut output = String::from("<available_skills>");
-    for skill in skills {
-        output.push_str("\n  <skill>\n    <name>");
-        output.push_str(&xml_escape(&skill.name));
-        output.push_str("</name>\n    <description>");
-        output.push_str(&xml_escape(&skill.description));
-        output.push_str("</description>\n  </skill>");
-    }
-    output.push_str("\n</available_skills>");
-    output
-}
-
-fn skill_tool_description(available_skills: &str) -> String {
-    [
-        "Load a specialized skill that provides domain-specific instructions and workflows.",
-        "Use this tool when the task at hand matches one of the skills listed in available_skills.",
-        "The `name` argument must be an exact skill name from available_skills.",
-        available_skills,
-    ]
-    .join("\n\n")
-}
-
-fn xml_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-fn task_tool_description_for_profile(
-    base_description: &str,
-    cfg: &HarnessConfig,
-    permission_policy: &PermissionPolicy,
-    parent_profile: &str,
-) -> String {
-    let mut subagents = cfg
+pub(crate) fn interactive_agent_profiles(
+    config: &HarnessConfig,
+) -> Result<BTreeMap<String, AgentProfile>, String> {
+    config
         .agents
         .iter()
-        .filter(|(_, profile)| profile.mode != AgentMode::Primary)
-        .filter(|(name, _)| task_profile_allowed(parent_profile, name, permission_policy))
-        .map(|(name, profile)| format!("- {name}: {}", profile.description))
-        .collect::<Vec<_>>();
-    subagents.sort();
-
-    let mut description = String::from(base_description);
-    description.push_str("\n\nAvailable subagents:");
-    if subagents.is_empty() {
-        description.push_str("\n- none");
-    } else {
-        for subagent in subagents {
-            description.push('\n');
-            description.push_str(&subagent);
-        }
-    }
-    description
-}
-
-fn task_profile_allowed(
-    parent_profile: &str,
-    child_profile: &str,
-    permission_policy: &PermissionPolicy,
-) -> bool {
-    !matches!(
-        permission_policy.evaluate_request(
-            Some(parent_profile),
-            PermissionKind::Task,
-            Some(&PermissionRuleRequest::TaskAgent(child_profile.to_string())),
-        ),
-        PolicyDecision::Deny
-    )
-}
-
-fn build_provider_router(cfg: &HarnessConfig) -> Result<ProviderRouter, String> {
-    let providers = cfg
-        .providers
-        .iter()
-        .map(|(provider_id, provider)| {
-            build_provider(provider_id, provider).map(|provider| (provider_id.clone(), provider))
-        })
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
-
-    Ok(ProviderRouter::new(providers))
-}
-
-fn build_provider(
-    provider_id: &str,
-    provider: &ProviderConfig,
-) -> Result<Arc<dyn Provider>, String> {
-    match provider {
-        ProviderConfig::OpenAiCompatible(provider) => {
-            let api_key = provider
-                .api_key_env
+        .map(|(name, source)| {
+            let mut profile = AgentProfile::fallback(name);
+            profile.model_ref = source.model_ref.clone();
+            profile.model_ref_explicit = source.model_ref_explicit;
+            profile.system_prompt = source
+                .system_prompt
                 .iter()
-                .find_map(|name| {
-                    std::env::var(name)
-                        .ok()
-                        .filter(|value| !value.trim().is_empty())
-                })
-                .unwrap_or_else(|| provider.api_key.clone());
-
-            let mut openai_provider =
-                OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
-                    base_url: provider.base_url.clone(),
-                    api_key,
-                    api_mode: map_openai_api_mode(provider.api_mode.clone()),
-                    timeout_ms: provider.timeout_ms,
-                    headers: provider.headers.clone(),
-                })
-                .map_err(|err| format!("failed to build provider `{provider_id}`: {err}"))?;
-
-            if let Some(auth_provider) = provider.auth_provider.clone() {
-                let auth_profile = if auth_provider == AuthProviderId::codex() {
-                    OpenAiAuthProfile::Codex
-                } else if auth_provider == AuthProviderId::github_copilot() {
-                    OpenAiAuthProfile::GithubCopilot
-                } else {
-                    return Err(format!(
-                        "unsupported auth provider `{auth_provider}` for provider `{provider_id}`"
-                    ));
-                };
-                openai_provider = openai_provider.with_auth_profile(auth_profile);
-                if let Some(store) = CredentialStore::from_env() {
-                    let mut manager = ProviderCredentialManager::new(
-                        store,
-                        auth_provider.clone(),
-                        provider.api_key_env.clone(),
-                        provider.api_key.clone(),
-                        |name| std::env::var(name).ok(),
-                    );
-                    if auth_provider == AuthProviderId::codex() {
-                        manager = manager.with_refresher(Arc::new(CodexOAuthClient::new(
-                            Arc::new(ReqwestAuthHttpClient::default()),
-                        )));
-                    }
-                    openai_provider = openai_provider.with_credential_source(Arc::new(manager));
-                }
-            }
-
-            Ok(Arc::new(openai_provider) as Arc<dyn Provider>)
-        }
-        ProviderConfig::Anthropic(provider) => {
-            let api_key = provider
-                .api_key_env
-                .iter()
-                .find_map(|name| {
-                    std::env::var(name)
-                        .ok()
-                        .filter(|value| !value.trim().is_empty())
-                })
-                .unwrap_or_else(|| provider.api_key.clone());
-
-            let anthropic_provider = harness_providers::anthropic::AnthropicProvider::new(
-                harness_providers::anthropic::AnthropicProviderConfig {
-                    base_url: provider.base_url.clone(),
-                    api_key,
-                    timeout_ms: provider.timeout_ms,
-                    headers: provider.headers.clone(),
-                },
-            )
-            .map_err(|err| format!("failed to build provider `{provider_id}`: {err}"))?;
-
-            Ok(Arc::new(anthropic_provider) as Arc<dyn Provider>)
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-struct ReqwestAuthHttpClient {
-    client: reqwest::Client,
-}
-
-#[async_trait]
-impl AuthHttpClient for ReqwestAuthHttpClient {
-    async fn send(&self, request: AuthHttpRequest) -> Result<AuthHttpResponse, CodexOAuthError> {
-        let mut builder = match request.method {
-            AuthHttpMethod::Post => self.client.post(&request.url),
-        };
-        for (name, value) in request.headers {
-            builder = builder.header(name, value);
-        }
-        let response =
-            builder
-                .body(request.body)
-                .send()
-                .await
-                .map_err(|err| CodexOAuthError::Http {
-                    message: err.without_url().to_string(),
-                })?;
-        let status = response.status().as_u16();
-        let body = response.text().await.map_err(|err| CodexOAuthError::Http {
-            message: err.without_url().to_string(),
-        })?;
-        Ok(AuthHttpResponse { status, body })
-    }
-}
-
-fn map_openai_api_mode(mode: CoreOpenAiApiMode) -> ProviderOpenAiApiMode {
-    match mode {
-        CoreOpenAiApiMode::Responses => ProviderOpenAiApiMode::Responses,
-        CoreOpenAiApiMode::ChatCompletions => ProviderOpenAiApiMode::ChatCompletions,
-        CoreOpenAiApiMode::Auto => ProviderOpenAiApiMode::Auto,
-    }
-}
-
-fn compose_interactive_system_prompt(
-    cfg: &HarnessConfig,
-    profile_name: &str,
-    profile_cfg: &harness_core::config::ProfileConfig,
-    model: &harness_core::config::ResolvedModelTarget,
-    toolset: &[String],
-) -> String {
-    interactive_prompt_template(cfg, profile_name, profile_cfg, model)
-        .compose(model, toolset.iter().any(|tool| tool == "skill"))
-}
-
-fn interactive_prompt_template(
-    cfg: &HarnessConfig,
-    profile_name: &str,
-    profile_cfg: &harness_core::config::ProfileConfig,
-    model: &harness_core::config::ResolvedModelTarget,
-) -> harness_core::model_resolution::ModelPromptTemplate {
-    use harness_core::model_resolution::{
-        configured_prompt_override, shipped_agent_prompt, ModelPromptTemplate,
-    };
-    let configured_prompt =
-        configured_prompt_override(profile_name, profile_cfg.system_prompt.as_deref());
-    let role = configured_prompt
-        .is_none()
-        .then(|| shipped_agent_prompt(profile_name))
-        .flatten();
-    ModelPromptTemplate {
-        model: model.clone(),
-        configured_prompt: configured_prompt.map(str::to_string),
-        role_prompt: role.map(str::to_string),
-        instruction_prompt: cfg.instruction_prompt_prefix(),
-        extra_rules: None,
-        render: dynamic_prompt::compose_template,
-    }
-}
-
-pub fn interactive_agent_profiles(
-    cfg: &HarnessConfig,
-) -> Result<BTreeMap<String, AgentProfile>, String> {
-    Ok(interactive_agent_profiles_with_extra_tools(cfg, &[])?.0)
-}
-
-fn interactive_agent_profiles_with_extra_tools(
-    cfg: &HarnessConfig,
-    extra_tool_ids: &[String],
-) -> Result<
-    (
-        BTreeMap<String, AgentProfile>,
-        BTreeMap<String, harness_core::config::ResolvedModelTarget>,
-        BTreeMap<String, Vec<harness_core::config::ResolvedModelTarget>>,
-    ),
-    String,
-> {
-    refresh_profile_model_metadata_registry(cfg).map_err(|err| err.to_string())?;
-
-    let mut profiles = BTreeMap::new();
-    let mut model_fallbacks = BTreeMap::new();
-    let mut model_targets = BTreeMap::new();
-
-    let editing_surface = EditingToolSurfaceConfig {
-        hashline_edit: cfg.hashline_edit,
-    };
-
-    for (profile_name, profile_cfg) in &cfg.agents {
-        let model_selection =
-            resolve_model_selection(cfg, &profile_cfg.model_ref, profile_cfg.variant.as_deref())
-                .map_err(|err| {
-                    format!(
-                        "agent `{profile_name}` has invalid model selection `{}`: {err}",
-                        profile_cfg.model_ref
-                    )
-                })?;
-
-        let mut toolset = normalize_profile_toolset(&profile_cfg.tools, editing_surface);
-        if profile_cfg.mode == AgentMode::Primary
-            || matches!(profile_name.as_str(), "explore" | "librarian")
-        {
-            for tool_id in extra_tool_ids {
-                if !toolset.contains(tool_id) {
-                    toolset.push(tool_id.clone());
-                }
-            }
-        }
-        let system_prompt = compose_interactive_system_prompt(
-            cfg,
-            profile_name,
-            profile_cfg,
-            &model_selection.primary,
-            &toolset,
-        );
-        let cache_retention = cfg
-            .providers
-            .get(&model_selection.primary.provider)
-            .map(provider_cache_retention)
-            .unwrap_or_default();
-
-        if !model_selection.fallback.is_empty() {
-            model_fallbacks.insert(profile_name.clone(), model_selection.fallback.clone());
-        }
-        model_targets.insert(profile_name.clone(), model_selection.primary.clone());
-
-        profiles.insert(
-            profile_name.clone(),
-            AgentProfile {
-                name: profile_name.clone(),
-                model_ref: model_selection.primary.model_ref,
-                model_ref_explicit: profile_cfg.model_ref_explicit,
-                system_prompt,
-                max_iters: profile_cfg.max_iters,
-                temperature: profile_cfg.temperature,
-                cache_retention,
-                tool_failure_mode: profile_cfg.tool_failure_mode,
-                toolset,
-                permission_ruleset: profile_cfg
-                    .permissions
-                    .as_ref()
-                    .map(harness_core::perm::from_profile_permissions)
-                    .unwrap_or_default(),
-            },
-        );
-    }
-
-    Ok((profiles, model_targets, model_fallbacks))
-}
-
-fn provider_cache_retention(provider: &ProviderConfig) -> harness_providers::CacheRetention {
-    match provider {
-        ProviderConfig::OpenAiCompatible(provider) => provider.cache_retention,
-        ProviderConfig::Anthropic(_) => harness_providers::CacheRetention::None,
-    }
-}
-
-fn normalize_profile_toolset(
-    configured: &[String],
-    editing_surface: EditingToolSurfaceConfig,
-) -> Vec<String> {
-    let mut ordered = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
-
-    for tool_id in configured {
-        push_tool(&mut ordered, &mut seen, tool_id);
-    }
-
-    if editing_surface.hashline_edit && seen.contains("edit") && !seen.contains("read") {
-        push_tool(&mut ordered, &mut seen, "read");
-    }
-
-    ordered
-}
-
-fn push_tool(
-    ordered: &mut Vec<String>,
-    seen: &mut std::collections::BTreeSet<String>,
-    tool_id: &str,
-) {
-    if seen.insert(tool_id.to_string()) {
-        ordered.push(tool_id.to_string());
-    }
-}
-
-fn auto_mcp_tool_ids(tool_registry: &ToolRegistry) -> Vec<String> {
-    tool_registry
-        .tool_ids()
-        .into_iter()
-        .filter(|tool_id| {
-            tool_id.starts_with("mcp.")
-                && !matches!(
-                    tool_id
-                        .splitn(4, '.')
-                        .skip(2)
-                        .collect::<Vec<_>>()
-                        .as_slice(),
-                    ["tools", "list"]
-                        | ["tool", "call"]
-                        | ["resources", "list"]
-                        | ["resource", "read"]
-                        | ["prompts", "list"]
-                        | ["prompt", "get"]
+                .map(String::as_str)
+                .chain(
+                    config
+                        .instruction_files
+                        .iter()
+                        .map(|file| file.content.as_str()),
                 )
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            profile.temperature = source.temperature;
+            profile.max_iters = source.max_iters;
+            profile.tool_failure_mode = source.tool_failure_mode;
+            let mut seen = BTreeSet::new();
+            profile.toolset = source
+                .tools
+                .iter()
+                .filter(|name| seen.insert(*name))
+                .cloned()
+                .collect();
+            if let Some(permissions) = &source.permissions {
+                profile.permission_ruleset = permission_rules(permissions, &permissions.rules)?;
+            }
+            Ok((name.clone(), profile))
         })
         .collect()
 }
-
-#[cfg(test)]
-mod tests {
-    use harness_core::agent::build_provider_tool_defs;
-    use harness_core::config::{load_config_from_file, load_config_from_str};
-
-    use super::*;
-    use crate::UnwrapOrAbort;
-
-    fn config_fixture(agents: &str) -> HarnessConfig {
-        let raw = format!(
-            r#"
-            {{
-              provider: {{
-                default: {{
-                  type: "openai_compatible",
-                  options: {{
-                    baseURL: "http://127.0.0.1:8317/v1",
-                    apiKey: "test-openai-api-key",
-                    apiMode: "responses",
-                    timeoutMs: 60000,
-                  }},
-                  models: {{
-                    "gpt-5.4-mini": {{
-                      name: "GPT-5.4 mini",
-                    }},
-                    "gpt-5.4": {{
-                      name: "GPT-5.4",
-                      variants: {{
-                        mini: {{
-                          name: "Mini",
-                        }},
-                      }},
-                    }},
-                  }},
-                }},
-              }},
-              model_profile: {{
-                fast: {{
-                  model: "default:gpt-5.4",
-                  variant: "mini",
-                }},
-              }},
-              model: "default/gpt-5.4-mini",
-              agent: {{
-                {agents}
-              }},
-              permission: "allow",
-            }}
-            "#,
-            agents = agents,
-        );
-
-        load_config_from_str(&raw).unwrap_or_abort()
-    }
-
-    #[test]
-    fn interactive_agent_profiles_preserve_optional_max_iters_and_temperature() {
-        let cfg = config_fixture(
-            r#"
-            default: {
-              system_prompt: "Deep prompt",
-              model: "default/gpt-5.4-mini",
-              temperature: 0.7,
-              tools: ["read"],
+pub(crate) fn build_interactive_coordinator_config(
+    config: &HarnessConfig,
+) -> Result<CoordinatorConfig, String> {
+    build(config, &CliDeps::real(), false)
+}
+pub(crate) fn build(
+    config: &HarnessConfig,
+    deps: &CliDeps,
+    mock: bool,
+) -> Result<CoordinatorConfig, String> {
+    config.validate().map_err(|e| e.to_string())?;
+    let mut result = CoordinatorConfig::new(config.runtime.session_dir.clone());
+    result.model_catalog = harness_core::config::configured_model_catalog(config).into();
+    let mut rules = permission_rules(&config.permissions.defaults, &config.permissions.rules)?;
+    if let Some(action) = config.permissions.fallback {
+        rules.insert(
+            0,
+            PermissionRule {
+                permission: "*".into(),
+                pattern: "*".into(),
+                action,
             },
-            general: {
-              system_prompt: "Review prompt",
-              model: "default/gpt-5.4-mini",
-              max_iters: 20,
-              tools: ["read"],
-            },
-            "#,
         );
-
-        let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
-        assert_eq!(profiles["default"].max_iters, None);
-        assert_eq!(profiles["default"].temperature, Some(0.7));
-        assert_eq!(profiles["general"].max_iters, Some(20));
-        assert_eq!(profiles["general"].temperature, None);
     }
-
-    #[test]
-    fn interactive_agents_preserve_configured_system_prompt_in_runtime_config() {
-        let configured_prompt =
-            "Audit the configured tool flow exactly.\nCollect hooks evidence before signoff.";
-        let configured_prompt_json = configured_prompt.replace('\n', "\\n");
-        let cfg = config_fixture(&format!(
-            r#"
-            default: {{
-              system_prompt: "{configured_prompt_json}",
-              model: "default/gpt-5.4-mini",
-              tools: ["read"],
-            }},
-            "#
-        ));
-
-        let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
-        assert!(profiles["default"]
-            .system_prompt
-            .starts_with(configured_prompt));
-        assert!(profiles["default"]
-            .system_prompt
-            .contains("The exact model ID is default/gpt-5.4-mini"));
-
-        let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
-        assert!(coordinator_config.agent_profiles["default"]
-            .system_prompt
-            .starts_with(configured_prompt));
-        assert!(coordinator_config.agent_profiles["default"]
-            .system_prompt
-            .contains("The exact model ID is default/gpt-5.4-mini"));
-    }
-
-    #[test]
-    fn interactive_agent_profiles_apply_model_profile_selection_to_runtime_model_ref() {
-        let cfg = config_fixture(
-            r#"
-            default: {
-              system_prompt: "Build prompt",
-              model: "fast",
-              tools: ["read"],
-            },
-            "#,
-        );
-
-        let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
-        assert_eq!(profiles["default"].model_ref, "default:gpt-5.4");
-    }
-
-    #[test]
-    fn interactive_agents_use_shipped_prompt_when_not_overridden() {
-        let cfg = config_fixture(
-            r#"
-            default: {
-              model: "default/gpt-5.4-mini",
-              tools: ["read"],
-            },
-            "#,
-        );
-
-        let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
-        assert!(profiles["default"].system_prompt.contains(
-            harness_core::model_resolution::shipped_agent_prompt("default").unwrap_or_abort()
-        ));
-    }
-
-    #[test]
-    fn interactive_agent_profiles_append_auto_mcp_tools() {
-        let cfg = config_fixture(
-            r#"
-            default: {
-              system_prompt: "Build prompt",
-              model: "default/gpt-5.4-mini",
-              tools: ["read"],
-            },
-            librarian: { tools: ["read", "mcp.docs-rs.search_in_crate"] },
-            "#,
-        );
-
-        let (profiles, _targets, _fallbacks) = interactive_agent_profiles_with_extra_tools(
-            &cfg,
-            &[
-                "mcp.docs-rs.search_in_crate".to_string(),
-                "mcp.gh_grep.searchGitHub".to_string(),
-            ],
-        )
-        .unwrap_or_abort();
-
-        assert!(!profiles["general"]
-            .toolset
+    rules.extend(
+        config
+            .skills
+            .permissions
             .iter()
-            .any(|tool| tool.starts_with("mcp.")));
-        assert_eq!(
-            profiles["librarian"].toolset,
-            [
-                "read",
-                "mcp.docs-rs.search_in_crate",
-                "mcp.gh_grep.searchGitHub"
-            ]
-        );
-        for tool in ["mcp.docs-rs.search_in_crate", "mcp.gh_grep.searchGitHub"] {
-            assert!(profiles["explore"].toolset.contains(&tool.to_string()));
-        }
-        assert!(profiles["default"].toolset.contains(&"read".to_string()));
-        assert!(profiles["default"]
-            .toolset
-            .contains(&"mcp.docs-rs.search_in_crate".to_string()));
-        assert!(profiles["default"]
-            .toolset
-            .contains(&"mcp.gh_grep.searchGitHub".to_string()));
-        assert!(!profiles["default"]
-            .toolset
-            .contains(&"mcp.docs-rs.tool.call".to_string()));
+            .map(|(pattern, action)| PermissionRule {
+                permission: "skill".into(),
+                pattern: pattern.clone().into(),
+                action: *action,
+            }),
+    );
+    result.permission_policy = PermissionPolicy::from_rules(rules)
+        .map_err(|e| e.to_string())?
+        .with_ask_timeout_ms(config.runtime.permissions.ask_timeout_ms);
+    result.always_approve_on_start = config.runtime.always_approve;
+    result.tool_concurrency = config.runtime.background_tasks.default_concurrency;
+    result.provider_model_concurrency = config.runtime.background_tasks.model_concurrency;
+    result.compaction = config.runtime.compaction.clone();
+    result.provider_retry = config.runtime.provider_retry.clone();
+    result.formatter = Arc::new(config.formatter.clone());
+    result.hook_runtime_config = harness_core::config::HookRuntimeConfig {
+        hooks: config.hooks.clone(),
+        shell_allowlist: config.permissions.shell_allowlist.clone(),
+        suppress_execution: config.runtime.deterministic.enabled,
+    };
+    let mut registry = harness_tools::coordinator_registry_with_skills(
+        config.permissions.shell_allowlist.clone(),
+        config.skills.clone(),
+    );
+    harness_tools::register_remote_search_tools(
+        &mut registry,
+        remote_search_config(deps, config.integrations.remote_search.clone())?,
+    );
+    harness_tools::register_mcp_tools(&mut registry, config.integrations.mcp.clone())
+        .map_err(|e| e.to_string())?;
+    harness_tools::register_lsp_tools(&mut registry, config.lsp.clone());
+    harness_tools::register_github_tools(&mut registry, &|key| deps.env_var_value(key));
+    harness_tools::register_shell_tool(
+        &mut registry,
+        config.permissions.shell_allowlist.clone(),
+        &|key| deps.env_var_value(key),
+    );
+    let mcp_tools: Vec<_> = registry
+        .tool_ids()
+        .into_iter()
+        .filter(|id| id.starts_with("mcp."))
+        .collect();
+    result.tool_registry = Arc::new(registry);
+    if !config.agents.is_empty() {
+        result.agent_profiles = interactive_agent_profiles(config)?;
     }
-
-    #[test]
-    fn interactive_profile_name_is_always_default() {
-        let cfg = config_fixture(
-            r#"
-            default: {
-              model: "default/gpt-5.4-mini",
-              tools: ["read"],
+    for (name, profile) in &mut result.agent_profiles {
+        if matches!(name.as_str(), "explore" | "librarian")
+            || config
+                .agents
+                .get(name)
+                .is_some_and(|p| p.mode == harness_core::config::AgentMode::Primary)
+        {
+            for tool in &mcp_tools {
+                if !profile.toolset.contains(tool) {
+                    profile.toolset.push(tool.clone());
+                }
+            }
+        }
+    }
+    let store = (!mock)
+        .then(|| CredentialStore::from_lookup(&|name| deps.env_var_value(name)))
+        .flatten();
+    result.secret_values = secret_values(config, deps, store.as_ref())?;
+    let workspace = deps.current_dir().map_err(|e| e.to_string())?;
+    let instructions = config
+        .instruction_files
+        .iter()
+        .map(|file| file.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    for (name, profile) in &mut result.agent_profiles {
+        if mock {
+            profile.model_ref = "mock:default".into();
+            continue;
+        }
+        if profile.model_ref == "mock:default" && !config.providers.contains_key("mock") {
+            continue;
+        }
+        let selection = resolve_model_selection(
+            config,
+            &profile.model_ref,
+            config.agents.get(name).and_then(|p| p.variant.as_deref()),
+        )
+        .map_err(|e| e.to_string())?;
+        profile.model_ref = selection.primary.model_ref.clone();
+        let source = harness_core::model_resolution::PromptSource {
+            configured: config
+                .agents
+                .get(name)
+                .and_then(|p| p.system_prompt.clone()),
+            suffix: if instructions.trim().is_empty() {
+                String::new()
+            } else {
+                format!("\n\nProject instructions:\n{instructions}")
             },
-            "#,
-        );
-
-        assert_eq!(interactive_profile_name(&cfg), "default");
-    }
-
-    #[test]
-    fn shipped_example_config_seeds_default_and_named_subagents() {
-        let config_path = crate::cli_config::shipped_example_config_path();
-        let cfg = load_config_from_file(&config_path).unwrap_or_abort();
-
-        for name in ["default", "explore", "general", "librarian"] {
-            assert!(cfg.agents.contains_key(name), "missing agent {name}");
+        };
+        profile.system_prompt =
+            source.resolve(name, selection.primary.resolution.prompt_family, &workspace);
+        result
+            .agent_prompt_sources
+            .insert(name.clone(), Arc::new(source));
+        if let Some(ProviderConfig::OpenAiCompatible(provider)) =
+            config.providers.get(&selection.primary.provider)
+        {
+            profile.cache_retention = provider.cache_retention;
         }
-
-        let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
-        for tool in ["edit", "bash", "task", "background_output", "todowrite"] {
-            assert!(
-                profiles["default"].toolset.contains(&tool.to_string()),
-                "missing tool {tool}"
-            );
-        }
-        assert!(!profiles["default"]
-            .toolset
-            .contains(&"plan_enter".to_string()));
-        assert!(!profiles["default"]
-            .toolset
-            .contains(&"plan_exit".to_string()));
-        for tool in ["read", "grep", "ast_grep_search", "webfetch", "websearch"] {
-            assert!(
-                profiles["explore"].toolset.contains(&tool.to_string()),
-                "missing explore tool {tool}"
-            );
-        }
-        for role in ["explore", "librarian"] {
-            assert!(profiles[role].toolset.iter().all(|tool| ![
-                "edit",
-                "write",
-                "apply_patch",
-                "task"
-            ]
-            .contains(&tool.as_str())));
-        }
-        assert!(profiles["general"].toolset.contains(&"edit".to_string()));
-        assert!(profiles["general"].toolset.contains(&"bash".to_string()));
-        assert!(!profiles["general"].toolset.contains(&"task".to_string()));
-        assert!(!profiles["general"]
-            .toolset
-            .contains(&"background_output".to_string()));
-        assert!(!profiles["general"]
-            .toolset
-            .contains(&"todowrite".to_string()));
-        assert!(profiles["librarian"]
-            .toolset
-            .contains(&"webfetch".to_string()));
-        assert!(profiles["default"].system_prompt.contains(
-            harness_core::model_resolution::shipped_agent_prompt("default").unwrap_or_abort()
-        ));
-        assert!(profiles["default"].system_prompt.contains("inside Harness"));
-        assert!(!profiles["default"]
-            .system_prompt
-            .to_lowercase()
-            .contains(&["open", "code"].concat()));
+        result
+            .agent_model_targets
+            .insert(name.clone(), selection.primary);
+        result
+            .agent_model_fallbacks
+            .insert(name.clone(), selection.fallback);
     }
+    result.provider = if let Some(provider) = deps.provider_override() {
+        provider
+    } else if mock {
+        Arc::new(harness_providers::mock::MockProvider::default())
+    } else {
+        providers(config, deps, &result.secret_registry)?
+    };
+    result.config_digest = blake3::hash(&serde_json::to_vec(config).map_err(|e| e.to_string())?)
+        .to_hex()
+        .to_string();
+    Ok(result)
+}
 
-    #[test]
-    fn task_tool_description_lists_available_subagents_for_default() {
-        let config_path = crate::cli_config::shipped_example_config_path();
-        let cfg = load_config_from_file(&config_path).unwrap_or_abort();
-        let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
-        let profile = &coordinator_config.agent_profiles["default"];
-        let task_description = task_description_for_profile(&coordinator_config, profile);
-
-        assert!(task_description.contains("Available subagents:"));
-        assert!(task_description.contains("- explore: Read-only codebase exploration subagent."));
-        assert!(task_description
-            .contains("- general: General-purpose implementation and research subagent."));
-        assert!(
-            task_description.contains("- librarian: Documentation and external research subagent.")
-        );
-        assert!(!task_description.contains("- default:"));
-    }
-
-    #[test]
-    fn skill_tool_description_lists_available_skills_for_default() {
-        let config_path = crate::cli_config::shipped_example_config_path();
-        let cfg = load_config_from_file(&config_path).unwrap_or_abort();
-        let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
-        let profile = &coordinator_config.agent_profiles["default"];
-        let skill_description = skill_description_for_profile(&coordinator_config, profile);
-
-        assert!(skill_description.contains("<available_skills>"));
-        assert!(skill_description.contains("<name>git-master</name>"));
-        assert!(skill_description.contains("<name>review-work</name>"));
-        assert!(skill_description.contains("<name>rust-best-practices</name>"));
-        assert!(skill_description.contains("The `name` argument must be an exact skill name"));
-        assert!(!skill_description.contains("user_message"));
-    }
-
-    #[test]
-    fn task_tool_description_filters_denied_subagents() {
-        let cfg = config_fixture(
-            r#"
-            default: {
-              system_prompt: "Default prompt",
-              model: "default/gpt-5.4-mini",
-              permission: {
-                task: {
-                  "*": "allow",
-                  general: "deny",
+fn providers(
+    config: &HarnessConfig,
+    deps: &CliDeps,
+    secrets: &Arc<harness_core::redact::SecretRegistry>,
+) -> Result<Arc<dyn Provider>, String> {
+    let store = CredentialStore::from_lookup(&|name| deps.env_var_value(name));
+    let mut providers = BTreeMap::<String, Arc<dyn Provider>>::new();
+    for (name, definition) in &config.providers {
+        if config.disabled_providers.contains(name)
+            || !config.enabled_providers.is_empty() && !config.enabled_providers.contains(name)
+        {
+            continue;
+        }
+        let (base, protocol, key, env, timeout, headers) = match definition {
+            ProviderConfig::OpenAiCompatible(p) => (
+                &p.base_url,
+                if p.api_mode != OpenAiApiMode::ChatCompletions {
+                    Protocol::Responses
+                } else {
+                    Protocol::Chat
                 },
-              },
-              tools: ["task"],
-            },
-            explore: {
-              system_prompt: "Explore prompt",
-              model: "default/gpt-5.4-mini",
-              tools: ["read"],
-            },
-            general: {
-              system_prompt: "General prompt",
-              model: "default/gpt-5.4-mini",
-              tools: ["read"],
-            },
-            "#,
-        );
-        let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
-        let profile = &coordinator_config.agent_profiles["default"];
-        let task_description = task_description_for_profile(&coordinator_config, profile);
-
-        assert!(task_description.contains("- explore: Read-only codebase exploration subagent."));
-        assert!(!task_description.contains("- general:"));
+                &p.api_key,
+                &p.api_key_env,
+                p.timeout_ms,
+                &p.headers,
+            ),
+            ProviderConfig::Anthropic(p) => (
+                &p.base_url,
+                Protocol::Anthropic,
+                &p.api_key,
+                &p.api_key_env,
+                p.timeout_ms,
+                &p.headers,
+            ),
+        };
+        let suffix = match protocol {
+            Protocol::Chat => "/chat/completions",
+            Protocol::Responses => "/responses",
+            Protocol::Anthropic => "/messages",
+        };
+        let mut endpoint = reqwest::Url::parse(base).map_err(|_| "invalid provider URL")?;
+        let path = endpoint.path().trim_end_matches('/');
+        let path = if path.ends_with(suffix) {
+            path.to_owned()
+        } else {
+            format!("{path}{suffix}")
+        };
+        endpoint.set_path(&path);
+        let mut provider =
+            HttpProvider::new(endpoint.as_str(), protocol, Duration::from_millis(timeout))?;
+        if matches!(definition, ProviderConfig::OpenAiCompatible(p) if p.api_mode == OpenAiApiMode::Auto)
+        {
+            provider = provider.with_chat_fallback();
+        }
+        let mut extra_headers = reqwest::header::HeaderMap::new();
+        for (key, value) in headers {
+            extra_headers.insert(
+                reqwest::header::HeaderName::try_from(key)
+                    .map_err(|_| "invalid provider header name")?,
+                reqwest::header::HeaderValue::try_from(value)
+                    .map_err(|_| "invalid provider header value")?,
+            );
+        }
+        provider = provider.with_headers(extra_headers);
+        let auth = definition
+            .credential_provider(name)
+            .ok_or("invalid provider ID")?;
+        if auth == ProviderId::codex() {
+            provider = provider.with_auth_profile(harness_providers::ProviderAuthProfile::Codex);
+        } else if auth == ProviderId::github_copilot() {
+            provider =
+                provider.with_auth_profile(harness_providers::ProviderAuthProfile::GithubCopilot);
+        }
+        let stored = store
+            .as_ref()
+            .is_some_and(|store| store.credential_path(&auth).exists());
+        if stored || !key.is_empty() || !env.is_empty() {
+            let deps = deps.clone();
+            let mut manager = ProviderCredentialManager::new(
+                store.clone(),
+                auth.clone(),
+                env.clone(),
+                key,
+                move |name| deps.env_var_value(name),
+            )
+            .with_secret_registry(Arc::clone(secrets))
+            .map_err(|e| e.to_string())?;
+            if auth == ProviderId::codex() {
+                let http =
+                    harness_core::auth::ReqwestAuthHttpClient::new().map_err(|e| e.to_string())?;
+                manager = manager.with_refresher(Arc::new(
+                    harness_core::auth::codex::CodexOAuthClient::new(Arc::new(http)),
+                ));
+            }
+            provider = provider.with_credentials(Arc::new(manager));
+        }
+        providers.insert(name.clone(), Arc::new(provider));
     }
-
-    fn task_description_for_profile(
-        coordinator_config: &CoordinatorConfig,
-        profile: &AgentProfile,
-    ) -> String {
-        build_provider_tool_defs(profile, coordinator_config.tool_registry.as_ref())
-            .unwrap_or_abort()
-            .into_iter()
-            .find(|tool| tool.tool_id == "task")
-            .unwrap_or_abort()
-            .description
-            .unwrap_or_abort()
+    if providers.is_empty() {
+        return Err(interactive_config_guidance());
     }
+    Ok(Arc::new(ProviderRouter::new(providers)))
+}
 
-    fn skill_description_for_profile(
-        coordinator_config: &CoordinatorConfig,
-        profile: &AgentProfile,
-    ) -> String {
-        build_provider_tool_defs(profile, coordinator_config.tool_registry.as_ref())
-            .unwrap_or_abort()
-            .into_iter()
-            .find(|tool| tool.tool_id == "skill")
-            .unwrap_or_abort()
-            .description
-            .unwrap_or_abort()
+fn permission_rules(
+    defaults: &impl serde::Serialize,
+    selectors: &PermissionRuleSet,
+) -> Result<PermissionRuleset, String> {
+    let mut rules = Vec::new();
+    let defaults = serde_json::to_value(defaults).map_err(|e| e.to_string())?;
+    if let Some(defaults) = defaults.as_object() {
+        for (name, action) in defaults {
+            if action.is_string() {
+                rules.push(PermissionRule {
+                    permission: if name == "shell" {
+                        "bash".into()
+                    } else {
+                        name.clone()
+                    },
+                    pattern: "*".into(),
+                    action: serde_json::from_value(action.clone()).map_err(|e| e.to_string())?,
+                });
+            }
+        }
     }
+    for (name, selectors) in [
+        ("bash", &selectors.shell),
+        ("edit", &selectors.edit),
+        ("task", &selectors.task),
+        ("read", &selectors.read),
+        ("external_directory", &selectors.external_directory),
+    ] {
+        for rule in selectors {
+            rules.push(PermissionRule {
+                permission: name.into(),
+                pattern: rule.selector.clone(),
+                action: rule.mode,
+            });
+        }
+    }
+    Ok(rules)
+}
+
+fn remote_search_config(
+    deps: &CliDeps,
+    mut config: harness_core::config::RemoteSearchConfig,
+) -> Result<harness_core::config::RemoteSearchConfig, String> {
+    let first = |names: &[&str]| {
+        names.iter().find_map(|name| {
+            deps.env_var_value(name)
+                .filter(|v| !v.trim().is_empty())
+                .map(|v| v.trim().to_owned())
+        })
+    };
+    if let Some(endpoint) = first(&["HARNESS_REMOTE_SEARCH_ENDPOINT", "HARNESS_EXA_MCP_ENDPOINT"]) {
+        config.endpoint = endpoint;
+    }
+    if let Some(token) = first(&[
+        "HARNESS_REMOTE_SEARCH_AUTH_TOKEN",
+        "HARNESS_EXA_MCP_AUTH_TOKEN",
+        "EXA_API_KEY",
+    ]) {
+        config.auth_token = Some(token);
+    }
+    if let Some(value) = deps.env_var_value("HARNESS_REMOTE_SEARCH_REQUIRE_AUTH") {
+        config.require_auth = match value.trim().to_ascii_lowercase().as_str() {
+            "true" | "1" | "yes" | "on" => true,
+            "false" | "0" | "no" | "off" => false,
+            _ => return Err("HARNESS_REMOTE_SEARCH_REQUIRE_AUTH must be true or false".into()),
+        };
+    }
+    for (name, target) in [
+        (
+            "HARNESS_REMOTE_SEARCH_TIMEOUT_SECS",
+            &mut config.timeout_secs,
+        ),
+        (
+            "HARNESS_REMOTE_SEARCH_RETRY_BACKOFF_MS",
+            &mut config.retry_backoff_ms,
+        ),
+    ] {
+        if let Some(value) = deps.env_var_value(name) {
+            *target = value
+                .trim()
+                .parse()
+                .map_err(|_| format!("{name} must be a nonnegative integer"))?;
+        }
+    }
+    if let Some(value) = deps.env_var_value("HARNESS_REMOTE_SEARCH_MAX_RETRIES") {
+        config.max_retries = value.trim().parse().map_err(|_| {
+            "HARNESS_REMOTE_SEARCH_MAX_RETRIES must be a nonnegative integer".to_owned()
+        })?;
+    }
+    Ok(config)
 }

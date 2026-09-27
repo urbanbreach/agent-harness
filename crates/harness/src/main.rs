@@ -1,5 +1,3 @@
-use std::process::ExitCode;
-
-fn main() -> ExitCode {
+fn main() -> std::process::ExitCode {
     harness::run_os()
 }

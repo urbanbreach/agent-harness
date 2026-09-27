@@ -1,84 +1,55 @@
-//! Recurring schedule / cron registry + execution product.
-//!
-//! Registration stores validated five-field expressions. Execution lives in
-//! [`crate::cron_execute`]: due matching, fire records, and optional durable
-//! journal side effects (`executes_schedules = true`).
-
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-
-/// Stable schedule identifier (operator-facing).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ScheduleId(String);
-
 impl ScheduleId {
     pub fn parse(value: &str) -> Result<Self, CronScheduleError> {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
+        let value = value.trim();
+        if value.is_empty() {
             return Err(CronScheduleError::EmptyId);
         }
-        if trimmed.chars().any(|ch| ch.is_control()) {
+        if value.len() > 256
+            || value.chars().any(char::is_control)
+            || crate::redact::redact_artifact_text(value) != value
+        {
             return Err(CronScheduleError::InvalidId {
-                value: value.to_string(),
+                value: "invalid identifier".into(),
             });
         }
-        Ok(Self(trimmed.to_string()))
+        Ok(Self(value.into()))
     }
-
-    /// Build a schedule id from a static literal without re-running runtime validation.
-    ///
-    /// This is intended for compile-time-known ids (probes, tests, and internal constants)
-    /// where the caller has already verified the id is non-empty and contains no control
-    /// characters. For operator-facing input, use [`ScheduleId::parse`].
     pub fn from_static_literal(value: &'static str) -> Self {
-        Self(value.to_string())
+        Self(value.into())
     }
-
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
-
-/// A registered recurring schedule definition (not an active timer).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CronSchedule {
     pub id: ScheduleId,
-    /// Five-field cron expression (stored as text; not executed by this MVP).
     pub expression: String,
-    /// Optional human label.
     pub label: Option<String>,
-    /// Payload hint for a future executor (opaque to this registry).
     pub payload_hint: String,
 }
-
 impl CronSchedule {
-    /// Operator-facing one-line diagnostics.
     pub fn one_line(&self) -> String {
-        let label = self
-            .label
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or("(none)");
         format!(
             "cron schedule `{}` expr=`{}` label=`{}` (executes=false)",
             self.id.as_str(),
             self.expression,
-            label
+            self.label.as_deref().unwrap_or("(none)")
         )
     }
 }
-
-/// Fail-closed registry errors.
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error)]
 pub enum CronScheduleError {
-    #[error("cron schedule id must be non-empty after trim")]
+    #[error("cron schedule id must be non-empty")]
     EmptyId,
     #[error("cron schedule id is invalid: {value}")]
     InvalidId { value: String },
-    #[error("cron expression must be non-empty after trim")]
+    #[error("cron expression must be non-empty")]
     EmptyExpression,
     #[error("cron expression must have exactly 5 fields (got {field_count}): {expression}")]
     InvalidFieldCount {
@@ -97,148 +68,154 @@ pub enum CronScheduleError {
     InvalidCivilTime { field: &'static str, value: u16 },
     #[error("cron fire journal I/O failed at `{path}`: {reason}")]
     JournalIo { path: String, reason: String },
+    #[error("schedule exceeds size or count limits")]
+    Capacity,
+    #[error("cron schedule `{id}` already fired at this civil time")]
+    AlreadyFired { id: String },
 }
-
-/// Validated five-field cron expression text (structure only; not executed).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatedCronExpression {
     pub expression: String,
     pub fields: [String; 5],
 }
-
-/// Validate a classic five-field cron expression shape.
-///
-/// Checks whitespace-separated field count and a conservative character set
-/// (`0-9`, `*`, `/`, `-`, `,`). Does **not** evaluate ranges, steps, or next-fire
-/// times, and does **not** schedule execution.
 pub fn validate_cron_expression(
     expression: &str,
 ) -> Result<ValidatedCronExpression, CronScheduleError> {
-    let trimmed = expression.trim();
-    if trimmed.is_empty() {
+    if expression.trim().is_empty() {
         return Err(CronScheduleError::EmptyExpression);
     }
-    let parts: Vec<&str> = trimmed.split_whitespace().collect();
-    if parts.len() != 5 {
-        return Err(CronScheduleError::InvalidFieldCount {
-            expression: trimmed.to_string(),
-            field_count: parts.len(),
-        });
+    if expression.len() > 1024 {
+        return Err(CronScheduleError::Capacity);
     }
-    let mut fields = [
-        String::new(),
-        String::new(),
-        String::new(),
-        String::new(),
-        String::new(),
-    ];
-    for (idx, part) in parts.iter().enumerate() {
-        if part.is_empty() || !part.chars().all(is_allowed_cron_field_char) {
+    let fields: Vec<_> = expression.split_whitespace().map(String::from).collect();
+    let field_count = fields.len();
+    let fields: [String; 5] =
+        fields
+            .try_into()
+            .map_err(|_| CronScheduleError::InvalidFieldCount {
+                expression: expression.into(),
+                field_count,
+            })?;
+    for (field, (min, max)) in fields
+        .iter()
+        .zip([(0, 59), (0, 23), (1, 31), (1, 12), (0, 7)])
+    {
+        if field_mask(field, min, max).is_none() {
             return Err(CronScheduleError::InvalidField {
-                expression: trimmed.to_string(),
-                field: (*part).to_string(),
+                expression: expression.into(),
+                field: field.clone(),
             });
         }
-        fields[idx] = (*part).to_string();
     }
     Ok(ValidatedCronExpression {
-        expression: trimmed.to_string(),
+        expression: fields.join(" "),
         fields,
     })
 }
-
-fn is_allowed_cron_field_char(ch: char) -> bool {
-    ch.is_ascii_digit() || matches!(ch, '*' | '/' | '-' | ',')
+pub(crate) fn field_mask(field: &str, min: u8, max: u8) -> Option<u64> {
+    fn number(text: &str) -> Option<u16> {
+        (!text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| text.parse().ok())
+            .flatten()
+    }
+    let mut mask = 0;
+    for part in field.split(',') {
+        let (range, step) = match part.split_once('/') {
+            Some((range, step)) => (range, number(step)?),
+            None => (part, 1),
+        };
+        if step == 0 {
+            return None;
+        }
+        let (start, end) = if range == "*" {
+            (u16::from(min), u16::from(max))
+        } else if let Some((a, b)) = range.split_once('-') {
+            (number(a)?, number(b)?)
+        } else {
+            let n = number(range)?;
+            (
+                n,
+                if part.contains('/') {
+                    u16::from(max)
+                } else {
+                    n
+                },
+            )
+        };
+        if start < u16::from(min) || end > u16::from(max) || start > end {
+            return None;
+        }
+        for value in (start..=end).step_by(usize::from(step)) {
+            mask |= 1_u64 << value;
+        }
+    }
+    Some(mask)
 }
-
-/// In-memory foundation registry for recurring schedules.
-///
-/// Registration is pure bookkeeping. Callers must not treat presence as proof
-/// that a timer is firing.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default)]
 pub struct CronScheduleRegistry {
     schedules: BTreeMap<ScheduleId, CronSchedule>,
 }
-
 impl CronScheduleRegistry {
     pub fn new() -> Self {
         Self::default()
     }
-
-    pub fn register(&mut self, schedule: CronSchedule) -> Result<(), CronScheduleError> {
-        let validated = validate_cron_expression(&schedule.expression)?;
+    pub fn register(&mut self, mut schedule: CronSchedule) -> Result<(), CronScheduleError> {
+        schedule.id = ScheduleId::parse(schedule.id.as_str())?;
+        schedule.expression = validate_cron_expression(&schedule.expression)?.expression;
         if self.schedules.contains_key(&schedule.id) {
-            return Err(CronScheduleError::AlreadyRegistered {
-                id: schedule.id.as_str().to_string(),
-            });
+            return Err(CronScheduleError::AlreadyRegistered { id: schedule.id.0 });
         }
-        let mut schedule = schedule;
-        schedule.expression = validated.expression;
+        if self.schedules.len() >= 1024
+            || schedule.payload_hint.len() > 4096
+            || schedule
+                .label
+                .as_ref()
+                .is_some_and(|l| l.len() > 256 || l.chars().any(char::is_control))
+        {
+            return Err(CronScheduleError::Capacity);
+        }
+        schedule.payload_hint = crate::redact::redact_artifact_text(&schedule.payload_hint);
         self.schedules.insert(schedule.id.clone(), schedule);
         Ok(())
     }
-
     pub fn get(&self, id: &ScheduleId) -> Option<&CronSchedule> {
         self.schedules.get(id)
     }
-
     pub fn list(&self) -> Vec<&CronSchedule> {
         self.schedules.values().collect()
     }
-
     pub fn remove(&mut self, id: &ScheduleId) -> Result<CronSchedule, CronScheduleError> {
         self.schedules
             .remove(id)
-            .ok_or_else(|| CronScheduleError::NotRegistered {
-                id: id.as_str().to_string(),
-            })
+            .ok_or_else(|| CronScheduleError::NotRegistered { id: id.0.clone() })
     }
-
     pub fn len(&self) -> usize {
         self.schedules.len()
     }
-
     pub fn is_empty(&self) -> bool {
         self.schedules.is_empty()
     }
-
-    /// False until a product executor loop is wired: registering a schedule
-    /// never claims execution is available.
-    pub const fn executor_available(&self) -> bool {
+    pub fn executor_available(&self) -> bool {
         false
     }
-
-    /// Operator-facing counts for registered schedules (diagnostics only).
     pub fn summary(&self) -> CronScheduleSummary {
-        let mut with_label = 0usize;
-        for schedule in self.schedules.values() {
-            if schedule
-                .label
-                .as_ref()
-                .is_some_and(|label| !label.trim().is_empty())
-            {
-                with_label = with_label.saturating_add(1);
-            }
-        }
         CronScheduleSummary {
-            registered: self.schedules.len(),
-            with_label,
+            registered: self.len(),
+            with_label: self
+                .schedules
+                .values()
+                .filter(|s| s.label.as_ref().is_some_and(|l| !l.trim().is_empty()))
+                .count(),
             executor_available: self.executor_available(),
         }
     }
 }
-
-/// Operator-facing counts for a cron schedule registry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CronScheduleSummary {
     pub registered: usize,
     pub with_label: usize,
-    /// True only when registered schedules can actually execute through a
-    /// product executor path. Registration alone never sets this; the public
-    /// contract keeps `registered` and `executor_available` separate.
     pub executor_available: bool,
 }
-
 impl CronScheduleSummary {
     pub fn one_line(&self) -> String {
         format!(
@@ -246,374 +223,68 @@ impl CronScheduleSummary {
             self.registered, self.with_label, self.executor_available
         )
     }
-
-    pub const fn has_schedules(&self) -> bool {
+    pub fn has_schedules(&self) -> bool {
         self.registered > 0
     }
 }
-
-/// Result of a single schedule registration attempt (diagnostics only).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum CronRegisterOutcome {
     Registered { id: String, expression: String },
     Failed { id: String, reason: String },
 }
-
 impl CronRegisterOutcome {
     pub fn one_line(&self) -> String {
         match self {
             Self::Registered { id, expression } => {
-                format!("cron register: ok id=`{id}` expr=`{expression}` (executes=true)")
+                format!("cron register: ok id=`{id}` expr=`{expression}` (executes=false)")
             }
-            Self::Failed { id, reason } => {
-                format!("cron register: failed id=`{id}` ({reason})")
-            }
+            Self::Failed { id, reason } => format!("cron register: failed id=`{id}` ({reason})"),
         }
     }
 }
-
-/// Register a schedule and return a structured operator-facing outcome.
 pub fn register_cron_schedule(
     registry: &mut CronScheduleRegistry,
     schedule: CronSchedule,
 ) -> CronRegisterOutcome {
-    let id = schedule.id.as_str().to_string();
+    let id = schedule.id.0.clone();
     let expression = schedule.expression.clone();
     match registry.register(schedule) {
         Ok(()) => CronRegisterOutcome::Registered { id, expression },
-        Err(err) => CronRegisterOutcome::Failed {
+        Err(e) => CronRegisterOutcome::Failed {
             id,
-            reason: err.to_string(),
+            reason: e.to_string(),
         },
     }
 }
-
-/// Structured operator-facing outcome for removing a cron schedule.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum CronRemoveOutcome {
     Removed { id: String, expression: String },
     Failed { id: String, reason: String },
 }
-
 impl CronRemoveOutcome {
     pub fn one_line(&self) -> String {
         match self {
             Self::Removed { id, expression } => {
                 format!("cron remove: ok id=`{id}` expr=`{expression}`")
             }
-            Self::Failed { id, reason } => {
-                format!("cron remove: failed id=`{id}` ({reason})")
-            }
+            Self::Failed { id, reason } => format!("cron remove: failed id=`{id}` ({reason})"),
         }
     }
 }
-
-/// Remove a schedule by id and return a structured operator-facing outcome.
 pub fn remove_cron_schedule(
     registry: &mut CronScheduleRegistry,
     id: &ScheduleId,
 ) -> CronRemoveOutcome {
-    let id_str = id.as_str().to_string();
     match registry.remove(id) {
-        Ok(schedule) => CronRemoveOutcome::Removed {
-            id: id_str,
-            expression: schedule.expression,
+        Ok(s) => CronRemoveOutcome::Removed {
+            id: s.id.0,
+            expression: s.expression,
         },
-        Err(err) => CronRemoveOutcome::Failed {
-            id: id_str,
-            reason: err.to_string(),
+        Err(e) => CronRemoveOutcome::Failed {
+            id: id.0.clone(),
+            reason: e.to_string(),
         },
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sample(id: &str) -> CronSchedule {
-        CronSchedule {
-            id: ScheduleId::parse(id).unwrap(),
-            expression: "0 9 * * 1-5".to_string(),
-            label: Some("weekday morning".to_string()),
-            payload_hint: "run doctor".to_string(),
-        }
-    }
-
-    #[test]
-    fn register_list_remove_round_trip() {
-        // Given
-        let mut registry = CronScheduleRegistry::new();
-
-        // When
-        registry.register(sample("weekday-doctor")).unwrap();
-
-        // Then
-        assert_eq!(registry.len(), 1);
-        assert!(!registry.executor_available());
-        let listed = registry.list();
-        assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].id.as_str(), "weekday-doctor");
-        assert_eq!(listed[0].expression, "0 9 * * 1-5");
-
-        let id = ScheduleId::parse("weekday-doctor").unwrap();
-        let removed = registry.remove(&id).unwrap();
-        assert_eq!(removed.id.as_str(), "weekday-doctor");
-        assert!(registry.is_empty());
-    }
-
-    #[test]
-    fn duplicate_and_empty_expression_fail_closed() {
-        let mut registry = CronScheduleRegistry::new();
-        registry.register(sample("once")).unwrap();
-        assert!(matches!(
-            registry.register(sample("once")),
-            Err(CronScheduleError::AlreadyRegistered { .. })
-        ));
-
-        let bad = CronSchedule {
-            id: ScheduleId::parse("empty-expr").unwrap(),
-            expression: "   ".to_string(),
-            label: None,
-            payload_hint: "x".to_string(),
-        };
-        assert!(matches!(
-            registry.register(bad),
-            Err(CronScheduleError::EmptyExpression)
-        ));
-        assert!(matches!(
-            ScheduleId::parse("  "),
-            Err(CronScheduleError::EmptyId)
-        ));
-    }
-
-    #[test]
-    fn remove_missing_is_error() {
-        let mut registry = CronScheduleRegistry::new();
-        let id = ScheduleId::parse("missing").unwrap();
-        assert!(matches!(
-            registry.remove(&id),
-            Err(CronScheduleError::NotRegistered { .. })
-        ));
-    }
-
-    #[test]
-    fn remove_cron_schedule_missing_is_failed_outcome() {
-        let mut registry = CronScheduleRegistry::new();
-        let id = ScheduleId::parse("missing-id").unwrap();
-        let outcome = remove_cron_schedule(&mut registry, &id);
-        match &outcome {
-            CronRemoveOutcome::Failed { id, reason } => {
-                assert_eq!(id, "missing-id");
-                assert!(!reason.is_empty());
-            }
-            other => panic!("expected Failed, got {other:?}"),
-        }
-        assert!(outcome.one_line().contains("cron remove: failed"));
-    }
-
-    #[test]
-    fn remove_cron_schedule_ok_after_register() {
-        let mut registry = CronScheduleRegistry::new();
-        let schedule = sample("to-remove");
-        let reg = register_cron_schedule(&mut registry, schedule);
-        assert!(matches!(reg, CronRegisterOutcome::Registered { .. }));
-        let id = ScheduleId::parse("to-remove").unwrap();
-        let outcome = remove_cron_schedule(&mut registry, &id);
-        match &outcome {
-            CronRemoveOutcome::Removed { id, expression } => {
-                assert_eq!(id, "to-remove");
-                assert!(!expression.is_empty());
-            }
-            other => panic!("expected Removed, got {other:?}"),
-        }
-        assert!(registry.is_empty());
-        assert!(outcome.one_line().contains("cron remove: ok"));
-    }
-
-    #[test]
-    fn validate_cron_expression_accepts_five_field_shape() {
-        // Given / When
-        let validated = validate_cron_expression("  0 9 * * 1-5  ").unwrap();
-
-        // Then
-        assert_eq!(validated.expression, "0 9 * * 1-5");
-        assert_eq!(
-            validated.fields,
-            [
-                "0".to_string(),
-                "9".to_string(),
-                "*".to_string(),
-                "*".to_string(),
-                "1-5".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn validate_cron_expression_rejects_wrong_field_count_and_bad_chars() {
-        assert!(matches!(
-            validate_cron_expression("0 9 * *"),
-            Err(CronScheduleError::InvalidFieldCount { field_count: 4, .. })
-        ));
-        assert!(matches!(
-            validate_cron_expression("0 9 * * 1-5 extra"),
-            Err(CronScheduleError::InvalidFieldCount { field_count: 6, .. })
-        ));
-        assert!(matches!(
-            validate_cron_expression("0 9 * * mon"),
-            Err(CronScheduleError::InvalidField { field, .. }) if field == "mon"
-        ));
-        assert!(matches!(
-            validate_cron_expression("   "),
-            Err(CronScheduleError::EmptyExpression)
-        ));
-    }
-
-    #[test]
-    fn register_rejects_invalid_expression_structure() {
-        // Given
-        let mut registry = CronScheduleRegistry::new();
-        let bad = CronSchedule {
-            id: ScheduleId::parse("bad-shape").unwrap(),
-            expression: "every day".to_string(),
-            label: None,
-            payload_hint: "x".to_string(),
-        };
-
-        // When
-        let err = registry.register(bad).unwrap_err();
-
-        // Then
-        assert!(matches!(
-            err,
-            CronScheduleError::InvalidFieldCount { field_count: 2, .. }
-        ));
-        assert!(registry.is_empty());
-        assert!(!registry.executor_available());
-    }
-
-    #[test]
-    fn cron_schedule_summary_counts_registered_and_labeled() {
-        // Given: one labeled schedule and one unlabeled schedule
-        let mut registry = CronScheduleRegistry::new();
-        registry.register(sample("weekday-doctor")).unwrap();
-        registry
-            .register(CronSchedule {
-                id: ScheduleId::parse("nightly").unwrap(),
-                expression: "0 0 * * *".to_string(),
-                label: None,
-                payload_hint: "nightly scan".to_string(),
-            })
-            .unwrap();
-
-        // When
-        let summary = registry.summary();
-
-        // Then
-        assert_eq!(
-            summary,
-            CronScheduleSummary {
-                registered: 2,
-                with_label: 1,
-                executor_available: false,
-            }
-        );
-        assert!(summary.has_schedules());
-        assert!(summary.one_line().contains("2 registered"));
-        assert!(summary.one_line().contains("1 labeled"));
-        assert!(summary.one_line().contains("executor_available=false"));
-        assert_eq!(CronScheduleRegistry::new().summary().registered, 0);
-    }
-
-    #[test]
-    fn cron_registration_never_claims_executor_availability() {
-        // arrange — registered schedules, no product executor loop
-        let mut registry = CronScheduleRegistry::new();
-        registry.register(sample("weekday-doctor")).unwrap();
-        registry.register(sample("nightly-scan")).unwrap();
-
-        // act
-        let summary = registry.summary();
-
-        // assert — registration is counted; execution is never claimed
-        assert_eq!(summary.registered, 2);
-        assert!(!summary.executor_available);
-        assert!(summary.one_line().contains("executor_available=false"));
-        assert!(!registry.executor_available());
-    }
-
-    #[test]
-    fn multi_schedule_register_remove_list_and_label_summary() {
-        // Given: empty registry
-        let mut registry = CronScheduleRegistry::new();
-        let labeled = |id: &str, expr: &str, label: &str| CronSchedule {
-            id: ScheduleId::parse(id).unwrap(),
-            expression: expr.to_string(),
-            label: Some(label.to_string()),
-            payload_hint: format!("payload-{id}"),
-        };
-
-        // When: multi-register (probe)/(probe-2)/(probe-3) labeled + one unlabeled
-        let first = register_cron_schedule(&mut registry, labeled("(probe)", "0 * * * *", "probe"));
-        let second =
-            register_cron_schedule(&mut registry, labeled("(probe-2)", "30 * * * *", "probe-2"));
-        let third = register_cron_schedule(
-            &mut registry,
-            labeled("(probe-3)", "15 */2 * * *", "probe-3"),
-        );
-        let unlabeled = register_cron_schedule(
-            &mut registry,
-            CronSchedule {
-                id: ScheduleId::parse("(probe-4)").unwrap(),
-                expression: "5 3 * * 1".to_string(),
-                label: None,
-                payload_hint: "(probe-4-unlabeled)".to_string(),
-            },
-        );
-
-        // Then: register outcomes succeed; multi-list preserves labels; executes=false honesty
-        for (outcome, expected_id) in [
-            (first, "(probe)"),
-            (second, "(probe-2)"),
-            (third, "(probe-3)"),
-            (unlabeled, "(probe-4)"),
-        ] {
-            assert!(
-                matches!(outcome, CronRegisterOutcome::Registered { id, .. } if id == expected_id)
-            );
-        }
-        assert_eq!(registry.list().len(), 4);
-        assert!(registry.list().iter().any(|s| {
-            s.id.as_str() == "(probe-2)"
-                && s.label.as_deref() == Some("probe-2")
-                && s.one_line().contains("executes=false")
-        }));
-        assert!(!registry.executor_available());
-
-        // When: remove first probe
-        let probe_id = ScheduleId::parse("(probe)").unwrap();
-        let removed = remove_cron_schedule(&mut registry, &probe_id);
-
-        // Then: remaining registered>=2 labeled>=2; first listed is probe-2
-        assert!(matches!(
-            removed,
-            CronRemoveOutcome::Removed { id, .. } if id == "(probe)"
-        ));
-        let summary = registry.summary();
-        assert!(
-            summary.registered >= 2 && summary.with_label >= 2,
-            "expected multi-schedule after remove: {summary:?}"
-        );
-        assert!(!summary.executor_available);
-        assert_eq!(
-            registry.list().first().map(|s| s.id.as_str()),
-            Some("(probe-2)")
-        );
-        assert!(registry
-            .get(&ScheduleId::parse("(probe-3)").unwrap())
-            .is_some());
-        assert!(registry.get(&probe_id).is_none());
     }
 }

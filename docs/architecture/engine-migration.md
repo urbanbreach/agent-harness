@@ -1,5 +1,10 @@
 # Engine migration
 
+> Historical pre-rewrite record. File maps and measurements below describe the
+> earlier engine. Use [runtime architecture](architecture.md),
+> [session storage](sessions-and-replay.md), and
+> [rewrite verification](backend-rewrite.md) for the current backend.
+
 The migration started at `060ee1fd`. It changed limits and budgets first, then
 session semantics, compaction, readers, and indexing. Obsolete paths were removed
 after their replacements passed the relevant checks.

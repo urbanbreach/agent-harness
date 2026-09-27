@@ -1,6 +1,3 @@
-// allow: SIZE_OK — config discovery pipeline (XDG/workspace/env path resolution + layer merging + asset discovery)
-use serde::de::DeserializeOwned;
-
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -11,699 +8,303 @@ pub struct ConfigDiscoveryContext {
     pub runtime_config_path: Option<PathBuf>,
     pub tui_config_path: Option<PathBuf>,
 }
-
 impl ConfigDiscoveryContext {
     pub fn from_env() -> Self {
+        let path = |key| {
+            std::env::var_os(key)
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+        };
         Self {
-            current_dir: env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            xdg_config_home: env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
-            home: env::var_os("HOME").map(PathBuf::from),
-            runtime_config_path: env::var_os("HARNESS_CONFIG")
-                .filter(|value| !value.is_empty())
-                .map(PathBuf::from),
-            tui_config_path: env::var_os("HARNESS_TUI_CONFIG")
-                .filter(|value| !value.is_empty())
-                .map(PathBuf::from),
+            current_dir: std::env::current_dir().unwrap_or_else(|_| ".".into()),
+            xdg_config_home: path("XDG_CONFIG_HOME"),
+            home: path("HOME"),
+            runtime_config_path: path("HARNESS_CONFIG"),
+            tui_config_path: path("HARNESS_TUI_CONFIG"),
         }
     }
-
-    pub fn with_current_dir(mut self, current_dir: PathBuf) -> Self {
-        self.current_dir = current_dir;
+    pub fn with_current_dir(mut self, directory: PathBuf) -> Self {
+        self.current_dir = directory;
         self
     }
-
     pub fn apply_env_var(mut self, name: &str, value: Option<String>) -> Self {
-        match name {
-            "XDG_CONFIG_HOME" => self.xdg_config_home = value.map(PathBuf::from),
-            "HOME" => self.home = value.map(PathBuf::from),
-            "HARNESS_CONFIG" => {
-                self.runtime_config_path =
-                    value.filter(|value| !value.is_empty()).map(PathBuf::from);
-            }
-            "HARNESS_TUI_CONFIG" => {
-                self.tui_config_path = value.filter(|value| !value.is_empty()).map(PathBuf::from);
-            }
-            _ => {}
-        }
+        let field = match name {
+            "XDG_CONFIG_HOME" => &mut self.xdg_config_home,
+            "HOME" => &mut self.home,
+            "HARNESS_CONFIG" => &mut self.runtime_config_path,
+            "HARNESS_TUI_CONFIG" => &mut self.tui_config_path,
+            _ => return self,
+        };
+        *field = value.filter(|v| !v.is_empty()).map(PathBuf::from);
         self
     }
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default, deny_unknown_fields)]
-struct MarkdownAgentFrontmatter {
-    pub name: Option<String>,
-    pub description: Option<String>,
-    #[serde(alias = "systemPrompt", alias = "prompt")]
-    pub system_prompt: Option<String>,
-    #[serde(rename = "model_ref", alias = "modelRef", alias = "model")]
-    pub model_ref: Option<String>,
-    pub variant: Option<String>,
-    pub temperature: Option<f32>,
-    #[serde(alias = "topP")]
-    pub top_p: Option<f32>,
-    pub mode: Option<AgentMode>,
-    pub hidden: Option<bool>,
-    pub color: Option<String>,
-    pub options: BTreeMap<String, serde_json::Value>,
-    pub permissions: Option<ProfilePermissions>,
-    #[serde(alias = "maxIters", alias = "steps", alias = "maxSteps")]
-    pub max_iters: Option<usize>,
-    #[serde(alias = "toolFailureMode")]
-    pub tool_failure_mode: Option<ToolFailureMode>,
-    pub tools: Option<PublicAgentTools>,
-    #[serde(default, alias = "smallModel")]
-    pub use_small_model: bool,
 }
 
 #[derive(Debug, Clone)]
-struct MarkdownAgentFile {
-    frontmatter: MarkdownAgentFrontmatter,
-    prompt_body: Option<String>,
+pub struct ConfigLoadContext {
+    pub discovery: ConfigDiscoveryContext,
+    pub runtime_content: Option<String>,
 }
-
-pub(super) fn resolve_discovered_prompt_assets(
-    parsed: &mut HarnessConfig,
-    config_path: &Path,
-) -> Result<(), ConfigError> {
-    resolve_discovered_prompt_assets_with_current_dir(parsed, config_path, None)
-}
-
-pub(super) fn resolve_discovered_prompt_assets_with_current_dir(
-    parsed: &mut HarnessConfig,
-    config_path: &Path,
-    current_dir: Option<&Path>,
-) -> Result<(), ConfigError> {
-    let small_model_ref = parsed.small_model.as_deref();
-    parsed.agents = merge_configured_and_markdown_agents(
-        &parsed.agents,
-        config_path,
-        current_dir,
-        small_model_ref,
-    )?;
-    parsed.instruction_files = discover_instruction_files(config_path, current_dir)?;
-    Ok(())
-}
-
-fn merge_configured_and_markdown_agents(
-    configured: &BTreeMap<String, ProfileConfig>,
-    config_path: &Path,
-    current_dir: Option<&Path>,
-    small_model_ref: Option<&str>,
-) -> Result<BTreeMap<String, ProfileConfig>, ConfigError> {
-    let discovered = discover_markdown_agents(config_path, current_dir)?;
-    let agent_names = discovered
-        .keys()
-        .chain(configured.keys())
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let mut merged = BTreeMap::new();
-
-    for name in agent_names {
-        let profile = match (discovered.get(&name), configured.get(&name)) {
-            (Some(markdown), Some(config)) => {
-                Some(merge_markdown_agent_with_config(config, markdown))
-            }
-            (None, Some(config)) => Some(config.clone()),
-            (Some(markdown), None) => {
-                let fallback_model_ref = configured
-                    .values()
-                    .next()
-                    .map(|profile| profile.model_ref.as_str());
-                profile_from_markdown_agent(markdown, fallback_model_ref, small_model_ref)?
-            }
-            (None, None) => None,
-        };
-
-        if let Some(profile) = profile {
-            merged.insert(name, profile);
+impl ConfigLoadContext {
+    pub fn from_env() -> Self {
+        Self {
+            discovery: ConfigDiscoveryContext::from_env(),
+            runtime_content: std::env::var("HARNESS_CONFIG_CONTENT").ok(),
         }
     }
-
-    Ok(merged)
-}
-
-fn merge_markdown_agent_with_config(
-    config: &ProfileConfig,
-    markdown: &MarkdownAgentFile,
-) -> ProfileConfig {
-    let prompt = config
-        .system_prompt
-        .clone()
-        .or_else(|| markdown.prompt_body.clone())
-        .or_else(|| markdown.frontmatter.system_prompt.clone());
-
-    // `model_ref` is a `String` (not `Option<String>`), so it always has a
-    // value. Use `model_ref_explicit` to determine if JSON config explicitly
-    // set the model. When JSON config did not explicitly set it, fall back to
-    // the markdown frontmatter value.
-    let model_ref = if config.model_ref_explicit {
-        config.model_ref.clone()
-    } else {
-        markdown
-            .frontmatter
-            .model_ref
-            .clone()
-            .unwrap_or_else(|| config.model_ref.clone())
-    };
-
-    // `tool_failure_mode` is a `ToolFailureMode` (not `Option`), so checking
-    // for the default is ambiguous: the serde default is
-    // `ContinueAsToolMessage` but `Default::default()` is `FailTurn`. We
-    // accept the ambiguity: if the config has `ContinueAsToolMessage` (the
-    // serde default), fall back to the markdown value. This means a user who
-    // explicitly sets `continue_as_tool_message` in JSON config would have
-    // their value overridden by markdown — an accepted trade-off to avoid
-    // adding a `tool_failure_mode_explicit` flag to all construction sites.
-    let tool_failure_mode = if config.tool_failure_mode == ToolFailureMode::ContinueAsToolMessage {
-        markdown
-            .frontmatter
-            .tool_failure_mode
-            .unwrap_or(config.tool_failure_mode)
-    } else {
-        config.tool_failure_mode
-    };
-
-    ProfileConfig {
-        name: config
-            .name
-            .clone()
-            .or_else(|| markdown.frontmatter.name.clone()),
-        description: if config.description.is_empty() {
-            markdown.frontmatter.description.clone().unwrap_or_default()
+    pub fn with_current_dir(mut self, directory: PathBuf) -> Self {
+        self.discovery.current_dir = directory;
+        self
+    }
+    pub fn apply_env_var(mut self, name: &str, value: Option<String>) -> Self {
+        if name == "HARNESS_CONFIG_CONTENT" {
+            self.runtime_content = value;
         } else {
-            config.description.clone()
-        },
-        system_prompt: prompt,
-        model_ref,
-        model_ref_explicit: config.model_ref_explicit || markdown.frontmatter.model_ref.is_some(),
-        variant: config
-            .variant
-            .clone()
-            .or_else(|| markdown.frontmatter.variant.clone()),
-        temperature: config.temperature.or(markdown.frontmatter.temperature),
-        top_p: config.top_p.or(markdown.frontmatter.top_p),
-        mode: if matches!(config.mode, AgentMode::All) {
-            markdown.frontmatter.mode.unwrap_or(config.mode)
+            self.discovery = self.discovery.apply_env_var(name, value);
+        }
+        self
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LoadedConfig {
+    pub config: HarnessConfig,
+    pub paths: Vec<PathBuf>,
+}
+impl LoadedConfig {
+    pub fn primary_path(&self) -> Option<&Path> {
+        self.paths.last().map(PathBuf::as_path)
+    }
+    pub fn path_display(&self) -> String {
+        if self.paths.is_empty() {
+            "<none>".into()
         } else {
-            config.mode
-        },
-        hidden: config.hidden || markdown.frontmatter.hidden.unwrap_or(false),
-        color: config
-            .color
-            .clone()
-            .or_else(|| markdown.frontmatter.color.clone()),
-        options: if config.options.is_empty() {
-            markdown.frontmatter.options.clone()
-        } else {
-            config.options.clone()
-        },
-        permissions: config
-            .permissions
-            .clone()
-            .or_else(|| markdown.frontmatter.permissions.clone()),
-        max_iters: config.max_iters.or(markdown.frontmatter.max_iters),
-        tool_failure_mode,
-        tools: if config.tools.is_empty() {
-            markdown
-                .frontmatter
-                .tools
-                .clone()
-                .map(|t| t.tool_ids())
-                .unwrap_or_default()
-        } else {
-            config.tools.clone()
-        },
-    }
-}
-
-fn profile_from_markdown_agent(
-    markdown: &MarkdownAgentFile,
-    fallback_model_ref: Option<&str>,
-    small_model_ref: Option<&str>,
-) -> Result<Option<ProfileConfig>, ConfigError> {
-    let Some(description) = markdown.frontmatter.description.clone() else {
-        return Ok(None);
-    };
-    let model_ref = if markdown.frontmatter.use_small_model {
-        markdown
-            .frontmatter
-            .model_ref
-            .clone()
-            .or_else(|| small_model_ref.map(str::to_string))
-            .or_else(|| fallback_model_ref.map(str::to_string))
-            .unwrap_or_else(|| "default:default".to_string())
-    } else {
-        markdown
-            .frontmatter
-            .model_ref
-            .clone()
-            .or_else(|| fallback_model_ref.map(str::to_string))
-            .unwrap_or_else(|| "default:default".to_string())
-    };
-
-    Ok(Some(ProfileConfig {
-        name: markdown.frontmatter.name.clone(),
-        description,
-        system_prompt: markdown
-            .prompt_body
-            .clone()
-            .or_else(|| markdown.frontmatter.system_prompt.clone()),
-        model_ref,
-        model_ref_explicit: markdown.frontmatter.model_ref.is_some(),
-        variant: markdown.frontmatter.variant.clone(),
-        temperature: markdown.frontmatter.temperature,
-        top_p: markdown.frontmatter.top_p,
-        mode: markdown.frontmatter.mode.unwrap_or_default(),
-        hidden: markdown.frontmatter.hidden.unwrap_or(false),
-        color: markdown.frontmatter.color.clone(),
-        options: markdown.frontmatter.options.clone(),
-        permissions: markdown.frontmatter.permissions.clone(),
-        max_iters: markdown.frontmatter.max_iters,
-        tool_failure_mode: markdown.frontmatter.tool_failure_mode.unwrap_or_default(),
-        tools: markdown
-            .frontmatter
-            .tools
-            .clone()
-            .map(|t| t.tool_ids())
-            .unwrap_or_default(),
-    }))
-}
-
-fn discover_markdown_agents(
-    config_path: &Path,
-    current_dir: Option<&Path>,
-) -> Result<BTreeMap<String, MarkdownAgentFile>, ConfigError> {
-    let mut agents = BTreeMap::new();
-
-    for dir in agent_prompt_search_dirs(config_path, current_dir) {
-        if !dir.exists() {
-            continue;
-        }
-
-        for file in markdown_files_in_dir(&dir)? {
-            let name = file
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .map(str::trim)
-                .filter(|stem| !stem.is_empty())
-                .ok_or_else(|| {
-                    ConfigError::InvalidReference(format!(
-                        "agent markdown `{}` must have a valid UTF-8 file stem",
-                        file.display()
-                    ))
-                })?
-                .to_string();
-
-            let content =
-                fs::read_to_string(&file).map_err(|source| ConfigError::ReadMarkdownAsset {
-                    path: file.display().to_string(),
-                    source,
-                })?;
-            let (frontmatter, prompt_body) =
-                parse_markdown_frontmatter::<MarkdownAgentFrontmatter>(&file, &content)?;
-            agents.insert(
-                name,
-                MarkdownAgentFile {
-                    frontmatter,
-                    prompt_body: (!prompt_body.is_empty()).then_some(prompt_body),
-                },
-            );
+            self.paths
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(" + ")
         }
     }
-
-    Ok(agents)
 }
 
-fn discover_instruction_files(
-    config_path: &Path,
-    current_dir: Option<&Path>,
-) -> Result<Vec<InstructionFile>, ConfigError> {
-    let mut instructions = Vec::new();
-    let mut seen = BTreeSet::new();
-
-    for path in instruction_search_paths(config_path, current_dir) {
-        if !path.exists() || !seen.insert(path.clone()) {
-            continue;
-        }
-
-        let content =
-            fs::read_to_string(&path).map_err(|source| ConfigError::ReadMarkdownAsset {
-                path: path.display().to_string(),
-                source,
-            })?;
-        let content = content.trim().to_string();
-        if content.is_empty() {
-            continue;
-        }
-
-        instructions.push(InstructionFile { path, content });
-    }
-
-    Ok(instructions)
+pub fn resolve_config_layer_paths(explicit: Option<&Path>) -> Vec<PathBuf> {
+    resolve_config_layer_paths_with_context(explicit, &ConfigDiscoveryContext::from_env())
 }
-
-fn parse_markdown_frontmatter<T>(path: &Path, content: &str) -> Result<(T, String), ConfigError>
-where
-    T: DeserializeOwned + Default,
-{
-    let mut lines = content.lines();
-    if lines.next() != Some("---") {
-        return Ok((T::default(), content.trim().to_string()));
-    }
-
-    let mut frontmatter_lines = Vec::new();
-    let mut found_closing = false;
-    for line in &mut lines {
-        if line == "---" {
-            found_closing = true;
-            break;
-        }
-        frontmatter_lines.push(line);
-    }
-
-    if !found_closing {
-        return Err(ConfigError::InvalidMarkdownFrontmatter {
-            path: path.display().to_string(),
-            reason: "frontmatter must end with `---`".to_string(),
-        });
-    }
-
-    let frontmatter_text = frontmatter_lines.join("\n");
-    let frontmatter = if frontmatter_text.trim().is_empty() {
-        T::default()
-    } else {
-        json5::from_str(&frontmatter_text).map_err(|err| {
-            ConfigError::InvalidMarkdownFrontmatter {
-                path: path.display().to_string(),
-                reason: err.to_string(),
-            }
-        })?
-    };
-
-    Ok((
-        frontmatter,
-        lines.collect::<Vec<_>>().join("\n").trim().to_string(),
-    ))
+pub fn resolve_config_path(explicit: Option<&Path>) -> Option<PathBuf> {
+    resolve_config_layer_paths(explicit).pop()
 }
-
-fn markdown_files_in_dir(dir: &Path) -> Result<Vec<PathBuf>, ConfigError> {
-    let mut files = Vec::new();
-    collect_markdown_files(dir, &mut files)?;
-    files.sort();
-    Ok(files)
-}
-
-fn collect_markdown_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), ConfigError> {
-    let mut entries = fs::read_dir(dir)
-        .map_err(|source| ConfigError::ReadMarkdownAsset {
-            path: dir.display().to_string(),
-            source,
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|source| ConfigError::ReadMarkdownAsset {
-            path: dir.display().to_string(),
-            source,
-        })?;
-    entries.sort_by_key(|entry| entry.file_name());
-
-    for entry in entries {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_markdown_files(&path, files)?;
-            continue;
-        }
-
-        if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
-            files.push(path);
-        }
-    }
-
-    Ok(())
-}
-
-fn agent_prompt_search_dirs(config_path: &Path, current_dir: Option<&Path>) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    for base in discovery_search_bases(config_path, current_dir) {
-        push_unique_path(&mut dirs, base.join(".agent-harness").join("agents"));
-    }
-
-    if let Some(config_dir) = config_path.parent() {
-        push_unique_path(&mut dirs, config_dir.join(".agent-harness").join("agents"));
-    }
-
-    dirs.reverse();
-    dirs
-}
-
-fn instruction_search_paths(config_path: &Path, current_dir: Option<&Path>) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    for base in discovery_search_bases(config_path, current_dir) {
-        push_unique_path(&mut paths, base.join("AGENTS.md"));
-    }
-
-    if let Some(config_dir) = config_path.parent() {
-        push_unique_path(&mut paths, config_dir.join("AGENTS.md"));
-    }
-
-    paths
-}
-
-fn discovery_search_bases(config_path: &Path, current_dir: Option<&Path>) -> Vec<PathBuf> {
-    let mut bases = Vec::new();
-
-    if let Some(current_dir) = current_dir {
-        for base in project_search_bases(current_dir) {
-            push_unique_path(&mut bases, base);
-        }
-    }
-
-    if let Some(config_dir) = config_path.parent() {
-        for base in project_search_bases(config_dir) {
-            push_unique_path(&mut bases, base);
-        }
-    }
-
-    if bases.is_empty() {
-        bases.push(PathBuf::from("."));
-    }
-
-    bases
-}
-
-fn project_search_bases(start: &Path) -> Vec<PathBuf> {
-    let ancestors = start.ancestors().map(Path::to_path_buf).collect::<Vec<_>>();
-    if let Some(index) = ancestors.iter().position(|path| path.join(".git").exists()) {
-        return ancestors.into_iter().take(index + 1).collect();
-    }
-    vec![start.to_path_buf()]
-}
-
-fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
-    if !paths.iter().any(|existing| existing == &candidate) {
-        paths.push(candidate);
-    }
-}
-
-pub fn resolve_config_layer_paths(explicit_path: Option<&Path>) -> Vec<PathBuf> {
-    resolve_config_layer_paths_with_context(explicit_path, &ConfigDiscoveryContext::from_env())
-}
-
-pub fn resolve_config_layer_paths_with_context(
-    explicit_path: Option<&Path>,
-    context: &ConfigDiscoveryContext,
-) -> Vec<PathBuf> {
-    if let Some(path) = explicit_path {
-        return vec![path.to_path_buf()];
-    }
-
-    let mut paths = Vec::new();
-
-    if let Some(global_path) = discover_xdg_runtime_config_path(context) {
-        push_unique_path(&mut paths, global_path);
-    }
-
-    if let Some(env_path) = discover_runtime_config_env_path(context) {
-        push_unique_path(&mut paths, env_path);
-    }
-
-    for local_path in discover_project_runtime_config_paths(&context.current_dir) {
-        push_unique_path(&mut paths, local_path);
-    }
-
-    paths
-}
-
-pub fn resolve_config_path(explicit_path: Option<&Path>) -> Option<PathBuf> {
-    resolve_config_path_with_context(explicit_path, &ConfigDiscoveryContext::from_env())
-}
-
 pub fn resolve_config_path_with_context(
-    explicit_path: Option<&Path>,
+    explicit: Option<&Path>,
     context: &ConfigDiscoveryContext,
 ) -> Option<PathBuf> {
-    if let Some(path) = explicit_path {
-        return Some(path.to_path_buf());
-    }
-
-    resolve_config_layer_paths_with_context(None, context)
-        .into_iter()
-        .last()
+    resolve_config_layer_paths_with_context(explicit, context).pop()
 }
-
-pub(super) fn resolve_tui_config_layer_paths_with_context(
-    explicit_path: Option<&Path>,
+pub fn resolve_config_layer_paths_with_context(
+    explicit: Option<&Path>,
     context: &ConfigDiscoveryContext,
 ) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
+    explicit.map_or_else(
+        || discover(context, false),
+        |path| vec![context.current_dir.join(path)],
+    )
+}
+pub fn resolve_tui_config_layer_paths_with_context(
+    context: &ConfigDiscoveryContext,
+) -> Vec<PathBuf> {
+    discover(context, true)
+}
 
-    if let Some(global_path) = discover_xdg_tui_config_path(context) {
-        push_unique_path(&mut paths, global_path);
+pub fn load_resolved_config(explicit: Option<&Path>) -> Result<Option<LoadedConfig>, ConfigError> {
+    load_resolved_config_with_context(explicit, &ConfigLoadContext::from_env())
+}
+pub fn load_resolved_config_with_context(
+    explicit: Option<&Path>,
+    context: &ConfigLoadContext,
+) -> Result<Option<LoadedConfig>, ConfigError> {
+    load_resolved_config_with_lookup(explicit, context, &|name| std::env::var(name).ok())
+}
+pub fn load_resolved_config_with_lookup(
+    explicit: Option<&Path>,
+    context: &ConfigLoadContext,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Result<Option<LoadedConfig>, ConfigError> {
+    let paths = resolve_config_layer_paths_with_context(explicit, &context.discovery);
+    if paths.is_empty() && context.runtime_content.is_none() {
+        return Ok(None);
     }
-
-    if let Some(env_path) = discover_tui_config_env_path(context) {
-        push_unique_path(&mut paths, env_path);
+    let mut value = ordered::OrderedValue::from(serde_json::json!({}));
+    let mut instructions = Vec::new();
+    for path in &paths {
+        let fragment = loader::parse_layer_with_lookup(
+            &loader::read_text(path)?,
+            path.parent().unwrap_or(Path::new(".")),
+            &mut instructions,
+            lookup,
+        )?;
+        value.merge(fragment);
     }
+    if let Some(content) = &context.runtime_content {
+        value.merge(loader::parse_layer_with_lookup(
+            content,
+            &context.discovery.current_dir,
+            &mut instructions,
+            lookup,
+        )?);
+    }
+    let mut config = normalize::normalize(value)?;
+    config.instruction_files = instructions;
+    let mut tui = serde_json::json!({});
+    for path in discover(&context.discovery, true) {
+        let layer = json5::from_str(&loader::read_text(&path)?).map_err(normalize::parse_error)?;
+        normalize::merge(&mut tui, layer);
+    }
+    let tui: PublicTuiConfig = serde_json::from_value(tui).map_err(normalize::parse_error)?;
+    config.ui.keybindings = tui.keybindings;
+    loader::instruction_files(&mut config, &context.discovery.current_dir)?;
+    registries::register(&config)?;
+    Ok(Some(LoadedConfig { config, paths }))
+}
 
-    let local_base = if context.current_dir.as_os_str().is_empty() {
-        explicit_path
-            .and_then(Path::parent)
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("."))
+pub(super) fn search_roots(directory: &Path) -> Vec<&Path> {
+    let mut roots: Vec<_> = directory.ancestors().collect();
+    if let Some(at) = roots.iter().position(|root| root.join(".git").exists()) {
+        roots.truncate(at + 1);
     } else {
-        context.current_dir.clone()
-    };
-    for local_path in discover_project_tui_config_paths(&local_base) {
-        push_unique_path(&mut paths, local_path);
+        roots.truncate(1);
     }
-
-    paths
+    roots.reverse();
+    roots
 }
 
-fn discover_xdg_runtime_config_path(context: &ConfigDiscoveryContext) -> Option<PathBuf> {
-    config_home_dir(context).and_then(|base| {
-        [
-            base.join("harness").join("harness.jsonc"),
-            base.join("harness").join("harness.json"),
-            base.join("harness").join("config.jsonc"),
-        ]
-        .into_iter()
-        .find(|path| path.exists())
-    })
-}
-
-fn discover_xdg_tui_config_path(context: &ConfigDiscoveryContext) -> Option<PathBuf> {
-    config_home_dir(context).and_then(|base| {
-        [
-            base.join("harness").join("tui.jsonc"),
-            base.join("harness").join("tui.json"),
-        ]
-        .into_iter()
-        .find(|path| path.exists())
-    })
-}
-
-fn config_home_dir(context: &ConfigDiscoveryContext) -> Option<PathBuf> {
-    context
+pub(super) fn discover(context: &ConfigDiscoveryContext, tui: bool) -> Vec<PathBuf> {
+    let names: &[&str] = if tui {
+        &["tui.jsonc", "tui.json"]
+    } else {
+        &["harness.jsonc", "harness.json", "config.jsonc"]
+    };
+    let mut paths = Vec::new();
+    let global = context
         .xdg_config_home
         .clone()
-        .or_else(|| context.home.as_ref().map(|home| home.join(".config")))
-}
-
-fn discover_runtime_config_env_path(context: &ConfigDiscoveryContext) -> Option<PathBuf> {
-    context.runtime_config_path.clone()
-}
-
-fn discover_tui_config_env_path(context: &ConfigDiscoveryContext) -> Option<PathBuf> {
-    context.tui_config_path.clone()
-}
-
-fn discover_project_runtime_config_paths(start: &Path) -> Vec<PathBuf> {
-    discover_existing_project_config_paths(
-        start,
-        &[
-            "harness.jsonc",
-            "harness.json",
-            ".agent-harness/harness.jsonc",
-            ".agent-harness/harness.json",
-        ],
-    )
-}
-
-fn discover_project_tui_config_paths(start: &Path) -> Vec<PathBuf> {
-    discover_existing_project_config_paths(
-        start,
-        &[
-            "tui.jsonc",
-            "tui.json",
-            ".agent-harness/tui.jsonc",
-            ".agent-harness/tui.json",
-        ],
-    )
-}
-
-fn discover_existing_project_config_paths(start: &Path, relative_paths: &[&str]) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    for base in project_config_search_bases(start) {
-        for relative_path in relative_paths {
-            let candidate = base.join(relative_path);
-            if candidate.exists() {
-                paths.push(candidate);
+        .or_else(|| context.home.as_ref().map(|home| home.join(".config")));
+    if let Some(base) = global {
+        if let Some(path) = names
+            .iter()
+            .map(|name| base.join("harness").join(name))
+            .find(|path| path.is_file())
+        {
+            paths.push(path);
+        }
+    }
+    if let Some(path) = if tui {
+        &context.tui_config_path
+    } else {
+        &context.runtime_config_path
+    } {
+        if !paths.contains(path) {
+            paths.push(path.clone());
+        }
+    }
+    for base in search_roots(&context.current_dir) {
+        for prefix in ["", ".agent-harness"] {
+            for name in &names[..2] {
+                let path = base.join(prefix).join(name);
+                if path.is_file() && !paths.contains(&path) {
+                    paths.push(path);
+                }
             }
         }
     }
-
     paths
 }
 
-fn project_config_search_bases(start: &Path) -> Vec<PathBuf> {
-    let mut bases = project_search_bases(start);
-    bases.reverse();
-    bases
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct PublicTuiConfig {
+    #[serde(rename = "$schema")]
+    pub schema: Option<String>,
+    #[serde(rename = "keybinds", alias = "keybindings")]
+    pub keybindings: BTreeMap<String, String>,
+    pub confirm_before_rewind: Option<bool>,
 }
 
-pub(super) fn resolve_configured_instruction_entries(
-    entries: &[String],
-    config_path: Option<&Path>,
-) -> Result<Vec<InstructionFile>, ConfigError> {
-    let mut resolved = Vec::new();
-    let base_dir = config_path.and_then(Path::parent);
-
-    for (index, entry) in entries.iter().enumerate() {
-        let trimmed = entry.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let candidate = base_dir
-            .map(|base| base.join(trimmed))
-            .filter(|path| path.exists())
-            .or_else(|| {
-                let path = PathBuf::from(trimmed);
-                path.exists().then_some(path)
-            });
-
-        if let Some(path) = candidate {
-            let content =
-                fs::read_to_string(&path).map_err(|source| ConfigError::ReadMarkdownAsset {
-                    path: path.display().to_string(),
-                    source,
-                })?;
-            let content = content.trim().to_string();
-            if !content.is_empty() {
-                resolved.push(InstructionFile { path, content });
-            }
-            continue;
-        }
-
-        resolved.push(InstructionFile {
-            path: PathBuf::from(format!("<config instructions {}>", index + 1)),
-            content: trimmed.to_string(),
-        });
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn config_discovery_merges_layers_without_writing_and_resolves_file_values(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let root = tempfile::tempdir()?;
+        let global = root.path().join("config/harness");
+        let project = root.path().join("project");
+        std::fs::create_dir_all(&global)?;
+        std::fs::create_dir_all(project.join(".git"))?;
+        let context = ConfigLoadContext {
+            discovery: ConfigDiscoveryContext {
+                current_dir: project.clone(),
+                xdg_config_home: Some(root.path().join("config")),
+                home: None,
+                runtime_config_path: None,
+                tui_config_path: None,
+            },
+            runtime_content: None,
+        };
+        assert!(load_resolved_config_with_context(None, &context)?.is_none());
+        assert!(!project.join("harness.json").exists());
+        std::fs::write(global.join("harness.jsonc"), "{runtime:{compaction:{enabled:false,fallbackInputTokens:1234}}, permission:{bash:{'git *':'allow','*':'deny'}}}")?;
+        std::fs::write(project.join("prompt.txt"), "local instructions")?;
+        std::fs::write(project.join("harness.jsonc"), "{runtime:{compaction:{fallback_input_tokens:8192}},agent:{default:{system_prompt:'{file:prompt.txt}'}},permission:{bash:{'git status':'ask'}}}")?;
+        std::fs::write(
+            project.join("tui.jsonc"),
+            "{keybinds:{copy_selection:'ctrl+y'}}",
+        )?;
+        let loaded =
+            load_resolved_config_with_context(None, &context)?.ok_or("configuration not found")?;
+        assert_eq!(loaded.paths.len(), 2);
+        assert_eq!(
+            loaded.primary_path(),
+            Some(project.join("harness.jsonc").as_path())
+        );
+        assert_eq!(loaded.config.runtime.compaction.fallback_input_tokens, 8192);
+        assert_eq!(loaded.config.ui.keybindings["copy_selection"], "ctrl+y");
+        assert!(!loaded.config.runtime.compaction.enabled);
+        assert_eq!(
+            loaded.config.agents["default"].system_prompt.as_deref(),
+            Some("local instructions")
+        );
+        assert_eq!(
+            loaded
+                .config
+                .permissions
+                .rules
+                .shell
+                .iter()
+                .map(|r| r.mode)
+                .collect::<Vec<_>>(),
+            vec![
+                PermissionMode::Allow,
+                PermissionMode::Deny,
+                PermissionMode::Ask
+            ]
+        );
+        assert!(!project.join(".agent-harness").exists());
+        let explicit =
+            load_resolved_config_with_context(Some(&global.join("harness.jsonc")), &context)?
+                .ok_or("explicit config missing")?;
+        assert_eq!(explicit.paths, vec![global.join("harness.jsonc")]);
+        assert!(explicit.config.agents["default"].system_prompt.is_none());
+        let mut references =
+            serde_json::json!({"text":"${EMPTY}|${EMPTY:-fallback}|{env:ABSENT}|{env:TOKEN}"});
+        references::expand(&mut references, &project, &|name| match name {
+            "EMPTY" => Some(String::new()),
+            "TOKEN" => Some("${KEEP_LITERAL}".into()),
+            _ => None,
+        })?;
+        assert_eq!(references["text"], "|fallback||${KEEP_LITERAL}");
+        assert!(
+            references::expand(&mut serde_json::json!("${ABSENT}"), &project, &|_| None).is_err()
+        );
+        Ok(())
     }
-
-    Ok(resolved)
 }

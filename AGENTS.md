@@ -1,8 +1,6 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-09-04T22:35:08.692Z
-**Commit:** 4edb5153
-**Branch:** dev
+Backend map updated for the rewrite on 2026-09-27. Terminal ownership is unchanged.
 
 ## OVERVIEW
 
@@ -19,7 +17,7 @@ agent-harness/
 │   ├── harness-providers/   # provider transports and stream normalization
 │   ├── harness-tools/       # native and MCP tool registry/execution
 │   ├── harness-tui/         # Ratatui/Crossterm live, replay, and review shells
-│   └── harness-testkit/     # deterministic fakes and simulation support
+│   └── harness-testkit/     # temporary workspaces and preserved terminal fixtures
 ├── configs/                 # strict JSON/JSONC configuration contracts
 ├── docs/                    # operator, architecture, and testing documentation
 └── scripts/                 # test lanes, suite gates, and QA dogfood tooling
@@ -30,12 +28,12 @@ agent-harness/
 | Task | Location | Notes |
 |------|----------|-------|
 | Change runtime coordination | `crates/harness-core/src/coord/` | Coordinator owns transitions and authority |
-| Change durable history | `crates/harness-core/src/event/`, `store/`, `session/`, `proj/` | Append-only events feed replay projections |
+| Change durable history | `crates/harness-core/src/event/`, `store.rs`, `session/`, `proj/` | Append-only events feed replay projections |
 | Add or modify a CLI command | `crates/harness/src/` | `lib.rs` owns Clap routing; `main.rs` only calls `run_os()` |
 | Add a provider/backend | `crates/harness-providers/src/` | Normalize backend protocol into common stream events |
 | Add or modify tools | `crates/harness-tools/src/` | Registry, validation, execution, edit, LSP, and MCP boundaries |
 | Change terminal behavior | `crates/harness-tui/src/` | Runtime I/O, state, view model, rendering, and terminal adapters |
-| Add deterministic fixtures | `crates/harness-testkit/src/` | Fakes, workspaces, secret scanning, and simulation summaries |
+| Add deterministic fixtures | The owning crate's `tests/` directory | Use existing local provider and tool fixtures; shared temporary workspaces live in `harness-testkit` |
 | Run scoped test suites | `scripts/test-lanes.sh` | Canonical lane runner; gated modes fail closed |
 
 ## CODE MAP
@@ -49,10 +47,10 @@ Reference centrality was not measured; `Refs` records only that limitation.
 | `HarnessConfig` | struct | `crates/harness-core/src/config/` | unmeasured | Runtime configuration hub |
 | `run` / `run_os` | functions | `crates/harness/src/lib.rs` | unmeasured | In-process and operating-system CLI entry points |
 | `Provider` / `ProviderStreamEvent` | trait / enum | `crates/harness-providers/src/lib.rs` | unmeasured | Backend contract and normalized stream vocabulary |
-| `coordinator_registry_with_mcp_editing_and_executors` | function | `crates/harness-tools/src/lib.rs` | unmeasured | Native registry plus configured MCP tools |
+| `coordinator_registry_with_skills` | function | `crates/harness-tools/src/lib.rs` | unmeasured | Native tool registry; runtime configuration adds MCP tools |
 | `AppState` / `render_app` | struct / function | `crates/harness-tui/src/app.rs`, `ui.rs` | unmeasured | UI state aggregate and pure frame composition |
 | `run_tui_with_options` | function | `crates/harness-tui/src/runtime.rs` | unmeasured | Public terminal runtime entry |
-| `build_normalized_summary` | function | `crates/harness-testkit/src/simulation.rs` | unmeasured | Deterministic simulation output |
+| `TestWorkspace` | struct | `crates/harness-testkit/src/workspace.rs` | unmeasured | Isolated temporary test workspace |
 
 ## CONVENTIONS
 
@@ -64,8 +62,8 @@ Reference centrality was not measured; `Refs` records only that limitation.
 - Provider-specific streams are normalized before crossing the provider boundary.
 - TUI rendering and view-model projection are pure; terminal I/O belongs to runtime
   and terminal adapters. Geometry uses grapheme/display-cell measurements.
-- Integration tests run in process where possible; large targets aggregate numbered
-  files with `include!`, and opt-in PTY/live/native evidence remains deterministic.
+- Integration tests run in process where possible. Backend tests cover behavior at
+  public boundaries; opt-in PTY/live/native evidence remains deterministic.
 - Workspace lint policy denies unsafe code, unused must-use values, non-ASCII
   identifiers, unwrap/expect/panic/todo, and selected sharp Clippy patterns.
 

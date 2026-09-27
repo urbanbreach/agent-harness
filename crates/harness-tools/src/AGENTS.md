@@ -1,48 +1,27 @@
-# HARNESS TOOLS SOURCE GUIDE
+# Native tools
 
-## OVERVIEW
+`lib.rs` assembles `harness_core::tool::Tool` implementations. Schemas use strict
+object-root arguments. Display text and structured JSON serve different callers;
+large results spill through the coordinator's private artifact path.
 
-Score 13: 38 direct Rust files, 14 subdirectories, a `lib.rs` boundary, and measured high symbol/export density make this the workspace's native-tool implementation hub.
+| Work | Source |
+| --- | --- |
+| File reads and edits | `files.rs`, `files/`, `hashline.rs`, `patch.rs` |
+| Search and structural edits | `search.rs`, `ast_grep.rs`, `ast_grep/` |
+| Shell processes | `shell.rs`, `shell/`, `process.rs` |
+| Formatting and language servers | `formatters.rs`, `formatters/`, `lsp.rs`, `lsp/` |
+| Delegation and batching | `tasks.rs`, `tasks/`, `batch.rs` |
+| Skills and sessions | `skills.rs`, `skills/`, `sessions.rs`, `sessions/` |
+| Network tools | `web.rs`, `remote_search.rs`, `mcp/`, `github.rs` |
 
-## STRUCTURE
+The coordinator checks permissions and owns cancellation, edits, and durable
+writes. Discovering additional paths does not grant access: request permission
+through the coordinator before reading or editing them.
 
-```text
-src/
-|- lib.rs              # registry assembly and public transport/catalog seams
-|- native_tools/       # provider-facing wrappers and argument schemas
-|- fs_read/            # bounded text reads and hashline rendering
-|- skill_catalog/      # precedence, frontmatter, and resource activation
-|- apply_patch_tool/   # parse and preflight before sequential mutation
-|- shell_run/          # process execution, confinement, and output limits
-|- session_tools/      # replay-only session projections
-|- network/            # fetch and remote-search transports
-|- lsp_support/        # JSON-RPC process/session support
-`- code_lsp_rename/    # UTF-16 rename planning and application
-```
+Canonicalize paths, reject escapes, and check fresh content before publication.
+Apply edits through shared staging, formatting, undo, and attribution paths.
+Never apply truncated structural results or overlapping/stale rename edits.
 
-## WHERE TO LOOK
-
-| Task | Location | Notes |
-|------|----------|-------|
-| Add or expose a native tool | `lib.rs`, `native_tools.rs`, `tool_catalog.rs` | Keep registry, canonical ID, actor availability, and schema aligned. |
-| Change file operations | `fs_read.rs`, `fs_grep.rs`, `workspace_paths.rs`, edit modules | Preserve workspace containment and artifact behavior. |
-| Change process execution | `shell_safety.rs`, `shell_run.rs`, `shell_run/` | Validation and Linux confinement fail closed. |
-| Change delegation | `agent_ops.rs`, `agent_ops/`, `control_plane.rs` | Coordinator owns permissions, lineage, and event ordering. |
-| Change language intelligence | `code_lsp.rs`, `lsp_support.rs`, `code_lsp_rename.rs` | Public positions are 1-based; protocol positions are 0-based. |
-| Change extension transport | `mcp.rs`, `mcp_session.rs`, `mcp_render.rs` | Support configured stdio and HTTP sessions. |
-
-## CONVENTIONS
-
-- Implement tools through `harness_core::tool::Tool`; use strict serde arguments and provider-safe object-root schemas.
-- Pair model-facing display text with structured JSON; spill bounded overflow to artifacts with digest/path metadata.
-- Canonicalize paths before access, reject escapes, and preserve deterministic ordering with sorting or ordered maps.
-- Editing paths preflight current content, preserve UTF-8/BOM/line endings where promised, and emit mutation evidence.
-- Keep most implementation types crate-visible; export only registry configuration, injectable transports, and stable catalog contracts.
-
-## ANTI-PATTERNS
-
-- Never bypass workspace checks, symlink checks, permission routing, atomic-edit paths, or stale-anchor validation.
-- Never use shell as a substitute for native read/list/glob/grep/edit tools; shell policy intentionally rejects expansion and compound syntax.
-- Never execute providers, tools, hooks, MCP, network, or CLI while replaying or inspecting sessions.
-- Do not apply truncated ast-grep results, overlapping edits, stale rename ranges, or unsupported patch moves.
-- Do not leak credentials, URL query strings, raw attachment bytes, reasoning, or unredacted event payloads into artifacts.
+Reuse lazy process and transport sessions within a run; close them at shutdown.
+Inspection must not replay tools, hooks, MCP, or provider calls. Do not persist
+raw arguments, credentials, reasoning, or unchecked artifact bytes.

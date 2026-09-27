@@ -1,116 +1,309 @@
-//! Compaction summary generation, token estimation, and cut-point detection.
-//!
-//! Ports Pi's compaction logic into Rust. The coordinator owns compaction
-//! lifecycle; this module provides pure helpers: token estimation,
-//! cut-point detection, prompt building, conversation serialization,
-//! and file operation formatting.
-
-#[path = "compaction/active_path_snapshot.rs"]
-mod active_path_snapshot;
-#[cfg(test)]
-#[path = "compaction/active_path_snapshot_tests.rs"]
-mod active_path_snapshot_tests;
-#[path = "compaction/branch_summary.rs"]
-mod branch_summary;
-#[path = "compaction/context_projection.rs"]
-mod context_projection;
-#[path = "compaction/cut_point.rs"]
-mod cut_point;
-#[path = "compaction/file_ops.rs"]
-mod file_ops;
-#[path = "compaction/snapshot.rs"]
-mod snapshot;
-#[path = "compaction/summary.rs"]
+use super::{context::Context, turn::Worker, *};
+use crate::config::HookLifecycleEvent as Hook;
+use harness_providers::{CompletionMessage, MessageRole};
+use serde_json::json;
+pub(super) mod plan;
 mod summary;
-#[path = "compaction/tokens.rs"]
-mod tokens;
 
-pub use active_path_snapshot::build_active_path_compaction_snapshot;
-pub use branch_summary::{
-    collect_entries_for_branch_summary, generate_branch_summary, prepare_branch_entries,
-    BranchPreparation, BranchSummaryResult, CollectEntriesResult, GenerateBranchSummaryOptions,
-    BRANCH_SUMMARY_PREAMBLE, BRANCH_SUMMARY_PREFIX, BRANCH_SUMMARY_PROMPT, BRANCH_SUMMARY_SUFFIX,
-};
-pub use context_projection::{
-    build_session_context, build_session_context_with_branch_summaries,
-    estimate_session_context_tokens,
-};
-pub(crate) use cut_point::{
-    estimate_typed_entries_tokens, find_safe_cut_point, SafeCutError, TypedCutPointPlan,
-};
-pub use cut_point::{find_cut_point, CutPointResult};
-pub use file_ops::{
-    compute_file_lists, extract_file_ops_from_tool_call, merge_file_operations, FileOperation,
-    FileOperations,
-};
-pub use snapshot::{
-    ActiveCompactionBranch, ActivePathCompactionPlan, ActivePathCompactionSnapshot,
-    ActivePathCompactionSnapshotInput, CompactionOwner, CompactionPlanBoundary,
-    CompactionSnapshotEntry, CompactionSnapshotError, CurrentCompactionModel,
-    LegacySourceSequences, OwnedSession, PendingCompactionPrompt, PriorActiveCompactionSummary,
-    ToolPairIdentity,
-};
-pub use summary::{
-    build_summarization_prompt, format_file_operations, serialize_conversation,
-    SUMMARIZATION_PROMPT, SUMMARIZATION_SYSTEM_PROMPT, TURN_PREFIX_SUMMARIZATION_PROMPT,
-    UPDATE_SUMMARIZATION_PROMPT,
-};
-pub use tokens::{
-    admit_tool_result, calculate_context_tokens, estimate_admitted_message_tokens,
-    estimate_context_tokens, estimate_message_tokens, estimate_messages_tokens,
-    estimate_text_tokens, ContextUsageEstimate,
-};
-
-use crate::config::CompactionSettings;
-use crate::conversation::ConversationMessage;
-
-/// Prepared compaction inputs computed from session state.
-///
-/// Contains the messages to summarize, optional turn-prefix messages for split
-/// turns, file operations extracted from the compacted window, and the
-/// compaction settings that govern the operation.
-#[derive(Debug, Clone)]
-pub struct CompactionPreparation {
-    /// Sequence number of the first event to keep after compaction.
-    pub first_kept_event_seq: u64,
-    /// Request id of the first kept turn, if identifiable.
-    pub first_kept_request_id: Option<String>,
-    /// Messages that will be summarized and then discarded.
-    pub messages_to_summarize: Vec<ConversationMessage>,
-    /// Messages from the prefix of a split turn (empty when `is_split_turn` is false).
-    pub turn_prefix_messages: Vec<ConversationMessage>,
-    /// Whether the cut point falls inside a turn, requiring a turn-prefix summary.
-    pub is_split_turn: bool,
-    /// Estimated token count before compaction.
-    pub tokens_before: u32,
-    /// Summary from the previous compaction, for iterative update.
-    pub previous_summary: Option<String>,
-    /// File operations extracted from `messages_to_summarize` (and turn prefix if split).
-    pub file_ops: FileOperations,
-    /// Compaction settings from the runtime config.
-    pub settings: CompactionSettings,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManualCompactionOutcome {
+    NoOp,
+    Compacted {
+        tokens_before: u32,
+        tokens_after: u32,
+        summary_preview: String,
+    },
 }
-
-/// Result of a compaction operation.
-///
-/// Contains the generated summary, the boundary metadata, and the computed file
-/// lists that were appended to the summary.
-#[derive(Debug, Clone)]
-pub struct CompactionResult {
-    /// The generated compaction summary (including appended file operation tags).
-    pub summary: String,
-    /// Sequence number of the first event kept after compaction.
-    pub first_kept_event_seq: u64,
-    /// Request id of the first kept turn, if identifiable.
-    pub first_kept_request_id: Option<String>,
-    /// Estimated token count before compaction.
-    pub tokens_before: u32,
-    /// Files that were read (but not modified) during the compacted window.
-    pub read_files: Vec<String>,
-    /// Files that were edited or written during the compacted window.
-    pub modified_files: Vec<String>,
+pub(super) struct Manual {
+    pub through: Option<String>,
+    pub reason: String,
+    pub instructions: Option<String>,
+    pub reply: Reply<ManualCompactionOutcome>,
 }
-
-#[cfg(test)]
-#[path = "compaction/tests.rs"]
-mod tests;
+impl CoordinatorHandle {
+    pub async fn compact_agent_context_with_instructions(
+        &self,
+        agent: impl Into<String>,
+        through_request_id: Option<String>,
+        trigger_reason: impl Into<String>,
+        custom_instructions: Option<String>,
+    ) -> Result<ManualCompactionOutcome, CoordinatorError> {
+        let (agent, reason) = (agent.into(), trigger_reason.into());
+        if reason.is_empty()
+            || reason.len() > 256
+            || custom_instructions
+                .as_ref()
+                .is_some_and(|s| s.len() > 32 * 1024)
+        {
+            return Err(CoordinatorError::Invalid(
+                "invalid compaction instructions or reason".into(),
+            ));
+        }
+        let (reply, response) = oneshot::channel();
+        self.call(move |s| {
+            s.queue_compaction(
+                &agent,
+                Manual {
+                    through: through_request_id,
+                    reason,
+                    instructions: custom_instructions,
+                    reply,
+                },
+            )
+        })
+        .await?;
+        response.await.map_err(|_| CoordinatorError::Closed)?
+    }
+    pub async fn compact_agent_context(
+        &self,
+        agent: impl Into<String>,
+        through: Option<String>,
+        reason: impl Into<String>,
+    ) -> Result<ManualCompactionOutcome, CoordinatorError> {
+        self.compact_agent_context_with_instructions(agent, through, reason, None)
+            .await
+    }
+    pub async fn cancel_compaction(
+        &self,
+        agent: impl Into<String>,
+    ) -> Result<(), CoordinatorError> {
+        let agent = agent.into();
+        self.call(move |s| {
+            let state = s
+                .agents
+                .get(&agent)
+                .ok_or_else(|| CoordinatorError::UnknownAgent(agent.clone()))?;
+            let queued: Vec<_> = state
+                .queue
+                .iter()
+                .filter(|t| t.manual.is_some())
+                .map(|t| t.id.clone())
+                .collect();
+            for task in queued {
+                s.cancel(&task, "compaction cancelled")?;
+            }
+            if let Some((_, cancellation)) = s.compacting.get(&agent) {
+                cancellation.cancel();
+            }
+            Ok(())
+        })
+        .await
+    }
+}
+impl Worker {
+    pub(super) async fn compact(
+        &self,
+        context: &mut Context,
+        through: Option<&str>,
+        reason: &str,
+        instructions: Option<&str>,
+        budget: Option<&crate::RequestBudget>,
+    ) -> Result<ManualCompactionOutcome, CoordinatorError> {
+        if !self.compaction.enabled {
+            return Ok(ManualCompactionOutcome::NoOp);
+        }
+        let keep = budget
+            .and_then(|budget| {
+                self.compaction_threshold(budget).map(|threshold| {
+                    threshold.saturating_sub(
+                        budget
+                            .occupied_input_tokens
+                            .saturating_sub(budget.components.history_tokens),
+                    )
+                })
+            })
+            .map_or(self.compaction.keep_recent_tokens, |allowance| {
+                self.compaction.keep_recent_tokens.min(allowance)
+            });
+        let Some(plan) = plan::Plan::new(context, &self.compaction, keep, through)? else {
+            return Ok(ManualCompactionOutcome::NoOp);
+        };
+        let agent = self
+            .actor
+            .agent_id
+            .clone()
+            .ok_or_else(|| CoordinatorError::Invalid("compaction needs an agent".into()))?;
+        let cancel = self.cancellation.child_token();
+        let (task, owner, id, token, trigger) = (
+            self.turn.id.clone(),
+            self.actor.clone(),
+            agent.clone(),
+            cancel.clone(),
+            reason.to_owned(),
+        );
+        let generation = self
+            .handle
+            .call(move |s| {
+                s.check_task(&task)?;
+                if let Err(error) = s.hook(
+                    Hook::CompactionRequested,
+                    &owner,
+                    Some(&task),
+                    json!({"outcome":"requested","output_summary":trigger}),
+                ) {
+                    let _ = s.hook(
+                        Hook::CompactionFailed,
+                        &owner,
+                        Some(&task),
+                        json!({"outcome":"failed","failure_reason":error.to_string()}),
+                    );
+                    return Err(error);
+                }
+                let generation = s.counter;
+                s.compacting.insert(id.clone(), (generation, token));
+                s.live(
+                    owner,
+                    task,
+                    LiveEventV1::CompactionProgress {
+                        agent_id: id,
+                        generation,
+                        trigger_reason: trigger,
+                        preview: Some("Summarizing earlier context…".into()),
+                    },
+                )?;
+                Ok(generation)
+            })
+            .await?;
+        let result = self.summarize(context, &plan, instructions, &cancel).await;
+        let result = match result {
+            Ok((summary, usage)) => {
+                self.apply_compaction(context, plan, &agent, summary, usage, reason, &cancel)
+                    .await
+            }
+            Err(error) => Err(error),
+        };
+        let (task, owner, id, trigger) = (
+            self.turn.id.clone(),
+            self.actor.clone(),
+            agent.clone(),
+            reason.to_owned(),
+        );
+        let failure = result.as_ref().err().map(ToString::to_string);
+        let cleared = self
+            .handle
+            .call(move |s| {
+                if s.compacting
+                    .get(&id)
+                    .is_some_and(|(current, _)| *current == generation)
+                {
+                    s.compacting.remove(&id);
+                    s.live(
+                        owner.clone(),
+                        task.clone(),
+                        LiveEventV1::CompactionProgress {
+                            agent_id: id,
+                            generation,
+                            trigger_reason: trigger,
+                            preview: None,
+                        },
+                    )?;
+                }
+                if let Some(error) = failure {
+                    s.hook(
+                        Hook::CompactionFailed,
+                        &owner,
+                        Some(&task),
+                        json!({"outcome":"failed","failure_reason":error}),
+                    )?;
+                }
+                Ok(())
+            })
+            .await;
+        if cancel.is_cancelled() && result.is_err() {
+            return Err(CoordinatorError::CompactionCancelled { agent_id: agent });
+        }
+        cleared?;
+        result
+    }
+    async fn apply_compaction(
+        &self,
+        context: &mut Context,
+        plan: plan::Plan,
+        agent: &str,
+        summary: String,
+        usage: Option<harness_providers::CompletionUsage>,
+        reason: &str,
+        cancel: &CancellationToken,
+    ) -> Result<ManualCompactionOutcome, CoordinatorError> {
+        let tokens_before = context.tokens();
+        let retained = &context.entries[plan.cut];
+        let model = crate::agent::AgentModelRef::parse(&self.turn.model);
+        let payload = SessionCompactionEvent {
+            agent_id: agent.into(),
+            summary,
+            first_kept_event_seq: retained.seq,
+            first_kept_request_id: retained.turn.clone(),
+            first_kept_entry_id: None,
+            tokens_before,
+            tokens_after: None,
+            summary_usage: usage,
+            summary_provider_id: Some(model.provider_id),
+            summary_model_id: Some(model.model_id),
+            read_files: plan.read_files,
+            modified_files: plan.modified_files,
+            task_intent: None,
+            current_intent: None,
+            trigger_reason: reason.into(),
+            from_hook: false,
+        };
+        let kept_tokens = super::context::tokens(&context.entries[..plan.start])
+            .saturating_add(super::context::tokens(&context.entries[plan.cut..]));
+        let (task, owner, token) = (self.turn.id.clone(), self.actor.clone(), cancel.clone());
+        let applied = self
+            .handle
+            .call(move |s| {
+                s.check_task(&task)?;
+                if token.is_cancelled() {
+                    return Err(CoordinatorError::Cancelled(task));
+                }
+                let summary = s.redactor.redact_text(&payload.summary);
+                let message = CompletionMessage::text(
+                    MessageRole::User,
+                    format!("Conversation summary:\n{summary}"),
+                );
+                let mut replacement = Context::default();
+                replacement.push(message.clone(), 0, None);
+                let tokens_after = kept_tokens.saturating_add(replacement.tokens());
+                if tokens_after >= tokens_before {
+                    return Err(CoordinatorError::Invalid(
+                        "summary did not reduce context; original context retained".into(),
+                    ));
+                }
+                // Critical completion hooks gate the same commit as the summary, so replay and memory cannot diverge.
+                for stage in [Hook::CompactionWritten, Hook::CompactionApplied] {
+                    s.hook(
+                        stage,
+                        &owner,
+                        Some(&task),
+                        json!({"outcome":"compacted","output_summary":summary}),
+                    )?;
+                }
+                s.emit(
+                    owner,
+                    Some(task),
+                    EventV1::SessionCompaction(SessionCompactionEvent {
+                        summary,
+                        tokens_after: Some(tokens_after),
+                        ..payload
+                    }),
+                )?;
+                Ok((message, tokens_after))
+            })
+            .await?;
+        let preview = applied.0.content.chars().take(512).collect();
+        context.entries.splice(
+            plan.start..plan.cut,
+            [super::context::Entry {
+                message: applied.0,
+                seq: 0,
+                turn: None,
+                attachments: Vec::new(),
+            }],
+        );
+        Ok(ManualCompactionOutcome::Compacted {
+            tokens_before,
+            tokens_after: applied.1,
+            summary_preview: preview,
+        })
+    }
+}

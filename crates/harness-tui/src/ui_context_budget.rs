@@ -1,33 +1,9 @@
+use crate::app::AppState;
 use harness_core::context_budget::{BudgetStatus, RequestBudgetSnapshot};
-use ratatui::style::Color;
-
-use crate::{app::AppState, theme::Theme};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ContextBudgetTone {
-    Normal,
-    Warning,
-    Critical,
-    Refreshing,
-    Unknown,
-}
-
-impl ContextBudgetTone {
-    pub(super) const fn color(self, theme: &Theme) -> Color {
-        match self {
-            Self::Normal => theme.status.success,
-            Self::Warning => theme.status.warning,
-            Self::Critical => theme.status.error,
-            Self::Refreshing => theme.status.info,
-            Self::Unknown => theme.text.tertiary,
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ContextBudget {
     label: String,
-    tone: ContextBudgetTone,
 }
 
 impl ContextBudget {
@@ -38,7 +14,6 @@ impl ContextBudget {
         {
             return Some(Self {
                 label: "ctx compacted · refreshing".to_string(),
-                tone: ContextBudgetTone::Refreshing,
             });
         }
 
@@ -52,7 +27,6 @@ impl ContextBudget {
                     .and_then(|usage| usage.tokens)
                     .unwrap_or(0)
             ),
-            tone: ContextBudgetTone::Unknown,
         })
     }
 
@@ -61,15 +35,9 @@ impl ContextBudget {
             BudgetStatus::Estimated => Self::estimated(snapshot),
             BudgetStatus::ConservativeFallback => Self {
                 label: format!("ctx ~{} · conservative", snapshot.occupied_input_tokens),
-                tone: if snapshot.requires_compaction == Some(true) {
-                    ContextBudgetTone::Warning
-                } else {
-                    ContextBudgetTone::Unknown
-                },
             },
             BudgetStatus::UnknownLimits => Self {
                 label: format!("ctx ~{} · capacity unknown", snapshot.occupied_input_tokens),
-                tone: ContextBudgetTone::Unknown,
             },
         }
     }
@@ -81,37 +49,15 @@ impl ContextBudget {
         else {
             return Self {
                 label: format!("ctx ~{} · capacity unknown", snapshot.occupied_input_tokens),
-                tone: ContextBudgetTone::Unknown,
             };
         };
         let occupied = snapshot.occupied_input_tokens;
         let percent = ((u64::from(occupied) * 100 + u64::from(threshold) / 2)
             / u64::from(threshold))
         .min(999);
-        let pressure = u64::from(occupied) * 100;
-        let threshold = u64::from(threshold);
         Self {
             label: format!("ctx ~{occupied}/{threshold} {percent}%"),
-            tone: if snapshot.requires_compaction == Some(true) || pressure >= threshold * 90 {
-                ContextBudgetTone::Critical
-            } else if pressure >= threshold * 75 {
-                ContextBudgetTone::Warning
-            } else {
-                ContextBudgetTone::Normal
-            },
         }
-    }
-
-    pub(super) fn full_label(&self) -> &str {
-        &self.label
-    }
-
-    pub(super) fn compact_label(&self) -> &str {
-        &self.label
-    }
-
-    pub(super) const fn tone(&self) -> ContextBudgetTone {
-        self.tone
     }
 }
 
@@ -128,7 +74,7 @@ mod tests {
     };
     use harness_providers::ProviderOutputCapDisposition;
 
-    use super::{ContextBudget, ContextBudgetTone};
+    use super::ContextBudget;
 
     fn snapshot(
         status: BudgetStatus,
@@ -152,16 +98,14 @@ mod tests {
     }
 
     #[test]
-    fn estimated_budget_uses_snapshot_threshold_for_label_and_tone() {
+    fn estimated_budget_uses_snapshot_threshold_for_label() {
         // arrange: occupied input at the warning boundary of the shared threshold.
         let snapshot = snapshot(BudgetStatus::Estimated, 900, Some(1_200));
 
         // act: the snapshot is formatted.
         let budget = ContextBudget::from_snapshot(snapshot);
 
-        // assert: threshold drives both the exact label and presentation tone.
-        assert_eq!(budget.full_label(), "ctx ~900/1200 75%");
-        assert_eq!(budget.tone(), ContextBudgetTone::Warning);
+        assert_eq!(budget.label, "ctx ~900/1200 75%");
     }
 
     #[test]

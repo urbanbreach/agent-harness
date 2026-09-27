@@ -1,412 +1,138 @@
-use crate::conversation::{
-    project_conversation, ConversationProjection, ConversationProjectionError,
+use super::*;
+use crate::{
+    event::*,
+    proj::{ProjectionError, RunSummary},
+    transcript_projection::{self, TranscriptIndex, TranscriptProjection},
 };
-use crate::event::{EventEnvelopeV1, EventV1};
-use crate::proj::{
-    inspect_resume_plan_from_events, project_resume_plan, project_resume_plan_from_run_history,
-    project_run_summary, project_session_catalog_entry, project_timeline_index, ProjectionError,
-    ResumePlan, RunSummary, SessionCatalogEntry, SessionCatalogMetadata, TimelineIndex,
-};
-use crate::transcript_projection::{
-    project_transcript, TranscriptProjection, TranscriptProjectionError,
-};
-use std::borrow::Cow;
-use std::path::Path;
+use std::collections::HashSet;
 
-use super::legacy::{
-    canonical_provider_fragment_for_event, latest_legacy_compaction,
-    legacy_projection_update_for_event, CanonicalLegacyCompaction, CanonicalProviderFragment,
-    LegacyAdapterError, LegacyAuditReference, LegacyEventLogAdapter, LegacyProvenance,
-    LegacySessionSnapshot, LegacyWarning,
-};
-use super::CanonicalSession;
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CanonicalSessionProjection {
     source_events: Vec<EventEnvelopeV1>,
+    index: TranscriptIndex,
+    event_ids: HashSet<String>,
+    finished_requests: HashSet<String>,
     pub session: CanonicalSession,
-    pub conversation: ConversationProjection,
-    pub run_summary: RunSummary,
-    pub resume_plan: ResumePlan,
-    pub timeline: TimelineIndex,
     pub transcript: TranscriptProjection,
-    pub source: LegacyProvenance,
-    pub compatibility_warnings: Vec<LegacyWarning>,
-    pub audit_timeline: Vec<LegacyAuditReference>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CanonicalProviderRequestStart<'a> {
-    pub seq: u64,
-    pub mono_ms: u64,
-    pub turn_request_id: Option<&'a str>,
-    pub request_id: &'a str,
-    pub agent_id: Option<&'a str>,
-    pub provider_id: &'a str,
-    pub model_id: &'a str,
-    pub prompt_summary: &'a str,
-    pub request_digest: &'a str,
-    pub metadata: Option<&'a crate::event::ProviderRequestStartedMetadata>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CanonicalProviderRequestFinish<'a> {
-    pub seq: u64,
-    pub mono_ms: u64,
-    pub turn_request_id: Option<&'a str>,
-    pub payload: &'a crate::event::ProviderRequestFinishedEvent,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct CanonicalBackgroundNotification<'a> {
-    pub seq: u64,
-    pub mono_ms: u64,
-    pub timestamp: Option<&'a str>,
-    pub actor_kind: crate::event::ActorKind,
-    pub actor_agent_id: Option<&'a str>,
-    pub correlation_id: Option<&'a str>,
-    pub payload: &'a crate::event::BackgroundTaskNotificationEvent,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct CanonicalStaleDetection<'a> {
-    pub seq: u64,
-    pub mono_ms: u64,
-    pub timestamp: Option<&'a str>,
-    pub task_id: &'a str,
-    pub stale_for_ms: u64,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CanonicalEditPayload<'a> {
-    Proposed(&'a crate::event::EditProposedEvent),
-    Applied(&'a crate::event::EditAppliedEvent),
-    Rejected(&'a crate::event::EditRejectedEvent),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct CanonicalEditEvent<'a> {
-    pub seq: u64,
-    pub tool_call_id: Option<&'a str>,
-    pub payload: CanonicalEditPayload<'a>,
+    pub run_summary: RunSummary,
+    pub compatibility_warnings: Vec<legacy::LegacyWarning>,
 }
 
 impl CanonicalSessionProjection {
-    /// The complete event history backing this projection, including uncached details.
     pub fn source_events(&self) -> &[EventEnvelopeV1] {
         &self.source_events
     }
-
-    pub(crate) fn conversation_from_event_history(
-        events: &[EventEnvelopeV1],
-    ) -> Result<ConversationProjection, ConversationProjectionError> {
-        project_conversation(events, &[])
+    pub fn from_event_history(events: &[EventEnvelopeV1]) -> Result<Self, ProjectionError> {
+        let mut projection = Self::default();
+        projection.apply_events(events)?;
+        Ok(projection)
     }
-
-    pub fn from_event_history(
-        events: &[EventEnvelopeV1],
-    ) -> Result<Self, CanonicalSessionProjectionError> {
-        Self::from_event_history_source(Cow::Borrowed(events))
-    }
-
-    fn from_event_history_source(
-        events: Cow<'_, [EventEnvelopeV1]>,
-    ) -> Result<Self, CanonicalSessionProjectionError> {
-        let snapshot = LegacyEventLogAdapter::new().project(&events)?;
-        let conversation = project_conversation(&events, &[])?;
-        let transcript = project_transcript(&events)?;
-        let (run_summary, resume_plan, timeline) = Self::project_operational_lossy(&events)?;
-        Ok(Self::from_parts(
-            snapshot,
-            conversation,
-            run_summary,
-            resume_plan,
-            timeline,
-            transcript,
-            events.into_owned(),
-        ))
-    }
-
-    pub fn from_strict_event_history(
-        events: &[EventEnvelopeV1],
-    ) -> Result<Self, CanonicalSessionProjectionError> {
-        let snapshot = LegacyEventLogAdapter::new().project(events)?;
-        let conversation = project_conversation(events, &[])?;
-        let transcript = project_transcript(events)?;
-        let (run_summary, resume_plan, timeline) = Self::project_operational_strict(events)?;
-        Ok(Self::from_parts(
-            snapshot,
-            conversation,
-            run_summary,
-            resume_plan,
-            timeline,
-            transcript,
-            events.to_vec(),
-        ))
-    }
-
-    pub fn from_run_history(
-        run_dir: &Path,
-        fallback_run_id: &str,
-        events: &[EventEnvelopeV1],
-    ) -> Result<Self, CanonicalSessionProjectionError> {
-        let snapshot = LegacyEventLogAdapter::new().project(events)?;
-        let conversation = project_conversation(events, &[])?;
-        let transcript = project_transcript(events)?;
-        let run_summary = project_run_summary(events)?;
-        let resume_plan = inspect_resume_plan_from_events(run_dir, fallback_run_id, events);
-        let timeline = project_timeline_index(events)?;
-        Ok(Self::from_parts(
-            snapshot,
-            conversation,
-            run_summary,
-            resume_plan,
-            timeline,
-            transcript,
-            events.to_vec(),
-        ))
-    }
-
-    pub fn from_strict_run_history(
-        run_dir: &Path,
-        fallback_run_id: &str,
-        events: &[EventEnvelopeV1],
-    ) -> Result<Self, CanonicalSessionProjectionError> {
-        let snapshot = LegacyEventLogAdapter::new().project(events)?;
-        let conversation = project_conversation(events, &[])?;
-        let transcript = project_transcript(events)?;
-        let run_summary = project_run_summary(events)?;
-        let resume_plan = project_resume_plan_from_run_history(run_dir, fallback_run_id, events)?;
-        let timeline = project_timeline_index(events)?;
-        Ok(Self::from_parts(
-            snapshot,
-            conversation,
-            run_summary,
-            resume_plan,
-            timeline,
-            transcript,
-            events.to_vec(),
-        ))
-    }
-
-    pub(crate) fn from_owner_event_history(
-        events: &[EventEnvelopeV1],
-        owner_events: &[EventEnvelopeV1],
-        agent_id: &str,
-    ) -> Result<Self, CanonicalSessionProjectionError> {
-        let snapshot = LegacyEventLogAdapter::new().project_owner(events, agent_id)?;
-        let conversation = project_conversation(owner_events, &[])?;
-        let transcript = project_transcript(events)?;
-        let (run_summary, resume_plan, timeline) = Self::project_operational_strict(events)?;
-        Ok(Self::from_parts(
-            snapshot,
-            conversation,
-            run_summary,
-            resume_plan,
-            timeline,
-            transcript,
-            events.to_vec(),
-        ))
-    }
-
-    fn from_parts(
-        snapshot: LegacySessionSnapshot,
-        conversation: ConversationProjection,
-        run_summary: RunSummary,
-        resume_plan: ResumePlan,
-        timeline: TimelineIndex,
-        transcript: TranscriptProjection,
-        source_events: Vec<EventEnvelopeV1>,
-    ) -> Self {
-        Self {
-            source_events,
-            session: snapshot.session,
-            conversation,
-            run_summary,
-            resume_plan,
-            timeline,
-            transcript,
-            source: snapshot.provenance,
-            compatibility_warnings: snapshot.warnings,
-            audit_timeline: snapshot.audit_timeline,
+    pub fn apply_events(&mut self, events: &[EventEnvelopeV1]) -> Result<(), ProjectionError> {
+        self.validate(events)?;
+        let rewind = events
+            .iter()
+            .any(|e| matches!(e.payload, EventV1::ConversationRewound(_)));
+        for event in events {
+            self.run_summary.apply(event);
+            self.session.apply(event);
+            self.track_warnings(event);
+            if !rewind {
+                transcript_projection::apply(&mut self.transcript, &mut self.index, event);
+            }
+            self.event_ids.insert(event.event_id.clone());
+            self.source_events.push(event.clone());
         }
-    }
-
-    pub fn apply_event(
-        &mut self,
-        event: EventEnvelopeV1,
-    ) -> Result<(), CanonicalSessionProjectionError> {
-        self.apply_events(std::slice::from_ref(&event))
-    }
-
-    pub fn apply_events(
-        &mut self,
-        new_events: &[EventEnvelopeV1],
-    ) -> Result<(), CanonicalSessionProjectionError> {
-        let mut events = self.source_events.clone();
-        events.extend_from_slice(new_events);
-        *self = Self::from_event_history_source(Cow::Owned(events))?;
+        if rewind {
+            self.transcript = TranscriptProjection::default();
+            self.index = TranscriptIndex::default();
+            for event in crate::conversation_rewind::active_events(&self.source_events).iter() {
+                transcript_projection::apply(&mut self.transcript, &mut self.index, event);
+            }
+        }
         Ok(())
     }
 
-    pub fn project_catalog_entry(
-        &self,
-        fallback_run_id: &str,
-        metadata: Option<&SessionCatalogMetadata>,
-        last_updated_at: Option<String>,
-        degraded_reason: Option<String>,
-    ) -> Result<SessionCatalogEntry, ProjectionError> {
-        project_session_catalog_entry(
-            self.source_events.iter(),
-            fallback_run_id,
-            metadata,
-            last_updated_at,
-            degraded_reason,
-        )
-    }
-
-    pub fn provider_request_starts(
-        &self,
-    ) -> impl Iterator<Item = CanonicalProviderRequestStart<'_>> {
-        self.source_events.iter().filter_map(|event| {
-            let EventV1::ProviderRequestStarted(payload) = &event.payload else {
-                return None;
-            };
-            Some(CanonicalProviderRequestStart {
-                seq: event.seq,
-                mono_ms: event.mono_ms,
-                turn_request_id: event.correlation_id.as_deref(),
-                request_id: payload.request_id.as_str(),
-                agent_id: event.actor.agent_id.as_deref(),
-                provider_id: &payload.provider_id,
-                model_id: &payload.model_id,
-                prompt_summary: &payload.prompt_summary,
-                request_digest: &payload.request_digest,
-                metadata: payload.metadata.as_ref(),
-            })
-        })
-    }
-
-    pub fn provider_request_finishes(
-        &self,
-    ) -> impl Iterator<Item = CanonicalProviderRequestFinish<'_>> {
-        self.source_events.iter().filter_map(|event| {
-            let EventV1::ProviderRequestFinished(payload) = &event.payload else {
-                return None;
-            };
-            Some(CanonicalProviderRequestFinish {
-                seq: event.seq,
-                mono_ms: event.mono_ms,
-                turn_request_id: event.correlation_id.as_deref(),
-                payload,
-            })
-        })
-    }
-
-    pub fn provider_fragments(&self) -> impl Iterator<Item = CanonicalProviderFragment<'_>> {
-        self.source_events
-            .iter()
-            .filter_map(canonical_provider_fragment_for_event)
-    }
-
-    pub fn latest_legacy_compaction(&self) -> Option<CanonicalLegacyCompaction> {
-        latest_legacy_compaction(&self.source_events)
-    }
-
-    pub fn background_notifications(
-        &self,
-    ) -> impl Iterator<Item = CanonicalBackgroundNotification<'_>> {
-        self.source_events.iter().filter_map(|event| {
-            let EventV1::BackgroundTaskNotification(payload) = &event.payload else {
-                return None;
-            };
-            Some(CanonicalBackgroundNotification {
-                seq: event.seq,
-                mono_ms: event.mono_ms,
-                timestamp: event.ts.as_deref(),
-                actor_kind: event.actor.kind,
-                actor_agent_id: event.actor.agent_id.as_deref(),
-                correlation_id: event.correlation_id.as_deref(),
-                payload,
-            })
-        })
-    }
-
-    pub fn stale_detections(&self) -> impl Iterator<Item = CanonicalStaleDetection<'_>> {
-        self.source_events.iter().filter_map(|event| {
-            let EventV1::StaleDetected(payload) = &event.payload else {
-                return None;
-            };
-            Some(CanonicalStaleDetection {
-                seq: event.seq,
-                mono_ms: event.mono_ms,
-                timestamp: event.ts.as_deref(),
-                task_id: payload.task_id.as_str(),
-                stale_for_ms: payload.stale_for_ms,
-            })
-        })
-    }
-
-    pub fn edit_events(&self) -> impl Iterator<Item = CanonicalEditEvent<'_>> {
-        self.source_events.iter().filter_map(|event| {
-            let payload = match &event.payload {
-                EventV1::EditProposed(payload) => CanonicalEditPayload::Proposed(payload),
-                EventV1::EditApplied(payload) => CanonicalEditPayload::Applied(payload),
-                EventV1::EditRejected(payload) => CanonicalEditPayload::Rejected(payload),
-                _ => return None,
-            };
-            Some(CanonicalEditEvent {
-                seq: event.seq,
-                tool_call_id: event.correlation_id.as_deref(),
-                payload,
-            })
-        })
-    }
-
-    fn project_operational_lossy(
-        events: &[EventEnvelopeV1],
-    ) -> Result<(RunSummary, ResumePlan, TimelineIndex), ProjectionError> {
-        let fallback_run_id = events
+    fn validate(&self, events: &[EventEnvelopeV1]) -> Result<(), ProjectionError> {
+        let mut sequence = self.source_events.last().map_or(0, |e| e.seq);
+        let run = self
+            .source_events
             .first()
-            .map_or("unknown", |event| event.run_id.as_str());
-        let resume_plan = project_resume_plan(events, fallback_run_id).unwrap_or_else(|error| {
-            ResumePlan::blocked(
-                fallback_run_id.to_string(),
-                format!("event log cannot resume: {error}"),
-            )
-        });
-        Ok((
-            project_run_summary(events)?,
-            resume_plan,
-            project_timeline_index(events)?,
-        ))
+            .or_else(|| events.first())
+            .map(|e| &e.run_id);
+        let mut seen = HashSet::with_capacity(events.len());
+        for event in events {
+            sequence = sequence
+                .checked_add(1)
+                .ok_or_else(|| ProjectionError("sequence overflow".into()))?;
+            if event.seq != sequence {
+                return Err(ProjectionError(format!(
+                    "expected sequence {sequence}, found {}",
+                    event.seq
+                )));
+            }
+            if event.schema_version != SCHEMA_VERSION
+                || Some(&event.run_id) != run
+                || event.run_id.as_str().is_empty()
+            {
+                return Err(ProjectionError(
+                    "unsupported schema or mixed run identity".into(),
+                ));
+            }
+            if event.event_id.is_empty()
+                || self.event_ids.contains(&event.event_id)
+                || !seen.insert(&event.event_id)
+            {
+                return Err(ProjectionError(format!(
+                    "duplicate or empty event identity: {}",
+                    event.event_id
+                )));
+            }
+            if let EventV1::ConversationRewound(rewind) = &event.payload {
+                if rewind.target_seq >= event.seq {
+                    return Err(ProjectionError(
+                        "rewind target must precede its event".into(),
+                    ));
+                }
+                let target = self
+                    .source_events
+                    .iter()
+                    .chain(events)
+                    .find(|e| e.seq == rewind.target_seq);
+                if !target.is_some_and(|e| matches!(&e.payload, EventV1::UserMessageSubmitted(user) if user.request_id.as_str() == rewind.request_id)) {
+                    return Err(ProjectionError("rewind target is not the selected user message".into()));
+                }
+            }
+        }
+        Ok(())
     }
 
-    fn project_operational_strict(
-        events: &[EventEnvelopeV1],
-    ) -> Result<(RunSummary, ResumePlan, TimelineIndex), ProjectionError> {
-        let fallback_run_id = events
-            .first()
-            .map_or("unknown", |event| event.run_id.as_str());
-        let resume_plan = project_resume_plan(events, fallback_run_id)?;
-        Ok((
-            project_run_summary(events)?,
-            resume_plan,
-            project_timeline_index(events)?,
-        ))
+    fn track_warnings(&mut self, event: &EventEnvelopeV1) {
+        use legacy::LegacyWarning as Warning;
+        match &event.payload {
+            EventV1::ProviderRequestFinished(data) => {
+                self.finished_requests.insert(data.request_id.to_string());
+                self.compatibility_warnings.retain(|w| !matches!(w, Warning::MissingProviderFinish { request_id } if request_id == data.request_id.as_str()));
+            }
+            EventV1::AssistantMessageFinished(data)
+                if !self.finished_requests.contains(data.request_id.as_str()) =>
+            {
+                self.compatibility_warnings
+                    .push(Warning::MissingProviderFinish {
+                        request_id: data.request_id.to_string(),
+                    });
+            }
+            EventV1::CompactionRequested(_)
+            | EventV1::CompactionWritten(_)
+            | EventV1::CompactionApplied(_)
+            | EventV1::CompactionFailed(_) => {
+                self.compatibility_warnings
+                    .push(Warning::UnsupportedLegacyVariant {
+                        event_id: event.event_id.clone(),
+                    });
+            }
+            _ => {}
+        }
     }
-}
-
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
-pub enum CanonicalSessionProjectionError {
-    #[error(transparent)]
-    Legacy(#[from] LegacyAdapterError),
-    #[error(transparent)]
-    Conversation(#[from] ConversationProjectionError),
-    #[error(transparent)]
-    Transcript(#[from] TranscriptProjectionError),
-    #[error(transparent)]
-    Operational(#[from] ProjectionError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -414,11 +140,7 @@ pub enum CanonicalProjectionUpdate {
     Buffer,
     Settle,
 }
-
 pub const fn canonical_projection_update_for_event(event: &EventV1) -> CanonicalProjectionUpdate {
-    if let Some(update) = legacy_projection_update_for_event(event) {
-        return update;
-    }
     match event {
         EventV1::RunStarted(_)
         | EventV1::TaskScheduled(_)
@@ -426,7 +148,56 @@ pub const fn canonical_projection_update_for_event(event: &EventV1) -> Canonical
         | EventV1::PromptAttachmentsSubmitted(_)
         | EventV1::ProviderRequestStarted(_)
         | EventV1::ToolCallRequested(_)
-        | EventV1::ToolCallStarted(_) => CanonicalProjectionUpdate::Buffer,
+        | EventV1::ToolCallStarted(_)
+        | EventV1::CompactionRequested(_) => CanonicalProjectionUpdate::Buffer,
         _ => CanonicalProjectionUpdate::Settle,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn session_batches_are_atomic_and_incremental_replay_matches_a_fresh_projection(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut events = Vec::new();
+        for seq in 1..=3 {
+            events.push(serde_json::from_value::<EventEnvelopeV1>(serde_json::json!({
+                "schema_version":1,"event_id":format!("e-{seq}"),"seq":seq,"run_id":"run","mono_ms":seq,
+                "actor":{"kind":"user"},"payload":{"event_type":"user_message_submitted","data":{"request_id":format!("q-{seq}"),"text":format!("question {seq}")}}
+            }))?);
+        }
+        let mut projection = CanonicalSessionProjection::from_event_history(&events[..1])?;
+        assert_eq!(projection.session.entries().len(), 1);
+        projection.apply_events(&events[1..])?;
+        assert_eq!(
+            projection,
+            CanonicalSessionProjection::from_event_history(&events)?
+        );
+        let before = projection.clone();
+        let mut bad = events[0].clone();
+        bad.seq = 4;
+        assert!(projection.apply_events(&[bad]).is_err());
+        assert_eq!(projection, before);
+        let rewind = EventEnvelopeV1 {
+            seq: 4,
+            event_id: "rewind".into(),
+            payload: EventV1::ConversationRewound(
+                crate::conversation_rewind::ConversationRewoundEvent {
+                    target_seq: 2,
+                    request_id: "q-2".into(),
+                },
+            ),
+            ..events[0].clone()
+        };
+        events.push(rewind.clone());
+        projection.apply_events(&[rewind])?;
+        assert_eq!(projection.transcript.messages.len(), 1);
+        assert_eq!(projection.source_events().len(), 4);
+        assert_eq!(
+            projection,
+            CanonicalSessionProjection::from_event_history(&events)?
+        );
+        Ok(())
     }
 }

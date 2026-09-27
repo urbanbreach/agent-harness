@@ -1,17 +1,6 @@
-//! Multi-team durable product path (create/members/mailbox deliver/cancel).
+use super::*;
 
-use std::path::Path;
-
-use crate::team_registry::{
-    add_team_member_outcome, cancel_team_outcome, create_team_outcome, send_team_message_outcome,
-    TeamAddMemberOutcome, TeamCancelOutcome, TeamCreateOutcome, TeamRegistrySummary,
-    TeamSendOutcome, TeamStatus,
-};
-
-use super::{DurableTeamRegistry, TeamMailboxJournalError};
-
-/// Multi-team durable product result (create/members/mailbox deliver/cancel).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MultiAgentTeamProduct {
     pub summary: TeamRegistrySummary,
     pub last_create: TeamCreateOutcome,
@@ -23,9 +12,7 @@ pub struct MultiAgentTeamProduct {
     pub first_line: Option<String>,
     pub last_message_line: Option<String>,
 }
-
 impl MultiAgentTeamProduct {
-    /// Product honesty: durable journal exists, multi-team active+cancelled, mailbox delivered.
     pub fn meets_durable_team_contract(&self) -> bool {
         self.summary.teams >= 2
             && self.summary.active >= 1
@@ -39,125 +26,56 @@ impl MultiAgentTeamProduct {
             && Path::new(&self.journal_path).is_file()
     }
 }
-
-/// Product path: multi-team create/members/mailbox/deliver/cancel with durable journal.
+/// Explicit diagnostic fixture used by the TUI tests, never a startup probe.
 pub fn run_durable_multi_agent_team_product(
-    workspace_root: &Path,
+    root: &Path,
 ) -> Result<MultiAgentTeamProduct, TeamMailboxJournalError> {
-    let mut durable = DurableTeamRegistry::open(workspace_root)?;
-
-    let create_probe = create_team_outcome(&mut durable.registry, "(probe)");
-    durable.persist()?;
-    let probe_id = match &create_probe {
-        TeamCreateOutcome::Created { team_id, .. } => team_id.clone(),
-        TeamCreateOutcome::Failed { .. } => {
-            return Ok(failed_product(durable, create_probe));
-        }
-    };
-
-    let create_active = create_team_outcome(&mut durable.registry, "(probe-active)");
-    durable.persist()?;
-    let active_id = match &create_active {
-        TeamCreateOutcome::Created { team_id, .. } => team_id.clone(),
-        TeamCreateOutcome::Failed { .. } => active_id_fallback(&durable),
-    };
-
-    let _ = add_team_member_outcome(&mut durable.registry, &probe_id, "probe-agent", "operator");
-    let last_add_member =
-        add_team_member_outcome(&mut durable.registry, &probe_id, "probe-worker", "worker");
-    durable.persist()?;
-
-    let _ = send_team_message_outcome(
-        &mut durable.registry,
-        &probe_id,
-        "probe-agent",
-        None,
-        "(probe mailbox)",
-    );
-    let last_send = send_team_message_outcome(
-        &mut durable.registry,
-        &probe_id,
-        "probe-worker",
-        Some("probe-agent".to_string()),
-        "(probe reply)",
-    );
-    durable.persist()?;
-
-    let last_message_line = durable
-        .peek_inbox(&probe_id, "probe-agent")
-        .ok()
-        .and_then(|msgs| msgs.into_iter().last())
-        .map(|msg| msg.one_line());
-
-    let delivered = durable.deliver_messages(&probe_id, "probe-worker")?;
-    let delivered_count = delivered.len();
-
-    let last_cancel = cancel_team_outcome(&mut durable.registry, &probe_id);
-    durable.persist()?;
-
-    let _ = add_team_member_outcome(&mut durable.registry, &active_id, "probe-lead", "lead");
-    let _ = send_team_message_outcome(
-        &mut durable.registry,
-        &active_id,
-        "probe-lead",
-        None,
-        "(active team mailbox)",
-    );
-    durable.persist()?;
-
-    let first_line = durable
-        .registry
-        .list_teams()
-        .into_iter()
-        .next()
-        .map(|t| t.one_line());
-
-    Ok(MultiAgentTeamProduct {
-        summary: durable.summary(),
-        last_create: create_active,
-        last_add_member,
-        last_send,
-        last_cancel,
-        delivered_count,
-        journal_path: durable.journal_path().display().to_string(),
-        first_line,
-        last_message_line,
+    let mut durable = DurableTeamRegistry::open(root)?;
+    let journal_path = durable.journal_path.display().to_string();
+    durable.update(|registry| {
+        let cancelled = registry.create_team("(probe)")?;
+        let active = registry.create_team("(probe-active)")?;
+        registry.add_member(&cancelled.team_id, "probe-agent", "operator")?;
+        let added = registry.add_member(&cancelled.team_id, "probe-worker", "worker")?;
+        registry.add_member(&active.team_id, "probe-lead", "lead")?;
+        registry.send_message(&cancelled.team_id, "probe-agent", None, "(probe mailbox)")?;
+        let sent = registry.send_message(
+            &cancelled.team_id,
+            "probe-worker",
+            Some("probe-agent".into()),
+            "(probe reply)",
+        )?;
+        let delivered_count = registry
+            .receive_messages(&cancelled.team_id, "probe-worker")?
+            .len();
+        let last_message_line = Some(sent.one_line());
+        let cancelled = registry.cancel_team(&cancelled.team_id)?;
+        registry.send_message(&active.team_id, "probe-lead", None, "(active team mailbox)")?;
+        Ok(MultiAgentTeamProduct {
+            summary: registry.summary(),
+            last_create: TeamCreateOutcome::Created {
+                team_id: active.team_id,
+                name: active.name,
+            },
+            last_add_member: TeamAddMemberOutcome::Added {
+                team_id: added.team_id,
+                agent_id: "probe-worker".into(),
+                role: "worker".into(),
+                member_count: added.members.len(),
+            },
+            last_send: TeamSendOutcome::Sent {
+                message_id: sent.message_id,
+                team_id: sent.team_id,
+                from_agent_id: sent.from_agent_id,
+            },
+            last_cancel: TeamCancelOutcome::Cancelled {
+                team_id: cancelled.team_id,
+                name: cancelled.name,
+            },
+            delivered_count,
+            journal_path,
+            first_line: registry.list_teams().first().map(TeamRecord::one_line),
+            last_message_line,
+        })
     })
-}
-
-fn failed_product(
-    durable: DurableTeamRegistry,
-    last_create: TeamCreateOutcome,
-) -> MultiAgentTeamProduct {
-    MultiAgentTeamProduct {
-        summary: durable.summary(),
-        last_create,
-        last_add_member: TeamAddMemberOutcome::Failed {
-            team_id: String::new(),
-            agent_id: String::new(),
-            reason: "skipped".to_string(),
-        },
-        last_send: TeamSendOutcome::Failed {
-            team_id: String::new(),
-            reason: "skipped".to_string(),
-        },
-        last_cancel: TeamCancelOutcome::Failed {
-            team_id: String::new(),
-            reason: "skipped".to_string(),
-        },
-        delivered_count: 0,
-        journal_path: durable.journal_path().display().to_string(),
-        first_line: None,
-        last_message_line: None,
-    }
-}
-
-fn active_id_fallback(durable: &DurableTeamRegistry) -> String {
-    durable
-        .registry
-        .list_teams()
-        .into_iter()
-        .find(|t| t.status == TeamStatus::Active)
-        .map(|t| t.team_id)
-        .unwrap_or_else(|| "team_missing".to_string())
 }

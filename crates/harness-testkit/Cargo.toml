@@ -1,6 +1,6 @@
 [package]
 name = "harness-testkit"
-description = "Deterministic test support: fakes, workspaces, simulation evidence"
+description = "Shared temporary workspaces and terminal test support"
 edition.workspace = true
 license.workspace = true
 version.workspace = true

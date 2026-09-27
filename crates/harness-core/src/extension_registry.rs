@@ -1,71 +1,26 @@
-//! Durable multi-descriptor extension registry under a workspace.
-//!
-//! Discovers `extension.manifest.json` descriptors and persists validated entries
-//! at `.agent-harness/extension-registry.json`. Descriptor-only: no code load.
-
-mod store;
-
-use std::io;
-use std::path::{Path, PathBuf};
-
+use crate::{extension_manifest::*, store};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
-
-use crate::extension_manifest::{
-    discover_extension_manifests, load_extension_manifest_from_path, ExtensionDiscoverSummary,
-    ExtensionManifestSummary, EXTENSION_MANIFEST_FILE_NAME,
+use std::{
+    collections::BTreeMap,
+    path::{Component, Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
 };
-
-use store::{
-    load_or_empty, now_unix_ms, resolve_manifest_path, save, workspace_relative,
-    ExtensionRegistryDocument,
-};
-
-/// Relative durable registry path under a workspace root.
 pub const EXTENSION_REGISTRY_REL: &str = ".agent-harness/extension-registry.json";
-
-pub(crate) const STORE_VERSION: u32 = 1;
-
-/// Failures for durable extension registry I/O and path safety.
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum ExtensionRegistryError {
-    #[error("failed to create extension-registry parent directory {path}: {source}")]
-    CreateParent {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to read extension-registry {path}: {source}")]
-    Read {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to parse extension-registry {path}: {detail}")]
-    Parse { path: String, detail: String },
-    #[error("unsupported extension-registry version {version} at {path}")]
+    #[error("extension registry I/O failed: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("invalid extension registry: {0}")]
+    Invalid(&'static str),
+    #[error("unsupported extension registry version {version} at {path}")]
     UnsupportedVersion { path: String, version: u32 },
-    #[error("failed to write extension-registry {path}: {source}")]
-    Write {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to replace extension-registry {path}: {source}")]
-    Replace {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("invalid extension registry path `{path}` (empty or escapes workspace)")]
+    #[error("invalid extension path `{path}` (empty or escapes workspace)")]
     InvalidPath { path: String },
-    #[error("extension manifest load failed for `{path}`: {detail}")]
+    #[error("extension manifest load failed at `{path}`: {detail}")]
     ManifestLoad { path: String, detail: String },
 }
-
-/// One durable registry entry (descriptor metadata + workspace-relative path).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionRegistryEntry {
     pub extension_id: String,
     pub manifest_path: String,
@@ -76,7 +31,6 @@ pub struct ExtensionRegistryEntry {
     pub loads_external_code: bool,
     pub registered_at_unix_ms: u64,
 }
-
 impl ExtensionRegistryEntry {
     pub fn one_line(&self) -> String {
         format!(
@@ -90,7 +44,6 @@ impl ExtensionRegistryEntry {
             self.loads_external_code
         )
     }
-
     pub fn to_summary(&self) -> ExtensionManifestSummary {
         ExtensionManifestSummary {
             extension_id: self.extension_id.clone(),
@@ -105,18 +58,15 @@ impl ExtensionRegistryEntry {
             mcp_bundles: 0,
             diagnostics: 0,
             provider_decorators: 0,
-            loads_external_code: self.loads_external_code,
+            loads_external_code: false,
         }
     }
 }
-
-/// Operator-facing durable registry counts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExtensionRegistrySummary {
     pub registered: usize,
     pub loads_external_code: bool,
 }
-
 impl ExtensionRegistrySummary {
     pub fn one_line(&self) -> String {
         format!(
@@ -125,228 +75,203 @@ impl ExtensionRegistrySummary {
         )
     }
 }
-
-/// Durable multi-descriptor registry for one workspace.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Document {
+    version: u32,
+    entries: BTreeMap<String, ExtensionRegistryEntry>,
+}
+#[derive(Clone, Debug)]
 pub struct ExtensionDescriptorRegistry {
     workspace_root: PathBuf,
     registry_path: PathBuf,
-    doc: ExtensionRegistryDocument,
+    doc: Document,
 }
-
 impl ExtensionDescriptorRegistry {
-    pub fn open(workspace_root: impl Into<PathBuf>) -> Result<Self, ExtensionRegistryError> {
-        let workspace_root = workspace_root.into();
+    pub fn open(root: impl Into<PathBuf>) -> Result<Self, ExtensionRegistryError> {
+        let workspace_root = root.into();
         let registry_path = workspace_root.join(EXTENSION_REGISTRY_REL);
-        let doc = load_or_empty(&registry_path)?;
+        let doc = load(&workspace_root, &registry_path)?;
         Ok(Self {
             workspace_root,
             registry_path,
             doc,
         })
     }
-
     pub fn workspace_root(&self) -> &Path {
         &self.workspace_root
     }
-
     pub fn registry_path(&self) -> &Path {
         &self.registry_path
     }
-
     pub fn summary(&self) -> ExtensionRegistrySummary {
         ExtensionRegistrySummary {
             registered: self.doc.entries.len(),
-            loads_external_code: self
-                .doc
-                .entries
-                .values()
-                .any(|entry| entry.loads_external_code),
+            loads_external_code: false,
         }
     }
-
     pub fn list(&self) -> Vec<&ExtensionRegistryEntry> {
         self.doc.entries.values().collect()
     }
-
-    pub fn get(&self, extension_id: &str) -> Option<&ExtensionRegistryEntry> {
-        self.doc.entries.get(extension_id)
+    pub fn get(&self, id: &str) -> Option<&ExtensionRegistryEntry> {
+        self.doc.entries.get(id)
     }
-
-    /// Discover descriptors under `scan_root` and register each (upsert by id).
-    pub fn discover_and_register(
-        &mut self,
-        scan_root: &Path,
-    ) -> Result<ExtensionDiscoverSummary, ExtensionRegistryError> {
-        let discovered = discover_extension_manifests(scan_root);
-        let mut pending = self.doc.clone();
-        let now = now_unix_ms();
-        for summary in &discovered {
-            let manifest_path = resolve_manifest_path(scan_root, summary)?;
-            let relative = workspace_relative(&self.workspace_root, &manifest_path)?;
-            load_extension_manifest_from_path(&manifest_path).map_err(|err| {
-                ExtensionRegistryError::ManifestLoad {
-                    path: manifest_path.display().to_string(),
-                    detail: err.to_string(),
-                }
-            })?;
-            pending.entries.insert(
-                summary.extension_id.clone(),
-                ExtensionRegistryEntry {
-                    extension_id: summary.extension_id.clone(),
-                    manifest_path: relative,
-                    capabilities: summary.capabilities,
-                    enabled_capabilities: summary.enabled_capabilities,
-                    tools: summary.tools,
-                    hooks: summary.hooks,
-                    loads_external_code: summary.loads_external_code,
-                    registered_at_unix_ms: now,
-                },
-            );
-        }
-        save(&self.registry_path, &pending)?;
-        self.doc = pending;
-        Ok(ExtensionDiscoverSummary {
-            discovered: discovered.len(),
-            loads_external_code: discovered.iter().any(|s| s.loads_external_code),
-        })
-    }
-
-    /// Register one validated manifest path (workspace-relative after resolve).
     pub fn register_manifest_path(
         &mut self,
-        manifest_path: impl AsRef<Path>,
+        path: impl AsRef<Path>,
     ) -> Result<ExtensionRegistryEntry, ExtensionRegistryError> {
-        let absolute = if manifest_path.as_ref().is_absolute() {
-            manifest_path.as_ref().to_path_buf()
-        } else {
-            self.workspace_root.join(manifest_path.as_ref())
-        };
-        let relative = workspace_relative(&self.workspace_root, &absolute)?;
-        let manifest = load_extension_manifest_from_path(&absolute).map_err(|err| {
+        let entry = self.entry(path.as_ref())?;
+        self.commit(std::iter::once(entry.clone()).collect())?;
+        Ok(entry)
+    }
+    pub fn discover_and_register(
+        &mut self,
+        root: &Path,
+    ) -> Result<ExtensionDiscoverSummary, ExtensionRegistryError> {
+        let root = resolve(&self.workspace_root, root)?;
+        let mut pending = BTreeMap::new();
+        for path in manifest_paths(&root) {
+            if !path.try_exists()? {
+                continue;
+            }
+            let entry = self.entry(&path)?;
+            if pending.insert(entry.extension_id.clone(), entry).is_some() {
+                return Err(ExtensionRegistryError::Invalid(
+                    "duplicate descriptor id in scan",
+                ));
+            }
+            if pending.len() > 1024 {
+                return Err(ExtensionRegistryError::Invalid(
+                    "scan exceeds 1024 descriptors",
+                ));
+            }
+        }
+        let discovered = pending.len();
+        self.commit(pending.into_values().collect())?;
+        Ok(ExtensionDiscoverSummary {
+            discovered,
+            loads_external_code: false,
+        })
+    }
+    fn entry(&self, path: &Path) -> Result<ExtensionRegistryEntry, ExtensionRegistryError> {
+        let path = resolve(&self.workspace_root, path)?;
+        let root = self.workspace_root.canonicalize()?;
+        let relative = path
+            .strip_prefix(root)
+            .ok()
+            .and_then(|p| p.to_str())
+            .ok_or_else(|| ExtensionRegistryError::InvalidPath {
+                path: path.display().to_string(),
+            })?
+            .replace('\\', "/");
+        valid_relative(&relative)?;
+        let manifest = load_extension_manifest_from_path(&path).map_err(|e| {
             ExtensionRegistryError::ManifestLoad {
-                path: absolute.display().to_string(),
-                detail: err.to_string(),
+                path: path.display().to_string(),
+                detail: e.to_string(),
             }
         })?;
         let summary = manifest.summary();
-        let entry = ExtensionRegistryEntry {
-            extension_id: summary.extension_id.clone(),
+        Ok(ExtensionRegistryEntry {
+            extension_id: summary.extension_id,
             manifest_path: relative,
             capabilities: summary.capabilities,
             enabled_capabilities: summary.enabled_capabilities,
             tools: summary.tools,
             hooks: summary.hooks,
-            loads_external_code: summary.loads_external_code,
-            registered_at_unix_ms: now_unix_ms(),
-        };
-        self.doc
-            .entries
-            .insert(entry.extension_id.clone(), entry.clone());
-        save(&self.registry_path, &self.doc)?;
-        Ok(entry)
+            loads_external_code: false,
+            registered_at_unix_ms: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .ok()
+                .and_then(|d| u64::try_from(d.as_millis()).ok())
+                .unwrap_or(0),
+        })
+    }
+    fn commit(
+        &mut self,
+        pending: Vec<ExtensionRegistryEntry>,
+    ) -> Result<(), ExtensionRegistryError> {
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let _lock = store::lock_private_parent(&self.registry_path)?;
+        let mut next = load(&self.workspace_root, &self.registry_path)?;
+        for entry in pending {
+            next.entries.insert(entry.extension_id.clone(), entry);
+        }
+        if next.entries.len() > 1024 {
+            return Err(ExtensionRegistryError::Invalid(
+                "registry exceeds 1024 descriptors",
+            ));
+        }
+        let bytes = serde_json::to_vec(&next)
+            .map_err(|_| ExtensionRegistryError::Invalid("cannot encode registry"))?;
+        if bytes.len() > 2 * 1024 * 1024 {
+            return Err(ExtensionRegistryError::Invalid("registry exceeds 2 MiB"));
+        }
+        store::write_private_atomic(&self.registry_path, &bytes)?;
+        self.doc = next;
+        Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::extension_manifest::EXTENSION_MANIFEST_V1_SCHEMA_VERSION;
-    use std::fs;
-
-    fn write_manifest(dir: &Path, id: &str, tools: bool) {
-        fs::create_dir_all(dir).expect("mkdir");
-        let tools_json = if tools {
-            r#","tools":[{"id":"probe.tool","capabilityId":"probe.cap","permission":"bash"}]"#
-        } else {
-            ""
-        };
-        let body = format!(
-            r#"{{"schemaVersion":"{schema}","id":"{id}","displayName":"Probe","version":"0.0.1","capabilities":[{{"id":"probe.cap","defaultEnabled":true}}]{tools}}}"#,
-            schema = EXTENSION_MANIFEST_V1_SCHEMA_VERSION,
-            id = id,
-            tools = tools_json,
-        );
-        fs::write(dir.join(EXTENSION_MANIFEST_FILE_NAME), body).expect("write");
+fn load(root: &Path, path: &Path) -> Result<Document, ExtensionRegistryError> {
+    let Some(bytes) = store::read_private_bytes(path, 2 * 1024 * 1024)? else {
+        return Ok(Document {
+            version: 1,
+            entries: BTreeMap::new(),
+        });
+    };
+    let doc: Document = serde_json::from_slice(&bytes)
+        .map_err(|_| ExtensionRegistryError::Invalid("invalid registry JSON"))?;
+    if doc.version != 1 {
+        return Err(ExtensionRegistryError::UnsupportedVersion {
+            path: path.display().to_string(),
+            version: doc.version,
+        });
     }
-
-    #[test]
-    fn discover_register_persists_and_reloads() {
-        // Given
-        let temp = tempfile::tempdir().expect("temp");
-        let root = temp.path();
-        write_manifest(&root.join("ext-a"), "harness.probe.extension", true);
-        write_manifest(&root.join("ext-b"), "harness.probe.extension.alt", false);
-        write_manifest(&root.join("ext-c"), "harness.probe.extension.tools", true);
-
-        // When
-        let mut registry = ExtensionDescriptorRegistry::open(root).expect("open");
-        let discover = registry.discover_and_register(root).expect("discover");
-
-        // Then
-        assert!(discover.discovered >= 3);
-        assert!(registry.registry_path().is_file());
-        assert!(registry.summary().registered >= 3);
-        assert!(registry.get("harness.probe.extension").is_some());
-
-        let reloaded = ExtensionDescriptorRegistry::open(root).expect("reload");
-        assert!(reloaded.summary().registered >= 3);
-        assert_eq!(
-            reloaded.get("harness.probe.extension").map(|e| e.tools),
-            Some(1)
-        );
-        assert!(!reloaded.summary().loads_external_code);
+    if doc.entries.len() > 1024 {
+        return Err(ExtensionRegistryError::Invalid(
+            "registry exceeds 1024 descriptors",
+        ));
     }
-
-    #[test]
-    fn register_manifest_path_fail_closed_on_missing() {
-        // Given
-        let temp = tempfile::tempdir().expect("temp");
-        let mut registry = ExtensionDescriptorRegistry::open(temp.path()).expect("open");
-
-        // When / Then
-        let err = registry
-            .register_manifest_path("missing/extension.manifest.json")
-            .expect_err("missing");
-        assert!(matches!(err, ExtensionRegistryError::ManifestLoad { .. }));
-        assert_eq!(registry.summary().registered, 0);
+    for (id, entry) in &doc.entries {
+        stable_id("extensionId", id)
+            .map_err(|_| ExtensionRegistryError::Invalid("invalid extension id"))?;
+        if id != &entry.extension_id
+            || entry.loads_external_code
+            || entry.enabled_capabilities > entry.capabilities
+            || entry
+                .capabilities
+                .saturating_add(entry.tools)
+                .saturating_add(entry.hooks)
+                > 4096
+        {
+            return Err(ExtensionRegistryError::Invalid(
+                "invalid descriptor identity or counts",
+            ));
+        }
+        valid_relative(&entry.manifest_path)?;
+        resolve(root, Path::new(&entry.manifest_path))?;
     }
-
-    #[test]
-    fn register_manifest_path_fail_closed_on_invalid_json() {
-        // arrange — a manifest file that is not a valid descriptor
-        let temp = tempfile::tempdir().expect("temp");
-        let ext_dir = temp.path().join("ext-broken");
-        fs::create_dir_all(&ext_dir).expect("mkdir");
-        fs::write(
-            ext_dir.join(EXTENSION_MANIFEST_FILE_NAME),
-            "{ not a valid descriptor",
-        )
-        .expect("write");
-        let mut registry = ExtensionDescriptorRegistry::open(temp.path()).expect("open");
-
-        // act
-        let err = registry
-            .register_manifest_path(ext_dir.join(EXTENSION_MANIFEST_FILE_NAME))
-            .expect_err("invalid manifest");
-
-        // assert — fails closed with no registry side effect
-        assert!(matches!(err, ExtensionRegistryError::ManifestLoad { .. }));
-        assert_eq!(registry.summary().registered, 0);
+    Ok(doc)
+}
+fn valid_relative(path: &str) -> Result<(), ExtensionRegistryError> {
+    if path.is_empty()
+        || path.len() > 4096
+        || path.chars().any(char::is_control)
+        || path.contains('\\')
+        || !Path::new(path)
+            .components()
+            .all(|c| matches!(c, Component::Normal(_)))
+    {
+        return Err(ExtensionRegistryError::InvalidPath { path: path.into() });
     }
-
-    #[test]
-    fn path_escape_attempts_are_rejected() {
-        // Given
-        let temp = tempfile::tempdir().expect("temp");
-        let outside = tempfile::tempdir().expect("outside");
-        write_manifest(outside.path(), "harness.escape.probe", false);
-        let mut registry = ExtensionDescriptorRegistry::open(temp.path()).expect("open");
-
-        // When / Then
-        let err = registry
-            .register_manifest_path(outside.path().join(EXTENSION_MANIFEST_FILE_NAME))
-            .expect_err("escape");
-        assert!(matches!(err, ExtensionRegistryError::InvalidPath { .. }));
-    }
+    Ok(())
+}
+fn resolve(root: &Path, path: &Path) -> Result<PathBuf, ExtensionRegistryError> {
+    crate::integrations::plugin::resolve_under_workspace(root, path).map_err(|_| {
+        ExtensionRegistryError::InvalidPath {
+            path: path.display().to_string(),
+        }
+    })
 }

@@ -2,7 +2,7 @@
 fn background_notification_keeps_launch_identity_and_replays_without_a_user_message() -> Result<()>
 {
     let fixture: Value = serde_json::from_str(FIXTURE)?;
-    for (delivery, status, verb) in [Some("turn"), None].into_iter().flat_map(|delivery| {
+    for (delivery, status, verb) in [Some("turn"), Some("suppressed"), None].into_iter().flat_map(|delivery| {
         [("completed", "completed"), ("cancelled", "cancelled"), ("failed", "failed"), ("timed_out", "timed out")]
             .map(|(status, verb)| (delivery, status, verb))
     }) {
@@ -20,6 +20,20 @@ fn background_notification_keeps_launch_identity_and_replays_without_a_user_mess
             "summary":"Background task cancelled", "terminal_event_id":"fixture-terminal", "terminal_task_id":"scheduled-task",
             "delivered_turn_request_id":delivery
         }))?;
+        if delivery == Some("suppressed") {
+            let mut cancelled = state.events.last().cloned().ok_or("missing notification")?;
+            cancelled.seq += 1;
+            cancelled.event_id = format!("order-{}", cancelled.seq);
+            cancelled.correlation_id = Some("suppressed".into());
+            cancelled.payload = serde_json::from_value(json!({"event_type":"task_cancelled","data":{
+                "task_id":"suppressed", "reason":"child result already delivered by a tool",
+                "failure":false, "task_scope":"agent_turn"
+            }}))?;
+            state.app.ingest_event(cancelled.clone());
+            state.events.push(cancelled);
+            state.event("task_completed", json!({"task_id":"turn", "result_summary":"Reports summarized",
+                "result_digest":"synthetic", "metadata":{"task_scope":"agent_turn"}}))?;
+        }
         for replay in [false, true] {
             if replay {
                 state.app = AppState::new_replay(
@@ -40,11 +54,17 @@ fn background_notification_keeps_launch_identity_and_replays_without_a_user_mess
                 .join("\n");
             assert!(text.contains("Ran 1 subagent"), "{text}");
             assert!(
-                text.contains(&format!("Subagent {verb}:")) && text.contains("0.4s"),
+                text.contains(&format!("Subagent {verb}:"))
+                    && (delivery == Some("suppressed") || text.contains("0.4s")),
                 "{text}"
             );
-            assert!(!text.contains("Background task cancelled"), "{text}");
-            if delivery.is_some() {
+            assert!(!text.contains("Background task cancelled") && !text.contains("already delivered"), "{text}");
+            if delivery == Some("suppressed") {
+                assert!(!matches!(state.app.runtime_state().kind,
+                    harness_tui::app::RuntimeStateKind::Failure | harness_tui::app::RuntimeStateKind::Cancelled),
+                    "suppressed wakeups must not leave a failed runtime state");
+                assert_eq!(text.matches(&format!("Subagent {verb}:")).count(), 1, "only the original task row should remain\n{text}");
+            } else if delivery.is_some() {
                 let started = text
                     .find(&format!("Subagent {verb}:"))
                     .ok_or("missing original launch row")?;

@@ -1,0 +1,403 @@
+{
+  "status": "final measurements of independently reviewed source",
+  "reference_commit": "3db4029fd9f816703590593a297203913cc30860",
+  "uncommitted_worktree": true,
+  "source": {
+    "algorithm": "sha256(sorted path UTF8 + NUL + bytes + NUL)",
+    "inputs": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "rust-toolchain.toml",
+      "rg --files crates: *.rs and Cargo.toml"
+    ],
+    "files": 1097,
+    "sha256": "e6a8522eaabd727688631375b49ce26b6d7efbb60b0df282feab851eebbc5d89"
+  },
+  "backend": {
+    "schema_version": 1,
+    "fixture_version": 3,
+    "captured_at": "2026-09-27T01:24:44.348287+00:00",
+    "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+    "machine": "x86_64",
+    "binary_sha256": "a759c76842041e2d8c64ebcc7c0603f214fc606990021a7094c4a6b2b2707872",
+    "binary_bytes": 38711576,
+    "cpu_resolution_ms": 10.0,
+    "samples": [
+      {
+        "cpu_user_s": 0.024564,
+        "cpu_system_s": 0.0029519999999999998,
+        "peak_rss_kib": 26656,
+        "startup_ms": 9.447728982195258,
+        "idle_cpu_percent": 0.0,
+        "first_fragment_ms": 1.0277609981130809,
+        "stream_and_commit_ms": 19.169639999745414,
+        "fragments": 5000,
+        "output_bytes": 25001,
+        "journal_bytes": 56157,
+        "durable_events": 10
+      },
+      {
+        "cpu_user_s": 0.0231,
+        "cpu_system_s": 0.0049689999999999995,
+        "peak_rss_kib": 27148,
+        "startup_ms": 8.728529006475583,
+        "idle_cpu_percent": 0.0,
+        "first_fragment_ms": 0.9272199822589755,
+        "stream_and_commit_ms": 20.298040995839983,
+        "fragments": 5000,
+        "output_bytes": 25001,
+        "journal_bytes": 56157,
+        "durable_events": 10
+      },
+      {
+        "cpu_user_s": 0.023093,
+        "cpu_system_s": 0.003011,
+        "peak_rss_kib": 26700,
+        "startup_ms": 7.660825009224936,
+        "idle_cpu_percent": 0.0,
+        "first_fragment_ms": 0.914894015295431,
+        "stream_and_commit_ms": 19.300806015962735,
+        "fragments": 5000,
+        "output_bytes": 25001,
+        "journal_bytes": 56157,
+        "durable_events": 10
+      },
+      {
+        "cpu_user_s": 0.020991,
+        "cpu_system_s": 0.0050669999999999995,
+        "peak_rss_kib": 25700,
+        "startup_ms": 7.7050389954820275,
+        "idle_cpu_percent": 0.0,
+        "first_fragment_ms": 1.1180730070918798,
+        "stream_and_commit_ms": 19.23911800258793,
+        "fragments": 5000,
+        "output_bytes": 25001,
+        "journal_bytes": 56157,
+        "durable_events": 10
+      },
+      {
+        "cpu_user_s": 0.023521,
+        "cpu_system_s": 0.006482,
+        "peak_rss_kib": 26424,
+        "startup_ms": 8.36896599503234,
+        "idle_cpu_percent": 0.0,
+        "first_fragment_ms": 1.0633750061970204,
+        "stream_and_commit_ms": 22.712585021508858,
+        "fragments": 5000,
+        "output_bytes": 25001,
+        "journal_bytes": 56157,
+        "durable_events": 10
+      }
+    ],
+    "medians": {
+      "cpu_user_s": 0.0231,
+      "cpu_system_s": 0.0049689999999999995,
+      "peak_rss_kib": 26656,
+      "startup_ms": 8.36896599503234,
+      "idle_cpu_percent": 0.0,
+      "first_fragment_ms": 1.0277609981130809,
+      "stream_and_commit_ms": 19.300806015962735,
+      "fragments": 5000,
+      "output_bytes": 25001,
+      "journal_bytes": 56157,
+      "durable_events": 10
+    }
+  },
+  "original_backend": {
+    "schema_version": 1,
+    "fixture_version": 3,
+    "captured_at": "2026-09-27T01:24:36.717047+00:00",
+    "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+    "machine": "x86_64",
+    "binary_sha256": "4cac41b41a78f8724b4ba1247e658c8213a8f69c6ccb4c0824d0d28c98a79c35",
+    "binary_bytes": 39058208,
+    "cpu_resolution_ms": 10.0,
+    "samples": [
+      {
+        "cpu_user_s": 0.16197,
+        "cpu_system_s": 0.058767,
+        "peak_rss_kib": 70896,
+        "startup_ms": 76.68794499477372,
+        "idle_cpu_percent": 0.0,
+        "first_fragment_ms": 0.9605810046195984,
+        "stream_and_commit_ms": 97.73064099135809,
+        "fragments": 5000,
+        "output_bytes": 25001,
+        "journal_bytes": 56580,
+        "durable_events": 10
+      },
+      {
+        "cpu_user_s": 0.168123,
+        "cpu_system_s": 0.048534,
+        "peak_rss_kib": 70436,
+        "startup_ms": 85.58368700323626,
+        "idle_cpu_percent": 0.0,
+        "first_fragment_ms": 0.8551619830541313,
+        "stream_and_commit_ms": 94.79040600126609,
+        "fragments": 5000,
+        "output_bytes": 25001,
+        "journal_bytes": 56580,
+        "durable_events": 10
+      },
+      {
+        "cpu_user_s": 0.181884,
+        "cpu_system_s": 0.038749,
+        "peak_rss_kib": 70996,
+        "startup_ms": 85.07450198521838,
+        "idle_cpu_percent": 0.9995635355714895,
+        "first_fragment_ms": 0.7479939959011972,
+        "stream_and_commit_ms": 96.85984801035374,
+        "fragments": 5000,
+        "output_bytes": 25001,
+        "journal_bytes": 56580,
+        "durable_events": 10
+      },
+      {
+        "cpu_user_s": 0.15759399999999998,
+        "cpu_system_s": 0.05092,
+        "peak_rss_kib": 70936,
+        "startup_ms": 75.35348300007172,
+        "idle_cpu_percent": 0.0,
+        "first_fragment_ms": 1.042351999785751,
+        "stream_and_commit_ms": 93.42001500772312,
+        "fragments": 5000,
+        "output_bytes": 25001,
+        "journal_bytes": 56580,
+        "durable_events": 10
+      },
+      {
+        "cpu_user_s": 0.177973,
+        "cpu_system_s": 0.041471,
+        "peak_rss_kib": 70664,
+        "startup_ms": 74.9859930074308,
+        "idle_cpu_percent": 0.0,
+        "first_fragment_ms": 1.0289190104231238,
+        "stream_and_commit_ms": 99.46325302007608,
+        "fragments": 5000,
+        "output_bytes": 25001,
+        "journal_bytes": 56580,
+        "durable_events": 10
+      }
+    ],
+    "medians": {
+      "cpu_user_s": 0.168123,
+      "cpu_system_s": 0.048534,
+      "peak_rss_kib": 70896,
+      "startup_ms": 76.68794499477372,
+      "idle_cpu_percent": 0.0,
+      "first_fragment_ms": 0.9605810046195984,
+      "stream_and_commit_ms": 96.85984801035374,
+      "fragments": 5000,
+      "output_bytes": 25001,
+      "journal_bytes": 56580,
+      "durable_events": 10
+    }
+  },
+  "delegation": {
+    "schema_version": 1,
+    "binary_sha256": "a759c76842041e2d8c64ebcc7c0603f214fc606990021a7094c4a6b2b2707872",
+    "delegation": {
+      "cancelled": false,
+      "children": 256,
+      "elapsed_ms": 817.5610809994396,
+      "resources": [
+        {
+          "children": 0,
+          "rss_kib": 26524,
+          "descriptors": 12
+        },
+        {
+          "children": 1,
+          "rss_kib": 27628,
+          "descriptors": 12
+        },
+        {
+          "children": 16,
+          "rss_kib": 27900,
+          "descriptors": 12
+        },
+        {
+          "children": 128,
+          "rss_kib": 32828,
+          "descriptors": 12
+        },
+        {
+          "children": 256,
+          "rss_kib": 38536,
+          "descriptors": 12
+        }
+      ],
+      "journal_bytes": 5955360,
+      "root_events": 3850,
+      "journals": 257
+    },
+    "cancellation": {
+      "cancelled": true,
+      "children": 1,
+      "elapsed_ms": 0.8211340173147619,
+      "resources": [
+        {
+          "children": 0,
+          "rss_kib": 27232,
+          "descriptors": 12
+        }
+      ],
+      "journal_bytes": 20378,
+      "root_events": 21,
+      "journals": 2
+    }
+  },
+  "tui": {
+    "commit": "3db4029fd9f816703590593a297203913cc30860",
+    "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+    "clock_ticks_per_second": 100,
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "repetitions": 3,
+    "frames": 120,
+    "scenarios": {
+      "startup-0": {
+        "cold_us": 1986,
+        "p50_us": 149,
+        "p95_us": 169,
+        "p99_us": 179,
+        "cpu_ms_per_frame": 0.16666666666666666,
+        "rss_before_kib": 16872,
+        "rss_after_kib": 16988,
+        "peak_rss_kib": 16988,
+        "bytes_submitted": 34711
+      },
+      "static-100": {
+        "cold_us": 5921,
+        "p50_us": 128,
+        "p95_us": 143,
+        "p99_us": 155,
+        "cpu_ms_per_frame": 0.16666666666666666,
+        "rss_before_kib": 19016,
+        "rss_after_kib": 19016,
+        "peak_rss_kib": 19016,
+        "bytes_submitted": 0
+      },
+      "static-10000": {
+        "cold_us": 272110,
+        "p50_us": 386,
+        "p95_us": 389,
+        "p99_us": 398,
+        "cpu_ms_per_frame": 0.4166666666666667,
+        "rss_before_kib": 228832,
+        "rss_after_kib": 228832,
+        "peak_rss_kib": 228832,
+        "bytes_submitted": 0
+      },
+      "scroll-10000": {
+        "cold_us": 271346,
+        "p50_us": 592,
+        "p95_us": 613,
+        "p99_us": 626,
+        "cpu_ms_per_frame": 0.5833333333333334,
+        "rss_before_kib": 229104,
+        "rss_after_kib": 229124,
+        "peak_rss_kib": 229124,
+        "bytes_submitted": 410933
+      },
+      "typing-10000": {
+        "cold_us": 270502,
+        "p50_us": 445,
+        "p95_us": 452,
+        "p99_us": 460,
+        "cpu_ms_per_frame": 0.5,
+        "rss_before_kib": 228820,
+        "rss_after_kib": 228856,
+        "peak_rss_kib": 228856,
+        "bytes_submitted": 5760
+      },
+      "stream-100": {
+        "cold_us": 6038,
+        "p50_us": 614,
+        "p95_us": 1211,
+        "p99_us": 1280,
+        "cpu_ms_per_frame": 0.6666666666666666,
+        "rss_before_kib": 20360,
+        "rss_after_kib": 21072,
+        "peak_rss_kib": 21072,
+        "bytes_submitted": 68998
+      },
+      "stream-10000": {
+        "cold_us": 271438,
+        "p50_us": 5547,
+        "p95_us": 6180,
+        "p99_us": 6391,
+        "cpu_ms_per_frame": 5.583333333333333,
+        "rss_before_kib": 257760,
+        "rss_after_kib": 258040,
+        "peak_rss_kib": 258040,
+        "bytes_submitted": 69170
+      },
+      "code-100": {
+        "cold_us": 8842,
+        "p50_us": 1010,
+        "p95_us": 1470,
+        "p99_us": 1530,
+        "cpu_ms_per_frame": 1.0833333333333333,
+        "rss_before_kib": 29432,
+        "rss_after_kib": 31272,
+        "peak_rss_kib": 31272,
+        "bytes_submitted": 73168
+      },
+      "tool-10000": {
+        "cold_us": 288471,
+        "p50_us": 4681,
+        "p95_us": 4778,
+        "p99_us": 4862,
+        "cpu_ms_per_frame": 4.666666666666667,
+        "rss_before_kib": 257544,
+        "rss_after_kib": 257544,
+        "peak_rss_kib": 257544,
+        "bytes_submitted": 373
+      },
+      "hover-10000": {
+        "cold_us": 269465,
+        "p50_us": 948,
+        "p95_us": 955,
+        "p99_us": 963,
+        "cpu_ms_per_frame": 0.9166666666666666,
+        "rss_before_kib": 229092,
+        "rss_after_kib": 229092,
+        "peak_rss_kib": 229092,
+        "bytes_submitted": 0
+      },
+      "selection-10000": {
+        "cold_us": 269244,
+        "p50_us": 723,
+        "p95_us": 842,
+        "p99_us": 852,
+        "cpu_ms_per_frame": 0.75,
+        "rss_before_kib": 242416,
+        "rss_after_kib": 242416,
+        "peak_rss_kib": 242416,
+        "bytes_submitted": 337644
+      },
+      "resize-10000": {
+        "cold_us": 268989,
+        "p50_us": 3248,
+        "p95_us": 4497,
+        "p99_us": 4658,
+        "cpu_ms_per_frame": 2.1666666666666665,
+        "rss_before_kib": 432232,
+        "rss_after_kib": 432260,
+        "peak_rss_kib": 432260,
+        "bytes_submitted": 1396620
+      },
+      "stream-events-10000": {
+        "cold_us": 272635,
+        "p50_us": 6413,
+        "p95_us": 7056,
+        "p99_us": 7249,
+        "cpu_ms_per_frame": 6.5,
+        "rss_before_kib": 266972,
+        "rss_after_kib": 267000,
+        "peak_rss_kib": 267000,
+        "bytes_submitted": 69197
+      }
+    }
+  }
+}
