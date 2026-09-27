@@ -1393,7 +1393,9 @@ pub(super) fn truncate_plain_text(text: &str, max_width: usize) -> String {
 }
 
 pub(super) fn display_width(text: &str) -> usize {
-    Line::from(text.to_string()).width()
+    text.lines()
+        .map(unicode_width::UnicodeWidthStr::width)
+        .sum()
 }
 
 pub(super) fn take_width_prefix(text: &str, max_width: usize) -> &str {
@@ -1403,13 +1405,13 @@ pub(super) fn take_width_prefix(text: &str, max_width: usize) -> &str {
 
     let mut used = 0usize;
     let mut split_at = 0usize;
-    for cluster in crate::composer_atoms::split_graphemes(text) {
-        let cluster_width = usize::from(cluster.display_width());
+    for (cluster, width) in crate::composer_atoms::measured_graphemes(text) {
+        let cluster_width = usize::from(width);
         if used.saturating_add(cluster_width) > max_width {
             break;
         }
         used = used.saturating_add(cluster_width);
-        split_at = split_at.saturating_add(cluster.as_str().len());
+        split_at = split_at.saturating_add(cluster.len());
     }
 
     &text[..split_at]

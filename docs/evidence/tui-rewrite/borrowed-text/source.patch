@@ -1,0 +1,328 @@
+diff --git i/crates/harness-tui/src/composer_atoms/grapheme.rs w/crates/harness-tui/src/composer_atoms/grapheme.rs
+index 267af949..95da0992 100644
+--- i/crates/harness-tui/src/composer_atoms/grapheme.rs
++++ w/crates/harness-tui/src/composer_atoms/grapheme.rs
+@@ -30,6 +30,11 @@ pub(crate) fn split_graphemes(text: &str) -> Vec<GraphemeCluster> {
+     text.graphemes(true).map(GraphemeCluster::new).collect()
+ }
+ 
++pub(crate) fn measured_graphemes(text: &str) -> impl Iterator<Item = (&str, u16)> {
++    text.graphemes(true)
++        .map(|text| (text, cluster_display_width(text)))
++}
++
+ fn cluster_display_width(text: &str) -> u16 {
+     if text.chars().count() == 2 && text.chars().all(is_regional_indicator) {
+         return 2;
+diff --git i/crates/harness-tui/src/composer_atoms/mod.rs w/crates/harness-tui/src/composer_atoms/mod.rs
+index 6b2f838e..826b5c4b 100644
+--- i/crates/harness-tui/src/composer_atoms/mod.rs
++++ w/crates/harness-tui/src/composer_atoms/mod.rs
+@@ -7,6 +7,8 @@ mod serialization;
+ pub use atom::{AtomId, AtomKind, AttachmentId, ComposerAtom, CursorBoundary, FileMentionId};
+ pub use buffer::{AtomBuffer, AtomBufferError, WrappedLine};
+ pub use cursor::{AtomBoundary, AtomCursor};
++pub(crate) use grapheme::measured_graphemes;
++#[cfg(test)]
+ pub(crate) use grapheme::split_graphemes;
+ pub use grapheme::GraphemeCluster;
+ pub use serialization::{deserialize, serialize, SerializationError};
+diff --git i/crates/harness-tui/src/ui_chrome.rs w/crates/harness-tui/src/ui_chrome.rs
+index 383486bf..debdf2f7 100644
+--- i/crates/harness-tui/src/ui_chrome.rs
++++ w/crates/harness-tui/src/ui_chrome.rs
+@@ -1393,7 +1393,9 @@ pub(super) fn truncate_plain_text(text: &str, max_width: usize) -> String {
+ }
+ 
+ pub(super) fn display_width(text: &str) -> usize {
+-    Line::from(text.to_string()).width()
++    text.lines()
++        .map(unicode_width::UnicodeWidthStr::width)
++        .sum()
+ }
+ 
+ pub(super) fn take_width_prefix(text: &str, max_width: usize) -> &str {
+@@ -1403,13 +1405,13 @@ pub(super) fn take_width_prefix(text: &str, max_width: usize) -> &str {
+ 
+     let mut used = 0usize;
+     let mut split_at = 0usize;
+-    for cluster in crate::composer_atoms::split_graphemes(text) {
+-        let cluster_width = usize::from(cluster.display_width());
++    for (cluster, width) in crate::composer_atoms::measured_graphemes(text) {
++        let cluster_width = usize::from(width);
+         if used.saturating_add(cluster_width) > max_width {
+             break;
+         }
+         used = used.saturating_add(cluster_width);
+-        split_at = split_at.saturating_add(cluster.as_str().len());
++        split_at = split_at.saturating_add(cluster.len());
+     }
+ 
+     &text[..split_at]
+diff --git i/crates/harness-tui/src/ui_composer/ghost.rs w/crates/harness-tui/src/ui_composer/ghost.rs
+index 7edb046b..2ce1eb88 100644
+--- i/crates/harness-tui/src/ui_composer/ghost.rs
++++ w/crates/harness-tui/src/ui_composer/ghost.rs
+@@ -1,9 +1,8 @@
+-use crate::composer_atoms::split_graphemes;
++use crate::composer_atoms::measured_graphemes;
+ 
+ pub(super) fn truncate_to_width(text: &str, max_width: usize) -> String {
+-    let clusters = split_graphemes(text);
+-    let text_width = clusters.iter().fold(0_usize, |width, cluster| {
+-        width.saturating_add(usize::from(cluster.display_width()))
++    let text_width = measured_graphemes(text).fold(0_usize, |width, (_, cells)| {
++        width.saturating_add(usize::from(cells))
+     });
+     if text_width <= max_width {
+         return text.to_string();
+@@ -15,12 +14,12 @@ pub(super) fn truncate_to_width(text: &str, max_width: usize) -> String {
+     let target_width = max_width.saturating_sub(1);
+     let mut used_width = 0_usize;
+     let mut output = String::new();
+-    for cluster in clusters {
+-        let width = usize::from(cluster.display_width());
++    for (cluster, cells) in measured_graphemes(text) {
++        let width = usize::from(cells);
+         if used_width.saturating_add(width) > target_width {
+             break;
+         }
+-        output.push_str(cluster.as_str());
++        output.push_str(cluster);
+         used_width = used_width.saturating_add(width);
+     }
+     output.push('…');
+diff --git i/crates/harness-tui/src/ui_markdown.rs w/crates/harness-tui/src/ui_markdown.rs
+index c3a4ef0f..904cd47d 100644
+--- i/crates/harness-tui/src/ui_markdown.rs
++++ w/crates/harness-tui/src/ui_markdown.rs
+@@ -37,10 +37,10 @@ impl ParsedInlineMarkdown {
+         if text.is_empty() {
+             return;
+         }
+-        let start_cell = self.spans.iter().map(Span::width).sum::<usize>();
+-        let end_cell = start_cell.saturating_add(display_width(text));
+-        if let Some(destination) = destination.filter(|destination| {
+-            crate::transcript_selection::Hyperlink::new(
++        if let Some(destination) = destination {
++            let start_cell = self.spans.iter().map(Span::width).sum::<usize>();
++            let end_cell = start_cell.saturating_add(display_width(text));
++            if crate::transcript_selection::Hyperlink::new(
+                 text,
+                 destination,
+                 crate::transcript_selection::LinkRange::new(
+@@ -50,19 +50,20 @@ impl ParsedInlineMarkdown {
+                 ),
+             )
+             .is_ok()
+-        }) {
+-            if let Some(previous) = self.links.last_mut().filter(|previous| {
+-                previous.end_cell == start_cell && previous.destination == destination
+-            }) {
+-                previous.label.push_str(text);
+-                previous.end_cell = end_cell;
+-            } else {
+-                self.links.push(InlineMarkdownLink {
+-                    label: text.to_string(),
+-                    start_cell,
+-                    end_cell,
+-                    destination: destination.to_string(),
+-                });
++            {
++                if let Some(previous) = self.links.last_mut().filter(|previous| {
++                    previous.end_cell == start_cell && previous.destination == destination
++                }) {
++                    previous.label.push_str(text);
++                    previous.end_cell = end_cell;
++                } else {
++                    self.links.push(InlineMarkdownLink {
++                        label: text.to_string(),
++                        start_cell,
++                        end_cell,
++                        destination: destination.to_string(),
++                    });
++                }
+             }
+         }
+         if let Some(previous) = self
+diff --git i/crates/harness-tui/src/ui_transcript_render.rs w/crates/harness-tui/src/ui_transcript_render.rs
+index 6bac5b77..e7664089 100644
+--- i/crates/harness-tui/src/ui_transcript_render.rs
++++ w/crates/harness-tui/src/ui_transcript_render.rs
+@@ -8,7 +8,7 @@ use super::ui_transcript_tool_render::{
+ };
+ use super::*;
+ use crate::app::ToolCallPresentationStatus;
+-use crate::composer_atoms::split_graphemes;
++use crate::composer_atoms::measured_graphemes;
+ use harness_core::event::ProviderRequestRetryMetadata;
+ use std::time::Duration;
+ 
+@@ -356,12 +356,12 @@ fn collapse_user_surface_body(
+ fn take_grapheme_width_prefix(text: &str, max_width: usize) -> String {
+     let mut prefix = String::new();
+     let mut used = 0usize;
+-    for cluster in split_graphemes(text) {
+-        let width = usize::from(cluster.display_width());
++    for (cluster, cells) in measured_graphemes(text) {
++        let width = usize::from(cells);
+         if used.saturating_add(width) > max_width {
+             break;
+         }
+-        prefix.push_str(cluster.as_str());
++        prefix.push_str(cluster);
+         used = used.saturating_add(width);
+     }
+     prefix
+diff --git i/crates/harness-tui/src/ui_transcript_selection.rs w/crates/harness-tui/src/ui_transcript_selection.rs
+index adc899b2..065494de 100644
+--- i/crates/harness-tui/src/ui_transcript_selection.rs
++++ w/crates/harness-tui/src/ui_transcript_selection.rs
+@@ -8,7 +8,7 @@ use ratatui::{
+     Frame,
+ };
+ 
+-use crate::composer_atoms::split_graphemes;
++use crate::composer_atoms::measured_graphemes;
+ use crate::theme::Theme;
+ 
+ use super::ui_chrome::display_width;
+@@ -342,11 +342,11 @@ pub(super) fn selection_row_line_text(row: &TranscriptSelectionRow) -> String {
+ fn extract_text_by_display_columns(text: &str, start_col: usize, end_col: usize) -> String {
+     let mut result = String::new();
+     let mut cell = 0usize;
+-    for cluster in split_graphemes(text) {
+-        let cluster_width = usize::from(cluster.display_width());
++    for (cluster, width) in measured_graphemes(text) {
++        let cluster_width = usize::from(width);
+         let cluster_end = cell.saturating_add(cluster_width);
+         if cell <= end_col && cluster_end > start_col {
+-            result.push_str(cluster.as_str());
++            result.push_str(cluster);
+         }
+         cell = cluster_end;
+         if cell > end_col {
+@@ -364,11 +364,11 @@ pub(super) fn transcript_selection_line_rows(
+     let mut rows = Vec::new();
+ 
+     for span in &line.spans {
+-        for cluster in split_graphemes(span.content.as_ref()) {
+-            let cell_width = usize::from(cluster.display_width());
++        for (cluster, cells) in measured_graphemes(span.content.as_ref()) {
++            let cell_width = usize::from(cells);
+             if cell_width == 0 {
+                 if let Some(cell) = row.iter_mut().rev().find(|cell| !cell.is_empty()) {
+-                    cell.push_str(cluster.as_str());
++                    cell.push_str(cluster);
+                 }
+                 continue;
+             }
+@@ -376,7 +376,7 @@ pub(super) fn transcript_selection_line_rows(
+                 rows.push(std::mem::take(&mut row));
+             }
+ 
+-            row.push(cluster.as_str().to_string());
++            row.push(cluster.to_string());
+             for _ in 1..cell_width {
+                 if row.len() == width {
+                     rows.push(std::mem::take(&mut row));
+diff --git i/crates/harness-tui/src/ui_transcript_surface.rs w/crates/harness-tui/src/ui_transcript_surface.rs
+index b764bf38..cd4b4a9d 100644
+--- i/crates/harness-tui/src/ui_transcript_surface.rs
++++ w/crates/harness-tui/src/ui_transcript_surface.rs
+@@ -20,7 +20,7 @@ use super::ui_transcript_layout::TranscriptVisualEntry;
+ use super::ui_transcript_style::{
+     blend_color, glyph_routed_streaming_spinner_frame, pending_diamond_color,
+ };
+-use crate::composer_atoms::split_graphemes;
++use crate::composer_atoms::measured_graphemes;
+ use crate::terminal::char_display_width;
+ 
+ const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
+@@ -1024,11 +1024,11 @@ pub(super) fn wrap_surface_spans_with_links(
+     }
+     let source = spans
+         .iter()
+-        .flat_map(|span| split_graphemes(span.content.as_ref()))
+-        .scan(0usize, |cell, cluster| {
++        .flat_map(|span| measured_graphemes(span.content.as_ref()))
++        .scan(0usize, |cell, (cluster, width)| {
+             let start_cell = *cell;
+-            *cell = cell.saturating_add(usize::from(cluster.display_width()));
+-            Some((cluster.as_str().to_string(), start_cell, *cell))
++            *cell = cell.saturating_add(usize::from(width));
++            Some((cluster.to_string(), start_cell, *cell))
+         })
+         .collect::<Vec<_>>();
+     let rows = wrap_surface_spans(spans, width);
+@@ -1038,20 +1038,20 @@ pub(super) fn wrap_surface_spans_with_links(
+         .map(|spans| {
+             let mut projected = Vec::<SurfaceLinkRun>::new();
+             let mut output_cell = 0usize;
+-            for cluster in spans
++            for (cluster, width) in spans
+                 .iter()
+-                .flat_map(|span| split_graphemes(span.content.as_ref()))
++                .flat_map(|span| measured_graphemes(span.content.as_ref()))
+             {
+                 while source
+                     .get(source_index)
+-                    .is_some_and(|(text, _, _)| text != cluster.as_str())
++                    .is_some_and(|(text, _, _)| text != cluster)
+                 {
+                     source_index = source_index.saturating_add(1);
+                 }
+                 let Some((_, source_start, source_end)) = source.get(source_index) else {
+                     break;
+                 };
+-                let cluster_width = usize::from(cluster.display_width());
++                let cluster_width = usize::from(width);
+                 for link in links
+                     .iter()
+                     .filter(|link| link.start_cell < *source_end && link.end_cell > *source_start)
+@@ -1148,18 +1148,17 @@ fn wrap_surface_spans_impl(
+             continue;
+         }
+ 
+-        let clusters = split_graphemes(token_text);
+         let mut chunk = String::new();
+         let mut chunk_width = 0usize;
+-        for cluster in clusters {
+-            let cluster_width = usize::from(cluster.display_width());
++        for (cluster, cells) in measured_graphemes(token_text) {
++            let cluster_width = usize::from(cells);
+             if !chunk.is_empty() && chunk_width.saturating_add(cluster_width) > width {
+                 current.push(Span::styled(std::mem::take(&mut chunk), token.style));
+                 rows.push(current);
+                 current = Vec::new();
+                 chunk_width = 0;
+             }
+-            chunk.push_str(cluster.as_str());
++            chunk.push_str(cluster);
+             chunk_width = chunk_width.saturating_add(cluster_width);
+         }
+         current_width = chunk_width;
+@@ -1200,11 +1199,11 @@ pub(super) fn expand_preformatted_tabs(spans: Vec<Span<'static>>) -> Vec<Span<'s
+         .into_iter()
+         .map(|span| {
+             let mut text = String::new();
+-            for cluster in split_graphemes(&span.content) {
+-                let part = if cluster.as_str() == "\t" {
++            for (cluster, _) in measured_graphemes(&span.content) {
++                let part = if cluster == "\t" {
+                     " ".repeat(4 - source_column % 4)
+                 } else {
+-                    cluster.as_str().to_string()
++                    cluster.to_string()
+                 };
+                 source_column += display_width(&part);
+                 text.push_str(&part);
+@@ -1297,7 +1296,7 @@ mod tests {
+         let mut rows = Vec::new();
+         let mut chunk = String::new();
+         let mut chunk_width = 0usize;
+-        for cluster in split_graphemes(text) {
++        for cluster in crate::composer_atoms::split_graphemes(text) {
+             let cluster_width = usize::from(cluster.display_width());
+             if !chunk.is_empty() && chunk_width.saturating_add(cluster_width) > width {
+                 rows.push(std::mem::take(&mut chunk));

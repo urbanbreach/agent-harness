@@ -1,0 +1,356 @@
+{
+  "startup-0": {
+    "metrics": {
+      "p50_us": {
+        "reference": 323,
+        "candidate": 329,
+        "change_percent": 1.86
+      },
+      "p95_us": {
+        "reference": 511,
+        "candidate": 424,
+        "change_percent": -17.03
+      },
+      "p99_us": {
+        "reference": 579,
+        "candidate": 451,
+        "change_percent": -22.11
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.35,
+        "candidate": 0.35,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 12492,
+        "candidate": 12088,
+        "change_percent": -3.23
+      },
+      "cold_us": {
+        "reference": 1221,
+        "candidate": 1186,
+        "change_percent": -2.87
+      },
+      "allocated_bytes": {
+        "reference": 12657480,
+        "candidate": 11886362,
+        "change_percent": -6.09
+      },
+      "peak_heap_bytes": {
+        "reference": 1907453,
+        "candidate": 1907431,
+        "change_percent": -0.0
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "idle-1000": {
+    "metrics": {
+      "p50_us": {
+        "reference": 298,
+        "candidate": 304,
+        "change_percent": 2.01
+      },
+      "p95_us": {
+        "reference": 335,
+        "candidate": 313,
+        "change_percent": -6.57
+      },
+      "p99_us": {
+        "reference": 343,
+        "candidate": 317,
+        "change_percent": -7.58
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.3,
+        "candidate": 0.3,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 48736,
+        "candidate": 38556,
+        "change_percent": -20.89
+      },
+      "cold_us": {
+        "reference": 54147,
+        "candidate": 46131,
+        "change_percent": -14.8
+      },
+      "allocated_bytes": {
+        "reference": 227097886,
+        "candidate": 208110614,
+        "change_percent": -8.36
+      },
+      "peak_heap_bytes": {
+        "reference": 29591149,
+        "candidate": 23170135,
+        "change_percent": -21.7
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "typing-1000": {
+    "metrics": {
+      "p50_us": {
+        "reference": 306,
+        "candidate": 318,
+        "change_percent": 3.92
+      },
+      "p95_us": {
+        "reference": 314,
+        "candidate": 325,
+        "change_percent": 3.5
+      },
+      "p99_us": {
+        "reference": 319,
+        "candidate": 331,
+        "change_percent": 3.76
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.3,
+        "candidate": 0.3,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 48972,
+        "candidate": 38604,
+        "change_percent": -21.17
+      },
+      "cold_us": {
+        "reference": 54886,
+        "candidate": 45978,
+        "change_percent": -16.23
+      },
+      "allocated_bytes": {
+        "reference": 227541920,
+        "candidate": 208565176,
+        "change_percent": -8.34
+      },
+      "peak_heap_bytes": {
+        "reference": 29683617,
+        "candidate": 23260491,
+        "change_percent": -21.64
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "stream-1000": {
+    "metrics": {
+      "p50_us": {
+        "reference": 4267,
+        "candidate": 1652,
+        "change_percent": -61.28
+      },
+      "p95_us": {
+        "reference": 8747,
+        "candidate": 2553,
+        "change_percent": -70.81
+      },
+      "p99_us": {
+        "reference": 9274,
+        "candidate": 2616,
+        "change_percent": -71.79
+      },
+      "cpu_ms_per_frame": {
+        "reference": 4.7,
+        "candidate": 1.65,
+        "change_percent": -64.89
+      },
+      "rss_kib": {
+        "reference": 51828,
+        "candidate": 39404,
+        "change_percent": -23.97
+      },
+      "cold_us": {
+        "reference": 54781,
+        "candidate": 45929,
+        "change_percent": -16.16
+      },
+      "allocated_bytes": {
+        "reference": 744453883,
+        "candidate": 380246527,
+        "change_percent": -48.92
+      },
+      "peak_heap_bytes": {
+        "reference": 30318633,
+        "candidate": 23470459,
+        "change_percent": -22.59
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "scroll-1000": {
+    "metrics": {
+      "p50_us": {
+        "reference": 365,
+        "candidate": 379,
+        "change_percent": 3.84
+      },
+      "p95_us": {
+        "reference": 378,
+        "candidate": 397,
+        "change_percent": 5.03
+      },
+      "p99_us": {
+        "reference": 384,
+        "candidate": 410,
+        "change_percent": 6.77
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.4,
+        "candidate": 0.4,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 48784,
+        "candidate": 38612,
+        "change_percent": -20.85
+      },
+      "cold_us": {
+        "reference": 54246,
+        "candidate": 47005,
+        "change_percent": -13.35
+      },
+      "allocated_bytes": {
+        "reference": 226735433,
+        "candidate": 207737381,
+        "change_percent": -8.38
+      },
+      "peak_heap_bytes": {
+        "reference": 29591153,
+        "candidate": 23172237,
+        "change_percent": -21.69
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": [
+          "visible"
+        ]
+      },
+      {
+        "repetition": 2,
+        "different_fields": [
+          "visible"
+        ]
+      },
+      {
+        "repetition": 3,
+        "different_fields": [
+          "visible"
+        ]
+      }
+    ]
+  },
+  "resize-1000": {
+    "metrics": {
+      "p50_us": {
+        "reference": 7891,
+        "candidate": 4378,
+        "change_percent": -44.52
+      },
+      "p95_us": {
+        "reference": 9722,
+        "candidate": 5589,
+        "change_percent": -42.51
+      },
+      "p99_us": {
+        "reference": 10223,
+        "candidate": 5879,
+        "change_percent": -42.49
+      },
+      "cpu_ms_per_frame": {
+        "reference": 5.6,
+        "candidate": 2.0,
+        "change_percent": -64.29
+      },
+      "rss_kib": {
+        "reference": 65916,
+        "candidate": 45728,
+        "change_percent": -30.63
+      },
+      "cold_us": {
+        "reference": 56933,
+        "candidate": 47402,
+        "change_percent": -16.74
+      },
+      "allocated_bytes": {
+        "reference": 670832693,
+        "candidate": 366841985,
+        "change_percent": -45.32
+      },
+      "peak_heap_bytes": {
+        "reference": 40672893,
+        "candidate": 29192767,
+        "change_percent": -28.23
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  }
+}

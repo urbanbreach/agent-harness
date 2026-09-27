@@ -20,7 +20,7 @@ use super::ui_transcript_layout::TranscriptVisualEntry;
 use super::ui_transcript_style::{
     blend_color, glyph_routed_streaming_spinner_frame, pending_diamond_color,
 };
-use crate::composer_atoms::split_graphemes;
+use crate::composer_atoms::measured_graphemes;
 use crate::terminal::char_display_width;
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
@@ -1024,11 +1024,11 @@ pub(super) fn wrap_surface_spans_with_links(
     }
     let source = spans
         .iter()
-        .flat_map(|span| split_graphemes(span.content.as_ref()))
-        .scan(0usize, |cell, cluster| {
+        .flat_map(|span| measured_graphemes(span.content.as_ref()))
+        .scan(0usize, |cell, (cluster, width)| {
             let start_cell = *cell;
-            *cell = cell.saturating_add(usize::from(cluster.display_width()));
-            Some((cluster.as_str().to_string(), start_cell, *cell))
+            *cell = cell.saturating_add(usize::from(width));
+            Some((cluster.to_string(), start_cell, *cell))
         })
         .collect::<Vec<_>>();
     let rows = wrap_surface_spans(spans, width);
@@ -1038,20 +1038,20 @@ pub(super) fn wrap_surface_spans_with_links(
         .map(|spans| {
             let mut projected = Vec::<SurfaceLinkRun>::new();
             let mut output_cell = 0usize;
-            for cluster in spans
+            for (cluster, width) in spans
                 .iter()
-                .flat_map(|span| split_graphemes(span.content.as_ref()))
+                .flat_map(|span| measured_graphemes(span.content.as_ref()))
             {
                 while source
                     .get(source_index)
-                    .is_some_and(|(text, _, _)| text != cluster.as_str())
+                    .is_some_and(|(text, _, _)| text != cluster)
                 {
                     source_index = source_index.saturating_add(1);
                 }
                 let Some((_, source_start, source_end)) = source.get(source_index) else {
                     break;
                 };
-                let cluster_width = usize::from(cluster.display_width());
+                let cluster_width = usize::from(width);
                 for link in links
                     .iter()
                     .filter(|link| link.start_cell < *source_end && link.end_cell > *source_start)
@@ -1148,18 +1148,17 @@ fn wrap_surface_spans_impl(
             continue;
         }
 
-        let clusters = split_graphemes(token_text);
         let mut chunk = String::new();
         let mut chunk_width = 0usize;
-        for cluster in clusters {
-            let cluster_width = usize::from(cluster.display_width());
+        for (cluster, cells) in measured_graphemes(token_text) {
+            let cluster_width = usize::from(cells);
             if !chunk.is_empty() && chunk_width.saturating_add(cluster_width) > width {
                 current.push(Span::styled(std::mem::take(&mut chunk), token.style));
                 rows.push(current);
                 current = Vec::new();
                 chunk_width = 0;
             }
-            chunk.push_str(cluster.as_str());
+            chunk.push_str(cluster);
             chunk_width = chunk_width.saturating_add(cluster_width);
         }
         current_width = chunk_width;
@@ -1200,11 +1199,11 @@ pub(super) fn expand_preformatted_tabs(spans: Vec<Span<'static>>) -> Vec<Span<'s
         .into_iter()
         .map(|span| {
             let mut text = String::new();
-            for cluster in split_graphemes(&span.content) {
-                let part = if cluster.as_str() == "\t" {
+            for (cluster, _) in measured_graphemes(&span.content) {
+                let part = if cluster == "\t" {
                     " ".repeat(4 - source_column % 4)
                 } else {
-                    cluster.as_str().to_string()
+                    cluster.to_string()
                 };
                 source_column += display_width(&part);
                 text.push_str(&part);
@@ -1297,7 +1296,7 @@ mod tests {
         let mut rows = Vec::new();
         let mut chunk = String::new();
         let mut chunk_width = 0usize;
-        for cluster in split_graphemes(text) {
+        for cluster in crate::composer_atoms::split_graphemes(text) {
             let cluster_width = usize::from(cluster.display_width());
             if !chunk.is_empty() && chunk_width.saturating_add(cluster_width) > width {
                 rows.push(std::mem::take(&mut chunk));
