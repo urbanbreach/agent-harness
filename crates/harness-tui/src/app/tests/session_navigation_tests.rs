@@ -5,20 +5,73 @@ use crate::UnwrapOrAbort;
 mod session_navigation_parent_child_tests;
 pub(super) use session_navigation_parent_child_tests::parent_transcript_hides_child_prompt_before_task_tool_finishes as parent_child_parent_transcript_hides_child_prompt_before_task_tool_finishes;
 
-pub(super) fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
-    let mut app = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
-
-    assert_eq!(app.focus, Focus::Details);
-
-    app.handle_key(key(KeyCode::Tab));
-    assert_eq!(app.focus, Focus::Details);
-
-    app.handle_key(key(KeyCode::Tab));
-    assert_eq!(app.focus, Focus::Details);
-
-    app.focus = Focus::Prompt;
-    app.handle_key(key(KeyCode::Char('x')));
-    assert!(app.composer.prompt_buffer.is_empty());
+pub(super) fn focus_shortcuts_follow_visible_shell_and_preserve_replay() {
+    use Focus::{Details, List, Prompt, Terminal};
+    let cases: [(AppState, &[(u8, Focus)]); 3] = [
+        (
+            AppState::new_startup(Vec::new(), None),
+            &[(11, List), (11, Prompt), (12, List), (12, Prompt)],
+        ),
+        (
+            AppState::new_live(None, false, None),
+            &[
+                (11, Details),
+                (12, Prompt),
+                (9, Prompt),
+                (12, Terminal),
+                (11, Prompt),
+                (11, Details),
+                (11, Terminal),
+                (9, Details),
+                (12, Prompt),
+                (10, List),
+                (12, Details),
+                (11, Prompt),
+                (10, List),
+                (11, Prompt),
+            ],
+        ),
+        (
+            AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new()),
+            &[
+                (11, Details),
+                (12, Details),
+                (9, Details),
+                (12, Terminal),
+                (11, Details),
+            ],
+        ),
+    ];
+    for (mut app, steps) in cases {
+        app.apply_keybindings(BTreeMap::from([
+            ("toggle_terminal_panel".into(), "F9".into()),
+            ("toggle_tasks".into(), "F10".into()),
+            ("focus_next".into(), "F11".into()),
+            ("focus_prev".into(), "F12".into()),
+        ]));
+        for &(function_key, expected) in steps {
+            app.handle_key(key(KeyCode::F(function_key)));
+            assert_eq!(app.focus, expected, "F{function_key}");
+            assert_eq!(
+                app.details_drawer_open(),
+                !app.startup_shell_visible() && !app.replay_mode && expected == List,
+                "drawer after F{function_key}"
+            );
+        }
+        if app.replay_mode {
+            // Default Tab variants stay on the transcript even with a terminal panel.
+            for code in [KeyCode::Tab, KeyCode::BackTab] {
+                app.handle_key(key(code));
+                assert_eq!(app.focus, Details);
+            }
+            app.focus = Prompt;
+            app.handle_key(key(KeyCode::Char('x')));
+            assert!(app.composer.prompt_buffer.is_empty());
+        } else {
+            app.handle_key(key(KeyCode::Char('x')));
+            assert_eq!(app.composer.prompt_buffer, "x");
+        }
+    }
 }
 
 pub(super) fn child_session_navigation_keybinds_follow_default_contract() {

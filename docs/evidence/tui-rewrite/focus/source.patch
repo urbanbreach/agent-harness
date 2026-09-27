@@ -1,0 +1,483 @@
+diff --git c/crates/harness-tui/src/app.rs i/crates/harness-tui/src/app.rs
+index cd9687ed..39489092 100644
+--- c/crates/harness-tui/src/app.rs
++++ i/crates/harness-tui/src/app.rs
+@@ -109,6 +109,7 @@ mod child_session;
+ mod composer;
+ mod composer_editing;
+ mod file_mentions;
++mod focus;
+ mod foreign_import;
+ mod ghost_suggestion;
+ mod help_browser;
+diff --git c/crates/harness-tui/src/app/focus.rs i/crates/harness-tui/src/app/focus.rs
+new file mode 100644
+index 00000000..fc47ac95
+--- /dev/null
++++ i/crates/harness-tui/src/app/focus.rs
+@@ -0,0 +1,82 @@
++use super::{AppState, Focus};
++
++impl AppState {
++    pub(super) fn normalize_focus_for_active_surface(&mut self) {
++        if self.replay_mode {
++            if self.focus == Focus::Prompt
++                || (self.focus == Focus::Terminal && !self.terminal_panel_visible())
++                || (self.focus == Focus::List && self.active_review_surface.is_none())
++            {
++                self.focus = Focus::Details;
++            }
++        } else if self.startup_shell_visible() {
++            self.toggle_startup_focus();
++        } else {
++            self.focus = match self.focus {
++                Focus::Prompt if self.active_review_surface.is_some() => Focus::List,
++                Focus::Terminal if self.active_review_surface.is_some() => Focus::Details,
++                Focus::List
++                    if self.active_review_surface.is_none()
++                        && !self.session_shell_operator_rail_interactive() =>
++                {
++                    Focus::Details
++                }
++                focus => focus,
++            };
++        }
++    }
++
++    pub(super) fn cycle_focus(&mut self, backward: bool) {
++        use Focus::{Details, List, Prompt, Terminal};
++        if self.replay_mode {
++            // Default Tab keys are consumed earlier; remapped reverse focus can
++            // still reach the read-only terminal panel.
++            self.focus = if backward && self.focus != Terminal && self.terminal_panel_visible() {
++                Terminal
++            } else {
++                Details
++            };
++            return;
++        }
++        if self.startup_shell_visible() {
++            self.toggle_startup_focus();
++            return;
++        }
++        if self.active_review_surface.is_some() {
++            self.focus = match (self.focus, backward) {
++                (List, false) | (Prompt, true) => Details,
++                (Prompt, false) | (Details | Terminal, true) => List,
++                _ => Prompt,
++            };
++            return;
++        }
++
++        self.focus = if self.session_shell_operator_rail_interactive() {
++            match (self.focus, backward) {
++                (Details, false) | (Prompt, true) => List,
++                (List, true) | (Prompt, false) => Details,
++                (Details, true) if self.terminal_panel_visible() => Terminal,
++                _ => Prompt,
++            }
++        } else {
++            match (self.focus, backward) {
++                (Details, false) | (Prompt, true) if self.terminal_panel_visible() => Terminal,
++                (Prompt, _) | (Terminal | List, true) => Details,
++                _ => Prompt,
++            }
++        };
++        self.live_details_drawer_open = self.focus == List;
++    }
++
++    fn toggle_startup_focus(&mut self) {
++        use crate::welcome_surface::WelcomeInput;
++        let input = if self.focus == Focus::Prompt {
++            self.focus = Focus::List;
++            WelcomeInput::FocusMenu
++        } else {
++            self.focus = Focus::Prompt;
++            WelcomeInput::FocusPrompt
++        };
++        self.welcome.handle(input);
++    }
++}
+diff --git c/crates/harness-tui/src/app/key_interaction.rs i/crates/harness-tui/src/app/key_interaction.rs
+index 2287cad7..1e3bd750 100644
+--- c/crates/harness-tui/src/app/key_interaction.rs
++++ i/crates/harness-tui/src/app/key_interaction.rs
+@@ -504,218 +504,6 @@ impl AppState {
+         self.normalize_focus_for_active_surface();
+     }
+ 
+-    pub(in crate::app) fn normalize_focus_for_active_surface(&mut self) {
+-        if self.replay_mode {
+-            if self.focus == Focus::Prompt {
+-                self.focus = if self.session_shell_operator_rail_interactive() {
+-                    Focus::List
+-                } else {
+-                    Focus::Details
+-                };
+-            } else if (self.focus == Focus::Terminal && !self.terminal_panel_visible())
+-                || (self.active_review_surface.is_none()
+-                    && !self.session_shell_operator_rail_interactive()
+-                    && self.focus == Focus::List)
+-            {
+-                self.focus = Focus::Details;
+-            }
+-            return;
+-        }
+-
+-        if self.post_run_handoff_visible() {
+-            if matches!(self.focus, Focus::Prompt | Focus::Terminal) || self.active_tab == Tab::Run
+-            {
+-                self.focus = Focus::List;
+-            }
+-            return;
+-        }
+-
+-        if self.startup_shell_visible() {
+-            if self.focus == Focus::Prompt {
+-                self.focus = Focus::List;
+-                self.welcome
+-                    .handle(crate::welcome_surface::WelcomeInput::FocusMenu);
+-            } else {
+-                self.focus = Focus::Prompt;
+-                self.welcome
+-                    .handle(crate::welcome_surface::WelcomeInput::FocusPrompt);
+-            }
+-            return;
+-        }
+-
+-        if self.active_review_surface.is_some() && self.focus == Focus::Prompt {
+-            self.focus = Focus::List;
+-        } else if (self.active_review_surface.is_some() && self.focus == Focus::Terminal)
+-            || (self.active_review_surface.is_none()
+-                && !self.startup_shell_visible()
+-                && !self.session_shell_operator_rail_interactive()
+-                && self.focus == Focus::List)
+-        {
+-            self.focus = Focus::Details;
+-        }
+-    }
+-
+-    fn cycle_focus_forward(&mut self) {
+-        if self.replay_mode {
+-            if !self.session_shell_operator_rail_interactive() {
+-                self.focus = Focus::Details;
+-                return;
+-            }
+-
+-            self.focus = match self.focus {
+-                Focus::List => Focus::Details,
+-                Focus::Details if self.terminal_panel_visible() => Focus::Terminal,
+-                Focus::Terminal | Focus::Details | Focus::Prompt => Focus::List,
+-            };
+-            return;
+-        }
+-
+-        if self.post_run_handoff_visible() {
+-            self.focus = if self.active_tab == Tab::Run {
+-                Focus::List
+-            } else {
+-                match self.focus {
+-                    Focus::List | Focus::Prompt | Focus::Terminal => Focus::Details,
+-                    Focus::Details => Focus::List,
+-                }
+-            };
+-            return;
+-        }
+-
+-        if self.startup_shell_visible() {
+-            if self.focus == Focus::Prompt {
+-                self.focus = Focus::List;
+-                self.welcome
+-                    .handle(crate::welcome_surface::WelcomeInput::FocusMenu);
+-            } else {
+-                self.focus = Focus::Prompt;
+-                self.welcome
+-                    .handle(crate::welcome_surface::WelcomeInput::FocusPrompt);
+-            }
+-            return;
+-        }
+-
+-        if self.active_review_surface.is_none()
+-            && !self.startup_shell_visible()
+-            && !self.session_shell_operator_rail_interactive()
+-        {
+-            self.focus = match self.focus {
+-                Focus::Prompt => Focus::Details,
+-                Focus::Details if self.terminal_panel_visible() => Focus::Terminal,
+-                Focus::Terminal | Focus::Details | Focus::List => Focus::Prompt,
+-            };
+-            self.live_details_drawer_open = false;
+-            return;
+-        }
+-
+-        self.focus = if self.active_review_surface.is_none() {
+-            match self.focus {
+-                Focus::Details => Focus::List,
+-                Focus::List => Focus::Prompt,
+-                Focus::Terminal => Focus::Prompt,
+-                Focus::Prompt => Focus::Details,
+-            }
+-        } else {
+-            match self.focus {
+-                Focus::List => Focus::Details,
+-                Focus::Details | Focus::Terminal => Focus::Prompt,
+-                Focus::Prompt => Focus::List,
+-            }
+-        };
+-
+-        if self.active_review_surface.is_none() {
+-            self.live_details_drawer_open = self.focus == Focus::List;
+-        }
+-    }
+-
+-    fn cycle_focus_backward(&mut self) {
+-        if self.replay_mode {
+-            if !self.session_shell_operator_rail_interactive() {
+-                self.focus = if self.focus == Focus::Terminal {
+-                    Focus::Details
+-                } else if self.terminal_panel_visible() {
+-                    Focus::Terminal
+-                } else {
+-                    Focus::Details
+-                };
+-                return;
+-            }
+-
+-            self.focus = match self.focus {
+-                Focus::List | Focus::Prompt => {
+-                    if self.terminal_panel_visible() {
+-                        Focus::Terminal
+-                    } else {
+-                        Focus::Details
+-                    }
+-                }
+-                Focus::Terminal => Focus::Details,
+-                Focus::Details => Focus::List,
+-            };
+-            return;
+-        }
+-
+-        if self.post_run_handoff_visible() {
+-            self.focus = if self.active_tab == Tab::Run {
+-                Focus::List
+-            } else {
+-                match self.focus {
+-                    Focus::List | Focus::Prompt | Focus::Terminal => Focus::Details,
+-                    Focus::Details => Focus::List,
+-                }
+-            };
+-            return;
+-        }
+-
+-        if self.startup_shell_visible() {
+-            if self.focus == Focus::Prompt {
+-                self.focus = Focus::List;
+-                self.welcome
+-                    .handle(crate::welcome_surface::WelcomeInput::FocusMenu);
+-            } else {
+-                self.focus = Focus::Prompt;
+-                self.welcome
+-                    .handle(crate::welcome_surface::WelcomeInput::FocusPrompt);
+-            }
+-            return;
+-        }
+-
+-        if self.active_review_surface.is_none()
+-            && !self.startup_shell_visible()
+-            && !self.session_shell_operator_rail_interactive()
+-        {
+-            self.focus = match self.focus {
+-                Focus::Prompt if self.terminal_panel_visible() => Focus::Terminal,
+-                Focus::Prompt => Focus::Details,
+-                Focus::Terminal => Focus::Details,
+-                Focus::Details => Focus::Prompt,
+-                Focus::List => Focus::Details,
+-            };
+-            self.live_details_drawer_open = false;
+-            return;
+-        }
+-
+-        self.focus = if self.active_review_surface.is_none() {
+-            match self.focus {
+-                Focus::Details if self.terminal_panel_visible() => Focus::Terminal,
+-                Focus::Details => Focus::Prompt,
+-                Focus::Terminal => Focus::Prompt,
+-                Focus::List => Focus::Details,
+-                Focus::Prompt => Focus::List,
+-            }
+-        } else {
+-            match self.focus {
+-                Focus::List => Focus::Prompt,
+-                Focus::Details | Focus::Terminal => Focus::List,
+-                Focus::Prompt => Focus::Details,
+-            }
+-        };
+-
+-        if self.active_review_surface.is_none() {
+-            self.live_details_drawer_open = self.focus == Focus::List;
+-        }
+-    }
+-
+     fn execute_action_from_key(&mut self, action: Action, key: KeyEvent) {
+         if action == Action::Quit {
+             self.arm_quit_confirmation(key);
+@@ -1242,16 +1030,8 @@ impl AppState {
+                 Focus::Details => self.details_scroll = self.details_scroll.saturating_sub(1),
+                 Focus::Prompt => {}
+             },
+-            Action::FocusNext => {
+-                if self.replay_mode && !self.session_shell_operator_rail_interactive() {
+-                    self.focus = Focus::Details;
+-                } else {
+-                    self.cycle_focus_forward();
+-                }
+-            }
+-            Action::FocusPrev => {
+-                self.cycle_focus_backward();
+-            }
++            Action::FocusNext => self.cycle_focus(false),
++            Action::FocusPrev => self.cycle_focus(true),
+             Action::RevertWorkspace => {
+                 self.open_rewind();
+             }
+diff --git c/crates/harness-tui/src/app/tests.rs i/crates/harness-tui/src/app/tests.rs
+index 86b102e1..0a04063b 100644
+--- c/crates/harness-tui/src/app/tests.rs
++++ i/crates/harness-tui/src/app/tests.rs
+@@ -1429,7 +1429,7 @@ mod session_navigation_tests;
+ 
+ delegate_test!(parent_transcript_hides_child_prompt_before_task_tool_finishes => session_navigation_tests::parent_child_parent_transcript_hides_child_prompt_before_task_tool_finishes);
+ 
+-delegate_test!(replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits => session_navigation_tests::replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits);
++delegate_test!(focus_shortcuts_follow_visible_shell_and_preserve_replay => session_navigation_tests::focus_shortcuts_follow_visible_shell_and_preserve_replay);
+ 
+ delegate_test!(child_session_navigation_keybinds_follow_default_contract => session_navigation_tests::child_session_navigation_keybinds_follow_default_contract);
+ 
+diff --git c/crates/harness-tui/src/app/tests/session_navigation_tests.rs i/crates/harness-tui/src/app/tests/session_navigation_tests.rs
+index b0f86307..87e4b88c 100644
+--- c/crates/harness-tui/src/app/tests/session_navigation_tests.rs
++++ i/crates/harness-tui/src/app/tests/session_navigation_tests.rs
+@@ -5,20 +5,73 @@ use crate::UnwrapOrAbort;
+ mod session_navigation_parent_child_tests;
+ pub(super) use session_navigation_parent_child_tests::parent_transcript_hides_child_prompt_before_task_tool_finishes as parent_child_parent_transcript_hides_child_prompt_before_task_tool_finishes;
+ 
+-pub(super) fn replay_mode_focus_cycle_skips_prompt_and_blocks_draft_edits() {
+-    let mut app = AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new());
+-
+-    assert_eq!(app.focus, Focus::Details);
+-
+-    app.handle_key(key(KeyCode::Tab));
+-    assert_eq!(app.focus, Focus::Details);
+-
+-    app.handle_key(key(KeyCode::Tab));
+-    assert_eq!(app.focus, Focus::Details);
+-
+-    app.focus = Focus::Prompt;
+-    app.handle_key(key(KeyCode::Char('x')));
+-    assert!(app.composer.prompt_buffer.is_empty());
++pub(super) fn focus_shortcuts_follow_visible_shell_and_preserve_replay() {
++    use Focus::{Details, List, Prompt, Terminal};
++    let cases: [(AppState, &[(u8, Focus)]); 3] = [
++        (
++            AppState::new_startup(Vec::new(), None),
++            &[(11, List), (11, Prompt), (12, List), (12, Prompt)],
++        ),
++        (
++            AppState::new_live(None, false, None),
++            &[
++                (11, Details),
++                (12, Prompt),
++                (9, Prompt),
++                (12, Terminal),
++                (11, Prompt),
++                (11, Details),
++                (11, Terminal),
++                (9, Details),
++                (12, Prompt),
++                (10, List),
++                (12, Details),
++                (11, Prompt),
++                (10, List),
++                (11, Prompt),
++            ],
++        ),
++        (
++            AppState::new_replay(PathBuf::from("/tmp/replay-session"), Vec::new()),
++            &[
++                (11, Details),
++                (12, Details),
++                (9, Details),
++                (12, Terminal),
++                (11, Details),
++            ],
++        ),
++    ];
++    for (mut app, steps) in cases {
++        app.apply_keybindings(BTreeMap::from([
++            ("toggle_terminal_panel".into(), "F9".into()),
++            ("toggle_tasks".into(), "F10".into()),
++            ("focus_next".into(), "F11".into()),
++            ("focus_prev".into(), "F12".into()),
++        ]));
++        for &(function_key, expected) in steps {
++            app.handle_key(key(KeyCode::F(function_key)));
++            assert_eq!(app.focus, expected, "F{function_key}");
++            assert_eq!(
++                app.details_drawer_open(),
++                !app.startup_shell_visible() && !app.replay_mode && expected == List,
++                "drawer after F{function_key}"
++            );
++        }
++        if app.replay_mode {
++            // Default Tab variants stay on the transcript even with a terminal panel.
++            for code in [KeyCode::Tab, KeyCode::BackTab] {
++                app.handle_key(key(code));
++                assert_eq!(app.focus, Details);
++            }
++            app.focus = Prompt;
++            app.handle_key(key(KeyCode::Char('x')));
++            assert!(app.composer.prompt_buffer.is_empty());
++        } else {
++            app.handle_key(key(KeyCode::Char('x')));
++            assert_eq!(app.composer.prompt_buffer, "x");
++        }
++    }
+ }
+ 
+ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
+diff --git c/crates/harness-tui/tests/help_browser_test.rs i/crates/harness-tui/tests/help_browser_test.rs
+index 14618c1f..535ea2ce 100644
+--- c/crates/harness-tui/tests/help_browser_test.rs
++++ i/crates/harness-tui/tests/help_browser_test.rs
+@@ -257,4 +257,31 @@ fn help_preempts_palette_and_close_restores_original_focus() {
+     assert!(!help.contains("Command Palette"), "{help}");
+     assert!(!app.palette_visible);
+     assert_eq!(app.focus, Focus::Prompt);
++
++    for replay in [false, true] {
++        let mut app = if replay {
++            AppState::new_replay("/tmp/help-replay".into(), Vec::new())
++        } else {
++            AppState::new_live(None, false, None)
++        };
++        app.apply_keybindings(BTreeMap::from([
++            ("toggle_terminal_panel".into(), "F9".into()),
++            ("focus_prev".into(), "F12".into()),
++        ]));
++        app.handle_key(key(KeyCode::F(9)));
++        app.handle_key(key(KeyCode::F(12)));
++        assert_eq!(app.focus, Focus::Terminal);
++        open_help(&mut app);
++        assert_eq!(
++            app.focus,
++            if replay {
++                Focus::Terminal
++            } else {
++                Focus::Details
++            }
++        );
++        app.handle_key(key(KeyCode::Esc));
++        assert_eq!(app.review_surface(), None);
++        assert_eq!(app.focus, Focus::Terminal);
++    }
+ }

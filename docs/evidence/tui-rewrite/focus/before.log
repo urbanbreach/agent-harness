@@ -1,0 +1,21 @@
+warning: unnecessary parentheses around closure body
+  --> vendor/crossterm/src/terminal/sys/unix.rs:87:50
+   |
+87 |     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+   |                                                  ^                            ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+87 -     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+87 +     let file = File::open("/dev/tty").map(|file| FileDesc::Owned(file.into()));
+   |
+
+warning: `crossterm` (lib) generated 1 warning (run `cargo fix --lib -p crossterm` to apply 1 suggestion)
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.67s
+────────────
+ Nextest run ID 13a9ade8-4198-484c-b1cf-63391ec3cf70 with nextest profile: ci
+    Starting 1 test across 1 binary (1250 tests skipped)
+────────────
+     Summary [   0.009s] 1 test run: 1 passed, 1250 skipped

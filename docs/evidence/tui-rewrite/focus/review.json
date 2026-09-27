@@ -1,0 +1,15 @@
+{
+  "reviewer": "/root/tui_review",
+  "decision": "approved for committing this bounded focus replacement",
+  "blocking_findings": [],
+  "verified_artifacts_before_review_receipt": 37,
+  "verified_source_files": 6,
+  "verified": [
+    "exact staged implementation patch and executable hashes",
+    "288 matching transition results",
+    "543 matching complete frame and ANSI pairs",
+    "10 exact paired browser PNGs and matching snapshots apart from disclosed observer counters",
+    "natural exits and terminal/resource restoration"
+  ],
+  "limits": "No performance improvement or whole-rewrite completion implied. Reviewer performed no builds, tests or modifications."
+}

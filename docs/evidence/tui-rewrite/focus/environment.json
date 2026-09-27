@@ -1,0 +1,57 @@
+{
+  "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)\nbinary: rustc\ncommit-hash: 88d9e12ae178fab0fb5cc050a94da85685d449ea\ncommit-date: 2026-08-18\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.0\nLLVM version: 22.1.8\n",
+  "platform": "Linux Thinkpad 7.2.5-3-omarchy #1 SMP PREEMPT_DYNAMIC Mon, 14 Sep 2026 19:55:01 +0000 x86_64 GNU/Linux\n",
+  "browser": {
+    "browserVersion": "152.0.7977.82",
+    "xtermVersion": "6.0.0",
+    "playwrightVersion": "1.55.0",
+    "font": {
+      "family": "Harness QA Mono",
+      "source": "/usr/share/fonts/Adwaita/AdwaitaMono-Regular.ttf",
+      "embedded": true
+    },
+    "viewport": {
+      "width": 3424,
+      "height": 1024
+    },
+    "renderSurface": {
+      "root": {
+        "x": 16,
+        "y": 16,
+        "width": 3392,
+        "height": 800
+      },
+      "screen": {
+        "x": 16,
+        "y": 16,
+        "width": 1344,
+        "height": 800
+      }
+    },
+    "renderDimensions": {
+      "css": {
+        "cell": {
+          "width": 9.6,
+          "height": 20
+        },
+        "canvas": {
+          "width": 1344,
+          "height": 800
+        }
+      },
+      "device": {
+        "cell": {
+          "width": 9.600021362304688,
+          "height": 20
+        },
+        "canvas": {
+          "width": 1344.0029907226562,
+          "height": 800
+        }
+      },
+      "cellWidthTimesCols": 1344
+    },
+    "console": []
+  },
+  "terminal_snapshot_location": "browser.tar.gz: before/report.json and candidate/report.json"
+}

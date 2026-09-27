@@ -1,0 +1,7 @@
+{
+  "cases": 288,
+  "equal": true,
+  "before_sha256": "e88122f10572389f3a11609c271969ec3baa52ed3e5f50d2257ec78e81837c15",
+  "candidate_sha256": "e88122f10572389f3a11609c271969ec3baa52ed3e5f50d2257ec78e81837c15",
+  "scope": "Pure focus transitions with production method bodies; stubs mirror traced lifecycle/terminal predicates. Public key routing is checked separately with nextest."
+}
