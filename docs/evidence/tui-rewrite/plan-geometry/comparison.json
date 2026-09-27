@@ -1,0 +1,210 @@
+[
+  {
+    "id": "plan-unicode-list-40x24-reduced-0ms",
+    "changed_ratatui_cells": 8,
+    "changed_xterm_cells": 8,
+    "allowed_rows_zero_based": [
+      3
+    ],
+    "different_screen_fields": [
+      "cells",
+      "scrollback",
+      "text",
+      "lines"
+    ],
+    "renderCount": {
+      "reference": 4,
+      "candidate": 4
+    },
+    "pixel_difference_bounds": [
+      279,
+      60,
+      380,
+      80
+    ]
+  },
+  {
+    "id": "plan-unicode-preview-40x24-reduced-0ms",
+    "changed_ratatui_cells": 36,
+    "changed_xterm_cells": 36,
+    "allowed_rows_zero_based": [
+      3,
+      4,
+      5,
+      6
+    ],
+    "different_screen_fields": [
+      "cells",
+      "scrollback",
+      "text",
+      "lines"
+    ],
+    "renderCount": {
+      "reference": 6,
+      "candidate": 6
+    },
+    "pixel_difference_bounds": [
+      186,
+      62,
+      380,
+      135
+    ]
+  },
+  {
+    "id": "plan-unicode-list-80x24-reduced-0ms",
+    "changed_ratatui_cells": 5,
+    "changed_xterm_cells": 5,
+    "allowed_rows_zero_based": [
+      3
+    ],
+    "different_screen_fields": [
+      "cells",
+      "scrollback",
+      "text",
+      "renderCount",
+      "lines"
+    ],
+    "renderCount": {
+      "reference": 4,
+      "candidate": 3
+    },
+    "pixel_difference_bounds": [
+      692,
+      62,
+      739,
+      75
+    ]
+  },
+  {
+    "id": "plan-unicode-preview-80x24-reduced-0ms",
+    "changed_ratatui_cells": 70,
+    "changed_xterm_cells": 70,
+    "allowed_rows_zero_based": [
+      3,
+      4,
+      5,
+      6
+    ],
+    "different_screen_fields": [
+      "cells",
+      "scrollback",
+      "text",
+      "renderCount",
+      "lines"
+    ],
+    "renderCount": {
+      "reference": 6,
+      "candidate": 4
+    },
+    "pixel_difference_bounds": [
+      378,
+      62,
+      764,
+      135
+    ]
+  },
+  {
+    "id": "plan-unicode-list-120x40-reduced-0ms",
+    "changed_ratatui_cells": 5,
+    "changed_xterm_cells": 5,
+    "allowed_rows_zero_based": [
+      9
+    ],
+    "different_screen_fields": [
+      "cells",
+      "scrollback",
+      "text",
+      "lines"
+    ],
+    "renderCount": {
+      "reference": 4,
+      "candidate": 4
+    },
+    "pixel_difference_bounds": [
+      923,
+      182,
+      969,
+      195
+    ]
+  },
+  {
+    "id": "plan-unicode-preview-120x40-reduced-0ms",
+    "changed_ratatui_cells": 76,
+    "changed_xterm_cells": 76,
+    "allowed_rows_zero_based": [
+      9,
+      10,
+      11,
+      12
+    ],
+    "different_screen_fields": [
+      "cells",
+      "scrollback",
+      "text",
+      "lines"
+    ],
+    "renderCount": {
+      "reference": 7,
+      "candidate": 7
+    },
+    "pixel_difference_bounds": [
+      570,
+      182,
+      995,
+      255
+    ]
+  },
+  {
+    "id": "plan-unicode-list-160x50-reduced-0ms",
+    "changed_ratatui_cells": 5,
+    "changed_xterm_cells": 5,
+    "allowed_rows_zero_based": [
+      14
+    ],
+    "different_screen_fields": [
+      "cells",
+      "scrollback",
+      "text",
+      "renderCount",
+      "lines"
+    ],
+    "renderCount": {
+      "reference": 5,
+      "candidate": 4
+    },
+    "pixel_difference_bounds": [
+      1115,
+      282,
+      1161,
+      295
+    ]
+  },
+  {
+    "id": "plan-unicode-preview-160x50-reduced-0ms",
+    "changed_ratatui_cells": 76,
+    "changed_xterm_cells": 76,
+    "allowed_rows_zero_based": [
+      14,
+      15,
+      16,
+      17
+    ],
+    "different_screen_fields": [
+      "cells",
+      "scrollback",
+      "text",
+      "renderCount",
+      "lines"
+    ],
+    "renderCount": {
+      "reference": 7,
+      "candidate": 6
+    },
+    "pixel_difference_bounds": [
+      762,
+      282,
+      1187,
+      355
+    ]
+  }
+]

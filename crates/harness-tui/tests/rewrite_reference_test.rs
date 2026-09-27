@@ -17,6 +17,8 @@ use serde_json::{json, Value};
 
 #[path = "support/rewrite_journey.rs"]
 mod journey;
+#[path = "support/rewrite_plan_geometry.rs"]
+mod plan_geometry;
 #[path = "support/rewrite_workflows.rs"]
 mod workflows;
 use journey::{Journey, Result};

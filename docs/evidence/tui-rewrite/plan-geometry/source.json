@@ -1,0 +1,29 @@
+{
+  "base": "f1c7d3bcb73a3f93ad62f248a85db1b4e8c73be1",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/ui_chrome.rs",
+      "sha256": "5b927ed461a1cbc09be2d04dbb925c5242dd094ca4714b1b45b818d4896d0387"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/plan_view.rs",
+      "sha256": "83297c067da84894a2ef4b31ddce8cd034e1e2cc3c07106627dbaf394aebb3c5"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_terminal.rs",
+      "sha256": "915288a174f86888f3a1361cc52fef2069cea93c6695fc2e5da83de3ae8d5a06"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_bash.rs",
+      "sha256": "e76e6feb47fb6a059fcecb84dba1b9831c818fd656ea53688487fc743a33cb39"
+    },
+    {
+      "path": "crates/harness-tui/tests/rewrite_reference_test.rs",
+      "sha256": "eb5865adb9df6c7b780bea37260007a0058fbb2bc5e10c85096f059b7b49d24e"
+    },
+    {
+      "path": "crates/harness-tui/tests/support/rewrite_plan_geometry.rs",
+      "sha256": "1e3b8822d16ae49ab3f50ea15e7075a5135f6a41c0bb3f9fd34db9c89f96f7ff"
+    }
+  ]
+}

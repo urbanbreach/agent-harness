@@ -1,0 +1,68 @@
+    Checking harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+error: non-NFC Unicode sequence detected
+   --> crates/harness-tui/src/ui_terminal.rs:332:28
+    |
+332 |             (1, vec!["#️", "é", "#️"]),
+    |                           ^^^ help: consider replacing the string with: `"é"`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#unicode_not_nfc
+    = note: `-D clippy::unicode-not-nfc` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::unicode_not_nfc)]`
+
+error: non-NFC Unicode sequence detected
+   --> crates/harness-tui/src/ui_terminal.rs:333:28
+    |
+333 |             (2, vec!["#️", "é", "#️"]),
+    |                           ^^^ help: consider replacing the string with: `"é"`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#unicode_not_nfc
+
+error: non-NFC Unicode sequence detected
+   --> crates/harness-tui/src/ui_terminal.rs:334:22
+    |
+334 |             (3, vec!["#️é", "#️"]),
+    |                      ^^^^ help: consider replacing the string with: `"#️é"`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#unicode_not_nfc
+
+error: non-NFC Unicode sequence detected
+   --> crates/harness-tui/src/ui_terminal.rs:336:60
+    |
+336 |             let rows = wrap_terminal_lines(vec![Line::from("#️é#️")], width);
+    |                                                            ^^^^^ help: consider replacing the string with: `"#️é#️"`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#unicode_not_nfc
+
+error: non-NFC Unicode sequence detected
+   --> crates/harness-tui/src/ui_transcript_bash.rs:453:33
+    |
+453 |             (1, vec!["#", "#️", "é", "#️"]),
+    |                                ^^^ help: consider replacing the string with: `"é"`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#unicode_not_nfc
+
+error: non-NFC Unicode sequence detected
+   --> crates/harness-tui/src/ui_transcript_bash.rs:454:33
+    |
+454 |             (2, vec!["#", "#️", "é", "#️"]),
+    |                                ^^^ help: consider replacing the string with: `"é"`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#unicode_not_nfc
+
+error: non-NFC Unicode sequence detected
+   --> crates/harness-tui/src/ui_transcript_bash.rs:455:27
+    |
+455 |             (3, vec!["#", "#️é", "#️"]),
+    |                           ^^^^ help: consider replacing the string with: `"#️é"`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#unicode_not_nfc
+
+error: non-NFC Unicode sequence detected
+   --> crates/harness-tui/src/ui_transcript_bash.rs:461:39
+    |
+461 |                     description: Some("# #️é#️"),
+    |                                       ^^^^^^^ help: consider replacing the string with: `"# #️é#️"`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#unicode_not_nfc
+
+error: could not compile `harness-tui` (lib test) due to 8 previous errors

@@ -1,5 +1,6 @@
 // allow: SIZE_OK — TUI rendering (indivisible view model)
 use super::*;
+use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) fn render_terminal_panel(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if area.width == 0 || area.height == 0 {
@@ -266,11 +267,12 @@ fn wrap_terminal_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
             let available = width.saturating_sub(current_width).max(1);
             let mut chunk = take_width_prefix(remaining, available);
             if chunk.is_empty() {
-                chunk = remaining
-                    .char_indices()
-                    .nth(1)
-                    .map(|(index, _)| &remaining[..index])
-                    .unwrap_or(remaining);
+                if current_width > 0 {
+                    rows.push(Line::from(std::mem::take(&mut current)));
+                    current_width = 0;
+                    continue;
+                }
+                chunk = remaining.graphemes(true).next().unwrap_or(remaining);
             }
 
             current_width = current_width.saturating_add(display_width(chunk));
@@ -325,6 +327,31 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(rendered, vec!["stdout> ab", "cdefghij"]);
+
+        for (width, text, expected) in [
+            (
+                1,
+                "#\u{fe0f}e\u{301}#\u{fe0f}",
+                vec!["#\u{fe0f}", "e\u{301}", "#\u{fe0f}"],
+            ),
+            (
+                2,
+                "#\u{fe0f}e\u{301}#\u{fe0f}",
+                vec!["#\u{fe0f}", "e\u{301}", "#\u{fe0f}"],
+            ),
+            (
+                3,
+                "#\u{fe0f}e\u{301}#\u{fe0f}",
+                vec!["#\u{fe0f}e\u{301}", "#\u{fe0f}"],
+            ),
+            (1, "\u{301}#\u{fe0f}", vec!["\u{301}#\u{fe0f}"]),
+        ] {
+            let rows = wrap_terminal_lines(vec![Line::from(text.to_string())], width);
+            assert_eq!(
+                rows.iter().map(Line::to_string).collect::<Vec<_>>(),
+                expected
+            );
+        }
     }
 
     #[test]
