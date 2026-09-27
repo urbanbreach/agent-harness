@@ -1,0 +1,124 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.10s
+────────────
+ Nextest run ID 364a0d1b-40c6-4d14-8999-7e8a2fca5395 with nextest profile: ci
+    Starting 1 test across 77 binaries (1743 tests and 1 binary skipped, including 1 binary via profile.default.default-filter)
+        FAIL [   0.030s] (1/1) harness-tui app::tests::terminal_panel_focus_scrolls_independently_from_transcript
+  stdout ───
+
+    running 1 test
+    test app::tests::terminal_panel_focus_scrolls_independently_from_transcript ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::terminal_panel_focus_scrolls_independently_from_transcript
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1324 filtered out; finished in 0.02s
+
+  stderr ───
+
+    thread 'app::tests::terminal_panel_focus_scrolls_independently_from_transcript' (2286569) panicked at crates/harness-tui/src/app/tests/terminal_panel_tests.rs:273:9:
+                                                                                                                                                
+      git:test-workspace /workspace/agent-harness                                                                                               
+                                                                                                                                                
+                                                                                                                                                
+         ❯ Run a shell command                                                                                                      12:00 PM    
+                                                                                                                                                
+                                                                                                                                                
+         ◆ Run run TUI tests                                                                                                                    
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+    Terminal  1 command · scrolled                                                                                                              
+                                                                                                                                                
+            row 33: output output output output output output output output output output output output                                         
+            row 34: output output output output output output output output output output output output                                         
+            row 35: output output output output output output output output output output output output                                         
+            row 36: output output output output output output output output output output output output                                         
+            row 37: output output output output output output output output output output output output                                         
+            row 38: output output output output output output output output output output output output                                         
+            row 39: output output output output output output output output output output output output                                         
+                                                                                                                                                
+        ⠋ Waiting for response… 0.0s                                                                                                      0.0s  
+                                                                                                                                                
+      ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  
+      │ ❯ Build anything                                                                                                                     │  
+      ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  
+                                                                                                                                                
+      Enter:queue  │  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts                                                                     
+                                                                                                                                                
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.039s] 1 test run: 0 passed, 1 failed, 1743 skipped
+        FAIL [   0.030s] (1/1) harness-tui app::tests::terminal_panel_focus_scrolls_independently_from_transcript
+  stdout ───
+
+    running 1 test
+    test app::tests::terminal_panel_focus_scrolls_independently_from_transcript ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::terminal_panel_focus_scrolls_independently_from_transcript
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1324 filtered out; finished in 0.02s
+
+  stderr ───
+
+    thread 'app::tests::terminal_panel_focus_scrolls_independently_from_transcript' (2286569) panicked at crates/harness-tui/src/app/tests/terminal_panel_tests.rs:273:9:
+                                                                                                                                                
+      git:test-workspace /workspace/agent-harness                                                                                               
+                                                                                                                                                
+                                                                                                                                                
+         ❯ Run a shell command                                                                                                      12:00 PM    
+                                                                                                                                                
+                                                                                                                                                
+         ◆ Run run TUI tests                                                                                                                    
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                                                                
+    Terminal  1 command · scrolled                                                                                                              
+                                                                                                                                                
+            row 33: output output output output output output output output output output output output                                         
+            row 34: output output output output output output output output output output output output                                         
+            row 35: output output output output output output output output output output output output                                         
+            row 36: output output output output output output output output output output output output                                         
+            row 37: output output output output output output output output output output output output                                         
+            row 38: output output output output output output output output output output output output                                         
+            row 39: output output output output output output output output output output output output                                         
+                                                                                                                                                
+        ⠋ Waiting for response… 0.0s                                                                                                      0.0s  
+                                                                                                                                                
+      ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  
+      │ ❯ Build anything                                                                                                                     │  
+      ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  
+                                                                                                                                                
+      Enter:queue  │  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts                                                                     
+                                                                                                                                                
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

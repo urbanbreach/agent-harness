@@ -1,0 +1,35 @@
+{
+  "base": "1ea17502228fd497eb8bee2af77be54889401334",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/app/key_interaction.rs",
+      "bytes": 74136,
+      "sha256": "5cf686f75fcdebb090e5ac4b791bf9cb30b160bf6e8e1dde3c6605b5f29caa45"
+    },
+    {
+      "path": "crates/harness-tui/src/app/mouse_interaction.rs",
+      "bytes": 70545,
+      "sha256": "19d3166b00057348aae0c7178b01b1d098a3c7a3f64f596f2faea32d8809cc4b"
+    },
+    {
+      "path": "crates/harness-tui/src/app/terminal_panel.rs",
+      "bytes": 9502,
+      "sha256": "3730faab5334b27507324d6180f06c35156fa9b8cf8141107173b4680e96147b"
+    },
+    {
+      "path": "crates/harness-tui/src/app/tests/terminal_panel_tests.rs",
+      "bytes": 9490,
+      "sha256": "a64c90fb07d581cb8a46b6430cd9a27b26c2e6164cb77f3572c6f76577196f5b"
+    },
+    {
+      "path": "crates/harness-tui/src/ui.rs",
+      "bytes": 35652,
+      "sha256": "2bb96668047b385c677430705a10814d8f76e9e56b03899a085a30ccdb7539ac"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_terminal.rs",
+      "bytes": 10528,
+      "sha256": "07a5c87450e973122fd38b303f2dc8f2001c7701cbebf7a14ef849db3c355996"
+    }
+  ]
+}

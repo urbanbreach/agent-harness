@@ -18,14 +18,9 @@ pub(super) fn render_terminal_panel(frame: &mut Frame, app: &AppState, area: Rec
         return;
     }
 
-    let lines = if entries.is_empty() {
-        terminal_panel_empty_lines(theme, surface)
-    } else {
-        terminal_panel_lines(&entries, theme, surface)
-    };
+    let lines = terminal_panel_lines(&entries, theme, surface);
     let lines = wrap_terminal_lines(lines, inner.width);
     let max_scroll = lines.len().saturating_sub(usize::from(inner.height));
-    app.terminal_panel.last_max_scroll.set(max_scroll);
     let scroll_from_bottom = if app.terminal_panel_follow() {
         0
     } else {
@@ -46,6 +41,30 @@ pub(super) fn render_terminal_panel(frame: &mut Frame, app: &AppState, area: Rec
             .wrap(Wrap { trim: false }),
         inner,
     );
+}
+
+pub(crate) fn terminal_panel_inner(app: &AppState, area: Rect) -> Rect {
+    let theme = app.theme();
+    let surface = ui_chrome::divided_shell_surface(theme);
+    ui_chrome::panel_block(theme, "", app.focus == Focus::Terminal, surface).inner(area)
+}
+
+pub(crate) fn terminal_panel_max_scroll(app: &AppState) -> usize {
+    let root = app.last_frame_area().unwrap_or(Rect::new(0, 0, 80, 24));
+    let Some(inner) = FrameLayoutPlan::for_app(app, root)
+        .terminal_panel
+        .map(|area| terminal_panel_inner(app, area))
+        .filter(|inner| inner.width > 0 && inner.height > 0)
+        .or(app.terminal_panel.last_content_area)
+    else {
+        return 0;
+    };
+    let theme = app.theme();
+    let surface = ui_chrome::divided_shell_surface(theme);
+    let lines = terminal_panel_lines(&app.terminal_panel_entries(), theme, surface);
+    wrap_terminal_lines(lines, inner.width)
+        .len()
+        .saturating_sub(usize::from(inner.height))
 }
 
 fn terminal_panel_title(app: &AppState, command_count: usize, theme: &Theme) -> Line<'static> {
@@ -87,6 +106,9 @@ fn terminal_panel_lines(
     theme: &Theme,
     surface: Color,
 ) -> Vec<Line<'static>> {
+    if entries.is_empty() {
+        return terminal_panel_empty_lines(theme, surface);
+    }
     let mut lines = Vec::new();
     for (idx, entry) in entries.iter().enumerate() {
         if idx > 0 {

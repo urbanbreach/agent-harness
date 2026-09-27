@@ -151,6 +151,7 @@ pub(crate) use ui_secondary::{
 use ui_secondary::{render_live_details_overlay, render_operator_sidebar};
 use ui_secondary_events_tab::render_help_tab;
 use ui_terminal::render_terminal_panel;
+pub(crate) use ui_terminal::{terminal_panel_inner, terminal_panel_max_scroll};
 use ui_transcript::render_transcript_pane;
 pub(crate) use ui_transcript::transcript_diff_hunk_rows;
 pub(crate) use ui_transcript::transcript_entry_scroll_top;

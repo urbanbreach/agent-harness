@@ -1,0 +1,20 @@
+Independent reviewer: /root/tui_review
+Scope: terminal-panel scroll ownership source and focused behavioral coverage.
+No builds or tests run by the reviewer.
+
+Source approved; no remaining blockers.
+
+Frame preparation retains only valid panel geometry. Home recomputes current
+output rows using current geometry, falling back to the retained rectangle while
+hidden. Painting remains read-only, and both paths use the same chrome padding
+and wrapping.
+
+The zero-height round trips at 140 and 60 columns cover the regression. The green
+log reports all 10 scoped checks passing.
+
+The earlier review confirmed that long rows fit at 140 columns but wrap at 60,
+so reusing the wide-screen limit would fail the first-row assertion. Home runs
+before either paint; PageDown and transcript independence remain covered.
+
+This is a source review of one correction, not approval of whole-rewrite
+completion or a new performance or browser-latency claim.
