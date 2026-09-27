@@ -9,7 +9,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::app::{AppState, Focus};
 use crate::overlay::OverlayKind;
 use crate::theme::{LiveShellLayout, Theme};
-use crate::theme_tokens::{ViewportBreakpoint, DESIGN_TOKENS};
+use crate::theme_tokens::DESIGN_TOKENS;
 
 mod overlays;
 mod permission;
@@ -28,14 +28,9 @@ pub(crate) use permission::{
     PermissionDockGeometry, PermissionDockMeasure, QuestionDockGeometry, QuestionDockMeasure,
     QUESTION_AUTO_SCROLL, QUESTION_OUTER_FOOTER_ROWS,
 };
-#[cfg(test)]
-pub(crate) use surfaces::lifecycle_card_area;
-#[cfg(test)]
-use surfaces::split_secondary_surface;
 pub(crate) use surfaces::{
-    inset_rect, live_empty_state_area, pad_rect, permission_dock_layout,
-    runtime_state_surface_area, runtime_state_surface_width, secondary_surface_layout,
-    startup_shell_area, ControlDockLayout, EdgeInsets, HELP_MODAL_LAYOUT,
+    inset_rect, live_empty_state_area, runtime_state_surface_area, runtime_state_surface_width,
+    ControlDockLayout, HELP_MODAL_LAYOUT,
 };
 
 pub(crate) use surfaces::release_notes_modal_area;
@@ -135,17 +130,6 @@ fn inset_composer_width(width: u16) -> u16 {
     width
         .saturating_sub(composer_horizontal_inset(width).saturating_mul(2))
         .max(1)
-}
-
-fn design_breakpoint(width: u16) -> ViewportBreakpoint {
-    DESIGN_TOKENS
-        .breakpoints
-        .all
-        .iter()
-        .rev()
-        .find(|breakpoint| width >= breakpoint.width)
-        .copied()
-        .unwrap_or(DESIGN_TOKENS.breakpoints.all[0])
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1108,22 +1092,6 @@ mod tests {
     use super::*;
     use crate::UnwrapOrAbort;
     use unicode_segmentation::UnicodeSegmentation;
-
-    #[test]
-    fn split_secondary_surface_stacks_vertically_in_narrow_tall_windows() {
-        let [top, bottom] = split_secondary_surface(Rect::new(0, 0, 60, 24), 40, 1);
-
-        assert_eq!(top, Rect::new(0, 0, 60, 9));
-        assert_eq!(bottom, Rect::new(0, 10, 60, 14));
-    }
-
-    #[test]
-    fn split_secondary_surface_keeps_horizontal_layout_when_width_allows() {
-        let [left, right] = split_secondary_surface(Rect::new(0, 0, 100, 24), 40, 1);
-
-        assert_eq!(left, Rect::new(0, 0, 39, 24));
-        assert_eq!(right, Rect::new(40, 0, 60, 24));
-    }
 
     #[test]
     fn lifecycle_overlay_stays_centered_in_minimum_geometry() {

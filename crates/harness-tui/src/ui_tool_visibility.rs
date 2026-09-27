@@ -59,17 +59,6 @@ pub(super) fn tool_call_has_transcript_disclosure(tool_call: &ToolCallEntry) -> 
         }
 }
 
-pub(super) fn tool_disclosure_state(
-    tool_call: &ToolCallEntry,
-    tool_output_expanded: bool,
-) -> Option<TranscriptToolCallDisclosureState> {
-    tool_call_has_transcript_disclosure(tool_call).then_some(if tool_output_expanded {
-        TranscriptToolCallDisclosureState::Expanded
-    } else {
-        TranscriptToolCallDisclosureState::Collapsed
-    })
-}
-
 fn tool_output_hidden_behind_disclosure_by_default(tool_call: &ToolCallEntry) -> bool {
     tool_call.status == ToolCallDisplayStatus::Succeeded
         && is_mcp_tool_id(tool_call.effective_tool_id())

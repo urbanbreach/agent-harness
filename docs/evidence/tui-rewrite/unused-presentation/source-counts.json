@@ -1,0 +1,130 @@
+{
+  "method": "physical lines; cfg(test) items and trailing blank separators, plus lib_tests sources, counted as tests",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/app/first_prompt.rs",
+      "production_delta": -35,
+      "test_delta": 0,
+      "total_delta": -35
+    },
+    {
+      "path": "crates/harness-tui/src/app/trust_prompt.rs",
+      "production_delta": -7,
+      "test_delta": 0,
+      "total_delta": -7
+    },
+    {
+      "path": "crates/harness-tui/src/app/welcome.rs",
+      "production_delta": -57,
+      "test_delta": 0,
+      "total_delta": -57
+    },
+    {
+      "path": "crates/harness-tui/src/app/workspace_display.rs",
+      "production_delta": -4,
+      "test_delta": 0,
+      "total_delta": -4
+    },
+    {
+      "path": "crates/harness-tui/src/layout.rs",
+      "production_delta": -12,
+      "test_delta": -20,
+      "total_delta": -32
+    },
+    {
+      "path": "crates/harness-tui/src/layout/surfaces.rs",
+      "production_delta": -149,
+      "test_delta": -60,
+      "total_delta": -209
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests.rs",
+      "production_delta": 0,
+      "test_delta": -2,
+      "total_delta": -2
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/startup_live_empty_surface.rs",
+      "production_delta": 0,
+      "test_delta": -43,
+      "total_delta": -43
+    },
+    {
+      "path": "crates/harness-tui/src/ui.rs",
+      "production_delta": -2,
+      "test_delta": 0,
+      "total_delta": -2
+    },
+    {
+      "path": "crates/harness-tui/src/ui_diff.rs",
+      "production_delta": 0,
+      "test_delta": -50,
+      "total_delta": -50
+    },
+    {
+      "path": "crates/harness-tui/src/ui_diff_render.rs",
+      "production_delta": -8,
+      "test_delta": 0,
+      "total_delta": -8
+    },
+    {
+      "path": "crates/harness-tui/src/ui_diff_syntax.rs",
+      "production_delta": -99,
+      "test_delta": 0,
+      "total_delta": -99
+    },
+    {
+      "path": "crates/harness-tui/src/ui_lifecycle.rs",
+      "production_delta": -113,
+      "test_delta": -4,
+      "total_delta": -117
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_input.rs",
+      "production_delta": -208,
+      "test_delta": -54,
+      "total_delta": -262
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_paths.rs",
+      "production_delta": -21,
+      "test_delta": -16,
+      "total_delta": -37
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_style.rs",
+      "production_delta": -33,
+      "test_delta": -34,
+      "total_delta": -67
+    },
+    {
+      "path": "crates/harness-tui/src/ui_tool_visibility.rs",
+      "production_delta": -11,
+      "test_delta": 0,
+      "total_delta": -11
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript.rs",
+      "production_delta": -3,
+      "test_delta": 0,
+      "total_delta": -3
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_surface.rs",
+      "production_delta": -32,
+      "test_delta": 0,
+      "total_delta": -32
+    },
+    {
+      "path": "crates/harness-tui/src/welcome_surface/layout.rs",
+      "production_delta": -23,
+      "test_delta": 0,
+      "total_delta": -23
+    }
+  ],
+  "totals": {
+    "production_delta": -817,
+    "test_delta": -283,
+    "total_delta": -1100
+  }
+}

@@ -1,0 +1,969 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+warning: constant `TOOL_OUTPUT_DISPLAY_MAX_CHARS` is never used
+   --> crates/harness-tui/src/app.rs:281:7
+    |
+281 | const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: requested on the command line with `--force-warn dead-code`
+
+warning: method `provider_disconnected` is never used
+    --> crates/harness-tui/src/app.rs:3765:19
+     |
+ 914 | impl AppState {
+     | ------------- method in this implementation
+...
+3765 |     pub(crate) fn provider_disconnected(&self) -> bool {
+     |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `merge_orchestration_task_completion_metadata` is never used
+   --> crates/harness-tui/src/app/activity.rs:418:23
+    |
+418 | pub(in crate::app) fn merge_orchestration_task_completion_metadata(
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `previous` and `next` are never used
+   --> crates/harness-tui/src/app/lifecycle.rs:233:33
+    |
+222 | impl StartupLauncherAction {
+    | -------------------------- methods in this implementation
+...
+233 |     pub(in crate::app) const fn previous(self) -> Self {
+    |                                 ^^^^^^^^
+...
+241 |     pub(in crate::app) const fn next(self) -> Self {
+    |                                 ^^^^
+
+warning: methods `is_first_run` and `startup_card_view_model` are never used
+   --> crates/harness-tui/src/app/lifecycle.rs:718:19
+    |
+590 | impl AppState {
+    | ------------- methods in this implementation
+...
+718 |     pub(crate) fn is_first_run(&self) -> bool {
+    |                   ^^^^^^^^^^^^
+...
+742 |     pub(crate) fn startup_card_view_model(&self) -> view_model::StartupCardViewModel {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `interrupt_confirmation_pending` and `interrupt_confirmation_pending_for` are never used
+   --> crates/harness-tui/src/app/lifecycle.rs:960:19
+    |
+776 | impl AppState {
+    | ------------- methods in this implementation
+...
+960 |     pub(crate) fn interrupt_confirmation_pending(&self) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+965 |     fn interrupt_confirmation_pending_for(&self, active_task_ids: &BTreeSet<String>) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variant `Reset` is never constructed
+  --> crates/harness-tui/src/app/modal_interaction.rs:34:5
+   |
+30 | pub(crate) enum ModalAction {
+   |                 ----------- variant in this enum
+...
+34 |     Reset,
+   |     ^^^^^
+   |
+   = note: `ModalAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `runtime_context_profile` is never used
+   --> crates/harness-tui/src/app/model_switcher.rs:222:27
+    |
+111 | impl AppState {
+    | ------------- method in this implementation
+...
+222 |     pub(in crate::app) fn runtime_context_profile(&self) -> &str {
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `is_suggested_duplicate` is never read
+   --> crates/harness-tui/src/app/palette_controller.rs:111:9
+    |
+ 99 | pub struct PaletteRow {
+    |            ---------- field in this struct
+...
+111 |     pub is_suggested_duplicate: bool,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `PaletteRow` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `is_suggested` is never used
+   --> crates/harness-tui/src/app/palette_controller.rs:175:8
+    |
+175 | pub fn is_suggested(app: &AppState, entry: &PaletteCommandEntry) -> bool {
+    |        ^^^^^^^^^^^^
+
+warning: method `mark_resolved` is never used
+  --> crates/harness-tui/src/app/permissions.rs:54:19
+   |
+53 | impl PermissionEntry {
+   | -------------------- method in this implementation
+54 |     pub(crate) fn mark_resolved(
+   |                   ^^^^^^^^^^^^^
+
+warning: function `question_prompt_is_single_select` is never used
+   --> crates/harness-tui/src/app/permissions/question.rs:106:15
+    |
+106 | pub(super) fn question_prompt_is_single_select(prompts: &[QuestionPromptView]) -> bool {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `selected_section` and `focused` are never read
+  --> crates/harness-tui/src/app/secondary_surfaces.rs:12:5
+   |
+10 | pub(crate) struct SecondarySurfaceState {
+   |                   --------------------- fields in this struct
+11 |     status_dialog_visible: bool,
+12 |     selected_section: Option<OperatorSidebarSection>,
+   |     ^^^^^^^^^^^^^^^^
+13 |     focused: bool,
+   |     ^^^^^^^
+   |
+   = note: `SecondarySurfaceState` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `selected_section`, `set_selected_section`, `focused`, `set_focused`, `toggle_section`, and `section_collapsed` are never used
+  --> crates/harness-tui/src/app/secondary_surfaces.rs:51:25
+   |
+38 | impl SecondarySurfaceState {
+   | -------------------------- methods in this implementation
+...
+51 |     pub(crate) const fn selected_section(&self) -> Option<OperatorSidebarSection> {
+   |                         ^^^^^^^^^^^^^^^^
+...
+55 |     pub(crate) fn set_selected_section(&mut self, section: Option<OperatorSidebarSection>) {
+   |                   ^^^^^^^^^^^^^^^^^^^^
+...
+59 |     pub(crate) const fn focused(&self) -> bool {
+   |                         ^^^^^^^
+...
+63 |     pub(crate) fn set_focused(&mut self, focused: bool) {
+   |                   ^^^^^^^^^^^
+...
+67 |     pub(crate) fn toggle_section(&mut self, section: OperatorSidebarSection) {
+   |                   ^^^^^^^^^^^^^^
+...
+73 |     pub(crate) fn section_collapsed(&self, section: OperatorSidebarSection) -> bool {
+   |                   ^^^^^^^^^^^^^^^^^
+
+warning: type alias `OperatorSidebarState` is never used
+  --> crates/harness-tui/src/app/secondary_surfaces.rs:78:17
+   |
+78 | pub(crate) type OperatorSidebarState = SecondarySurfaceState;
+   |                 ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `session_history_time_label` is never used
+   --> crates/harness-tui/src/app/session_history.rs:140:4
+    |
+140 | fn session_history_time_label(timestamp: &str) -> String {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `format_twelve_hour_time` is never used
+   --> crates/harness-tui/src/app/session_history.rs:158:4
+    |
+158 | fn format_twelve_hour_time(hour: u8, minute: u8) -> String {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `session_history_date_parts` is never used
+   --> crates/harness-tui/src/app/session_history.rs:225:4
+    |
+225 | fn session_history_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `epoch_millis_date_parts` is never used
+   --> crates/harness-tui/src/app/session_history.rs:229:4
+    |
+229 | fn epoch_millis_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `epoch_millis_time_parts` is never used
+   --> crates/harness-tui/src/app/session_history.rs:234:4
+    |
+234 | fn epoch_millis_time_parts(timestamp: &str) -> Option<(u8, u8)> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `current_utc_date` is never used
+   --> crates/harness-tui/src/app/session_history.rs:268:4
+    |
+268 | fn current_utc_date() -> Option<(i32, u8, u8)> {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: function `civil_from_days` is never used
+   --> crates/harness-tui/src/app/session_history.rs:275:4
+    |
+275 | fn civil_from_days(days_since_unix_epoch: i64) -> Option<(i32, u8, u8)> {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `days_from_civil` is never used
+   --> crates/harness-tui/src/app/session_history.rs:293:4
+    |
+293 | fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `weekday_name` is never used
+   --> crates/harness-tui/src/app/session_history.rs:306:4
+    |
+306 | fn weekday_name(year: i32, month: u8, day: u8) -> &'static str {
+    |    ^^^^^^^^^^^^
+
+warning: function `month_name` is never used
+   --> crates/harness-tui/src/app/session_history.rs:313:10
+    |
+313 | const fn month_name(month: u8) -> &'static str {
+    |          ^^^^^^^^^^
+
+warning: method `session_history_visual_row_count` is never used
+   --> crates/harness-tui/src/app/session_history.rs:548:19
+    |
+360 | impl AppState {
+    | ------------- method in this implementation
+...
+548 |     pub(crate) fn session_history_visual_row_count(&self) -> usize {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `slash_command_column_width` and `palette_command_available` are never used
+    --> crates/harness-tui/src/app/session_navigation.rs:295:19
+     |
+  52 | impl AppState {
+     | ------------- methods in this implementation
+...
+ 295 |     pub(crate) fn slash_command_column_width(&self) -> usize {
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1015 |     pub(in crate::app) fn palette_command_available(&self, command_id: &str) -> bool {
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `slash_command_display_width` is never used
+  --> crates/harness-tui/src/app/session_slash.rs:51:15
+   |
+51 | pub(super) fn slash_command_display_width(command: &str) -> usize {
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `transcript_page_flip_preserving` and `active_turn_tool_motion_demand` are never used
+   --> crates/harness-tui/src/app/transcript_state.rs:164:19
+    |
+ 41 | impl AppState {
+    | ------------- methods in this implementation
+...
+164 |     pub(crate) fn transcript_page_flip_preserving(&self) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+417 |     pub(crate) fn active_turn_tool_motion_demand(&self) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `show_mode_banner` is never used
+   --> crates/harness-tui/src/app/transcript_state.rs:810:27
+    |
+793 | impl AppState {
+    | ------------- method in this implementation
+...
+810 |     pub(in crate::app) fn show_mode_banner(&mut self, message: impl Into<String>) {
+    |                           ^^^^^^^^^^^^^^^^
+
+warning: function `active_turn_motion_demand` is never used
+ --> crates/harness-tui/src/app/transcript_view.rs:9:21
+  |
+9 | pub(super) const fn active_turn_motion_demand(
+  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `running_elapsed` is never used
+  --> crates/harness-tui/src/app/transcript_view.rs:82:19
+   |
+29 | impl ToolMotionTracker {
+   | ---------------------- method in this implementation
+...
+82 |     pub(crate) fn running_elapsed(&self, tool_call_id: &str, now: Instant) -> Duration {
+   |                   ^^^^^^^^^^^^^^^
+
+warning: method `startup_directory_branch_label` is never used
+  --> crates/harness-tui/src/app/workspace_display.rs:45:19
+   |
+44 | impl super::AppState {
+   | -------------------- method in this implementation
+45 |     pub(crate) fn startup_directory_branch_label(&self) -> &str {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `design_breakpoint` is never used
+   --> crates/harness-tui/src/layout.rs:140:4
+    |
+140 | fn design_breakpoint(width: u16) -> ViewportBreakpoint {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `command_palette_visible_rows` is never used
+   --> crates/harness-tui/src/layout/overlays.rs:220:4
+    |
+220 | fn command_palette_visible_rows(app: &AppState) -> usize {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SecondarySurfaceLayout` is never constructed
+  --> crates/harness-tui/src/layout/surfaces.rs:16:19
+   |
+16 | pub(crate) struct SecondarySurfaceLayout {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `EdgeInsets` is never constructed
+  --> crates/harness-tui/src/layout/surfaces.rs:30:19
+   |
+30 | pub(crate) struct EdgeInsets {
+   |                   ^^^^^^^^^^
+
+warning: associated items `ZERO` and `new` are never used
+  --> crates/harness-tui/src/layout/surfaces.rs:38:22
+   |
+37 | impl EdgeInsets {
+   | --------------- associated items in this implementation
+38 |     pub(crate) const ZERO: Self = Self {
+   |                      ^^^^
+...
+45 |     pub(crate) const fn new(left: u16, right: u16, top: u16, bottom: u16) -> Self {
+   |                         ^^^
+
+warning: struct `PermissionDockLayout` is never constructed
+  --> crates/harness-tui/src/layout/surfaces.rs:56:19
+   |
+56 | pub(crate) struct PermissionDockLayout {
+   |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `PERMISSION_DOCK_RAIL_WIDTH` is never used
+  --> crates/harness-tui/src/layout/surfaces.rs:89:7
+   |
+89 | const PERMISSION_DOCK_RAIL_WIDTH: u16 = 1;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `QUESTION_PERMISSION_DOCK_TRAY_HEIGHT` is never used
+  --> crates/harness-tui/src/layout/surfaces.rs:90:7
+   |
+90 | const QUESTION_PERMISSION_DOCK_TRAY_HEIGHT: u16 = 2;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH` is never used
+  --> crates/harness-tui/src/layout/surfaces.rs:91:7
+   |
+91 | const PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH: u16 = 80;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH` is never used
+  --> crates/harness-tui/src/layout/surfaces.rs:92:7
+   |
+92 | const PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH: u16 = 20;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `permission_dock_layout` is never used
+  --> crates/harness-tui/src/layout/surfaces.rs:94:15
+   |
+94 | pub(crate) fn permission_dock_layout(area: Rect) -> PermissionDockLayout {
+   |               ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `pad_rect` is never used
+   --> crates/harness-tui/src/layout/surfaces.rs:123:15
+    |
+123 | pub(crate) fn pad_rect(area: Rect, insets: EdgeInsets) -> Rect {
+    |               ^^^^^^^^
+
+warning: function `secondary_surface_layout` is never used
+   --> crates/harness-tui/src/layout/surfaces.rs:134:15
+    |
+134 | pub(crate) fn secondary_surface_layout(area: Rect, theme: &Theme) -> SecondarySurfaceLayout {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `startup_shell_area` is never used
+   --> crates/harness-tui/src/layout/surfaces.rs:227:15
+    |
+227 | pub(crate) fn startup_shell_area(area: Rect, theme: &Theme) -> Rect {
+    |               ^^^^^^^^^^^^^^^^^^
+
+warning: function `stretch_split_startup_card_to_shell` is never used
+   --> crates/harness-tui/src/layout/surfaces.rs:236:4
+    |
+236 | fn stretch_split_startup_card_to_shell(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `lifecycle_card_area` is never used
+   --> crates/harness-tui/src/layout/surfaces.rs:248:15
+    |
+248 | pub(crate) fn lifecycle_card_area(area: Rect, theme: &Theme, card: LifecycleCardTokens) -> Rect {
+    |               ^^^^^^^^^^^^^^^^^^^
+
+warning: function `drain_live_updates` is never used
+   --> crates/harness-tui/src/runtime_live_updates.rs:113:15
+    |
+113 | pub(crate) fn drain_live_updates(
+    |               ^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `pending` and `render` are never used
+  --> crates/harness-tui/src/scheduling/decision.rs:20:25
+   |
+19 | impl FrameDecision {
+   | ------------------ associated functions in this implementation
+20 |     pub(crate) const fn pending(deadline_ms: u64, reason: FrameReason) -> Self {
+   |                         ^^^^^^^
+...
+28 |     pub(crate) const fn render(deadline_ms: Option<u64>, reason: FrameReason) -> Self {
+   |                         ^^^^^^
+
+warning: function `row_spans` is never used
+  --> crates/harness-tui/src/startup_logo.rs:40:15
+   |
+40 | pub(crate) fn row_spans(logo: Logo, row_index: usize, color: Color) -> Vec<Span<'static>> {
+   |               ^^^^^^^^^
+
+warning: function `padded_row` is never used
+  --> crates/harness-tui/src/startup_logo.rs:55:4
+   |
+55 | fn padded_row(row: &str, width: usize) -> String {
+   |    ^^^^^^^^^^
+
+warning: function `command_palette_section` is never used
+   --> crates/harness-tui/src/ui_chrome.rs:106:21
+    |
+106 | pub(super) const fn command_palette_section(theme: &Theme) -> Color {
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `fork_selector_selection_bg` is never used
+   --> crates/harness-tui/src/ui_chrome.rs:122:21
+    |
+122 | pub(super) const fn fork_selector_selection_bg(theme: &Theme) -> Color {
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `fork_selector_selection_fg` is never used
+   --> crates/harness-tui/src/ui_chrome.rs:126:21
+    |
+126 | pub(super) const fn fork_selector_selection_fg(theme: &Theme) -> Color {
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `preferred_binding` is never used
+    --> crates/harness-tui/src/ui_chrome.rs:1000:4
+     |
+1000 | fn preferred_binding(
+     |    ^^^^^^^^^^^^^^^^^
+
+warning: function `live_transcript_shell_surface` is never used
+    --> crates/harness-tui/src/ui_chrome.rs:1069:15
+     |
+1069 | pub(super) fn live_transcript_shell_surface(theme: &Theme) -> Color {
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `question_prompt_secondary` is never used
+   --> crates/harness-tui/src/ui_permission_dock.rs:617:28
+    |
+617 | pub(in crate::ui) const fn question_prompt_secondary(theme: &Theme) -> Color {
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `diff_added_line_number_bg` is never used
+   --> crates/harness-tui/src/ui_diff_render.rs:672:21
+    |
+672 | pub(super) const fn diff_added_line_number_bg(theme: &Theme) -> Color {
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `diff_removed_line_number_bg` is never used
+   --> crates/harness-tui/src/ui_diff_render.rs:676:21
+    |
+676 | pub(super) const fn diff_removed_line_number_bg(theme: &Theme) -> Color {
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `highlight_diff_line_chunks` is never used
+   --> crates/harness-tui/src/ui_diff_syntax.rs:115:15
+    |
+115 | pub(super) fn highlight_diff_line_chunks(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `diff_path_is_plain_prose` is never used
+   --> crates/harness-tui/src/ui_diff_syntax.rs:143:15
+    |
+143 | pub(super) fn diff_path_is_plain_prose(path: &str) -> bool {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `diff_syntax_highlight_assets` is never used
+   --> crates/harness-tui/src/ui_diff_syntax.rs:157:4
+    |
+157 | fn diff_syntax_highlight_assets() -> &'static DiffSyntaxHighlightAssets {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `diff_syntect_theme` is never used
+   --> crates/harness-tui/src/ui_diff_syntax.rs:167:15
+    |
+167 | pub(crate) fn diff_syntect_theme() -> SyntectTheme {
+    |               ^^^^^^^^^^^^^^^^^^
+
+warning: struct `DiffSyntaxHighlightAssets` is never constructed
+   --> crates/harness-tui/src/ui_diff_syntax.rs:174:8
+    |
+174 | struct DiffSyntaxHighlightAssets {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `diff_syntect_style_to_ratatui` is never used
+   --> crates/harness-tui/src/ui_diff_syntax.rs:179:4
+    |
+179 | fn diff_syntect_style_to_ratatui(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `LIFECYCLE_COPY_INSET_X` is never used
+  --> crates/harness-tui/src/ui_lifecycle.rs:27:7
+   |
+27 | const LIFECYCLE_COPY_INSET_X: u16 = 3;
+   |       ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `STARTUP_CLIPBOARD_WARNING` is never used
+  --> crates/harness-tui/src/ui_lifecycle.rs:28:7
+   |
+28 | const STARTUP_CLIPBOARD_WARNING: &str = "Clipboard may be unreachable.";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `STARTUP_CLIPBOARD_SETUP_HINT` is never used
+  --> crates/harness-tui/src/ui_lifecycle.rs:29:7
+   |
+29 | const STARTUP_CLIPBOARD_SETUP_HINT: &str = "Run /doctor for details and fixes.";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `WELCOME_ACTION_COL` is never used
+  --> crates/harness-tui/src/ui_lifecycle.rs:30:7
+   |
+30 | const WELCOME_ACTION_COL: usize = 18;
+   |       ^^^^^^^^^^^^^^^^^^
+
+warning: function `lifecycle_surface_copy_area` is never used
+  --> crates/harness-tui/src/ui_lifecycle.rs:60:4
+   |
+60 | fn lifecycle_surface_copy_area(area: Rect) -> Rect {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `lifecycle_surface_block` is never used
+  --> crates/harness-tui/src/ui_lifecycle.rs:72:4
+   |
+72 | fn lifecycle_surface_block<'a>(
+   |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `render_lifecycle_copy_line` is never used
+  --> crates/harness-tui/src/ui_lifecycle.rs:80:4
+   |
+80 | fn render_lifecycle_copy_line(
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `render_startup_clipboard_warning` is never used
+   --> crates/harness-tui/src/ui_lifecycle.rs:164:4
+    |
+164 | fn render_startup_clipboard_warning(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `startup_breadcrumb_text` is never used
+   --> crates/harness-tui/src/ui_lifecycle.rs:193:4
+    |
+193 | fn startup_breadcrumb_text(app: &AppState) -> String {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `LIVE_BREADCRUMB_RESERVE_ROWS` is never used
+   --> crates/harness-tui/src/ui_lifecycle.rs:228:18
+    |
+228 | pub(super) const LIVE_BREADCRUMB_RESERVE_ROWS: u16 = 2;
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `startup_clipboard_warning_visible` is never used
+   --> crates/harness-tui/src/ui_lifecycle.rs:440:4
+    |
+440 | fn startup_clipboard_warning_visible(app: &AppState) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `startup_banner_is_clipboard_warning` is never used
+   --> crates/harness-tui/src/ui_lifecycle.rs:446:4
+    |
+446 | fn startup_banner_is_clipboard_warning(banner: &str) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `welcome_text_after_logo` is never used
+   --> crates/harness-tui/src/ui_lifecycle.rs:452:4
+    |
+452 | fn welcome_text_after_logo(text: &str, inner_width: usize, logo_width: usize) -> String {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `welcome_panel_visible` is never used
+  --> crates/harness-tui/src/app/first_prompt.rs:12:15
+   |
+12 | pub(crate) fn welcome_panel_visible(app: &AppState) -> bool {
+   |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `composer_has_focus` is never used
+  --> crates/harness-tui/src/app/first_prompt.rs:17:15
+   |
+17 | pub(crate) fn composer_has_focus(app: &AppState) -> bool {
+   |               ^^^^^^^^^^^^^^^^^^
+
+warning: function `composer_text` is never used
+  --> crates/harness-tui/src/app/first_prompt.rs:22:15
+   |
+22 | pub(crate) fn composer_text(app: &AppState) -> &str {
+   |               ^^^^^^^^^^^^^
+
+warning: function `composer_cursor` is never used
+  --> crates/harness-tui/src/app/first_prompt.rs:27:15
+   |
+27 | pub(crate) fn composer_cursor(app: &AppState) -> usize {
+   |               ^^^^^^^^^^^^^^^
+
+warning: function `welcome_dismissed_by_typing` is never used
+  --> crates/harness-tui/src/app/first_prompt.rs:33:15
+   |
+33 | pub(crate) fn welcome_dismissed_by_typing(app: &AppState) -> bool {
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `trust_prompt_visible` is never used
+  --> crates/harness-tui/src/app/trust_prompt.rs:20:15
+   |
+20 | pub(crate) fn trust_prompt_visible(app: &AppState) -> bool {
+   |               ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `WelcomeIdentity` is never constructed
+  --> crates/harness-tui/src/app/welcome.rs:12:19
+   |
+12 | pub(crate) struct WelcomeIdentity {
+   |                   ^^^^^^^^^^^^^^^
+
+warning: struct `LocalNotice` is never constructed
+  --> crates/harness-tui/src/app/welcome.rs:18:19
+   |
+18 | pub(crate) struct LocalNotice {
+   |                   ^^^^^^^^^^^
+
+warning: function `welcome_identity` is never used
+  --> crates/harness-tui/src/app/welcome.rs:23:15
+   |
+23 | pub(crate) fn welcome_identity(title: &'static str) -> WelcomeIdentity {
+   |               ^^^^^^^^^^^^^^^^
+
+warning: function `local_notices` is never used
+  --> crates/harness-tui/src/app/welcome.rs:35:15
+   |
+35 | pub(crate) fn local_notices(app: &AppState) -> Vec<LocalNotice> {
+   |               ^^^^^^^^^^^^^
+
+warning: function `has_local_notices` is never used
+  --> crates/harness-tui/src/app/welcome.rs:50:15
+   |
+50 | pub(crate) fn has_local_notices(app: &AppState) -> bool {
+   |               ^^^^^^^^^^^^^^^^^
+
+warning: function `path_root_from_args` is never used
+  --> crates/harness-tui/src/ui_lsp.rs:73:15
+   |
+73 | pub(super) fn path_root_from_args(args_summary: &str) -> Option<String> {
+   |               ^^^^^^^^^^^^^^^^^^^
+
+warning: function `render_command_palette_surface` is never used
+   --> crates/harness-tui/src/ui_overlays.rs:617:4
+    |
+617 | fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rect) -> Option<Rect> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `permission_modal_metadata_line` is never used
+ --> crates/harness-tui/src/ui_overlays/permission_modal.rs:5:22
+  |
+5 | pub(in crate::ui) fn permission_modal_metadata_line(
+  |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `permission_modal_icon` is never used
+  --> crates/harness-tui/src/ui_overlays/permission_modal.rs:11:22
+   |
+11 | pub(in crate::ui) fn permission_modal_icon(
+   |                      ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `permission_modal_guidance` is never used
+   --> crates/harness-tui/src/ui_overlays/permission_modal.rs:184:22
+    |
+184 | pub(in crate::ui) fn permission_modal_guidance(
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `permission_modal_summary_line` is never used
+   --> crates/harness-tui/src/ui_overlays/permission_modal.rs:200:22
+    |
+200 | pub(in crate::ui) fn permission_modal_summary_line(
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `permission_modal_draft_line` is never used
+   --> crates/harness-tui/src/ui_overlays/permission_modal.rs:224:22
+    |
+224 | pub(in crate::ui) fn permission_modal_draft_line(prompt_buffer: &str) -> String {
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `push_wrapped_bullet` is never used
+   --> crates/harness-tui/src/ui_overlays/release_notes.rs:212:4
+    |
+212 | fn push_wrapped_bullet(rows: &mut Vec<ReleaseNoteRow>, title: &str, detail: &str, width: usize) {
+    |    ^^^^^^^^^^^^^^^^^^^
+
+warning: enum `OrderedToolInputValue` is never used
+ --> crates/harness-tui/src/ui_tool_input.rs:4:6
+  |
+4 | enum OrderedToolInputValue {
+  |      ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compact_tool_input_part` is never used
+  --> crates/harness-tui/src/ui_tool_input.rs:86:4
+   |
+86 | fn compact_tool_input_part(key: &str, value: &OrderedToolInputValue) -> Option<String> {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `tool_input_label` is never used
+  --> crates/harness-tui/src/ui_tool_input.rs:99:15
+   |
+99 | pub(super) fn tool_input_label(args_summary: &str, unwrap_arguments: bool) -> Option<String> {
+   |               ^^^^^^^^^^^^^^^^
+
+warning: function `tool_input_args` is never used
+   --> crates/harness-tui/src/ui_tool_input.rs:105:15
+    |
+105 | pub(super) fn tool_input_args(
+    |               ^^^^^^^^^^^^^^^
+
+warning: function `ordered_tool_input_display_value` is never used
+   --> crates/harness-tui/src/ui_tool_input.rs:116:4
+    |
+116 | fn ordered_tool_input_display_value(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `tool_input_label_from_value` is never used
+   --> crates/harness-tui/src/ui_tool_input.rs:135:4
+    |
+135 | fn tool_input_label_from_value(value: &OrderedToolInputValue) -> Option<String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `tool_input_args_from_value` is never used
+   --> crates/harness-tui/src/ui_tool_input.rs:164:4
+    |
+164 | fn tool_input_args_from_value(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `compact_tool_trigger_subtitle` is never used
+   --> crates/harness-tui/src/ui_tool_input.rs:197:15
+    |
+197 | pub(super) fn compact_tool_trigger_subtitle(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `todo_write_tool_id` is never used
+   --> crates/harness-tui/src/ui_tool_paths.rs:208:15
+    |
+208 | pub(super) fn todo_write_tool_id(tool_id: &str) -> bool {
+    |               ^^^^^^^^^^^^^^^^^^
+
+warning: function `context_group_tool_id` is never used
+   --> crates/harness-tui/src/ui_tool_paths.rs:217:15
+    |
+217 | pub(super) fn context_group_tool_id(tool_id: &str) -> bool {
+    |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inline_tool_color` is never used
+  --> crates/harness-tui/src/ui_tool_style.rs:28:15
+   |
+28 | pub(super) fn inline_tool_color(status: ToolCallPresentationStatus, theme: &Theme) -> Color {
+   |               ^^^^^^^^^^^^^^^^^
+
+warning: function `block_tool_color` is never used
+  --> crates/harness-tui/src/ui_tool_style.rs:40:15
+   |
+40 | pub(super) fn block_tool_color(status: ToolCallPresentationStatus, theme: &Theme) -> Color {
+   |               ^^^^^^^^^^^^^^^^
+
+warning: function `block_status_color` is never used
+  --> crates/harness-tui/src/ui_tool_style.rs:44:4
+   |
+44 | fn block_status_color(
+   |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `tool_disclosure_state` is never used
+  --> crates/harness-tui/src/ui_tool_visibility.rs:62:15
+   |
+62 | pub(super) fn tool_disclosure_state(
+   |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_measured_transcript_layout_for_width` is never used
+   --> crates/harness-tui/src/ui_transcript.rs:984:4
+    |
+984 | fn build_measured_transcript_layout_for_width(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_measured_transcript_layout_for_width_on_surface` is never used
+   --> crates/harness-tui/src/ui_transcript.rs:992:4
+    |
+992 | fn build_measured_transcript_layout_for_width_on_surface(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `semantic_label` is never used
+   --> crates/harness-tui/src/ui_transcript_types.rs:414:19
+    |
+279 | impl TranscriptToolGroupSummary {
+    | ------------------------------- method in this implementation
+...
+414 |     pub(super) fn semantic_label(&self) -> String {
+    |                   ^^^^^^^^^^^^^^
+
+warning: methods `assistant_reasoning`, `assistant_bodies`, and `assistant_error` are never used
+   --> crates/harness-tui/src/ui_transcript_types.rs:545:19
+    |
+526 | impl TranscriptTurnSection {
+    | -------------------------- methods in this implementation
+...
+545 |     pub(super) fn assistant_reasoning(&self) -> Option<&TranscriptLabeledTextSection> {
+    |                   ^^^^^^^^^^^^^^^^^^^
+...
+552 |     pub(super) fn assistant_bodies(&self) -> impl Iterator<Item = &TranscriptBodyBlock> {
+    |                   ^^^^^^^^^^^^^^^^
+...
+559 |     pub(super) fn assistant_error(&self) -> Option<&TranscriptErrorSection> {
+    |                   ^^^^^^^^^^^^^^^
+
+warning: variant `Markdown` is never constructed
+   --> crates/harness-tui/src/ui_transcript_types.rs:672:5
+    |
+662 | pub(in crate::ui) enum TranscriptToolCallDetailBlock {
+    |                        ----------------------------- variant in this enum
+...
+672 |     Markdown {
+    |     ^^^^^^^^
+    |
+    = note: `TranscriptToolCallDetailBlock` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: constant `TRANSCRIPT_REASONING_BODY_PREFIX` is never used
+   --> crates/harness-tui/src/ui_transcript_types.rs:757:18
+    |
+757 | pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = TRANSCRIPT_ASSISTANT_BODY_PREFIX;
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `TRANSCRIPT_REASONING_HEADER_PREFIX` is never used
+   --> crates/harness-tui/src/ui_transcript_types.rs:758:18
+    |
+758 | pub(super) const TRANSCRIPT_REASONING_HEADER_PREFIX: &str = TRANSCRIPT_ASSISTANT_BODY_PREFIX;
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `retry_attempt` is never used
+    --> crates/harness-tui/src/ui_transcript_render.rs:1240:4
+     |
+1240 | fn retry_attempt(turn: &TranscriptTurnSection) -> Option<&ProviderRequestRetryMetadata> {
+     |    ^^^^^^^^^^^^^
+
+warning: function `push_running_subagent_detail` is never used
+    --> crates/harness-tui/src/ui_transcript_tool_sections.rs:1172:4
+     |
+1172 | fn push_running_subagent_detail(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `push_completed_subagent_detail` is never used
+    --> crates/harness-tui/src/ui_transcript_tool_sections.rs:1200:4
+     |
+1200 | fn push_completed_subagent_detail(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `format_subagent_toolcalls` is never used
+    --> crates/harness-tui/src/ui_transcript_tool_sections.rs:1216:4
+     |
+1216 | fn format_subagent_toolcalls(count: usize) -> String {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `format_completed_subagent_detail` is never used
+    --> crates/harness-tui/src/ui_transcript_tool_sections.rs:1220:4
+     |
+1220 | fn format_completed_subagent_detail(toolcalls: usize, duration: String) -> String {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `task_result_markdown` is never used
+    --> crates/harness-tui/src/ui_transcript_tool_sections.rs:1227:4
+     |
+1227 | fn task_result_markdown(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `tagged_task_result` is never used
+    --> crates/harness-tui/src/ui_transcript_tool_sections.rs:1246:4
+     |
+1246 | fn tagged_task_result(output: &str) -> Option<&str> {
+     |    ^^^^^^^^^^^^^^^^^^
+
+warning: fields `leading_gap_rows` and `hit_region` are never read
+   --> crates/harness-tui/src/ui_transcript_layout.rs:401:16
+    |
+396 | pub(super) struct TranscriptVisualEntry {
+    |                   --------------------- fields in this struct
+...
+401 |     pub(super) leading_gap_rows: usize,
+    |                ^^^^^^^^^^^^^^^^
+...
+418 |     pub(super) hit_region: TranscriptVisualEntryHitRegion,
+    |                ^^^^^^^^^^
+    |
+    = note: `TranscriptVisualEntry` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: constant `MIN_NODE_WIDTH` is never used
+  --> crates/harness-tui/src/ui_transcript_mermaid.rs:13:7
+   |
+13 | const MIN_NODE_WIDTH: usize = 7;
+   |       ^^^^^^^^^^^^^^
+
+warning: constant `MAX_LABEL_WIDTH` is never used
+  --> crates/harness-tui/src/ui_transcript_mermaid.rs:14:7
+   |
+14 | const MAX_LABEL_WIDTH: usize = 28;
+   |       ^^^^^^^^^^^^^^^
+
+warning: function `transcript_scroll_offset` is never used
+   --> crates/harness-tui/src/ui_transcript_scrollbar.rs:257:15
+    |
+257 | pub(super) fn transcript_scroll_offset(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `TRANSCRIPT_TOOL_WAVE_SPEED` is never used
+  --> crates/harness-tui/src/ui_transcript_style.rs:12:7
+   |
+12 | const TRANSCRIPT_TOOL_WAVE_SPEED: f32 = 0.15;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `transcript_running_tool_marker_color` is never used
+  --> crates/harness-tui/src/ui_transcript_style.rs:62:15
+   |
+62 | pub(super) fn transcript_running_tool_marker_color(theme: &Theme, animation_phase: usize) -> Color {
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `transcript_nested_rail_color` is never used
+   --> crates/harness-tui/src/ui_transcript_style.rs:145:15
+    |
+145 | pub(super) fn transcript_nested_rail_color(theme: &Theme) -> Color {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `transcript_surface_rail_lines` is never used
+   --> crates/harness-tui/src/ui_transcript_surface.rs:775:4
+    |
+775 | fn transcript_surface_rail_lines(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `prepend_transcript_surface_rail` is never used
+   --> crates/harness-tui/src/ui_transcript_surface.rs:793:4
+    |
+793 | fn prepend_transcript_surface_rail(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `for_startup_area` is never used
+  --> crates/harness-tui/src/welcome_surface/layout.rs:36:19
+   |
+31 | impl WelcomeLayout {
+   | ------------------ associated function in this implementation
+...
+36 |     pub(crate) fn for_startup_area(
+   |                   ^^^^^^^^^^^^^^^^
+
+warning: struct `StartupCardViewModel` is never constructed
+  --> crates/harness-tui/src/view_model.rs:39:19
+   |
+39 | pub(crate) struct StartupCardViewModel {
+   |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `startup_card_view_model` is never used
+   --> crates/harness-tui/src/view_model.rs:436:15
+    |
+436 | pub(crate) fn startup_card_view_model(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `new_cancel_offer` is never used
+  --> crates/harness-tui/src/rewind_view.rs:61:12
+   |
+60 | impl RewindState {
+   | ---------------- associated function in this implementation
+61 |     pub fn new_cancel_offer(
+   |            ^^^^^^^^^^^^^^^^
+
+warning: `harness-tui` (lib) generated 140 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 22.86s

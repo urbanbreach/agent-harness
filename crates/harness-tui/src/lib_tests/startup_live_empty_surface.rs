@@ -52,49 +52,6 @@ pub(super) fn lifecycle_shell_narrow_layout_renders_primary_cta() {
     assert!(prompt_row <= footer_row);
 }
 
-pub(super) fn startup_card_uses_lifecycle_geometry_contract() {
-    let theme = Theme::default();
-    let minimum_area = ratatui::layout::Rect::new(0, 0, 80, 24);
-    let primary_area = ratatui::layout::Rect::new(0, 0, 100, 30);
-
-    let minimum_layout = theme.lifecycle_surface_layout(minimum_area.width, minimum_area.height);
-    let primary_layout = theme.lifecycle_surface_layout(primary_area.width, primary_area.height);
-
-    let minimum_startup = layout::startup_shell_area(minimum_area, &theme);
-    let primary_startup = layout::startup_shell_area(primary_area, &theme);
-
-    assert_eq!(
-        minimum_startup,
-        layout::lifecycle_card_area(minimum_area, &theme, minimum_layout.startup_card)
-    );
-    assert_eq!(
-        primary_startup,
-        layout::lifecycle_card_area(primary_area, &theme, primary_layout.startup_card)
-    );
-    assert_eq!(minimum_startup, ratatui::layout::Rect::new(5, 7, 70, 12));
-    assert_eq!(primary_startup, ratatui::layout::Rect::new(9, 10, 82, 12));
-    assert_ne!(
-        minimum_startup,
-        layout::live_empty_state_area(minimum_area, &theme)
-    );
-    assert_ne!(
-        primary_startup,
-        layout::live_empty_state_area(primary_area, &theme)
-    );
-}
-
-pub(super) fn startup_card_moves_closer_to_dock_in_tall_and_split_windows() {
-    let theme = Theme::default();
-    let tall_minimum_area = ratatui::layout::Rect::new(0, 0, 80, 48);
-    let split_area = ratatui::layout::Rect::new(0, 0, 96, 40);
-
-    let tall_minimum = layout::startup_shell_area(tall_minimum_area, &theme);
-    let split = layout::startup_shell_area(split_area, &theme);
-
-    assert_eq!(tall_minimum, ratatui::layout::Rect::new(5, 19, 70, 12));
-    assert_eq!(split, ratatui::layout::Rect::new(0, 14, 96, 13));
-}
-
 pub(super) fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
     let mut demo = app::AppState::new_live(None, false, None);
     demo.set_launch_metadata(

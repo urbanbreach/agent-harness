@@ -1,0 +1,13 @@
+diff --git i/crates/harness-tui/src/ui_syntax_highlight.rs w/crates/harness-tui/src/ui_syntax_highlight.rs
+index 071a87e8..bdcb6e15 100644
+--- i/crates/harness-tui/src/ui_syntax_highlight.rs
++++ w/crates/harness-tui/src/ui_syntax_highlight.rs
+@@ -121,7 +121,7 @@ fn syntect_style_to_ratatui(style: syntect::highlighting::Style, theme: &Theme)
+         syntect_color_to_ratatui(style.foreground)
+     };
+     let mut rendered = Style::default()
+-        .fg(quantize_color(foreground, theme.color_level()))
++        .fg(foreground)
+         .bg(theme.markdown.code_background);
+ 
+     if style.font_style.contains(SyntectFontStyle::BOLD) {

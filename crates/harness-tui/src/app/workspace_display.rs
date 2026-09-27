@@ -42,10 +42,6 @@ impl WorkspaceDisplay {
 }
 
 impl super::AppState {
-    pub(crate) fn startup_directory_branch_label(&self) -> &str {
-        &self.current_directory_branch_label
-    }
-
     pub(crate) fn refresh_current_directory_label(&mut self) -> bool {
         let environment = self.current_directory_environment();
         let label = directory_branch_label(&environment, false);

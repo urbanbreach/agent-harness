@@ -670,6 +670,20 @@ remain explicit. Source reduction, state/formatter replacement and sustained
 runtime targets are still outstanding. Evidence is in
 [`evidence/tui-rewrite/styled-wrap`](evidence/tui-rewrite/styled-wrap).
 
+## Unused presentation paths
+
+Compiler diagnostics and caller searches identified unreachable tool-input,
+per-line diff-highlight, startup-card, secondary-layout, status and rail helpers.
+Removing them and 11 obsolete private tests reduces production by 817 lines and
+test source by 283 lines. The retained limited-color check now exercises the
+actual diff renderer and fails if its shared quantization is bypassed.
+
+All 1,671 remaining TUI tests, seven gated PTY checks and quality checks pass.
+The 555 complete frame records and their ANSI output exactly match the preceding
+candidate. This cleanup makes no new resource or browser claim; the active
+state engine and remaining lower renderers still need replacement. Evidence is
+in [`evidence/tui-rewrite/unused-presentation`](evidence/tui-rewrite/unused-presentation).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

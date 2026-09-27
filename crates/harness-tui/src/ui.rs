@@ -13,8 +13,8 @@ use crate::app::{
 };
 use crate::keybindings::Action;
 use crate::layout::{
-    composer_input_height, inset_rect, live_empty_state_area, secondary_surface_layout,
-    startup_composer_input_height, FrameLayoutPlan,
+    composer_input_height, inset_rect, live_empty_state_area, startup_composer_input_height,
+    FrameLayoutPlan,
 };
 use crate::overlay::OverlayKind;
 use crate::theme::Theme;
@@ -55,8 +55,6 @@ mod ui_tool_delegation;
 mod ui_tool_diffs;
 #[path = "ui_tool_error.rs"]
 mod ui_tool_error;
-#[path = "ui_tool_input.rs"]
-mod ui_tool_input;
 #[path = "ui_tool_metadata.rs"]
 mod ui_tool_metadata;
 #[path = "ui_tool_output.rs"]

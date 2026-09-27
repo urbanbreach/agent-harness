@@ -1,0 +1,56 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.28s
+────────────
+ Nextest run ID 8bedd16a-9e2d-487c-8f14-f8942d805280 with nextest profile: ci
+    Starting 1 test across 1 binary (1254 tests skipped)
+        FAIL [   0.274s] (1/1) harness-tui ui::ui_diff::tests::structured_diff_syntax_respects_limited_color_levels
+  stdout ───
+
+    running 1 test
+    test ui::ui_diff::tests::structured_diff_syntax_respects_limited_color_levels ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_diff::tests::structured_diff_syntax_respects_limited_color_levels
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1254 filtered out; finished in 0.26s
+
+  stderr ───
+
+    thread 'ui::ui_diff::tests::structured_diff_syntax_respects_limited_color_levels' (2648871) panicked at crates/harness-tui/src/ui_diff.rs:246:9:
+    assertion failed: lines.iter().flat_map(|line|
+                &line.spans).all(|span|
+            {
+                !matches!(span.style.fg, Some(Color::Rgb(..))) &&
+                    !matches!(span.style.bg, Some(Color::Rgb(..)))
+            })
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.279s] 1 test run: 0 passed, 1 failed, 1254 skipped
+        FAIL [   0.274s] (1/1) harness-tui ui::ui_diff::tests::structured_diff_syntax_respects_limited_color_levels
+  stdout ───
+
+    running 1 test
+    test ui::ui_diff::tests::structured_diff_syntax_respects_limited_color_levels ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_diff::tests::structured_diff_syntax_respects_limited_color_levels
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1254 filtered out; finished in 0.26s
+
+  stderr ───
+
+    thread 'ui::ui_diff::tests::structured_diff_syntax_respects_limited_color_levels' (2648871) panicked at crates/harness-tui/src/ui_diff.rs:246:9:
+    assertion failed: lines.iter().flat_map(|line|
+                &line.spans).all(|span|
+            {
+                !matches!(span.style.fg, Some(Color::Rgb(..))) &&
+                    !matches!(span.style.bg, Some(Color::Rgb(..)))
+            })
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

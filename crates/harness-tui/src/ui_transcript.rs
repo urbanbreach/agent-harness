@@ -30,7 +30,7 @@ use super::ui_tool_error::{
 use super::ui_tool_metadata::tool_summary_string;
 use super::ui_tool_output::collapsible_output_preview;
 use super::ui_tool_paths::{
-    context_group_tool_id, join_tool_subtitles, read_tool_input_suffix, search_result_count_suffix,
+    join_tool_subtitles, read_tool_input_suffix, search_result_count_suffix,
     tool_call_path_metadata, tool_match_count_description, tool_path_display,
     TranscriptPathMetadata,
 };
@@ -39,8 +39,7 @@ use super::ui_tool_question_todo::{
     todo_items_from_tool_call, TranscriptTodoItem,
 };
 use super::ui_tool_style::{
-    block_tool_color, generic_tool_visual_style, inline_tool_color, tool_call_header_style,
-    TranscriptToolCallVisualStyle,
+    generic_tool_visual_style, tool_call_header_style, TranscriptToolCallVisualStyle,
 };
 use super::ui_tool_titles::{
     background_output_tool_subtitle, background_output_tool_title, batch_tool_title,
@@ -51,9 +50,7 @@ use super::ui_tool_titles_harness::{
     ast_grep_tool_title, background_cancel_tool_title, invalid_tool_title, lsp_tool_title,
     plan_enter_tool_title, plan_exit_tool_title, session_tool_title, skill_tool_title,
 };
-use super::ui_tool_visibility::{
-    tool_disclosure_state, tool_hidden_from_transcript, TranscriptToolCallDisclosureState,
-};
+use super::ui_tool_visibility::{tool_hidden_from_transcript, TranscriptToolCallDisclosureState};
 use super::ui_transcript_bash::{
     append_harness_bash_panel, shell_tool_command, shell_tool_output, shell_tool_structured_output,
     shell_tool_title_description, HarnessBashPanel,

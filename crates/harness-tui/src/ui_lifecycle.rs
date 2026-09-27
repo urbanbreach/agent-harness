@@ -5,29 +5,8 @@ use crate::welcome_surface::{WelcomeFocus, WelcomeLayout};
 use ratatui::widgets::{BorderType, Clear};
 use unicode_width::UnicodeWidthStr;
 
-#[path = "app/first_prompt.rs"]
-#[allow(
-    dead_code,
-    reason = "first-prompt composer focus helpers; wired for contract verification"
-)]
-mod first_prompt;
 #[path = "app/trust_prompt.rs"]
-#[allow(
-    dead_code,
-    reason = "trust prompt constants and helpers; consumed by render_trust_folder_prompt_overlay"
-)]
 mod trust_prompt;
-#[path = "app/welcome.rs"]
-#[allow(
-    dead_code,
-    reason = "view model helpers wired for contract use; not all consumed yet"
-)]
-mod welcome;
-
-const LIFECYCLE_COPY_INSET_X: u16 = 3;
-const STARTUP_CLIPBOARD_WARNING: &str = "Clipboard may be unreachable.";
-const STARTUP_CLIPBOARD_SETUP_HINT: &str = "Run /doctor for details and fixes.";
-const WELCOME_ACTION_COL: usize = 18;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WelcomeActionEmphasis {
@@ -57,43 +36,8 @@ pub(super) struct LifecycleSelectableText {
     pub alignment: Alignment,
 }
 
-fn lifecycle_surface_copy_area(area: Rect) -> Rect {
-    inset_rect(
-        area,
-        LIFECYCLE_COPY_INSET_X.min(area.width.saturating_sub(1) / 2),
-        0,
-    )
-}
-
 fn rect_from_tuple((x, y, width, height): (u16, u16, u16, u16)) -> Rect {
     Rect::new(x, y, width, height)
-}
-
-fn lifecycle_surface_block<'a>(
-    theme: &Theme,
-    title: impl Into<Line<'a>>,
-    is_focused: bool,
-) -> Block<'a> {
-    ui_chrome::message_surface(theme, title, is_focused, theme.surface.panel_elevated)
-}
-
-fn render_lifecycle_copy_line(
-    frame: &mut Frame,
-    area: Rect,
-    text: &str,
-    style: Style,
-    alignment: Alignment,
-) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    frame.render_widget(
-        Paragraph::new(truncate_plain_text(text, usize::from(area.width)))
-            .style(style)
-            .alignment(alignment),
-        area,
-    );
 }
 
 pub(crate) fn live_empty_state_visible(app: &AppState) -> bool {
@@ -161,44 +105,6 @@ pub(crate) fn render_startup_lifecycle_flow(
     }
 }
 
-fn render_startup_clipboard_warning(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    if !startup_clipboard_warning_visible(app) || area.width <= 4 || area.height <= 4 {
-        return;
-    }
-    for (offset, line) in [STARTUP_CLIPBOARD_WARNING, STARTUP_CLIPBOARD_SETUP_HINT]
-        .into_iter()
-        .enumerate()
-    {
-        let row = Rect::new(
-            area.x,
-            area.y
-                .saturating_add(4)
-                .saturating_add(u16::try_from(offset).unwrap_or(0)),
-            area.width,
-            1,
-        );
-        frame.render_widget(
-            Paragraph::new(truncate_plain_text(line, usize::from(row.width)))
-                .style(
-                    Style::default()
-                        .fg(theme.text.secondary)
-                        .bg(theme.surface.canvas),
-                )
-                .alignment(Alignment::Center),
-            row,
-        );
-    }
-}
-
-fn startup_breadcrumb_text(app: &AppState) -> String {
-    let (prefix, path) = startup_breadcrumb_parts(app);
-    if path.is_empty() {
-        prefix
-    } else {
-        format!("{prefix} {path}")
-    }
-}
-
 fn startup_breadcrumb_parts(app: &AppState) -> (String, String) {
     let facts = &app.workspace_display;
     let branch = facts
@@ -224,8 +130,6 @@ fn live_breadcrumb_text(app: &AppState, width: u16) -> String {
         path
     )
 }
-
-pub(super) const LIVE_BREADCRUMB_RESERVE_ROWS: u16 = 2;
 
 fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if area.height < 2 {
@@ -437,23 +341,6 @@ pub(super) fn live_transcript_area_with_breadcrumb(area: Rect) -> Rect {
     }
 }
 
-fn startup_clipboard_warning_visible(app: &AppState) -> bool {
-    app.status_banner
-        .as_deref()
-        .is_some_and(startup_banner_is_clipboard_warning)
-}
-
-fn startup_banner_is_clipboard_warning(banner: &str) -> bool {
-    let normalized = banner.to_ascii_lowercase();
-    normalized.contains("clipboard")
-        && (normalized.contains("unreachable") || normalized.contains("inaccessible"))
-}
-
-fn welcome_text_after_logo(text: &str, inner_width: usize, logo_width: usize) -> String {
-    let budget = inner_width.saturating_sub(logo_width).max(1);
-    truncate_plain_text(text, budget)
-}
-
 fn welcome_action_emphasis(app: &AppState, index: usize) -> WelcomeActionEmphasis {
     if app.welcome_state().focus() == WelcomeFocus::Menu(index) {
         WelcomeActionEmphasis::Focused
@@ -592,7 +479,7 @@ fn welcome_content_lines(app: &AppState, area: Rect, theme: &Theme) -> (Rect, Ve
     } else {
         "•"
     };
-    let notes = welcome::changelog_bullets()
+    let notes = crate::release_notes::CURRENT
         .into_iter()
         .flat_map(|text| {
             super::wrap_completion_text(
@@ -942,7 +829,6 @@ mod breadcrumb_token_meta_tests {
                 git_branch: Some(format!("branch-{call}")),
             }
         }));
-        let _ = app.startup_directory_branch_label();
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend).expect("test backend");
         let theme = app.theme();
@@ -968,10 +854,7 @@ mod breadcrumb_token_meta_tests {
 
         // act
         // Then: a cell after the visible breadcrumb retains the canvas style.
-        let text = super::startup_breadcrumb_text(&app);
-        let text_width = u16::try_from(super::super::display_width(&text))
-            .expect("breadcrumb fits standard viewport");
-        let cell = &terminal.backend().buffer()[(text_width + 1, 1)];
+        let cell = &terminal.backend().buffer()[(99, 1)];
         // assert
         assert_eq!(cell.bg, theme.surface.canvas);
         assert!(!cell.modifier.contains(Modifier::DIM));

@@ -772,38 +772,6 @@ pub(super) fn nested_surface_prefix_width(indent: &str) -> usize {
     display_width(indent) + display_width(TRANSCRIPT_RAIL_GLYPH) + 1
 }
 
-fn transcript_surface_rail_lines(
-    height: usize,
-    rail_glyph: &'static str,
-    rail_color: Color,
-    surface: Color,
-) -> Text<'static> {
-    Text::from(
-        (0..height)
-            .map(|_| {
-                Line::from(Span::styled(
-                    rail_glyph,
-                    Style::default().fg(rail_color).bg(surface),
-                ))
-            })
-            .collect::<Vec<_>>(),
-    )
-}
-
-fn prepend_transcript_surface_rail(
-    line: Line<'static>,
-    rail_glyph: &'static str,
-    rail_color: Color,
-    surface: Color,
-) -> Line<'static> {
-    let mut spans = vec![Span::styled(
-        rail_glyph,
-        Style::default().fg(rail_color).bg(surface),
-    )];
-    spans.extend(line.spans);
-    Line::from(spans)
-}
-
 #[cfg(test)]
 mod animation_phase_tests {
     use super::{apply_surface_animation_phase, render_transcript_surface};
