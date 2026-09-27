@@ -1,0 +1,16 @@
+Independent reviewer: /root/tui_review
+Scope: compact selection rows at 8b01eed0 plus the archived source patch.
+
+Approved for committing this compact-selection slice. No blocking findings remain.
+
+- Verified source hashes, archived patch, line counts and 380 artifact hashes before the final documentation corrections.
+- Recomputed all 72 final measurement reports and retained untrimmed summaries. All 14 unchanged frozen checks pass in this run.
+- Confirmed 555 frame/ANSI matches and 3,136 identical row records.
+- Visually inspected terminal captures: only the accepted 21-cell R7 highlight differs; text, cursor, modes and cleanup checks agree.
+- The unexplained timing shift and remaining heap/RSS regressions are reported accurately. Both documentation findings are fixed.
+
+Resolved findings: the README now names only the differing parser counter, and
+the frozen resource receipt links the two raw allocation baseline logs.
+
+Regenerate the manifest after adding this review. Approval covers this slice;
+the broader rewrite remains incomplete.

@@ -1,0 +1,26 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.88s
+────────────
+ Nextest run ID e8ccf866-64f8-456c-954a-01770e9b8ed3 with nextest profile: default
+    Starting 19 tests across 1 binary (1236 tests skipped)
+        PASS [   0.004s] ( 1/19) harness-tui ui::ui_transcript_selection::tests::unresolved_semantic_selection_does_not_fall_back_to_stale_cells
+        PASS [   0.004s] ( 2/19) harness-tui ui::ui_transcript_selection::tests::transformed_fences_fail_closed_for_semantic_selection
+        PASS [   0.004s] ( 3/19) harness-tui ui::ui_transcript_selection::tests::inline_link_ranges_survive_repeated_labels_wrapping_and_wide_graphemes
+        PASS [   0.005s] ( 4/19) harness-tui ui::ui_transcript_selection::tests::destination_export_includes_only_half_open_runs_intersecting_selection
+        PASS [   0.005s] ( 5/19) harness-tui ui::ui_transcript_selection::tests::open_fence_selection_rows_match_streaming_code_body
+        PASS [   0.005s] ( 6/19) harness-tui ui::ui_transcript_selection::tests::markdown_selection_copy_retains_safe_destination_metadata
+        PASS [   0.014s] ( 7/19) harness-tui ui::ui_transcript_selection::tests::fenced_selection_rows_preserve_logical_code_lines_through_rewrap
+        PASS [   0.015s] ( 8/19) harness-tui ui::ui_transcript_selection::tests::streaming_and_settled_rows_preserve_link_metadata_before_open_fence
+        PASS [   0.017s] ( 9/19) harness-tui ui::ui_transcript_selection::grammar_tests::softbreaks_collapse_but_hardbreaks_and_paragraphs_stay_distinct
+        PASS [   0.023s] (10/19) harness-tui ui::ui_transcript_selection::grammar_tests::nested_links_copy_only_their_painted_label_and_destination
+        PASS [   0.027s] (11/19) harness-tui ui::ui_transcript_selection::grammar_tests::quote_depth_repeats_across_wrapping_without_implicit_italic_or_copy_bars
+        PASS [   0.029s] (12/19) harness-tui app::tests::disabled_copy_on_select_keeps_selection_until_right_click_copy
+        PASS [   0.035s] (13/19) harness-tui ui::ui_transcript_selection::grammar_tests::nested_emphasis_combines_styles_at_public_render_seam
+        PASS [   0.051s] (14/19) harness-tui ui::ui_transcript_selection::grammar_tests::terminal_math_renders_supported_forms_and_copies_the_visible_result
+        PASS [   0.052s] (15/19) harness-tui ui::ui_transcript_selection::grammar_tests::malformed_math_and_code_literals_remain_readable
+        PASS [   0.153s] (16/19) harness-tui ui::ui_transcript_selection::grammar_tests::longer_fence_keeps_shorter_and_suffixed_closers_in_code
+        PASS [   0.185s] (17/19) harness-tui ui::ui_transcript_selection::grammar_tests::tilde_fences_highlight_and_select_code_without_markers
+        PASS [   0.199s] (18/19) harness-tui ui::ui_transcript_selection::grammar_tests::code_indentation_tabs_citation_syntax_and_copy_follow_the_same_wrapping
+        PASS [   0.237s] (19/19) harness-tui ui::ui_transcript_selection::diagnostic::diagnostic_compact_rows
+────────────
+     Summary [   0.239s] 19 tests run: 19 passed, 1236 skipped

@@ -1,0 +1,382 @@
+{
+  "startup-0": {
+    "metrics": {
+      "construction_us": {
+        "reference": 149,
+        "candidate": 157,
+        "change_percent": 5.37
+      },
+      "cold_us": {
+        "reference": 661,
+        "candidate": 673,
+        "change_percent": 1.82
+      },
+      "p95_us": {
+        "reference": 160,
+        "candidate": 165,
+        "change_percent": 3.12
+      },
+      "p99_us": {
+        "reference": 256,
+        "candidate": 170,
+        "change_percent": -33.59
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.15,
+        "candidate": 0.15,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 9256,
+        "candidate": 9408,
+        "change_percent": 1.64
+      },
+      "allocated_bytes": {
+        "reference": 12660191,
+        "candidate": 9226445,
+        "change_percent": -27.12
+      },
+      "peak_heap_bytes": {
+        "reference": 1907363,
+        "candidate": 1909477,
+        "change_percent": 0.11
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      },
+      {
+        "repetition": "alloc",
+        "different_fields": []
+      }
+    ]
+  },
+  "idle-1000": {
+    "metrics": {
+      "construction_us": {
+        "reference": 26815,
+        "candidate": 22310,
+        "change_percent": -16.8
+      },
+      "cold_us": {
+        "reference": 25832,
+        "candidate": 19074,
+        "change_percent": -26.16
+      },
+      "p95_us": {
+        "reference": 138,
+        "candidate": 146,
+        "change_percent": 5.8
+      },
+      "p99_us": {
+        "reference": 145,
+        "candidate": 149,
+        "change_percent": 2.76
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.1,
+        "candidate": 0.15,
+        "change_percent": 50.0
+      },
+      "rss_kib": {
+        "reference": 46208,
+        "candidate": 32396,
+        "change_percent": -29.89
+      },
+      "allocated_bytes": {
+        "reference": 227104637,
+        "candidate": 200271838,
+        "change_percent": -11.82
+      },
+      "peak_heap_bytes": {
+        "reference": 29593171,
+        "candidate": 19924656,
+        "change_percent": -32.67
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      },
+      {
+        "repetition": "alloc",
+        "different_fields": []
+      }
+    ]
+  },
+  "typing-1000": {
+    "metrics": {
+      "construction_us": {
+        "reference": 27504,
+        "candidate": 21677,
+        "change_percent": -21.19
+      },
+      "cold_us": {
+        "reference": 25526,
+        "candidate": 18958,
+        "change_percent": -25.73
+      },
+      "p95_us": {
+        "reference": 145,
+        "candidate": 153,
+        "change_percent": 5.52
+      },
+      "p99_us": {
+        "reference": 147,
+        "candidate": 157,
+        "change_percent": 6.8
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.15,
+        "candidate": 0.15,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 46376,
+        "candidate": 32628,
+        "change_percent": -29.64
+      },
+      "allocated_bytes": {
+        "reference": 227552367,
+        "candidate": 200741192,
+        "change_percent": -11.78
+      },
+      "peak_heap_bytes": {
+        "reference": 29683527,
+        "candidate": 20015012,
+        "change_percent": -32.57
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      },
+      {
+        "repetition": "alloc",
+        "different_fields": []
+      }
+    ]
+  },
+  "stream-1000": {
+    "metrics": {
+      "construction_us": {
+        "reference": 27153,
+        "candidate": 21719,
+        "change_percent": -20.01
+      },
+      "cold_us": {
+        "reference": 25442,
+        "candidate": 19217,
+        "change_percent": -24.47
+      },
+      "p95_us": {
+        "reference": 4033,
+        "candidate": 1068,
+        "change_percent": -73.52
+      },
+      "p99_us": {
+        "reference": 4277,
+        "candidate": 1102,
+        "change_percent": -74.23
+      },
+      "cpu_ms_per_frame": {
+        "reference": 2.15,
+        "candidate": 0.7,
+        "change_percent": -67.44
+      },
+      "rss_kib": {
+        "reference": 49132,
+        "candidate": 33360,
+        "change_percent": -32.1
+      },
+      "allocated_bytes": {
+        "reference": 744446946,
+        "candidate": 324787449,
+        "change_percent": -56.37
+      },
+      "peak_heap_bytes": {
+        "reference": 30318543,
+        "candidate": 20209725,
+        "change_percent": -33.34
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      },
+      {
+        "repetition": "alloc",
+        "different_fields": []
+      }
+    ]
+  },
+  "scroll-1000": {
+    "metrics": {
+      "construction_us": {
+        "reference": 27296,
+        "candidate": 21775,
+        "change_percent": -20.23
+      },
+      "cold_us": {
+        "reference": 25516,
+        "candidate": 19132,
+        "change_percent": -25.02
+      },
+      "p95_us": {
+        "reference": 171,
+        "candidate": 181,
+        "change_percent": 5.85
+      },
+      "p99_us": {
+        "reference": 173,
+        "candidate": 184,
+        "change_percent": 6.36
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.15,
+        "candidate": 0.15,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 46284,
+        "candidate": 32424,
+        "change_percent": -29.95
+      },
+      "allocated_bytes": {
+        "reference": 226729008,
+        "candidate": 199891773,
+        "change_percent": -11.84
+      },
+      "peak_heap_bytes": {
+        "reference": 29591063,
+        "candidate": 19922534,
+        "change_percent": -32.67
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": [
+          "visible"
+        ]
+      },
+      {
+        "repetition": 2,
+        "different_fields": [
+          "visible"
+        ]
+      },
+      {
+        "repetition": 3,
+        "different_fields": [
+          "visible"
+        ]
+      },
+      {
+        "repetition": "alloc",
+        "different_fields": [
+          "visible"
+        ]
+      }
+    ]
+  },
+  "resize-1000": {
+    "metrics": {
+      "construction_us": {
+        "reference": 27573,
+        "candidate": 22039,
+        "change_percent": -20.07
+      },
+      "cold_us": {
+        "reference": 26730,
+        "candidate": 19081,
+        "change_percent": -28.62
+      },
+      "p95_us": {
+        "reference": 5014,
+        "candidate": 2676,
+        "change_percent": -46.63
+      },
+      "p99_us": {
+        "reference": 5092,
+        "candidate": 2769,
+        "change_percent": -45.62
+      },
+      "cpu_ms_per_frame": {
+        "reference": 2.8,
+        "candidate": 0.95,
+        "change_percent": -66.07
+      },
+      "rss_kib": {
+        "reference": 63376,
+        "candidate": 39880,
+        "change_percent": -37.07
+      },
+      "allocated_bytes": {
+        "reference": 670819748,
+        "candidate": 353246457,
+        "change_percent": -47.34
+      },
+      "peak_heap_bytes": {
+        "reference": 40670691,
+        "candidate": 25901288,
+        "change_percent": -36.31
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      },
+      {
+        "repetition": "alloc",
+        "different_fields": []
+      }
+    ]
+  }
+}

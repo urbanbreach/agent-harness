@@ -684,6 +684,31 @@ candidate. This cleanup makes no new resource or browser claim; the active
 state engine and remaining lower renderers still need replacement. Evidence is
 in [`evidence/tui-rewrite/unused-presentation`](evidence/tui-rewrite/unused-presentation).
 
+## Compact selection rows
+
+Selection preparation now writes one string and cell bounds per row. The old
+per-cell string model and its join/clone conversion are removed across semantic,
+fallback and reasoning paths. Copy and highlight rules remain unchanged. All
+3,136 diagnostic row comparisons, 555 frame/ANSI records, 1,670 TUI tests and
+seven gated PTY checks pass. An existing mouse journey now protects Unicode/link
+copy through reflow, with a retained failing anchor mutation. Fresh xterm captures
+preserve the accepted R7 highlight correction and terminal restoration.
+
+Production shrinks by 52 lines. In fresh paired release runs, streaming p99 falls
+1,242→1,102 µs and allocated bytes fall 7.6% against the preceding retained build.
+Resize p99 rises 2.0%, and long-history RSS remains 0.5–1.3% higher after trimming
+excess vector capacity. Both streaming and resize RSS remain more than 30% below
+the original. All frozen main-workload limits pass in this run. The retained
+executables also ran about twice as fast as in the earlier recording, so this
+slice does not account for the entire absolute timing improvement.
+
+A separate trace confirms fixed-viewport resize invokes `tput` without a terminal;
+that diagnostic is excluded from acceptance samples. These remain renderer/encoder
+measurements, not sustained runtime or end-to-end latency evidence. The source tree
+is only 7.61% smaller than the original, and the broader implementation rewrite
+remains open. Evidence is in
+[`evidence/tui-rewrite/compact-selection`](evidence/tui-rewrite/compact-selection).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

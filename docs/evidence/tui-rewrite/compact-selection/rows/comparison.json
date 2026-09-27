@@ -1,0 +1,8 @@
+{
+  "cases": 3136,
+  "all_records_byte_equal": true,
+  "before_sha256": "ab268dfcfb98fa91cb3594dd11d9f5241d045ffc574280bc05baaa330b5f00d6",
+  "candidate_sha256": "ab268dfcfb98fa91cb3594dd11d9f5241d045ffc574280bc05baaa330b5f00d6",
+  "before_source": "8b01eed0",
+  "fixture_is_temporary": true
+}

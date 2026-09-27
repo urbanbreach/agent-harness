@@ -84,8 +84,7 @@ use super::ui_transcript_scrollbar::{
 use super::ui_transcript_selection::{
     blank_selection_row, lifecycle_selection_snapshot, render_transcript_selection,
     selection_rows_for_markdownish_text_block, selection_rows_for_rendered_line, SelectionRow,
-    TranscriptSelection, TranscriptSelectionCell, TranscriptSelectionRow,
-    TranscriptSelectionSnapshot,
+    TranscriptSelection, TranscriptSelectionCell, TranscriptSelectionSnapshot,
 };
 use super::ui_transcript_style::{
     assistant_footer_label, assistant_primary_label_color, assistant_primary_rail_color,
@@ -918,6 +917,7 @@ fn transcript_selection_rows(
         .map(|&line_index| SelectionRow {
             line_index,
             text: " ".repeat(width),
+            width,
             continues_previous: false,
             copy_joiner: None,
             start_cell: 1,

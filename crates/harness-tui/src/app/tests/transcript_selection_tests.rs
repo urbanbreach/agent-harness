@@ -188,11 +188,35 @@ pub(super) fn disabled_copy_on_select_keeps_selection_until_right_click_copy() {
         Ok(())
     })));
 
-    let mut app = transcript_selection_test_app();
-    let (column, row, _) = drag_transcript_selection(&mut app, "Copy this exact reply");
+    let body = format!(
+        "Copy {}",
+        "界 e\u{301} 👩‍💻 #\u{fe0f} wrapped words ".repeat(8)
+    );
+    let source = format!("{}\n\n[finish](https://example.com/copy)", body.trim_end());
+    let expected = format!(
+        "{}\n\nfinish\n\nLinks:\nhttps://example.com/copy",
+        body.trim_end()
+    );
+    let mut app = transcript_selection_test_app_with_text(&source);
+    let (column, row) = transcript_click_position(&app, "Copy");
+    let (end_column, end_row) = transcript_click_position(&app, "finish");
+    drag_transcript_selection_range(&mut app, (column - 1, row), (end_column + 4, end_row));
 
     assert!(app.transcript_selection().is_some());
     assert!(copied.lock().unwrap_or_abort().is_none());
+
+    // The same source selection survives reflow, including wide and joined graphemes.
+    let mut area = TEST_FRAME_AREA;
+    for width in [40, 140, 40] {
+        area.width = width;
+        app.set_frame_area(area);
+        let (column, row) = transcript_click_position_in_area(&app, area, "Copy");
+        assert_eq!(
+            rendered_cell_bg_in_area(&app, area, column - 1, row),
+            app.theme().status.info
+        );
+    }
+    let (column, row) = transcript_click_position_in_area(&app, area, "Copy");
 
     app.handle_mouse(
         MouseEvent {
@@ -201,16 +225,13 @@ pub(super) fn disabled_copy_on_select_keeps_selection_until_right_click_copy() {
             row,
             modifiers: KeyModifiers::NONE,
         },
-        TEST_FRAME_AREA,
+        area,
         None,
         None,
         None,
     );
 
-    assert_eq!(
-        copied.lock().unwrap_or_abort().clone(),
-        Some("Copy this exact reply".to_string())
-    );
+    assert_eq!(copied.lock().unwrap_or_abort().clone(), Some(expected));
     assert!(app.transcript_selection().is_none());
     assert_eq!(
         app.toast()

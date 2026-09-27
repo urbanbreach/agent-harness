@@ -1,0 +1,3 @@
+#!/bin/bash
+printf '%s %s\n' "$PPID" "$1" >> "$TUI_TPUT_TRACE"
+exec /usr/bin/tput "$@"
