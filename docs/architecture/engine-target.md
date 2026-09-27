@@ -1,5 +1,10 @@
 # Engine architecture boundary
 
+> Historical pre-rewrite record. File maps and measurements below describe the
+> earlier engine. Use [runtime architecture](architecture.md),
+> [session storage](sessions-and-replay.md), and
+> [rewrite verification](backend-rewrite.md) for the current backend.
+
 The coordinator appends events and owns lifecycle transitions. This design
 separates durable session history, temporary provider display updates, and legacy
 log decoding. See the [architecture guide](architecture.md) for the current runtime.

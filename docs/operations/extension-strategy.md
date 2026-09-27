@@ -40,46 +40,24 @@ listed compatibility roots are imported after Harness-owned and other
 non-compatibility roots, so they cannot silently shadow shipped or Harness-owned
 skills.
 
-## Native lifecycle hooks and commands
+## Native lifecycle hooks
 
-TUI slash commands are built-in UI actions. V1 does not execute markdown command
-files, substitute `$ARGUMENTS`, interpolate commands, or inject rules by source
-file, glob, priority, or consume policy. These command/hook formats remain
-unsupported.
+Configure commands in `hooks.lifecycle`. Each entry chooses an event, an argument
+vector, an optional workspace-relative `cwd`, a timeout, a `critical` flag, and
+explicit environment values. See [hook execution](hooks.md) for an example,
+phase order, limits, and failure handling.
 
-Runtime config lists the native lifecycle hooks. The coordinator owns their execution. Hooks observe lifecycle points through allowlisted commands after
-the coordinator reaches that point; they do not append events directly, schedule
-tasks directly, register tools, resolve permissions, or run during replay.
-Critical hook failure fails closed at the coordinator boundary for the owning
-operation. Noncritical hook failure records metadata without turning a failed
-hook into a successful operation. Deterministic/replay modes suppress live hook
-execution while preserving hook metadata already in events.
+The coordinator runs hooks in configuration order. Critical failures veto the
+owning operation; noncritical failures produce a warning. Commands must appear
+exactly in `permissions.shell_allowlist.executables`. Hook output cannot approve
+a tool, modify a provider response, or supply a compaction summary.
 
-### Lifecycle phase map
+Replay, recovery of historical events, and inspection never execute hooks.
+Deterministic execution records skipped task receipts. Resuming a session invokes
+only the new run's lifecycle hooks.
 
-| Hook lifecycle event | V1 status | Runtime boundary | Safety / replay note |
-|---|---|---|---|
-| `run_started` | native | run lifecycle | Coordinator starts the run and records hook metadata; replay reads prior metadata only. |
-| `run_finished` | native | run lifecycle | Coordinator finishes the run after owned work completes; hook failure cannot rewrite prior events. |
-| `run_failed` | native | run lifecycle | Coordinator records failure state; hooks observe the terminal failure boundary. |
-| `agent_turn_started` | native | message/turn boundary | Coordinator starts a provider turn; hooks cannot inject provider-visible context by side effect. |
-| `agent_turn_finished` | native | message/turn boundary | Coordinator finishes the provider turn and records metadata; replay does not execute hooks. |
-| `tool_call_started` | native | tool preflight/result | Runs after coordinator permission/scheduling has started the tool lifecycle; edit/bash authority still comes from permission policy. |
-| `tool_call_finished` | native | tool preflight/result | Runs at tool completion; critical failure records failed tool metadata and cancels owned task completion. |
-| `provider_request_started` | native | provider request params | Runs around provider request construction/execution; provider transport remains owned by the coordinator/provider abstraction. |
-| `provider_request_finished` | native | provider request result | Records provider boundary metadata without letting hooks mutate replayed provider output. |
-| `compaction_requested` | native | compaction request | Critical failure cancels compaction; successful output may provide `compaction_summary:` under coordinator validation. |
-| `compaction_written` | native | compaction result | Legacy lifecycle name; current compaction commits `SessionCompaction` without a checkpoint artifact. |
-| `compaction_applied` | native | compaction result | Observes context application; replay reads the committed compaction event. |
-| `compaction_failed` | native | compaction result | Observes failed compaction without starting a retry loop. |
-| `subagent_spawned` | native | subagent lifecycle | Coordinator-owned spawn event and permission rules remain authoritative. |
-| `subagent_finished` | native | subagent lifecycle | Coordinator records task/subagent terminal metadata; hooks cannot bypass worker redelegation policy. |
-| `permission_requested` | native | permission preflight | Observes a pending permission; hook output cannot grant permission. |
-| `permission_resolved` | native | permission result | Observes operator/coordinator decision after resolution; hook output cannot change the recorded decision. |
-| `markdown_command_file` | intentionally_unsupported | command loading | No V1 command file schema, `$ARGUMENTS` substitution, or interpolation execution. |
-| `rules_context_injection` | intentionally_unsupported | context transform | No V1 rules injection by source file, glob, priority, or consume policy. |
-| `typed_extension_command_hook` | post_v1 | extension manifest | Future descriptor/plugin work must route through coordinator permissions, artifacts, and replay-safe metadata first. |
-| `fallback_external_plugin_hook` | post_v1 | extension/plugin runtime | Arbitrary executable plugins and upstream command-hook compatibility remain post-V1. |
+TUI slash commands remain built-in UI actions. Markdown command files and typed
+extension command descriptors do not execute commands.
 
 ## Typed extension manifest descriptors
 

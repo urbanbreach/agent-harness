@@ -1,5 +1,10 @@
 # Engine inventory
 
+> Historical pre-rewrite record. File maps and measurements below describe the
+> earlier engine. Use [runtime architecture](architecture.md),
+> [session storage](sessions-and-replay.md), and
+> [rewrite verification](backend-rewrite.md) for the current backend.
+
 This inventory records baseline `060ee1fd` and the later migration measurements.
 The tables distinguish measured source structure from planned changes. They do
 not certify a release. See [architecture](architecture.md) for the current runtime.
