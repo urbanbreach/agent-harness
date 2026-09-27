@@ -99,7 +99,6 @@ pub(super) fn merge_presentation_enrichment(
         else {
             continue;
         };
-        tool.edit.clone_from(&existing.edit);
         tool.truncated_output.clone_from(&existing.truncated_output);
         tool.resolved_tool_identity
             .clone_from(&existing.resolved_tool_identity);

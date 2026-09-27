@@ -1,0 +1,49 @@
+{
+  "reference": "../../reference/performance/summary.json",
+  "allocation_sources": {
+    "stream-1000": "../../reference/performance/stream-1000-alloc.log",
+    "resize-1000": "../../reference/performance/resize-1000-alloc.log"
+  },
+  "metrics": {
+    "stream-1000": {
+      "cpu_ms_per_frame": {
+        "frozen_reference": 2.2,
+        "limit": 1.54,
+        "candidate": 0.65,
+        "passes": true
+      },
+      "rss_kib": {
+        "frozen_reference": 51604,
+        "limit": 36122.799999999996,
+        "candidate": 33452,
+        "passes": true
+      },
+      "allocated_bytes": {
+        "frozen_reference": 741881764,
+        "limit": 519317234.79999995,
+        "candidate": 312090531,
+        "passes": true
+      }
+    },
+    "resize-1000": {
+      "cpu_ms_per_frame": {
+        "frozen_reference": 2.8,
+        "limit": 1.9599999999999997,
+        "candidate": 0.9,
+        "passes": true
+      },
+      "rss_kib": {
+        "frozen_reference": 66064,
+        "limit": 46244.799999999996,
+        "candidate": 39732,
+        "passes": true
+      },
+      "allocated_bytes": {
+        "frozen_reference": 668453171,
+        "limit": 467917219.7,
+        "candidate": 348556462,
+        "passes": true
+      }
+    }
+  }
+}

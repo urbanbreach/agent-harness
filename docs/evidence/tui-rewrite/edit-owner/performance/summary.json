@@ -1,0 +1,260 @@
+{
+  "reference": {
+    "settle-1000": {
+      "construction_us": 37039,
+      "cold_us": 25285,
+      "p50_us": 72111,
+      "p95_us": 80119,
+      "p99_us": 81436,
+      "bytes": 28598,
+      "rss_kib": 80568,
+      "cpu_ms_per_frame": 72.15,
+      "allocated_bytes": 9197170968,
+      "peak_heap_bytes": 55944714
+    },
+    "startup-0": {
+      "construction_us": 149,
+      "cold_us": 685,
+      "p50_us": 142,
+      "p95_us": 158,
+      "p99_us": 172,
+      "bytes": 5200,
+      "rss_kib": 9484,
+      "cpu_ms_per_frame": 0.15,
+      "allocated_bytes": 12664623,
+      "peak_heap_bytes": 1909470
+    },
+    "idle-1000": {
+      "construction_us": 26625,
+      "cold_us": 25693,
+      "p50_us": 136,
+      "p95_us": 138,
+      "p99_us": 140,
+      "bytes": 5200,
+      "rss_kib": 46220,
+      "cpu_ms_per_frame": 0.15,
+      "allocated_bytes": 227107477,
+      "peak_heap_bytes": 29591054
+    },
+    "typing-1000": {
+      "construction_us": 26395,
+      "cold_us": 25306,
+      "p50_us": 142,
+      "p95_us": 147,
+      "p99_us": 154,
+      "bytes": 7600,
+      "rss_kib": 46440,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 227546103,
+      "peak_heap_bytes": 29683522
+    },
+    "stream-1000": {
+      "construction_us": 26658,
+      "cold_us": 25376,
+      "p50_us": 2016,
+      "p95_us": 4195,
+      "p99_us": 4457,
+      "bytes": 183623,
+      "rss_kib": 49016,
+      "cpu_ms_per_frame": 2.25,
+      "allocated_bytes": 744448434,
+      "peak_heap_bytes": 30318538
+    },
+    "scroll-1000": {
+      "construction_us": 26974,
+      "cold_us": 25587,
+      "p50_us": 170,
+      "p95_us": 175,
+      "p99_us": 178,
+      "bytes": 704350,
+      "rss_kib": 46180,
+      "cpu_ms_per_frame": 0.2,
+      "allocated_bytes": 226727272,
+      "peak_heap_bytes": 29591058
+    },
+    "resize-1000": {
+      "construction_us": 27373,
+      "cold_us": 25759,
+      "p50_us": 4086,
+      "p95_us": 4979,
+      "p99_us": 5050,
+      "bytes": 2320100,
+      "rss_kib": 63296,
+      "cpu_ms_per_frame": 2.7,
+      "allocated_bytes": 670826660,
+      "peak_heap_bytes": 40672798
+    }
+  },
+  "before": {
+    "settle-1000": {
+      "construction_us": 30497,
+      "cold_us": 18966,
+      "p50_us": 1228,
+      "p95_us": 1315,
+      "p99_us": 1382,
+      "bytes": 28598,
+      "rss_kib": 47708,
+      "cpu_ms_per_frame": 1.2,
+      "allocated_bytes": 347796347,
+      "peak_heap_bytes": 35053311
+    },
+    "startup-0": {
+      "construction_us": 151,
+      "cold_us": 660,
+      "p50_us": 150,
+      "p95_us": 169,
+      "p99_us": 175,
+      "bytes": 5200,
+      "rss_kib": 9212,
+      "cpu_ms_per_frame": 0.15,
+      "allocated_bytes": 9224337,
+      "peak_heap_bytes": 1909471
+    },
+    "idle-1000": {
+      "construction_us": 21429,
+      "cold_us": 18783,
+      "p50_us": 127,
+      "p95_us": 133,
+      "p99_us": 140,
+      "bytes": 5200,
+      "rss_kib": 32212,
+      "cpu_ms_per_frame": 0.15,
+      "allocated_bytes": 195581437,
+      "peak_heap_bytes": 19922538
+    },
+    "typing-1000": {
+      "construction_us": 21698,
+      "cold_us": 19173,
+      "p50_us": 132,
+      "p95_us": 135,
+      "p99_us": 142,
+      "bytes": 7600,
+      "rss_kib": 32540,
+      "cpu_ms_per_frame": 0.15,
+      "allocated_bytes": 196045815,
+      "peak_heap_bytes": 20015006
+    },
+    "stream-1000": {
+      "construction_us": 21555,
+      "cold_us": 18795,
+      "p50_us": 635,
+      "p95_us": 954,
+      "p99_us": 981,
+      "bytes": 183623,
+      "rss_kib": 33416,
+      "cpu_ms_per_frame": 0.65,
+      "allocated_bytes": 312093805,
+      "peak_heap_bytes": 20160874
+    },
+    "scroll-1000": {
+      "construction_us": 21706,
+      "cold_us": 19169,
+      "p50_us": 160,
+      "p95_us": 166,
+      "p99_us": 172,
+      "bytes": 704350,
+      "rss_kib": 32344,
+      "cpu_ms_per_frame": 0.2,
+      "allocated_bytes": 195578691,
+      "peak_heap_bytes": 19922528
+    },
+    "resize-1000": {
+      "construction_us": 21691,
+      "cold_us": 18874,
+      "p50_us": 2123,
+      "p95_us": 2631,
+      "p99_us": 2729,
+      "bytes": 2320100,
+      "rss_kib": 39572,
+      "cpu_ms_per_frame": 0.95,
+      "allocated_bytes": 348553512,
+      "peak_heap_bytes": 25899170
+    }
+  },
+  "candidate": {
+    "settle-1000": {
+      "construction_us": 30193,
+      "cold_us": 19033,
+      "p50_us": 1208,
+      "p95_us": 1301,
+      "p99_us": 1373,
+      "bytes": 28598,
+      "rss_kib": 47584,
+      "cpu_ms_per_frame": 1.2,
+      "allocated_bytes": 347788617,
+      "peak_heap_bytes": 35051202
+    },
+    "startup-0": {
+      "construction_us": 148,
+      "cold_us": 425,
+      "p50_us": 150,
+      "p95_us": 168,
+      "p99_us": 172,
+      "bytes": 5200,
+      "rss_kib": 9296,
+      "cpu_ms_per_frame": 0.15,
+      "allocated_bytes": 9224479,
+      "peak_heap_bytes": 1907362
+    },
+    "idle-1000": {
+      "construction_us": 21680,
+      "cold_us": 19099,
+      "p50_us": 126,
+      "p95_us": 134,
+      "p99_us": 139,
+      "bytes": 5200,
+      "rss_kib": 32340,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 195588331,
+      "peak_heap_bytes": 19924653
+    },
+    "typing-1000": {
+      "construction_us": 22210,
+      "cold_us": 19181,
+      "p50_us": 133,
+      "p95_us": 136,
+      "p99_us": 141,
+      "bytes": 7600,
+      "rss_kib": 32516,
+      "cpu_ms_per_frame": 0.15,
+      "allocated_bytes": 196044805,
+      "peak_heap_bytes": 20015009
+    },
+    "stream-1000": {
+      "construction_us": 21907,
+      "cold_us": 19011,
+      "p50_us": 641,
+      "p95_us": 955,
+      "p99_us": 989,
+      "bytes": 183623,
+      "rss_kib": 33452,
+      "cpu_ms_per_frame": 0.65,
+      "allocated_bytes": 312090531,
+      "peak_heap_bytes": 20160877
+    },
+    "scroll-1000": {
+      "construction_us": 21947,
+      "cold_us": 19145,
+      "p50_us": 159,
+      "p95_us": 164,
+      "p99_us": 166,
+      "bytes": 704350,
+      "rss_kib": 32232,
+      "cpu_ms_per_frame": 0.15,
+      "allocated_bytes": 195579529,
+      "peak_heap_bytes": 19922531
+    },
+    "resize-1000": {
+      "construction_us": 21967,
+      "cold_us": 18976,
+      "p50_us": 2114,
+      "p95_us": 2643,
+      "p99_us": 2740,
+      "bytes": 2320100,
+      "rss_kib": 39732,
+      "cpu_ms_per_frame": 0.9,
+      "allocated_bytes": 348556462,
+      "peak_heap_bytes": 25899173
+    }
+  }
+}

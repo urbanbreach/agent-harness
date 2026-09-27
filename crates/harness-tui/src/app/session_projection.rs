@@ -33,6 +33,7 @@ use crate::view_model;
 
 #[path = "session_projection/background_notification.rs"]
 mod background_notification;
+mod edit;
 mod event_history;
 mod event_ingest;
 mod live_lifecycle;

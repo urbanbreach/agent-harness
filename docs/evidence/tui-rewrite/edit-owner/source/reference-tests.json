@@ -1,0 +1,19 @@
+{
+  "head": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+  "files": {
+    "crates/harness-tui/tests/typed_runtime_event_settle_test.rs": {
+      "sha256": "aa3c95a9c7e2c566e4ceb1027090672d5b9d090d9c1293097c3acbf1f22229be",
+      "lines": 398
+    },
+    "crates/harness-tui/tests/typed_runtime_event_settle/edits.rs": {
+      "sha256": "a6538c920e353841d6c9a015e23b14187ef7a3cc8c8e745021f24098def89428",
+      "lines": 126
+    },
+    "crates/harness-tui/src/app/session_projection/edit_contract_test.rs": {
+      "sha256": "518407241867ed91bf472eca25a8c1762277475ddb39478210c5db3fb54dbf9d",
+      "lines": 119
+    }
+  },
+  "unit_adapter": "events() to events.iter() only; cfg(test) module registration",
+  "production_changes": false
+}

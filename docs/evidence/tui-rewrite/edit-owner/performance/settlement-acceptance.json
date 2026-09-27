@@ -1,0 +1,27 @@
+{
+  "p95_us": {
+    "candidate": 1301,
+    "limit": 49690.899999999994,
+    "passes": true
+  },
+  "p99_us": {
+    "candidate": 1373,
+    "limit": 50081.5,
+    "passes": true
+  },
+  "cpu_ms_per_frame": {
+    "candidate": 1.2,
+    "limit": 45.394999999999996,
+    "passes": true
+  },
+  "allocated_bytes": {
+    "candidate": 347788617,
+    "limit": 26530471624.3,
+    "passes": true
+  },
+  "rss_kib": {
+    "candidate": 47584,
+    "limit": 55765.600000000006,
+    "passes": true
+  }
+}

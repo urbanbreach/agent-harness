@@ -1,0 +1,34 @@
+{
+  "crates/harness-tui/src/app/session_projection.rs": {
+    "sha256": "9cefb6ea59190ca3319db100b69f5b2321837950f306450a8edf3150eda05aa8",
+    "lines": 1885
+  },
+  "crates/harness-tui/src/app/session_projection/edit.rs": {
+    "sha256": "dc2b900e4dcca292a8ce653e3ac42cef7159d57d8ce9a4b374c422ba4819b4c2",
+    "lines": 202
+  },
+  "crates/harness-tui/src/app/session_projection/live_tool.rs": {
+    "sha256": "4ac26e51e14e188fb5bd0400db60fdac565c1da962a44865432b10a455e1d2e2",
+    "lines": 116
+  },
+  "crates/harness-tui/src/app/session_projection/settled_presentation.rs": {
+    "sha256": "1ddc5d3039149fd7c6d19deaffbfbf8200e9eb9b8af05cb03108ee12e54ead9e",
+    "lines": 392
+  },
+  "crates/harness-tui/src/app/session_projection/settled_presentation/canonical_orchestration.rs": {
+    "sha256": "b331cf86bd285311185f6267af002a5e5aa435df5dc86823b3bbcb1702dd5a3d",
+    "lines": 138
+  },
+  "crates/harness-tui/src/app/session_projection/settled_presentation/presentation_merge.rs": {
+    "sha256": "32fcd86cb5bb551999178a2d877eb0cd9d2a41ded40cf2a4bce573bced327e28",
+    "lines": 171
+  },
+  "crates/harness-tui/tests/typed_runtime_event_settle/edits.rs": {
+    "sha256": "a6538c920e353841d6c9a015e23b14187ef7a3cc8c8e745021f24098def89428",
+    "lines": 126
+  },
+  "crates/harness-tui/tests/typed_runtime_event_settle_test.rs": {
+    "sha256": "aa3c95a9c7e2c566e4ceb1027090672d5b9d090d9c1293097c3acbf1f22229be",
+    "lines": 398
+  }
+}
