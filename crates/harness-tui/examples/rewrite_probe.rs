@@ -2,9 +2,12 @@
 #[cfg(unix)]
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use harness_core::event::RuntimeEvent;
-    use harness_tui::{live_update_channel, run_tui_with_options, LiveUpdate, TuiMode, TuiOptions};
+    use harness_tui::{
+        live_update_channel, run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent,
+    };
+    use serde_json::{json, Value};
     use std::{
-        io::BufRead,
+        io::{BufRead, Write},
         net::Shutdown,
         os::unix::net::{UnixListener, UnixStream},
         path::PathBuf,
@@ -31,14 +34,28 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 return Ok(());
             }
             for line in std::io::BufReader::new(stream).lines() {
-                let event: RuntimeEvent = serde_json::from_str(&line?)?;
-                if sender.send(LiveUpdate::Event(Box::new(event))).is_err() {
+                let value: Value = serde_json::from_str(&line?)?;
+                let update = if let Some(response) = value.get("rewind_points") {
+                    LiveUpdate::RewindPoints {
+                        generation: serde_json::from_value(response["generation"].clone())?,
+                        result: serde_json::from_value(response["result"].clone())?,
+                    }
+                } else if let Some(response) = value.get("rewind_complete") {
+                    LiveUpdate::RewindComplete {
+                        generation: serde_json::from_value(response["generation"].clone())?,
+                        result: serde_json::from_value(response["result"].clone())?,
+                    }
+                } else {
+                    LiveUpdate::Event(Box::new(serde_json::from_value::<RuntimeEvent>(value)?))
+                };
+                if sender.send(update).is_err() {
                     break;
                 }
             }
             Ok(())
         },
     );
+    let intent_connection = Arc::clone(&connection);
     let result = run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: std::env::current_dir()?,
@@ -49,7 +66,26 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             compact_session_supported: false,
         },
         exit_on_finish: false,
-        on_ui_intent: None,
+        on_ui_intent: Some(Arc::new(move |intent| {
+            let value = match intent {
+                UiIntent::LoadRewindPoints { generation, .. } => {
+                    json!({"load_rewind_points": generation})
+                }
+                UiIntent::RewindConversation {
+                    generation,
+                    request_id,
+                } => json!({"rewind_conversation": generation, "request_id": request_id}),
+                _ => return,
+            };
+            if let Some(stream) = intent_connection
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .as_mut()
+            {
+                // The controller owns this fixture socket; a disconnected controller ends the journey.
+                let _ = writeln!(stream, "{value}");
+            }
+        })),
         keybindings: None,
         toggles: None,
         preserve_terminal_on_exit: false,

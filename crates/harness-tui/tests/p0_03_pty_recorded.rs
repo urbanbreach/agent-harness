@@ -45,7 +45,7 @@ fn p0_03_real_pty_records_markdown_and_event_driven_fence() {
         "markdown table must render as a box\n{ready_screen}"
     );
     assert!(
-        ready_screen.contains("nested _emphasis_"),
+        ready_screen.contains("nested emphasis"),
         "nested emphasis must remain visible\n{ready_screen}"
     );
     assert!(
@@ -53,9 +53,30 @@ fn p0_03_real_pty_records_markdown_and_event_driven_fence() {
         "CJK text must remain visible\n{ready_screen}"
     );
     assert!(
-        ready_screen.contains("👩"),
-        "emoji must remain visible\n{ready_screen}"
+        helper
+            .raw
+            .windows("👩‍💻".len())
+            .any(|bytes| bytes == "👩‍💻".as_bytes()),
+        "the terminal must receive the complete ZWJ grapheme"
     );
+    // vt100 does not implement grapheme clustering; xterm captures check its width.
+    let (row, line) = ready_screen
+        .lines()
+        .enumerate()
+        .find(|(_, line)| line.contains("nested emphasis"))
+        .unwrap_or_abort();
+    let column = UnicodeWidthStr::width(&line[..line.find("emphasis").unwrap_or_abort()]);
+    for column in column..column + "emphasis".len() {
+        let cell = helper
+            .parser
+            .screen()
+            .cell(row as u16, column as u16)
+            .unwrap_or_abort();
+        assert!(
+            cell.bold() && cell.italic(),
+            "nested emphasis lost its style"
+        );
+    }
     assert!(
         ready_screen.contains("valid"),
         "valid link label must remain visible\n{ready_screen}"

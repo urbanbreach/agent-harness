@@ -117,6 +117,15 @@ impl Session {
     }
 
     pub(crate) fn resize_burst(&mut self, final_cols: u16, final_rows: u16) -> Value {
+        let before = self.text();
+        let composer_border = self.terminal.composer_border().unwrap_or_abort();
+        let anchor = before
+            .lines()
+            .find_map(|line| {
+                let start = line.find("Harness response ")?;
+                Some(line[start..].split(':').next()?.to_owned())
+            })
+            .unwrap_or_abort();
         let sequence = [
             (final_cols.saturating_add(9), final_rows.saturating_add(3)),
             (
@@ -125,27 +134,44 @@ impl Session {
             ),
             (final_cols, final_rows),
         ];
-        let output_before_prime = self.raw().len();
+        let frames_before_prime = self.terminal.frames();
         let (prime_cols, prime_rows) = sequence[0];
         self.master
             .resize(size(prime_cols, prime_rows))
             .unwrap_or_abort();
         self.terminal.resize(prime_cols, prime_rows);
         self.wait_until(
-            |terminal| terminal.raw().len() > output_before_prime,
+            |terminal| terminal.completed_frame(frames_before_prime),
             "priming resize frame",
         );
 
-        let output_before_burst = self.raw().len();
+        let frames_before_burst = self.terminal.frames();
         for (cols, rows) in sequence[1..].iter().copied() {
             self.master.resize(size(cols, rows)).unwrap_or_abort();
             self.terminal.resize(cols, rows);
         }
         self.wait_until(
-            |terminal| terminal.raw().len() > output_before_burst,
+            |terminal| {
+                terminal.completed_frame(frames_before_burst)
+                    && terminal.composer_border() == Some(composer_border)
+            },
             "debounced resize frame",
         );
+        let resized = self.text();
+        assert!(
+            resized.contains(&anchor),
+            "resize lost detached anchor {anchor}\n{resized}"
+        );
+        assert!(
+            !resized.contains(scenario::READY_MARKER),
+            "resize unexpectedly followed live"
+        );
         self.send(b"\x1b[6~");
+        self.wait_until(
+            |terminal| terminal.text() != resized,
+            "PageDown progression",
+        );
+        self.send(b"\x1b[F");
         self.wait_for(scenario::READY_MARKER);
         assert_eq!(self.terminal.state_size(), (final_rows, final_cols));
         json!({
@@ -155,6 +181,8 @@ impl Session {
             "inputAfterDebouncedResize": true,
             "parserStatePreserved": true,
             "masterPtyResize": true,
+            "detachedAnchor": anchor,
+            "returnToLive": "End",
         })
     }
 

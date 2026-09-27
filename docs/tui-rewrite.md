@@ -34,11 +34,27 @@ reproducible commands. An ignored local artifact alone is not published evidence
 The initial samples and CLI happy-path recording are committed under
 [`evidence/tui-rewrite/reference`](evidence/tui-rewrite/reference).
 
-The opt-in Linux PTY run executes 22 checks: 18 pass and four fail on the original
-source (P0-02 navigation error marker, P0-03 Markdown visibility, P1-02 Settings
-geometry, and P1-04 responsive readiness). These failures are being classified
-against their captured screens. The separate CLI happy path passes through
-prompt, permission, tool edit, resume picker and quit.
+The original Linux PTY lane initially passed 18 of 22 checks. The four failures
+came from stale fixtures. Correcting them also exposed R4 below. The fixtures now use
+canonical completed-assistant events, expand collapsed errors before inspecting
+them, check the current Settings footer, and wait for a complete resize frame.
+Markdown checks assert rendered emphasis; xterm supplies grapheme-aware visual
+evidence that the small VT100 test parser cannot provide. R4 below remains a
+separate failing behavior check, exempted only while recording the reference.
+
+The CLI journey now enters the saved session and submits another prompt after
+the startup-to-live terminal handoff. The runtime probe also exercises rewind
+loading, confirmation, stale responses, failure recovery, and success through
+real `LiveUpdate` messages and `UiIntent` callbacks. Three release PTY/xterm runs
+passed that journey and exited naturally with termios, protocol modes, sockets,
+process groups, and browser profiles restored or closed.
+
+Published evidence includes raw ANSI archives, compressed capture manifests,
+539 cell/cursor/intent checkpoints, raw renderer/runtime/browser samples, and
+selected PNGs. [`files.json`](evidence/tui-rewrite/reference/files.json) records
+file hashes. Full local PNG and browser-cell captures remain available in the
+isolated evidence directories for the final comparison. Unpack `*.tar.gz` with
+`tar -xzf` and read `*.json.gz` with `gzip -dc`.
 
 ## Behavior inventory
 
@@ -50,8 +66,8 @@ Grok's additional features do not imply that Harness implements them.
 | --- | --- | --- |
 | Shell | Home, empty/live session, replay, completed session; model/context chrome; narrow layouts | `deterministic_render_test`, `shell_topology_contract_test`, `startup_polish_test` |
 | Motion | Startup reveal, shimmer, live reasoning/tool pulse, completion rail, reduced motion | `grok_parity_render_test`, `motion_demand_app_state_test`, P1-03/P1-04 PTY fixtures |
-| Composer | Grapheme editing, selection, undo/redo, multiline, paste preview, history, stash, attachments, file/agent/resource mentions | Composer tests, `production_composer_reachability_test`, P0-04 PTY fixtures |
-| Submission | Send, queue, interject, cancel-and-replace, queue editing/reorder, shell command mode | Prompt queue tests, live turn tests, CLI intent tests |
+| Composer | Grapheme editing, selection, undo/redo, multiline, paste preview, history, stash, file and agent mentions | Composer tests, `production_composer_reachability_test`, P0-04 PTY fixtures |
+| Submission | Send, queue, interject, cancel-and-replace, queued-entry navigation, shell command mode | Prompt queue tests, live turn tests, CLI intent tests |
 | Commands | Palette and slash search, aliases, key remapping, leader chords, simple/Vim modes | `keybindings`, `help_browser_test`, slash completion fixtures |
 | Dialogs | Help, themes, model/preset selection, auth/connect, toggles, settings, status/usage/extensions | Modal chrome fixtures, model switcher tests, dashboard tests |
 | Session tools | Resume/replay, rename/delete/pin, tree, fork/clone, import/export, rewind, worktree picker/new worktree | Session navigation, lineage, foreign import, CLI replay tests |
@@ -67,13 +83,29 @@ The final coverage table must distinguish tested behavior, recorded defects,
 unsupported features, and unverified environments. A passing renderer check
 does not establish runtime reachability.
 
-The new public-boundary oracle currently records 507 frames, including complete
-cell colors, underline colors, modifiers, cursor positions, input sequences, and
-emitted intents. It exercises populated plans, memory, settings, model selection,
-stash, session resume, replay, and permission submissions as well as empty states.
-The independent review identified missing coverage for child-session navigation,
-attachments/mentions, queue editing, mouse routing, rewind acknowledgement, and
-preserved-terminal handoff. Those remain required before source removal.
+The public-boundary oracle records 539 frames with complete cell colors,
+underline colors, modifiers, cursor positions, input sequences, and emitted
+intents. It covers populated plans, memory, settings, model selection, stash,
+resume/replay, permission submissions, file/subagent mention selection and
+submission, and queued-entry navigation with exact draft restoration.
+
+Reachability was checked separately from rendering:
+
+- Child/parent/sibling session navigation already has public integration coverage
+  in `session_navigation_keybindings_test`; live-parent stream isolation and
+  typed child-fragment settlement have useful behavior checks to retain.
+- Mouse ownership, stale presses, selection release, and clipboard selection
+  have existing behavior tests. Keep those observable assertions when replacing
+  their current private fixtures.
+- Attachment ingestion, MCP resource mentions, and queue edit/reorder APIs have
+  injected tests but no shipped CLI/input callers. Preserve required submission
+  data contracts; do not claim those helper APIs are reachable UI features.
+- The real runtime rewind probe covers acknowledgement and stale generations;
+  the CLI PTY journey covers a successful preserved-terminal handoff. The
+  restoration probe now covers a failed successor initialization too.
+- Marketplace and Feedback lead to Help; Plugins leads to toggles. Export shows
+  the CLI command. Account credits/billing and extension installation report
+  unavailable. These are existing limits, not features to invent in the rewrite.
 
 ## Existing defects and decisions
 
@@ -85,12 +117,21 @@ before changing the implementation.
 | R1 | `runtime.rs` initializes fallible presentation/scheduling telemetry after terminal setup but before installing `TerminalRestoreGuard` | Fix in the replacement. An initialization error must restore the terminal. |
 | R2 | `teardown_terminal_session` returns on its first failed restore operation | Fix in the replacement. Attempt the remaining restoration operations and return the error. |
 | R3 | Detaching completed history at 40×24 changes the viewport between the first and second paints, without an input or clock change | Record both buffers. Compare the settled reference viewport; the replacement must resolve navigation before painting. Candidate checks require its first paint to match. |
+| R4 | Shift-K/J response navigation positions the answer under its sticky header, hiding a short answer and preventing reliable advancement | Fix in the replacement. The selected answer's first line must remain visible and navigation must clamp at both ends. |
+| R5 | Direct `tui --scenario ... --exit-on-finish` preserves the terminal but its CLI route never closes it | Move final preserved-terminal cleanup to the shared CLI exit path. The PTY check first failed on active alternate-screen/paste modes. |
+| R6 | Setup flush failures can leave enabled modes untracked; shutdown can hide the first error or leave synchronized output open after a partial frame | Track completed keyboard pushes before flushing, arm idempotent mode cleanup before setup, end synchronization, and attempt every cleanup while retaining the first error. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
-Normal exit restores all checked modes. A write failure during initial setup
-restores termios; recovery from a failure partway through teardown still needs
-an injected-writer check for R2.
+Normal exit restores all checked modes. Injected-writer checks reproduce R2 and
+verify that accepted setup bytes are undone after a flush failure. The replacement must pass normal exit, telemetry initialization failure, failed
+successor handoff, and `/dev/full` setup failure. With `/dev/full`, only termios
+can be verified: no output escape can reach the terminal.
+
+The required R5 compatibility edit is confined to `crates/harness/src/tui.rs`: the CLI
+closes any preserved terminal after dispatching every non-replay mode, including
+errors, and retains the original failure. Coordinator behavior and contracts are
+unchanged. Replay already owns and restores its terminal directly.
 
 ## Performance acceptance, set before replacement
 
@@ -107,6 +148,19 @@ bytes with a 30,042,765-byte heap peak; resize allocated 668,453,171 bytes with
 a 40,266,345-byte peak. The same fixed fixture cost stays in both measurements.
 CPU ticks are coarse for short static runs; use sustained runtime workloads
 for idle and typing CPU conclusions.
+
+The later serial run in `performance-final` retained the same workload and
+similar RSS but took roughly twice as long across every renderer scenario. The
+cause is not established; the host uses its `powersave` governor. Both sample
+sets are retained. This does not relax the original timing limits. Run the
+reference and candidate again on the same host immediately before final
+performance signoff and report variability.
+
+The three serial browser runs each contain 120 samples per input/stream/resize
+workload. Median p99 browser observations are about 94/68/82 ms; raw PTY frame
+p99 values are about 9.4/2.3/34.3 ms. The browser values include DOM observation
+and two animation callbacks. They are not renderer timings. The sustained
+runtime baseline records zero settled-idle CPU ticks and redraws.
 
 Freeze these acceptance rules before changing production source:
 
