@@ -64,6 +64,7 @@ pub(crate) fn render_bordered_composer(
         bordered_composer_placeholder(app, &context, focused, composer_empty, ghost_visible);
     let Some(resolved) = super::presentation::resolve_composer(
         app,
+        &composer_view.editor,
         &composer_text,
         context.dock.composer_focused,
         context.dock.composer_disabled,
@@ -255,6 +256,7 @@ pub(crate) fn composer_input_viewport(
     }
     let resolved = super::presentation::resolve_composer(
         app,
+        &app.composer_view_model_for_area(input).editor,
         &text,
         app.focus == Focus::Prompt,
         app.composer_disabled(),

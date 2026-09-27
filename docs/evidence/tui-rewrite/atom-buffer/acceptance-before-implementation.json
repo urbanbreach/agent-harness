@@ -1,0 +1,49 @@
+{
+  "recorded_at": "2026-09-27T22:22:20.617548+00:00",
+  "source": "7918123b2e2946a8b87a94a9c03fe9b594a13b58",
+  "baseline": {
+    "typing-long": {
+      "p50_us": 379,
+      "p95_us": 413,
+      "p99_us": 543,
+      "bytes": 20000,
+      "rss_kib": 25132,
+      "cpu_ms_per_frame": 0.38,
+      "allocated_bytes": 362805790,
+      "peak_heap_bytes": 11996411,
+      "malloc_calls": 5243974
+    },
+    "typing": {
+      "p50_us": 110,
+      "p95_us": 132,
+      "p99_us": 202,
+      "bytes": 140750,
+      "rss_kib": 9620,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 9697658,
+      "peak_heap_bytes": 2025602,
+      "malloc_calls": 110886
+    }
+  },
+  "limits": {
+    "typing-long": {
+      "p95_us": 453.20000000000005,
+      "p99_us": 477.40000000000003,
+      "rss_kib": 27645.2,
+      "peak_heap_bytes": 13196052.100000001,
+      "allocated_bytes": 370061905.8,
+      "malloc_calls": 5086654.78,
+      "cpu_ms_per_frame": 0.342
+    },
+    "typing": {
+      "p95_us": 135.3,
+      "p99_us": 179.3,
+      "rss_kib": 10472.0,
+      "peak_heap_bytes": 2228162.2,
+      "allocated_bytes": 9891611.16,
+      "malloc_calls": 113097.6,
+      "cpu_ms_per_frame": 0.12000000000000001
+    }
+  },
+  "scope": "Replace atom parsing/validation and eliminate duplicate reflow ownership. Target at least10% lower long-draft CPU and3% fewer malloc calls; all prior stricter limits retained. Pre-change p99 already exceeds previous long/short limits; those misses remain evidence and do not reset limits."
+}

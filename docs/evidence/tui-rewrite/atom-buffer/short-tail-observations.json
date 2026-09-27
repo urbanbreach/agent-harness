@@ -1,0 +1,181 @@
+{
+  "cause": "unverified; no samples omitted and no warmup/limit changes",
+  "runs": [
+    {
+      "side": "before",
+      "sample": 1,
+      "p99_us": 138,
+      "samples_over_original_limit": [
+        {
+          "index": 211,
+          "us": 182
+        },
+        {
+          "index": 369,
+          "us": 199
+        }
+      ]
+    },
+    {
+      "side": "before",
+      "sample": 2,
+      "p99_us": 125,
+      "samples_over_original_limit": []
+    },
+    {
+      "side": "before",
+      "sample": 3,
+      "p99_us": 171,
+      "samples_over_original_limit": [
+        {
+          "index": 55,
+          "us": 267
+        },
+        {
+          "index": 322,
+          "us": 269
+        },
+        {
+          "index": 323,
+          "us": 204
+        },
+        {
+          "index": 325,
+          "us": 198
+        },
+        {
+          "index": 326,
+          "us": 248
+        }
+      ]
+    },
+    {
+      "side": "candidate",
+      "sample": 1,
+      "p99_us": 196,
+      "samples_over_original_limit": [
+        {
+          "index": 0,
+          "us": 194
+        },
+        {
+          "index": 1,
+          "us": 246
+        },
+        {
+          "index": 3,
+          "us": 197
+        },
+        {
+          "index": 5,
+          "us": 229
+        },
+        {
+          "index": 7,
+          "us": 196
+        },
+        {
+          "index": 9,
+          "us": 215
+        },
+        {
+          "index": 11,
+          "us": 271
+        }
+      ]
+    },
+    {
+      "side": "candidate",
+      "sample": 2,
+      "p99_us": 205,
+      "samples_over_original_limit": [
+        {
+          "index": 0,
+          "us": 205
+        },
+        {
+          "index": 1,
+          "us": 205
+        },
+        {
+          "index": 3,
+          "us": 196
+        },
+        {
+          "index": 4,
+          "us": 216
+        },
+        {
+          "index": 5,
+          "us": 199
+        },
+        {
+          "index": 7,
+          "us": 197
+        },
+        {
+          "index": 9,
+          "us": 195
+        },
+        {
+          "index": 10,
+          "us": 190
+        },
+        {
+          "index": 11,
+          "us": 203
+        },
+        {
+          "index": 12,
+          "us": 186
+        },
+        {
+          "index": 13,
+          "us": 185
+        },
+        {
+          "index": 15,
+          "us": 184
+        },
+        {
+          "index": 16,
+          "us": 206
+        },
+        {
+          "index": 17,
+          "us": 193
+        },
+        {
+          "index": 18,
+          "us": 203
+        },
+        {
+          "index": 19,
+          "us": 186
+        },
+        {
+          "index": 21,
+          "us": 184
+        },
+        {
+          "index": 22,
+          "us": 190
+        },
+        {
+          "index": 23,
+          "us": 263
+        },
+        {
+          "index": 39,
+          "us": 253
+        }
+      ]
+    },
+    {
+      "side": "candidate",
+      "sample": 3,
+      "p99_us": 129,
+      "samples_over_original_limit": []
+    }
+  ]
+}

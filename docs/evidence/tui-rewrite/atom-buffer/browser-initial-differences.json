@@ -1,0 +1,132 @@
+[
+  {
+    "name": "01-prompt.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "02-unicode-draft.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "03-insert.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "04-delete.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "05-middle-edit.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "06-undo.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "06b-ctrl-y-conflict.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "07-redo.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "08-select-all.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "09-replace-selection.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "10-undo-selection.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "11-redo-selection.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "12-escape.screen.json",
+    "keys": [
+      "parsedCount",
+      "text",
+      "cells",
+      "scrollback",
+      "lines"
+    ],
+    "text_rows": [
+      [
+        38,
+        "  Enter:send  \u2502  Shift+Tab:mode  \u2502  Ctrl+x:shortcuts                                                                                        ",
+        "  Esc:press again to clear                                                                                                                  "
+      ]
+    ],
+    "png_equal": true
+  },
+  {
+    "name": "13-multiline-paste.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  },
+  {
+    "name": "14-expanded-paste.screen.json",
+    "keys": [
+      "parsedCount"
+    ],
+    "text_rows": [],
+    "png_equal": true
+  }
+]

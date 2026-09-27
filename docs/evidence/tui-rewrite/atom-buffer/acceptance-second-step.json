@@ -1,0 +1,6 @@
+{
+  "recorded_at": "2026-09-27T22:31:37.208076+00:00",
+  "reason": "First candidate passes initial absolute limits but paired CPU improvement is only one10ms clock tick(5.6%). Reuse already prepared bordered-composer model before final comparison. Preserve original limits and additionally require10% from paired predecessor CPU baseline.",
+  "paired_before_cpu_ms_per_frame": 0.36,
+  "cpu_ms_per_frame_limit": 0.324
+}

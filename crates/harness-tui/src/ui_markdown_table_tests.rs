@@ -112,14 +112,12 @@ fn boxed_table_projects_complete_repeated_and_whitespace_link_ranges_through_wra
         .filter(|link| link.destination == "https://example.com/words")
         .flat_map(|link| {
             let mut cell = 0usize;
-            split_graphemes(&text[link.row])
-                .into_iter()
-                .filter_map(move |cluster| {
-                    let start = cell;
-                    cell = cell.saturating_add(usize::from(cluster.display_width()));
-                    (start < link.end_cell && cell > link.start_cell)
-                        .then(|| cluster.as_str().to_string())
-                })
+            split_graphemes(&text[link.row]).filter_map(move |cluster| {
+                let start = cell;
+                cell = cell.saturating_add(usize::from(cluster.display_width()));
+                (start < link.end_cell && cell > link.start_cell)
+                    .then(|| cluster.as_str().to_string())
+            })
         })
         .collect::<String>();
     assert_eq!(linked_words, "two words");

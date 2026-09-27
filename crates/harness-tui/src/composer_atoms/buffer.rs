@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt::Write;
 
 use super::atom::{AtomId, AtomKind, ComposerAtom};
@@ -48,34 +49,24 @@ impl AtomBuffer {
 
     pub fn from_text(text: &str) -> Self {
         let mut buffer = Self::new();
-        let mut pending = String::new();
-        for character in text.chars() {
-            if character == '\n' {
-                buffer.append_text(&pending);
-                pending.clear();
-                let id = buffer.allocate_id();
-                buffer.atoms.push(ComposerAtom::newline(id));
-            } else {
-                pending.push(character);
-            }
-        }
-        buffer.append_text(&pending);
+        buffer.atoms = buffer.parse_text(text);
         buffer
     }
 
     pub fn from_atoms(atoms: Vec<ComposerAtom>) -> Result<Self, AtomBufferError> {
-        let next_atom_id = atoms.iter().try_fold(1, |next, atom| {
-            if atoms
-                .iter()
-                .filter(|candidate| candidate.id == atom.id)
-                .count()
-                > 1
-            {
-                Err(AtomBufferError::DuplicateAtomId(atom.id))
-            } else {
-                Ok(next.max(atom.id.get().saturating_add(1)))
+        let mut ids = HashSet::with_capacity(atoms.len());
+        let mut duplicate = None;
+        let mut next_atom_id = 1;
+        // Scan backward so the error names the first conflicting atom in input order.
+        for atom in atoms.iter().rev() {
+            if !ids.insert(atom.id) {
+                duplicate = Some(atom.id);
             }
-        })?;
+            next_atom_id = next_atom_id.max(atom.id.get().saturating_add(1));
+        }
+        if let Some(id) = duplicate {
+            return Err(AtomBufferError::DuplicateAtomId(id));
+        }
         Ok(Self {
             atoms,
             next_atom_id,
@@ -109,26 +100,7 @@ impl AtomBuffer {
         text: &str,
     ) -> Result<AtomCursor, AtomBufferError> {
         let insertion_index = self.validate_cursor(cursor)?;
-        let mut inserted = Vec::new();
-        let mut pending = String::new();
-        for character in text.chars() {
-            if character == '\n' {
-                inserted.extend(
-                    split_graphemes(&pending)
-                        .into_iter()
-                        .map(|cluster| ComposerAtom::text(self.allocate_id(), cluster)),
-                );
-                pending.clear();
-                inserted.push(ComposerAtom::newline(self.allocate_id()));
-            } else {
-                pending.push(character);
-            }
-        }
-        inserted.extend(
-            split_graphemes(&pending)
-                .into_iter()
-                .map(|cluster| ComposerAtom::text(self.allocate_id(), cluster)),
-        );
+        let inserted = self.parse_text(text);
         let inserted_len = inserted.len();
         self.atoms
             .splice(insertion_index..insertion_index, inserted);
@@ -180,11 +152,18 @@ impl AtomBuffer {
         lines
     }
 
-    fn append_text(&mut self, text: &str) {
-        for cluster in split_graphemes(text) {
-            let id = self.allocate_id();
-            self.atoms.push(ComposerAtom::text(id, cluster));
+    fn parse_text(&mut self, text: &str) -> Vec<ComposerAtom> {
+        let mut atoms = Vec::new();
+        for (line_index, line) in text.split('\n').enumerate() {
+            if line_index > 0 {
+                atoms.push(ComposerAtom::newline(self.allocate_id()));
+            }
+            atoms.extend(
+                split_graphemes(line)
+                    .map(|cluster| ComposerAtom::text(self.allocate_id(), cluster)),
+            );
         }
+        atoms
     }
 
     fn allocate_id(&mut self) -> u64 {

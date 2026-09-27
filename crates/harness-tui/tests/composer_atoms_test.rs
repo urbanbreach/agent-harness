@@ -6,8 +6,8 @@
 )]
 
 use harness_tui::composer_atoms::{
-    deserialize, serialize, AtomBoundary, AtomBuffer, AtomCursor, AtomKind, AttachmentId,
-    ComposerAtom, FileMentionId, GraphemeCluster,
+    deserialize, serialize, AtomBoundary, AtomBuffer, AtomBufferError, AtomCursor, AtomId,
+    AtomKind, AttachmentId, ComposerAtom, FileMentionId, GraphemeCluster,
 };
 
 #[test]
@@ -52,8 +52,8 @@ fn cjk_and_fullwidth_graphemes_use_two_terminal_cells() {
 #[test]
 fn newlines_are_atoms_and_text_round_trips_without_byte_offsets() {
     // arrange
-    // Given: multiline content with a combining grapheme on the second line.
-    let text = "first\nse\u{301}cond\n";
+    // Given: leading/trailing blank lines, CRLF and a combining grapheme.
+    let text = "\nfirst\r\nse\u{301}cond\n\n";
 
     // When: content is parsed into atoms and projected back to text.
     let buffer = AtomBuffer::from_text(text);
@@ -67,9 +67,24 @@ fn newlines_are_atoms_and_text_round_trips_without_byte_offsets() {
             .iter()
             .filter(|atom| matches!(atom.kind, AtomKind::Newline))
             .count(),
-        2
+        4
     );
     assert_eq!(buffer.text(), text);
+    let mut inserted = AtomBuffer::new();
+    inserted.insert_text_at(AtomCursor::start(), text).unwrap();
+    assert_eq!(inserted, buffer);
+}
+
+#[test]
+fn duplicate_ids_report_the_first_conflicting_atom() {
+    let atoms = [9, 2, 2, 9]
+        .into_iter()
+        .map(ComposerAtom::newline)
+        .collect();
+    assert_eq!(
+        AtomBuffer::from_atoms(atoms),
+        Err(AtomBufferError::DuplicateAtomId(AtomId::new(9)))
+    );
 }
 
 #[test]
@@ -96,6 +111,13 @@ fn insertion_and_deletion_preserve_unaffected_atom_ids() {
     assert_eq!(buffer.atoms()[2].id, last);
     assert!(buffer.atoms().iter().all(|atom| atom.id != inserted));
     assert_eq!(buffer.text(), "abc");
+    let before = buffer.clone();
+    let invalid = AtomCursor::before(buffer.atoms().len() + 1);
+    assert_eq!(
+        buffer.insert_text_at(invalid, "\n界"),
+        Err(AtomBufferError::CursorOutOfBounds(invalid))
+    );
+    assert_eq!(buffer, before);
 }
 
 #[test]

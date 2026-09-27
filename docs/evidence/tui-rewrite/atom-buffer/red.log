@@ -1,0 +1,148 @@
+warning: unnecessary parentheses around closure body
+  --> vendor/crossterm/src/terminal/sys/unix.rs:87:50
+   |
+87 |     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+   |                                                  ^                            ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+87 -     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+87 +     let file = File::open("/dev/tty").map(|file| FileDesc::Owned(file.into()));
+   |
+
+warning: `crossterm` (lib) generated 1 warning (run `cargo fix --lib -p crossterm` to apply 1 suggestion)
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.42s
+────────────
+ Nextest run ID f94c0faa-e28a-4bf7-8d9b-2beb7b76bc8f with nextest profile: ci
+    Starting 8 tests across 1 binary
+        FAIL [   0.003s] (4/8) harness-tui::composer_atoms_test viewport_wrapping_keeps_atoms_whole_and_identity_ordered
+  stdout ───
+
+    running 1 test
+    test viewport_wrapping_keeps_atoms_whole_and_identity_ordered ... FAILED
+
+    failures:
+
+    failures:
+        viewport_wrapping_keeps_atoms_whole_and_identity_ordered
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'viewport_wrapping_keeps_atoms_whole_and_identity_ordered' (3392790) panicked at crates/harness-tui/tests/composer_atoms_test.rs:189:5:
+    assertion `left == right` failed
+      left: [4, 3]
+     right: [4, 1, 2, 0]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.003s] (5/8) harness-tui::composer_atoms_test duplicate_ids_report_the_first_conflicting_atom
+  stdout ───
+
+    running 1 test
+    test duplicate_ids_report_the_first_conflicting_atom ... FAILED
+
+    failures:
+
+    failures:
+        duplicate_ids_report_the_first_conflicting_atom
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'duplicate_ids_report_the_first_conflicting_atom' (3392793) panicked at crates/harness-tui/tests/composer_atoms_test.rs:84:5:
+    assertion `left == right` failed
+      left: Ok(AtomBuffer { atoms: [ComposerAtom { id: AtomId(9), kind: Newline, display_width: 0, cursor_boundary: CursorBoundary { before: true, after: true } }, ComposerAtom { id: AtomId(2), kind: Newline, display_width: 0, cursor_boundary: CursorBoundary { before: true, after: true } }, ComposerAtom { id: AtomId(2), kind: Newline, display_width: 0, cursor_boundary: CursorBoundary { before: true, after: true } }, ComposerAtom { id: AtomId(9), kind: Newline, display_width: 0, cursor_boundary: CursorBoundary { before: true, after: true } }], next_atom_id: 10 })
+     right: Err(DuplicateAtomId(AtomId(9)))
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.003s] (8/8) harness-tui::composer_atoms_test newlines_are_atoms_and_text_round_trips_without_byte_offsets
+  stdout ───
+
+    running 1 test
+    test newlines_are_atoms_and_text_round_trips_without_byte_offsets ... FAILED
+
+    failures:
+
+    failures:
+        newlines_are_atoms_and_text_round_trips_without_byte_offsets
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'newlines_are_atoms_and_text_round_trips_without_byte_offsets' (3392796) panicked at crates/harness-tui/tests/composer_atoms_test.rs:64:5:
+    assertion `left == right` failed
+      left: 0
+     right: 4
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.004s] 8 tests run: 5 passed, 3 failed, 0 skipped
+        FAIL [   0.003s] (4/8) harness-tui::composer_atoms_test viewport_wrapping_keeps_atoms_whole_and_identity_ordered
+  stdout ───
+
+    running 1 test
+    test viewport_wrapping_keeps_atoms_whole_and_identity_ordered ... FAILED
+
+    failures:
+
+    failures:
+        viewport_wrapping_keeps_atoms_whole_and_identity_ordered
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'viewport_wrapping_keeps_atoms_whole_and_identity_ordered' (3392790) panicked at crates/harness-tui/tests/composer_atoms_test.rs:189:5:
+    assertion `left == right` failed
+      left: [4, 3]
+     right: [4, 1, 2, 0]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.003s] (5/8) harness-tui::composer_atoms_test duplicate_ids_report_the_first_conflicting_atom
+  stdout ───
+
+    running 1 test
+    test duplicate_ids_report_the_first_conflicting_atom ... FAILED
+
+    failures:
+
+    failures:
+        duplicate_ids_report_the_first_conflicting_atom
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'duplicate_ids_report_the_first_conflicting_atom' (3392793) panicked at crates/harness-tui/tests/composer_atoms_test.rs:84:5:
+    assertion `left == right` failed
+      left: Ok(AtomBuffer { atoms: [ComposerAtom { id: AtomId(9), kind: Newline, display_width: 0, cursor_boundary: CursorBoundary { before: true, after: true } }, ComposerAtom { id: AtomId(2), kind: Newline, display_width: 0, cursor_boundary: CursorBoundary { before: true, after: true } }, ComposerAtom { id: AtomId(2), kind: Newline, display_width: 0, cursor_boundary: CursorBoundary { before: true, after: true } }, ComposerAtom { id: AtomId(9), kind: Newline, display_width: 0, cursor_boundary: CursorBoundary { before: true, after: true } }], next_atom_id: 10 })
+     right: Err(DuplicateAtomId(AtomId(9)))
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.003s] (8/8) harness-tui::composer_atoms_test newlines_are_atoms_and_text_round_trips_without_byte_offsets
+  stdout ───
+
+    running 1 test
+    test newlines_are_atoms_and_text_round_trips_without_byte_offsets ... FAILED
+
+    failures:
+
+    failures:
+        newlines_are_atoms_and_text_round_trips_without_byte_offsets
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'newlines_are_atoms_and_text_round_trips_without_byte_offsets' (3392796) panicked at crates/harness-tui/tests/composer_atoms_test.rs:64:5:
+    assertion `left == right` failed
+      left: 0
+     right: 4
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

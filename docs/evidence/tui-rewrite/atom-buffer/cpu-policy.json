@@ -1,0 +1,126 @@
+{
+  "read_only": true,
+  "policy_not_changed": true,
+  "cores": [
+    {
+      "cpu": 0,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "4700000"
+    },
+    {
+      "cpu": 1,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "4700000"
+    },
+    {
+      "cpu": 2,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "4700000"
+    },
+    {
+      "cpu": 3,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "4700000"
+    },
+    {
+      "cpu": 4,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "4800000"
+    },
+    {
+      "cpu": 5,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "4800000"
+    },
+    {
+      "cpu": 6,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "4800000"
+    },
+    {
+      "cpu": 7,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "4800000"
+    },
+    {
+      "cpu": 8,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "4700000"
+    },
+    {
+      "cpu": 9,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "4700000"
+    },
+    {
+      "cpu": 10,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "4700000"
+    },
+    {
+      "cpu": 11,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "4700000"
+    },
+    {
+      "cpu": 12,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "3700000"
+    },
+    {
+      "cpu": 13,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "3700000"
+    },
+    {
+      "cpu": 14,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "3700000"
+    },
+    {
+      "cpu": 15,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "3700000"
+    },
+    {
+      "cpu": 16,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "3700000"
+    },
+    {
+      "cpu": 17,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "3700000"
+    },
+    {
+      "cpu": 18,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "3700000"
+    },
+    {
+      "cpu": 19,
+      "scaling_driver": "intel_pstate",
+      "scaling_governor": "powersave",
+      "cpuinfo_max_freq": "3700000"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+[
+  {
+    "path": "crates/harness-tui/src/composer_atoms/buffer.rs",
+    "sha256": "6a67ddc1bfa4757861c8fdda1190339c52e9fe4bba532189cf98e067e68efe65",
+    "lines": 193
+  },
+  {
+    "path": "crates/harness-tui/src/composer_atoms/grapheme.rs",
+    "sha256": "aa664e3b70d9c56827635a6f4a69603518ca3486f6cc744459177368bab60d6e",
+    "lines": 81
+  },
+  {
+    "path": "crates/harness-tui/src/composer_integration/presentation.rs",
+    "sha256": "a6f4fee14615c553ec2fb3aca2b2846c610d9d88b4a0bd06b609200e6ed1e1b3",
+    "lines": 254
+  },
+  {
+    "path": "crates/harness-tui/src/ui_composer/bordered.rs",
+    "sha256": "24aff1c348aac6cb2021b324f667b2a514b98dc7d19cd9be7cc109651d9721b2",
+    "lines": 352
+  },
+  {
+    "path": "crates/harness-tui/src/ui_composer/collapsed.rs",
+    "sha256": "6edf62e4ec10271676407893242ef9881139df2a47fa7aa1d7fdabcbfe6ed650",
+    "lines": 51
+  },
+  {
+    "path": "crates/harness-tui/src/ui_composer/document.rs",
+    "sha256": "8983de07a88b4827325ee7e088d68741a48905c873334da87c592d30306b59a8",
+    "lines": 251
+  },
+  {
+    "path": "crates/harness-tui/src/ui_composer/presentation.rs",
+    "sha256": "4147a956a3c8bde5e2de6709c6f2519d8cf14fe708e8a5be515c9bd3f42f8f9b",
+    "lines": 103
+  },
+  {
+    "path": "crates/harness-tui/src/ui_markdown_table_tests.rs",
+    "sha256": "99a1e29836d42cf3e4c8228aa1fb91e53da4bf576d6880ff3c9f063e949bef4c",
+    "lines": 197
+  },
+  {
+    "path": "crates/harness-tui/tests/composer_atoms_test.rs",
+    "sha256": "6a0fedac9854b8f411c53db37ff1a43babe16345f9f7c0f1decee0d474fe21bf",
+    "lines": 198
+  },
+  {
+    "path": "crates/harness-tui/tests/rewrite_performance_test.rs",
+    "sha256": "fa5b0c431ab96ba012a01486bbbf6fc485ef899f9ac2ef92d3fccfb3563bb51d",
+    "lines": 350
+  },
+  {
+    "path": "crates/harness-tui/examples/rewrite_probe.rs",
+    "sha256": "b0d55857b23f02a201abe40b20ba8bf118a2a8b35a9228fe8887fcffbf1a281f",
+    "lines": 127
+  }
+]

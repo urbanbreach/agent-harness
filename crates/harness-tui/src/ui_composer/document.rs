@@ -127,6 +127,7 @@ pub(crate) fn render_document_composer_content(
         && (placeholder_visible || context.dock.composer_focused);
     let Some(resolved) = super::presentation::resolve_composer(
         app,
+        &app.composer_view_model_for_area(input_area).editor,
         &composer_text,
         context.dock.composer_focused,
         context.dock.composer_disabled,

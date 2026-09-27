@@ -15,6 +15,7 @@ pub(super) fn render_collapsed_composer(
         .max(1);
     let Some(resolved) = super::presentation::resolve_composer(
         app,
+        &app.composer_view_model_for_area(area).editor,
         &text,
         false,
         context.dock.composer_disabled,

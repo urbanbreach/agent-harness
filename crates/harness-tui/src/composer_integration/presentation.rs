@@ -88,7 +88,7 @@ impl ComposerEditorModel {
         let wrapped_lines = buffer.wrap(wrap_width);
         Ok(Self {
             text: self.text.clone(),
-            atoms: self.atoms.clone(),
+            atoms: buffer.atoms,
             cursor: self.cursor,
             selection: self.selection,
             viewport_rows: wrapped_lines.len().min(max_viewport_lines).max(1),

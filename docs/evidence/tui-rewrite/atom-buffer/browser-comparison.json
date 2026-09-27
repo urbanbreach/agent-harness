@@ -1,0 +1,182 @@
+{
+  "comparisons": [
+    {
+      "name": "01-prompt.png",
+      "pixels_equal": true,
+      "png_sha256": "390fd0e558c2caa77fa1cd4d65a569cbed16e5b8dbef814b8f80a5d9f2f9728c",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 3,
+          "candidate": 4
+        }
+      }
+    },
+    {
+      "name": "02-unicode-draft.png",
+      "pixels_equal": true,
+      "png_sha256": "fb64f3944d3d84fe7c91768f2761fa42c7508fc7093413e154d5cc5eb85163da",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 4,
+          "candidate": 5
+        }
+      }
+    },
+    {
+      "name": "03-insert.png",
+      "pixels_equal": true,
+      "png_sha256": "a12bf800ec2f428dae01fc913a16e601f869b9605475a405a092a9aa4c73428f",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 5,
+          "candidate": 6
+        }
+      }
+    },
+    {
+      "name": "04-delete.png",
+      "pixels_equal": true,
+      "png_sha256": "fb64f3944d3d84fe7c91768f2761fa42c7508fc7093413e154d5cc5eb85163da",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 6,
+          "candidate": 7
+        }
+      }
+    },
+    {
+      "name": "05-middle-edit.png",
+      "pixels_equal": true,
+      "png_sha256": "b24ce505c3c92c1b99d34001c5cec21fac76afbd5862e7d6dda19edda9617bdc",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 7,
+          "candidate": 8
+        }
+      }
+    },
+    {
+      "name": "06-undo.png",
+      "pixels_equal": true,
+      "png_sha256": "1b6f76277dc19e67b536daf1c65c512ac93457de99e5c36e4c7162de32449fd9",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 8,
+          "candidate": 9
+        }
+      }
+    },
+    {
+      "name": "06b-ctrl-y-conflict.png",
+      "pixels_equal": true,
+      "png_sha256": "1b6f76277dc19e67b536daf1c65c512ac93457de99e5c36e4c7162de32449fd9",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 8,
+          "candidate": 9
+        }
+      }
+    },
+    {
+      "name": "07-redo.png",
+      "pixels_equal": true,
+      "png_sha256": "b24ce505c3c92c1b99d34001c5cec21fac76afbd5862e7d6dda19edda9617bdc",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 9,
+          "candidate": 10
+        }
+      }
+    },
+    {
+      "name": "08-select-all.png",
+      "pixels_equal": true,
+      "png_sha256": "a269919fb85a1749a069637ed237a3728ece6699cd415c1079a92cb483624c7d",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 10,
+          "candidate": 11
+        }
+      }
+    },
+    {
+      "name": "09-replace-selection.png",
+      "pixels_equal": true,
+      "png_sha256": "7fd52deb21aa444182517995dcf258bb7851dd80a38208899e206b805f6ceeae",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 11,
+          "candidate": 12
+        }
+      }
+    },
+    {
+      "name": "10-undo-selection.png",
+      "pixels_equal": true,
+      "png_sha256": "a269919fb85a1749a069637ed237a3728ece6699cd415c1079a92cb483624c7d",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 12,
+          "candidate": 13
+        }
+      }
+    },
+    {
+      "name": "11-redo-selection.png",
+      "pixels_equal": true,
+      "png_sha256": "7fd52deb21aa444182517995dcf258bb7851dd80a38208899e206b805f6ceeae",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 13,
+          "candidate": 14
+        }
+      }
+    },
+    {
+      "name": "12-escape-expired.png",
+      "pixels_equal": true,
+      "png_sha256": "7fd52deb21aa444182517995dcf258bb7851dd80a38208899e206b805f6ceeae",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 15,
+          "candidate": 16
+        }
+      }
+    },
+    {
+      "name": "12b-cleared.png",
+      "pixels_equal": true,
+      "png_sha256": "7f0a6573ea1bc30ccfaa4c617860318f67cb59923779b1e9bb4e960fa810af4a",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 18,
+          "candidate": 19
+        }
+      }
+    },
+    {
+      "name": "13-multiline-paste.png",
+      "pixels_equal": true,
+      "png_sha256": "392d30ff8f24c24f4b7685d66ad333e53b42921aabd4bf91dbe876c0cbe538d5",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 19,
+          "candidate": 20
+        }
+      }
+    },
+    {
+      "name": "14-expanded-paste.png",
+      "pixels_equal": true,
+      "png_sha256": "2fd27cc8779ff479387ab4de6cef0d27bd6e29ac1eee0a7f1927157a85a82e0e",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 20,
+          "candidate": 21
+        }
+      }
+    }
+  ],
+  "both_runs_restore_and_cleanup": true,
+  "clear_then_history_ghost_and_unprefixed_paste": true
+}
