@@ -128,6 +128,7 @@ before changing the implementation.
 | R12 | Plan painting, summary counts and pointer geometry read the filesystem independently, so identical state can paint different buffers after a directory change | Read one plan snapshot before painting and hit testing. Refresh during surface opening, frame preparation and plan actions; keep public diagnostic queries fresh. The extended plan journey fails on the preceding implementation, whose plan state/renderer sources still matched the pinned original. |
 | R13 | Plan rows and previews budget Unicode scalars rather than cells; shared UI clipping also undercounts emoji presentation sequences | Replace plan painting and use Ratatui-compatible grapheme widths. Eight original/candidate frames cover metadata, combining text, joined emoji and VS16. Terminal and Bash title wrapping keep whole graphemes, including zero-width prefixes, without adding or undercounting rows. |
 | R14 | Long transcript tokens undercount VS16 cells, whitespace tokenization splits combining clusters, and selection uses different widths from painting | Replace styled wrapping with borrowed grapheme tokens and align selection with Ratatui widths. Four paired records restore all missing clusters; copy/highlight checks use painted coordinates. Zero-width prefixes remain on their content row. |
+| R15 | A first local file/subagent mention can remain absent from a warmed empty transcript until another update invalidates it | Preserve the recorded first-echo timing during the settlement optimization. Explicitly invalidate later local echoes, whose changed selection index previously caused the refresh. A separate correction needs an intentional first-echo behavior change; the original and unconditional-invalidation captures are retained under `evidence/tui-rewrite/settlement-suffix/diagnostics`. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -790,6 +791,29 @@ simplification with small allocation savings, not a substantial speed or memory
 improvement. Sustained typing/burst CPU and the broader rewrite remain open.
 Raw evidence and commands are in
 [`evidence/tui-rewrite/assistant-parts`](evidence/tui-rewrite/assistant-parts).
+
+## Durable settlement suffix
+
+Plain durable turns now convert the changed suffix and retain prepared layouts
+for a proven prefix of completed text turns. Complex ownership, tools,
+permissions, live fragments, rewinds and task resurrection still use full
+conversion. Canonical validation and coordinator contracts are unchanged.
+Local echoes and session resets now explicitly invalidate the affected layouts;
+the recorded first-empty-view mention delay remains documented as R15.
+
+All 1,666 tests, 555 frame records, 733 controlled animation frames and seven
+gated PTY checks pass. Six xterm screenshots match. Existing settlement and
+`/new` tests were extended, with red/green evidence and pinned-original checks.
+For the new 1,000-turn settlement workload, CPU falls from
+65.85 to 1.2 ms/frame and allocated bytes from 37,900,677,305 to
+347,790,939. Peak heap is essentially unchanged. All nineteen frozen
+checks pass; these renderer/encoder measurements are not end-to-end latency.
+
+The slice adds 278 production and 42 unit-test lines. Whole TUI source is
+167,934 lines, a 7.67% reduction from the original. Full-history
+eligibility scans, complex-turn conversion and the old state engine remain;
+this does not complete their replacement. Evidence and limitations are in
+[`evidence/tui-rewrite/settlement-suffix`](evidence/tui-rewrite/settlement-suffix).
 
 ## Verification sequence
 

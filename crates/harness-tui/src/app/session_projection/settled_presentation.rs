@@ -21,6 +21,7 @@ mod canonical_provider;
 mod compaction;
 mod parts;
 mod presentation_merge;
+mod suffix;
 mod tasks;
 
 use self::canonical_orchestration::*;
@@ -30,7 +31,7 @@ use self::presentation_merge::*;
 use self::tasks::*;
 
 impl SessionProjection {
-    pub(super) fn rebuild_settled_presentation(&mut self, inline: bool) {
+    pub(super) fn rebuild_settled_presentation(&mut self, inline: bool, from: usize) {
         // An inline child is a display slice, not a complete durable log. Keep
         // its original sequence numbers and use the transcript projector,
         // which accepts ordered slices without weakening history validation.
@@ -62,18 +63,35 @@ impl SessionProjection {
                 &canonical.run_summary,
             )
         };
-        let active_events = harness_core::conversation_rewind::active_events(events);
+        let active_events = if from == 0 {
+            harness_core::conversation_rewind::active_events(events)
+        } else {
+            std::borrow::Cow::Borrowed(events)
+        };
         let events = active_events.as_ref();
         let legacy_compaction = harness_core::session::legacy::latest_legacy_compaction(events);
-        let presentation_enrichment = std::mem::take(&mut self.activities);
-        let presentation_orchestration = std::mem::take(&mut self.orchestration_tasks);
+        let cutoff = if from == 0 {
+            0
+        } else {
+            self.activities[from].first_seq
+        };
+        let events = &events[events.partition_point(|event| event.seq < cutoff)..];
+        let mut prefix = std::mem::take(&mut self.activities);
+        let presentation_enrichment = prefix.split_off(from);
+        let (mut orchestration_tasks, presentation_orchestration): (BTreeMap<_, _>, _) =
+            std::mem::take(&mut self.orchestration_tasks)
+                .into_iter()
+                .partition(|(_, row)| row.first_seq < cutoff);
         let mut settled_activities = VecDeque::new();
         let mut activity_by_request = BTreeMap::new();
-        let mut pending_permissions = BTreeMap::new();
-        let mut orchestration_tasks = BTreeMap::new();
+        let mut pending_permissions = std::mem::take(&mut self.pending_permissions);
+        pending_permissions.retain(|_, permission| permission.seq < cutoff);
         let mut turn_terminals = BTreeMap::new();
 
-        for message in &transcript.messages {
+        let at = transcript
+            .messages
+            .partition_point(|message| message.provenance.first_seq < cutoff);
+        for message in &transcript.messages[at..] {
             let request_id = message
                 .request_id
                 .as_ref()
@@ -200,7 +218,7 @@ impl SessionProjection {
 
         let (latest_request_budget, provider_context_usage) =
             apply_canonical_provider_presentation(events, transcript, &mut settled_activities);
-        mark_user_only_activities(&mut settled_activities);
+        mark_user_only_activities(&mut settled_activities, from);
         apply_canonical_background_notifications(
             events,
             transcript,
@@ -238,23 +256,16 @@ impl SessionProjection {
             }
         }
         self.run_terminal_seen = run_summary.status != harness_core::proj::RunStatus::Running;
-        if let Some(activity) = activities.back_mut() {
-            match run_summary.status {
-                harness_core::proj::RunStatus::Failed => {
-                    activity.status = ActivityStatus::Error;
-                    activity.error_message.clone_from(&run_summary.last_error);
-                }
-                harness_core::proj::RunStatus::Finished
-                    if activity.status == ActivityStatus::Streaming =>
-                {
-                    activity.status = ActivityStatus::Done;
-                }
-                harness_core::proj::RunStatus::Running
-                | harness_core::proj::RunStatus::Finished => {}
-            }
+        apply_run_status(&mut activities, run_summary);
+        self.activities = if from == 0 {
+            activities
+        } else {
+            prefix.extend(activities);
+            prefix
+        };
+        if from == 0 || latest_request_budget.is_some() {
+            self.latest_request_budget = latest_request_budget;
         }
-        self.activities = activities;
-        self.latest_request_budget = latest_request_budget;
         if provider_context_usage.is_some()
             || self
                 .events()
@@ -270,8 +281,13 @@ impl SessionProjection {
         if self.compaction_status.is_none() {
             self.rebuild_legacy_compaction_presentation(legacy_compaction.as_ref());
         }
+        let trimmed = self.transcript_trimmed_count;
         self.enforce_transcript_memory_cap();
-        self.transcript_delta = ProjectionDelta::FullRebuild;
+        self.transcript_delta = if from == 0 || self.transcript_trimmed_count != trimmed {
+            ProjectionDelta::FullRebuild
+        } else {
+            ProjectionDelta::RetainedPrefix { index: from }
+        };
     }
     fn restore_uncommitted_assistant_suffixes(
         &self,
@@ -316,6 +332,25 @@ impl SessionProjection {
     }
 }
 
+fn apply_run_status(
+    activities: &mut VecDeque<ActivityEntry>,
+    summary: &harness_core::proj::RunSummary,
+) {
+    let Some(activity) = activities.back_mut() else {
+        return;
+    };
+    match summary.status {
+        harness_core::proj::RunStatus::Failed => {
+            activity.status = ActivityStatus::Error;
+            activity.error_message.clone_from(&summary.last_error);
+        }
+        harness_core::proj::RunStatus::Finished if activity.status == ActivityStatus::Streaming => {
+            activity.status = ActivityStatus::Done;
+        }
+        harness_core::proj::RunStatus::Running | harness_core::proj::RunStatus::Finished => {}
+    }
+}
+
 fn apply_message_provider_metadata(
     activity: &mut ActivityEntry,
     provider: &harness_core::transcript_projection::ProjectedProviderMessageMetadata,
@@ -336,14 +371,14 @@ fn apply_message_provider_metadata(
             });
 }
 
-fn mark_user_only_activities(activities: &mut VecDeque<ActivityEntry>) {
+fn mark_user_only_activities(activities: &mut VecDeque<ActivityEntry>, from: usize) {
     for (index, activity) in activities.iter_mut().enumerate() {
         let is_user_only = activity.user_message.is_some()
             && activity.request_data.is_none()
             && activity.transcript_text.is_empty()
             && activity.tool_calls.is_empty();
         if is_user_only {
-            activity.status = if index == 0 {
+            activity.status = if from == 0 && index == 0 {
                 ActivityStatus::Streaming
             } else {
                 ActivityStatus::Queued

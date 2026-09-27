@@ -1,0 +1,11 @@
+{
+  "base": "d7df6d0f5bfb1a9f9b153124e104723184d310c9",
+  "tui_source_lines": 167934,
+  "tui_source_files": 564,
+  "source_line_delta": 320,
+  "new_files": {
+    "crates/harness-tui/src/app/session_projection/settled_presentation/suffix.rs": 198,
+    "crates/harness-tui/src/app/tests/new_session_test.rs": 89,
+    "crates/harness-tui/tests/typed_runtime_event_settle/settlement.rs": 314
+  }
+}

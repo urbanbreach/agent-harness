@@ -1791,7 +1791,6 @@ impl AppState {
 
         let permission_was_pending = !historical && self.active_permission().is_some();
         self.starting_session_seed = false;
-        self.bump_transcript_render_epoch();
 
         self.cache_recorded_artifacts(&event);
         self.prepare_event_surfaces(&event, historical);
@@ -1824,6 +1823,7 @@ impl AppState {
             self.projection
                 .cache_event_details(event.clone(), historical)
         };
+        self.invalidate_transcript_after_durable_event();
         if historical && update_canonical {
             self.projection.run_terminal_seen = run_terminal_seen_before_historical_ingest;
         }

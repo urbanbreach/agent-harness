@@ -1,0 +1,16 @@
+{
+  "rewrite_probe": {
+    "source": "target/release/examples/rewrite_probe",
+    "retained": "/tmp/tui-settled-rewrite_probe.bin",
+    "bytes": 15214136,
+    "sha256": "14e9f9b78654932bb07b3aba07a6ef73cc146051c709223903288ba781328abd",
+    "source_patch": "d7df6d0f + settlement-suffix/source.patch.gz"
+  },
+  "resource_probe": {
+    "source": "target/release/examples/resource_probe",
+    "retained": "/tmp/tui-settled-resource_probe.bin",
+    "bytes": 14018016,
+    "sha256": "98737b925397627e3e37cf536580e2786716d58ab32fd862dbf273048aebadcb",
+    "source_patch": "d7df6d0f + settlement-suffix/source.patch.gz"
+  }
+}

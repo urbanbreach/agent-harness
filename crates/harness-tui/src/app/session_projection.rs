@@ -53,6 +53,9 @@ pub(crate) enum ProjectionDelta {
     Activity {
         index: usize,
     },
+    RetainedPrefix {
+        index: usize,
+    },
     FullRebuild,
     ReplayPending,
 }
@@ -142,7 +145,7 @@ pub struct SessionProjection {
     pub(crate) pending_permissions: BTreeMap<String, PendingPermission>,
     pub(crate) run_terminal_seen: bool,
     pub(crate) pending_status_notice: Option<String>,
-    transcript_delta: ProjectionDelta,
+    pub(super) transcript_delta: ProjectionDelta,
 }
 
 impl SessionProjection {
@@ -459,8 +462,12 @@ impl SessionProjection {
         }
         self.unsettled_durable_events.push(event);
         let trimmed = self.enforce_event_memory_cap();
-        if should_settle && !self.settle_durable_events() {
-            self.transcript_delta = ProjectionDelta::FullRebuild;
+        if should_settle {
+            if !self.settle_durable_events() {
+                self.transcript_delta = ProjectionDelta::FullRebuild;
+            }
+        } else if let Some(index) = self.settled_suffix_start() {
+            self.transcript_delta = ProjectionDelta::RetainedPrefix { index };
         }
         trimmed
     }
@@ -547,7 +554,7 @@ impl SessionProjection {
             self.canonical_projection = None;
             self.canonical_projection_error = None;
             self.unsettled_durable_events.clear();
-            self.rebuild_settled_presentation(true);
+            self.rebuild_settled_presentation(true, 0);
             return;
         }
         if events.is_empty() {
@@ -564,7 +571,7 @@ impl SessionProjection {
                 self.unsettled_durable_events.clear();
                 self.canonical_projection_generation =
                     self.canonical_projection_generation.saturating_add(1);
-                self.rebuild_settled_presentation(false);
+                self.rebuild_settled_presentation(false, 0);
             }
             Err(error) => {
                 self.canonical_projection = None;
@@ -578,6 +585,7 @@ impl SessionProjection {
         if self.unsettled_durable_events.is_empty() {
             return self.canonical_projection_error.is_none();
         }
+        let from = self.settled_suffix_start().unwrap_or(0);
         let result = match self.canonical_projection.as_mut() {
             Some(projection) => projection.apply_events(&self.unsettled_durable_events),
             None => CanonicalSessionProjection::from_event_history(&self.unsettled_durable_events)
@@ -592,7 +600,7 @@ impl SessionProjection {
                 self.unsettled_durable_events.clear();
                 self.canonical_projection_generation =
                     self.canonical_projection_generation.saturating_add(1);
-                self.rebuild_settled_presentation(false);
+                self.rebuild_settled_presentation(false, from);
                 true
             }
             Err(error) => {
@@ -614,7 +622,7 @@ impl SessionProjection {
             == CanonicalProjectionUpdate::Settle;
         let trimmed = self.ingest_transient_view_event(event, historical);
         if should_settle {
-            self.rebuild_settled_presentation(true);
+            self.rebuild_settled_presentation(true, 0);
         }
         trimmed
     }

@@ -284,54 +284,6 @@ pub(super) fn startup_prompt_enter_echoes_prompt_and_selects_new_session() {
     );
 }
 
-pub(super) fn slash_new_then_submit_bootstraps_fresh_session_instead_of_live_turn_submit() {
-    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent: UiIntent| {
-            intents.lock().unwrap_or_abort().push(intent);
-        })
-    };
-
-    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
-    for ch in "/new".chars() {
-        app.handle_key(key(KeyCode::Char(ch)));
-    }
-    app.handle_key(key(KeyCode::Enter));
-    assert!(app.startup_shell_visible());
-
-    app.clear_prompt_input();
-    for ch in "fresh run".chars() {
-        app.handle_key(key(KeyCode::Char(ch)));
-    }
-    app.handle_key(key(KeyCode::Enter));
-
-    assert!(app.should_quit);
-    assert!(!app.startup_shell_visible());
-    assert!(
-        matches!(
-            intents.lock().unwrap_or_abort().as_slice(),
-            [UiIntent::NewSession]
-        ),
-        "/new startup handoff must select a fresh session, not submit to the old live run"
-    );
-
-    let relaunched = AppState::new_live(None, false, None);
-    assert_eq!(relaunched.composer.prompt_buffer, "");
-    assert_eq!(
-        relaunched.composer.prompt_history,
-        vec!["fresh run".to_string()]
-    );
-    assert_eq!(
-        relaunched
-            .activities
-            .back()
-            .and_then(|activity| activity.user_message.as_ref())
-            .map(|message| message.text.as_str()),
-        Some("fresh run")
-    );
-}
-
 pub(super) fn startup_mode_uses_pending_launch_metadata() {
     set_pending_live_launch_metadata(
         LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),

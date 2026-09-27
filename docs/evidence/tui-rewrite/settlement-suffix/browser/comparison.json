@@ -1,0 +1,100 @@
+{
+  "screenshots": {
+    "chat-runningopen-120x40-motion-0ms.png": "06fc8df5a13eb2b005f673ed0c89d58f520106f7ef48a0defe6f5cc9d1436e4a",
+    "chat-runningopen-120x40-motion-330ms.png": "284ed7efeab05086d8e055763b8882afdc0ce99fb52f477e2730b728bfeeefed",
+    "chat-runningopen-120x40-motion-660ms.png": "4f18d891445a1f9f4eb83d5f3f2c9a214e4e2ec9c753769a3c7ef70037dd81b8",
+    "chat-thinking-120x40-motion-0ms.png": "8afeb045cbcad1e9daa1cbca1c3f380e7a1baaa979100e8ea33e728f3e2f7840",
+    "chat-thinking-120x40-motion-330ms.png": "a5a59c4c1985e7794ad4210dd4133aec0ddd156881bc9d99f04473304807d2ba",
+    "chat-thinking-120x40-motion-660ms.png": "7229f5f9ac266a8840195a98798e0a24dba5f26b265ebc8e36ed6d37efabe3aa"
+  },
+  "equal_snapshot_fields": [
+    "activeBuffer",
+    "cells",
+    "cols",
+    "cursor",
+    "lastRender",
+    "lines",
+    "modes",
+    "rows",
+    "scrollback",
+    "text",
+    "title",
+    "titleHistory",
+    "wrappedRows"
+  ],
+  "callback_counters": {
+    "chat-runningopen-120x40-motion-0ms.png": {
+      "renderCount": {
+        "before": 3,
+        "candidate": 4,
+        "delta": 1
+      },
+      "parsedCount": {
+        "before": 2,
+        "candidate": 2,
+        "delta": 0
+      }
+    },
+    "chat-runningopen-120x40-motion-330ms.png": {
+      "renderCount": {
+        "before": 5,
+        "candidate": 7,
+        "delta": 2
+      },
+      "parsedCount": {
+        "before": 4,
+        "candidate": 4,
+        "delta": 0
+      }
+    },
+    "chat-runningopen-120x40-motion-660ms.png": {
+      "renderCount": {
+        "before": 7,
+        "candidate": 8,
+        "delta": 1
+      },
+      "parsedCount": {
+        "before": 6,
+        "candidate": 6,
+        "delta": 0
+      }
+    },
+    "chat-thinking-120x40-motion-0ms.png": {
+      "renderCount": {
+        "before": 8,
+        "candidate": 10,
+        "delta": 2
+      },
+      "parsedCount": {
+        "before": 8,
+        "candidate": 8,
+        "delta": 0
+      }
+    },
+    "chat-thinking-120x40-motion-330ms.png": {
+      "renderCount": {
+        "before": 10,
+        "candidate": 12,
+        "delta": 2
+      },
+      "parsedCount": {
+        "before": 10,
+        "candidate": 10,
+        "delta": 0
+      }
+    },
+    "chat-thinking-120x40-motion-660ms.png": {
+      "renderCount": {
+        "before": 12,
+        "candidate": 13,
+        "delta": 1
+      },
+      "parsedCount": {
+        "before": 12,
+        "candidate": 12,
+        "delta": 0
+      }
+    }
+  },
+  "counter_note": "xterm callback counts depend on asynchronous browser scheduling. Pixels, cells and terminal state match. These captures do not measure runtime animation cadence."
+}
