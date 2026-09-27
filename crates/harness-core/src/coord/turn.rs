@@ -5,7 +5,7 @@ mod request;
 
 pub(super) struct Turn {
     pub id: String,
-    prompt: super::prompt::Prompt,
+    pub(super) prompt: super::prompt::Prompt,
     pub(super) model: String,
     pub(super) settings: AgentModelSettings,
     pub(super) target: Option<ResolvedModelTarget>,

@@ -18,6 +18,8 @@ impl Runtime {
                 job.reason.take().unwrap_or_else(|| "task cancelled".into()),
             ));
         }
+        // Keep completion identities even when a large report spills to an artifact.
+        let consumed_notifications = self.consumed_child_notifications(&job, &result);
         if messages.is_none() {
             self.reject_unfinished_edits(&id)?;
             result = result.and_then(|output| self.bound_tool_output(&id, &job.actor, output));
@@ -42,6 +44,12 @@ impl Runtime {
                 &result,
                 std::mem::take(&mut job.hooks),
             )
+            .and_then(|()| {
+                consumed_notifications
+                    .into_iter()
+                    .filter(|_| result.is_ok())
+                    .try_for_each(|id| self.cancel(&id, "child result already delivered by a tool"))
+            })
         } else {
             Ok(())
         };

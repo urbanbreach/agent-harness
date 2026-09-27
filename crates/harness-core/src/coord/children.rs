@@ -397,7 +397,7 @@ impl Runtime {
             .clone_from(&reserved_id);
         self.emit(
             actor.clone(),
-            Some(request),
+            Some(request.clone()),
             EventV1::BackgroundTaskNotification(notification),
         )?;
         if let Some(id) = reserved_id {
@@ -407,6 +407,7 @@ impl Runtime {
                 super::prompt::Prompt {
                     text: prompt,
                     reserved_id: Some(id),
+                    child_completion: Some(request),
                     ..Default::default()
                 },
                 None,
@@ -415,6 +416,53 @@ impl Runtime {
             )?;
         }
         Ok(())
+    }
+    pub fn consumed_child_notifications(
+        &self,
+        job: &runtime::Job,
+        result: &Result<ToolResult, CoordinatorError>,
+    ) -> Vec<String> {
+        let (JobKind::Tool { tool_id, .. }, Ok(output), Some(parent)) =
+            (&job.kind, result, job.actor.agent_id.as_deref())
+        else {
+            return Vec::new();
+        };
+        if !matches!(
+            tool_id.as_str(),
+            "task" | "background_output" | "background_cancel"
+        ) {
+            return Vec::new();
+        }
+        let Some(value) = &output.structured_json else {
+            return Vec::new();
+        };
+        // Like grok-build, consume only reports actually returned by a tool,
+        // not intermediate polls made while that tool is still waiting.
+        let consumed: Vec<_> = std::iter::once(value)
+            .chain(value["tasks"].as_array().into_iter().flatten())
+            .filter(|report| {
+                matches!(
+                    report["status"].as_str(),
+                    Some("completed" | "failed" | "cancelled")
+                ) && report["session_id"]
+                    .as_str()
+                    .and_then(|id| self.children.get(id))
+                    .is_some_and(|child| child.parent_agent == parent)
+            })
+            .filter_map(|report| report["request_id"].as_str())
+            .collect();
+        self.agents
+            .get(parent)
+            .into_iter()
+            .flat_map(|agent| &agent.queue)
+            .filter(|turn| {
+                turn.prompt
+                    .child_completion
+                    .as_deref()
+                    .is_some_and(|id| consumed.contains(&id))
+            })
+            .map(|turn| turn.id.clone())
+            .collect()
     }
     pub fn fail_child_waiters(&mut self, message: &str) {
         for child in self.children.values_mut() {
