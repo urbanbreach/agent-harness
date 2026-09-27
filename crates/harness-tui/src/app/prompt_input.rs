@@ -175,7 +175,6 @@ impl AppState {
         self.composer.prompt_buffer = draft.text;
         self.composer.prompt_cursor = draft.cursor.min(self.prompt_char_count());
         self.clear_file_mention_tags();
-        self.continued_live_reopen_surface_active = false;
         self.slash_draft_snapshot = None;
         self.sync_slash_overlay();
         self.sync_file_mention_overlay();
@@ -190,7 +189,6 @@ impl AppState {
         self.clear_file_mention_tags();
         self.composer.prompt_history_index = None;
         self.composer.prompt_history_draft = None;
-        self.continued_live_reopen_surface_active = false;
         self.slash_draft_snapshot = None;
         self.sync_slash_overlay();
         self.sync_file_mention_overlay();
@@ -250,7 +248,6 @@ impl AppState {
         }
         self.composer.selection_anchor = None;
         self.clear_file_mention_tags();
-        self.continued_live_reopen_surface_active = false;
         self.slash_draft_snapshot = None;
         self.sync_slash_overlay();
         self.sync_file_mention_overlay();
@@ -273,7 +270,6 @@ impl AppState {
             self.dismiss_welcome_for_input();
         }
         self.reset_clear_prompt_confirmation();
-        self.continued_live_reopen_surface_active = false;
         if c == '/'
             && (self.composer.prompt_cursor == 0
                 || self.composer.prompt_buffer[..self.prompt_cursor_byte_index()]
@@ -429,7 +425,6 @@ impl AppState {
             return;
         }
 
-        self.continued_live_reopen_surface_active = false;
         self.composer.push_undo();
         self.delete_prompt_range(
             self.prompt_grapheme_boundary(false),
@@ -462,7 +457,6 @@ impl AppState {
             return;
         }
 
-        self.continued_live_reopen_surface_active = false;
         self.composer.push_undo();
         self.delete_prompt_range(
             self.composer.prompt_cursor,

@@ -602,24 +602,6 @@ impl AppState {
             return;
         }
 
-        if self.post_run_handoff_visible() && self.focus == Focus::List {
-            match action {
-                Action::SubmitPrompt => {
-                    self.execute_post_run_handoff_action();
-                    return;
-                }
-                Action::MoveUp | Action::HistoryUp => {
-                    self.select_previous_post_run_handoff_action();
-                    return;
-                }
-                Action::MoveDown | Action::HistoryDown => {
-                    self.select_next_post_run_handoff_action();
-                    return;
-                }
-                _ => {}
-            }
-        }
-
         if self.startup_shell_visible() && self.focus == Focus::List {
             match action {
                 Action::SubmitPrompt => {

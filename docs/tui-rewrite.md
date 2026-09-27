@@ -960,6 +960,20 @@ resource improvement claim; the remaining state engine and full rewrite targets
 are unfinished. Evidence is in
 [`evidence/tui-rewrite/focus`](evidence/tui-rewrite/focus).
 
+## Unreachable post-run controller removal
+
+The retired handoff's private selection controller and three state fields are
+removed. Its key path was guarded by an always-false lifecycle query; the flags
+were write-only or used solely inside that path. Public contracts, live empty-state
+geometry, replay failure text and active session navigation remain unchanged.
+
+All 1,668 TUI tests, seven gated PTY checks and quality checks pass. The existing
+completion tests reject a temporary mutation that restores the retired handoff.
+No tests or snapshots changed, and no resource improvement is claimed. This removes
+133 production lines, leaving 166,914 TUI source lines, only 8.23% below the original.
+The full rewrite remains unfinished. Evidence is in
+[`evidence/tui-rewrite/post-run-cleanup`](evidence/tui-rewrite/post-run-cleanup).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

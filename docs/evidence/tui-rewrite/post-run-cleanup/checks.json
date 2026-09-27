@@ -1,0 +1,50 @@
+[
+  {
+    "log": "before.log",
+    "command": "cargo nextest run --profile ci -p harness-tui --all-features -E 'test(post_run_handoff_renders_next_actions) | test(post_run_failure_handoff_renders_recovery_actions) | binary(rewrite_reference_test)'",
+    "exit": 0,
+    "result": "5 passed; unmodified predecessor"
+  },
+  {
+    "log": "red.log",
+    "command": "cargo nextest run --profile ci -p harness-tui --all-features -E 'test(post_run_handoff_renders_next_actions) | test(post_run_failure_handoff_renders_recovery_actions)'",
+    "exit": 100,
+    "result": "2 failed as intended; red.patch.gz applied temporarily to predecessor and then reverted"
+  },
+  {
+    "log": "all.log",
+    "command": "cargo nextest run --profile ci -p harness-tui --all-features",
+    "exit": 0,
+    "result": "1668 passed; 7 skipped"
+  },
+  {
+    "log": "clippy.log",
+    "command": "cargo clippy -p harness-tui --all-targets --all-features -- -D warnings",
+    "exit": 0,
+    "result": "passed; existing capped dependency warning retained in log"
+  },
+  {
+    "log": "workspace-check.log",
+    "command": "cargo check --workspace",
+    "exit": 0,
+    "result": "passed"
+  },
+  {
+    "log": "fmt.log",
+    "command": "cargo fmt --all -- --check",
+    "exit": 0,
+    "result": "passed"
+  },
+  {
+    "log": "suite-gates.log",
+    "command": "python3 scripts/check-test-suite-gates.py",
+    "exit": 0,
+    "result": "passed"
+  },
+  {
+    "log": "pty.log",
+    "command": "HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run --profile ci -p harness-tui --all-features --ignore-default-filter -E 'binary(p0_04_pty_recorded) | binary(p1_04_pty_recorded)'",
+    "exit": 0,
+    "result": "7 passed"
+  }
+]

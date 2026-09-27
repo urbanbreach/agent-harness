@@ -464,7 +464,6 @@ impl AppState {
         self.active_review_surface.is_none()
             && self.focus == Focus::List
             && !self.startup_shell_visible()
-            && !self.post_run_handoff_visible()
             && self.session_shell_operator_rail_interactive()
     }
 
