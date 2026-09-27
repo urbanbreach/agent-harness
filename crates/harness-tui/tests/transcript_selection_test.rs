@@ -28,6 +28,29 @@ fn wrapped_drag_selection_joins_soft_line_breaks() {
     // Then: soft wrapping does not insert a spurious newline.
     // assert
     assert_eq!(copied, "hello world");
+
+    // Explicit empty rows and whitespace omitted at a soft wrap keep source offsets.
+    let text = WrappedText::new("\n界  e\u{301}\n\nend", 3).expect("valid width");
+    assert_eq!(
+        (0..text.row_count())
+            .map(|row| text.row_text(row))
+            .collect::<Vec<_>>(),
+        ["", "界 ", "e\u{301}", "", "end"],
+    );
+    for (byte, point) in [
+        (0, CellPoint::new(1, 0)),
+        (4, CellPoint::new(1, 2)),
+        (5, CellPoint::new(2, 0)),
+        (9, CellPoint::new(4, 0)),
+        (14, CellPoint::new(4, 3)),
+    ] {
+        assert_eq!(text.point_for_byte(byte), point, "source byte {byte}");
+    }
+    assert_eq!(
+        text.copy(text.drag(CellPoint::new(1, 0), CellPoint::new(2, 0)))
+            .expect("selection has text"),
+        "界  e\u{301}",
+    );
 }
 
 #[test]

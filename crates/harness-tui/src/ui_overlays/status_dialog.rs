@@ -453,11 +453,6 @@ fn render_dashboard_reply(
         }
         return;
     }
-    let Ok(wrapped) =
-        crate::transcript_selection::WrappedText::new(&text, usize::from(inner.width.max(1)))
-    else {
-        return;
-    };
     let byte = dashboard.reply_editor().map_or(text.len(), |editor| {
         use unicode_segmentation::UnicodeSegmentation;
         text.graphemes(true)
@@ -465,6 +460,11 @@ fn render_dashboard_reply(
             .map(str::len)
             .sum()
     });
+    let Ok(wrapped) =
+        crate::transcript_selection::TextLayout::new(text, usize::from(inner.width.max(1)))
+    else {
+        return;
+    };
     let cursor = wrapped.point_for_byte(byte);
     let top = cursor
         .row

@@ -5,6 +5,7 @@
 
 mod copy_metadata;
 mod hyperlinks;
+mod layout;
 mod local_clipboard;
 mod osc52;
 mod selection;
@@ -13,6 +14,7 @@ mod selection_types;
 pub use copy_metadata::{copy_with_metadata, BlockKind, CopyMetadata, CopyMetadataPolicy};
 pub(crate) use hyperlinks::safe_external_url;
 pub use hyperlinks::{hyperlink_sequence, Hyperlink, HyperlinkError, HyperlinkMap, LinkRange};
+pub(crate) use layout::TextLayout;
 pub use local_clipboard::{
     copy_local, copy_local_with_runner, ClipboardCommand, LocalClipboardError, LocalPlatform,
 };

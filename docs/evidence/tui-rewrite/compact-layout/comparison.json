@@ -1,0 +1,334 @@
+{
+  "idle-2000": {
+    "reference": {
+      "construction_us": 6863,
+      "cold_us": 513128,
+      "p50_us": 3183,
+      "p95_us": 3250,
+      "p99_us": 3456,
+      "bytes": 3800,
+      "rss_kib": 90692,
+      "cpu_ms_per_frame": 3.2,
+      "allocated_bytes": 674941248,
+      "peak_heap_bytes": 64104551,
+      "median_phase_us": [
+        0.0,
+        4.0,
+        3179.0
+      ]
+    },
+    "before": {
+      "construction_us": 4298,
+      "cold_us": 377034,
+      "p50_us": 1246,
+      "p95_us": 1252,
+      "p99_us": 1258,
+      "bytes": 3800,
+      "rss_kib": 59724,
+      "cpu_ms_per_frame": 1.25,
+      "allocated_bytes": 197909070,
+      "peak_heap_bytes": 53836089,
+      "median_phase_us": [
+        0.0,
+        6.0,
+        1240.0
+      ]
+    },
+    "candidate": {
+      "construction_us": 3872,
+      "cold_us": 365775,
+      "p50_us": 630,
+      "p95_us": 636,
+      "p99_us": 647,
+      "bytes": 3800,
+      "rss_kib": 45148,
+      "cpu_ms_per_frame": 0.6,
+      "allocated_bytes": 167771861,
+      "peak_heap_bytes": 24240320,
+      "median_phase_us": [
+        0.0,
+        6.0,
+        624.0
+      ]
+    },
+    "equal_fields_all_repetitions": [
+      "bytes",
+      "visible",
+      "tail",
+      "scroll_rows",
+      "search_labels",
+      "resize_output_lines"
+    ],
+    "acceptance": {
+      "p95_us": {
+        "limit": 2275.0,
+        "passed": true
+      },
+      "p99_us": {
+        "limit": 2419.2,
+        "passed": true
+      },
+      "cpu_ms_per_frame": {
+        "limit": 2.2399999999999998,
+        "passed": true
+      },
+      "rss_kib": {
+        "limit": 63484.399999999994,
+        "passed": true
+      },
+      "allocated_bytes": {
+        "limit": 472458873.59999996,
+        "passed": true
+      }
+    }
+  },
+  "scroll-2000": {
+    "reference": {
+      "construction_us": 7303,
+      "cold_us": 515685,
+      "p50_us": 3257,
+      "p95_us": 3327,
+      "p99_us": 3600,
+      "bytes": 64765,
+      "rss_kib": 90668,
+      "cpu_ms_per_frame": 3.3,
+      "allocated_bytes": 678239612,
+      "peak_heap_bytes": 64102441,
+      "median_phase_us": [
+        0.0,
+        4.0,
+        3253.0
+      ]
+    },
+    "before": {
+      "construction_us": 3872,
+      "cold_us": 372864,
+      "p50_us": 1315,
+      "p95_us": 1454,
+      "p99_us": 1524,
+      "bytes": 64765,
+      "rss_kib": 60604,
+      "cpu_ms_per_frame": 1.35,
+      "allocated_bytes": 201225098,
+      "peak_heap_bytes": 53833979,
+      "median_phase_us": [
+        0.0,
+        6.0,
+        1309.0
+      ]
+    },
+    "candidate": {
+      "construction_us": 3964,
+      "cold_us": 362713,
+      "p50_us": 652,
+      "p95_us": 657,
+      "p99_us": 664,
+      "bytes": 64765,
+      "rss_kib": 36008,
+      "cpu_ms_per_frame": 0.65,
+      "allocated_bytes": 171081345,
+      "peak_heap_bytes": 24240322,
+      "median_phase_us": [
+        0.0,
+        6.0,
+        646.0
+      ]
+    },
+    "equal_fields_all_repetitions": [
+      "bytes",
+      "visible",
+      "tail",
+      "scroll_rows",
+      "search_labels",
+      "resize_output_lines"
+    ],
+    "acceptance": {
+      "p95_us": {
+        "limit": 2328.8999999999996,
+        "passed": true
+      },
+      "p99_us": {
+        "limit": 2520.0,
+        "passed": true
+      },
+      "cpu_ms_per_frame": {
+        "limit": 2.3099999999999996,
+        "passed": true
+      },
+      "rss_kib": {
+        "limit": 63467.6,
+        "passed": true
+      },
+      "allocated_bytes": {
+        "limit": 474767728.4,
+        "passed": true
+      }
+    }
+  },
+  "search-2000": {
+    "reference": {
+      "construction_us": 7053,
+      "cold_us": 517860,
+      "p50_us": 39102,
+      "p95_us": 40216,
+      "p99_us": 41199,
+      "bytes": 89400,
+      "rss_kib": 90764,
+      "cpu_ms_per_frame": 38.6,
+      "allocated_bytes": 9932400481,
+      "peak_heap_bytes": 64104553,
+      "median_phase_us": [
+        33809.5,
+        6.0,
+        5116.0
+      ]
+    },
+    "before": {
+      "construction_us": 4008,
+      "cold_us": 385537,
+      "p50_us": 7411,
+      "p95_us": 7563,
+      "p99_us": 7751,
+      "bytes": 89400,
+      "rss_kib": 60288,
+      "cpu_ms_per_frame": 7.4,
+      "allocated_bytes": 673228358,
+      "peak_heap_bytes": 53833979,
+      "median_phase_us": [
+        5911.5,
+        8.0,
+        1525.5
+      ]
+    },
+    "candidate": {
+      "construction_us": 4388,
+      "cold_us": 355435,
+      "p50_us": 6583,
+      "p95_us": 6694,
+      "p99_us": 6986,
+      "bytes": 89400,
+      "rss_kib": 44884,
+      "cpu_ms_per_frame": 6.6,
+      "allocated_bytes": 643088949,
+      "peak_heap_bytes": 24240322,
+      "median_phase_us": [
+        5906.0,
+        8.0,
+        670.5
+      ]
+    },
+    "equal_fields_all_repetitions": [
+      "bytes",
+      "visible",
+      "tail",
+      "scroll_rows",
+      "search_labels",
+      "resize_output_lines"
+    ],
+    "acceptance": {
+      "p95_us": {
+        "limit": 28151.199999999997,
+        "passed": true
+      },
+      "p99_us": {
+        "limit": 28839.3,
+        "passed": true
+      },
+      "cpu_ms_per_frame": {
+        "limit": 27.02,
+        "passed": true
+      },
+      "rss_kib": {
+        "limit": 63534.799999999996,
+        "passed": true
+      },
+      "allocated_bytes": {
+        "limit": 6952680336.7,
+        "passed": true
+      }
+    }
+  },
+  "resize-2000": {
+    "reference": {
+      "construction_us": 6504,
+      "cold_us": 510076,
+      "p50_us": 63959,
+      "p95_us": 71036,
+      "p99_us": 86976,
+      "bytes": 1877700,
+      "rss_kib": 90672,
+      "cpu_ms_per_frame": 57.25,
+      "allocated_bytes": 16132309624,
+      "peak_heap_bytes": 64102441,
+      "median_phase_us": [
+        3125.5,
+        57713.5,
+        3733.0
+      ]
+    },
+    "before": {
+      "construction_us": 4254,
+      "cold_us": 372601,
+      "p50_us": 37983,
+      "p95_us": 46441,
+      "p99_us": 48573,
+      "bytes": 1877700,
+      "rss_kib": 83092,
+      "cpu_ms_per_frame": 35.3,
+      "allocated_bytes": 5645242885,
+      "peak_heap_bytes": 54320276,
+      "median_phase_us": [
+        2972.0,
+        35445.5,
+        1254.0
+      ]
+    },
+    "candidate": {
+      "construction_us": 4076,
+      "cold_us": 354452,
+      "p50_us": 18666,
+      "p95_us": 32777,
+      "p99_us": 34065,
+      "bytes": 1877700,
+      "rss_kib": 44784,
+      "cpu_ms_per_frame": 21.55,
+      "allocated_bytes": 2450002890,
+      "peak_heap_bytes": 24400485,
+      "median_phase_us": [
+        2720.0,
+        20553.0,
+        833.0
+      ]
+    },
+    "equal_fields_all_repetitions": [
+      "bytes",
+      "visible",
+      "tail",
+      "scroll_rows",
+      "search_labels",
+      "resize_output_lines"
+    ],
+    "acceptance": {
+      "p95_us": {
+        "limit": 49725.2,
+        "passed": true
+      },
+      "p99_us": {
+        "limit": 60883.2,
+        "passed": true
+      },
+      "cpu_ms_per_frame": {
+        "limit": 40.074999999999996,
+        "passed": true
+      },
+      "rss_kib": {
+        "limit": 63470.399999999994,
+        "passed": true
+      },
+      "allocated_bytes": {
+        "limit": 11292616736.8,
+        "passed": true
+      }
+    }
+  }
+}

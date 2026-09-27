@@ -20,25 +20,16 @@ pub fn render_surface(state: &ViewerState, _area: Rect) -> ViewerRenderSurface {
 pub(crate) fn render_viewer(buffer: &mut Buffer, area: Rect, state: &ViewerState, theme: &Theme) {
     let body = super::viewer_layout(area).content_body(state.input_active() || state.visual_mode);
     let first = state.scroll_top();
-    let rows = first
-        ..first
-            .saturating_add(usize::from(body.height))
-            .min(state.wrapped.row_count());
+    let count = state.wrapped.row_count();
+    let rows = first..first.saturating_add(usize::from(body.height)).min(count);
     let surface = project_rows(state, rows);
-    paint(
-        buffer,
-        area,
-        &surface,
-        first,
-        state.wrapped.row_count(),
-        theme,
-    );
+    paint(buffer, area, &surface, first, count, theme);
 }
 
 fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface {
     let mut filter_search = super::SearchState::new();
     if state.filter_editing {
-        let _ = filter_search.set_query(&state.display_text, &regex::escape(&state.filter_query));
+        let _ = filter_search.set_query(state.wrapped.text(), &regex::escape(&state.filter_query));
     }
     let highlights = if state.filter_editing {
         &filter_search
@@ -72,7 +63,7 @@ fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface 
         .map(|(row, match_ranges)| {
             let selection_range = selection.and_then(|(start, end)| cells_in_row(start, end, row));
             RenderedLine {
-                text: state.wrapped.row_text(row),
+                text: state.wrapped.row_text(row).to_owned(),
                 styled: state.styled_lines.get(row).cloned(),
                 selected: selection_range.is_some(),
                 current_match: current
@@ -426,14 +417,28 @@ fn render_line<'a>(
     theme: &Theme,
 ) -> ratatui::text::Line<'a> {
     let mut column = 0;
+    let mut source_styles = line
+        .styled
+        .iter()
+        .flat_map(|line| &line.spans)
+        .scan(0, |end, span| {
+            *end += span.width();
+            Some((*end, span.style))
+        })
+        .peekable();
     let spans = line
         .text
         .graphemes(true)
         .map(|grapheme| {
             let start = column;
             column += grapheme.width();
-            let mut style = source_style(line, start)
-                .unwrap_or_else(|| Style::default().fg(theme.terminal_colors.primary));
+            while source_styles.peek().is_some_and(|(end, _)| *end <= start) {
+                let _ = source_styles.next();
+            }
+            let mut style = source_styles.peek().map_or_else(
+                || Style::default().fg(theme.terminal_colors.primary),
+                |(_, style)| *style,
+            );
             if line
                 .match_ranges
                 .iter()
@@ -476,14 +481,6 @@ const fn mode_label(mode: ViewerMode) -> &'static str {
         ViewerMode::Wrapped => "wrapped",
         ViewerMode::Raw => "raw",
     }
-}
-
-fn source_style(line: &RenderedLine, column: usize) -> Option<Style> {
-    let mut end = 0;
-    line.styled.as_ref()?.spans.iter().find_map(|span| {
-        end += span.width();
-        (column < end).then_some(span.style)
-    })
 }
 
 #[expect(
