@@ -1,0 +1,8 @@
+{
+  "profile": "release",
+  "path": "/home/urbanbreach/Projects/agent-harness/target/release/deps/rewrite_viewer_performance_test-6fb2a40aef914a48",
+  "bytes": 15037320,
+  "sha256": "bdc861417d6cf0116f478fde1fdbf0aa1fddf3acbe9b87f25c4ce650bce0094e",
+  "fixture_sha256": "103cdff460fedd4b6fe6f643fb5472006c2c9ba196494a03efb37997698a0ecd",
+  "driver_sha256": "35d19a228d4939f23162616ab67e21c9c3d1e6b9ce545119ba94b64ba7cfe705"
+}

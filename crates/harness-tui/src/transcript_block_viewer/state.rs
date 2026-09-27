@@ -5,8 +5,8 @@ use crate::transcript_scroll::{
 };
 use crate::transcript_selection::{CellPoint, SelectionRange, WrappedText};
 
-use super::render::{render_surface, ViewerRenderSurface};
 use super::search::{SearchDirection, SearchNavigation, SearchState};
+use super::{render_surface, ViewerRenderSurface};
 use super::{
     ViewerBlockContent, ViewerClose, ViewerCloseReason, ViewerError, ViewerMode,
     ViewerReturnSnapshot,
