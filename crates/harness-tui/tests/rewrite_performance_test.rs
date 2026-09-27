@@ -51,7 +51,7 @@ fn resources() -> Result<serde_json::Value> {
     )
 }
 
-fn history(turns: usize, turn_tasks: bool) -> Result<Vec<EventEnvelopeV1>> {
+fn history(turns: usize, turn_tasks: bool, tools: bool) -> Result<Vec<EventEnvelopeV1>> {
     let mut result = Vec::with_capacity(turns * if turn_tasks { 6 } else { 4 });
     for index in 0..turns {
         let request = format!("history-{index}");
@@ -67,7 +67,7 @@ fn history(turns: usize, turn_tasks: bool) -> Result<Vec<EventEnvelopeV1>> {
             ),
             (
                 "assistant_message_finished",
-                json!({"request_id": request, "tool_call_count": 0,
+                json!({"request_id": request, "tool_call_count": usize::from(tools),
                 "parts": [{"kind": "text", "text": format!("Response {index:05}: 界 e\u{301} 👩‍💻 retained history.")}],
                 "provenance": null, "assistant_message": null}),
             ),
@@ -81,6 +81,33 @@ fn history(turns: usize, turn_tasks: bool) -> Result<Vec<EventEnvelopeV1>> {
             let mut value = envelope(seq, kind, data);
             value["correlation_id"] = json!(request);
             result.push(serde_json::from_value(value)?);
+            if tools && kind == "provider_request_started" {
+                let (tool_id, args) = match index % 4 {
+                    0 => ("read", json!({"path":"src/main.rs", "offset":2, "limit":4})),
+                    1 => (
+                        "shell.run",
+                        json!({"command":"printf ready", "description":"inspect fixture"}),
+                    ),
+                    2 => ("grep", json!({"pattern":"fixture", "path":"src"})),
+                    _ => ("custom.lookup", json!({"query":"fixture"})),
+                };
+                for (kind, data) in [
+                    (
+                        "tool_call_requested",
+                        json!({"tool_call_id":request, "tool_id":tool_id,
+                        "args_summary":args.to_string(), "args_digest":"fixture"}),
+                    ),
+                    (
+                        "tool_call_finished",
+                        json!({"tool_call_id":request, "tool_id":tool_id,
+                        "status":"succeeded", "output_summary":"fixture output\nsecond line\nthird line\nfourth line", "output_digest":"fixture"}),
+                    ),
+                ] {
+                    let mut value = envelope(u64::try_from(result.len())? + 1, kind, data);
+                    value["correlation_id"] = json!(request);
+                    result.push(serde_json::from_value(value)?);
+                }
+            }
             if turn_tasks && kind == "user_message_submitted" {
                 let mut value = envelope(
                     u64::try_from(result.len())? + 1,
@@ -127,7 +154,7 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
     assert!(frames >= 100, "p99 needs at least 100 samples");
     let workspace = tempfile::tempdir()?;
     std::env::set_current_dir(workspace.path())?;
-    let events = history(count, scenario == "settle")?;
+    let events = history(count, scenario == "settle", scenario == "tools")?;
     let event_count = events.len();
     let construction = Instant::now();
     let mut j = Journey::new(scenario == "startup");
@@ -148,7 +175,7 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
         }
     }
     let mut durable_updates = if scenario == "settle" {
-        history(count + frames + 10, true)?
+        history(count + frames + 10, true, false)?
             .into_iter()
             .skip(event_count)
             .collect::<VecDeque<_>>()
@@ -167,6 +194,22 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
     j.app.set_frame_area(area);
     terminal.draw(|frame| render_app(frame, &j.app))?;
     let cold_us = cold.elapsed().as_micros();
+    if scenario == "tools" {
+        assert_eq!(j.app.canonical_projection_error(), None);
+        j.app.expand_all_tool_outputs_for_test();
+        assert_eq!(j.app.expanded_tool_output_ids_for_test().len(), count);
+        j.app.collapse_all_tool_outputs_for_test();
+        j.app.set_generic_tool_output_visible_for_test(true);
+        assert!(
+            screen(&mut j, area)?.contains("fixture output"),
+            "tool body must appear when disclosed"
+        );
+        j.app.set_generic_tool_output_visible_for_test(false);
+        assert!(
+            !screen(&mut j, area)?.contains("fixture output"),
+            "tool body must disappear when collapsed"
+        );
+    }
     if matches!(scenario.as_str(), "scroll" | "resize") {
         j.app.scroll_page_up(24);
     }
@@ -181,6 +224,11 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
         let start = Instant::now();
         match scenario.as_str() {
             "startup" | "idle" => {}
+            // Explicit disclosure seam rebuilds all tool rows; this measures
+            // projection/rendering, not keyboard or terminal-emulator latency.
+            "tools" => j
+                .app
+                .set_generic_tool_output_visible_for_test(index % 2 == 0),
             "typing" => j.app.handle_key(KeyEvent::new(
                 if index % 2 == 0 {
                     KeyCode::Char('x')

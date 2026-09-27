@@ -1,0 +1,24 @@
+{
+  "recorded_at": "2026-09-27T18:34:59.296114+00:00",
+  "baseline": {
+    "construction_us": 5793,
+    "cold_us": 6361,
+    "p50_us": 6567,
+    "p95_us": 15043,
+    "p99_us": 15157,
+    "bytes": 772800,
+    "rss_kib": 39480,
+    "cpu_ms_per_frame": 10.5,
+    "allocated_bytes": 7986409532,
+    "peak_heap_bytes": 25621538
+  },
+  "candidate_limits": {
+    "p95_us": 16547.300000000003,
+    "p99_us": 16672.7,
+    "rss_kib": 43428.0,
+    "cpu_ms_per_frame": 11.55,
+    "allocated_bytes": 8785050485.2,
+    "peak_heap_bytes": 28183691.8
+  },
+  "scope": "Tool projection and rendering through explicit global disclosure seam; no terminal emulator or input-latency claim."
+}

@@ -35,8 +35,7 @@ use super::ui_tool_paths::{
     TranscriptPathMetadata,
 };
 use super::ui_tool_question_todo::{
-    ordered_todo_items, question_tool_title, resolved_question_answer_items,
-    todo_items_from_tool_call, TranscriptTodoItem,
+    ordered_todo_items, question_tool_title, resolved_question_answer_items, TranscriptTodoItem,
 };
 use super::ui_tool_style::{
     generic_tool_visual_style, tool_call_header_style, TranscriptToolCallVisualStyle,

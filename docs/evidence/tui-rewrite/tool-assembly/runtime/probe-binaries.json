@@ -1,0 +1,12 @@
+{
+  "rewrite_probe": {
+    "path": "/tmp/tui-tool-assembly-rewrite_probe.bin",
+    "sha256": "e05472f189ac459235069f7ced436e0bd9ef200dd61cee792d4e3db227a76625",
+    "bytes": 15204728
+  },
+  "resource_probe": {
+    "path": "/tmp/tui-tool-assembly-resource_probe.bin",
+    "sha256": "4b6055f71446ffedc2c61de59515ba0ef3a20e28a51f3756ee73c127295f5058",
+    "bytes": 14008544
+  }
+}
