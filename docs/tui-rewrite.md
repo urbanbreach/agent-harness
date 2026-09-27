@@ -126,6 +126,7 @@ before changing the implementation.
 | R10 | Terminal-panel Home reads a scroll limit written by the previous paint, so it stays at the bottom before the first paint and can use stale wrapping after resize | Derive the limit from the current wrapped rows when handling Home. Retain the last drawable geometry during frame preparation for temporarily hidden panels; painting stays immutable. |
 | R11 | The hand-written selection segmenter splits a decomposed Hangul syllable and lets viewer search match an interior jamo | Use the installed Unicode grapheme segmenter for layout and search boundaries, and measure cluster widths as painting does. Existing selection and search fixtures reproduce both failures on the original; a spacing-mark fixture protects painted highlight and copy alignment. |
 | R12 | Plan painting, summary counts and pointer geometry read the filesystem independently, so identical state can paint different buffers after a directory change | Read one plan snapshot before painting and hit testing. Refresh during surface opening, frame preparation and plan actions; keep public diagnostic queries fresh. The extended plan journey fails on the preceding implementation, whose plan state/renderer sources still matched the pinned original. |
+| R13 | Plan rows and previews budget Unicode scalars rather than cells; shared UI clipping also undercounts emoji presentation sequences | Replace plan painting and use Ratatui-compatible grapheme widths. Eight original/candidate frames cover metadata, combining text, joined emoji and VS16. Terminal and Bash title wrapping keep whole graphemes, including zero-width prefixes, without adding or undercounting rows. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -606,6 +607,23 @@ matrix retain those routes. Plan rendering and its scalar-based text truncation
 still need replacement. This is a paint-purity step, with no new resource or
 terminal-latency claim. Evidence is in
 [`evidence/tui-rewrite/plan-preparation`](evidence/tui-rewrite/plan-preparation).
+
+## Plan painter replacement (R13)
+
+The plan painter now uses the prepared entries and shared cell clipping. Its
+203 lines become 145, preserving popup geometry, row styles, scrolling and
+interaction. Wide paths retain their metadata, and previews retain whole
+graphemes and visible ellipses. Shared UI clipping now measures VS16 sequences
+as Ratatui does. Terminal and Bash title wrapping retain whole oversized
+graphemes; terminal rows flush only after consuming display cells.
+
+The original and pre-change candidate match all eight new Unicode plan records.
+Their documented differences after replacement stay within the path or preview
+rows in both terminal cells and xterm pixels. The other 543 records remain
+unchanged. Independent review caught the VS16 mismatch and a zero-width-prefix
+row regression; retained red/green checks cover both. This slice makes no new
+performance or end-to-end terminal claim. Evidence is in
+[`evidence/tui-rewrite/plan-geometry`](evidence/tui-rewrite/plan-geometry).
 
 ## Verification sequence
 

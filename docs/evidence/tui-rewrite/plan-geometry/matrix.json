@@ -1,0 +1,8 @@
+{
+  "frames": 543,
+  "preceding_source": "f1c7d3bcb73a3f93ad62f248a85db1b4e8c73be1",
+  "preceding_sha256": "3ba090388367678cbfa2d005fcd199869e06bcae67514a2c0a2bc031a5702710",
+  "current_sha256": "3ba090388367678cbfa2d005fcd199869e06bcae67514a2c0a2bc031a5702710",
+  "golden_sha256": "5913f3430a0572b649f1758a4d29648a90dc6a7194d5951ba9898254dd0e2751",
+  "result": "all complete records unchanged; original matrix with explicit R8 correction passes"
+}

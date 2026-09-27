@@ -1,5 +1,6 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use std::path::{Path, PathBuf};
+use unicode_segmentation::UnicodeSegmentation;
 
 use ratatui::{
     style::{Color, Style},
@@ -378,11 +379,7 @@ fn wrap_plain_terminal_row(text: &str, width: usize) -> Vec<String> {
     while !remaining.is_empty() {
         let mut chunk = take_width_prefix(remaining, width);
         if chunk.is_empty() {
-            chunk = remaining
-                .char_indices()
-                .nth(1)
-                .map(|(index, _)| &remaining[..index])
-                .unwrap_or(remaining);
+            chunk = remaining.graphemes(true).next().unwrap_or(remaining);
         }
         rows.push(chunk.to_string());
         remaining = &remaining[chunk.len()..];
@@ -449,6 +446,33 @@ mod tests {
                 rows.iter().map(Line::to_string).collect::<Vec<_>>(),
                 expected,
                 "{command}"
+            );
+        }
+
+        for (width, expected) in [
+            (1, vec!["#", "#\u{fe0f}", "e\u{301}", "#\u{fe0f}"]),
+            (2, vec!["#", "#\u{fe0f}", "e\u{301}", "#\u{fe0f}"]),
+            (3, vec!["#", "#\u{fe0f}e\u{301}", "#\u{fe0f}"]),
+        ] {
+            let rows = harness_bash_card_lines(
+                HarnessBashPanel {
+                    command: "",
+                    output: "",
+                    description: Some("# #\u{fe0f}e\u{301}#\u{fe0f}"),
+                    expanded: true,
+                },
+                &Theme::default(),
+                width,
+                Color::Reset,
+            );
+            let rows: Vec<_> = rows.iter().map(Line::to_string).collect();
+            assert_eq!(
+                rows.iter()
+                    .map(|row| row.trim_end())
+                    .filter(|row| !row.is_empty())
+                    .collect::<Vec<_>>(),
+                expected,
+                "title at {width} columns"
             );
         }
     }

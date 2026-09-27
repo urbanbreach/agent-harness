@@ -1,0 +1,92 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.75s
+────────────
+ Nextest run ID b3f6b373-7fef-4f49-83fc-649f6627b6ad with nextest profile: ci
+    Starting 2 tests across 1 binary (1265 tests skipped)
+        FAIL [   0.010s] (1/2) harness-tui ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll
+  stdout ───
+
+    running 1 test
+    test ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1266 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll' (2518672) panicked at crates/harness-tui/src/ui_terminal.rs:335:13:
+    assertion `left == right` failed
+      left: ["#\u{fe0f}e\u{301}", "#\u{fe0f}"]
+     right: ["#\u{fe0f}", "e\u{301}", "#\u{fe0f}"]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.567s] (2/2) harness-tui ui::ui_transcript_bash::tests::shell_panel_wraps_operators_without_splitting_quoted_or_heredoc_payload
+  stdout ───
+
+    running 1 test
+    test ui::ui_transcript_bash::tests::shell_panel_wraps_operators_without_splitting_quoted_or_heredoc_payload ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_transcript_bash::tests::shell_panel_wraps_operators_without_splitting_quoted_or_heredoc_payload
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1266 filtered out; finished in 0.56s
+
+  stderr ───
+
+    thread 'ui::ui_transcript_bash::tests::shell_panel_wraps_operators_without_splitting_quoted_or_heredoc_payload' (2518673) panicked at crates/harness-tui/src/ui_transcript_bash.rs:472:13:
+    assertion `left == right` failed: title at 2 columns
+      left: ["#", "#\u{fe0f}e\u{301}", "#\u{fe0f}"]
+     right: ["#", "#\u{fe0f}", "e\u{301}", "#\u{fe0f}"]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.572s] 2 tests run: 0 passed, 2 failed, 1265 skipped
+        FAIL [   0.010s] (1/2) harness-tui ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll
+  stdout ───
+
+    running 1 test
+    test ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1266 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll' (2518672) panicked at crates/harness-tui/src/ui_terminal.rs:335:13:
+    assertion `left == right` failed
+      left: ["#\u{fe0f}e\u{301}", "#\u{fe0f}"]
+     right: ["#\u{fe0f}", "e\u{301}", "#\u{fe0f}"]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.567s] (2/2) harness-tui ui::ui_transcript_bash::tests::shell_panel_wraps_operators_without_splitting_quoted_or_heredoc_payload
+  stdout ───
+
+    running 1 test
+    test ui::ui_transcript_bash::tests::shell_panel_wraps_operators_without_splitting_quoted_or_heredoc_payload ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_transcript_bash::tests::shell_panel_wraps_operators_without_splitting_quoted_or_heredoc_payload
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1266 filtered out; finished in 0.56s
+
+  stderr ───
+
+    thread 'ui::ui_transcript_bash::tests::shell_panel_wraps_operators_without_splitting_quoted_or_heredoc_payload' (2518673) panicked at crates/harness-tui/src/ui_transcript_bash.rs:472:13:
+    assertion `left == right` failed: title at 2 columns
+      left: ["#", "#\u{fe0f}e\u{301}", "#\u{fe0f}"]
+     right: ["#", "#\u{fe0f}", "e\u{301}", "#\u{fe0f}"]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

@@ -1,0 +1,50 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.41s
+────────────
+ Nextest run ID 8ba8e09e-8565-4265-88e6-46d2b851e240 with nextest profile: ci
+    Starting 1 test across 1 binary (1 test skipped)
+        FAIL [   0.194s] (1/1) harness-tui::rewrite_reference_test plan_geometry::plan_unicode_paths_and_previews_keep_cell_alignment
+  stdout ───
+
+    running 1 test
+    test plan_geometry::plan_unicode_paths_and_previews_keep_cell_alignment ... FAILED
+
+    failures:
+
+    failures:
+        plan_geometry::plan_unicode_paths_and_previews_keep_cell_alignment
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.19s
+
+  stderr ───
+
+    thread 'plan_geometry::plan_unicode_paths_and_previews_keep_cell_alignment' (2518136) panicked at crates/harness-tui/tests/support/rewrite_plan_geometry.rs:64:13:
+    assertion `left == right` failed: plan metadata at 40 columns
+      left: [" ", "…", " ", " ", "s"]
+     right: ["s", "a", "v", "e", "d"]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.195s] 1 test run: 0 passed, 1 failed, 1 skipped
+        FAIL [   0.194s] (1/1) harness-tui::rewrite_reference_test plan_geometry::plan_unicode_paths_and_previews_keep_cell_alignment
+  stdout ───
+
+    running 1 test
+    test plan_geometry::plan_unicode_paths_and_previews_keep_cell_alignment ... FAILED
+
+    failures:
+
+    failures:
+        plan_geometry::plan_unicode_paths_and_previews_keep_cell_alignment
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.19s
+
+  stderr ───
+
+    thread 'plan_geometry::plan_unicode_paths_and_previews_keep_cell_alignment' (2518136) panicked at crates/harness-tui/tests/support/rewrite_plan_geometry.rs:64:13:
+    assertion `left == right` failed: plan metadata at 40 columns
+      left: [" ", "…", " ", " ", "s"]
+     right: ["s", "a", "v", "e", "d"]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

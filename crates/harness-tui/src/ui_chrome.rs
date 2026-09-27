@@ -2,6 +2,8 @@
 use super::*;
 
 use ratatui::widgets::Padding;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use crate::layout::{ControlDockLayout, FrameLayoutPlan, SessionFooterMode, SessionHeaderMode};
 use crate::text::has_trimmed_content;
@@ -1405,8 +1407,8 @@ pub(super) fn take_width_prefix(text: &str, max_width: usize) -> &str {
 
     let mut used = 0usize;
     let mut split_at = 0usize;
-    for (cluster, width) in crate::composer_atoms::measured_graphemes(text) {
-        let cluster_width = usize::from(width);
+    for cluster in text.graphemes(true) {
+        let cluster_width = cluster.width();
         if used.saturating_add(cluster_width) > max_width {
             break;
         }

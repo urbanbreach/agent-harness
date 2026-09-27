@@ -1,0 +1,57 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.13s
+────────────
+ Nextest run ID a1eaa597-e3fa-4922-941b-db932f464cd0 with nextest profile: ci
+    Starting 4 tests across 2 binaries (1265 tests skipped)
+        FAIL [   0.010s] (1/4) harness-tui ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll
+  stdout ───
+
+    running 1 test
+    test ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1266 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll' (2519629) panicked at crates/harness-tui/src/ui_terminal.rs:332:13:
+    assertion `left == right` failed
+      left: ["#\u{fe0f}", "e\u{301}#\u{fe0f}"]
+     right: ["#\u{fe0f}", "e\u{301}", "#\u{fe0f}"]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        SLOW [>  2.000s] (───) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  4.000s] (───) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  6.000s] (───) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  8.000s] (───) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [> 10.000s] (───) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [> 12.000s] (───) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+────────────
+     Summary [  12.526s] 4 tests run: 3 passed (1 slow), 1 failed, 1265 skipped
+        SLOW [  12.521s] (4/4) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        FAIL [   0.010s] (1/4) harness-tui ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll
+  stdout ───
+
+    running 1 test
+    test ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1266 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'ui::ui_terminal::tests::terminal_wrap_counts_display_rows_before_scroll' (2519629) panicked at crates/harness-tui/src/ui_terminal.rs:332:13:
+    assertion `left == right` failed
+      left: ["#\u{fe0f}", "e\u{301}#\u{fe0f}"]
+     right: ["#\u{fe0f}", "e\u{301}", "#\u{fe0f}"]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

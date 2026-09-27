@@ -1,0 +1,14 @@
+Independent reviewer: /root/tui_review
+Result: approved to commit this slice; no blockers.
+
+Verified all 79 pre-receipt artifacts, final source hashes and diff, executable
+receipts, 1,682 passing tests and four focused checks. All 543 existing records
+remain unchanged. All eight new comparisons stay within the documented cell
+and pixel boundaries. Narrow filename and wide preview pairs were visually
+inspected; metadata, whole graphemes and ellipses display correctly.
+
+Shared width helpers and all direct callers were reviewed. The VS16 and
+zero-width-prefix findings are resolved. Callback-count differences and the
+absence of new resource/runtime evidence are accurately disclosed.
+
+Whole-rewrite acceptance remains open. The reviewer made no source edits.
