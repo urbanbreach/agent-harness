@@ -1144,7 +1144,7 @@ impl AppState {
                 self.arm_quit_confirmation(default_key);
             }
             Action::HalfPageDown if self.focus == Focus::Details => {
-                let viewport = self.transcript_view.last_transcript_viewport_height.get();
+                let viewport = self.transcript_view.last_transcript_viewport_height;
                 self.scroll_half_page_down(viewport);
             }
             Action::ScrollDown if self.focus == Focus::Details => {
@@ -1358,9 +1358,9 @@ impl AppState {
                     let _ = self.select_transcript_turn_at(0);
                 } else if !self.activities.is_empty() {
                     self.transcript_view.selected_activity_index = 0;
-                    self.transcript_view.follow_mode = false;
+                    self.transcript_view.set_following(false);
                     self.details_scroll = 0;
-                    self.transcript_view.transcript_scroll = 0;
+                    self.transcript_view.set_offset(0);
                 }
             }
             Action::LastMessage | Action::MoveBufferEnd => {
@@ -1372,9 +1372,9 @@ impl AppState {
                 } else if !self.activities.is_empty() {
                     self.transcript_view.selected_activity_index =
                         self.activities.len().saturating_sub(1);
-                    self.transcript_view.follow_mode = true;
+                    self.transcript_view.set_following(true);
                     self.details_scroll = 0;
-                    self.transcript_view.transcript_scroll = 0;
+                    self.transcript_view.set_offset(0);
                 }
             }
             Action::NextMessage => {
@@ -1389,9 +1389,9 @@ impl AppState {
                         < self.activities.len().saturating_sub(1)
                 {
                     self.transcript_view.selected_activity_index += 1;
-                    self.transcript_view.follow_mode = false;
+                    self.transcript_view.set_following(false);
                     self.details_scroll = 0;
-                    self.transcript_view.transcript_scroll = 0;
+                    self.transcript_view.set_offset(0);
                 }
             }
             Action::PreviousMessage => {
@@ -1403,9 +1403,9 @@ impl AppState {
                     let _ = self.select_transcript_turn_at(previous);
                 } else if self.transcript_view.selected_activity_index > 0 {
                     self.transcript_view.selected_activity_index -= 1;
-                    self.transcript_view.follow_mode = false;
+                    self.transcript_view.set_following(false);
                     self.details_scroll = 0;
-                    self.transcript_view.transcript_scroll = 0;
+                    self.transcript_view.set_offset(0);
                 }
             }
             _ => {}
@@ -1577,7 +1577,7 @@ impl AppState {
     pub fn next_event(&mut self) {
         if !self.events.is_empty() && self.selected_event_index < self.events.len() - 1 {
             self.selected_event_index += 1;
-            self.transcript_view.follow_mode = false;
+            self.transcript_view.set_following(false);
             self.details_scroll = 0;
         }
     }
@@ -1585,7 +1585,7 @@ impl AppState {
     pub fn previous_event(&mut self) {
         if self.selected_event_index > 0 {
             self.selected_event_index -= 1;
-            self.transcript_view.follow_mode = false;
+            self.transcript_view.set_following(false);
             self.details_scroll = 0;
         }
     }
@@ -1595,18 +1595,18 @@ impl AppState {
             && self.transcript_view.selected_activity_index < self.activities.len() - 1
         {
             self.transcript_view.selected_activity_index += 1;
-            self.transcript_view.follow_mode = false;
+            self.transcript_view.set_following(false);
             self.details_scroll = 0;
-            self.transcript_view.transcript_scroll = 0;
+            self.transcript_view.set_offset(0);
         }
     }
 
     fn previous_activity(&mut self) {
         if self.transcript_view.selected_activity_index > 0 {
             self.transcript_view.selected_activity_index -= 1;
-            self.transcript_view.follow_mode = false;
+            self.transcript_view.set_following(false);
             self.details_scroll = 0;
-            self.transcript_view.transcript_scroll = 0;
+            self.transcript_view.set_offset(0);
         }
     }
 
@@ -1682,7 +1682,7 @@ impl AppState {
         }
 
         if self.focus == Focus::Details && key.modifiers == KeyModifiers::CONTROL {
-            let half_page = self.transcript_view.last_transcript_viewport_height.get() / 2;
+            let half_page = self.transcript_view.last_transcript_viewport_height / 2;
             let movement = match key.code {
                 KeyCode::Char('k') => Some((true, 1)),
                 KeyCode::Char('j') => Some((false, 1)),
@@ -2063,9 +2063,9 @@ mod tests {
         app.transcript_integration = Some(composite);
         app.focus = Focus::Details;
         app.composer.vim_mode = true;
-        app.transcript_view.last_transcript_max_scroll.set(10);
+        app.transcript_view.record_measured_max_scroll(10);
         app.transcript_view.set_measured_viewport(
-            crate::app::transcript_viewport::MeasuredTranscriptViewport::following(10),
+            crate::app::transcript_viewport::TranscriptViewport::following(10),
         );
         let before_viewport = app.transcript_view.measured_viewport();
         let before_following = app.transcript_following();

@@ -10,7 +10,7 @@ pub(crate) struct PromptHistoryPicker {
 
 pub(in crate::app) struct QueuedPromptReturn {
     draft: composer::ComposerSnapshot,
-    viewport: super::transcript_viewport::MeasuredTranscriptViewport,
+    viewport: super::transcript_viewport::TranscriptViewport,
     anchor: Option<ui::TranscriptContentAnchor>,
     selected_entry: Option<ui::TranscriptVisualEntryId>,
     focus: Focus,
@@ -42,7 +42,7 @@ impl AppState {
             self.queued_prompt_navigation = Some(QueuedPromptReturn {
                 draft: self.composer.snapshot(),
                 viewport: self.transcript_view.measured_viewport(),
-                anchor: self.transcript_view.measured_anchor.get(),
+                anchor: self.transcript_view.measured_anchor,
                 selected_entry: self.transcript_view.selected_entry,
                 focus: self.focus,
             });
@@ -73,7 +73,7 @@ impl AppState {
             self.composer.restore(snapshot.draft);
             self.transcript_view
                 .set_measured_viewport(snapshot.viewport);
-            self.transcript_view.measured_anchor.set(snapshot.anchor);
+            self.transcript_view.measured_anchor = snapshot.anchor;
             self.transcript_view.selected_entry = snapshot.selected_entry;
             self.focus = snapshot.focus;
             return true;

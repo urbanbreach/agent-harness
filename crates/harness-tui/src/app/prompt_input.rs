@@ -503,7 +503,7 @@ impl AppState {
         });
         self.transcript_view.selected_activity_index = self.activities.len().saturating_sub(1);
         self.details_scroll = 0;
-        self.transcript_view.transcript_scroll = 0;
+        self.transcript_view.set_offset(0);
         if status == ActivityStatus::Streaming {
             self.begin_transcript_page_flip(
                 self.activities

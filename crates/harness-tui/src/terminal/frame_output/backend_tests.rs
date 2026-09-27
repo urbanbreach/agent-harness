@@ -1,7 +1,7 @@
 use ratatui::{backend::Backend, buffer::Cell};
 
 use super::FrameOutputBackend;
-use crate::terminal::frame_output::{set_frame_hyperlinks, FrameHyperlink, FrameOutput};
+use crate::terminal::frame_output::{FrameHyperlink, FrameOutput};
 
 fn draw_frame(
     output: &mut FrameOutput,
@@ -11,7 +11,7 @@ fn draw_frame(
     links: Vec<FrameHyperlink>,
 ) -> Vec<u8> {
     output.begin_frame().expect("begin frame");
-    set_frame_hyperlinks(links);
+    backend.set_hyperlinks(links);
     backend
         .draw(cells.iter().map(|(x, y, cell)| (*x, *y, cell)))
         .expect("draw frame");
@@ -91,7 +91,7 @@ fn backend_repaints_same_label_when_url_changes_or_link_is_removed() {
     );
 
     output.begin_frame().expect("begin unchanged frame");
-    set_frame_hyperlinks(first.to_vec());
+    backend.set_hyperlinks(first.to_vec());
     backend.draw(std::iter::empty()).expect("unchanged links");
     assert_eq!(
         output.finish_frame().expect("finish unchanged frame"),
@@ -145,7 +145,7 @@ fn backend_full_clear_does_not_repaint_old_link_cells_after_resize() {
         } else {
             backend.clear().expect("clear backend");
         }
-        set_frame_hyperlinks(vec![FrameHyperlink {
+        backend.set_hyperlinks(vec![FrameHyperlink {
             row: 25,
             start_column: 12,
             end_column: 13,

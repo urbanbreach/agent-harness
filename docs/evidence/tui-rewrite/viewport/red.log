@@ -1,0 +1,46 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.99s
+────────────
+ Nextest run ID a16dea31-1cf4-4bb7-951c-29575b86a32b with nextest profile: ci
+    Starting 1 test across 1 binary
+        FAIL [   0.512s] (1/1) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+  stdout ───
+
+    running 1 test
+    test recorded_terminal_journeys_match_reference_cells_and_intents ... FAILED
+
+    failures:
+
+    failures:
+        recorded_terminal_journeys_match_reference_cells_and_intents
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+
+  stderr ───
+
+    thread 'recorded_terminal_journeys_match_reference_cells_and_intents' (2045454) panicked at crates/harness-tui/tests/rewrite_reference_test.rs:45:9:
+    first paint differs from settled paint: detached-history
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.513s] 1 test run: 0 passed, 1 failed, 0 skipped
+        FAIL [   0.512s] (1/1) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+  stdout ───
+
+    running 1 test
+    test recorded_terminal_journeys_match_reference_cells_and_intents ... FAILED
+
+    failures:
+
+    failures:
+        recorded_terminal_journeys_match_reference_cells_and_intents
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+
+  stderr ───
+
+    thread 'recorded_terminal_journeys_match_reference_cells_and_intents' (2045454) panicked at crates/harness-tui/tests/rewrite_reference_test.rs:45:9:
+    first paint differs from settled paint: detached-history
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

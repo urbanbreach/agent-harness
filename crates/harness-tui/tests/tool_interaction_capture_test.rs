@@ -247,6 +247,7 @@ fn capture_interaction_transitions() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     assert!(!app.composer_disabled());
                     let mut initial = Terminal::new(TestBackend::new(w, h))?;
+                    app.set_frame_area(Rect::new(0, 0, w, h));
                     initial.draw(|frame| render_app(frame, &app))?;
                     let c = case["key"]
                         .as_str()
@@ -293,9 +294,11 @@ fn capture_interaction_transitions() -> Result<(), Box<dyn std::error::Error>> {
             if w == 80 {
                 // Re-render this very same state wide before the representative 80-column frame.
                 let mut wide = Terminal::new(TestBackend::new(120, h))?;
+                app.set_frame_area(Rect::new(0, 0, 120, h));
                 wide.draw(|frame| render_app(frame, &app))?;
             }
             let mut terminal = Terminal::new(TestBackend::new(w, h))?;
+            app.set_frame_area(Rect::new(0, 0, w, h));
             terminal.draw(|frame| render_app(frame, &app))?;
             let text = terminal
                 .backend()
@@ -363,6 +366,7 @@ fn capture_interaction_transitions() -> Result<(), Box<dyn std::error::Error>> {
                             viewport: Viewport::Fixed(Rect::new(0, 0, w, h)),
                         },
                     )?;
+                    app.set_frame_area(Rect::new(0, 0, w, h));
                     terminal.draw(|frame| render_app(frame, &app))?;
                 }
                 fs::write(dir.join(format!("{stem}.ansi")), bytes)?;

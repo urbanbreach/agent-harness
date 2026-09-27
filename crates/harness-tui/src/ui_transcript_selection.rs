@@ -82,7 +82,7 @@ pub(super) struct TranscriptSelectionSnapshot {
     pub(super) line_texts: Rc<[String]>,
     pub(super) continues_previous: Rc<[bool]>,
     pub(super) row_width: usize,
-    pub(super) resolved_selection: Cell<Option<TranscriptSelection>>,
+    pub(super) resolved_selection: Option<TranscriptSelection>,
 }
 
 #[derive(Debug, Clone)]
@@ -171,7 +171,7 @@ impl TranscriptSelectionSnapshot {
         _selection: TranscriptSelection,
         include_destinations: bool,
     ) -> Option<String> {
-        let selection = self.resolved_selection.get()?;
+        let selection = self.resolved_selection?;
         let (start, end) = selection.normalized();
         if start == end || self.rows.is_empty() {
             return None;
@@ -875,7 +875,7 @@ pub(super) fn lifecycle_selection_snapshot(
         line_texts: Rc::from(line_texts),
         continues_previous: Rc::from(continues_previous),
         row_width: width,
-        resolved_selection: Cell::new(None),
+        resolved_selection: None,
     })
 }
 
@@ -947,7 +947,7 @@ pub(super) fn render_transcript_selection(
     let Some(snapshot) = snapshot else {
         return;
     };
-    let Some(selection) = snapshot.resolved_selection.get() else {
+    let Some(selection) = snapshot.resolved_selection else {
         return;
     };
     if snapshot.rows.is_empty() {
@@ -1112,10 +1112,10 @@ mod tests {
             continues_previous: Rc::from(vec![false]),
             rows: Rc::from(compact),
             row_width: 40,
-            resolved_selection: Cell::new(Some(TranscriptSelection {
+            resolved_selection: Some(TranscriptSelection {
                 anchor: TranscriptSelectionCell { row: 0, column: 2 },
                 focus: TranscriptSelectionCell { row: 0, column: 10 },
-            })),
+            }),
         };
 
         // When: selected cells are copied.
@@ -1151,7 +1151,7 @@ mod tests {
             line_texts: Rc::from(vec![selection_row_line_text(&row)]),
             continues_previous: Rc::from(vec![false]),
             row_width: 10,
-            resolved_selection: Cell::new(Some(TranscriptSelection {
+            resolved_selection: Some(TranscriptSelection {
                 anchor: TranscriptSelectionCell {
                     row: 0,
                     column: anchor,
@@ -1160,7 +1160,7 @@ mod tests {
                     row: 0,
                     column: focus,
                 },
-            })),
+            }),
         };
 
         // When: selections land before, after, and on the final linked cell.
@@ -1311,7 +1311,7 @@ mod tests {
             line_texts: Rc::from(vec!["stale".to_string()]),
             continues_previous: Rc::from(vec![false]),
             row_width: 5,
-            resolved_selection: Cell::new(None),
+            resolved_selection: None,
         };
         let stale_selection = TranscriptSelection {
             anchor: TranscriptSelectionCell { row: 0, column: 0 },

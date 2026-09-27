@@ -166,7 +166,7 @@ mod transcript_entry;
 mod transcript_state;
 mod transcript_view;
 mod transcript_viewer;
-mod transcript_viewport;
+pub(crate) mod transcript_viewport;
 mod workspace_display;
 mod worktree_picker;
 
@@ -921,10 +921,9 @@ impl AppState {
             Ok(mut dashboard) => {
                 dashboard.capture_return_state(DashboardReturnState::new(
                     TranscriptFocus::Transcript,
-                    self.transcript_view.follow_mode,
+                    self.transcript_view.viewport.is_following(),
                     self.transcript_view
                         .measured_anchor
-                        .get()
                         .map(DashboardTranscriptAnchor::capture),
                 ));
                 self.dashboard = Some(dashboard);
@@ -942,12 +941,11 @@ impl AppState {
         self.dashboard = None;
         self.secondary_surfaces.close_status_dialog();
         if let Some(return_state) = transcript_return {
-            self.transcript_view.follow_mode = return_state.transcript_follow;
-            self.transcript_view.measured_anchor.set(
-                return_state
-                    .transcript_anchor
-                    .map(DashboardTranscriptAnchor::into_content_anchor),
-            );
+            self.transcript_view
+                .set_following(return_state.transcript_follow);
+            self.transcript_view.measured_anchor = return_state
+                .transcript_anchor
+                .map(DashboardTranscriptAnchor::into_content_anchor);
         }
         if let Some(focus) = self.dashboard_return_focus.take() {
             self.focus = focus;
@@ -1696,7 +1694,7 @@ impl AppState {
         self.transcript_view.expanded_patch_file_outputs.clear();
         self.transcript_view.expanded_reasoning_requests.clear();
         self.transcript_view.tool_motion = Default::default();
-        self.transcript_view.visible_running_tool_motion.set(false);
+        self.transcript_view.visible_running_tool_motion = false;
         self.cancel_transcript_page_flip();
         self.live_turn_started_at = None;
         self.live_turn_phase_started_at = None;
@@ -1720,7 +1718,7 @@ impl AppState {
                 .min(self.projection.events.len() - 1);
         }
         self.details_scroll = 0;
-        self.transcript_view.transcript_scroll = 0;
+        self.transcript_view.set_offset(0);
         self.terminal_panel.scroll = 0;
         self.terminal_panel.follow = true;
         self.update_queued_prompt_count();
@@ -1849,12 +1847,12 @@ impl AppState {
             .min(self.projection.activities.len().saturating_sub(1));
         self.selected_event_index = self.selected_event_index.saturating_sub(trimmed_events);
 
-        if self.transcript_view.follow_mode && !self.projection.events.is_empty() {
+        if self.transcript_view.viewport.is_following() && !self.projection.events.is_empty() {
             self.selected_event_index = self.projection.events.len() - 1;
             self.transcript_view.selected_activity_index =
                 self.projection.activities.len().saturating_sub(1);
             self.details_scroll = 0;
-            self.transcript_view.transcript_scroll = 0;
+            self.transcript_view.set_offset(0);
         }
 
         if terminal_panel_follow_event && self.terminal_panel.follow {
@@ -2038,7 +2036,7 @@ impl AppState {
         (!hidden.contains(activity.request_id.as_str())).then_some(activity.first_seq)
     }
 
-    fn retarget_local_transcript_page_flip(&self, event: &EventEnvelopeV1) {
+    fn retarget_local_transcript_page_flip(&mut self, event: &EventEnvelopeV1) {
         let state = self.transcript_page_flip_state();
         if state.activity_first_seq() != Some(0)
             || !matches!(&event.payload, EventV1::UserMessageSubmitted(_))
@@ -3774,8 +3772,8 @@ impl AppState {
         if let Some(scroll_top) = self.transcript_page_flip_scroll_top() {
             return self
                 .transcript_view
-                .last_transcript_max_scroll
-                .get()
+                .viewport
+                .max_scroll()
                 .saturating_sub(scroll_top);
         }
         self.transcript_view
@@ -3830,7 +3828,7 @@ impl AppState {
     /// If not in follow mode, scroll position is unchanged.
     pub fn follow_mode_content_arrived(&mut self) {
         if self.transcript_following() {
-            self.transcript_view.transcript_scroll = 0;
+            self.transcript_view.set_offset(0);
         }
     }
 

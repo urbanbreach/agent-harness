@@ -61,7 +61,7 @@ impl AppState {
         self.select_transcript_entry(entry);
         let viewport = self.transcript_view.measured_viewport();
         self.transcript_view.set_measured_viewport(
-            super::transcript_viewport::MeasuredTranscriptViewport::detached(
+            super::transcript_viewport::TranscriptViewport::detached(
                 entry.top,
                 viewport.max_scroll(),
             ),
@@ -231,11 +231,7 @@ impl AppState {
         }
         self.cancel_transcript_page_flip();
         let viewport = self.transcript_view.measured_viewport();
-        let height = self
-            .transcript_view
-            .last_transcript_viewport_height
-            .get()
-            .max(1);
+        let height = self.transcript_view.last_transcript_viewport_height.max(1);
         let top = if entry.top < viewport.top() {
             entry.top
         } else if entry.top + entry.height > viewport.top() + height {
@@ -246,10 +242,7 @@ impl AppState {
             viewport.top()
         };
         self.transcript_view.set_measured_viewport(
-            super::transcript_viewport::MeasuredTranscriptViewport::detached(
-                top,
-                viewport.max_scroll(),
-            ),
+            super::transcript_viewport::TranscriptViewport::detached(top, viewport.max_scroll()),
         );
     }
 

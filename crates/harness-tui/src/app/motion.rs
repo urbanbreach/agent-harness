@@ -191,7 +191,7 @@ impl AppState {
         self.activities.iter().any(|activity| {
             activity.status == ActivityStatus::Streaming
                 && ((!activity.thinking_text.is_empty() && activity.transcript_text.is_empty())
-                    || (self.transcript_view.visible_running_tool_motion.get()
+                    || (self.transcript_view.visible_running_tool_motion
                         && activity
                             .tool_calls
                             .iter()

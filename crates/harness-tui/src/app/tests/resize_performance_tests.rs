@@ -129,17 +129,21 @@ fn perf_interactive_resources_under_load() -> TestResult {
     let cold = Instant::now();
     app.set_frame_area(Rect::new(0, 0, 160, 48));
     output.begin_frame()?;
+    terminal
+        .backend_mut()
+        .set_hyperlinks(std::mem::take(&mut app.transcript_view.hyperlinks));
     terminal.draw(|frame| render_app(frame, &app))?;
     output.finish_frame()?;
     receiver.write_next(&mut std::io::sink())?;
     let _ = output.take_acknowledgements();
     let cold_us = cold.elapsed().as_micros();
-    let max_scroll = app.transcript_view.last_transcript_max_scroll.get();
+    let max_scroll = app.transcript_view.viewport.max_scroll();
     if matches!(
         scenario.as_str(),
         "scroll" | "resize" | "selection" | "hover"
     ) {
         app.set_transcript_scroll_for_test(max_scroll / 2);
+        app.set_frame_area(Rect::new(0, 0, 160, 48));
     }
     if scenario == "selection" {
         app.transcript_view.transcript_selection = Some(crate::ui::TranscriptSelection {
@@ -227,11 +231,14 @@ fn perf_interactive_resources_under_load() -> TestResult {
             }
             "resize" => {
                 let area = Rect::new(0, 0, if index % 2 == 0 { 80 } else { 160 }, 48);
-                app.set_frame_area(area);
                 terminal.resize(area)?;
             }
             _ => return Err(format!("unknown performance scenario: {scenario}").into()),
         }
+        app.set_frame_area(terminal.get_frame().area());
+        terminal
+            .backend_mut()
+            .set_hyperlinks(std::mem::take(&mut app.transcript_view.hyperlinks));
         black_box(app.motion_plan());
         terminal.draw(|frame| render_app(frame, app))?;
         if matches!(output.finish_frame()?, FrameSubmission::Accepted(_)) {
@@ -327,14 +334,14 @@ pub(super) fn perf_resize_to_render_p95_stays_within_one_frame_and_preserves_det
     let backend = TestBackend::new(initial_area.width, initial_area.height);
     let mut terminal = Terminal::new(backend)?;
     terminal.draw(|frame| render_app(frame, &app))?;
-    let max_scroll = app.transcript_view.last_transcript_max_scroll.get();
+    let max_scroll = app.transcript_view.viewport.max_scroll();
     assert!(max_scroll > 0, "10,000 blocks must overflow the viewport");
     app.set_transcript_scroll_for_test(max_scroll / 2);
+    app.set_frame_area(initial_area);
     terminal.draw(|frame| render_app(frame, &app))?;
     let anchor_before = app
         .transcript_view
         .measured_anchor
-        .get()
         .ok_or("detached transcript must expose a logical/display-column anchor")?;
 
     for iteration in 0..WARMUP_RESIZE_COUNT {
@@ -347,10 +354,7 @@ pub(super) fn perf_resize_to_render_p95_stays_within_one_frame_and_preserves_det
         app.set_frame_area(area);
         terminal.resize(area)?;
         terminal.draw(|frame| render_app(frame, &app))?;
-        assert_eq!(
-            app.transcript_view.measured_anchor.get(),
-            Some(anchor_before)
-        );
+        assert_eq!(app.transcript_view.measured_anchor, Some(anchor_before));
     }
 
     // When: 100 hot resize-to-render operations alternate between 80 and 160 columns.
@@ -368,10 +372,7 @@ pub(super) fn perf_resize_to_render_p95_stays_within_one_frame_and_preserves_det
         terminal.draw(|frame| render_app(frame, &app))?;
         black_box(terminal.backend().buffer());
         samples_us.push(started.elapsed().as_micros());
-        assert_eq!(
-            app.transcript_view.measured_anchor.get(),
-            Some(anchor_before)
-        );
+        assert_eq!(app.transcript_view.measured_anchor, Some(anchor_before));
     }
 
     // Then: emit the complete sample set and enforce the 120 Hz frame budget at p95.

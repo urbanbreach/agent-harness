@@ -396,12 +396,13 @@ fn ordinary_transcript_copy_exports_selected_destinations_but_patch_copy_does_no
 #[test]
 fn production_render_app_emits_only_balanced_safe_osc8_through_frame_backend() {
     // Given: production transcript rendering with one safe and one unsafe destination.
-    let app = transcript_selection_test_app_with_text(
+    let mut app = transcript_selection_test_app_with_text(
         "[safe](https://example.com/safe) [bad](javascript:alert(1))",
     );
     let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap_or_abort();
 
-    // When: render_app paints ordinary cells and frame output physically serializes them.
+    app.set_frame_area(Rect::new(0, 0, 120, 40));
+    // When: pure paint supplies cells and runtime projection supplies link metadata.
     terminal
         .draw(|frame| render_app(frame, &app))
         .unwrap_or_abort();
@@ -422,6 +423,7 @@ fn production_render_app_emits_only_balanced_safe_osc8_through_frame_backend() {
     let (mut output, writer, receiver) = crate::terminal::FrameOutput::bounded(1);
     let mut backend = crate::terminal::FrameOutputBackend::new(writer);
     output.begin_frame().unwrap_or_abort();
+    backend.set_hyperlinks(std::mem::take(&mut app.transcript_view.hyperlinks));
     ratatui::backend::Backend::draw(
         &mut backend,
         cells.iter().map(|(x, y, cell)| (*x, *y, cell)),

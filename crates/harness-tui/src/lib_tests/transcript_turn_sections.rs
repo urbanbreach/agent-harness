@@ -14,8 +14,8 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         "Grouped response",
     )]);
     app.transcript_view.selected_activity_index = 0;
-    app.transcript_view.follow_mode = false;
-    app.transcript_view.transcript_scroll = usize::MAX;
+    app.transcript_view.set_following(false);
+    app.transcript_view.set_offset(usize::MAX);
 
     let rendered = render_live_lines(&app, 80, 24);
     let buffer = render_live_cells(&app, 80, 24);
@@ -80,8 +80,8 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     plan_activity.profile_label = "plan".to_string();
     plan_app.activities = std::collections::VecDeque::from(vec![plan_activity]);
     plan_app.transcript_view.selected_activity_index = 0;
-    plan_app.transcript_view.follow_mode = false;
-    plan_app.transcript_view.transcript_scroll = usize::MAX;
+    plan_app.transcript_view.set_following(false);
+    plan_app.transcript_view.set_offset(usize::MAX);
 
     let plan_rendered = render_live_lines(&plan_app, 80, 24);
     let plan_lines = plan_rendered.lines().collect::<Vec<_>>();
@@ -135,8 +135,9 @@ fn assert_transcript_follow_and_scroll_back() {
             .collect::<Vec<_>>(),
     );
     follow_app.transcript_view.selected_activity_index = 7;
-    follow_app.transcript_view.follow_mode = true;
+    follow_app.transcript_view.set_following(true);
 
+    follow_app.set_frame_area(ratatui::layout::Rect::new(0, 0, 60, 24));
     let followed = render_live_lines(&follow_app, 60, 24);
     assert!(
         followed.contains("question 7") && followed.contains("reply 7"),
@@ -147,8 +148,8 @@ fn assert_transcript_follow_and_scroll_back() {
         "follow mode should scroll past the earliest grouped turn\n{followed}"
     );
 
-    follow_app.transcript_view.follow_mode = false;
-    follow_app.transcript_view.transcript_scroll = usize::MAX;
+    follow_app.transcript_view.set_following(false);
+    follow_app.transcript_view.set_offset(usize::MAX);
 
     let scrolled_back = render_live_lines(&follow_app, 60, 24);
     assert!(
@@ -201,7 +202,7 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
     });
     app.activities = std::collections::VecDeque::from(vec![activity]);
     app.transcript_view.selected_activity_index = 0;
-    app.transcript_view.transcript_scroll = usize::MAX;
+    app.transcript_view.set_offset(usize::MAX);
 
     app.toggle_tool_output_for_test("call-1");
 

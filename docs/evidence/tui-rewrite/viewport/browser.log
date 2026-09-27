@@ -1,0 +1,3 @@
+Input latency samples complete
+Stream latency samples complete
+{"summary":{"startup_pty_frame":{"p50_ms":99.98904600000014,"p95_ms":99.98904600000014,"p99_ms":99.98904600000014},"startup":{"p50_ms":158.30190200000015,"p95_ms":158.30190200000015,"p99_ms":158.30190200000015}},"cleanup":{"at":"2026-09-27T05:42:29.504Z","childPid":2094278,"childExited":true,"processGroupAlive":false,"stdinClosed":true,"terminatedByCleanup":false,"temporarySockets":[]},"output":"/home/urbanbreach/Projects/agent-harness/.omo/evidence/tui-rewrite/viewport"}

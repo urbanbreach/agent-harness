@@ -277,7 +277,8 @@ fn streaming_delta_reuses_unrelated_running_tool_section() {
 
     for width in [60, 100] {
         let area = Rect::new(0, 0, width, 16);
-        let render = |app: &AppState| {
+        let render = |app: &mut AppState| {
+            app.set_frame_area(area);
             let mut terminal =
                 ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, area.height))
                     .unwrap_or_abort();
@@ -294,7 +295,7 @@ fn streaming_delta_reuses_unrelated_running_tool_section() {
                 snapshot.continues_previous,
             )
         };
-        let _ = render(&app);
+        let _ = render(&mut app);
         reset_transcript_section_render_count_for_test();
         TRANSCRIPT_SEMANTIC_BUILD_COUNT.with(|count| count.set(0));
 
@@ -306,11 +307,11 @@ fn streaming_delta_reuses_unrelated_running_tool_section() {
         active.revision = active.revision.wrapping_add(1);
         app.mark_transcript_dirty_for_test();
         app.advance_transcript_animation_phase();
-        let cached = render(&app);
+        let cached = render(&mut app);
 
         // Then: semantics build once, only the active turn is remeasured at each width,
         // and painted cells plus selection geometry/text match an uncached render.
-        assert!(app.transcript_view.last_transcript_max_scroll.get() > 0);
+        assert!(app.transcript_view.viewport.max_scroll() > 0);
         assert_eq!(TRANSCRIPT_SEMANTIC_BUILD_COUNT.with(Cell::get), 1);
         assert_eq!(transcript_section_render_count_for_test(), 2);
         let context = transcript_pane_context(
@@ -350,7 +351,7 @@ fn streaming_delta_reuses_unrelated_running_tool_section() {
         }
         TRANSCRIPT_LAYOUT_CACHE.with(|cache| cache.borrow_mut().clear());
         reset_transcript_selection_cache_metrics_for_test();
-        assert_eq!(cached, render(&app));
+        assert_eq!(cached, render(&mut app));
     }
 }
 

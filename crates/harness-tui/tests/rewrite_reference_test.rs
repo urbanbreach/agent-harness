@@ -28,14 +28,19 @@ struct Recorder {
     frames: Vec<Value>,
     output: Option<PathBuf>,
     area: Rect,
-    original: bool,
 }
 
 impl Recorder {
     fn frame(&mut self, name: &str, journey: &mut Journey) -> Result {
         journey.app.set_frame_area(self.area);
         let mut terminal = Terminal::new(TestBackend::new(self.area.width, self.area.height))?;
+        let interaction = journey.app.transcript_interaction_snapshot();
         terminal.draw(|frame| render_app(frame, &journey.app))?;
+        assert_eq!(
+            interaction,
+            journey.app.transcript_interaction_snapshot(),
+            "paint changed interaction state: {name}"
+        );
         let first = terminal.backend().buffer().clone();
         terminal.draw(|frame| render_app(frame, &journey.app))?;
         let buffer = terminal.backend().buffer().clone();
@@ -43,26 +48,10 @@ impl Recorder {
             .backend()
             .cursor_visible()
             .then(|| terminal.backend().cursor_position());
-        if first != buffer {
-            assert!(
-                self.original
-                    && name == "detached-history"
-                    && self.area.width == 40
-                    && self.area.height == 24,
-                "first paint differs from settled paint: {name}"
-            );
-            if let Some(output) = &self.output {
-                fs::write(
-                    output.join(format!(
-                        "first-paint-{name}-{}x{}.json",
-                        self.area.width, self.area.height
-                    )),
-                    serde_json::to_vec(
-                        &json!({"first": cells(&first), "settled": cells(&buffer)}),
-                    )?,
-                )?;
-            }
-        }
+        assert!(
+            first == buffer,
+            "first paint differs from settled paint: {name}"
+        );
         terminal.draw(|frame| render_app(frame, &journey.app))?;
         assert_eq!(
             &buffer,
@@ -306,7 +295,6 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
         frames: Vec::new(),
         output,
         area: Rect::default(),
-        original: original_renderer()?,
     };
     for (width, height) in [(40, 24), (80, 24), (120, 40), (160, 50)] {
         r.area = Rect::new(0, 0, width, height);
@@ -325,6 +313,9 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
     }
     r.area = Rect::new(0, 0, 120, 40);
     r.disk_sessions(std::path::Path::new("."))?;
+    if let Some(output) = &r.output {
+        fs::write(output.join("cells.json"), serde_json::to_vec(&r.frames)?)?;
+    }
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(GOLDEN);
     if std::env::var_os("HARNESS_TUI_RECORD_REFERENCE").is_some() {
         assert!(
@@ -376,33 +367,6 @@ fn original_source() -> Result<bool> {
             "crates/harness-tui/src",
             "crates/harness-core/src",
             "Cargo.lock",
-        ])
-        .status()?
-        .success())
-}
-
-// During the terminal migration the pinned renderer still has R3. Only unchanged
-// projection/rendering source can use its settled-frame allowance.
-fn original_renderer() -> Result<bool> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    Ok(Command::new("git")
-        .current_dir(root)
-        .args([
-            "diff",
-            "--quiet",
-            BASE,
-            "--",
-            "crates/harness-tui/src",
-            ":(exclude)crates/harness-tui/src/runtime.rs",
-            ":(exclude)crates/harness-tui/src/runtime/**",
-            ":(exclude)crates/harness-tui/src/runtime_input.rs",
-            ":(exclude)crates/harness-tui/src/runtime_live_updates.rs",
-            ":(exclude)crates/harness-tui/src/scheduling/**",
-            ":(exclude)crates/harness-tui/src/transcript_scroll/autoscroll.rs",
-            ":(exclude)crates/harness-tui/src/lib.rs",
-            ":(exclude)crates/harness-tui/src/terminal.rs",
-            ":(exclude)crates/harness-tui/src/terminal/**",
-            "crates/harness-core/src",
         ])
         .status()?
         .success())

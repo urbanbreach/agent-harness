@@ -9,15 +9,16 @@ fn settled_detached_transcript_return_restores_follow_mode() {
         .join("\n");
     let mut app = transcript_selection_test_app_with_text(&transcript);
     let area = Rect::new(0, 0, 80, 24);
+    app.set_frame_area(area);
     let _ = render_text(&app, area.width, area.height);
-    let max_scroll = app.transcript_view.last_transcript_max_scroll.get();
+    let max_scroll = app.transcript_view.viewport.max_scroll();
     assert!(
         max_scroll > 0,
         "fixture must overflow the transcript viewport"
     );
     assert!(!app.active_turn_in_progress());
-    app.transcript_view.follow_mode = false;
-    app.transcript_view.transcript_scroll = max_scroll;
+    app.transcript_view.set_following(false);
+    app.transcript_view.set_offset(max_scroll);
     app.transcript_view.return_to_live_hovered = true;
     let (column, row) = (0..area.height)
         .flat_map(|row| (0..area.width).map(move |column| (column, row)))

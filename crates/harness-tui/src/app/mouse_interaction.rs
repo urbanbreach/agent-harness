@@ -348,12 +348,14 @@ impl AppState {
         focus: TranscriptSelectionCell,
     ) {
         self.transcript_view.transcript_selection = Some(TranscriptSelection { anchor, focus });
-        self.transcript_view.transcript_selection_anchors.set(None);
+        self.transcript_view.transcript_selection_anchors = self
+            .last_frame_area
+            .and_then(|area| crate::ui::capture_selection_anchors(self, area));
     }
 
     pub(in crate::app) fn clear_transcript_selection(&mut self) {
         self.transcript_view.transcript_selection = None;
-        self.transcript_view.transcript_selection_anchors.set(None);
+        self.transcript_view.transcript_selection_anchors = None;
         self.transcript_view.transcript_selection_dragging = false;
     }
 
@@ -582,6 +584,7 @@ impl AppState {
             let _ = composite.resize(transcript_area);
         }
         self.resize_transcript_viewer(area);
+        crate::ui::prepare_transcript(self, area);
     }
 
     pub(crate) fn last_frame_area(&self) -> Option<Rect> {

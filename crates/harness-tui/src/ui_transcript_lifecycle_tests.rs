@@ -374,7 +374,7 @@ fn startup_lifecycle_text_participates_in_selection_copy() {
     )
     .unwrap_or_abort();
     app.transcript_view.transcript_selection = Some(TranscriptSelection { anchor, focus });
-    app.transcript_view.transcript_selection_anchors.set(None);
+    app.transcript_view.transcript_selection_anchors = None;
 
     let copied = transcript_selection_text(&app, area, TranscriptSelection { anchor, focus })
         .unwrap_or_abort();

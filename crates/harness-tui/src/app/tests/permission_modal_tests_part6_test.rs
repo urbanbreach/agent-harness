@@ -217,7 +217,7 @@ pub(super) fn permission_modal_escape_parks_and_tab_restores_without_answering()
     assert!(!app.transcript_thinking_visible());
     app.handle_key(key(KeyCode::PageUp));
     assert!(app.transcript_scroll_offset() > 0);
-    assert!(!app.transcript_view.follow_mode);
+    assert!(!app.transcript_view.viewport.is_following());
     app.handle_key(key(KeyCode::End));
     assert_eq!(app.transcript_scroll_offset(), 0);
     let transcript = crate::layout::FrameLayoutPlan::for_app(&app, area)

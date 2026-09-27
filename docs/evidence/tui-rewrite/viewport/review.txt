@@ -1,0 +1,4 @@
+Independent review: /root/tui_review
+Scope: viewport and metadata ownership migration only.
+Result: no remaining actionable findings after benchmark timing and capture preparation corrections.
+Remaining work: R4 response navigation, original projection, global caches, and renderer replacement.

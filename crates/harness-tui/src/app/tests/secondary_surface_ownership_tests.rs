@@ -317,11 +317,11 @@ pub(super) fn status_dashboard_captures_and_restores_detached_transcript_anchor(
     app.set_frame_area(compact);
     let _ = render_text(&app, compact.width, compact.height);
     app.scroll_transcript_up(40);
+    app.set_frame_area(compact);
     let _ = render_text(&app, compact.width, compact.height);
     let anchor_before = app
         .transcript_view
         .measured_anchor
-        .get()
         .expect("detached transcript must have an exact content anchor");
     let focus_before = Focus::Details;
     app.focus = focus_before;
@@ -341,12 +341,13 @@ pub(super) fn status_dashboard_captures_and_restores_detached_transcript_anchor(
     app.set_frame_area(resized);
     let _ = render_text(&app, resized.width, resized.height);
     app.handle_key(key(KeyCode::Esc));
+    app.set_frame_area(resized);
     let _ = render_text(&app, resized.width, resized.height);
 
     assert_eq!(app.focus, focus_before);
-    assert!(!app.transcript_view.follow_mode);
+    assert!(!app.transcript_view.viewport.is_following());
     assert_eq!(
-        app.transcript_view.measured_anchor.get(),
+        app.transcript_view.measured_anchor,
         Some(anchor_before),
         "dashboard exit after resize must restore the exact logical line and display column"
     );

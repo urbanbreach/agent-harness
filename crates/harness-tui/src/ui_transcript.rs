@@ -471,13 +471,13 @@ pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Re
 }
 
 #[derive(Debug, Clone)]
-struct TranscriptPaneContext<'a> {
-    inner_area: Rect,
-    base_surface: Color,
+pub(super) struct TranscriptPaneContext<'a> {
+    pub(super) inner_area: Rect,
+    pub(super) base_surface: Color,
     block: Option<ratatui::widgets::Block<'a>>,
 }
 
-fn transcript_pane_context<'a>(
+pub(super) fn transcript_pane_context<'a>(
     app: &AppState,
     area: Rect,
     theme: &'a Theme,
@@ -654,10 +654,6 @@ fn render_measured_transcript_pane(
                 return;
             }
 
-            let regular_max = layout
-                .total_height
-                .saturating_sub(usize::from(viewport.content.height));
-            app.transcript_view.record_measured_max_scroll(regular_max);
             let transcript_scroll = transcript_scroll_top(app, layout, viewport.content.height);
             let TranscriptScrollPosition {
                 top: transcript_scroll,
@@ -669,8 +665,6 @@ fn render_measured_transcript_pane(
                 viewport.content.height,
                 transcript_scroll,
             );
-            app.set_transcript_page_flip_state(page_flip);
-            app.transcript_view.record_measured_max_scroll(max_scroll);
             let surface_area = transcript_surface_area(
                 app,
                 viewport.content,
@@ -680,14 +674,6 @@ fn render_measured_transcript_pane(
                     page_flip,
                 },
             );
-            app.transcript_view
-                .last_transcript_viewport_height
-                .set(usize::from(surface_area.height));
-            app.record_visible_running_tool_motion(transcript_layout_has_visible_running_tool(
-                layout,
-                usize::from(surface_area.height),
-                transcript_scroll,
-            ));
             render_integrated_timeline(frame, app, surface_area);
             render_transcript_layout_surfaces(
                 frame,
@@ -700,7 +686,6 @@ fn render_measured_transcript_pane(
             if let Some(seq) = app.rewind_dim_from_seq() {
                 dim_rewind_transcript(frame, layout, surface_area, transcript_scroll, seq, theme);
             }
-            register_transcript_hyperlinks(layout, surface_area, transcript_scroll);
             if app.focus == Focus::Details && !app.todo_pane_focused() {
                 super::ui_transcript_layout::render_selected_transcript_entry(
                     frame,
@@ -812,7 +797,7 @@ fn render_response_position_affordance(frame: &mut Frame, area: Rect, app: &AppS
     );
 }
 
-fn transcript_surface_area(
+pub(super) fn transcript_surface_area(
     app: &AppState,
     viewport: Rect,
     scroll_position: TranscriptScrollPosition,
@@ -859,29 +844,9 @@ fn transcript_scroll_top(
     if let Some(scroll_top) = app.transcript_page_flip_scroll_top() {
         return scroll_top;
     }
-    let max_scroll = layout
-        .total_height
-        .saturating_sub(usize::from(viewport_height));
-    let viewport = app.transcript_view.measured_viewport();
-    if viewport.is_following() {
-        app.transcript_view.measured_anchor.set(None);
-        return max_scroll;
-    }
-    let anchor = app.transcript_view.measured_anchor.get();
-    let resolved = anchor.and_then(|anchor| layout.resolve_content_anchor(anchor));
-    let scroll_top = resolved.unwrap_or_else(|| viewport.top()).min(max_scroll);
-    app.transcript_view
-        .set_resolved_measured_top(scroll_top, max_scroll);
-    app.transcript_view
-        .measured_anchor
-        .set(if resolved == Some(scroll_top) {
-            // A reflow can place the source column in the middle of a row.
-            // Keep that exact source position for the next resize.
-            anchor
-        } else {
-            layout.capture_content_anchor(scroll_top)
-        });
-    scroll_top
+    super::ui_transcript_viewport::resolve_viewport(app, layout, viewport_height)
+        .0
+        .top()
 }
 
 fn build_transcript_selection_snapshot(
@@ -965,7 +930,7 @@ fn build_transcript_selection_snapshot(
                 line_texts,
                 continues_previous,
                 row_width: render_width,
-                resolved_selection: Cell::new(None),
+                resolved_selection: None,
             }
         },
     ))
@@ -993,7 +958,6 @@ fn with_transcript_selection_snapshot<R>(
     let resolved_selection = if app.startup_shell_visible() || live_empty_state_visible(app) {
         app.transcript_view
             .transcript_selection_anchors
-            .get()
             .is_none()
             .then(|| app.transcript_selection())
             .flatten()
@@ -1005,21 +969,15 @@ fn with_transcript_selection_snapshot<R>(
             context.base_surface,
             |layout| {
                 app.transcript_selection().and_then(|selection| {
-                    if let Some((anchor, focus)) =
-                        app.transcript_view.transcript_selection_anchors.get()
+                    if let Some((anchor, focus)) = app.transcript_view.transcript_selection_anchors
                     {
                         return Some(TranscriptSelection {
                             anchor: layout.resolve_selection_anchor(anchor)?,
                             focus: layout.resolve_selection_anchor(focus)?,
                         });
                     }
-                    let anchors = (
-                        layout.capture_selection_anchor(selection.anchor)?,
-                        layout.capture_selection_anchor(selection.focus)?,
-                    );
-                    app.transcript_view
-                        .transcript_selection_anchors
-                        .set(Some(anchors));
+                    layout.capture_selection_anchor(selection.anchor)?;
+                    layout.capture_selection_anchor(selection.focus)?;
                     Some(selection)
                 })
             },
@@ -1038,17 +996,18 @@ fn with_transcript_selection_snapshot<R>(
         },
         |previous| build_transcript_selection_snapshot(app, area, previous),
         |snapshot| {
-            snapshot.resolved_selection.set(resolved_selection);
-            render(snapshot)
+            let mut snapshot = snapshot.clone();
+            snapshot.resolved_selection = resolved_selection;
+            render(&snapshot)
         },
     )
 }
 
-fn register_transcript_hyperlinks(
+pub(super) fn transcript_hyperlinks(
     layout: &MeasuredTranscriptLayout,
     viewport: Rect,
     scroll_top: usize,
-) {
+) -> Vec<crate::terminal::FrameHyperlink> {
     let viewport_rows = transcript_viewport_rows(layout, usize::from(viewport.height), scroll_top);
     let mut links = Vec::new();
     for local_row in 0..usize::from(viewport.height) {
@@ -1075,7 +1034,7 @@ fn register_transcript_hyperlinks(
             });
         }
     }
-    crate::terminal::set_frame_hyperlinks(links);
+    links
 }
 
 fn transcript_selection_row_at(
@@ -1241,7 +1200,7 @@ fn build_measured_transcript_layout_for_width_on_surface(
     )
 }
 
-fn with_measured_transcript_layout_for_width_on_surface<R>(
+pub(super) fn with_measured_transcript_layout_for_width_on_surface<R>(
     app: &AppState,
     theme: &Theme,
     width: u16,
@@ -1342,7 +1301,7 @@ pub(crate) fn transcript_scrollbar_hit(
     row: u16,
 ) -> Option<TranscriptScrollbarHit> {
     let context = transcript_pane_context(app, resolved_transcript_area(app, area)?, app.theme());
-    let max_scroll = app.transcript_view.last_transcript_max_scroll.get();
+    let max_scroll = app.transcript_view.viewport.max_scroll();
     if max_scroll == 0 {
         return None;
     }
@@ -1412,12 +1371,8 @@ pub(crate) fn transcript_selection_cell(
     row: u16,
 ) -> Option<TranscriptSelectionCell> {
     with_transcript_selection_snapshot(app, area, |snapshot| {
-        if app
-            .transcript_view
-            .transcript_selection_anchors
-            .get()
-            .is_some()
-            && snapshot.resolved_selection.get().is_none()
+        if app.transcript_view.transcript_selection_anchors.is_some()
+            && snapshot.resolved_selection.is_none()
         {
             return None;
         }
@@ -1461,7 +1416,7 @@ pub(crate) fn transcript_diff_hunk_rows(app: &AppState, area: Rect) -> Vec<usize
 /// Live run shell paints breadcrumb inside `plan.transcript` and shrinks the
 /// remaining pane; interaction paths must use the same shrink or hitboxes
 /// land two rows above painted content.
-fn resolved_transcript_area(app: &AppState, area: Rect) -> Option<Rect> {
+pub(super) fn resolved_transcript_area(app: &AppState, area: Rect) -> Option<Rect> {
     let transcript_area = FrameLayoutPlan::for_app(app, area).transcript?;
     if app.replay_mode || app.startup_shell_visible() {
         return Some(transcript_area);

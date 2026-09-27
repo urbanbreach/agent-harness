@@ -207,9 +207,9 @@ The writer-failure checks, four PTY restoration scenarios, resumed CLI journey,
 539-frame oracle, scoped Clippy run, and workspace check pass. The two injected
 writer regressions were observed failing before their fixes. Raw results are in
 [`evidence/tui-rewrite/terminal`](evidence/tui-rewrite/terminal).
-The oracle still permits the documented R3 settled-frame comparison while the
-original renderer is unchanged. This is a migration step; the renderer and state
-engine still need replacement.
+This stage retained the documented R3 settled-frame allowance for the unchanged
+renderer. The viewport replacement below removes that allowance. The original
+renderer and most of the state engine still need replacement.
 
 ## Event loop replacement
 
@@ -260,6 +260,55 @@ naturally with terminal modes and fixture resources restored.
 Raw results, ANSI recordings, and the click-burst PNG are published under
 [`evidence/tui-rewrite/runtime`](evidence/tui-rewrite/runtime), with hashes in
 [`files.json`](evidence/tui-rewrite/runtime/files.json).
+
+## Viewport ownership replacement
+
+`TranscriptViewport` replaces the parallel follow flag, bottom offset, measured
+viewport, and legacy snapshot. Extent, reading anchor, page-flip transitions,
+selection anchors, and visible-tool motion are committed during `set_frame_area`
+before input or paint. Painting reads those values. The terminal backend receives
+visible hyperlink metadata from the same preparation step; the thread-local link
+transfer is removed. Startup, empty, and hidden transcript surfaces clear links.
+
+The public oracle now rejects every first/second-paint difference and checks that
+paint leaves the interaction snapshot unchanged. Removing the R3 allowance failed
+on the original implementation's detached 40×24 history; frame preparation fixes
+it without changing the 539 recorded expectations. Five private viewport tests
+were removed; public scrolling, reflow, selection, disclosure, and return-to-live
+checks retain the behavioral coverage.
+
+Review found capture helpers that had relied on paint to commit geometry and
+benchmarks that would have omitted preparation from their timers. Capture helpers
+now prepare before navigation and each size. Both benchmarks include preparation
+in cold and warm samples, including visible-link extraction. Use the updated
+public benchmark on both builds for the final paired comparison; the frozen
+acceptance limits remain unchanged.
+
+Validation passed: 1,797 deterministic tests with seven skips, all 539 reference
+frames without the R3 waiver, scoped Clippy, and test-suite gates. Eighteen of 19
+PTY checks passed; the remaining failure is the recorded R4 defect. The browser
+workflow delivered the burst notice in 64.12 ms, restored terminal modes, and
+closed its process group, socket, and browser profile. This debug timing is a
+regression check, not a resource-improvement claim. Independent review approved
+this slice after the benchmark and capture corrections.
+
+The corrected release checks also pass: the 10,000-block resize contract preserves
+its anchor (p95 1,342 µs against its existing 8,333 µs limit), and the public
+1,000-turn streaming workload keeps both current output and oldest history
+reachable. These are smoke checks, not the final paired improvement result.
+
+```sh
+HARNESS_REWRITE_SCENARIO=stream HARNESS_REWRITE_HISTORY=1000 HARNESS_REWRITE_FRAMES=100 \
+  cargo nextest run --release --profile perf -p harness-tui --all-features --lib \
+  --test rewrite_performance_test -j 1 --success-output immediate \
+  -E 'test(perf_rewrite_public_boundary_workloads) | test(perf_resize_to_render_p95_stays_within_one_frame_and_preserves_detached_anchor)'
+```
+
+Raw reports are in [`evidence/tui-rewrite/viewport`](evidence/tui-rewrite/viewport).
+
+This is a state-ownership migration, not completion of the renderer rewrite.
+Whole-history projection, global layout caches, and the original rendering engine
+remain. R4 response navigation still fails its PTY check and needs replacement.
 
 ## Verification sequence
 

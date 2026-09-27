@@ -131,8 +131,9 @@ pub(super) fn transcript_scrollbar_matches_session_shape() {
             .collect::<Vec<_>>(),
     );
     app.transcript_view.selected_activity_index = 13;
-    app.transcript_view.follow_mode = false;
-    app.transcript_view.transcript_scroll = 18;
+    app.transcript_view.set_following(false);
+    app.set_frame_area(ratatui::layout::Rect::new(0, 0, 80, 24));
+    app.transcript_view.set_offset(18);
 
     let rendered = render_live_lines(&app, 80, 24)
         .lines()
@@ -172,6 +173,7 @@ pub(super) fn transcript_page_down_reaches_response_tail_after_scrolling_up() {
     app.transcript_view.selected_activity_index = 0;
     app.focus = app::Focus::Details;
 
+    app.set_frame_area(ratatui::layout::Rect::new(0, 0, 60, 24));
     let _ = render_live_buffer(&app, 60, 24);
     app.handle_key(key(KeyCode::Home));
 
@@ -187,7 +189,7 @@ pub(super) fn transcript_page_down_reaches_response_tail_after_scrolling_up() {
 
     for _ in 0..40 {
         app.handle_key(key(KeyCode::PageDown));
-        if app.transcript_view.follow_mode {
+        if app.transcript_view.viewport.is_following() {
             break;
         }
     }
@@ -208,7 +210,7 @@ pub(super) fn transcript_without_overflow_hides_scrollbar() {
         "short reply",
     )]);
     app.transcript_view.selected_activity_index = 0;
-    app.transcript_view.follow_mode = true;
+    app.transcript_view.set_following(true);
 
     let rendered = render_live_lines(&app, 80, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
@@ -498,8 +500,8 @@ pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() 
     assert!(app.toggle_selected_transcript_fold());
 
     // Scroll to top so wrapped thinking first-line + body both stay visible under breadcrumb chrome.
-    app.transcript_view.follow_mode = false;
-    app.transcript_view.transcript_scroll = usize::MAX;
+    app.transcript_view.set_following(false);
+    app.transcript_view.set_offset(usize::MAX);
     let rendered = render_live_lines(&app, 80, 36);
     let lines = rendered.lines().collect::<Vec<_>>();
     let thinking_row =

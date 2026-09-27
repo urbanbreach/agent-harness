@@ -131,7 +131,7 @@ fn native_tool_scroll_inputs_follow_reference_line_and_half_page_steps() -> Capt
                 "native idle fixture must not render unfinished foreground work: {:?}",
                 app.runtime_state().kind
             );
-            let max = app.transcript_view.last_transcript_max_scroll.get();
+            let max = app.transcript_view.viewport.max_scroll();
             let start = usize::try_from(config["start_offset"].as_u64().ok_or("offset")?)?;
             assert!(
                 max > start * 2,
@@ -139,10 +139,10 @@ fn native_tool_scroll_inputs_follow_reference_line_and_half_page_steps() -> Capt
             );
             app.set_transcript_scroll_for_test(max - start);
             let (before_bytes, _) = draw(&mut app, area)?;
-            let before = app.transcript_view.transcript_scroll;
-            let viewport = app.transcript_view.last_transcript_viewport_height.get();
+            let before = app.transcript_view.viewport.offset_from_bottom();
+            let viewport = app.transcript_view.last_transcript_viewport_height;
             app.handle_key(KeyEvent::new(KeyCode::Char(key), KeyModifiers::CONTROL));
-            let after = app.transcript_view.transcript_scroll;
+            let after = app.transcript_view.viewport.offset_from_bottom();
             let step = if matches!(key, 'k' | 'j') {
                 1
             } else {
@@ -223,7 +223,7 @@ fn native_tool_header_mouse_capture_uses_rendered_hit_targets() -> CaptureResult
         let area = Rect::new(0, 0, width, height);
         let mut app = scroll_app(&config)?;
         draw(&mut app, area)?;
-        app.set_transcript_scroll_for_test(app.transcript_view.last_transcript_max_scroll.get());
+        app.set_transcript_scroll_for_test(app.transcript_view.viewport.max_scroll());
         let (_, mut painted) = draw(&mut app, area)?;
         let mut first_header_row = None;
         for (count, expanded) in [(1, true), (2, false), (3, true), (4, true)] {

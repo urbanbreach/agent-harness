@@ -127,7 +127,6 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
         }
     }
     let mut area = Rect::new(0, 0, 160, 48);
-    j.app.set_frame_area(area);
     let output_bytes = Cell::new(0);
     let mut terminal = Terminal::with_options(
         CrosstermBackend::new(Output(&output_bytes)),
@@ -136,6 +135,7 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
         },
     )?;
     let cold = Instant::now();
+    j.app.set_frame_area(area);
     terminal.draw(|frame| render_app(frame, &j.app))?;
     let cold_us = cold.elapsed().as_micros();
     if matches!(scenario.as_str(), "scroll" | "resize") {
@@ -172,11 +172,11 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
             }
             "resize" => {
                 area.width = if index % 2 == 0 { 80 } else { 160 };
-                j.app.set_frame_area(area);
                 terminal.resize(area)?;
             }
             _ => return Err(format!("unknown workload: {scenario}").into()),
         }
+        j.app.set_frame_area(area);
         terminal.draw(|frame| render_app(frame, &j.app))?;
         if index >= 10 {
             samples_us.push(start.elapsed().as_micros());
@@ -184,7 +184,7 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
     }
     let after = resources()?;
     let bytes = output_bytes.get() - bytes_before;
-    let visible = screen(&j, area)?;
+    let visible = screen(&mut j, area)?;
     if scenario == "stream" {
         assert!(
             visible.contains("token"),
@@ -194,7 +194,7 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
     let mut oldest = String::new();
     if count > 0 {
         j.app.scroll_goto_top();
-        oldest = screen(&j, area)?;
+        oldest = screen(&mut j, area)?;
         if count <= 2000 {
             assert!(oldest.contains("Prompt 00000"), "history was discarded");
         }
@@ -210,7 +210,7 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
         "p50_us": sorted[frames * 50 / 100 - 1], "p95_us": sorted[frames * 95 / 100 - 1],
         "p99_us": sorted[frames * 99 / 100 - 1], "before": before, "after": after,
         "bytes": bytes, "visible": visible, "oldest": oldest,
-        "boundary": "public event/input handlers, render_app, Ratatui diff, Crossterm encoding to counting sink"});
+        "boundary": "public event/input handlers, frame preparation, render_app, Ratatui diff, Crossterm encoding to counting sink"});
     if let Some(path) = std::env::var_os("HARNESS_REWRITE_PERF_OUT") {
         fs::write(path, serde_json::to_vec_pretty(&report)?)?;
     }
@@ -218,7 +218,8 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
     Ok(())
 }
 
-fn screen(journey: &Journey, area: Rect) -> Result<String> {
+fn screen(journey: &mut Journey, area: Rect) -> Result<String> {
+    journey.app.set_frame_area(area);
     let mut terminal = Terminal::new(TestBackend::new(area.width, area.height))?;
     terminal.draw(|frame| render_app(frame, &journey.app))?;
     Ok(terminal
