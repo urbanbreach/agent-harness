@@ -1,114 +1,37 @@
-//! Typed settings registry foundation over existing public runtime/TUI keys.
-//!
-//! Complements [`super::public::public_config_contract`] with per-setting
-//! metadata (scope, sensitivity, capability dependency, restart, merge, mutability).
-//! Does not merge runtime and TUI public file contracts or implement migrations.
+use serde::Serialize;
+use std::sync::LazyLock;
 
-use serde::{Deserialize, Serialize};
-
-use crate::worktree::{DEFAULT_WORKTREE_RELATIVE_BASE, WORKTREE_BRANCH_PREFIX};
-
-/// Stable public setting identifier (dotted path over public config keys).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SettingId(pub &'static str);
-
-impl SettingId {
-    pub const fn new(value: &'static str) -> Self {
-        Self(value)
-    }
-
-    pub const fn as_str(self) -> &'static str {
-        self.0
-    }
+macro_rules! ids {
+    ($($name:ident),*) => {$(
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+        #[serde(transparent)]
+        pub struct $name(pub &'static str);
+        impl $name {
+            pub const fn new(value: &'static str) -> Self { Self(value) }
+            pub const fn as_str(self) -> &'static str { self.0 }
+        }
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(self.0) }
+        }
+    )*};
 }
-
-impl AsRef<str> for SettingId {
-    fn as_ref(&self) -> &str {
-        self.0
-    }
+ids!(SettingId, SchemaId);
+macro_rules! labels {
+    ($($name:ident { $($variant:ident => $label:literal),* }),*) => {$(
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+        #[serde(rename_all = "snake_case")]
+        pub enum $name { $($variant),* }
+        impl $name { pub const fn as_str(self) -> &'static str { match self { $(Self::$variant => $label),* } } }
+    )*};
 }
-
-impl std::fmt::Display for SettingId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.0)
-    }
+labels! {
+    SettingSurface { Runtime => "runtime", Tui => "tui" },
+    SettingScope { System => "system", User => "user", Profile => "profile", Project => "project", Workspace => "workspace", Worktree => "worktree", Session => "session", CommandLine => "command_line", Environment => "environment" },
+    SettingSensitivity { Public => "public", Redacted => "redacted", Secret => "secret" },
+    SettingMergeStrategy { Replace => "replace", DeepMergeMap => "deep_merge_map" },
+    SettingMutability { ReadOnly => "read_only", Editable => "editable" }
 }
-
-/// Stable schema identifier for generated/effective settings schema work.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SchemaId(pub &'static str);
-
-impl SchemaId {
-    pub const fn new(value: &'static str) -> Self {
-        Self(value)
-    }
-
-    pub const fn as_str(self) -> &'static str {
-        self.0
-    }
-}
-
-impl AsRef<str> for SchemaId {
-    fn as_ref(&self) -> &str {
-        self.0
-    }
-}
-
-impl std::fmt::Display for SchemaId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.0)
-    }
-}
-
-/// Which public file contract owns the setting (runtime vs TUI stay separate).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SettingSurface {
-    Runtime,
-    Tui,
-}
-
-/// Default discovery/merge scope for the setting (foundation; full layer engine is later work).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SettingScope {
-    System,
-    User,
-    Profile,
-    Project,
-    Workspace,
-    Worktree,
-    Session,
-    CommandLine,
-    Environment,
-}
-
-/// Redaction/sensitivity class for effective-config and evidence surfaces.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SettingSensitivity {
-    Public,
-    Redacted,
-    Secret,
-}
-
-/// Deterministic merge strategy when layers contribute the same setting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SettingMergeStrategy {
-    /// Later layer replaces the earlier value wholesale (scalars, modes).
-    Replace,
-    /// Nested maps deep-merge; arrays/primitives still replace.
-    DeepMergeMap,
-}
-
-/// Whether the settings editor / write path may mutate the setting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SettingMutability {
-    /// Visible in registry/UI; edits are rejected.
-    ReadOnly,
-    /// Eligible for project-file edit when the write path supports the key.
-    Editable,
-}
-
-/// One registered public setting with foundation metadata.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct SettingDefinition {
     pub setting_id: SettingId,
     pub schema_id: SchemaId,
@@ -117,349 +40,112 @@ pub struct SettingDefinition {
     pub sensitivity: SettingSensitivity,
     pub capability_dependency: Option<&'static str>,
     pub restart_required: bool,
-    /// Stable string form of the built-in default when one exists.
     pub default_value: Option<&'static str>,
     pub merge_strategy: SettingMergeStrategy,
     pub mutability: SettingMutability,
 }
-
 impl SettingDefinition {
     pub const fn has_default(self) -> bool {
         self.default_value.is_some()
     }
-
     pub const fn is_secret(self) -> bool {
         matches!(self.sensitivity, SettingSensitivity::Secret)
     }
-
     pub const fn is_editable(self) -> bool {
-        matches!(self.mutability, SettingMutability::Editable) && !self.is_secret()
+        matches!(self.mutability, SettingMutability::Editable)
     }
 }
-
-const fn def(
-    setting_id: &'static str,
-    schema_id: &'static str,
+fn definition(
+    id: &'static str,
+    schema: &'static str,
     surface: SettingSurface,
-    default_scope: SettingScope,
-    sensitivity: SettingSensitivity,
-    capability_dependency: Option<&'static str>,
-    restart_required: bool,
-    default_value: Option<&'static str>,
-    merge_strategy: SettingMergeStrategy,
-    mutability: SettingMutability,
+    default: Option<&'static str>,
 ) -> SettingDefinition {
+    let metadata = is_metadata_only_setting(id);
+    let secret = id == "provider.apiKey";
     SettingDefinition {
-        setting_id: SettingId(setting_id),
-        schema_id: SchemaId(schema_id),
+        setting_id: SettingId(id),
+        schema_id: SchemaId(schema),
         surface,
-        default_scope,
-        sensitivity,
-        capability_dependency,
-        restart_required,
-        default_value,
-        merge_strategy,
-        mutability,
+        default_scope: if metadata {
+            SettingScope::Worktree
+        } else {
+            SettingScope::Project
+        },
+        sensitivity: if secret {
+            SettingSensitivity::Secret
+        } else {
+            SettingSensitivity::Public
+        },
+        capability_dependency: id.strip_prefix("permission."),
+        restart_required: metadata
+            || matches!(id, "runtime.always_approve" | "runtime.session_dir"),
+        default_value: default,
+        merge_strategy: if matches!(
+            id,
+            "agent"
+                | "provider"
+                | "skills"
+                | "mcp"
+                | "model_profile"
+                | "ui"
+                | "runtime.compaction.model_thresholds"
+                | "runtime.compaction.agent_thresholds"
+                | "keybinds"
+        ) {
+            SettingMergeStrategy::DeepMergeMap
+        } else {
+            SettingMergeStrategy::Replace
+        },
+        mutability: if secret || metadata || id == "$schema" {
+            SettingMutability::ReadOnly
+        } else {
+            SettingMutability::Editable
+        },
     }
 }
-
-const fn runtime_public(
-    setting_id: &'static str,
-    schema_id: &'static str,
-    default_value: Option<&'static str>,
-) -> SettingDefinition {
-    def(
-        setting_id,
-        schema_id,
-        SettingSurface::Runtime,
-        SettingScope::Project,
-        SettingSensitivity::Public,
-        None,
-        false,
-        default_value,
-        SettingMergeStrategy::Replace,
-        SettingMutability::Editable,
-    )
+macro_rules! entries {
+    ($prefix:literal, $surface:ident; $($id:literal $(=> $default:literal)?),* $(,)?) => {
+        [$(definition($id, concat!($prefix, $id), SettingSurface::$surface, [$($default)?].first().copied())),*]
+    };
 }
-
-const fn runtime_public_map(
-    setting_id: &'static str,
-    schema_id: &'static str,
-    default_value: Option<&'static str>,
-) -> SettingDefinition {
-    def(
-        setting_id,
-        schema_id,
-        SettingSurface::Runtime,
-        SettingScope::Project,
-        SettingSensitivity::Public,
-        None,
-        false,
-        default_value,
-        SettingMergeStrategy::DeepMergeMap,
-        SettingMutability::Editable,
-    )
-}
-
-const fn runtime_permission(
-    setting_id: &'static str,
-    schema_id: &'static str,
-    capability: &'static str,
-) -> SettingDefinition {
-    def(
-        setting_id,
-        schema_id,
-        SettingSurface::Runtime,
-        SettingScope::Project,
-        SettingSensitivity::Public,
-        Some(capability),
-        false,
-        None,
-        SettingMergeStrategy::Replace,
-        SettingMutability::Editable,
-    )
-}
-
-/// Focused high-value public settings registry. Expand surgically; not full coverage.
-// allow: SIZE_OK — static settings registry data table + metadata JSON API
-const SETTINGS_REGISTRY: &[SettingDefinition] = &[
-    runtime_public("model", "harness.runtime.model", None),
-    runtime_public("small_model", "harness.runtime.small_model", None),
-    runtime_public_map("agent", "harness.runtime.agent", None),
-    runtime_public_map("provider", "harness.runtime.provider", None),
-    runtime_public_map("skills", "harness.runtime.skills", None),
-    runtime_public_map("mcp", "harness.runtime.mcp", None),
-    runtime_public("formatter", "harness.runtime.formatter", None),
-    runtime_public("instructions", "harness.runtime.instructions", None),
-    runtime_public_map("model_profile", "harness.runtime.model_profile", None),
-    runtime_public("lsp", "harness.runtime.lsp", None),
-    runtime_public(
-        "disabled_providers",
-        "harness.runtime.disabled_providers",
-        None,
-    ),
-    runtime_public(
-        "enabled_providers",
-        "harness.runtime.enabled_providers",
-        None,
-    ),
-    runtime_public("shell", "harness.runtime.shell", None),
-    runtime_public("logging", "harness.runtime.logging", None),
-    runtime_public_map("ui", "harness.runtime.ui", None),
-    runtime_permission("permission.bash", "harness.runtime.permission.bash", "bash"),
-    runtime_permission("permission.edit", "harness.runtime.permission.edit", "edit"),
-    runtime_permission(
-        "permission.question",
-        "harness.runtime.permission.question",
-        "question",
-    ),
-    runtime_permission("permission.task", "harness.runtime.permission.task", "task"),
-    runtime_permission(
-        "permission.webfetch",
-        "harness.runtime.permission.webfetch",
-        "webfetch",
-    ),
-    runtime_permission(
-        "permission.websearch",
-        "harness.runtime.permission.websearch",
-        "websearch",
-    ),
-    runtime_permission(
-        "permission.codesearch",
-        "harness.runtime.permission.codesearch",
-        "codesearch",
-    ),
-    runtime_permission("permission.lsp", "harness.runtime.permission.lsp", "lsp"),
-    runtime_permission("permission.read", "harness.runtime.permission.read", "read"),
-    runtime_permission(
-        "permission.external_directory",
-        "harness.runtime.permission.external_directory",
-        "external_directory",
-    ),
-    runtime_permission(
-        "permission.doom_loop",
-        "harness.runtime.permission.doom_loop",
-        "doom_loop",
-    ),
-    runtime_public(
-        "permission.shell_allowlist",
-        "harness.runtime.permission.shell_allowlist",
-        None,
-    ),
-    def(
-        "runtime.always_approve",
-        "harness.runtime.always_approve",
-        SettingSurface::Runtime,
-        SettingScope::Project,
-        SettingSensitivity::Public,
-        None,
-        true,
-        Some("false"),
-        SettingMergeStrategy::Replace,
-        SettingMutability::Editable,
-    ),
-    runtime_public(
-        "runtime.compaction.enabled",
-        "harness.runtime.compaction.enabled",
-        Some("true"),
-    ),
-    runtime_public(
-        "runtime.compaction.reserve_tokens",
-        "harness.runtime.compaction.reserve_tokens",
-        Some("16384"),
-    ),
-    runtime_public(
-        "runtime.compaction.keep_recent_tokens",
-        "harness.runtime.compaction.keep_recent_tokens",
-        Some("20000"),
-    ),
-    runtime_public(
-        "runtime.compaction.threshold_percent",
-        "harness.runtime.compaction.threshold_percent",
-        None,
-    ),
-    runtime_public(
-        "runtime.compaction.threshold_tokens",
-        "harness.runtime.compaction.threshold_tokens",
-        None,
-    ),
-    runtime_public_map(
-        "runtime.compaction.model_thresholds",
-        "harness.runtime.compaction.model_thresholds",
-        Some("{}"),
-    ),
-    runtime_public_map(
-        "runtime.compaction.agent_thresholds",
-        "harness.runtime.compaction.agent_thresholds",
-        Some("{}"),
-    ),
-    runtime_public(
-        "runtime.compaction.fallback_input_tokens",
-        "harness.runtime.compaction.fallback_input_tokens",
-        Some("32768"),
-    ),
-    runtime_public(
-        "runtime.compaction.auto_retry_overflow",
-        "harness.runtime.compaction.auto_retry_overflow",
-        Some("true"),
-    ),
-    runtime_public(
-        "runtime.compaction.structured_summary_contract",
-        "harness.runtime.compaction.structured_summary_contract",
-        Some("true"),
-    ),
-    runtime_public(
-        "runtime.compaction.estimated_token_triggers",
-        "harness.runtime.compaction.estimated_token_triggers",
-        Some("true"),
-    ),
-    runtime_public(
-        "runtime.deterministic.enabled",
-        "harness.runtime.deterministic.enabled",
-        Some("false"),
-    ),
-    def(
-        "runtime.session_dir",
-        "harness.runtime.session_dir",
-        SettingSurface::Runtime,
-        SettingScope::Project,
-        SettingSensitivity::Public,
-        None,
-        true,
-        Some(".agent-harness/sessions"),
-        SettingMergeStrategy::Replace,
-        SettingMutability::Editable,
-    ),
-    def(
-        "provider.apiKey",
-        "harness.runtime.provider.apiKey",
-        SettingSurface::Runtime,
-        SettingScope::Project,
-        SettingSensitivity::Secret,
-        None,
-        false,
-        None,
-        SettingMergeStrategy::Replace,
-        SettingMutability::ReadOnly,
-    ),
-    runtime_public(
-        "hashline_edit",
-        "harness.runtime.hashline_edit",
-        Some("true"),
-    ),
-    def(
-        "confirm_before_rewind",
-        "harness.tui.confirm_before_rewind",
-        SettingSurface::Tui,
-        SettingScope::Project,
-        SettingSensitivity::Public,
-        None,
-        false,
-        Some("true"),
-        SettingMergeStrategy::Replace,
-        SettingMutability::Editable,
-    ),
-    def(
-        "keybinds",
-        "harness.tui.keybinds",
-        SettingSurface::Tui,
-        SettingScope::Project,
-        SettingSensitivity::Public,
-        None,
-        false,
-        Some("{}"),
-        SettingMergeStrategy::DeepMergeMap,
-        SettingMutability::Editable,
-    ),
-    def(
-        "$schema",
-        "harness.tui.$schema",
-        SettingSurface::Tui,
-        SettingScope::Project,
-        SettingSensitivity::Public,
-        None,
-        false,
-        None,
-        SettingMergeStrategy::Replace,
-        SettingMutability::ReadOnly,
-    ),
-    // Metadata-only: product defaults from worktree.rs, not public schema keys yet.
-    def(
-        "worktree.relative_base",
-        "harness.runtime.worktree.relative_base",
-        SettingSurface::Runtime,
-        SettingScope::Worktree,
-        SettingSensitivity::Public,
-        None,
-        true,
-        Some(DEFAULT_WORKTREE_RELATIVE_BASE),
-        SettingMergeStrategy::Replace,
-        SettingMutability::ReadOnly,
-    ),
-    def(
-        "worktree.branch_prefix",
-        "harness.runtime.worktree.branch_prefix",
-        SettingSurface::Runtime,
-        SettingScope::Worktree,
-        SettingSensitivity::Public,
-        None,
-        true,
-        Some(WORKTREE_BRANCH_PREFIX),
-        SettingMergeStrategy::Replace,
-        SettingMutability::ReadOnly,
-    ),
-];
-
-/// Setting ids that intentionally have no public harness.json / tui.json path yet.
-const METADATA_ONLY_SETTING_IDS: &[&str] = &["worktree.relative_base", "worktree.branch_prefix"];
-
-/// Returns the static typed settings registry (foundation; not a full migration engine).
+static REGISTRY: LazyLock<Vec<SettingDefinition>> = LazyLock::new(|| {
+    let mut entries = entries!("harness.runtime.", Runtime;
+        "model", "small_model", "agent", "provider", "skills", "mcp", "formatter", "instructions", "model_profile", "lsp",
+        "disabled_providers", "enabled_providers", "shell", "logging", "ui",
+        "permission.bash", "permission.edit", "permission.question", "permission.task", "permission.webfetch", "permission.websearch",
+        "permission.codesearch", "permission.lsp", "permission.read", "permission.external_directory", "permission.doom_loop", "permission.shell_allowlist",
+        "provider.apiKey", "hashline_edit" => "true", "worktree.relative_base" => ".agent-harness/worktrees", "worktree.branch_prefix" => "harness/wt-",
+    ).to_vec();
+    entries.extend(entries!("harness.", Runtime;
+        "runtime.always_approve" => "false", "runtime.compaction.enabled" => "true", "runtime.compaction.reserve_tokens" => "16384",
+        "runtime.compaction.keep_recent_tokens" => "20000", "runtime.compaction.threshold_percent", "runtime.compaction.threshold_tokens",
+        "runtime.compaction.model_thresholds" => "{}", "runtime.compaction.agent_thresholds" => "{}", "runtime.compaction.fallback_input_tokens" => "32768",
+        "runtime.compaction.auto_retry_overflow" => "true", "runtime.compaction.structured_summary_contract" => "true", "runtime.compaction.estimated_token_triggers" => "true",
+        "runtime.deterministic.enabled" => "false", "runtime.session_dir" => ".agent-harness/sessions",
+    ));
+    entries.extend(entries!("harness.tui.", Tui; "confirm_before_rewind" => "true", "keybinds" => "{}", "$schema"));
+    entries
+});
 pub fn settings_registry() -> &'static [SettingDefinition] {
-    SETTINGS_REGISTRY
+    &REGISTRY
 }
-
-/// Operator-facing counts for the settings registry (diagnostics only).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub fn setting_definition(id: &str) -> Option<&'static SettingDefinition> {
+    let id = match id {
+        "hashlineEdit" | "hashline-edit" => "hashline_edit",
+        _ => id,
+    };
+    settings_registry()
+        .iter()
+        .find(|entry| entry.setting_id.0 == id)
+}
+pub fn resolve_setting_id(id: &str) -> Option<&'static str> {
+    setting_definition(id).map(|entry| entry.setting_id.0)
+}
+pub fn is_metadata_only_setting(id: &str) -> bool {
+    matches!(id, "worktree.relative_base" | "worktree.branch_prefix")
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct SettingsRegistrySummary {
     pub total: usize,
     pub runtime: usize,
@@ -470,116 +156,46 @@ pub struct SettingsRegistrySummary {
     pub metadata_only: usize,
     pub with_default: usize,
 }
-
 impl SettingsRegistrySummary {
     pub fn one_line(&self) -> String {
-        format!(
-            "settings registry: {} total (runtime={}, tui={}, editable={}, read_only={}, secret={}, metadata_only={}, with_default={})",
-            self.total,
-            self.runtime,
-            self.tui,
-            self.editable,
-            self.read_only,
-            self.secret,
-            self.metadata_only,
-            self.with_default
-        )
+        format!("settings registry: {} total (runtime={}, tui={}, editable={}, read_only={}, secret={}, metadata_only={}, with_default={})", self.total, self.runtime, self.tui, self.editable, self.read_only, self.secret, self.metadata_only, self.with_default)
     }
-
     pub const fn has_editable(&self) -> bool {
         self.editable > 0
     }
 }
-
-/// Summarize registry composition for operator/CLI surfaces.
 pub fn summarize_settings_registry() -> SettingsRegistrySummary {
-    let mut summary = SettingsRegistrySummary {
-        total: settings_registry().len(),
-        ..SettingsRegistrySummary::default()
-    };
+    let mut summary = SettingsRegistrySummary::default();
     for entry in settings_registry() {
-        match entry.surface {
-            SettingSurface::Runtime => {
-                summary.runtime = summary.runtime.saturating_add(1);
-            }
-            SettingSurface::Tui => {
-                summary.tui = summary.tui.saturating_add(1);
-            }
-        }
-        match entry.mutability {
-            SettingMutability::Editable => {
-                summary.editable = summary.editable.saturating_add(1);
-            }
-            SettingMutability::ReadOnly => {
-                summary.read_only = summary.read_only.saturating_add(1);
-            }
-        }
-        if matches!(entry.sensitivity, SettingSensitivity::Secret) {
-            summary.secret = summary.secret.saturating_add(1);
-        }
-        if is_metadata_only_setting(entry.setting_id.as_str()) {
-            summary.metadata_only = summary.metadata_only.saturating_add(1);
-        }
-        if entry.has_default() {
-            summary.with_default = summary.with_default.saturating_add(1);
-        }
+        summary.total += 1;
+        summary.runtime += usize::from(entry.surface == SettingSurface::Runtime);
+        summary.tui += usize::from(entry.surface == SettingSurface::Tui);
+        summary.editable += usize::from(entry.is_editable());
+        summary.read_only += usize::from(!entry.is_editable());
+        summary.secret += usize::from(entry.is_secret());
+        summary.metadata_only += usize::from(is_metadata_only_setting(entry.setting_id.0));
+        summary.with_default += usize::from(entry.has_default());
     }
     summary
 }
-
-/// Look up one setting by stable `setting_id`.
-pub fn setting_definition(setting_id: &str) -> Option<&'static SettingDefinition> {
-    let canonical = resolve_setting_id(setting_id).unwrap_or(setting_id);
-    settings_registry()
-        .iter()
-        .find(|entry| entry.setting_id.as_str() == canonical)
-}
-
-/// True when the setting documents product metadata without a public config key.
-pub fn is_metadata_only_setting(setting_id: &str) -> bool {
-    let canonical = resolve_setting_id(setting_id).unwrap_or(setting_id);
-    METADATA_ONLY_SETTING_IDS.contains(&canonical)
-}
-
-/// One legacy → canonical settings-id rename for load/write migration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct SettingCompatMigration {
     pub legacy_id: &'static str,
     pub canonical_id: &'static str,
 }
-
-const SETTINGS_COMPAT_MIGRATIONS: &[SettingCompatMigration] = &[
-    SettingCompatMigration {
-        legacy_id: "hashlineEdit",
-        canonical_id: "hashline_edit",
-    },
-    SettingCompatMigration {
-        legacy_id: "hashline-edit",
-        canonical_id: "hashline_edit",
-    },
-];
-
-/// Compatibility renames applied before registry lookup / project writes.
 pub fn settings_compat_migrations() -> &'static [SettingCompatMigration] {
-    SETTINGS_COMPAT_MIGRATIONS
+    &[
+        SettingCompatMigration {
+            legacy_id: "hashlineEdit",
+            canonical_id: "hashline_edit",
+        },
+        SettingCompatMigration {
+            legacy_id: "hashline-edit",
+            canonical_id: "hashline_edit",
+        },
+    ]
 }
-
-/// Resolve a legacy or canonical setting id to the registry canonical id.
-pub fn resolve_setting_id(setting_id: &str) -> Option<&'static str> {
-    if let Some(entry) = settings_registry()
-        .iter()
-        .find(|entry| entry.setting_id.as_str() == setting_id)
-    {
-        return Some(entry.setting_id.as_str());
-    }
-    SETTINGS_COMPAT_MIGRATIONS
-        .iter()
-        .find(|migration| migration.legacy_id == setting_id)
-        .map(|migration| migration.canonical_id)
-}
-
-/// Source-explanation record for one registry setting (no secret values).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SettingSourceExplanation {
     pub setting_id: String,
     pub schema_id: String,
@@ -591,141 +207,30 @@ pub struct SettingSourceExplanation {
     pub metadata_only: bool,
     pub restart_required: bool,
     pub has_default: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_value: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capability_dependency: Option<String>,
-    /// True when project-file bool write path supports this setting today.
     pub project_write_supported: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_from_legacy: Option<String>,
 }
-
-impl SettingSourceExplanation {
-    pub fn one_line(&self) -> String {
-        format!(
-            "setting {}: surface={} scope={} merge={} mutability={} metadata_only={} write={}",
-            self.setting_id,
-            self.surface,
-            self.default_scope,
-            self.merge_strategy,
-            self.mutability,
-            self.metadata_only,
-            self.project_write_supported
-        )
-    }
-}
-
-const PROJECT_BOOL_WRITE_SETTING_IDS: &[&str] = &[
-    "runtime.always_approve",
-    "hashline_edit",
-    "runtime.compaction.enabled",
-    "runtime.compaction.auto_retry_overflow",
-    "runtime.compaction.structured_summary_contract",
-    "runtime.compaction.estimated_token_triggers",
-    "runtime.deterministic.enabled",
-];
-
-/// Explain one setting id for source-explanation / settings-editor journeys.
-pub fn explain_setting(setting_id: &str) -> Option<SettingSourceExplanation> {
-    let legacy = SETTINGS_COMPAT_MIGRATIONS
-        .iter()
-        .find(|migration| migration.legacy_id == setting_id)
-        .map(|migration| migration.legacy_id.to_string());
-    let def = setting_definition(setting_id)?;
-    let id = def.setting_id.as_str();
-    let surface = match def.surface {
-        SettingSurface::Runtime => "runtime",
-        SettingSurface::Tui => "tui",
-    };
-    let default_scope = match def.default_scope {
-        SettingScope::System => "system",
-        SettingScope::User => "user",
-        SettingScope::Profile => "profile",
-        SettingScope::Project => "project",
-        SettingScope::Workspace => "workspace",
-        SettingScope::Worktree => "worktree",
-        SettingScope::Session => "session",
-        SettingScope::CommandLine => "command_line",
-        SettingScope::Environment => "environment",
-    };
-    let sensitivity = match def.sensitivity {
-        SettingSensitivity::Public => "public",
-        SettingSensitivity::Redacted => "redacted",
-        SettingSensitivity::Secret => "secret",
-    };
-    let merge_strategy = match def.merge_strategy {
-        SettingMergeStrategy::Replace => "replace",
-        SettingMergeStrategy::DeepMergeMap => "deep_merge_map",
-    };
-    let mutability = match def.mutability {
-        SettingMutability::ReadOnly => "read_only",
-        SettingMutability::Editable => "editable",
-    };
-    let default_value = if matches!(def.sensitivity, SettingSensitivity::Secret) {
-        None
-    } else {
-        def.default_value.map(str::to_string)
-    };
+pub fn explain_setting(id: &str) -> Option<SettingSourceExplanation> {
+    let entry = setting_definition(id)?;
     Some(SettingSourceExplanation {
-        setting_id: id.to_string(),
-        schema_id: def.schema_id.as_str().to_string(),
-        surface: surface.to_string(),
-        default_scope: default_scope.to_string(),
-        sensitivity: sensitivity.to_string(),
-        merge_strategy: merge_strategy.to_string(),
-        mutability: mutability.to_string(),
-        metadata_only: is_metadata_only_setting(id),
-        restart_required: def.restart_required,
-        has_default: def.has_default(),
-        default_value,
-        capability_dependency: def.capability_dependency.map(str::to_string),
-        project_write_supported: PROJECT_BOOL_WRITE_SETTING_IDS.contains(&id),
-        resolved_from_legacy: legacy,
+        setting_id: entry.setting_id.to_string(),
+        schema_id: entry.schema_id.to_string(),
+        surface: entry.surface.as_str().into(),
+        default_scope: entry.default_scope.as_str().into(),
+        sensitivity: entry.sensitivity.as_str().into(),
+        merge_strategy: entry.merge_strategy.as_str().into(),
+        mutability: entry.mutability.as_str().into(),
+        metadata_only: is_metadata_only_setting(entry.setting_id.0),
+        restart_required: entry.restart_required,
+        has_default: entry.has_default(),
+        default_value: entry.default_value.map(str::to_owned),
+        capability_dependency: entry.capability_dependency.map(str::to_owned),
+        project_write_supported: super::settings_write::writable(entry.setting_id.0).is_ok(),
+        resolved_from_legacy: (id != entry.setting_id.0).then(|| id.into()),
     })
 }
-
-/// Redacted JSON envelope of registry metadata (no secret or default values).
-///
-/// Schema: `harness-settings-registry-v1` with `setting_count` and `settings[]`
-/// entries carrying `setting_id`, `schema_id`, `surface`, `sensitivity`,
-/// `merge_strategy`, `mutability`, `metadata_only`.
 pub fn settings_registry_json() -> Result<String, serde_json::Error> {
-    let settings: Vec<serde_json::Value> = settings_registry()
-        .iter()
-        .map(|entry| {
-            let surface = match entry.surface {
-                SettingSurface::Runtime => "runtime",
-                SettingSurface::Tui => "tui",
-            };
-            let sensitivity = match entry.sensitivity {
-                SettingSensitivity::Public => "public",
-                SettingSensitivity::Redacted => "redacted",
-                SettingSensitivity::Secret => "secret",
-            };
-            let merge_strategy = match entry.merge_strategy {
-                SettingMergeStrategy::Replace => "replace",
-                SettingMergeStrategy::DeepMergeMap => "deep_merge_map",
-            };
-            let mutability = match entry.mutability {
-                SettingMutability::ReadOnly => "read_only",
-                SettingMutability::Editable => "editable",
-            };
-            serde_json::json!({
-                "setting_id": entry.setting_id.as_str(),
-                "schema_id": entry.schema_id.as_str(),
-                "surface": surface,
-                "sensitivity": sensitivity,
-                "merge_strategy": merge_strategy,
-                "mutability": mutability,
-                "metadata_only": is_metadata_only_setting(entry.setting_id.as_str()),
-            })
-        })
-        .collect();
-    let envelope = serde_json::json!({
-        "schema_version": "harness-settings-registry-v1",
-        "setting_count": settings.len(),
-        "settings": settings,
-    });
-    serde_json::to_string_pretty(&envelope)
+    serde_json::to_string_pretty(settings_registry())
 }

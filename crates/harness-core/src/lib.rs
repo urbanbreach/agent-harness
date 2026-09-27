@@ -1,7 +1,5 @@
-//! Core runtime and domain crate for Agent Harness.
-
+//! Runtime authority, durable sessions, and the contracts consumed by the TUI.
 pub mod agent;
-pub mod agent_catalog;
 pub mod attachment_transport;
 pub mod auth;
 pub mod auto_fallback;
@@ -11,68 +9,53 @@ pub mod clock;
 pub mod code_graph;
 pub mod config;
 pub mod context_budget;
-pub mod conversation;
 pub mod conversation_rewind;
 pub mod coord;
-pub(crate) mod counter_id;
 pub mod cow_worktree;
 pub mod crash_recovery;
+#[cfg(test)]
+#[path = "crash_recovery/tests.rs"]
+mod crash_tests;
 pub mod cron_execute;
 pub mod cron_schedule;
-pub(crate) mod digest;
-pub mod edit;
 pub mod edit_attribution;
 pub mod event;
 pub mod extension_manifest;
 pub mod extension_registry;
-mod file_checkpoint;
 pub mod file_tag;
-pub mod folder_trust;
 pub mod foreground_demote;
 pub mod foreign_session;
-pub(crate) mod fslock;
 pub mod ids;
 pub mod integrations;
 pub mod jujutsu;
+#[cfg(test)]
+#[path = "session_lineage/tests.rs"]
+mod lineage_tests;
 pub mod mcp_oauth;
 pub mod memory;
 pub mod model_resolution;
-pub(crate) mod path_display;
-pub(crate) mod path_selector;
 pub mod perm;
 pub mod plan;
+pub mod process;
 pub mod proj;
 pub mod prompt_queue;
-pub mod prompt_rewind;
-pub(crate) mod provider_args;
 pub mod provider_catalog;
-pub mod provider_protocol;
-pub mod question_answers;
 pub mod redact;
 pub mod sandbox;
-pub mod sched;
 pub mod session;
 pub mod session_lineage;
-pub(crate) mod session_paths;
 pub mod session_title;
 pub mod sleep_wake_auth;
 pub mod store;
-pub mod system_power;
 pub mod team_mailbox_journal;
 pub mod team_registry;
-pub(crate) mod text;
-mod token_estimation;
 pub mod tool;
 pub mod transcript_projection;
-pub mod vcs;
 pub mod workspace;
 pub mod workspace_hub;
 pub mod worktree;
-
 pub use context_budget::{
     compute_request_budget, BudgetStatus, RequestBudget, RequestBudgetComponents,
     RequestBudgetError, RequestBudgetInput, RequestBudgetSnapshot,
 };
-pub use coord::estimate_compaction_text_tokens;
 pub use harness_providers::UnwrapOrAbort;
-pub use tool::ToolResultExt;

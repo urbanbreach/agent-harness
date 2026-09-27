@@ -1,1 +1,1 @@
-agent-product-bytes-v1
+// Retained path for the unchanged PTY checkout-integrity check.

@@ -1,155 +1,79 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use super::*;
 
-use super::{PermissionMode, ToolFailureMode};
-
-pub const DEFAULT_REMOTE_SEARCH_ENDPOINT: &str = "https://mcp.exa.ai/mcp";
-pub const DEFAULT_REMOTE_SEARCH_TIMEOUT_SECS: u64 = 30;
-pub const DEFAULT_REMOTE_SEARCH_MAX_RETRIES: u32 = 1;
-pub const DEFAULT_REMOTE_SEARCH_RETRY_BACKOFF_MS: u64 = 250;
-
-pub(super) fn default_hashline_edit() -> bool {
-    true
+macro_rules! defaults {
+    ($($name:ident { $($field:ident: $value:expr),* $(,)? })*) => {$(
+        impl Default for $name { fn default() -> Self { Self { $($field: $value),* } } }
+    )*};
 }
 
-pub(super) fn default_logging_level() -> String {
-    "info".to_string()
+defaults! {
+    HarnessConfig {
+        schema: None, providers: BTreeMap::new(), disabled_providers: Vec::new(), enabled_providers: Vec::new(), model_profiles: BTreeMap::new(),
+        agents: BTreeMap::new(), permissions: PermissionsConfig::default(), runtime: RuntimeConfig::default(), integrations: IntegrationsConfig::default(),
+        hooks: HooksConfig::default(), skills: SkillsConfig::default(), lsp: LspConfig::default(), background_task: BackgroundTaskSettings::default(),
+        paths: PathsConfig::default(), deterministic: DeterministicConfig::default(), ui: UiConfig::default(), logging: LoggingConfig::default(),
+        hashline_edit: true, formatter: FormatterConfig::default(), instruction_files: Vec::new(), small_model: None
+    }
+    UiConfig { default_profile: None, keybindings: BTreeMap::new(), max_events_in_memory: 25_000, max_transcript_chars_in_memory: 200_000 }
+    LoggingConfig { level: "info".into(), file: None }
+    BackgroundTaskSettings { default_concurrency: 4, provider_concurrency: 4, model_concurrency: 2, stale_timeout_ms: 30_000, message_staleness_timeout_ms: 10_000 }
+    RuntimePermissionsConfig { ask_timeout_ms: 30_000 }
+    PromptRuntimeConfig { wait_timeout_ms: 30_000 }
+    PathsConfig { session_dir: ".agent-harness/sessions".into() }
+    RuntimeConfig {
+        always_approve: false, background_tasks: BackgroundTaskSettings::default(), session_dir: PathsConfig::default().session_dir,
+        permissions: RuntimePermissionsConfig::default(), prompt: PromptRuntimeConfig::default(), deterministic: DeterministicConfig::default(),
+        compaction: CompactionSettings::default(), provider_retry: ProviderRetryRuntimeConfig::default()
+    }
+    ProviderRetryRuntimeConfig { max_retries: 2, base_delay_ms: 2_000, max_delay_ms: 30_000 }
+    CompactionSettings {
+        enabled: true, threshold_percent: None, threshold_tokens: None, model_thresholds: BTreeMap::new(), agent_thresholds: BTreeMap::new(),
+        reserve_tokens: 16_384, keep_recent_tokens: 20_000, auto_retry_overflow: true, structured_summary_contract: true,
+        estimated_token_triggers: true, fallback_input_tokens: 32_768, split_oversized_turns: false, suppress_auto_compaction: false
+    }
+    ProfileConfig {
+        name: None, description: String::new(), system_prompt: None, model_ref: String::new(), model_ref_explicit: false, variant: None,
+        temperature: None, top_p: None, mode: AgentMode::All, hidden: false, color: None, options: BTreeMap::new(), permissions: None,
+        max_iters: None, tool_failure_mode: ToolFailureMode::ContinueAsToolMessage, tools: Vec::new()
+    }
+    PermissionDefaultsConfig {
+        edit: PermissionMode::Allow, shell: PermissionMode::Allow, network: PermissionMode::Allow, question: Some(PermissionMode::Deny),
+        task: Some(PermissionMode::Allow), webfetch: Some(PermissionMode::Allow), websearch: Some(PermissionMode::Allow), codesearch: Some(PermissionMode::Allow),
+        lsp: Some(PermissionMode::Allow), read: Some(PermissionMode::Allow), external_directory: Some(PermissionMode::Ask), doom_loop: Some(PermissionMode::Ask)
+    }
+    PermissionsConfig { defaults: PermissionDefaultsConfig::default(), fallback: None, rules: default_permission_rule_set_with_read_env(), shell_allowlist: ShellAllowlist::default() }
+    SkillsConfig { project_roots: vec![".agent-harness/skills".into(), ".harness/skills".into()], global_roots: vec!["~/.config/agent-harness/skills".into()], urls: Vec::new(), disabled: Vec::new(), walk_to_git_root: true, permissions: BTreeMap::new() }
+    LifecycleHookConfig { id: None, event: HookLifecycleEvent::ToolCallStarted, command: Vec::new(), cwd: None, timeout_ms: 5_000, critical: false, env: BTreeMap::new() }
+    FormatterConfig { enabled: true, experimental_oxfmt: false, overrides: BTreeMap::new() }
+    RemoteSearchConfig { endpoint: "https://mcp.exa.ai/mcp".into(), auth_token: None, require_auth: false, timeout_secs: 30, max_retries: 1, retry_backoff_ms: 250 }
+    OpenAiCompatibleProviderConfig {
+        name: None, auth_provider: None, base_url: "https://api.openai.com/v1".into(), api_key: String::new(), api_key_env: Vec::new(),
+        timeout_ms: 60_000, api_mode: OpenAiApiMode::Auto, cache_retention: harness_providers::CacheRetention::Short,
+        headers: BTreeMap::new(), options: OpenAiCompatibleProviderOptions::default(), models: BTreeMap::new()
+    }
+    AnthropicProviderConfig {
+        name: None, base_url: "https://api.anthropic.com/v1".into(), api_key: String::new(), api_key_env: Vec::new(), timeout_ms: 60_000,
+        headers: BTreeMap::new(), options: AnthropicProviderOptions::default(), models: BTreeMap::new()
+    }
 }
 
-pub(super) fn default_max_events_in_memory() -> usize {
-    25_000
-}
-
-pub(super) fn default_max_transcript_chars_in_memory() -> usize {
-    200_000
-}
-
-pub(super) fn default_background_task_default_concurrency() -> usize {
-    4
-}
-
-pub(super) fn default_background_task_provider_concurrency() -> usize {
-    4
-}
-
-pub(super) fn default_background_task_model_concurrency() -> usize {
-    2
-}
-
-pub(super) fn default_background_task_stale_timeout_ms() -> u64 {
-    30_000
-}
-
-pub(super) fn default_background_task_message_staleness_timeout_ms() -> u64 {
-    10_000
-}
-
-pub(super) fn default_session_dir() -> PathBuf {
-    PathBuf::from(".agent-harness/sessions")
-}
-
-pub(super) fn default_runtime_ask_timeout_ms() -> u64 {
-    30_000
-}
-
-pub(super) fn default_prompt_wait_timeout_ms() -> u64 {
-    30_000
-}
-
-pub(super) fn default_compaction_enabled() -> bool {
-    true
-}
-
-pub(super) fn default_compaction_reserve_tokens() -> u32 {
-    16_384
-}
-
-pub(super) fn default_compaction_keep_recent_tokens() -> u32 {
-    20_000
-}
-
-pub(super) fn default_compaction_auto_retry_overflow() -> bool {
-    true
-}
-
-pub(super) fn default_compaction_structured_summary_contract() -> bool {
-    true
-}
-
-pub(super) fn default_compaction_estimated_token_triggers() -> bool {
-    true
-}
-
-pub(super) fn default_compaction_fallback_input_tokens() -> u32 {
-    32_768
-}
-
-pub(super) fn default_provider_retry_max_retries() -> u32 {
-    2
-}
-
-pub(super) fn default_provider_retry_base_delay_ms() -> u64 {
-    2_000
-}
-
-pub(super) fn default_provider_retry_max_delay_ms() -> u64 {
-    30_000
-}
-
-pub(super) fn default_hook_timeout_ms() -> u64 {
-    5_000
-}
-
-pub(super) fn default_skills_walk_to_git_root() -> bool {
-    true
-}
-
-pub(super) fn default_skills_project_roots() -> Vec<PathBuf> {
-    vec![
-        PathBuf::from(".agent-harness/skills"),
-        PathBuf::from(".harness/skills"),
+pub fn default_read_env_permission_rules() -> Vec<PermissionSelectorRule> {
+    [
+        ("*", PermissionMode::Allow),
+        ("*.env", PermissionMode::Ask),
+        ("*.env.*", PermissionMode::Ask),
+        ("*.env.example", PermissionMode::Allow),
     ]
+    .into_iter()
+    .map(|(pattern, mode)| PermissionSelectorRule {
+        selector: PermissionSelector::Glob(pattern.into()),
+        mode,
+    })
+    .collect()
 }
-
-pub(super) fn default_skills_global_roots() -> Vec<PathBuf> {
-    vec![PathBuf::from("~/.config/agent-harness/skills")]
-}
-
-pub(super) fn default_skills_permissions() -> BTreeMap<String, PermissionMode> {
-    BTreeMap::from([
-        ("*".to_string(), PermissionMode::Allow),
-        ("experimental-*".to_string(), PermissionMode::Ask),
-        ("internal-*".to_string(), PermissionMode::Deny),
-    ])
-}
-
-pub(super) fn default_provider_timeout_ms() -> u64 {
-    60_000
-}
-
-pub(super) fn default_runtime_tool_failure_mode() -> ToolFailureMode {
-    ToolFailureMode::ContinueAsToolMessage
-}
-
-pub(super) fn default_remote_search_endpoint() -> String {
-    DEFAULT_REMOTE_SEARCH_ENDPOINT.to_string()
-}
-
-pub(super) fn default_remote_search_timeout_secs() -> u64 {
-    DEFAULT_REMOTE_SEARCH_TIMEOUT_SECS
-}
-
-pub(super) fn default_remote_search_max_retries() -> u32 {
-    DEFAULT_REMOTE_SEARCH_MAX_RETRIES
-}
-
-pub(super) fn default_remote_search_retry_backoff_ms() -> u64 {
-    DEFAULT_REMOTE_SEARCH_RETRY_BACKOFF_MS
-}
-
-pub(super) fn default_mcp_timeout_secs() -> u64 {
-    30
-}
-
-pub(super) fn default_mcp_enabled() -> bool {
-    true
+pub fn default_permission_rule_set_with_read_env() -> PermissionRuleSet {
+    PermissionRuleSet {
+        read: default_read_env_permission_rules(),
+        ..Default::default()
+    }
 }

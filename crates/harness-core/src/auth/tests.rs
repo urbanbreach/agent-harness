@@ -1,557 +1,222 @@
 use super::*;
-use crate::UnwrapOrAbort;
-
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex as StdMutex;
-use tokio::sync::oneshot;
-
-#[derive(Debug)]
-struct FixedClock(SystemTime);
-
-impl CredentialClock for FixedClock {
-    fn now(&self) -> SystemTime {
-        self.0
-    }
-}
-
-struct CountingRefresher {
-    calls: AtomicUsize,
-    expires_at: String,
-    started: StdMutex<Option<oneshot::Sender<()>>>,
-    release: StdMutex<Option<oneshot::Receiver<()>>>,
-}
-
-impl fmt::Debug for CountingRefresher {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("CountingRefresher")
-            .field("calls", &self.calls.load(Ordering::SeqCst))
-            .field("expires_at", &self.expires_at)
-            .finish_non_exhaustive()
-    }
-}
-
-#[async_trait]
-impl OAuthTokenRefresher for CountingRefresher {
-    async fn refresh(
-        &self,
-        provider: &ProviderId,
-        credential: &StoredCredential,
-    ) -> Result<OAuthRefreshOutcome, CredentialRefreshError> {
-        assert_eq!(provider, &ProviderId::codex());
-        assert_eq!(credential.refresh_token.as_deref(), Some("refresh-old"));
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        if let Some(started) = self.started.lock().unwrap_or_abort().take() {
-            let _ = started.send(());
-        }
-        let release = self.release.lock().unwrap_or_abort().take();
-        if let Some(release) = release {
-            let _ = release.await;
-        }
-        Ok(OAuthRefreshOutcome {
-            access_token: "access-new".to_string(),
-            refresh_token: Some("refresh-new".to_string()),
-            expires_at: Some(self.expires_at.clone()),
-            account_id: Some("acct-new".to_string()),
-            scopes: vec!["openid".to_string()],
-        })
-    }
-}
-
-fn provider_id(value: &str) -> ProviderId {
-    ProviderId::parse(value).unwrap_or_abort()
-}
+use std::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::{Duration, SystemTime},
+};
+use tokio::sync::Notify;
 
 #[test]
-fn credential_store_round_trips_replaces_atomically_and_uses_restrictive_permissions() {
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    let first = StoredCredential::api_key(
-        ProviderId::codex(),
-        "stored-api-key-old",
-        "2026-05-30T00:00:00Z",
-    );
-    store.save(&first).unwrap_or_abort();
-    let second = StoredCredential::api_key(
-        ProviderId::codex(),
-        "stored-api-key-new",
-        "2026-05-30T00:00:01Z",
-    );
-    store.save(&second).unwrap_or_abort();
-
-    let loaded = store
-        .load(&ProviderId::codex())
-        .unwrap_or_abort()
-        .unwrap_or_abort();
-    assert_eq!(loaded.api_key.as_deref(), Some("stored-api-key-new"));
-    assert_eq!(loaded.secret_values(), vec!["stored-api-key-new"]);
-
-    #[cfg(unix)]
-    assert_eq!(
-        credential_file_mode(&store.credential_path(&ProviderId::codex())).unwrap_or_abort(),
-        0o600
-    );
-}
-
-#[tokio::test]
-async fn credential_resolution_precedence_prefers_stored_then_env_then_inline() {
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    let manager = ProviderCredentialManager::new(
-        store.clone(),
-        ProviderId::codex(),
-        vec!["HARNESS_TEST_API_KEY".to_string()],
-        "inline-key",
-        |name| (name == "HARNESS_TEST_API_KEY").then(|| "env-key".to_string()),
-    );
-
-    let resolved = manager.resolve().await.unwrap_or_abort();
-    assert_eq!(
-        resolved.source,
-        ResolvedCredentialSource::EnvApiKey {
-            env: "HARNESS_TEST_API_KEY".to_string()
-        }
-    );
-    assert_eq!(resolved.token, "env-key");
-
-    store
-        .save(&StoredCredential::api_key(
-            ProviderId::codex(),
-            "stored-api-key",
-            "2026-05-30T00:00:00Z",
-        ))
-        .unwrap_or_abort();
-    let resolved = manager.resolve().await.unwrap_or_abort();
-    assert_eq!(resolved.source, ResolvedCredentialSource::StoredApiKey);
-    assert_eq!(resolved.token, "stored-api-key");
-
-    store
-        .save(&StoredCredential::oauth(
-            ProviderId::codex(),
-            "stored-oauth-access",
-            "stored-oauth-refresh",
-            Some("2099-01-01T00:00:00Z".to_string()),
-            "2026-05-30T00:00:00Z",
-        ))
-        .unwrap_or_abort();
-    let resolved = manager.resolve().await.unwrap_or_abort();
-    assert_eq!(resolved.source, ResolvedCredentialSource::StoredOauth);
-    assert_eq!(resolved.token, "stored-oauth-access");
-}
-
-#[tokio::test]
-async fn credential_resolution_preserves_copilot_enterprise_url() {
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    let mut credential = StoredCredential::oauth(
-        ProviderId::github_copilot(),
-        "stored-copilot-access",
-        "stored-copilot-refresh",
-        None,
-        "2026-05-30T00:00:00Z",
-    );
-    credential.enterprise_url = Some("ghe.example.com".to_string());
-    store.save(&credential).unwrap_or_abort();
-
-    let manager =
-        ProviderCredentialManager::new(store, ProviderId::github_copilot(), Vec::new(), "", |_| {
-            None
-        });
-
-    let bearer = manager.bearer_token().await.unwrap_or_abort();
-    assert_eq!(bearer.token, "stored-copilot-access");
-    assert_eq!(bearer.enterprise_url.as_deref(), Some("ghe.example.com"));
-}
-
-#[tokio::test]
-async fn expired_oauth_refresh_is_single_flight_and_persisted() {
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    store
-        .save(&StoredCredential::oauth(
-            ProviderId::codex(),
-            "access-old",
-            "refresh-old",
-            Some("2026-05-29T00:00:00Z".to_string()),
-            "2026-05-29T00:00:00Z",
-        ))
-        .unwrap_or_abort();
-    let (started_tx, started_rx) = oneshot::channel();
-    let (release_tx, release_rx) = oneshot::channel();
-    let refresher = Arc::new(CountingRefresher {
-        calls: AtomicUsize::new(0),
-        expires_at: "2026-05-31T00:00:00Z".to_string(),
-        started: StdMutex::new(Some(started_tx)),
-        release: StdMutex::new(Some(release_rx)),
-    });
-    let manager = Arc::new(
-        ProviderCredentialManager::new(store.clone(), ProviderId::codex(), Vec::new(), "", |_| {
-            None
-        })
-        .with_clock(Arc::new(FixedClock(
-            humantime::parse_rfc3339("2026-05-30T00:00:00Z").unwrap_or_abort(),
-        )))
-        .with_refresher({
-            let r: Arc<dyn OAuthTokenRefresher> = Arc::<CountingRefresher>::clone(&refresher);
-            r
-        }),
-    );
-
-    let first = tokio::spawn({
-        let manager = Arc::clone(&manager);
-        async move { manager.resolve().await.unwrap_or_abort() }
-    });
-    started_rx.await.unwrap_or_abort();
-    let second = tokio::spawn({
-        let manager = Arc::clone(&manager);
-        async move { manager.resolve().await.unwrap_or_abort() }
-    });
-    tokio::task::yield_now().await;
-    release_tx.send(()).unwrap_or_abort();
-    let first = first.await.unwrap_or_abort();
-    let second = second.await.unwrap_or_abort();
-
-    assert_eq!(first.token, "access-new");
-    assert_eq!(second.token, "access-new");
-    assert_eq!(refresher.calls.load(Ordering::SeqCst), 1);
-    let stored = store
-        .load(&ProviderId::codex())
-        .unwrap_or_abort()
-        .unwrap_or_abort();
-    assert_eq!(stored.access_token.as_deref(), Some("access-new"));
-    assert_eq!(stored.refresh_token.as_deref(), Some("refresh-new"));
-    assert_eq!(stored.account_id.as_deref(), Some("acct-new"));
-}
-
-#[test]
-fn credential_store_manifest_excludes_secret_material() {
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    store
-        .save(&StoredCredential::oauth(
-            ProviderId::github_copilot(),
-            "access-secret-value",
-            "refresh-secret-value",
-            Some("2099-01-01T00:00:00Z".to_string()),
-            "2026-05-30T00:00:00Z",
-        ))
-        .unwrap_or_abort();
-
-    let manifest = serde_json::to_string(&store.manifest_entries([ProviderId::github_copilot()]))
-        .unwrap_or_abort();
-    assert!(manifest.contains("github-copilot"));
-    assert!(!manifest.contains("access-secret-value"));
-    assert!(!manifest.contains("refresh-secret-value"));
-}
-
-#[test]
-fn windows_whoami_csv_sid_parser_accepts_quoted_user_rows() {
-    assert_eq!(
-        parse_whoami_user_sid("\"EXAMPLE\\\\user\",\"S-1-5-21-111-222-333-1001\"\r\n"),
-        Some("S-1-5-21-111-222-333-1001".to_string())
-    );
-    assert_eq!(parse_whoami_user_sid("\"EXAMPLE\\\\user\",\"\""), None);
-}
-
-#[test]
-fn provider_id_parse_rejects_empty() {
-    // arrange
-    let input_empty = "";
-    let input_spaces = "   ";
-
-    // act
-    let result_empty = ProviderId::parse(input_empty);
-    let result_spaces = ProviderId::parse(input_spaces);
-
-    // assert
-    assert!(result_empty.is_none());
-    assert!(result_spaces.is_none());
-}
-
-#[test]
-fn provider_id_parse_rejects_path_traversal() {
-    // arrange
-    let input1 = "../etc/passwd";
-    let input2 = "..\\..\\windows";
-
-    // act
-    let result1 = ProviderId::parse(input1);
-    let result2 = ProviderId::parse(input2);
-
-    // assert
-    assert!(result1.is_none());
-    assert!(result2.is_none());
-}
-
-#[test]
-fn provider_id_parse_rejects_null_bytes() {
-    // arrange
-    let input = "codex\x00evil";
-
-    // act
-    let result = ProviderId::parse(input);
-
-    // assert
-    assert!(result.is_none());
-}
-
-#[test]
-fn provider_id_parse_rejects_newlines() {
-    // arrange
-    let input1 = "codex\nevil";
-    let input2 = "codex\revil";
-
-    // act
-    let result1 = ProviderId::parse(input1);
-    let result2 = ProviderId::parse(input2);
-
-    // assert
-    assert!(result1.is_none());
-    assert!(result2.is_none());
-}
-
-#[test]
-fn provider_id_parse_rejects_terminal_control_characters() {
-    // arrange
-    let input_esc = "codex\u{1b}]52;c;SGFja2Vk\u{7}";
-    let input_del = "codex\u{7f}evil";
-    let input_leading_newline = "\ncodex";
-    let input_trailing_newline = "codex\n";
-    let input_leading_tab = "\tcodex";
-
-    // act
-    let result_esc = ProviderId::parse(input_esc);
-    let result_del = ProviderId::parse(input_del);
-    let result_leading_newline = ProviderId::parse(input_leading_newline);
-    let result_trailing_newline = ProviderId::parse(input_trailing_newline);
-    let result_leading_tab = ProviderId::parse(input_leading_tab);
-
-    // assert
-    assert!(result_esc.is_none());
-    assert!(result_del.is_none());
-    assert!(result_leading_newline.is_none());
-    assert!(result_trailing_newline.is_none());
-    assert!(result_leading_tab.is_none());
-}
-
-#[test]
-fn provider_id_parse_rejects_slashes() {
-    // arrange
-    let input1 = "foo/bar";
-    let input2 = "foo\\bar";
-
-    // act
-    let result1 = ProviderId::parse(input1);
-    let result2 = ProviderId::parse(input2);
-
-    // assert
-    assert!(result1.is_none());
-    assert!(result2.is_none());
-}
-
-#[test]
-fn provider_id_parse_rejects_dotdot() {
-    // arrange
-    let input1 = "..";
-    let input2 = "foo..bar";
-
-    // act
-    let result1 = ProviderId::parse(input1);
-    let result2 = ProviderId::parse(input2);
-
-    // assert
-    assert!(result1.is_none());
-    assert!(result2.is_none());
-}
-
-#[test]
-fn credential_path_stays_in_credentials_dir() {
-    // arrange
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-
-    // act
-    let path = store.credential_path(&provider_id("test"));
-    let credentials_dir = temp.path().join(CREDENTIALS_DIR_NAME);
-
-    // assert
-    assert!(
-        path.starts_with(&credentials_dir),
-        "credential path {path:?} must be inside {credentials_dir:?}"
-    );
-    assert_eq!(
-        path.file_name().and_then(|name| name.to_str()),
-        Some("test.json")
-    );
-}
-
-#[test]
-fn credential_store_load_corrupted_json_fails_gracefully() {
-    // arrange
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    let path = store.credential_path(&ProviderId::codex());
-    std::fs::create_dir_all(path.parent().unwrap_or_abort()).unwrap_or_abort();
-    std::fs::write(&path, "{{{{not valid json").unwrap_or_abort();
-
-    // act
-    let result = store.load(&ProviderId::codex());
-
-    // assert
-    assert!(
-        result.is_err(),
-        "corrupted json must return error not panic"
-    );
-    match result {
-        Err(CredentialStoreError::Parse { .. }) => {}
-        other => panic!("expected Parse error, got {other:?}"),
-    }
-}
-
-#[test]
-fn credential_store_load_truncated_json_fails() {
-    // arrange
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    let path = store.credential_path(&ProviderId::codex());
-    std::fs::create_dir_all(path.parent().unwrap_or_abort()).unwrap_or_abort();
-    std::fs::write(&path, "{\"version\":1,\"provider\":\"cod").unwrap_or_abort();
-
-    // act
-    let result = store.load(&ProviderId::codex());
-
-    // assert
-    assert!(result.is_err(), "truncated json must return error");
-}
-
-#[test]
-fn credential_store_load_wrong_version_fails() {
-    // arrange
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    let path = store.credential_path(&ProviderId::codex());
-    std::fs::create_dir_all(path.parent().unwrap_or_abort()).unwrap_or_abort();
-    std::fs::write(
-        &path,
-        r#"{"version":99,"provider":"codex","kind":"api_key","apiKey":"k","updatedAt":"t"}"#,
-    )
-    .unwrap_or_abort();
-
-    // act
-    let result = store.load(&ProviderId::codex());
-
-    // assert
-    assert!(result.is_err(), "wrong version must return error");
-    match result {
-        Err(CredentialStoreError::InvalidCredential { .. }) => {}
-        other => panic!("expected InvalidCredential error, got {other:?}"),
-    }
-}
-
-#[test]
-fn credential_store_load_wrong_provider_fails() {
-    // arrange
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    let path = store.credential_path(&ProviderId::codex());
-    std::fs::create_dir_all(path.parent().unwrap_or_abort()).unwrap_or_abort();
-    std::fs::write(
-        &path,
-        r#"{"version":1,"provider":"anthropic","kind":"api_key","apiKey":"k","updatedAt":"t"}"#,
-    )
-    .unwrap_or_abort();
-
-    // act
-    let result = store.load(&ProviderId::codex());
-
-    // assert
-    assert!(
-        result.is_err(),
-        "loading codex.json with provider=anthropic must return error"
-    );
-    match result {
-        Err(CredentialStoreError::InvalidCredential { .. }) => {}
-        other => panic!("expected InvalidCredential error, got {other:?}"),
-    }
-}
-
-#[test]
-fn credential_store_save_and_load_arbitrary_provider() {
-    // arrange
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    let provider = provider_id("anthropic");
+fn credential_store_is_private_and_rejects_identity_mismatches_and_symlinks(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let store = CredentialStore::new(temp.path().join("data"));
+    let provider = ProviderId::codex();
+    assert!(store.load(&provider)?.is_none());
+    assert!(store.stored_provider_ids()?.is_empty());
+    assert!(!store.delete(&provider)?);
+    assert_eq!(std::fs::read_dir(temp.path())?.count(), 0);
     let credential = StoredCredential::api_key(
         provider.clone(),
-        "sk-anthropic-test",
-        "2026-06-26T00:00:00Z",
+        "opaque-private-key",
+        "2026-09-26T00:00:00Z",
     );
-
-    // act
-    store.save(&credential).unwrap_or_abort();
-    let loaded = store.load(&provider).unwrap_or_abort().unwrap_or_abort();
-
-    // assert
-    assert_eq!(loaded.provider, provider);
-    assert_eq!(loaded.api_key.as_deref(), Some("sk-anthropic-test"));
-}
-
-#[test]
-fn credential_store_delete_arbitrary_provider() {
-    // arrange
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    let provider = provider_id("custom");
-    let credential =
-        StoredCredential::api_key(provider.clone(), "sk-custom-test", "2026-06-26T00:00:00Z");
-    store.save(&credential).unwrap_or_abort();
-
-    // act
-    let deleted = store.delete(&provider).unwrap_or_abort();
-    let loaded = store.load(&provider).unwrap_or_abort();
-
-    // assert
-    assert!(deleted, "delete should return true for existing credential");
-    assert!(loaded.is_none(), "credential should be gone after delete");
-}
-
-#[test]
-fn credential_store_file_permissions_are_0600() {
-    // arrange
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let store = CredentialStore::new(temp.path());
-    let provider = provider_id("perm-test");
-    let credential =
-        StoredCredential::api_key(provider.clone(), "sk-perm-test", "2026-06-26T00:00:00Z");
-    store.save(&credential).unwrap_or_abort();
+    store.save(&credential)?;
+    assert_eq!(store.stored_provider_ids()?, vec![provider.clone()]);
+    assert_eq!(store.load(&provider)?, Some(credential.clone()));
+    assert!(!format!("{credential:?}").contains("opaque-private-key"));
+    #[cfg(unix)]
+    assert_eq!(
+        credential_file_mode(&store.credential_path(&provider))? & 0o777,
+        0o600
+    );
     let path = store.credential_path(&provider);
-
-    // act
+    let original = std::fs::read(&path)?;
+    let mut invalid = credential.clone();
+    invalid.version = 2;
+    assert!(store.save(&invalid).is_err());
+    assert_eq!(std::fs::read(&path)?, original);
+    invalid.version = 1;
+    invalid.provider = ProviderId::github_copilot();
+    std::fs::write(&path, serde_json::to_vec(&invalid)?)?;
+    assert!(store.load(&provider).is_err());
+    assert_ne!(
+        store.manifest_entries([provider.clone()])[0].status,
+        "not_stored"
+    );
     #[cfg(unix)]
-    let mode = credential_file_mode(&path).unwrap_or_abort();
-    #[cfg(not(unix))]
-    let _ = path;
-
-    // assert
-    #[cfg(unix)]
-    assert_eq!(mode, 0o600, "credential file must have 0600 permissions");
-    #[cfg(not(unix))]
     {
-        // no-op on non-unix
+        let external = temp.path().join("external");
+        std::fs::write(&external, &original)?;
+        std::fs::remove_file(&path)?;
+        std::os::unix::fs::symlink(&external, &path)?;
+        assert!(store.load(&provider).is_err());
+        assert!(store.save(&credential).is_err());
+        assert!(store.delete(&provider).is_err());
+        assert!(store.stored_provider_ids().is_err());
+        assert_eq!(std::fs::read(&external)?, original);
+    }
+    Ok(())
+}
+
+struct FixedClock;
+impl CredentialClock for FixedClock {
+    fn now(&self) -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(2_000_000_000)
     }
 }
-
-#[test]
-fn credential_store_scopes_files_per_provider_and_delete_is_idempotent() {
-    // arrange — hermetic temp-dir credential store
-    let temp = tempfile::tempdir().expect("tempdir");
+#[derive(Default)]
+struct Refresh {
+    calls: AtomicUsize,
+    entered: Notify,
+    release: Notify,
+}
+#[async_trait::async_trait]
+impl OAuthTokenRefresher for Refresh {
+    async fn refresh(
+        &self,
+        _: &ProviderId,
+        _: &StoredCredential,
+    ) -> Result<OAuthRefreshOutcome, CredentialRefreshError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.entered.notify_one();
+        self.release.notified().await;
+        Ok(OAuthRefreshOutcome {
+            access_token: "refreshed-private-token".into(),
+            refresh_token: Some("rotated-private-token".into()),
+            expires_at: Some("2100-01-01T00:00:00Z".into()),
+            account_id: None,
+            scopes: Vec::new(),
+        })
+    }
+}
+#[tokio::test]
+async fn credential_refresh_coalesces_waiters_and_cannot_resurrect_logout(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
     let store = CredentialStore::new(temp.path());
+    let provider = ProviderId::codex();
+    let refresh = Arc::new(Refresh::default());
+    let secrets = Arc::new(crate::redact::SecretRegistry::default());
+    let redactor = crate::redact::SecretRedactor::new(
+        Arc::new(crate::redact::DefaultRedactor::default()),
+        Arc::clone(&secrets),
+    );
+    let manager = Arc::new(
+        ProviderCredentialManager::new(
+            store.clone(),
+            provider.clone(),
+            vec!["TEST_KEY".into()],
+            "inline-private-key",
+            |_| Some("environment-private-key".into()),
+        )
+        .with_clock(Arc::new(FixedClock))
+        .with_refresher(Arc::clone(&refresh) as Arc<dyn OAuthTokenRefresher>)
+        .with_secret_registry(Arc::clone(&secrets))?,
+    );
+    let environment = manager.resolve().await?;
+    assert_eq!(
+        environment.source,
+        ResolvedCredentialSource::EnvApiKey {
+            env: "TEST_KEY".into()
+        }
+    );
+    store.save(&StoredCredential::api_key(
+        provider.clone(),
+        "stored-private-key",
+        "2026-09-26T00:00:00Z",
+    ))?;
+    assert_eq!(
+        manager.resolve().await?.source,
+        ResolvedCredentialSource::StoredApiKey
+    );
+    let mut expired = StoredCredential::oauth(
+        provider.clone(),
+        "expired-private-token",
+        "old-private-refresh",
+        Some("2000-01-01T00:00:00Z".into()),
+        "2026-09-26T00:00:00Z",
+    );
+    expired.metadata.insert("retained".into(), "value".into());
+    store.save(&expired)?;
+    let tasks: Vec<_> = (0..2)
+        .map(|_| {
+            let manager = Arc::clone(&manager);
+            tokio::spawn(async move { manager.resolve().await })
+        })
+        .collect();
+    tokio::time::timeout(Duration::from_secs(3), refresh.entered.notified()).await?;
+    refresh.release.notify_one();
+    for task in tasks {
+        let result = tokio::time::timeout(Duration::from_secs(3), task).await???;
+        assert_eq!(result.token, "refreshed-private-token");
+        assert!(!format!("{result:?}").contains("private-token"));
+    }
+    assert_eq!(refresh.calls.load(Ordering::SeqCst), 1);
+    let saved = store
+        .load(&provider)?
+        .ok_or("missing refreshed credential")?;
+    assert_eq!(
+        saved.refresh_token.as_deref(),
+        Some("rotated-private-token")
+    );
+    assert_eq!(saved.metadata, expired.metadata);
+    use crate::redact::Redactor;
+    for token in [
+        "environment-private-key",
+        "stored-private-key",
+        "expired-private-token",
+        "old-private-refresh",
+        "refreshed-private-token",
+        "rotated-private-token",
+    ] {
+        assert_eq!(redactor.redact_text(token), "[REDACTED]");
+    }
+    assert!(secrets.register(["x".repeat(4 * 1024 * 1024 + 1)]).is_err());
+    assert_eq!(
+        redactor.redact_text("refreshed-private-token"),
+        "[REDACTED]"
+    );
+    store.save(&expired)?;
+    let pending = {
+        let manager = Arc::clone(&manager);
+        tokio::spawn(async move { manager.resolve().await })
+    };
+    tokio::time::timeout(Duration::from_secs(3), refresh.entered.notified()).await?;
+    store.delete(&provider)?;
+    refresh.release.notify_one();
+    assert!(tokio::time::timeout(Duration::from_secs(3), pending)
+        .await??
+        .is_err());
+    assert!(store.load(&provider)?.is_none());
+    cancel_wake_refresh(&store, manager, refresh, &expired).await?;
+    Ok(())
+}
 
-    // act — layout for a known provider + deletion of an absent credential
-    let codex_path = store.credential_path(&ProviderId::codex());
-    let removed = store.delete(&ProviderId::codex()).expect("delete");
-
-    // assert — per-provider file layout; missing delete is a structured no-op
-    assert!(codex_path.ends_with(std::path::Path::new("credentials").join("codex.json")));
-    assert!(!removed);
+async fn cancel_wake_refresh(
+    store: &CredentialStore,
+    manager: Arc<ProviderCredentialManager>,
+    refresh: Arc<Refresh>,
+    expired: &StoredCredential,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use crate::sleep_wake_auth::*;
+    store.save(expired)?;
+    let decision = decide_sleep_wake_credential_refresh_for(
+        SleepWakeHostEvent::Wake,
+        Some(&CredentialExpirySnapshot::with_default_leeway(Some(0), 1)),
+    );
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let token = cancel.clone();
+    let pending = tokio::spawn(async move {
+        execute_sleep_wake_refresh_decision(&decision, &manager, &token).await
+    });
+    tokio::time::timeout(Duration::from_secs(3), refresh.entered.notified()).await?;
+    cancel.cancel();
+    assert!(tokio::time::timeout(Duration::from_secs(3), pending)
+        .await??
+        .is_cancelled());
+    assert_eq!(store.load(&expired.provider)?.as_ref(), Some(expired));
+    Ok(())
 }

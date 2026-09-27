@@ -22,15 +22,15 @@ Usage: scripts/test-lanes.sh <mode> [options]
        scripts/test-lanes.sh --help
 
 Modes:
-  fast                 Parallel deterministic T1-T3 developer lane via cargo nextest profile ci.
+  fast                 Backend format checks, workspace Clippy/check, and deterministic nextest.
   integration          Partitioned deterministic T1-T3 nextest run for CI fan-out checks.
-  quality-gates        Static test-suite gates for sleeps, globals, real/live deps, focus, taxonomy, and cassette secrets.
-  perf                 T4 performance-budget lane via cargo nextest profile perf.
+  quality-gates        Backend size, test isolation, opt-in boundaries, and cassette secret checks.
+  perf                 Release TUI budgets and local backend streaming/resource measurements.
   coverage             Coverage ratchet lane via scripts/coverage-ratchet.sh.
-  simulation           Offline deterministic simulation lane with matrix validation, artifacts, same-seed comparison, and secret scan.
-  signoff-binary       Real-process CLI shim smoke, env-gated and ignored by default.
+  simulation           Offline scenario determinism, permission denial, continuation, and fork checks.
+  signoff-binary       Opt-in native process, filesystem, language, and worktree checks.
   signoff-pty          Strict fail-closed deterministic PTY signoff, single-threaded.
-  signoff-live         Live provider signoff. Requires live env and runs live_proxy_preflight_requires_live_env first.
+  signoff-live         Live preflight, a bounded provider prompt, and public MCP search.
   signoff-native       Native visual signoff. Requires native visual env and runs ignored native visual tests single-threaded.
   stress-offline       Delegates to scripts/stress-harness.sh --mode offline.
   stress-live          Requires live env/config and delegates to scripts/stress-harness.sh --mode live.
@@ -61,13 +61,13 @@ Required environment:
   signoff-native requires:
     HARNESS_NATIVE_VISUAL=1
     DISPLAY=<display>
-  signoff-binary sets HARNESS_BINARY_SMOKE=1 and HARNESS_BINARY_SMOKE_ARTIFACT_DIR for the ignored binary smoke.
+  signoff-binary sets HARNESS_BINARY_SIGNOFF=1 for the native backend checks.
   all-deterministic PTY support requires:
     cargo on PATH
     crates/harness-testkit/tests/pty_e2e.rs
     crates/harness-tui/tests/pty_e2e.rs
     HARNESS_TEST_LANES_SKIP_PTY not set to 1
-  simulation runs only local deterministic mock-provider harness runs and records artifacts under simulation/stages/simulation_evidence/artifacts.
+  simulation uses local in-process mock providers and temporary workspaces.
   stress-offline and stress-live pass --harness-bin to scripts/stress-harness.sh when
     --harness-bin is supplied or an existing target/debug/harness can be reused.
 EOF
@@ -472,7 +472,7 @@ require_native_env() {
 }
 
 run_fast() {
-  run_stage fast fmt "$repo_root" cargo fmt --all -- --check || true
+  run_stage fast backend_format "$repo_root" python3 scripts/check-test-suite-gates.py --format || true
   run_stage fast clippy "$repo_root" cargo clippy --all-targets --all-features --workspace -- -D warnings || true
   run_stage fast check "$repo_root" cargo check --workspace || true
   run_stage fast nextest_ci "$repo_root" cargo nextest run --profile ci --workspace --all-features || true
@@ -493,7 +493,9 @@ run_perf() {
   perf_artifacts_dir="$(stage_dir_for perf nextest_perf)/artifacts"
   mkdir -p "$perf_artifacts_dir"
   run_stage perf nextest_perf "$repo_root" env HARNESS_PERF_ARTIFACT_DIR="$perf_artifacts_dir" cargo nextest run --profile perf --release --workspace --all-features || true
-  run_stage perf perf_artifact_freshness "$repo_root" python3 scripts/check-perf-artifacts.py --artifact-dir "$perf_artifacts_dir" || true
+  run_stage perf release_binary "$repo_root" cargo build --release -p harness --bin harness || return
+  run_stage perf backend_resources "$repo_root" python3 scripts/measure-backend.py --binary target/release/harness --output "$perf_artifacts_dir/backend.json" --repetitions 5 || true
+  run_stage perf delegation_resources "$repo_root" python3 scripts/measure-delegation.py --binary target/release/harness --output "$perf_artifacts_dir/delegation.json" || true
 }
 
 run_coverage() {
@@ -501,55 +503,11 @@ run_coverage() {
 }
 
 run_simulation() {
-  local simulation_dir
-  simulation_dir="$(mode_dir_for simulation)"
-  local simulation_data_dir="${simulation_dir}/data"
-  local evidence_artifacts_dir="$(stage_dir_for simulation simulation_evidence)/artifacts"
-  local baseline_out="${simulation_data_dir}/baseline.events.jsonl"
-  local repeat_out="${simulation_data_dir}/repeat.events.jsonl"
-  local baseline_run_dir_file="${simulation_data_dir}/baseline-run-dir.txt"
-  local repeat_run_dir_file="${simulation_data_dir}/repeat-run-dir.txt"
-  local baseline_replay="${simulation_data_dir}/baseline.replay.json"
-  local repeat_replay="${simulation_data_dir}/repeat.replay.json"
-
-  mkdir -p "$simulation_data_dir"
-
-  run_stage simulation matrix_and_validator_tests "$repo_root" cargo nextest run -p harness-testkit --test simulation_validator_test || true
-
-  run_stage simulation baseline_golden_path "$repo_root" cargo run -p harness -- --session-dir "${simulation_data_dir}/sessions-baseline" run --scenario golden_path --deterministic --out "$baseline_out" --print-run-dir || true
-  if [[ "$dry_run" -eq 0 && -s "$(stage_dir_for simulation baseline_golden_path)/stdout.txt" ]]; then
-    awk 'NF { last=$0 } END { if (last) print last }' "$(stage_dir_for simulation baseline_golden_path)/stdout.txt" >"$baseline_run_dir_file"
-  fi
-
-  run_stage simulation repeat_golden_path "$repo_root" cargo run -p harness -- --session-dir "${simulation_data_dir}/sessions-repeat" run --scenario golden_path --deterministic --out "$repeat_out" --print-run-dir || true
-  if [[ "$dry_run" -eq 0 && -s "$(stage_dir_for simulation repeat_golden_path)/stdout.txt" ]]; then
-    awk 'NF { last=$0 } END { if (last) print last }' "$(stage_dir_for simulation repeat_golden_path)/stdout.txt" >"$repeat_run_dir_file"
-  fi
-
-  if [[ "$dry_run" -eq 0 && -s "$baseline_run_dir_file" ]]; then
-    run_stage simulation baseline_replay "$repo_root" cargo run -p harness -- replay --session "$(cat "$baseline_run_dir_file")" --json || true
-    cp "$(stage_dir_for simulation baseline_replay)/stdout.txt" "$baseline_replay"
-  else
-    run_stage simulation baseline_replay "$repo_root" cargo run -p harness -- replay --session "<baseline-run-dir>" --json || true
-  fi
-
-  if [[ "$dry_run" -eq 0 && -s "$repeat_run_dir_file" ]]; then
-    run_stage simulation repeat_replay "$repo_root" cargo run -p harness -- replay --session "$(cat "$repeat_run_dir_file")" --json || true
-    cp "$(stage_dir_for simulation repeat_replay)/stdout.txt" "$repeat_replay"
-  else
-    run_stage simulation repeat_replay "$repo_root" cargo run -p harness -- replay --session "<repeat-run-dir>" --json || true
-  fi
-
-  run_stage simulation simulation_evidence "$repo_root" cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root "$evidence_artifacts_dir" --matrix "${repo_root}/docs/testing/simulation-matrix.json" --baseline-events "$baseline_out" --baseline-replay "$baseline_replay" --repeat-events "$repeat_out" --repeat-replay "$repeat_replay" --seed 0 || true
-
-  run_stage simulation simulation_secret_scan "$repo_root" env HARNESS_SECRETS_SCAN_ARTIFACTS=1 HARNESS_SIMULATION_ARTIFACT_DIR="$evidence_artifacts_dir" cargo nextest run -p harness-testkit --test secretscan_test || true
+  run_stage simulation scenario_behavior "$repo_root" cargo nextest run --profile ci -p harness --test run || true
 }
 
 run_signoff_binary() {
-  local binary_smoke_artifacts_dir
-  binary_smoke_artifacts_dir="$(stage_dir_for signoff-binary harness_binary_smoke)/artifacts"
-  mkdir -p "$binary_smoke_artifacts_dir"
-  run_stage signoff-binary harness_binary_smoke "$repo_root" env HARNESS_BINARY_SMOKE=1 HARNESS_BINARY_SMOKE_ARTIFACT_DIR="$binary_smoke_artifacts_dir" cargo nextest run -p harness --test binary_smoke --ignore-default-filter -- --ignored --exact || true
+  run_stage signoff-binary native_backend "$repo_root" env HARNESS_BINARY_SIGNOFF=1 cargo nextest run --profile ci -p harness -p harness-core -p harness-tools --test binary_smoke --ignore-default-filter --test-threads 1 || true
 }
 
 run_p0_06_xterm_capture() {
@@ -810,6 +768,8 @@ run_signoff_live() {
   run_stage signoff-live live_proxy_preflight_requires_live_env "$repo_root" cargo nextest run -p harness-testkit --test live_proxy_e2e --ignore-default-filter --run-ignored only -E 'test(=live_proxy_preflight_requires_live_env)' || true
   run_stage signoff-live live_proxy_prompt_signoff "$repo_root" cargo nextest run -p harness-testkit --test live_proxy_e2e --ignore-default-filter --run-ignored only -E 'test(=live_proxy_prompt_signoff)' || true
   run_stage signoff-live live_proxy_e2e_tui_signoff "$repo_root" cargo nextest run -p harness-testkit --test live_proxy_e2e --ignore-default-filter --run-ignored only -E 'test(=live_proxy_e2e_tui_signoff)' || true
+  run_stage signoff-live provider_prompt "$repo_root" bash scripts/harness-qa-live-smoke.sh --slug backend-signoff || true
+  run_stage signoff-live public_mcp "$repo_root" env HARNESS_MCP_LIVE_SIGNOFF=1 cargo nextest run --profile ci -p harness-tools --test live_proxy_e2e --ignore-default-filter || true
 }
 
 run_signoff_native() {

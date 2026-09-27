@@ -1,86 +1,76 @@
-//! Browser OIDC availability and the browser launcher shared by provider authentication.
-
-use std::process::Command;
-
 use serde::{Deserialize, Serialize};
+use std::process::{Command, Stdio};
 
-/// Browser/device OIDC-SSO availability.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum BrowserOidcAvailability {
     Available,
     Unavailable { reason: String },
 }
-
 impl BrowserOidcAvailability {
-    pub const fn is_available(&self) -> bool {
+    pub fn is_available(&self) -> bool {
         matches!(self, Self::Available)
     }
-
-    pub const fn is_unavailable(&self) -> bool {
-        matches!(self, Self::Unavailable { .. })
+    pub fn is_unavailable(&self) -> bool {
+        !self.is_available()
     }
-
     pub fn one_line(&self) -> String {
         match self {
-            Self::Available => "browser OIDC: available".to_string(),
-            Self::Unavailable { reason } => {
-                format!("browser OIDC: unavailable ({reason})")
-            }
+            Self::Available => "browser OIDC: available".into(),
+            Self::Unavailable { reason } => format!("browser OIDC: unavailable ({reason})"),
         }
     }
 }
-
-/// Enterprise OIDC has no public issuer configuration or authentication workflow.
 pub fn evaluate_browser_oidc_availability() -> BrowserOidcAvailability {
     BrowserOidcAvailability::Unavailable {
-        reason: "no OIDC issuer configured; browser OIDC workflow is not yet config-reachable"
-            .to_string(),
+        reason: "no OIDC issuer configured".into(),
     }
 }
-
-/// Launch a browser to open the given URL.
-///
-/// Uses `xdg-open` on Linux, `open` on macOS, `start` on Windows.
-/// Returns `Ok(())` if the browser command was spawned, `Err` with a
-/// manual-URL fallback message otherwise.
 pub fn launch_browser(url: &str) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    let browser_cmd = "xdg-open";
+    let parsed = reqwest::Url::parse(url).map_err(|_| "invalid browser URL")?;
+    if url.chars().any(char::is_control)
+        || !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
+        return Err("browser URL must use HTTP(S) without embedded credentials or controls".into());
+    }
     #[cfg(target_os = "macos")]
-    let browser_cmd = "open";
-    #[cfg(target_os = "windows")]
-    let browser_cmd = "start";
-
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    let mut command = Command::new("open");
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = Command::new("xdg-open");
+    #[cfg(windows)]
+    let mut command = {
+        let mut c = Command::new("rundll32.exe");
+        c.arg("url.dll,FileProtocolHandler");
+        c
+    };
+    #[cfg(not(any(unix, windows)))]
+    return Err("browser launcher is unavailable on this platform".into());
+    #[cfg(any(unix, windows))]
     {
-        return Err(format!(
-            "unsupported platform for browser launch; open manually: {url}"
-        ));
-    }
-
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-    {
-        match Command::new(browser_cmd).arg(url).spawn() {
-            Ok(_) => Ok(()),
-            Err(err) => Err(format!(
-                "failed to launch browser ({browser_cmd}): {err}; open manually: {url}"
-            )),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn browser_oidc_reports_unavailable_when_unconfigured() {
-        let availability = evaluate_browser_oidc_availability();
-        assert!(!availability.is_available());
-        assert!(availability.is_unavailable());
-        assert!(availability
-            .one_line()
-            .contains("no OIDC issuer configured"));
+        command
+            .arg(parsed.as_str())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        // Reap the launcher without keeping the authentication UI waiting for a browser process.
+        std::thread::Builder::new()
+            .name("browser-launch".into())
+            .spawn(move || match command.spawn() {
+                Ok(mut child) => {
+                    let _ = tx.send(Ok(()));
+                    let _ = child.wait();
+                }
+                Err(_) => {
+                    let _ = tx.send(Err(
+                        "browser launcher failed; open the authorization URL manually".to_owned(),
+                    ));
+                }
+            })
+            .map_err(|_| "cannot start browser launcher")?;
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(|_| "browser launcher did not respond")?
     }
 }

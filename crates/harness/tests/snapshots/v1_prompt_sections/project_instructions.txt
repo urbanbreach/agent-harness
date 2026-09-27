@@ -1,2 +1,0 @@
-Instructions from: fixture
-Follow the fixture rule.

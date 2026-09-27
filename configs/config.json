@@ -1,9 +1,81 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "additionalProperties": false,
-  "definitions": {
+  "$defs": {
+    "AgentMode": {
+      "enum": [
+        "primary",
+        "subagent",
+        "all"
+      ],
+      "type": "string"
+    },
     "AnthropicProviderOptions": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "baseURL",
+              "base_url"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "baseURL",
+              "baseUrl"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "base_url",
+              "baseUrl"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "apiKey",
+              "api_key"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "apiKeyEnv",
+              "api_key_env"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "apiKeyEnv",
+              "apiKeyEnvironment"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "api_key_env",
+              "apiKeyEnvironment"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "timeoutMs",
+              "timeout_ms"
+            ]
+          }
+        }
+      ],
       "properties": {
         "apiKey": {
           "default": null,
@@ -19,7 +91,42 @@
           },
           "type": "array"
         },
+        "apiKeyEnvironment": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "api_key": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "api_key_env": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "baseURL": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "baseUrl": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_url": {
           "default": null,
           "type": [
             "string",
@@ -48,6 +155,123 @@
             "integer",
             "null"
           ]
+        },
+        "timeout_ms": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "BackgroundTaskSettings": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "defaultConcurrency",
+              "default_concurrency"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "providerConcurrency",
+              "provider_concurrency"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "modelConcurrency",
+              "model_concurrency"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "staleTimeoutMs",
+              "stale_timeout_ms"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "messageStalenessTimeoutMs",
+              "message_staleness_timeout_ms"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "defaultConcurrency": {
+          "default": 4,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "default_concurrency": {
+          "default": 4,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "messageStalenessTimeoutMs": {
+          "default": 10000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "message_staleness_timeout_ms": {
+          "default": 10000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "modelConcurrency": {
+          "default": 2,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "model_concurrency": {
+          "default": 2,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "providerConcurrency": {
+          "default": 4,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "provider_concurrency": {
+          "default": 4,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "staleTimeoutMs": {
+          "default": 30000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stale_timeout_ms": {
+          "default": 30000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -62,13 +286,120 @@
     },
     "CompactionSettings": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "threshold_percent",
+              "thresholdPercent"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "threshold_tokens",
+              "thresholdTokens"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "model_thresholds",
+              "modelThresholds"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "agent_thresholds",
+              "agentThresholds"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "reserve_tokens",
+              "reserveTokens"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "keep_recent_tokens",
+              "keepRecentTokens"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "auto_retry_overflow",
+              "autoRetryOverflow"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "structured_summary_contract",
+              "structuredSummaryContract"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "estimated_token_triggers",
+              "estimatedTokenTriggers"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "fallback_input_tokens",
+              "fallbackInputTokens"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "split_oversized_turns",
+              "splitOversizedTurns"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "suppress_auto_compaction",
+              "suppressAutoCompaction"
+            ]
+          }
+        }
+      ],
       "properties": {
+        "agentThresholds": {
+          "additionalProperties": {
+            "$ref": "#/$defs/CompactionThreshold"
+          },
+          "type": "object"
+        },
         "agent_thresholds": {
           "additionalProperties": {
-            "$ref": "#/definitions/CompactionThreshold"
+            "$ref": "#/$defs/CompactionThreshold"
           },
-          "description": "Fixed thresholds by agent profile key; overrides model and global settings.",
           "type": "object"
+        },
+        "autoRetryOverflow": {
+          "default": true,
+          "type": "boolean"
         },
         "auto_retry_overflow": {
           "default": true,
@@ -78,14 +409,28 @@
           "default": true,
           "type": "boolean"
         },
+        "estimatedTokenTriggers": {
+          "default": true,
+          "type": "boolean"
+        },
         "estimated_token_triggers": {
           "default": true,
-          "description": "Enables the explicitly conservative fallback only when all model limits are unknown.\nThis mode can trigger compaction but never claims exact model capacity.",
           "type": "boolean"
+        },
+        "fallbackInputTokens": {
+          "default": 32768,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "fallback_input_tokens": {
           "default": 32768,
-          "description": "Conservative non-exact input cap used only when all model limits are unknown.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "keepRecentTokens": {
+          "default": 20000,
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -96,12 +441,23 @@
           "minimum": 0,
           "type": "integer"
         },
+        "modelThresholds": {
+          "additionalProperties": {
+            "$ref": "#/$defs/CompactionThreshold"
+          },
+          "type": "object"
+        },
         "model_thresholds": {
           "additionalProperties": {
-            "$ref": "#/definitions/CompactionThreshold"
+            "$ref": "#/$defs/CompactionThreshold"
           },
-          "description": "Fixed percentages or `{ \"tokens\": count }` by canonical `provider:model` reference.",
           "type": "object"
+        },
+        "reserveTokens": {
+          "default": 16384,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "reserve_tokens": {
           "default": 16384,
@@ -109,31 +465,59 @@
           "minimum": 0,
           "type": "integer"
         },
+        "splitOversizedTurns": {
+          "default": false,
+          "type": "boolean"
+        },
         "split_oversized_turns": {
           "default": false,
+          "type": "boolean"
+        },
+        "structuredSummaryContract": {
+          "default": true,
           "type": "boolean"
         },
         "structured_summary_contract": {
           "default": true,
           "type": "boolean"
         },
+        "suppressAutoCompaction": {
+          "default": false,
+          "type": "boolean"
+        },
         "suppress_auto_compaction": {
           "default": false,
           "type": "boolean"
         },
-        "threshold_percent": {
+        "thresholdPercent": {
           "anyOf": [
             {
-              "$ref": "#/definitions/CompactionThresholdPercent"
+              "$ref": "#/$defs/CompactionThresholdPercent"
             },
             {
               "type": "null"
             }
-          ],
-          "description": "Fixed trigger percentage (1–100). Unset uses the adaptive compaction policy."
+          ]
+        },
+        "thresholdTokens": {
+          "format": "uint32",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "threshold_percent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CompactionThresholdPercent"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "threshold_tokens": {
-          "description": "Fixed token count. Overrides the global percentage when both are set.",
           "format": "uint32",
           "minimum": 1,
           "type": [
@@ -147,10 +531,9 @@
     "CompactionThreshold": {
       "anyOf": [
         {
-          "$ref": "#/definitions/CompactionThresholdPercent"
+          "$ref": "#/$defs/CompactionThresholdPercent"
         },
         {
-          "additionalProperties": false,
           "properties": {
             "tokens": {
               "format": "uint32",
@@ -163,29 +546,62 @@
           ],
           "type": "object"
         }
-      ],
-      "description": "A bare integer is a percentage; an object specifies an absolute token count."
+      ]
     },
     "CompactionThresholdPercent": {
-      "description": "A percentage validated at the configuration boundary, including map values.",
       "format": "uint8",
       "maximum": 100,
       "minimum": 1,
       "type": "integer"
     },
+    "DeterministicConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "seed": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "FormatterConfig": {
       "additionalProperties": {
-        "$ref": "#/definitions/FormatterOverride"
+        "$ref": "#/$defs/FormatterOverride"
       },
-      "description": "Runtime formatter configuration.\n\n`deny_unknown_fields` is intentionally omitted because `#[serde(flatten)]`\non the per-formatter overrides map allows arbitrary formatter-name keys in\nthe public object form; serde would otherwise reject those keys as unknown.",
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "experimental_oxfmt",
+              "experimentalOxfmt"
+            ]
+          }
+        }
+      ],
       "properties": {
         "enabled": {
           "default": true,
           "type": "boolean"
         },
+        "experimentalOxfmt": {
+          "default": false,
+          "type": "boolean"
+        },
         "experimental_oxfmt": {
           "default": false,
           "type": "boolean"
+        },
+        "languages": {
+          "additionalProperties": {
+            "$ref": "#/$defs/FormatterOverride"
+          },
+          "type": "object"
         }
       },
       "type": "object"
@@ -230,18 +646,182 @@
       },
       "type": "object"
     },
-    "InstructionList": {
-      "anyOf": [
+    "HookLifecycleEvent": {
+      "enum": [
+        "run_started",
+        "run_finished",
+        "run_failed",
+        "agent_turn_started",
+        "agent_turn_finished",
+        "tool_call_started",
+        "tool_call_finished",
+        "provider_request_started",
+        "provider_request_finished",
+        "compaction_requested",
+        "compaction_written",
+        "compaction_applied",
+        "compaction_failed",
+        "subagent_spawned",
+        "subagent_finished",
+        "permission_requested",
+        "permission_resolved"
+      ],
+      "type": "string"
+    },
+    "HooksConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "lifecycle": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LifecycleHookConfig"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "IntegrationsConfig": {
+      "additionalProperties": false,
+      "allOf": [
         {
-          "type": "string"
+          "not": {
+            "required": [
+              "remote_search",
+              "remoteSearch"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "mcp": {
+          "$ref": "#/$defs/McpConfig",
+          "default": {
+            "servers": {}
+          }
+        },
+        "remoteSearch": {
+          "$ref": "#/$defs/RemoteSearchConfig",
+          "default": {
+            "auth_token": null,
+            "endpoint": "https://mcp.exa.ai/mcp",
+            "max_retries": 1,
+            "require_auth": false,
+            "retry_backoff_ms": 250,
+            "timeout_secs": 30
+          }
+        },
+        "remote_search": {
+          "$ref": "#/$defs/RemoteSearchConfig",
+          "default": {
+            "auth_token": null,
+            "endpoint": "https://mcp.exa.ai/mcp",
+            "max_retries": 1,
+            "require_auth": false,
+            "retry_backoff_ms": 250,
+            "timeout_secs": 30
+          }
+        }
+      },
+      "type": "object"
+    },
+    "LifecycleHookConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "id",
+              "name"
+            ]
+          }
         },
         {
+          "not": {
+            "required": [
+              "timeout_ms",
+              "timeoutMs"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "command": {
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "critical": {
+          "default": false,
+          "type": "boolean"
+        },
+        "cwd": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "event": {
+          "$ref": "#/$defs/HookLifecycleEvent"
+        },
+        "id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeoutMs": {
+          "default": 5000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "timeout_ms": {
+          "default": 5000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
         }
-      ]
+      },
+      "required": [
+        "event",
+        "command"
+      ],
+      "type": "object"
+    },
+    "LoggingConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "level": {
+          "default": "info",
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "LspConfig": {
       "additionalProperties": false,
@@ -252,7 +832,7 @@
         },
         "servers": {
           "additionalProperties": {
-            "$ref": "#/definitions/LspServerConfig"
+            "$ref": "#/$defs/LspServerConfig"
           },
           "default": {},
           "type": "object"
@@ -300,10 +880,57 @@
       },
       "type": "object"
     },
+    "McpConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "servers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/McpServerConfig"
+          },
+          "default": {},
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "McpServerConfig": {
       "oneOf": [
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "env",
+                  "environment"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "timeout_secs",
+                  "timeoutSecs"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "timeout_secs",
+                  "timeout"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "timeoutSecs",
+                  "timeout"
+                ]
+              }
+            }
+          ],
           "properties": {
             "command": {
               "items": {
@@ -329,6 +956,25 @@
               "default": {},
               "type": "object"
             },
+            "environment": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "default": {},
+              "type": "object"
+            },
+            "timeout": {
+              "default": 30,
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "timeoutSecs": {
+              "default": 30,
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
             "timeout_secs": {
               "default": 30,
               "format": "uint64",
@@ -348,6 +994,54 @@
         },
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "anyOf": [
+                {
+                  "required": [
+                    "endpoint"
+                  ]
+                },
+                {
+                  "required": [
+                    "url"
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "endpoint",
+                  "url"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "timeout_secs",
+                  "timeoutSecs"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "timeout_secs",
+                  "timeout"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "timeoutSecs",
+                  "timeout"
+                ]
+              }
+            }
+          ],
           "properties": {
             "enabled": {
               "default": true,
@@ -363,6 +1057,18 @@
               "default": {},
               "type": "object"
             },
+            "timeout": {
+              "default": 30,
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "timeoutSecs": {
+              "default": 30,
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
             "timeout_secs": {
               "default": 30,
               "format": "uint64",
@@ -370,13 +1076,17 @@
               "type": "integer"
             },
             "transport": {
-              "const": "http",
+              "enum": [
+                "http",
+                "streamable_http"
+              ]
+            },
+            "url": {
               "type": "string"
             }
           },
           "required": [
-            "transport",
-            "endpoint"
+            "transport"
           ],
           "type": "object"
         }
@@ -384,18 +1094,82 @@
     },
     "ModelConfig": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "name",
+              "display_name"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "name",
+              "displayName"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "display_name",
+              "displayName"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "max_input_tokens",
+              "maxInputTokens"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "max_output_tokens",
+              "maxOutputTokens"
+            ]
+          }
+        }
+      ],
       "properties": {
+        "displayName": {
+          "default": "",
+          "type": "string"
+        },
+        "display_name": {
+          "default": "",
+          "type": "string"
+        },
         "limit": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ModelLimitConfig"
-            }
-          ],
+          "$ref": "#/$defs/ModelLimitConfig",
           "default": {
             "context": null,
             "input": null,
             "output": null
           }
+        },
+        "maxInputTokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "maxOutputTokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "max_input_tokens": {
           "default": null,
@@ -416,11 +1190,7 @@
           ]
         },
         "metadata": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ModelMetadataConfig"
-            }
-          ],
+          "$ref": "#/$defs/ModelMetadataConfig",
           "default": {
             "context_window_tokens": null,
             "family": null,
@@ -430,17 +1200,14 @@
           }
         },
         "modalities": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ModelModalitiesConfig"
-            }
-          ],
+          "$ref": "#/$defs/ModelModalitiesConfig",
           "default": {
             "input": [],
             "output": []
           }
         },
         "name": {
+          "default": "",
           "type": "string"
         },
         "options": {
@@ -450,15 +1217,12 @@
         },
         "variants": {
           "additionalProperties": {
-            "$ref": "#/definitions/ModelVariantConfig"
+            "$ref": "#/$defs/ModelVariantConfig"
           },
           "default": {},
           "type": "object"
         }
       },
-      "required": [
-        "name"
-      ],
       "type": "object"
     },
     "ModelLimitConfig": {
@@ -496,7 +1260,50 @@
     },
     "ModelMetadataConfig": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "release_stage",
+              "releaseStage"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "context_window_tokens",
+              "contextWindowTokens"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "supports_tool_calls",
+              "supportsToolCalls"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "supports_reasoning_summaries",
+              "supportsReasoningSummaries"
+            ]
+          }
+        }
+      ],
       "properties": {
+        "contextWindowTokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "context_window_tokens": {
           "default": null,
           "format": "uint32",
@@ -513,16 +1320,41 @@
             "null"
           ]
         },
-        "release_stage": {
+        "releaseStage": {
           "anyOf": [
             {
-              "$ref": "#/definitions/ModelReleaseStage"
+              "$ref": "#/$defs/ModelReleaseStage"
             },
             {
               "type": "null"
             }
           ],
           "default": null
+        },
+        "release_stage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelReleaseStage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "supportsReasoningSummaries": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supportsToolCalls": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "supports_reasoning_summaries": {
           "default": null,
@@ -567,11 +1399,12 @@
         "fallback": {
           "default": [],
           "items": {
-            "$ref": "#/definitions/ModelProfileTargetConfig"
+            "$ref": "#/$defs/ModelProfileTargetConfig"
           },
           "type": "array"
         },
         "model": {
+          "default": "",
           "type": "string"
         },
         "variant": {
@@ -582,15 +1415,13 @@
           ]
         }
       },
-      "required": [
-        "model"
-      ],
       "type": "object"
     },
     "ModelProfileTargetConfig": {
       "additionalProperties": false,
       "properties": {
         "model": {
+          "default": "",
           "type": "string"
         },
         "variant": {
@@ -601,9 +1432,6 @@
           ]
         }
       },
-      "required": [
-        "model"
-      ],
       "type": "object"
     },
     "ModelReleaseStage": {
@@ -616,7 +1444,66 @@
     },
     "ModelVariantConfig": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "name",
+              "display_name"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "name",
+              "displayName"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "display_name",
+              "displayName"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "context_window_tokens",
+              "contextWindowTokens"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "max_input_tokens",
+              "maxInputTokens"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "max_output_tokens",
+              "maxOutputTokens"
+            ]
+          }
+        }
+      ],
       "properties": {
+        "contextWindowTokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "context_window_tokens": {
           "default": null,
           "format": "uint32",
@@ -630,17 +1517,45 @@
           "default": false,
           "type": "boolean"
         },
+        "displayName": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "display_name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "limit": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ModelLimitConfig"
-            }
-          ],
+          "$ref": "#/$defs/ModelLimitConfig",
           "default": {
             "context": null,
             "input": null,
             "output": null
           }
+        },
+        "maxInputTokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "maxOutputTokens": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "max_input_tokens": {
           "default": null,
@@ -661,11 +1576,7 @@
           ]
         },
         "metadata": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ModelVariantMetadataConfig"
-            }
-          ],
+          "$ref": "#/$defs/ModelVariantMetadataConfig",
           "default": {
             "description": null,
             "reasoning_effort": null,
@@ -674,11 +1585,7 @@
           }
         },
         "modalities": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ModelModalitiesConfig"
-            }
-          ],
+          "$ref": "#/$defs/ModelModalitiesConfig",
           "default": {
             "input": [],
             "output": []
@@ -701,6 +1608,32 @@
     },
     "ModelVariantMetadataConfig": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "reasoning_effort",
+              "reasoningEffort"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "text_verbosity",
+              "textVerbosity"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "recommended_for",
+              "recommendedFor"
+            ]
+          }
+        }
+      ],
       "properties": {
         "description": {
           "default": null,
@@ -709,16 +1642,34 @@
             "null"
           ]
         },
-        "reasoning_effort": {
+        "reasoningEffort": {
           "anyOf": [
             {
-              "$ref": "#/definitions/ModelVariantReasoningEffort"
+              "$ref": "#/$defs/ModelVariantReasoningEffort"
             },
             {
               "type": "null"
             }
           ],
           "default": null
+        },
+        "reasoning_effort": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelVariantReasoningEffort"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recommendedFor": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "recommended_for": {
           "default": null,
@@ -727,10 +1678,21 @@
             "null"
           ]
         },
+        "textVerbosity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelVariantTextVerbosity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "text_verbosity": {
           "anyOf": [
             {
-              "$ref": "#/definitions/ModelVariantTextVerbosity"
+              "$ref": "#/$defs/ModelVariantTextVerbosity"
             },
             {
               "type": "null"
@@ -771,6 +1733,96 @@
     },
     "OpenAiCompatibleProviderOptions": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "baseURL",
+              "base_url"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "baseURL",
+              "baseUrl"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "base_url",
+              "baseUrl"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "apiKey",
+              "api_key"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "apiKeyEnv",
+              "api_key_env"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "apiKeyEnv",
+              "apiKeyEnvironment"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "api_key_env",
+              "apiKeyEnvironment"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "timeoutMs",
+              "timeout_ms"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "authProvider",
+              "auth_provider"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "apiMode",
+              "api_mode"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "cacheRetention",
+              "cache_retention"
+            ]
+          }
+        }
+      ],
       "properties": {
         "apiKey": {
           "default": null,
@@ -786,10 +1838,42 @@
           },
           "type": "array"
         },
+        "apiKeyEnvironment": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "apiMode": {
           "anyOf": [
             {
-              "$ref": "#/definitions/OpenAiApiMode"
+              "$ref": "#/$defs/OpenAiApiMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "api_key": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "api_key_env": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "api_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OpenAiApiMode"
             },
             {
               "type": "null"
@@ -800,7 +1884,18 @@
         "authProvider": {
           "anyOf": [
             {
-              "$ref": "#/definitions/ProviderId"
+              "$ref": "#/$defs/ProviderId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "auth_provider": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderId"
             },
             {
               "type": "null"
@@ -815,10 +1910,35 @@
             "null"
           ]
         },
+        "baseUrl": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_url": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "cacheRetention": {
           "anyOf": [
             {
-              "$ref": "#/definitions/CacheRetention"
+              "$ref": "#/$defs/CacheRetention"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cache_retention": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CacheRetention"
             },
             {
               "type": "null"
@@ -848,22 +1968,1531 @@
             "integer",
             "null"
           ]
+        },
+        "timeout_ms": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "type": "object"
     },
-    "PermissionMode": {
+    "PermissionAction": {
       "enum": [
         "allow",
-        "deny",
-        "ask"
+        "ask",
+        "deny"
       ],
       "type": "string"
+    },
+    "PermissionDefaultsConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "webfetch",
+              "webFetch"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "websearch",
+              "webSearch"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "codesearch",
+              "codeSearch"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "lsp",
+              "codeLsp"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "codeLsp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "allow"
+        },
+        "codeSearch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "allow"
+        },
+        "codesearch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "allow"
+        },
+        "doom_loop": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "ask"
+        },
+        "edit": {
+          "$ref": "#/$defs/PermissionAction",
+          "default": "allow"
+        },
+        "external_directory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "ask"
+        },
+        "lsp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "allow"
+        },
+        "network": {
+          "$ref": "#/$defs/PermissionAction",
+          "default": "allow"
+        },
+        "question": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "deny"
+        },
+        "read": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "allow"
+        },
+        "shell": {
+          "$ref": "#/$defs/PermissionAction",
+          "default": "allow"
+        },
+        "task": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "allow"
+        },
+        "webFetch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "allow"
+        },
+        "webSearch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "allow"
+        },
+        "webfetch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "allow"
+        },
+        "websearch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "allow"
+        }
+      },
+      "type": "object"
+    },
+    "PermissionRuleSet": {
+      "additionalProperties": false,
+      "properties": {
+        "edit": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PermissionSelectorRule"
+          },
+          "type": "array"
+        },
+        "external_directory": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PermissionSelectorRule"
+          },
+          "type": "array"
+        },
+        "read": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PermissionSelectorRule"
+          },
+          "type": "array"
+        },
+        "shell": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PermissionSelectorRule"
+          },
+          "type": "array"
+        },
+        "task": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PermissionSelectorRule"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "PermissionSelector": {
+      "oneOf": [
+        {
+          "enum": [
+            "catch_all"
+          ],
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "exact": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "exact"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "prefix": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "prefix"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "glob": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "glob"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PermissionSelectorRule": {
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/PermissionAction"
+        },
+        "selector": {
+          "$ref": "#/$defs/PermissionSelector"
+        }
+      },
+      "required": [
+        "selector",
+        "mode"
+      ],
+      "type": "object"
+    },
+    "PermissionsConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "shell_allowlist",
+              "shellAllowlist"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "*": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "defaults": {
+          "$ref": "#/$defs/PermissionDefaultsConfig",
+          "default": {
+            "codesearch": "allow",
+            "doom_loop": "ask",
+            "edit": "allow",
+            "external_directory": "ask",
+            "lsp": "allow",
+            "network": "allow",
+            "question": "deny",
+            "read": "allow",
+            "shell": "allow",
+            "task": "allow",
+            "webfetch": "allow",
+            "websearch": "allow"
+          }
+        },
+        "rules": {
+          "$ref": "#/$defs/PermissionRuleSet",
+          "default": {
+            "edit": [],
+            "external_directory": [],
+            "read": [
+              {
+                "mode": "allow",
+                "selector": {
+                  "glob": "*"
+                }
+              },
+              {
+                "mode": "ask",
+                "selector": {
+                  "glob": "*.env"
+                }
+              },
+              {
+                "mode": "ask",
+                "selector": {
+                  "glob": "*.env.*"
+                }
+              },
+              {
+                "mode": "allow",
+                "selector": {
+                  "glob": "*.env.example"
+                }
+              }
+            ],
+            "shell": [],
+            "task": []
+          }
+        },
+        "shellAllowlist": {
+          "$ref": "#/$defs/ShellAllowlist",
+          "default": {
+            "cwd_roots": [],
+            "executables": [],
+            "mode": "permission_patterns"
+          }
+        },
+        "shell_allowlist": {
+          "$ref": "#/$defs/ShellAllowlist",
+          "default": {
+            "cwd_roots": [],
+            "executables": [],
+            "mode": "permission_patterns"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "ProfileConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "system_prompt",
+              "systemPrompt"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "system_prompt",
+              "prompt"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "systemPrompt",
+              "prompt"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "model_ref",
+              "modelRef"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "model_ref",
+              "model"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "modelRef",
+              "model"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "top_p",
+              "topP"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "max_iters",
+              "maxIters"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "max_iters",
+              "maxSteps"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "max_iters",
+              "steps"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "maxIters",
+              "maxSteps"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "maxIters",
+              "steps"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "maxSteps",
+              "steps"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "tool_failure_mode",
+              "toolFailureMode"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "permissions",
+              "permission"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "color": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "hidden": {
+          "default": false,
+          "type": "boolean"
+        },
+        "maxIters": {
+          "default": null,
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "maxSteps": {
+          "default": null,
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_iters": {
+          "default": null,
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/$defs/AgentMode",
+          "default": "all"
+        },
+        "model": {
+          "default": "",
+          "type": "string"
+        },
+        "modelRef": {
+          "default": "",
+          "type": "string"
+        },
+        "model_ref": {
+          "default": "",
+          "type": "string"
+        },
+        "model_ref_explicit": {
+          "default": false,
+          "type": "boolean"
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "options": {
+          "additionalProperties": true,
+          "default": {},
+          "type": "object"
+        },
+        "permission": {
+          "anyOf": [
+            {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/ProfilePermissions"
+                },
+                {
+                  "required": [
+                    "rules"
+                  ]
+                }
+              ]
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "*": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "bash": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "allow",
+                        "ask",
+                        "deny"
+                      ]
+                    },
+                    {
+                      "additionalProperties": {
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "codesearch": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "doom_loop": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "edit": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "allow",
+                        "ask",
+                        "deny"
+                      ]
+                    },
+                    {
+                      "additionalProperties": {
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "external_directory": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "allow",
+                        "ask",
+                        "deny"
+                      ]
+                    },
+                    {
+                      "additionalProperties": {
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "lsp": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "network": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "question": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "read": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "allow",
+                        "ask",
+                        "deny"
+                      ]
+                    },
+                    {
+                      "additionalProperties": {
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "shell": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "allow",
+                        "ask",
+                        "deny"
+                      ]
+                    },
+                    {
+                      "additionalProperties": {
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "task": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "allow",
+                        "ask",
+                        "deny"
+                      ]
+                    },
+                    {
+                      "additionalProperties": {
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "todowrite": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "webfetch": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "websearch": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "permissions": {
+          "anyOf": [
+            {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/ProfilePermissions"
+                },
+                {
+                  "required": [
+                    "rules"
+                  ]
+                }
+              ]
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "*": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "bash": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "allow",
+                        "ask",
+                        "deny"
+                      ]
+                    },
+                    {
+                      "additionalProperties": {
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "codesearch": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "doom_loop": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "edit": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "allow",
+                        "ask",
+                        "deny"
+                      ]
+                    },
+                    {
+                      "additionalProperties": {
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "external_directory": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "allow",
+                        "ask",
+                        "deny"
+                      ]
+                    },
+                    {
+                      "additionalProperties": {
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "lsp": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "network": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "question": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "read": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "allow",
+                        "ask",
+                        "deny"
+                      ]
+                    },
+                    {
+                      "additionalProperties": {
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "shell": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "allow",
+                        "ask",
+                        "deny"
+                      ]
+                    },
+                    {
+                      "additionalProperties": {
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "task": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "allow",
+                        "ask",
+                        "deny"
+                      ]
+                    },
+                    {
+                      "additionalProperties": {
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "deny"
+                        ]
+                      },
+                      "type": "object"
+                    }
+                  ]
+                },
+                "todowrite": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "webfetch": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                "websearch": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "prompt": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "steps": {
+          "default": null,
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "systemPrompt": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "system_prompt": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "temperature": {
+          "default": null,
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "toolFailureMode": {
+          "$ref": "#/$defs/ToolFailureMode",
+          "default": "continue_as_tool_message"
+        },
+        "tool_failure_mode": {
+          "$ref": "#/$defs/ToolFailureMode",
+          "default": "continue_as_tool_message"
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "type": "boolean"
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "topP": {
+          "default": null,
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "top_p": {
+          "default": null,
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "variant": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ProfilePermissions": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "shell",
+              "bash"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "webfetch",
+              "webFetch"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "websearch",
+              "webSearch"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "codesearch",
+              "codeSearch"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "lsp",
+              "codeLsp"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "*": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "bash": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "codeLsp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "codeSearch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "codesearch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "doom_loop": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "edit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "external_directory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "lsp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "network": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "question": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "read": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rules": {
+          "$ref": "#/$defs/PermissionRuleSet",
+          "default": {
+            "edit": [],
+            "external_directory": [],
+            "read": [],
+            "shell": [],
+            "task": []
+          }
+        },
+        "shell": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "todowrite": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "webFetch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "webSearch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "webfetch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "websearch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "PromptRuntimeConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "wait_timeout_ms",
+              "waitTimeoutMs"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "waitTimeoutMs": {
+          "default": 30000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "wait_timeout_ms": {
+          "default": 30000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
     },
     "ProviderConfig": {
       "oneOf": [
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "baseURL",
+                  "base_url"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "baseURL",
+                  "baseUrl"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "base_url",
+                  "baseUrl"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "apiKey",
+                  "api_key"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "apiKeyEnv",
+                  "api_key_env"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "apiKeyEnv",
+                  "apiKeyEnvironment"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "api_key_env",
+                  "apiKeyEnvironment"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "timeoutMs",
+                  "timeout_ms"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "authProvider",
+                  "auth_provider"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "apiMode",
+                  "api_mode"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "cacheRetention",
+                  "cache_retention"
+                ]
+              }
+            }
+          ],
           "properties": {
             "apiKey": {
               "default": "",
@@ -876,18 +3505,47 @@
               },
               "type": "array"
             },
+            "apiKeyEnvironment": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "apiMode": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/OpenAiApiMode"
-                }
-              ],
+              "$ref": "#/$defs/OpenAiApiMode",
+              "default": "auto"
+            },
+            "api_key": {
+              "default": "",
+              "type": "string"
+            },
+            "api_key_env": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "api_mode": {
+              "$ref": "#/$defs/OpenAiApiMode",
               "default": "auto"
             },
             "authProvider": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/ProviderId"
+                  "$ref": "#/$defs/ProviderId"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "auth_provider": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ProviderId"
                 },
                 {
                   "type": "null"
@@ -896,15 +3554,23 @@
               "default": null
             },
             "baseURL": {
-              "default": "",
+              "default": "https://api.openai.com/v1",
+              "type": "string"
+            },
+            "baseUrl": {
+              "default": "https://api.openai.com/v1",
+              "type": "string"
+            },
+            "base_url": {
+              "default": "https://api.openai.com/v1",
               "type": "string"
             },
             "cacheRetention": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/CacheRetention"
-                }
-              ],
+              "$ref": "#/$defs/CacheRetention",
+              "default": "short"
+            },
+            "cache_retention": {
+              "$ref": "#/$defs/CacheRetention",
               "default": "short"
             },
             "headers": {
@@ -916,7 +3582,7 @@
             },
             "models": {
               "additionalProperties": {
-                "$ref": "#/definitions/ModelConfig"
+                "$ref": "#/$defs/ModelConfig"
               },
               "default": {},
               "type": "object"
@@ -929,11 +3595,7 @@
               ]
             },
             "options": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/OpenAiCompatibleProviderOptions"
-                }
-              ],
+              "$ref": "#/$defs/OpenAiCompatibleProviderOptions",
               "default": {
                 "apiKey": null,
                 "apiKeyEnv": [],
@@ -952,6 +3614,12 @@
               "minimum": 0,
               "type": "integer"
             },
+            "timeout_ms": {
+              "default": 60000,
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
             "type": {
               "const": "openai_compatible",
               "type": "string"
@@ -964,7 +3632,72 @@
         },
         {
           "additionalProperties": false,
-          "description": "Configuration for an Anthropic Messages API provider.\n\nUses `x-api-key` authentication and the Anthropic `/v1/messages` endpoint.\nThe Anthropic transport is implemented in `harness_providers::anthropic`.",
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "baseURL",
+                  "base_url"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "baseURL",
+                  "baseUrl"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "base_url",
+                  "baseUrl"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "apiKey",
+                  "api_key"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "apiKeyEnv",
+                  "api_key_env"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "apiKeyEnv",
+                  "apiKeyEnvironment"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "api_key_env",
+                  "apiKeyEnvironment"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "timeoutMs",
+                  "timeout_ms"
+                ]
+              }
+            }
+          ],
           "properties": {
             "apiKey": {
               "default": "",
@@ -977,8 +3710,34 @@
               },
               "type": "array"
             },
+            "apiKeyEnvironment": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "api_key": {
+              "default": "",
+              "type": "string"
+            },
+            "api_key_env": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "baseURL": {
-              "default": "https://api.anthropic.com",
+              "default": "https://api.anthropic.com/v1",
+              "type": "string"
+            },
+            "baseUrl": {
+              "default": "https://api.anthropic.com/v1",
+              "type": "string"
+            },
+            "base_url": {
+              "default": "https://api.anthropic.com/v1",
               "type": "string"
             },
             "headers": {
@@ -990,7 +3749,7 @@
             },
             "models": {
               "additionalProperties": {
-                "$ref": "#/definitions/ModelConfig"
+                "$ref": "#/$defs/ModelConfig"
               },
               "default": {},
               "type": "object"
@@ -1003,11 +3762,7 @@
               ]
             },
             "options": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/AnthropicProviderOptions"
-                }
-              ],
+              "$ref": "#/$defs/AnthropicProviderOptions",
               "default": {
                 "apiKey": null,
                 "apiKeyEnv": [],
@@ -1018,6 +3773,12 @@
               }
             },
             "timeoutMs": {
+              "default": 60000,
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "timeout_ms": {
               "default": 60000,
               "format": "uint64",
               "minimum": 0,
@@ -1040,10 +3801,54 @@
     },
     "ProviderRetryRuntimeConfig": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "max_retries",
+              "maxRetries"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "base_delay_ms",
+              "baseDelayMs"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "max_delay_ms",
+              "maxDelayMs"
+            ]
+          }
+        }
+      ],
       "properties": {
+        "baseDelayMs": {
+          "default": 2000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "base_delay_ms": {
           "default": 2000,
           "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "maxDelayMs": {
+          "default": 30000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "maxRetries": {
+          "default": 2,
+          "format": "uint32",
           "minimum": 0,
           "type": "integer"
         },
@@ -1062,516 +3867,183 @@
       },
       "type": "object"
     },
-    "PublicAgentConfig": {
+    "RemoteSearchConfig": {
       "additionalProperties": false,
-      "description": "Configuration shared by the primary agent and named subagents.",
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "auth_token",
+              "authToken"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "require_auth",
+              "requireAuth"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "timeout_secs",
+              "timeoutSecs"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "max_retries",
+              "maxRetries"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "retry_backoff_ms",
+              "retryBackoffMs"
+            ]
+          }
+        }
+      ],
       "properties": {
-        "max_iters": {
+        "authToken": {
           "default": null,
-          "format": "uint",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "auth_token": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "endpoint": {
+          "default": "https://mcp.exa.ai/mcp",
+          "type": "string"
+        },
+        "maxRetries": {
+          "default": 1,
+          "format": "uint32",
           "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
+          "type": "integer"
         },
-        "model": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
+        "max_retries": {
+          "default": 1,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
-        "options": {
-          "additionalProperties": true,
-          "default": {},
-          "type": "object"
-        },
-        "permission": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicProfilePermissions"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "system_prompt": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "temperature": {
-          "default": null,
-          "format": "float",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "tool_failure_mode": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/ToolFailureMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "tools": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/PublicAgentTools"
-            }
-          ],
-          "default": []
-        },
-        "top_p": {
-          "default": null,
-          "format": "float",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "variant": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
-    },
-    "PublicAgentMap": {
-      "additionalProperties": false,
-      "properties": {
-        "default": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            }
-          ],
-          "default": {
-            "max_iters": null,
-            "model": null,
-            "options": {},
-            "permission": null,
-            "system_prompt": null,
-            "temperature": null,
-            "tool_failure_mode": null,
-            "tools": [],
-            "top_p": null,
-            "variant": null
-          }
-        },
-        "explore": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            }
-          ],
-          "default": {
-            "max_iters": null,
-            "model": null,
-            "options": {},
-            "permission": null,
-            "system_prompt": null,
-            "temperature": null,
-            "tool_failure_mode": null,
-            "tools": [],
-            "top_p": null,
-            "variant": null
-          }
-        },
-        "general": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            }
-          ],
-          "default": {
-            "max_iters": null,
-            "model": null,
-            "options": {},
-            "permission": null,
-            "system_prompt": null,
-            "temperature": null,
-            "tool_failure_mode": null,
-            "tools": [],
-            "top_p": null,
-            "variant": null
-          }
-        },
-        "librarian": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            }
-          ],
-          "default": {
-            "max_iters": null,
-            "model": null,
-            "options": {},
-            "permission": null,
-            "system_prompt": null,
-            "temperature": null,
-            "tool_failure_mode": null,
-            "tools": [],
-            "top_p": null,
-            "variant": null
-          }
-        }
-      },
-      "type": "object"
-    },
-    "PublicAgentTools": {
-      "anyOf": [
-        {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "type": "boolean"
-          },
-          "type": "object"
-        }
-      ]
-    },
-    "PublicPermissionConfig": {
-      "additionalProperties": false,
-      "properties": {
-        "*": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "bash": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicRulePermissionValue"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "codesearch": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "doom_loop": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "edit": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicRulePermissionValue"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "external_directory": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicRulePermissionValue"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "lsp": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "question": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "read": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicRulePermissionValue"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "shell_allowlist": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/ShellAllowlist"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicRulePermissionValue"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "webfetch": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "websearch": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        }
-      },
-      "type": "object"
-    },
-    "PublicPermissionValue": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/PermissionMode"
-        },
-        {
-          "$ref": "#/definitions/PublicPermissionConfig"
-        }
-      ]
-    },
-    "PublicProfilePermissions": {
-      "additionalProperties": false,
-      "properties": {
-        "*": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "bash": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicRulePermissionValue"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "codesearch": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "doom_loop": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "edit": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicRulePermissionValue"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "external_directory": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicRulePermissionValue"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "lsp": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "question": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "read": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicRulePermissionValue"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicRulePermissionValue"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "webfetch": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "websearch": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PermissionMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        }
-      },
-      "type": "object"
-    },
-    "PublicRulePermissionValue": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/PermissionMode"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/definitions/PermissionMode"
-          },
-          "type": "object"
-        }
-      ]
-    },
-    "PublicRuntimeSettingsConfig": {
-      "additionalProperties": false,
-      "properties": {
-        "always_approve": {
+        "requireAuth": {
           "default": false,
-          "description": "Start new and resumed runs in always-approve mode (off by default).",
           "type": "boolean"
         },
+        "require_auth": {
+          "default": false,
+          "type": "boolean"
+        },
+        "retryBackoffMs": {
+          "default": 250,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retry_backoff_ms": {
+          "default": 250,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "timeoutSecs": {
+          "default": 30,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "timeout_secs": {
+          "default": 30,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "RuntimeConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "always_approve",
+              "alwaysApprove"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "background_tasks",
+              "backgroundTasks"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_dir",
+              "sessionDir"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "provider_retry",
+              "providerRetry"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "alwaysApprove": {
+          "default": false,
+          "type": "boolean"
+        },
+        "always_approve": {
+          "default": false,
+          "type": "boolean"
+        },
+        "backgroundTasks": {
+          "$ref": "#/$defs/BackgroundTaskSettings",
+          "default": {
+            "defaultConcurrency": 4,
+            "messageStalenessTimeoutMs": 10000,
+            "modelConcurrency": 2,
+            "providerConcurrency": 4,
+            "staleTimeoutMs": 30000
+          }
+        },
+        "background_tasks": {
+          "$ref": "#/$defs/BackgroundTaskSettings",
+          "default": {
+            "defaultConcurrency": 4,
+            "messageStalenessTimeoutMs": 10000,
+            "modelConcurrency": 2,
+            "providerConcurrency": 4,
+            "staleTimeoutMs": 30000
+          }
+        },
         "compaction": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/CompactionSettings"
-            }
-          ],
+          "$ref": "#/$defs/CompactionSettings",
           "default": {
             "auto_retry_overflow": true,
             "enabled": true,
@@ -1584,24 +4056,124 @@
             "suppress_auto_compaction": false
           }
         },
-        "provider_retry": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ProviderRetryRuntimeConfig"
-            }
-          ],
+        "deterministic": {
+          "$ref": "#/$defs/DeterministicConfig",
+          "default": {
+            "enabled": false,
+            "seed": 0
+          }
+        },
+        "permissions": {
+          "$ref": "#/$defs/RuntimePermissionsConfig",
+          "default": {
+            "ask_timeout_ms": 30000
+          }
+        },
+        "prompt": {
+          "$ref": "#/$defs/PromptRuntimeConfig",
+          "default": {
+            "wait_timeout_ms": 30000
+          }
+        },
+        "providerRetry": {
+          "$ref": "#/$defs/ProviderRetryRuntimeConfig",
           "default": {
             "base_delay_ms": 2000,
             "max_delay_ms": 30000,
             "max_retries": 2
           }
+        },
+        "provider_retry": {
+          "$ref": "#/$defs/ProviderRetryRuntimeConfig",
+          "default": {
+            "base_delay_ms": 2000,
+            "max_delay_ms": 30000,
+            "max_retries": 2
+          }
+        },
+        "sessionDir": {
+          "default": ".agent-harness/sessions",
+          "type": "string"
+        },
+        "session_dir": {
+          "default": ".agent-harness/sessions",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "RuntimePermissionsConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "ask_timeout_ms",
+              "askTimeoutMs"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "askTimeoutMs": {
+          "default": 30000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ask_timeout_ms": {
+          "default": 30000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "type": "object"
     },
     "ShellAllowlist": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "mode",
+              "policy_mode"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "mode",
+              "policyMode"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "policy_mode",
+              "policyMode"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "cwd_roots",
+              "cwdRoots"
+            ]
+          }
+        }
+      ],
       "properties": {
+        "cwdRoots": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "cwd_roots": {
           "default": [],
           "items": {
@@ -1617,11 +4189,15 @@
           "type": "array"
         },
         "mode": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ShellAllowlistMode"
-            }
-          ],
+          "$ref": "#/$defs/ShellAllowlistMode",
+          "default": "permission_patterns"
+        },
+        "policyMode": {
+          "$ref": "#/$defs/ShellAllowlistMode",
+          "default": "permission_patterns"
+        },
+        "policy_mode": {
+          "$ref": "#/$defs/ShellAllowlistMode",
           "default": "permission_patterns"
         }
       },
@@ -1636,6 +4212,56 @@
     },
     "SkillsConfig": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "project_roots",
+              "projectRoots"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "project_roots",
+              "paths"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "projectRoots",
+              "paths"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "global_roots",
+              "globalRoots"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "disabled",
+              "disabledIds"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "walk_to_git_root",
+              "walkToGitRoot"
+            ]
+          }
+        }
+      ],
       "properties": {
         "disabled": {
           "default": [],
@@ -1644,8 +4270,36 @@
           },
           "type": "array"
         },
-        "global_roots": {
+        "disabledIds": {
           "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "globalRoots": {
+          "default": [
+            "~/.config/agent-harness/skills"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "global_roots": {
+          "default": [
+            "~/.config/agent-harness/skills"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "paths": {
+          "default": [
+            ".agent-harness/skills",
+            ".harness/skills"
+          ],
           "items": {
             "type": "string"
           },
@@ -1653,13 +4307,26 @@
         },
         "permissions": {
           "additionalProperties": {
-            "$ref": "#/definitions/PermissionMode"
+            "$ref": "#/$defs/PermissionAction"
           },
           "default": {},
           "type": "object"
         },
+        "projectRoots": {
+          "default": [
+            ".agent-harness/skills",
+            ".harness/skills"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "project_roots": {
-          "default": [],
+          "default": [
+            ".agent-harness/skills",
+            ".harness/skills"
+          ],
           "items": {
             "type": "string"
           },
@@ -1671,6 +4338,10 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "walkToGitRoot": {
+          "default": true,
+          "type": "boolean"
         },
         "walk_to_git_root": {
           "default": true,
@@ -1685,8 +4356,153 @@
         "continue_as_tool_message"
       ],
       "type": "string"
+    },
+    "UiConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "default_profile",
+              "defaultProfile"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "maxEventsInMemory",
+              "max_events_in_memory"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "maxTranscriptCharsInMemory",
+              "max_transcript_chars_in_memory"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "defaultProfile": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default_profile": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "keybindings": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "maxEventsInMemory": {
+          "default": 25000,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "maxTranscriptCharsInMemory": {
+          "default": 200000,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_events_in_memory": {
+          "default": 25000,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_transcript_chars_in_memory": {
+          "default": 200000,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
     }
   },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "not": {
+        "required": [
+          "providers",
+          "provider"
+        ]
+      }
+    },
+    {
+      "not": {
+        "required": [
+          "agents",
+          "agent"
+        ]
+      }
+    },
+    {
+      "not": {
+        "required": [
+          "permissions",
+          "permission"
+        ]
+      }
+    },
+    {
+      "not": {
+        "required": [
+          "model_profile",
+          "modelProfile"
+        ]
+      }
+    },
+    {
+      "not": {
+        "required": [
+          "model_profile",
+          "model_profiles"
+        ]
+      }
+    },
+    {
+      "not": {
+        "required": [
+          "modelProfile",
+          "model_profiles"
+        ]
+      }
+    },
+    {
+      "not": {
+        "required": [
+          "hashline_edit",
+          "hashlineEdit"
+        ]
+      }
+    },
+    {
+      "not": {
+        "required": [
+          "small_model",
+          "smallModel"
+        ]
+      }
+    }
+  ],
   "properties": {
     "$schema": {
       "default": null,
@@ -1696,183 +4512,618 @@
       ]
     },
     "agent": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/PublicAgentMap"
-        }
-      ],
-      "default": {
-        "default": {
-          "max_iters": null,
-          "model": null,
-          "options": {},
-          "permission": null,
-          "system_prompt": null,
-          "temperature": null,
-          "tool_failure_mode": null,
-          "tools": [],
-          "top_p": null,
-          "variant": null
-        },
-        "explore": {
-          "max_iters": null,
-          "model": null,
-          "options": {},
-          "permission": null,
-          "system_prompt": null,
-          "temperature": null,
-          "tool_failure_mode": null,
-          "tools": [],
-          "top_p": null,
-          "variant": null
-        },
-        "general": {
-          "max_iters": null,
-          "model": null,
-          "options": {},
-          "permission": null,
-          "system_prompt": null,
-          "temperature": null,
-          "tool_failure_mode": null,
-          "tools": [],
-          "top_p": null,
-          "variant": null
-        },
-        "librarian": {
-          "max_iters": null,
-          "model": null,
-          "options": {},
-          "permission": null,
-          "system_prompt": null,
-          "temperature": null,
-          "tool_failure_mode": null,
-          "tools": [],
-          "top_p": null,
-          "variant": null
-        }
-      }
-    },
-    "autoshare": {
-      "default": null,
-      "type": [
-        "boolean",
-        "null"
-      ]
-    },
-    "command": {
-      "default": null
-    },
-    "disabled_providers": {
-      "default": null,
-      "items": {
-        "type": "string"
-      },
-      "type": [
-        "array",
-        "null"
-      ]
-    },
-    "enabled_providers": {
-      "default": null,
-      "items": {
-        "type": "string"
-      },
-      "type": [
-        "array",
-        "null"
-      ]
-    },
-    "formatter": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/FormatterConfig"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
-    "instructions": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/InstructionList"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
-    "lsp": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/LspConfig"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
-    "mcp": {
       "additionalProperties": {
-        "$ref": "#/definitions/McpServerConfig"
+        "$ref": "#/$defs/ProfileConfig"
       },
       "default": {},
       "type": "object"
     },
-    "model": {
-      "default": null,
-      "type": [
-        "string",
-        "null"
+    "agents": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ProfileConfig"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "disabled_providers": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "enabled_providers": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "formatter": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/$defs/FormatterConfig",
+          "default": {
+            "enabled": true,
+            "experimental_oxfmt": false
+          }
+        }
       ]
+    },
+    "hashlineEdit": {
+      "default": true,
+      "type": "boolean"
+    },
+    "hashline_edit": {
+      "default": true,
+      "type": "boolean"
+    },
+    "hooks": {
+      "$ref": "#/$defs/HooksConfig",
+      "default": {
+        "lifecycle": []
+      }
+    },
+    "instructions": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ]
+    },
+    "integrations": {
+      "$ref": "#/$defs/IntegrationsConfig",
+      "default": {
+        "mcp": {
+          "servers": {}
+        },
+        "remote_search": {
+          "auth_token": null,
+          "endpoint": "https://mcp.exa.ai/mcp",
+          "max_retries": 1,
+          "require_auth": false,
+          "retry_backoff_ms": 250,
+          "timeout_secs": 30
+        }
+      }
+    },
+    "logging": {
+      "$ref": "#/$defs/LoggingConfig",
+      "default": {
+        "file": null,
+        "level": "info"
+      }
+    },
+    "lsp": {
+      "anyOf": [
+        {
+          "const": false
+        },
+        {
+          "$ref": "#/$defs/LspConfig",
+          "default": {
+            "disabled": false,
+            "servers": {}
+          }
+        }
+      ]
+    },
+    "mcp": {
+      "additionalProperties": {
+        "$ref": "#/$defs/McpServerConfig"
+      },
+      "type": "object"
+    },
+    "model": {
+      "type": "string"
+    },
+    "modelProfile": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ModelProfileConfig"
+      },
+      "default": {},
+      "type": "object"
     },
     "model_profile": {
       "additionalProperties": {
-        "$ref": "#/definitions/ModelProfileConfig"
+        "$ref": "#/$defs/ModelProfileConfig"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "model_profiles": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ModelProfileConfig"
       },
       "default": {},
       "type": "object"
     },
     "permission": {
-      "allOf": [
+      "anyOf": [
         {
-          "$ref": "#/definitions/PublicPermissionValue"
+          "enum": [
+            "allow",
+            "ask",
+            "deny"
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/PermissionsConfig"
+            },
+            {
+              "anyOf": [
+                {
+                  "required": [
+                    "defaults"
+                  ]
+                },
+                {
+                  "required": [
+                    "rules"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "*": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "bash": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                {
+                  "additionalProperties": {
+                    "enum": [
+                      "allow",
+                      "ask",
+                      "deny"
+                    ]
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "codesearch": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "doom_loop": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "edit": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                {
+                  "additionalProperties": {
+                    "enum": [
+                      "allow",
+                      "ask",
+                      "deny"
+                    ]
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "external_directory": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                {
+                  "additionalProperties": {
+                    "enum": [
+                      "allow",
+                      "ask",
+                      "deny"
+                    ]
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "lsp": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "network": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "question": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "read": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                {
+                  "additionalProperties": {
+                    "enum": [
+                      "allow",
+                      "ask",
+                      "deny"
+                    ]
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "shell": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                {
+                  "additionalProperties": {
+                    "enum": [
+                      "allow",
+                      "ask",
+                      "deny"
+                    ]
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "shellAllowlist": {
+              "$ref": "#/$defs/ShellAllowlist"
+            },
+            "shell_allowlist": {
+              "$ref": "#/$defs/ShellAllowlist"
+            },
+            "task": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                {
+                  "additionalProperties": {
+                    "enum": [
+                      "allow",
+                      "ask",
+                      "deny"
+                    ]
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "webfetch": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "websearch": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            }
+          },
+          "type": "object"
         }
-      ],
-      "default": {
-        "*": null,
-        "bash": null,
-        "codesearch": null,
-        "doom_loop": null,
-        "edit": null,
-        "external_directory": null,
-        "lsp": null,
-        "question": null,
-        "read": null,
-        "shell_allowlist": null,
-        "task": null,
-        "webfetch": null,
-        "websearch": null
-      }
+      ]
+    },
+    "permissions": {
+      "anyOf": [
+        {
+          "enum": [
+            "allow",
+            "ask",
+            "deny"
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/PermissionsConfig"
+            },
+            {
+              "anyOf": [
+                {
+                  "required": [
+                    "defaults"
+                  ]
+                },
+                {
+                  "required": [
+                    "rules"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "*": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "bash": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                {
+                  "additionalProperties": {
+                    "enum": [
+                      "allow",
+                      "ask",
+                      "deny"
+                    ]
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "codesearch": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "doom_loop": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "edit": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                {
+                  "additionalProperties": {
+                    "enum": [
+                      "allow",
+                      "ask",
+                      "deny"
+                    ]
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "external_directory": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                {
+                  "additionalProperties": {
+                    "enum": [
+                      "allow",
+                      "ask",
+                      "deny"
+                    ]
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "lsp": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "network": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "question": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "read": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                {
+                  "additionalProperties": {
+                    "enum": [
+                      "allow",
+                      "ask",
+                      "deny"
+                    ]
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "shell": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                {
+                  "additionalProperties": {
+                    "enum": [
+                      "allow",
+                      "ask",
+                      "deny"
+                    ]
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "shellAllowlist": {
+              "$ref": "#/$defs/ShellAllowlist"
+            },
+            "shell_allowlist": {
+              "$ref": "#/$defs/ShellAllowlist"
+            },
+            "task": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
+                {
+                  "additionalProperties": {
+                    "enum": [
+                      "allow",
+                      "ask",
+                      "deny"
+                    ]
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "webfetch": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            },
+            "websearch": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      ]
     },
     "provider": {
       "additionalProperties": {
-        "$ref": "#/definitions/ProviderConfig"
+        "$ref": "#/$defs/ProviderConfig"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "providers": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ProviderConfig"
       },
       "default": {},
       "type": "object"
     },
     "runtime": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/PublicRuntimeSettingsConfig"
-        }
-      ],
+      "$ref": "#/$defs/RuntimeConfig",
       "default": {
         "always_approve": false,
+        "background_tasks": {
+          "defaultConcurrency": 4,
+          "messageStalenessTimeoutMs": 10000,
+          "modelConcurrency": 2,
+          "providerConcurrency": 4,
+          "staleTimeoutMs": 30000
+        },
         "compaction": {
           "auto_retry_overflow": true,
           "enabled": true,
@@ -1884,32 +5135,32 @@
           "structured_summary_contract": true,
           "suppress_auto_compaction": false
         },
+        "deterministic": {
+          "enabled": false,
+          "seed": 0
+        },
+        "permissions": {
+          "ask_timeout_ms": 30000
+        },
+        "prompt": {
+          "wait_timeout_ms": 30000
+        },
         "provider_retry": {
           "base_delay_ms": 2000,
           "max_delay_ms": 30000,
           "max_retries": 2
-        }
+        },
+        "session_dir": ".agent-harness/sessions"
       }
     },
-    "server": {
-      "default": null
-    },
     "skills": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/SkillsConfig"
-        }
-      ],
+      "$ref": "#/$defs/SkillsConfig",
       "default": {
         "disabled": [],
         "global_roots": [
           "~/.config/agent-harness/skills"
         ],
-        "permissions": {
-          "*": "allow",
-          "experimental-*": "ask",
-          "internal-*": "deny"
-        },
+        "permissions": {},
         "project_roots": [
           ".agent-harness/skills",
           ".harness/skills"
@@ -1918,14 +5169,30 @@
         "walk_to_git_root": true
       }
     },
+    "smallModel": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "small_model": {
       "default": null,
       "type": [
         "string",
         "null"
       ]
+    },
+    "ui": {
+      "$ref": "#/$defs/UiConfig",
+      "default": {
+        "default_profile": null,
+        "keybindings": {},
+        "maxEventsInMemory": 25000,
+        "maxTranscriptCharsInMemory": 200000
+      }
     }
   },
-  "title": "PublicRuntimeConfig",
+  "title": "HarnessConfig",
   "type": "object"
 }

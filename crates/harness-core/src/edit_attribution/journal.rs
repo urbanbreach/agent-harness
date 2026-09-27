@@ -1,63 +1,42 @@
-//! Durable edit-attribution journal under `.agent-harness/edit-attribution.jsonl`.
-
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-use std::time::SystemTime;
-
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-
-use super::journal_store::{
-    append_record, apply_loaded_records, ensure_parent_for_write, hex_encode, load_records,
-    normalize_workspace_relative, now_unix_ms, write_bytes, JournalKind, JournalRecord,
-};
-use super::{
-    sha256_hex, AttributedEdit, EditAttributionSummary, EditAttributionTracker, EditSource,
-};
-
-/// Relative journal path under a workspace root.
+use super::*;
+use std::io::Write;
 pub const EDIT_ATTRIBUTION_JOURNAL_REL: &str = ".agent-harness/edit-attribution.jsonl";
 
-pub(super) const JOURNAL_VERSION: u32 = 1;
-
-/// Failures for durable attribution journal I/O and path safety.
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum EditAttributionError {
-    #[error("failed to create edit-attribution parent directory {path}: {source}")]
+    #[error("create attribution parent {path}: {source}")]
     CreateParent {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
-    #[error("failed to read edit-attribution journal {path}: {source}")]
+    #[error("read attribution journal {path}: {source}")]
     Read {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
-    #[error("failed to parse edit-attribution journal line in {path}: {detail}")]
+    #[error("invalid attribution journal {path}: {detail}")]
     Parse { path: String, detail: String },
-    #[error("failed to write edit-attribution journal {path}: {source}")]
+    #[error("write attribution journal {path}: {source}")]
     Write {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
-    #[error("invalid attribution path `{path}` (empty or escapes workspace)")]
+    #[error("invalid attribution path `{path}`")]
     InvalidPath { path: String },
-    #[error("no attribution record for path `{path}`")]
+    #[error("no attribution for `{path}`")]
     NotFound { path: String },
-    #[error("no agent snapshot available to revert path `{path}`")]
+    #[error("no agent snapshot for `{path}`")]
     NoAgentSnapshot { path: String },
-    #[error("failed to restore path `{path}`: {source}")]
+    #[error("restore attribution path {path}: {source}")]
     Restore {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
 }
-
-/// Result of querying one path's latest attribution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EditAttributionQuery {
     pub path: String,
@@ -66,382 +45,218 @@ pub struct EditAttributionQuery {
     pub drifted: bool,
     pub one_line: String,
 }
-
-/// Result of reverting one path to the last agent snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RevertAttributionResult {
     pub path: String,
     pub restored_sha256: String,
     pub bytes_written: usize,
 }
-
-/// Durable multi-path edit attribution journal for one workspace.
-#[derive(Debug, Clone)]
 pub struct EditAttributionJournal {
     workspace_root: PathBuf,
     journal_path: PathBuf,
-    tracker: EditAttributionTracker,
-    agent_snapshots: BTreeMap<String, Vec<u8>>,
-    next_seq: u64,
+    state: records::State,
 }
-
 impl EditAttributionJournal {
-    pub fn open(workspace_root: impl Into<PathBuf>) -> Result<Self, EditAttributionError> {
-        let workspace_root = workspace_root.into();
-        let journal_path = workspace_root.join(EDIT_ATTRIBUTION_JOURNAL_REL);
-        let mut journal = Self {
-            workspace_root,
-            journal_path: journal_path.clone(),
-            tracker: EditAttributionTracker::new(),
-            agent_snapshots: BTreeMap::new(),
-            next_seq: 1,
-        };
-        let records = load_records(&journal_path)?;
-        apply_loaded_records(
-            &mut journal.tracker,
-            &mut journal.agent_snapshots,
-            &mut journal.next_seq,
-            &records,
-        );
+    pub fn open(root: impl Into<PathBuf>) -> Result<Self, EditAttributionError> {
+        let mut journal = Self::empty(root);
+        crate::store::validate_private_path(&journal.workspace_root).map_err(|source| {
+            EditAttributionError::Read {
+                path: journal.workspace_root.display().to_string(),
+                source,
+            }
+        })?;
+        journal.state = records::load(&journal.journal_path)?;
         Ok(journal)
     }
-
-    pub fn empty(workspace_root: impl Into<PathBuf>) -> Self {
-        let workspace_root = workspace_root.into();
-        let journal_path = workspace_root.join(EDIT_ATTRIBUTION_JOURNAL_REL);
+    pub fn empty(root: impl Into<PathBuf>) -> Self {
+        let workspace_root = root.into();
         Self {
+            journal_path: workspace_root.join(EDIT_ATTRIBUTION_JOURNAL_REL),
             workspace_root,
-            journal_path,
-            tracker: EditAttributionTracker::new(),
-            agent_snapshots: BTreeMap::new(),
-            next_seq: 1,
+            state: records::State::default(),
         }
     }
-
     pub fn workspace_root(&self) -> &Path {
         &self.workspace_root
     }
-
     pub fn journal_path(&self) -> &Path {
         &self.journal_path
     }
-
     pub fn tracker(&self) -> &EditAttributionTracker {
-        &self.tracker
+        &self.state.tracker
     }
-
     pub fn summary(&self) -> EditAttributionSummary {
-        self.tracker.summary()
+        self.state.tracker.summary()
     }
-
     pub fn list(&self) -> Vec<&AttributedEdit> {
-        self.tracker.list()
+        self.state.tracker.list()
     }
-
     pub fn query(
         &self,
         path: impl AsRef<Path>,
     ) -> Result<EditAttributionQuery, EditAttributionError> {
-        let path_key = normalize_workspace_relative(&self.workspace_root, path.as_ref())?;
-        let entry = self
+        let key = self.key(path.as_ref())?;
+        let state = records::load(&self.journal_path)?;
+        let entry = state
             .tracker
-            .get(&path_key)
-            .ok_or_else(|| EditAttributionError::NotFound {
-                path: path_key.clone(),
-            })?;
+            .get(&key)
+            .ok_or_else(|| EditAttributionError::NotFound { path: key.clone() })?;
         Ok(EditAttributionQuery {
-            path: entry.path.clone(),
+            path: key.clone(),
             source: entry.source,
             content_sha256: entry.content_sha256.clone(),
-            drifted: self.tracker.is_drifted(&entry.path),
+            drifted: state.tracker.is_drifted(&key),
             one_line: entry.one_line(),
         })
     }
-
     pub fn record_agent_tool_edit(
         &mut self,
         path: impl AsRef<Path>,
         content: &[u8],
         mtime: Option<SystemTime>,
     ) -> Result<AttributedEdit, EditAttributionError> {
-        let path_key = normalize_workspace_relative(&self.workspace_root, path.as_ref())?;
-        let entry = self
-            .tracker
-            .record_agent_tool_edit(&path_key, content, mtime);
-        self.agent_snapshots
-            .insert(path_key.clone(), content.to_vec());
-        let seq = self.alloc_seq();
-        append_record(
-            &self.journal_path,
-            &JournalRecord {
-                v: JOURNAL_VERSION,
-                seq,
-                path: path_key,
-                source: EditSource::AgentTool,
-                kind: JournalKind::AgentTool,
-                content_sha256: entry.content_sha256.clone(),
-                mtime_unix_ms: entry.mtime_unix_ms,
-                agent_snapshot_hex: Some(hex_encode(content)),
-                ts_unix_ms: now_unix_ms(),
-            },
-        )?;
-        Ok(entry)
+        self.record(path.as_ref(), content, mtime, EditSource::AgentTool)
     }
-
     pub fn observe_external(
         &mut self,
         path: impl AsRef<Path>,
         content: &[u8],
         mtime: Option<SystemTime>,
     ) -> Result<AttributedEdit, EditAttributionError> {
-        let path_key = normalize_workspace_relative(&self.workspace_root, path.as_ref())?;
-        let was_agent = matches!(
-            self.tracker.get(&path_key).map(|e| e.source),
-            Some(EditSource::AgentTool)
-        );
-        let prev_hash = self
-            .tracker
-            .get(&path_key)
-            .map(|e| e.content_sha256.clone());
-        let entry = self.tracker.observe_external(&path_key, content, mtime);
-        let kind = if was_agent
-            && entry.source == EditSource::External
-            && prev_hash.as_deref() != Some(entry.content_sha256.as_str())
-        {
-            JournalKind::Drift
-        } else if entry.source == EditSource::AgentTool {
-            JournalKind::AgentTool
+        self.record(path.as_ref(), content, mtime, EditSource::External)
+    }
+    fn record(
+        &mut self,
+        path: &Path,
+        content: &[u8],
+        mtime: Option<SystemTime>,
+        source: EditSource,
+    ) -> Result<AttributedEdit, EditAttributionError> {
+        let key = self.key(path)?;
+        records::validate_content(&self.journal_path, content)?;
+        let _lock = crate::store::lock_private_parent(&self.journal_path)
+            .map_err(|source| self.write_error(source))?;
+        let mut state = records::load(&self.journal_path)?;
+        let entry = if source == EditSource::AgentTool {
+            state.snapshots.insert(key.clone(), content.into());
+            state.tracker.record_agent_tool_edit(&key, content, mtime)
         } else {
-            JournalKind::External
+            state.tracker.observe_external(&key, content, mtime)
         };
-        let seq = self.alloc_seq();
-        append_record(
-            &self.journal_path,
-            &JournalRecord {
-                v: JOURNAL_VERSION,
-                seq,
-                path: path_key,
-                source: entry.source,
-                kind,
-                content_sha256: entry.content_sha256.clone(),
-                mtime_unix_ms: entry.mtime_unix_ms,
-                agent_snapshot_hex: None,
-                ts_unix_ms: now_unix_ms(),
-            },
-        )?;
+        records::save(&self.journal_path, &state)?;
+        self.state = state;
         Ok(entry)
     }
-
     pub fn revert_path(
         &mut self,
         path: impl AsRef<Path>,
     ) -> Result<RevertAttributionResult, EditAttributionError> {
-        let path_key = normalize_workspace_relative(&self.workspace_root, path.as_ref())?;
-        let snapshot = self
-            .agent_snapshots
-            .get(&path_key)
-            .cloned()
-            .ok_or_else(|| EditAttributionError::NoAgentSnapshot {
-                path: path_key.clone(),
+        let key = self.key(path.as_ref())?;
+        let _lock = crate::store::lock_private_parent(&self.journal_path)
+            .map_err(|source| self.write_error(source))?;
+        let mut state = records::load(&self.journal_path)?;
+        let bytes = state
+            .snapshots
+            .get(&key)
+            .ok_or_else(|| EditAttributionError::NoAgentSnapshot { path: key.clone() })?;
+        let target = self.workspace_root.join(&key);
+        let (before, _) =
+            hash_path_contents(&target).map_err(|source| EditAttributionError::Restore {
+                path: key.clone(),
+                source,
             })?;
-        let abs = self.workspace_root.join(&path_key);
-        ensure_parent_for_write(&abs)?;
-        self.ensure_revert_target_is_contained(&path_key, &abs)?;
-        write_bytes(&abs, &snapshot)?;
-        let entry = self.record_agent_tool_edit(&path_key, &snapshot, None)?;
-        Ok(RevertAttributionResult {
-            path: path_key,
+        let permissions = fs::metadata(&target)
+            .map_err(|source| EditAttributionError::Restore {
+                path: key.clone(),
+                source,
+            })?
+            .permissions();
+        let restore_error = |source| EditAttributionError::Restore {
+            path: key.clone(),
+            source,
+        };
+        let rollback = |error| match replace_file(&target, &before, permissions.clone()) {
+            Ok(()) => error,
+            Err(source) => restore_error(io::Error::other(format!(
+                "{error}; rollback failed: {source}"
+            ))),
+        };
+        replace_file(&target, bytes, permissions.clone())
+            .map_err(|source| rollback(restore_error(source)))?;
+        let entry = state.tracker.record_agent_tool_edit(&key, bytes, None);
+        let result = RevertAttributionResult {
+            path: key.clone(),
             restored_sha256: entry.content_sha256,
-            bytes_written: snapshot.len(),
-        })
+            bytes_written: bytes.len(),
+        };
+        records::save(&self.journal_path, &state).map_err(rollback)?;
+        self.state = state;
+        Ok(result)
     }
-
-    pub fn diff(&self, path: impl AsRef<Path>) -> Result<super::DiffResult, EditAttributionError> {
-        let path_key = normalize_workspace_relative(&self.workspace_root, path.as_ref())?;
-        if self.tracker.get(&path_key).is_none() {
-            return Err(EditAttributionError::NotFound {
-                path: path_key.clone(),
-            });
-        }
-        let snapshot = self
-            .agent_snapshots
-            .get(&path_key)
-            .cloned()
-            .ok_or_else(|| EditAttributionError::NoAgentSnapshot {
-                path: path_key.clone(),
-            })?;
-        let current = std::fs::read(self.workspace_root.join(&path_key)).unwrap_or_default();
-        Ok(super::compute_diff(&path_key, &snapshot, &current))
+    pub fn diff(&self, path: impl AsRef<Path>) -> Result<DiffResult, EditAttributionError> {
+        let (key, snapshot, current) = self.comparison(path.as_ref())?;
+        Ok(compute_diff(&key, &snapshot, &current))
     }
-
-    pub fn blame(
-        &self,
-        path: impl AsRef<Path>,
-    ) -> Result<super::BlameResult, EditAttributionError> {
-        let path_key = normalize_workspace_relative(&self.workspace_root, path.as_ref())?;
-        if self.tracker.get(&path_key).is_none() {
-            return Err(EditAttributionError::NotFound {
-                path: path_key.clone(),
-            });
-        }
-        let snapshot = self
-            .agent_snapshots
-            .get(&path_key)
-            .cloned()
-            .ok_or_else(|| EditAttributionError::NoAgentSnapshot {
-                path: path_key.clone(),
-            })?;
-        let current = std::fs::read(self.workspace_root.join(&path_key)).unwrap_or_default();
-        Ok(super::compute_blame(&path_key, &snapshot, &current))
+    pub fn blame(&self, path: impl AsRef<Path>) -> Result<BlameResult, EditAttributionError> {
+        let (key, snapshot, current) = self.comparison(path.as_ref())?;
+        Ok(compute_blame(&key, &snapshot, &current))
     }
-
-    fn alloc_seq(&mut self) -> u64 {
-        let seq = self.next_seq;
-        self.next_seq = self.next_seq.saturating_add(1);
-        seq
+    fn comparison(&self, path: &Path) -> Result<(String, Vec<u8>, Vec<u8>), EditAttributionError> {
+        let key = self.key(path)?;
+        let mut state = records::load(&self.journal_path)?;
+        let snapshot = state
+            .snapshots
+            .remove(&key)
+            .ok_or_else(|| EditAttributionError::NoAgentSnapshot { path: key.clone() })?;
+        let current =
+            crate::store::read_private_bytes(&self.workspace_root.join(&key), 8 * 1024 * 1024)
+                .map_err(|source| EditAttributionError::Read {
+                    path: key.clone(),
+                    source,
+                })?
+                .unwrap_or_default();
+        Ok((key, snapshot, current))
     }
-
-    fn ensure_revert_target_is_contained(
-        &self,
-        path_key: &str,
-        target: &Path,
-    ) -> Result<(), EditAttributionError> {
-        if target
-            .symlink_metadata()
-            .is_ok_and(|metadata| metadata.file_type().is_symlink())
-        {
-            return Err(EditAttributionError::InvalidPath {
-                path: path_key.to_string(),
-            });
+    fn key(&self, path: &Path) -> Result<String, EditAttributionError> {
+        let invalid = || EditAttributionError::InvalidPath {
+            path: path.display().to_string(),
+        };
+        let relative = if path.is_absolute() {
+            path.strip_prefix(&self.workspace_root)
+                .map_err(|_| invalid())?
+        } else {
+            path
+        };
+        relative.to_str().ok_or_else(invalid)?;
+        let key = normalize_path(relative);
+        records::validate_key(&key).map_err(|()| invalid())?;
+        crate::store::validate_private_path(&self.workspace_root.join(&key))
+            .map_err(|_| invalid())?;
+        Ok(key)
+    }
+    fn write_error(&self, source: io::Error) -> EditAttributionError {
+        EditAttributionError::Write {
+            path: self.journal_path.display().to_string(),
+            source,
         }
-        let workspace =
-            self.workspace_root
-                .canonicalize()
-                .map_err(|_| EditAttributionError::InvalidPath {
-                    path: path_key.to_string(),
-                })?;
-        let parent = target
-            .parent()
-            .and_then(|parent| parent.canonicalize().ok())
-            .filter(|parent| parent.starts_with(&workspace));
-        if parent.is_none() {
-            return Err(EditAttributionError::InvalidPath {
-                path: path_key.to_string(),
-            });
-        }
-        Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn journal_records_agent_external_and_drift_with_durable_side_effects() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root = dir.path();
-        let mut journal = EditAttributionJournal::open(root).expect("open");
-
-        journal
-            .record_agent_tool_edit("src/agent.rs", b"agent-bytes", None)
-            .expect("agent");
-        journal
-            .observe_external("src/external.rs", b"external-bytes", None)
-            .expect("external");
-        journal
-            .record_agent_tool_edit("src/drift.rs", b"agent-v1", None)
-            .expect("drift agent");
-        journal
-            .observe_external("src/drift.rs", b"external-v2", None)
-            .expect("drift observe");
-
-        assert!(journal.journal_path().is_file());
-        let raw = fs::read_to_string(journal.journal_path()).expect("read journal");
-        assert!(raw.lines().count() >= 4);
-        assert!(raw.contains("\"kind\":\"agent_tool\""));
-        assert!(raw.contains("\"kind\":\"external\""));
-        assert!(raw.contains("\"kind\":\"drift\""));
-
-        let summary = journal.summary();
-        assert_eq!(summary.agent_tool, 1);
-        assert_eq!(summary.external, 1);
-        assert_eq!(summary.drift, 1);
-        assert_eq!(summary.total, 3);
-
-        let reloaded = EditAttributionJournal::open(root).expect("reload");
-        let re_summary = reloaded.summary();
-        assert_eq!(re_summary.total, 3);
-        assert_eq!(re_summary.agent_tool, 1);
-        assert_eq!(re_summary.external, 1);
-        assert_eq!(re_summary.drift, 1);
-        assert_eq!(
-            reloaded.query("src/agent.rs").expect("query").source,
-            EditSource::AgentTool
-        );
-        assert!(reloaded.query("src/drift.rs").expect("query").drifted);
-    }
-
-    #[test]
-    fn query_fails_closed_for_unknown_path() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let journal = EditAttributionJournal::open(dir.path()).expect("open");
-        let err = journal.query("missing.rs").expect_err("unknown");
-        assert!(matches!(err, EditAttributionError::NotFound { .. }));
-    }
-
-    #[test]
-    fn revert_path_fails_closed_without_agent_snapshot() {
-        // arrange
-        let dir = tempfile::tempdir().expect("tempdir");
-        let mut journal = EditAttributionJournal::open(dir.path()).expect("open");
-
-        // act
-        let err = journal
-            .revert_path("src/never-edited.rs")
-            .expect_err("no agent snapshot");
-
-        // assert
-        assert!(matches!(err, EditAttributionError::NoAgentSnapshot { .. }));
-    }
-
-    #[test]
-    fn revert_path_restores_agent_snapshot_after_drift() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root = dir.path();
-        let mut journal = EditAttributionJournal::open(root).expect("open");
-        let rel = "src/file.rs";
-        let abs = root.join(rel);
-        fs::create_dir_all(abs.parent().expect("parent")).expect("mkdir");
-        fs::write(&abs, b"agent-content").expect("write agent");
-        journal
-            .record_agent_tool_edit(rel, b"agent-content", None)
-            .expect("record");
-        fs::write(&abs, b"human-edit").expect("external write");
-        journal
-            .observe_external(rel, b"human-edit", None)
-            .expect("observe");
-        assert_eq!(journal.query(rel).expect("q").source, EditSource::External);
-
-        let reverted = journal.revert_path(rel).expect("revert");
-
-        assert_eq!(reverted.path, rel);
-        assert_eq!(fs::read(&abs).expect("read"), b"agent-content");
-        assert_eq!(
-            journal.query(rel).expect("q2").source,
-            EditSource::AgentTool
-        );
-        assert_eq!(reverted.restored_sha256, sha256_hex(b"agent-content"));
-    }
-
-    #[test]
-    fn invalid_path_escape_fails_closed() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let mut journal = EditAttributionJournal::open(dir.path()).expect("open");
-        let err = journal
-            .record_agent_tool_edit("../escape.rs", b"x", None)
-            .expect_err("escape");
-        assert!(matches!(err, EditAttributionError::InvalidPath { .. }));
-    }
+pub(crate) fn replace_file(
+    path: &Path,
+    bytes: &[u8],
+    permissions: fs::Permissions,
+) -> io::Result<()> {
+    crate::store::validate_private_path(path)?;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut staged = tempfile::NamedTempFile::new_in(parent)?;
+    staged.write_all(bytes)?;
+    staged.as_file().set_permissions(permissions)?;
+    staged.as_file().sync_all()?;
+    staged.persist(path).map_err(|e| e.error)?;
+    #[cfg(unix)]
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
 }
