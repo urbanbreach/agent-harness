@@ -1,0 +1,22 @@
+{
+  "reviewer": "/root/tui_review",
+  "recorded_at": "2026-09-27T19:24:05.348046+00:00",
+  "decision": "approved",
+  "scope": "ASCII selection-row batching and its recorded evidence; not whole-rewrite signoff",
+  "blocking_findings": [],
+  "source": {
+    "crates/harness-tui/src/ui_transcript_selection/rows.rs": {
+      "sha256": "7b4eb43f91b9f56c4ac1bbe2eb807fad6799126922a9375f7d202ea94c5a4638",
+      "lines": 193
+    }
+  },
+  "verified": [
+    "Final source, source patch and hash agree; flattened Clippy guard preserves reviewed behavior.",
+    "All 84 raw measurement reports recomputed; six tool and fourteen general limits pass unchanged.",
+    "41120 row projections, 555 complete reference frames and 733 animation pairs agree.",
+    "Browser comparisons and PTY restoration/resource cleanup pass.",
+    "Original scroll difference matches previously published R8 behavior.",
+    "README accurately records limits, 32-line increase and unfinished rewrite."
+  ],
+  "review_summary": "Approved for this bounded slice. No blocking findings."
+}

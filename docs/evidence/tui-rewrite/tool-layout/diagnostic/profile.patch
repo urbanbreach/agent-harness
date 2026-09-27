@@ -1,0 +1,72 @@
+diff --git i/crates/harness-tui/src/ui_transcript_frame.rs w/crates/harness-tui/src/ui_transcript_frame.rs
+index 08e0bd8d..73373611 100644
+--- i/crates/harness-tui/src/ui_transcript_frame.rs
++++ w/crates/harness-tui/src/ui_transcript_frame.rs
+@@ -47,6 +47,7 @@ impl PreparedTranscript {
+     }
+ 
+     fn build(&self, app: &AppState, theme: &Theme, width: u16, surface: Color) -> PreparedLayout {
++        let started = std::time::Instant::now();
+         let key = app.transcript_render_cache_key();
+         let settings = app.transcript_settings_key();
+         let current =
+@@ -67,6 +68,8 @@ impl PreparedTranscript {
+             },
+             |entry| Arc::clone(&entry.sections),
+         );
++        let section_ns = started.elapsed().as_nanos();
++        let mut surfaces_ns = 0;
+         let previous = self.layouts.iter().rev().find(|entry| {
+             entry.theme == *theme && entry.width == width && entry.surface == surface
+         });
+@@ -83,9 +86,13 @@ impl PreparedTranscript {
+                     .flatten()
+             },
+             |section, theme, width, surface| {
+-                build_transcript_render_surfaces(section, theme, width, surface)
++                let start = std::time::Instant::now();
++                let result = build_transcript_render_surfaces(section, theme, width, surface);
++                surfaces_ns += start.elapsed().as_nanos();
++                result
+             },
+         );
++        eprintln!("PROFILE_FRAME width={width} disclosed={} sections_ns={section_ns} surfaces_ns={surfaces_ns} total_ns={}", app.generic_tool_output_visible(), started.elapsed().as_nanos());
+         PreparedLayout {
+             key,
+             settings,
+diff --git i/crates/harness-tui/src/ui_transcript_layout.rs w/crates/harness-tui/src/ui_transcript_layout.rs
+index 3ee3c3de..53995e56 100644
+--- i/crates/harness-tui/src/ui_transcript_layout.rs
++++ w/crates/harness-tui/src/ui_transcript_layout.rs
+@@ -432,6 +432,7 @@ pub(super) fn measure_transcript_layout<Section>(
+         Color,
+     ) -> Vec<ResolvedTranscriptVisualEntryDraft>,
+ ) -> MeasuredTranscriptLayout {
++    let mut selection_ns = 0;
+     let mut top_row = 0;
+     let mut measured_sections = Vec::with_capacity(sections.len());
+ 
+@@ -474,6 +475,7 @@ pub(super) fn measure_transcript_layout<Section>(
+                     .collect::<Vec<_>>()
+                     .join("\n"),
+             );
++            let selection_started = std::time::Instant::now();
+             let semantic_selection = surface.selection_rows.is_some();
+             let selection_rows = surface.selection_rows.map_or_else(
+                 || {
+@@ -492,6 +494,7 @@ pub(super) fn measure_transcript_layout<Section>(
+                     rows
+                 },
+             );
++            selection_ns += selection_started.elapsed().as_nanos();
+             measured_surfaces.push(TranscriptVisualEntry {
+                 source_text,
+                 rendered_text,
+@@ -532,6 +535,7 @@ pub(super) fn measure_transcript_layout<Section>(
+         measured_sections.push(Arc::new(measured_section));
+     }
+ 
++    eprintln!("PROFILE_SELECTION width={width} selection_ns={selection_ns}");
+     MeasuredTranscriptLayout {
+         sections: measured_sections,
+         total_height: top_row,

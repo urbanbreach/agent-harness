@@ -1,0 +1,27 @@
+{
+  "comparisons": [
+    {
+      "name": "before",
+      "pixels_cells_modes_equal": true,
+      "observer_differences": {
+        "renderCount": {
+          "before": 8,
+          "candidate": 9
+        }
+      },
+      "candidate_png_sha256": "c9ac8a3935a2bf174802fd80c6bfb76018a72cc52ba36c510af1c684eba634ed"
+    },
+    {
+      "name": "selected",
+      "pixels_cells_modes_equal": true,
+      "observer_differences": {
+        "renderCount": {
+          "before": 12,
+          "candidate": 13
+        }
+      },
+      "candidate_png_sha256": "87be22208cb7577436af9a0f3cc136f61c435ab9a52fce758447576bd1086d1d"
+    }
+  ],
+  "both_restoration_and_cleanup_pass": true
+}

@@ -1,0 +1,66 @@
+[
+  {
+    "side": "reference",
+    "sample": "1",
+    "baseline": "docs/evidence/tui-rewrite/settlement-suffix/performance/reference/scroll-1000-1.json.gz",
+    "baseline_sha256": "9ca3c8199b466604a83d07f9ccf92af94df30448d164d46f549c0a4c02bc5d17",
+    "visible_sha256": "b604c2518f79668dc86e93faa9ca02a2c8fa8184fd738b5068007b82fcba34a4",
+    "equal": true
+  },
+  {
+    "side": "reference",
+    "sample": "2",
+    "baseline": "docs/evidence/tui-rewrite/settlement-suffix/performance/reference/scroll-1000-1.json.gz",
+    "baseline_sha256": "9ca3c8199b466604a83d07f9ccf92af94df30448d164d46f549c0a4c02bc5d17",
+    "visible_sha256": "b604c2518f79668dc86e93faa9ca02a2c8fa8184fd738b5068007b82fcba34a4",
+    "equal": true
+  },
+  {
+    "side": "reference",
+    "sample": "3",
+    "baseline": "docs/evidence/tui-rewrite/settlement-suffix/performance/reference/scroll-1000-1.json.gz",
+    "baseline_sha256": "9ca3c8199b466604a83d07f9ccf92af94df30448d164d46f549c0a4c02bc5d17",
+    "visible_sha256": "b604c2518f79668dc86e93faa9ca02a2c8fa8184fd738b5068007b82fcba34a4",
+    "equal": true
+  },
+  {
+    "side": "reference",
+    "sample": "alloc",
+    "baseline": "docs/evidence/tui-rewrite/settlement-suffix/performance/reference/scroll-1000-1.json.gz",
+    "baseline_sha256": "9ca3c8199b466604a83d07f9ccf92af94df30448d164d46f549c0a4c02bc5d17",
+    "visible_sha256": "b604c2518f79668dc86e93faa9ca02a2c8fa8184fd738b5068007b82fcba34a4",
+    "equal": true
+  },
+  {
+    "side": "candidate",
+    "sample": "1",
+    "baseline": "docs/evidence/tui-rewrite/settlement-suffix/performance/candidate/scroll-1000-1.json.gz",
+    "baseline_sha256": "7a0ffd92aa16beb4e23903fd01b9bd8df7595a748c5bd83549ffdff2158ae3e7",
+    "visible_sha256": "cbe249df3180ad37beba48d4ab746175dcf01ba280b0e37d138b27c6160baea1",
+    "equal": true
+  },
+  {
+    "side": "candidate",
+    "sample": "2",
+    "baseline": "docs/evidence/tui-rewrite/settlement-suffix/performance/candidate/scroll-1000-1.json.gz",
+    "baseline_sha256": "7a0ffd92aa16beb4e23903fd01b9bd8df7595a748c5bd83549ffdff2158ae3e7",
+    "visible_sha256": "cbe249df3180ad37beba48d4ab746175dcf01ba280b0e37d138b27c6160baea1",
+    "equal": true
+  },
+  {
+    "side": "candidate",
+    "sample": "3",
+    "baseline": "docs/evidence/tui-rewrite/settlement-suffix/performance/candidate/scroll-1000-1.json.gz",
+    "baseline_sha256": "7a0ffd92aa16beb4e23903fd01b9bd8df7595a748c5bd83549ffdff2158ae3e7",
+    "visible_sha256": "cbe249df3180ad37beba48d4ab746175dcf01ba280b0e37d138b27c6160baea1",
+    "equal": true
+  },
+  {
+    "side": "candidate",
+    "sample": "alloc",
+    "baseline": "docs/evidence/tui-rewrite/settlement-suffix/performance/candidate/scroll-1000-1.json.gz",
+    "baseline_sha256": "7a0ffd92aa16beb4e23903fd01b9bd8df7595a748c5bd83549ffdff2158ae3e7",
+    "visible_sha256": "cbe249df3180ad37beba48d4ab746175dcf01ba280b0e37d138b27c6160baea1",
+    "equal": true
+  }
+]

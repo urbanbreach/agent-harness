@@ -1,0 +1,11 @@
+{
+  "scope": "Independent read-only source review; final evidence review pending",
+  "reviewer": "/root/tui_review",
+  "decision": "approved for validation",
+  "notes": [
+    "Printable ASCII validation makes byte slices safe and preserves one-cell increments.",
+    "Leading spaces, end/last-cell state, later combining marks and rail replacement remain equivalent.",
+    "Prepared selection ownership and query costs remain unchanged; no lazy fallback or index added.",
+    "Final uninstrumented measurements must decide acceptance."
+  ]
+}
