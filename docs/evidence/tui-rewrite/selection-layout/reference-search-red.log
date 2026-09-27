@@ -1,0 +1,46 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/.codex/worktrees/tui-reference/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.73s
+────────────
+ Nextest run ID cdab6c37-a544-4b74-91f8-f79f18622e5c with nextest profile: ci
+    Starting 1 test across 1 binary (7 tests skipped)
+        FAIL [   0.019s] (1/1) harness-tui::rewrite_viewer_selection_test search_accepts_complete_unicode_graphemes_and_rejects_partial_ones
+  stdout ───
+
+    running 1 test
+    test search_accepts_complete_unicode_graphemes_and_rejects_partial_ones ... FAILED
+
+    failures:
+
+    failures:
+        search_accepts_complete_unicode_graphemes_and_rejects_partial_ones
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'search_accepts_complete_unicode_graphemes_and_rejects_partial_ones' (2356889) panicked at crates/harness-tui/tests/rewrite_viewer_selection_test.rs:86:5:
+    assertion failed: viewer.set_search_query("\u{1161}").no_result
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.021s] 1 test run: 0 passed, 1 failed, 7 skipped
+        FAIL [   0.019s] (1/1) harness-tui::rewrite_viewer_selection_test search_accepts_complete_unicode_graphemes_and_rejects_partial_ones
+  stdout ───
+
+    running 1 test
+    test search_accepts_complete_unicode_graphemes_and_rejects_partial_ones ... FAILED
+
+    failures:
+
+    failures:
+        search_accepts_complete_unicode_graphemes_and_rejects_partial_ones
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'search_accepts_complete_unicode_graphemes_and_rejects_partial_ones' (2356889) panicked at crates/harness-tui/tests/rewrite_viewer_selection_test.rs:86:5:
+    assertion failed: viewer.set_search_query("\u{1161}").no_result
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

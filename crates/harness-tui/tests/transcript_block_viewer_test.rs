@@ -67,9 +67,33 @@ fn search_wraps_back_and_forward_and_reports_no_result() -> TestResult {
 
 #[test]
 fn search_accepts_complete_unicode_graphemes_and_rejects_partial_ones() -> TestResult {
+    // A spacing mark shares a grapheme but still occupies its own terminal cell.
+    let mut spacing = viewer("कःX")?;
+    spacing.set_search_query("X");
+    let area = Rect::new(0, 0, 40, 12);
+    let mut buffer = Buffer::empty(area);
+    render_to_buffer(
+        &mut buffer,
+        area,
+        &spacing.render_surface(area),
+        &Theme::harness_dark(),
+    );
+    let marker = buffer
+        .content
+        .iter()
+        .find(|cell| cell.symbol() == "X")
+        .ok_or("missing painted marker")?;
+    assert!(marker.modifier.contains(ratatui::style::Modifier::REVERSED));
+    spacing.mouse_drag(
+        CellPoint::new(0, 2),
+        CellPoint::new(0, 2),
+        Viewport::new(0, 1),
+    )?;
+    assert_eq!(spacing.copy_selection_text()?, "X");
+
     // arrange
     // Given: combining text, a ZWJ emoji, and CJK content.
-    let mut viewer = viewer("e\u{301} 👩‍💻 中")?;
+    let mut viewer = viewer("e\u{301} 👩‍💻 中 \u{1100}\u{1161}\u{11a8}")?;
 
     // When: complete clusters and an incomplete cluster are searched.
     let combining = viewer.set_search_query("e\u{301}");
@@ -82,6 +106,13 @@ fn search_accepts_complete_unicode_graphemes_and_rejects_partial_ones() -> TestR
     assert_eq!(combining.match_count, 1);
     assert_eq!(emoji.match_count, 1);
     assert!(partial.no_result);
+    assert_eq!(
+        viewer
+            .set_search_query("\u{1100}\u{1161}\u{11a8}")
+            .match_count,
+        1
+    );
+    assert!(viewer.set_search_query("\u{1161}").no_result);
     Ok(())
 }
 

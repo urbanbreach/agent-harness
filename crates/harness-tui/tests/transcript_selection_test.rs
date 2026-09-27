@@ -49,6 +49,16 @@ fn cjk_and_emoji_selection_stays_on_grapheme_boundaries() {
     // assert
     assert_eq!(emoji.text, "👩‍💻");
     assert_eq!(copied, "e\u{301} 👩‍💻");
+
+    // A decomposed Hangul syllable occupies one two-cell grapheme.
+    let syllable = "\u{1100}\u{1161}\u{11a8}";
+    let text = WrappedText::new(syllable, 2).expect("valid width");
+    assert_eq!(text.row_count(), 1, "a syllable must not split across rows");
+    assert_eq!(
+        text.copy(text.select(CellPoint::new(0, 1), SelectionMode::Line))
+            .expect("syllable is selectable"),
+        syllable,
+    );
 }
 
 #[test]

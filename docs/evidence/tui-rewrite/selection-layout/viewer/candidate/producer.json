@@ -1,0 +1,7 @@
+{
+  "entrypoints": "AppState Enter and subsequent key handlers; render_app via CrosstermBackend",
+  "side": "candidate",
+  "timing": {
+    "mode": "deterministic fixture clock; static frame replay; not PTY or latency"
+  }
+}

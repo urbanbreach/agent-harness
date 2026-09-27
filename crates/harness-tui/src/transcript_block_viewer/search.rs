@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::transcript_selection::{CellPoint, WrappedText};
+use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchDirection {
@@ -148,27 +148,13 @@ fn find_matches(text: &str, query: &str) -> Vec<SearchMatch> {
 }
 
 fn grapheme_boundaries(text: &str) -> Vec<usize> {
-    let lines = text.split('\n').collect::<Vec<_>>();
-    let mut boundaries = vec![0];
+    let mut boundaries = Vec::new();
     let mut offset = 0;
-    for (line_index, line) in lines.iter().enumerate() {
-        let width = line.len().max(1);
-        if let Ok(wrapped) = WrappedText::new(line, width) {
-            for cell in 0..=line.len() {
-                if let Some(grapheme) = wrapped.grapheme_at(CellPoint::new(0, cell)) {
-                    boundaries.push(offset + grapheme.range.byte_range.start);
-                    boundaries.push(offset + grapheme.range.byte_range.end);
-                }
-            }
-        }
+    for line in text.split('\n') {
+        boundaries.extend(line.grapheme_indices(true).map(|(byte, _)| offset + byte));
         offset += line.len();
         boundaries.push(offset);
-        if line_index + 1 < lines.len() {
-            offset += 1;
-            boundaries.push(offset);
-        }
+        offset += 1;
     }
-    boundaries.sort_unstable();
-    boundaries.dedup();
     boundaries
 }

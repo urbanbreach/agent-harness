@@ -12,7 +12,6 @@ use super::{
     ViewerReturnSnapshot,
 };
 
-const DEFAULT_WIDTH: usize = 80;
 const DEFAULT_HEIGHT: usize = 24;
 
 pub struct ViewerState {
@@ -49,24 +48,18 @@ impl ViewerState {
         content: ViewerBlockContent,
         return_snapshot: ViewerReturnSnapshot,
     ) -> Result<Self, ViewerError> {
-        let mode = ViewerMode::Wrapped;
-        let width = DEFAULT_WIDTH;
-        let height = DEFAULT_HEIGHT;
-        let wrapped =
-            WrappedText::new(content.text(mode), width).map_err(ViewerError::Selection)?;
-        let layout = viewer_layout(block_id, content.text(mode), width, height)?;
         let mut state = Self {
             block_id,
-            display_text: content.text(mode).to_string(),
+            display_text: String::new(),
             content,
             styled_lines: Vec::new(),
             row_joiners: Vec::new(),
             theme: crate::theme::Theme::default(),
             return_snapshot,
-            mode,
-            width,
-            height,
-            wrapped,
+            mode: ViewerMode::Wrapped,
+            width: 80,
+            height: DEFAULT_HEIGHT,
+            wrapped: WrappedText::new("", 1).map_err(ViewerError::Selection)?,
             selection: None,
             cursor: CellPoint::new(0, 0),
             body_start: 0,
@@ -77,7 +70,7 @@ impl ViewerState {
             wrap_enabled: true,
             search: SearchState::new(),
             search_editing: false,
-            layout,
+            layout: viewer_layout(block_id, 1, DEFAULT_HEIGHT)?,
             scroll_top: 0.0,
             transition: None,
             open: true,
@@ -292,12 +285,7 @@ impl ViewerState {
         if width_changed {
             self.rebuild_display()?;
         } else {
-            self.layout = viewer_layout(
-                self.block_id,
-                &self.display_text,
-                self.wrapped_width(),
-                height,
-            )?;
+            self.layout = viewer_layout(self.block_id, self.wrapped.row_count(), height)?;
         }
         self.scroll_top = anchor.resolve(&self.layout).map_err(ViewerError::Scroll)?;
         self.transition = None;
@@ -330,19 +318,6 @@ impl ViewerState {
         );
         self.selection = None;
         self.reveal_cursor();
-    }
-
-    fn wrapped_width(&self) -> usize {
-        if self.wrap_enabled {
-            self.width
-        } else {
-            self.display_text
-                .lines()
-                .map(unicode_width::UnicodeWidthStr::width)
-                .max()
-                .unwrap_or(1)
-                .max(self.width)
-        }
     }
 
     pub fn scroll_by(&mut self, delta: f64) -> Result<(), ViewerError> {
@@ -480,10 +455,19 @@ impl ViewerState {
             .map(ratatui::text::Line::to_string)
             .collect::<Vec<_>>()
             .join("\n");
-        let width = self.wrapped_width();
+        let width = if self.wrap_enabled {
+            self.width
+        } else {
+            self.display_text
+                .lines()
+                .map(unicode_width::UnicodeWidthStr::width)
+                .max()
+                .unwrap_or(1)
+                .max(self.width)
+        };
         self.wrapped =
             WrappedText::new(&self.display_text, width).map_err(ViewerError::Selection)?;
-        self.layout = viewer_layout(self.block_id, &self.display_text, width, self.height)?;
+        self.layout = viewer_layout(self.block_id, self.wrapped.row_count(), self.height)?;
         if self.cursor.row >= previous_body {
             self.cursor.row = self
                 .cursor
@@ -506,15 +490,10 @@ impl ViewerState {
 
 fn viewer_layout(
     block_id: BlockId,
-    text: &str,
-    width: usize,
+    rows: usize,
     height: usize,
 ) -> Result<TranscriptLayout, ViewerError> {
-    let rows = WrappedText::new(text, width)
-        .map_err(ViewerError::Selection)?
-        .row_count()
-        .max(1);
-    let rows = u32::try_from(rows).map_err(|_| ViewerError::InvalidViewport)?;
+    let rows = u32::try_from(rows.max(1)).map_err(|_| ViewerError::InvalidViewport)?;
     let height = u32::try_from(height.max(1)).map_err(|_| ViewerError::InvalidViewport)?;
     TranscriptLayout::from_heights([(block_id, f64::from(rows))], f64::from(height))
         .map_err(ViewerError::Scroll)

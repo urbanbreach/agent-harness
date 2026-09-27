@@ -1,0 +1,19 @@
+Independent reviewer: /root/tui_review
+Scope: selection-layout migration from 0b041626; not whole-rewrite completion.
+
+Initial review found a blocker: using maximum scalar width with the broader
+Unicode segmenter undercounted spacing-mark graphemes. The candidate was fixed
+to use the renderer's grapheme-width measurement, and the existing viewer test
+was extended with painted highlight and exact-copy assertions. The interim
+failure and final pass are retained.
+
+Final review: no blockers; approved to commit this migration slice.
+Verified all 91 pre-receipt artifact hashes, 560 source receipts and both debug
+binary hashes. The published patch and fixtures match the working tree.
+All 539 matrix frames match the previous candidate; all 51 raw viewer captures
+match the pinned original. Both xterm snapshots and PNGs match exactly and were
+visually inspected. Logs support the full 1,738-test pass and final focused
+checks. The final wrap-guard change preserves behavior.
+The README limits its claims accurately. The 8.20 to 13.13 second debug viewer
+difference remains open for controlled release measurement.
+No builds, tests or edits performed by the reviewer.
