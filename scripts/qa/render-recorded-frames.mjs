@@ -14,7 +14,9 @@ if (!process.argv[2] || !process.argv[3]) throw new Error("Usage: render-recorde
 const output = await validateEvidenceDir(process.argv[3], repoRoot);
 await mkdir(output, { recursive: true });
 const reference = process.argv[4] === "--reference-grok";
-const sourceRoot = reference ? join(repoRoot, "inspirations/grok-build") : repoRoot;
+const sourceOption = process.argv.indexOf("--source-root");
+const sourceRoot = sourceOption >= 0 ? resolve(process.argv[sourceOption + 1])
+  : reference ? join(repoRoot, "inspirations/grok-build") : repoRoot;
 const source = await currentTree(sourceRoot);
 const producerMetadata = await readFile(join(input, "producer.json"), "utf8")
   .then(JSON.parse).catch((error) => { if (error.code === "ENOENT") return null; throw error; });

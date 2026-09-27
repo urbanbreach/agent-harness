@@ -1,0 +1,83 @@
+[
+  {
+    "scenario": "normal",
+    "exit_code": 0,
+    "termios_restored": true,
+    "flags_before": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "flags_after": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "control_chars_restored": true,
+    "protocol_exit": {
+      "alternate_screen_left": true,
+      "paste_disabled": true,
+      "mouse_disabled": true
+    }
+  },
+  {
+    "scenario": "telemetry_failure",
+    "exit_code": 1,
+    "termios_restored": false,
+    "flags_before": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "flags_after": [
+      0,
+      4,
+      983231,
+      2608,
+      15,
+      15
+    ],
+    "control_chars_restored": false,
+    "protocol_exit": {
+      "alternate_screen_left": false,
+      "paste_disabled": false,
+      "mouse_disabled": false
+    }
+  },
+  {
+    "scenario": "output_failure",
+    "exit_code": 1,
+    "termios_restored": true,
+    "flags_before": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "flags_after": [
+      1280,
+      5,
+      983231,
+      35387,
+      15,
+      15
+    ],
+    "control_chars_restored": true,
+    "protocol_exit": {
+      "alternate_screen_left": false,
+      "paste_disabled": false,
+      "mouse_disabled": false
+    }
+  }
+]

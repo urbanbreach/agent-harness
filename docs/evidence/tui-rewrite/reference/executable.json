@@ -1,0 +1,8 @@
+{
+  "commit": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+  "binary": "/home/urbanbreach/.codex/worktrees/tui-reference/agent-harness/target/release/harness",
+  "sha256": "e639f47f8db5184482e16f727f1d6d20dc457b6e2c401a11d92a537abc891333",
+  "bytes": 38716768,
+  "build_command": "cargo build --release --locked -p harness --bin harness",
+  "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)"
+}
