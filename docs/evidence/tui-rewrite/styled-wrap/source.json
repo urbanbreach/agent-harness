@@ -1,0 +1,43 @@
+{
+  "base": "dafd4ed9dcc29d9556a030ceddfc226466ff0fb3",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/ui_transcript_render.rs",
+      "sha256": "5a6f98870b87b45ea773f6cb998791be07642f139678152d1b3093bde589f70d"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_selection.rs",
+      "sha256": "3a8c1af7b2f893890cfd04ca9968c06a88d53a99808803786e617a88521f8839"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_selection_grammar_tests.rs",
+      "sha256": "2a3493e4801f57b1ba62ecfd556ea53c219faf1338387f6c2f9a469640a1361a"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_surface.rs",
+      "sha256": "40e50660a4117218afdd5e09f2848672e119dc99e5e8bbaa03344859f1f715f6"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_surface/wrapping.rs",
+      "sha256": "be2bd34383ed54fafdf136401eec7f4a0a7aebf640a4515b87873acff8b76272"
+    },
+    {
+      "path": "crates/harness-tui/tests/rewrite_reference_test.rs",
+      "sha256": "bb08fb1e0c78f93c34b55d1e1edde2e33042dd87240f0731d6084f3f9e3a0e92"
+    },
+    {
+      "path": "crates/harness-tui/tests/support/rewrite_wrapping_geometry.rs",
+      "sha256": "346ea1a430949896191d6e61f7f68b546883a3a887719326d6cb3c3f0196321c"
+    }
+  ],
+  "benchmark": [
+    {
+      "path": "crates/harness-tui/tests/rewrite_performance_test.rs",
+      "sha256": "9928404a38cc966814620c26b90332d90500123575a7be9ff909df2bbd03e9d9"
+    },
+    {
+      "path": "crates/harness-tui/tests/support/rewrite_journey.rs",
+      "sha256": "a3e48bb45948409ca6d4e4c9a695f7ba8900920a1d17613cb22b889815473b74"
+    }
+  ]
+}

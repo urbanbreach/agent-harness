@@ -127,6 +127,7 @@ before changing the implementation.
 | R11 | The hand-written selection segmenter splits a decomposed Hangul syllable and lets viewer search match an interior jamo | Use the installed Unicode grapheme segmenter for layout and search boundaries, and measure cluster widths as painting does. Existing selection and search fixtures reproduce both failures on the original; a spacing-mark fixture protects painted highlight and copy alignment. |
 | R12 | Plan painting, summary counts and pointer geometry read the filesystem independently, so identical state can paint different buffers after a directory change | Read one plan snapshot before painting and hit testing. Refresh during surface opening, frame preparation and plan actions; keep public diagnostic queries fresh. The extended plan journey fails on the preceding implementation, whose plan state/renderer sources still matched the pinned original. |
 | R13 | Plan rows and previews budget Unicode scalars rather than cells; shared UI clipping also undercounts emoji presentation sequences | Replace plan painting and use Ratatui-compatible grapheme widths. Eight original/candidate frames cover metadata, combining text, joined emoji and VS16. Terminal and Bash title wrapping keep whole graphemes, including zero-width prefixes, without adding or undercounting rows. |
+| R14 | Long transcript tokens undercount VS16 cells, whitespace tokenization splits combining clusters, and selection uses different widths from painting | Replace styled wrapping with borrowed grapheme tokens and align selection with Ratatui widths. Four paired records restore all missing clusters; copy/highlight checks use painted coordinates. Zero-width prefixes remain on their content row. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -647,6 +648,27 @@ reported; frozen absolute timing and CPU limits, source reduction, sustained
 runtime targets and the remaining implementation rewrite are still outstanding.
 Evidence is in
 [`evidence/tui-rewrite/event-history`](evidence/tui-rewrite/event-history).
+
+## Styled transcript wrapping (R14)
+
+Styled wrapping now borrows tokens and source link clusters. The old token
+buffer, per-cluster link strings, duplicate long-token paths and duplicate
+clipping helper are removed. The 234-line replacement uses Ratatui-compatible
+cell widths; selection uses the same measurements. Four new paired records
+show every VS16 cluster surviving long-token wrapping. The other 551 complete
+records remain unchanged, and xterm differences stay within the reply rows.
+
+All 1,682 TUI tests, seven gated PTY checks and quality checks pass. Existing
+behavioral tests cover space/combining clusters, zero-width styled prefixes and
+copy/highlight at painted link coordinates. Production shrinks by 54 lines and
+inline tests by seven; integration fixtures add 55 lines.
+
+Streaming allocation falls 7.0% and resize allocation 1.7% versus the preceding
+candidate. Timing is mixed: streaming p99 rises 2,639→2,709 µs, resize rises
+5,890→5,921 µs, and scrolling falls 435→405 µs. Frozen CPU and timing failures
+remain explicit. Source reduction, state/formatter replacement and sustained
+runtime targets are still outstanding. Evidence is in
+[`evidence/tui-rewrite/styled-wrap`](evidence/tui-rewrite/styled-wrap).
 
 ## Verification sequence
 

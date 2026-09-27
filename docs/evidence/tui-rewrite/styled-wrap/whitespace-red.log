@@ -1,0 +1,50 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.62s
+────────────
+ Nextest run ID 53c82cbf-24f0-4e2e-8b1f-bd1422c5164f with nextest profile: ci
+    Starting 1 test across 1 binary (1265 tests skipped)
+        FAIL [   0.010s] (1/1) harness-tui ui::ui_transcript_surface::tests::long_token_fast_path_preserves_unicode_and_complex_grapheme_boundaries
+  stdout ───
+
+    running 1 test
+    test ui::ui_transcript_surface::tests::long_token_fast_path_preserves_unicode_and_complex_grapheme_boundaries ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_transcript_surface::tests::long_token_fast_path_preserves_unicode_and_complex_grapheme_boundaries
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1265 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'ui::ui_transcript_surface::tests::long_token_fast_path_preserves_unicode_and_complex_grapheme_boundaries' (2599381) panicked at crates/harness-tui/src/ui_transcript_surface.rs:1328:9:
+    assertion `left == right` failed
+      left: ["\u{301}x"]
+     right: [" \u{301}", "x"]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.016s] 1 test run: 0 passed, 1 failed, 1265 skipped
+        FAIL [   0.010s] (1/1) harness-tui ui::ui_transcript_surface::tests::long_token_fast_path_preserves_unicode_and_complex_grapheme_boundaries
+  stdout ───
+
+    running 1 test
+    test ui::ui_transcript_surface::tests::long_token_fast_path_preserves_unicode_and_complex_grapheme_boundaries ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_transcript_surface::tests::long_token_fast_path_preserves_unicode_and_complex_grapheme_boundaries
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1265 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'ui::ui_transcript_surface::tests::long_token_fast_path_preserves_unicode_and_complex_grapheme_boundaries' (2599381) panicked at crates/harness-tui/src/ui_transcript_surface.rs:1328:9:
+    assertion `left == right` failed
+      left: ["\u{301}x"]
+     right: [" \u{301}", "x"]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

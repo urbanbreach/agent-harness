@@ -1,0 +1,8 @@
+{
+  "path": "/tmp/tui-event-history-candidate.bin",
+  "bytes": 15020368,
+  "sha256": "8d5529e0f8fa92e1897be371203c2490ec516eafc9cac83cc912793e6533192f",
+  "source": "6b732a691c90423857fca126bbfe4468627ba942 + source.patch.gz",
+  "clean": false,
+  "note": "final reviewed source patch; no source changes during measurement"
+}

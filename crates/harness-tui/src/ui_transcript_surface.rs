@@ -20,8 +20,13 @@ use super::ui_transcript_layout::TranscriptVisualEntry;
 use super::ui_transcript_style::{
     blend_color, glyph_routed_streaming_spinner_frame, pending_diamond_color,
 };
-use crate::composer_atoms::measured_graphemes;
-use crate::terminal::char_display_width;
+
+#[path = "ui_transcript_surface/wrapping.rs"]
+mod wrapping;
+pub(super) use wrapping::{
+    expand_preformatted_tabs, wrap_preformatted_spans, wrap_surface_spans,
+    wrap_surface_spans_with_links, SurfaceLinkRun, WrappedSurfaceRow,
+};
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 // Grok Build HorizontalLayout::ACCENT (1) + LayoutConfig::block_pad_left (2).
@@ -135,234 +140,6 @@ fn apply_surface_animation_phase(
                     .fg(pending_diamond_color(theme, animation_phase));
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod animation_phase_tests {
-    use super::{apply_surface_animation_phase, render_transcript_surface};
-    use crate::theme::Theme;
-    use crate::ui::ui_transcript::{
-        ToolRailMotion, TranscriptBlockPlacement, TranscriptRenderSurfaceKind,
-        TranscriptVisualEntryDisplayMode, TranscriptVisualEntryHitRegion,
-        TranscriptVisualEntryMetadata,
-    };
-    use crate::ui::ui_transcript_layout::TranscriptVisualEntry;
-    use ratatui::{backend::TestBackend, layout::Rect, style::Style, text::Span, Terminal};
-
-    fn reasoning_surface(
-        theme: &Theme,
-        marker: &str,
-        motion: Option<ToolRailMotion>,
-    ) -> TranscriptVisualEntry {
-        TranscriptVisualEntry {
-            source_text: None,
-            rendered_text: std::sync::Arc::from(""),
-            metadata: TranscriptVisualEntryMetadata::settled(
-                0,
-                0,
-                TranscriptVisualEntryDisplayMode::Flow,
-            ),
-            kind: TranscriptRenderSurfaceKind::AssistantReasoning,
-            leading_gap_rows: 0,
-            placement: TranscriptBlockPlacement::Flow,
-            top_offset: 0,
-            height: 1,
-            width: 80,
-            show_outer_rail: true,
-            rail_glyph: "┃",
-            rail_color: theme.text.tertiary,
-            surface: theme.surface.canvas,
-            lines: vec![ratatui::text::Line::from(vec![
-                Span::raw("  "),
-                Span::styled(
-                    format!("{marker} "),
-                    Style::default().fg(theme.text.tertiary),
-                ),
-                Span::styled(
-                    "Thinking…",
-                    Style::default()
-                        .fg(theme.text.secondary)
-                        .add_modifier(ratatui::style::Modifier::BOLD),
-                ),
-            ])],
-            interaction_rows: None,
-            selection_rows: Vec::new(),
-            semantic_selection: false,
-            diff_hunk_offsets: Vec::new(),
-            selected_rail: false,
-            tool_rail_motion: motion,
-            hit_region: TranscriptVisualEntryHitRegion::new(0, 80, 1),
-        }
-    }
-
-    #[test]
-    fn cached_assistant_footer_rehydrates_the_pending_diamond_phase() {
-        // arrange
-        // Given: a cached waiting footer with independently styled marker and label spans.
-        let theme = Theme::default();
-        let surface = TranscriptVisualEntry {
-            source_text: None,
-            rendered_text: std::sync::Arc::from(""),
-            metadata: TranscriptVisualEntryMetadata::settled(
-                0,
-                0,
-                TranscriptVisualEntryDisplayMode::Flow,
-            ),
-            kind: TranscriptRenderSurfaceKind::AssistantFooter,
-            leading_gap_rows: 0,
-            placement: TranscriptBlockPlacement::Flow,
-            top_offset: 0,
-            height: 1,
-            width: 80,
-            show_outer_rail: false,
-            rail_glyph: " ",
-            rail_color: theme.text.secondary,
-            surface: theme.surface.canvas,
-            lines: vec![ratatui::text::Line::from(vec![
-                Span::raw("    "),
-                Span::styled("◆ ", Style::default().fg(theme.text.secondary)),
-                Span::styled(
-                    "Waiting on answers",
-                    Style::default().fg(theme.text.secondary),
-                ),
-            ])],
-            interaction_rows: None,
-            selection_rows: Vec::new(),
-            semantic_selection: false,
-            diff_hunk_offsets: Vec::new(),
-            selected_rail: false,
-            tool_rail_motion: None,
-            hit_region: TranscriptVisualEntryHitRegion::new(0, 80, 1),
-        };
-
-        // When: cached lines are rehydrated at two runtime animation phases.
-        let mut first = surface.lines.clone();
-        apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
-        let mut later = surface.lines.clone();
-        apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
-
-        // act
-        // Then: the marker changes color while the waiting label remains muted.
-        // assert
-        assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
-        assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
-        assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
-    }
-
-    #[test]
-    fn active_reasoning_wave_animates_only_the_diamond() {
-        // arrange
-        let theme = Theme::default();
-        let surface = reasoning_surface(
-            &theme,
-            "◆",
-            Some(ToolRailMotion::Running {
-                elapsed: std::time::Duration::ZERO,
-                sampled_phase: 0,
-            }),
-        );
-
-        // act
-        let mut first = surface.lines.clone();
-        apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
-        let mut later = surface.lines.clone();
-        apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
-
-        // assert
-        assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
-        assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
-        assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
-    }
-
-    #[test]
-    fn active_reasoning_wave_animates_the_ascii_marker() {
-        // arrange
-        let theme = Theme::default().with_glyph_mode(crate::theme::GlyphMode::Ascii);
-        let surface = reasoning_surface(
-            &theme,
-            "*",
-            Some(ToolRailMotion::Running {
-                elapsed: std::time::Duration::ZERO,
-                sampled_phase: 0,
-            }),
-        );
-
-        // act
-        let mut first = surface.lines.clone();
-        apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
-        let mut later = surface.lines.clone();
-        apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
-
-        // assert
-        assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
-        assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
-        assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
-    }
-
-    #[test]
-    fn cached_running_tool_repaints_only_its_lifecycle_marker() {
-        for glyph_mode in [
-            crate::theme::GlyphMode::Preferred,
-            crate::theme::GlyphMode::Ascii,
-        ] {
-            let theme = Theme::default().with_glyph_mode(glyph_mode);
-            let mut surface = reasoning_surface(
-                &theme,
-                theme.live_shell.glyphs.running,
-                Some(ToolRailMotion::Running {
-                    elapsed: std::time::Duration::ZERO,
-                    sampled_phase: 0,
-                }),
-            );
-            surface.kind = TranscriptRenderSurfaceKind::AssistantTool;
-            surface.show_outer_rail = false;
-            surface.rail_glyph = " ";
-            surface.lines[0].spans[2].content = "Run cargo test".into();
-            let mut terminal = Terminal::new(TestBackend::new(40, 1)).expect("test terminal");
-            let mut frames = Vec::new();
-            for phase in [0, 10] {
-                terminal
-                    .draw(|frame| {
-                        render_transcript_surface(
-                            frame,
-                            &surface,
-                            Rect::new(0, 0, 40, 1),
-                            0,
-                            phase,
-                            &theme,
-                        );
-                    })
-                    .expect("render cached tool");
-                frames.push(terminal.backend().buffer().clone());
-            }
-            assert_ne!(frames[0][(2, 0)].fg, frames[1][(2, 0)].fg, "{glyph_mode:?}");
-            assert_eq!(
-                frames[0][(4, 0)],
-                frames[1][(4, 0)],
-                "tool label must not pulse"
-            );
-            assert_eq!(frames[1][(4, 0)].fg, theme.text.secondary);
-        }
-    }
-
-    #[test]
-    fn static_reasoning_rail_is_painted_after_content() {
-        // arrange
-        let theme = Theme::default();
-        let surface = reasoning_surface(&theme, "◆", None);
-        let backend = TestBackend::new(20, 1);
-        let mut terminal = Terminal::new(backend).expect("test terminal");
-
-        // act
-        terminal
-            .draw(|frame| {
-                render_transcript_surface(frame, &surface, Rect::new(0, 0, 20, 1), 0, 0, &theme);
-            })
-            .expect("render reasoning surface");
-
-        // assert
-        assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "┃");
     }
 }
 
@@ -995,260 +772,6 @@ pub(super) fn nested_surface_prefix_width(indent: &str) -> usize {
     display_width(indent) + display_width(TRANSCRIPT_RAIL_GLYPH) + 1
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SurfaceLinkRun {
-    pub(super) start_cell: usize,
-    pub(super) end_cell: usize,
-    pub(super) destination: String,
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct WrappedSurfaceRow {
-    pub(super) spans: Vec<Span<'static>>,
-    pub(super) links: Vec<SurfaceLinkRun>,
-}
-
-pub(super) fn wrap_surface_spans_with_links(
-    spans: Vec<Span<'static>>,
-    links: &[SurfaceLinkRun],
-    width: usize,
-) -> Vec<WrappedSurfaceRow> {
-    if links.is_empty() {
-        return wrap_surface_spans(spans, width)
-            .into_iter()
-            .map(|spans| WrappedSurfaceRow {
-                spans,
-                links: Vec::new(),
-            })
-            .collect();
-    }
-    let source = spans
-        .iter()
-        .flat_map(|span| measured_graphemes(span.content.as_ref()))
-        .scan(0usize, |cell, (cluster, width)| {
-            let start_cell = *cell;
-            *cell = cell.saturating_add(usize::from(width));
-            Some((cluster.to_string(), start_cell, *cell))
-        })
-        .collect::<Vec<_>>();
-    let rows = wrap_surface_spans(spans, width);
-    let mut source_index = 0usize;
-
-    rows.into_iter()
-        .map(|spans| {
-            let mut projected = Vec::<SurfaceLinkRun>::new();
-            let mut output_cell = 0usize;
-            for (cluster, width) in spans
-                .iter()
-                .flat_map(|span| measured_graphemes(span.content.as_ref()))
-            {
-                while source
-                    .get(source_index)
-                    .is_some_and(|(text, _, _)| text != cluster)
-                {
-                    source_index = source_index.saturating_add(1);
-                }
-                let Some((_, source_start, source_end)) = source.get(source_index) else {
-                    break;
-                };
-                let cluster_width = usize::from(width);
-                for link in links
-                    .iter()
-                    .filter(|link| link.start_cell < *source_end && link.end_cell > *source_start)
-                {
-                    let output_end = output_cell.saturating_add(cluster_width);
-                    if let Some(previous) = projected.last_mut().filter(|previous| {
-                        previous.destination == link.destination && previous.end_cell == output_cell
-                    }) {
-                        previous.end_cell = output_end;
-                    } else {
-                        projected.push(SurfaceLinkRun {
-                            start_cell: output_cell,
-                            end_cell: output_end,
-                            destination: link.destination.clone(),
-                        });
-                    }
-                }
-                output_cell = output_cell.saturating_add(cluster_width);
-                source_index = source_index.saturating_add(1);
-            }
-            WrappedSurfaceRow {
-                spans,
-                links: projected,
-            }
-        })
-        .collect()
-}
-
-pub(super) fn wrap_surface_spans(
-    spans: Vec<Span<'static>>,
-    width: usize,
-) -> Vec<Vec<Span<'static>>> {
-    wrap_surface_spans_impl(spans, width, false)
-}
-
-fn wrap_surface_spans_impl(
-    spans: Vec<Span<'static>>,
-    width: usize,
-    preserve_indent: bool,
-) -> Vec<Vec<Span<'static>>> {
-    if spans.is_empty() {
-        return Vec::new();
-    }
-
-    let mut rows = Vec::new();
-    let mut current = Vec::new();
-    let mut current_width = 0;
-
-    for token in spans.into_iter().flat_map(surface_wrap_tokens) {
-        let token_text = token.content.as_ref();
-        let token_width = token.width();
-        let token_is_whitespace = token_text.chars().all(char::is_whitespace);
-
-        if token_is_whitespace && current.is_empty() && !(preserve_indent && rows.is_empty()) {
-            continue;
-        }
-
-        if current_width + token_width <= width {
-            current_width += token_width;
-            current.push(token);
-            continue;
-        }
-
-        if token_is_whitespace {
-            if !current.is_empty() {
-                rows.push(current);
-                current = Vec::new();
-                current_width = 0;
-            }
-            continue;
-        }
-
-        if !current.is_empty() {
-            rows.push(current);
-            current = Vec::new();
-        }
-
-        if simple_grapheme_boundaries(token_text) {
-            let mut chunk = String::new();
-            let mut chunk_width = 0usize;
-            for character in token_text.chars() {
-                let character_width = usize::from(char_display_width(character));
-                if !chunk.is_empty() && chunk_width.saturating_add(character_width) > width {
-                    current.push(Span::styled(std::mem::take(&mut chunk), token.style));
-                    rows.push(current);
-                    current = Vec::new();
-                    chunk_width = 0;
-                }
-                chunk.push(character);
-                chunk_width = chunk_width.saturating_add(character_width);
-            }
-            current_width = chunk_width;
-            current.push(Span::styled(chunk, token.style));
-            continue;
-        }
-
-        let mut chunk = String::new();
-        let mut chunk_width = 0usize;
-        for (cluster, cells) in measured_graphemes(token_text) {
-            let cluster_width = usize::from(cells);
-            if !chunk.is_empty() && chunk_width.saturating_add(cluster_width) > width {
-                current.push(Span::styled(std::mem::take(&mut chunk), token.style));
-                rows.push(current);
-                current = Vec::new();
-                chunk_width = 0;
-            }
-            chunk.push_str(cluster);
-            chunk_width = chunk_width.saturating_add(cluster_width);
-        }
-        current_width = chunk_width;
-        current.push(Span::styled(chunk, token.style));
-    }
-
-    if !current.is_empty() {
-        rows.push(current);
-    }
-
-    rows
-}
-
-/// Code and terminal output preserve whitespace instead of treating it as a word separator.
-/// Expand tabs in source columns before cell wrapping, shared with selection.
-pub(super) fn wrap_preformatted_spans(
-    spans: Vec<Span<'static>>,
-    width: usize,
-) -> Vec<Vec<Span<'static>>> {
-    let expanded = expand_preformatted_tabs(spans);
-    if expanded.iter().map(Span::width).sum::<usize>() <= width.max(1) {
-        return vec![expanded];
-    }
-    let rows = wrap_surface_spans_impl(expanded, width.max(1), true);
-    if rows.is_empty() {
-        vec![Vec::new()]
-    } else {
-        rows
-    }
-}
-
-pub(super) fn expand_preformatted_tabs(spans: Vec<Span<'static>>) -> Vec<Span<'static>> {
-    if !spans.iter().any(|span| span.content.contains('\t')) {
-        return spans;
-    }
-    let mut source_column = 0;
-    spans
-        .into_iter()
-        .map(|span| {
-            let mut text = String::new();
-            for (cluster, _) in measured_graphemes(&span.content) {
-                let part = if cluster == "\t" {
-                    " ".repeat(4 - source_column % 4)
-                } else {
-                    cluster.to_string()
-                };
-                source_column += display_width(&part);
-                text.push_str(&part);
-            }
-            Span::styled(text, span.style)
-        })
-        .collect()
-}
-
-fn simple_grapheme_boundaries(text: &str) -> bool {
-    text.chars().all(|character| {
-        char_display_width(character) > 0
-            && u32::from(character) <= 0xFFFF
-            && character != '\u{200D}'
-            && !matches!(character, '\u{1F1E6}'..='\u{1F1FF}' | '\u{1F3FB}'..='\u{1F3FF}')
-    })
-}
-
-fn surface_wrap_tokens(span: Span<'static>) -> Vec<Span<'static>> {
-    let mut tokens = Vec::new();
-    let mut current = String::new();
-    let mut current_is_whitespace = None;
-    let mut chars = span.content.chars().peekable();
-    let mut previous = None;
-    while let Some(ch) = chars.next() {
-        let is_whitespace = ch.is_whitespace();
-        if current_is_whitespace.is_some_and(|was| was != is_whitespace) && !current.is_empty() {
-            tokens.push(Span::styled(std::mem::take(&mut current), span.style));
-        }
-        current.push(ch);
-        current_is_whitespace = Some(is_whitespace);
-        if ch == '-'
-            && previous.is_some_and(char::is_alphanumeric)
-            && chars.peek().is_some_and(|next| next.is_alphanumeric())
-        {
-            tokens.push(Span::styled(std::mem::take(&mut current), span.style));
-        }
-        previous = Some(ch);
-    }
-    if !current.is_empty() {
-        tokens.push(Span::styled(current, span.style));
-    }
-    tokens
-}
-
 fn transcript_surface_rail_lines(
     height: usize,
     rail_glyph: &'static str,
@@ -1282,48 +805,229 @@ fn prepend_transcript_surface_rail(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod animation_phase_tests {
+    use super::{apply_surface_animation_phase, render_transcript_surface};
+    use crate::theme::Theme;
+    use crate::ui::ui_transcript::{
+        ToolRailMotion, TranscriptBlockPlacement, TranscriptRenderSurfaceKind,
+        TranscriptVisualEntryDisplayMode, TranscriptVisualEntryHitRegion,
+        TranscriptVisualEntryMetadata,
+    };
+    use crate::ui::ui_transcript_layout::TranscriptVisualEntry;
+    use ratatui::{backend::TestBackend, layout::Rect, style::Style, text::Span, Terminal};
 
-    fn wrapped_text(text: &str, width: usize) -> Vec<String> {
-        wrap_surface_spans(vec![Span::raw(text.to_string())], width)
-            .into_iter()
-            .map(|row| row.into_iter().map(|span| span.content).collect())
-            .collect()
-    }
-
-    fn legacy_wrapped_text(text: &str, width: usize) -> Vec<String> {
-        let mut rows = Vec::new();
-        let mut chunk = String::new();
-        let mut chunk_width = 0usize;
-        for cluster in crate::composer_atoms::split_graphemes(text) {
-            let cluster_width = usize::from(cluster.display_width());
-            if !chunk.is_empty() && chunk_width.saturating_add(cluster_width) > width {
-                rows.push(std::mem::take(&mut chunk));
-                chunk_width = 0;
-            }
-            chunk.push_str(cluster.as_str());
-            chunk_width = chunk_width.saturating_add(cluster_width);
+    fn reasoning_surface(
+        theme: &Theme,
+        marker: &str,
+        motion: Option<ToolRailMotion>,
+    ) -> TranscriptVisualEntry {
+        TranscriptVisualEntry {
+            source_text: None,
+            rendered_text: std::sync::Arc::from(""),
+            metadata: TranscriptVisualEntryMetadata::settled(
+                0,
+                0,
+                TranscriptVisualEntryDisplayMode::Flow,
+            ),
+            kind: TranscriptRenderSurfaceKind::AssistantReasoning,
+            leading_gap_rows: 0,
+            placement: TranscriptBlockPlacement::Flow,
+            top_offset: 0,
+            height: 1,
+            width: 80,
+            show_outer_rail: true,
+            rail_glyph: "┃",
+            rail_color: theme.text.tertiary,
+            surface: theme.surface.canvas,
+            lines: vec![ratatui::text::Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    format!("{marker} "),
+                    Style::default().fg(theme.text.tertiary),
+                ),
+                Span::styled(
+                    "Thinking…",
+                    Style::default()
+                        .fg(theme.text.secondary)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                ),
+            ])],
+            interaction_rows: None,
+            selection_rows: Vec::new(),
+            semantic_selection: false,
+            diff_hunk_offsets: Vec::new(),
+            selected_rail: false,
+            tool_rail_motion: motion,
+            hit_region: TranscriptVisualEntryHitRegion::new(0, 80, 1),
         }
-        if !chunk.is_empty() {
-            rows.push(chunk);
-        }
-        rows
     }
 
     #[test]
-    fn long_token_fast_path_preserves_unicode_and_complex_grapheme_boundaries() {
+    fn cached_assistant_footer_rehydrates_the_pending_diamond_phase() {
         // arrange
+        // Given: a cached waiting footer with independently styled marker and label spans.
+        let theme = Theme::default();
+        let surface = TranscriptVisualEntry {
+            source_text: None,
+            rendered_text: std::sync::Arc::from(""),
+            metadata: TranscriptVisualEntryMetadata::settled(
+                0,
+                0,
+                TranscriptVisualEntryDisplayMode::Flow,
+            ),
+            kind: TranscriptRenderSurfaceKind::AssistantFooter,
+            leading_gap_rows: 0,
+            placement: TranscriptBlockPlacement::Flow,
+            top_offset: 0,
+            height: 1,
+            width: 80,
+            show_outer_rail: false,
+            rail_glyph: " ",
+            rail_color: theme.text.secondary,
+            surface: theme.surface.canvas,
+            lines: vec![ratatui::text::Line::from(vec![
+                Span::raw("    "),
+                Span::styled("◆ ", Style::default().fg(theme.text.secondary)),
+                Span::styled(
+                    "Waiting on answers",
+                    Style::default().fg(theme.text.secondary),
+                ),
+            ])],
+            interaction_rows: None,
+            selection_rows: Vec::new(),
+            semantic_selection: false,
+            diff_hunk_offsets: Vec::new(),
+            selected_rail: false,
+            tool_rail_motion: None,
+            hit_region: TranscriptVisualEntryHitRegion::new(0, 80, 1),
+        };
+
+        // When: cached lines are rehydrated at two runtime animation phases.
+        let mut first = surface.lines.clone();
+        apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
+        let mut later = surface.lines.clone();
+        apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
+
         // act
-        let simple = "abc界···xyz";
+        // Then: the marker changes color while the waiting label remains muted.
         // assert
-        assert!(simple_grapheme_boundaries(simple));
-        assert_eq!(wrapped_text(simple, 4), legacy_wrapped_text(simple, 4));
-        assert!(!simple_grapheme_boundaries("e\u{301}x"));
-        assert!(!simple_grapheme_boundaries("👨\u{200D}💻x"));
-        assert!(!simple_grapheme_boundaries("🇫🇮x"));
-        assert_eq!(wrapped_text("e\u{301}x", 1), ["e\u{301}", "x"]);
-        assert_eq!(wrapped_text("👨\u{200D}💻x", 2), ["👨\u{200D}💻", "x"]);
-        assert_eq!(wrapped_text("🇫🇮x", 2), ["🇫🇮", "x"]);
+        assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
+        assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
+        assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
+    }
+
+    #[test]
+    fn active_reasoning_wave_animates_only_the_diamond() {
+        // arrange
+        let theme = Theme::default();
+        let surface = reasoning_surface(
+            &theme,
+            "◆",
+            Some(ToolRailMotion::Running {
+                elapsed: std::time::Duration::ZERO,
+                sampled_phase: 0,
+            }),
+        );
+
+        // act
+        let mut first = surface.lines.clone();
+        apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
+        let mut later = surface.lines.clone();
+        apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
+
+        // assert
+        assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
+        assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
+        assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
+    }
+
+    #[test]
+    fn active_reasoning_wave_animates_the_ascii_marker() {
+        // arrange
+        let theme = Theme::default().with_glyph_mode(crate::theme::GlyphMode::Ascii);
+        let surface = reasoning_surface(
+            &theme,
+            "*",
+            Some(ToolRailMotion::Running {
+                elapsed: std::time::Duration::ZERO,
+                sampled_phase: 0,
+            }),
+        );
+
+        // act
+        let mut first = surface.lines.clone();
+        apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
+        let mut later = surface.lines.clone();
+        apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
+
+        // assert
+        assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
+        assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
+        assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
+    }
+
+    #[test]
+    fn cached_running_tool_repaints_only_its_lifecycle_marker() {
+        for glyph_mode in [
+            crate::theme::GlyphMode::Preferred,
+            crate::theme::GlyphMode::Ascii,
+        ] {
+            let theme = Theme::default().with_glyph_mode(glyph_mode);
+            let mut surface = reasoning_surface(
+                &theme,
+                theme.live_shell.glyphs.running,
+                Some(ToolRailMotion::Running {
+                    elapsed: std::time::Duration::ZERO,
+                    sampled_phase: 0,
+                }),
+            );
+            surface.kind = TranscriptRenderSurfaceKind::AssistantTool;
+            surface.show_outer_rail = false;
+            surface.rail_glyph = " ";
+            surface.lines[0].spans[2].content = "Run cargo test".into();
+            let mut terminal = Terminal::new(TestBackend::new(40, 1)).expect("test terminal");
+            let mut frames = Vec::new();
+            for phase in [0, 10] {
+                terminal
+                    .draw(|frame| {
+                        render_transcript_surface(
+                            frame,
+                            &surface,
+                            Rect::new(0, 0, 40, 1),
+                            0,
+                            phase,
+                            &theme,
+                        );
+                    })
+                    .expect("render cached tool");
+                frames.push(terminal.backend().buffer().clone());
+            }
+            assert_ne!(frames[0][(2, 0)].fg, frames[1][(2, 0)].fg, "{glyph_mode:?}");
+            assert_eq!(
+                frames[0][(4, 0)],
+                frames[1][(4, 0)],
+                "tool label must not pulse"
+            );
+            assert_eq!(frames[1][(4, 0)].fg, theme.text.secondary);
+        }
+    }
+
+    #[test]
+    fn static_reasoning_rail_is_painted_after_content() {
+        // arrange
+        let theme = Theme::default();
+        let surface = reasoning_surface(&theme, "◆", None);
+        let backend = TestBackend::new(20, 1);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+
+        // act
+        terminal
+            .draw(|frame| {
+                render_transcript_surface(frame, &surface, Rect::new(0, 0, 20, 1), 0, 0, &theme);
+            })
+            .expect("render reasoning surface");
+
+        // assert
+        assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "┃");
     }
 }

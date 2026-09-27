@@ -1,0 +1,263 @@
+    Checking harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+error: this block is too nested
+  --> crates/harness-tui/src/ui_transcript_surface/wrapping.rs:51:88
+   |
+51 |                           if let Some(previous) = projected.last_mut().filter(|previous| {
+   |  ________________________________________________________________________________________^
+52 | |                             previous.destination == link.destination
+53 | |                                 && previous.end_cell == output_cell
+54 | |                         }) {
+   | |_________________________^
+   |
+   = help: try refactoring your code to minimize nesting
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#excessive_nesting
+   = note: `-D clippy::excessive-nesting` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::excessive_nesting)]`
+
+error: this block is too nested
+  --> crates/harness-tui/src/ui_transcript_surface/wrapping.rs:54:28
+   |
+54 |                           }) {
+   |  ____________________________^
+55 | |                             previous.end_cell = output_end;
+56 | |                         } else {
+   | |_________________________^
+   |
+   = help: try refactoring your code to minimize nesting
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#excessive_nesting
+
+error: this block is too nested
+  --> crates/harness-tui/src/ui_transcript_surface/wrapping.rs:56:32
+   |
+56 |                           } else {
+   |  ________________________________^
+57 | |                             projected.push(SurfaceLinkRun {
+58 | |                                 start_cell: output_cell,
+59 | |                                 end_cell: output_end,
+60 | |                                 destination: link.destination.clone(),
+61 | |                             });
+62 | |                         }
+   | |_________________________^
+   |
+   = help: try refactoring your code to minimize nesting
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#excessive_nesting
+
+error: this block is too nested
+   --> crates/harness-tui/src/ui_transcript_surface/wrapping.rs:109:81
+    |
+109 |                       if cells > 0 && cells.saturating_add(cluster_width) > width {
+    |  _________________________________________________________________________________^
+110 | |                         row.push(Span::styled(token[start..index].to_owned(), span.style));
+111 | |                         rows.push(std::mem::take(&mut row));
+112 | |                         start = index;
+113 | |                         cells = 0;
+114 | |                     }
+    | |_____________________^
+    |
+    = help: try refactoring your code to minimize nesting
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#excessive_nesting
+
+error: could not compile `harness-tui` (lib) due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: items after a test module
+    --> crates/harness-tui/src/ui_transcript_surface.rs:147:1
+     |
+ 147 |   mod animation_phase_tests {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 374 | / fn apply_tool_header_motion_color(
+ 375 | |     line: &mut Line<'static>,
+ 376 | |     surface: &TranscriptVisualEntry,
+ 377 | |     absolute_row: usize,
+ 378 | |     animation_phase: usize,
+ 379 | |     theme: &Theme,
+ 380 | | ) {
+     | |_^
+...
+ 448 | / fn transcript_surface_rail_lines_for_motion(
+ 449 | |     surface: &TranscriptVisualEntry,
+ 450 | |     local_scroll: usize,
+ 451 | |     visible_height: usize,
+ 452 | |     animation_phase: usize,
+ 453 | | ) -> Vec<Line<'static>> {
+     | |_______________________^
+...
+ 505 |   pub(super) fn line_has_tool_rail(line: &Line<'_>, rail_glyph: &str) -> bool {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 514 |   const TOOL_RAIL_WAVE_ROWS: usize = 32;
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 515 |   // Preserve the reference wave's speed while sampling continuously at the display cadence.
+ 516 |   const TOOL_RAIL_ANGULAR_SPEED: f32 = 0.15;
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 517 |
+ 518 |   pub(super) fn wave_brightness(elapsed: Duration, row: usize, wave_rows: usize) -> f32 {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 528 | / pub(super) fn tool_rail_motion_color(
+ 529 | |     surface: Color,
+ 530 | |     accent: Color,
+ 531 | |     motion: Option<ToolRailMotion>,
+ 532 | |     row: usize,
+ 533 | |     animation_phase: usize,
+ 534 | | ) -> Color {
+     | |__________^
+...
+ 549 |   fn motion_elapsed(motion: Option<ToolRailMotion>, animation_phase: usize) -> Duration {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 565 | / pub(super) fn visible_surface_lines(
+ 566 | |     surface: &TranscriptVisualEntry,
+ 567 | |     local_scroll: usize,
+ 568 | |     visible_height: usize,
+ 569 | | ) -> Vec<Line<'static>> {
+     | |_______________________^
+...
+ 584 | / pub(super) fn render_transcript_surface_lines<Entry>(surfaces: &[Entry]) -> Vec<Line<'static>>
+ 585 | | where
+ 586 | |     Entry: Borrow<TranscriptVisualEntryDraft>,
+     | |______________________________________________^
+...
+ 602 |   pub(super) fn transcript_surface_content_width(width: u16, show_outer_rail: bool) -> u16 {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 610 | / pub(super) fn transcript_surface_render_width(
+ 611 | |     width: u16,
+ 612 | |     kind: TranscriptRenderSurfaceKind,
+ 613 | | ) -> u16 {
+     | |________^
+...
+ 628 | / pub(super) fn append_prebuilt_nested_surface_lines(
+ 629 | |     lines: &mut Vec<Line<'static>>,
+ 630 | |     indent: &str,
+ 631 | |     rail_color: Color,
+...    |
+ 634 | |     width: u16,
+ 635 | | ) {
+     | |_^
+...
+ 649 | / pub(super) fn append_prebuilt_surface_lines(
+ 650 | |     lines: &mut Vec<Line<'static>>,
+ 651 | |     indent: &str,
+ 652 | |     surface: Color,
+ 653 | |     prebuilt: Vec<Line<'static>>,
+ 654 | |     width: u16,
+ 655 | | ) {
+     | |_^
+...
+ 677 | / pub(super) fn append_surface_row(
+ 678 | |     lines: &mut Vec<Line<'static>>,
+ 679 | |     indent: &str,
+ 680 | |     surface: Color,
+ 681 | |     content_spans: Vec<Span<'static>>,
+ 682 | |     width: u16,
+ 683 | | ) {
+     | |_^
+...
+ 711 | / pub(super) fn append_user_surface_text_block(
+ 712 | |     lines: &mut Vec<Line<'static>>,
+ 713 | |     text: &str,
+ 714 | |     color: Color,
+...    |
+ 717 | |     surface: Color,
+ 718 | | ) {
+     | |_^
+...
+ 724 | / pub(super) fn append_user_surface_text_block_with_first_line_reserve(
+ 725 | |     lines: &mut Vec<Line<'static>>,
+ 726 | |     text: &str,
+ 727 | |     color: Color,
+...    |
+ 731 | |     first_line_reserve: usize,
+ 732 | | ) {
+     | |_^
+...
+ 766 | / pub(super) fn append_user_surface_wrapped_line(
+ 767 | |     lines: &mut Vec<Line<'static>>,
+ 768 | |     content_spans: Vec<Span<'static>>,
+ 769 | |     prefix: &str,
+...    |
+ 773 | |     first_row_reserve: usize,
+ 774 | | ) {
+     | |_^
+...
+ 842 | / pub(super) fn user_surface_line(
+ 843 | |     prefix: &str,
+ 844 | |     content_spans: Vec<Span<'static>>,
+ 845 | |     prefix_style: Style,
+ 846 | |     surface: Color,
+ 847 | | ) -> Line<'static> {
+     | |__________________^
+...
+ 855 | / pub(super) fn append_prefixed_wrapped_spans_line(
+ 856 | |     lines: &mut Vec<Line<'static>>,
+ 857 | |     prefix: &str,
+ 858 | |     prefix_style: Style,
+ 859 | |     content_spans: Vec<Span<'static>>,
+ 860 | |     width: u16,
+ 861 | | ) {
+     | |_^
+...
+ 876 | / pub(super) fn append_prebuilt_plain_lines(
+ 877 | |     lines: &mut Vec<Line<'static>>,
+ 878 | |     prefix: &str,
+ 879 | |     prebuilt: Vec<Line<'static>>,
+ 880 | |     width: u16,
+ 881 | | ) {
+     | |_^
+...
+ 894 |   fn surface_prefix(indent: &str) -> Vec<Span<'static>> {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 902 |   pub(super) fn surface_prefix_width(indent: &str) -> usize {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 906 | / fn surface_line(
+ 907 | |     mut prefix: Vec<Span<'static>>,
+ 908 | |     prefix_width: usize,
+ 909 | |     content_spans: Vec<Span<'static>>,
+ 910 | |     width: u16,
+ 911 | |     surface: Color,
+ 912 | | ) -> Line<'static> {
+     | |__________________^
+...
+ 929 |   pub(super) fn surface_span(text: impl Into<String>, style: Style, surface: Color) -> Span<'static> {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 933 | / pub(super) fn append_nested_surface_row(
+ 934 | |     lines: &mut Vec<Line<'static>>,
+ 935 | |     indent: &str,
+ 936 | |     rail_color: Color,
+...    |
+ 940 | |     width: u16,
+ 941 | | ) {
+     | |_^
+...
+ 986 |   fn nested_surface_prefix(indent: &str, rail_color: Color, surface: Color) -> Vec<Span<'static>> {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 999 |   pub(super) fn nested_surface_prefix_width(indent: &str) -> usize {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1003 | / fn transcript_surface_rail_lines(
+1004 | |     height: usize,
+1005 | |     rail_glyph: &'static str,
+1006 | |     rail_color: Color,
+1007 | |     surface: Color,
+1008 | | ) -> Text<'static> {
+     | |__________________^
+...
+1021 | / fn prepend_transcript_surface_rail(
+1022 | |     line: Line<'static>,
+1023 | |     rail_glyph: &'static str,
+1024 | |     rail_color: Color,
+1025 | |     surface: Color,
+1026 | | ) -> Line<'static> {
+     | |__________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#items_after_test_module
+     = note: `-D clippy::items-after-test-module` implied by `-D clippy::all`
+     = help: to override `-D clippy::all` add `#[allow(clippy::items_after_test_module)]`
+     = help: move the items to before the test module was defined
+
+error: could not compile `harness-tui` (lib test) due to 5 previous errors

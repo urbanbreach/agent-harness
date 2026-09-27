@@ -1,0 +1,92 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.78s
+────────────
+ Nextest run ID cc85d851-4a04-440a-b273-17e31b5c70d5 with nextest profile: ci
+    Starting 2 tests across 1 binary (1264 tests skipped)
+        FAIL [   0.010s] (1/2) harness-tui ui::ui_transcript_surface::wrapping::tests::long_tokens_preserve_graphemes_and_cell_widths
+  stdout ───
+
+    running 1 test
+    test ui::ui_transcript_surface::wrapping::tests::long_tokens_preserve_graphemes_and_cell_widths ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_transcript_surface::wrapping::tests::long_tokens_preserve_graphemes_and_cell_widths
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1265 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'ui::ui_transcript_surface::wrapping::tests::long_tokens_preserve_graphemes_and_cell_widths' (2605496) panicked at crates/harness-tui/src/ui_transcript_surface/wrapping.rs:220:9:
+    assertion `left == right` failed
+      left: [[Span::from("\u{301}").bold()], [Span::from("ab")], [Span::from("cd")]]
+     right: [[Span::from("\u{301}").bold(), Span::from("ab")], [Span::from("cd")]]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.026s] (2/2) harness-tui ui::ui_transcript_selection::grammar_tests::nested_links_copy_only_their_painted_label_and_destination
+  stdout ───
+
+    running 1 test
+    test ui::ui_transcript_selection::grammar_tests::nested_links_copy_only_their_painted_label_and_destination ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_transcript_selection::grammar_tests::nested_links_copy_only_their_painted_label_and_destination
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1265 filtered out; finished in 0.02s
+
+  stderr ───
+
+    thread 'ui::ui_transcript_selection::grammar_tests::nested_links_copy_only_their_painted_label_and_destination' (2605497) panicked at crates/harness-tui/src/ui_transcript_selection_grammar_tests.rs:167:9:
+    assertion `left == right` failed
+      left: Rgb(20, 20, 20)
+     right: Rgb(125, 207, 255)
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.031s] 2 tests run: 0 passed, 2 failed, 1264 skipped
+        FAIL [   0.010s] (1/2) harness-tui ui::ui_transcript_surface::wrapping::tests::long_tokens_preserve_graphemes_and_cell_widths
+  stdout ───
+
+    running 1 test
+    test ui::ui_transcript_surface::wrapping::tests::long_tokens_preserve_graphemes_and_cell_widths ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_transcript_surface::wrapping::tests::long_tokens_preserve_graphemes_and_cell_widths
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1265 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'ui::ui_transcript_surface::wrapping::tests::long_tokens_preserve_graphemes_and_cell_widths' (2605496) panicked at crates/harness-tui/src/ui_transcript_surface/wrapping.rs:220:9:
+    assertion `left == right` failed
+      left: [[Span::from("\u{301}").bold()], [Span::from("ab")], [Span::from("cd")]]
+     right: [[Span::from("\u{301}").bold(), Span::from("ab")], [Span::from("cd")]]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.026s] (2/2) harness-tui ui::ui_transcript_selection::grammar_tests::nested_links_copy_only_their_painted_label_and_destination
+  stdout ───
+
+    running 1 test
+    test ui::ui_transcript_selection::grammar_tests::nested_links_copy_only_their_painted_label_and_destination ... FAILED
+
+    failures:
+
+    failures:
+        ui::ui_transcript_selection::grammar_tests::nested_links_copy_only_their_painted_label_and_destination
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1265 filtered out; finished in 0.02s
+
+  stderr ───
+
+    thread 'ui::ui_transcript_selection::grammar_tests::nested_links_copy_only_their_painted_label_and_destination' (2605497) panicked at crates/harness-tui/src/ui_transcript_selection_grammar_tests.rs:167:9:
+    assertion `left == right` failed
+      left: Rgb(20, 20, 20)
+     right: Rgb(125, 207, 255)
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

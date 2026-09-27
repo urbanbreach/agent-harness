@@ -121,6 +121,12 @@ fn copy(app: &mut AppState, buffer: &Buffer, start: &str, end: &str) -> String {
             None,
             None,
         );
+        if matches!(kind, MouseEventKind::Drag(_)) {
+            assert_eq!(
+                render(app, buffer.area.width)[(x, y)].bg,
+                app.theme().status.info
+            );
+        }
     }
     let result = copied
         .borrow()
@@ -149,14 +155,20 @@ fn nested_emphasis_combines_styles_at_public_render_seam() {
 
 #[test]
 fn nested_links_copy_only_their_painted_label_and_destination() {
-    // Given: a wide character before a link nested inside bold/emphasis.
+    // Given: wide graphemes before and inside a link nested in bold/emphasis.
     for width in [24, 80] {
-        let mut app = app("中 **[*bold link*](https://example.com/bold)**", true);
+        let mut app = app(
+            "中 #\u{fe0f} **[*bold #\u{fe0f}link*](https://example.com/bold)**",
+            true,
+        );
         // When: painted linked cells are dragged through the public mouse path.
         let buffer = render(&app, width);
         let copied = copy(&mut app, &buffer, "bold", "link");
         // Then: the selection range excludes delimiters and retains its actual URL.
-        assert_eq!(copied, "bold link\n\nLinks:\nhttps://example.com/bold");
+        assert_eq!(
+            copied,
+            "bold #\u{fe0f}link\n\nLinks:\nhttps://example.com/bold"
+        );
         let (x, y) = position(&buffer, "bold");
         assert!(buffer[(x, y)]
             .modifier

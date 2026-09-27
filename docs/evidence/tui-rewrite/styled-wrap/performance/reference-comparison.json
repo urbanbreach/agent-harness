@@ -1,0 +1,386 @@
+{
+  "startup-0": {
+    "metrics": {
+      "construction_us": {
+        "reference": 178,
+        "candidate": 195,
+        "change_percent": 9.55
+      },
+      "cold_us": {
+        "reference": 1205,
+        "candidate": 1159,
+        "change_percent": -3.82
+      },
+      "p50_us": {
+        "reference": 331,
+        "candidate": 338,
+        "change_percent": 2.11
+      },
+      "p95_us": {
+        "reference": 401,
+        "candidate": 455,
+        "change_percent": 13.47
+      },
+      "p99_us": {
+        "reference": 408,
+        "candidate": 461,
+        "change_percent": 12.99
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.35,
+        "candidate": 0.35,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 12920,
+        "candidate": 11852,
+        "change_percent": -8.27
+      },
+      "allocated_bytes": {
+        "reference": 12659350,
+        "candidate": 9223020,
+        "change_percent": -27.14
+      },
+      "peak_heap_bytes": {
+        "reference": 1907453,
+        "candidate": 1907431,
+        "change_percent": -0.0
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "idle-1000": {
+    "metrics": {
+      "construction_us": {
+        "reference": 58011,
+        "candidate": 48628,
+        "change_percent": -16.17
+      },
+      "cold_us": {
+        "reference": 54312,
+        "candidate": 49165,
+        "change_percent": -9.48
+      },
+      "p50_us": {
+        "reference": 300,
+        "candidate": 309,
+        "change_percent": 3.0
+      },
+      "p95_us": {
+        "reference": 306,
+        "candidate": 315,
+        "change_percent": 2.94
+      },
+      "p99_us": {
+        "reference": 310,
+        "candidate": 323,
+        "change_percent": 4.19
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.3,
+        "candidate": 0.3,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 48752,
+        "candidate": 34876,
+        "change_percent": -28.46
+      },
+      "allocated_bytes": {
+        "reference": 227102068,
+        "candidate": 202887925,
+        "change_percent": -10.66
+      },
+      "peak_heap_bytes": {
+        "reference": 29591149,
+        "candidate": 19828722,
+        "change_percent": -32.99
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "typing-1000": {
+    "metrics": {
+      "construction_us": {
+        "reference": 58572,
+        "candidate": 49883,
+        "change_percent": -14.83
+      },
+      "cold_us": {
+        "reference": 54364,
+        "candidate": 49138,
+        "change_percent": -9.61
+      },
+      "p50_us": {
+        "reference": 311,
+        "candidate": 324,
+        "change_percent": 4.18
+      },
+      "p95_us": {
+        "reference": 319,
+        "candidate": 335,
+        "change_percent": 5.02
+      },
+      "p99_us": {
+        "reference": 334,
+        "candidate": 349,
+        "change_percent": 4.49
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.3,
+        "candidate": 0.3,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 48960,
+        "candidate": 35020,
+        "change_percent": -28.47
+      },
+      "allocated_bytes": {
+        "reference": 227544422,
+        "candidate": 203352903,
+        "change_percent": -10.63
+      },
+      "peak_heap_bytes": {
+        "reference": 29683617,
+        "candidate": 19919078,
+        "change_percent": -32.9
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "stream-1000": {
+    "metrics": {
+      "construction_us": {
+        "reference": 59987,
+        "candidate": 49727,
+        "change_percent": -17.1
+      },
+      "cold_us": {
+        "reference": 54514,
+        "candidate": 49222,
+        "change_percent": -9.71
+      },
+      "p50_us": {
+        "reference": 4284,
+        "candidate": 1707,
+        "change_percent": -60.15
+      },
+      "p95_us": {
+        "reference": 8795,
+        "candidate": 2617,
+        "change_percent": -70.24
+      },
+      "p99_us": {
+        "reference": 9294,
+        "candidate": 2709,
+        "change_percent": -70.85
+      },
+      "cpu_ms_per_frame": {
+        "reference": 4.75,
+        "candidate": 1.7,
+        "change_percent": -64.21
+      },
+      "rss_kib": {
+        "reference": 51816,
+        "candidate": 35688,
+        "change_percent": -31.13
+      },
+      "allocated_bytes": {
+        "reference": 744459345,
+        "candidate": 351557394,
+        "change_percent": -52.78
+      },
+      "peak_heap_bytes": {
+        "reference": 30320745,
+        "candidate": 20109708,
+        "change_percent": -33.68
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  },
+  "scroll-1000": {
+    "metrics": {
+      "construction_us": {
+        "reference": 59826,
+        "candidate": 53083,
+        "change_percent": -11.27
+      },
+      "cold_us": {
+        "reference": 54560,
+        "candidate": 49741,
+        "change_percent": -8.83
+      },
+      "p50_us": {
+        "reference": 387,
+        "candidate": 386,
+        "change_percent": -0.26
+      },
+      "p95_us": {
+        "reference": 398,
+        "candidate": 402,
+        "change_percent": 1.01
+      },
+      "p99_us": {
+        "reference": 401,
+        "candidate": 405,
+        "change_percent": 1.0
+      },
+      "cpu_ms_per_frame": {
+        "reference": 0.4,
+        "candidate": 0.4,
+        "change_percent": 0.0
+      },
+      "rss_kib": {
+        "reference": 48852,
+        "candidate": 35000,
+        "change_percent": -28.36
+      },
+      "allocated_bytes": {
+        "reference": 226735703,
+        "candidate": 202516076,
+        "change_percent": -10.68
+      },
+      "peak_heap_bytes": {
+        "reference": 29593265,
+        "candidate": 19828712,
+        "change_percent": -33.0
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": [
+          "visible"
+        ]
+      },
+      {
+        "repetition": 2,
+        "different_fields": [
+          "visible"
+        ]
+      },
+      {
+        "repetition": 3,
+        "different_fields": [
+          "visible"
+        ]
+      }
+    ]
+  },
+  "resize-1000": {
+    "metrics": {
+      "construction_us": {
+        "reference": 60033,
+        "candidate": 48719,
+        "change_percent": -18.85
+      },
+      "cold_us": {
+        "reference": 54166,
+        "candidate": 49088,
+        "change_percent": -9.37
+      },
+      "p50_us": {
+        "reference": 8016,
+        "candidate": 4404,
+        "change_percent": -45.06
+      },
+      "p95_us": {
+        "reference": 9613,
+        "candidate": 5586,
+        "change_percent": -41.89
+      },
+      "p99_us": {
+        "reference": 10099,
+        "candidate": 5921,
+        "change_percent": -41.37
+      },
+      "cpu_ms_per_frame": {
+        "reference": 5.6,
+        "candidate": 2.05,
+        "change_percent": -63.39
+      },
+      "rss_kib": {
+        "reference": 65804,
+        "candidate": 42232,
+        "change_percent": -35.82
+      },
+      "allocated_bytes": {
+        "reference": 670823099,
+        "candidate": 358480344,
+        "change_percent": -46.56
+      },
+      "peak_heap_bytes": {
+        "reference": 40672893,
+        "candidate": 25709354,
+        "change_percent": -36.79
+      }
+    },
+    "diagnostic_comparison": [
+      {
+        "repetition": 1,
+        "different_fields": []
+      },
+      {
+        "repetition": 2,
+        "different_fields": []
+      },
+      {
+        "repetition": 3,
+        "different_fields": []
+      }
+    ]
+  }
+}
