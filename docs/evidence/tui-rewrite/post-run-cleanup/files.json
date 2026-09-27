@@ -1,0 +1,77 @@
+[
+  {
+    "path": "README.md",
+    "bytes": 2594,
+    "sha256": "6395ecf8d1ae6e2d2089db32c93db92c828a9b315618395b4af47b28b624b83f"
+  },
+  {
+    "path": "all.log",
+    "bytes": 2891,
+    "sha256": "ac7210d6f121f91705d8002b967da680720981d9295ffb4a9004fd9d13cd51b9"
+  },
+  {
+    "path": "base.json",
+    "bytes": 323,
+    "sha256": "7814cab2e9882b8435a0f40340c313ca884de8bf0034e2a9e01649b056668b25"
+  },
+  {
+    "path": "before.log",
+    "bytes": 1507,
+    "sha256": "3e5526f672fbe1681e2ebe035b94a89830fa52a9b34c3453c6d30f9a0e4c863a"
+  },
+  {
+    "path": "checks.json",
+    "bytes": 1671,
+    "sha256": "468d189ec556d8e8e99f72cd8da81e0b79286d2d07d55bc936e132d3f5149fb8"
+  },
+  {
+    "path": "clippy.log",
+    "bytes": 877,
+    "sha256": "222ef3eaf78090e11eb3a39ad43aa43af95b1091c3d9c3a30ea00f20863a0ec4"
+  },
+  {
+    "path": "fmt.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "pty.log",
+    "bytes": 1760,
+    "sha256": "d2c7629a6ab1e18da3fcde575c983ba0e3d2036fd061bc54030aa52d238bfa62"
+  },
+  {
+    "path": "red.log",
+    "bytes": 4070,
+    "sha256": "399656a32dec66b99e1c045767641fd3517c266247bec8ecca68041f9a9be0a5"
+  },
+  {
+    "path": "red.patch.gz",
+    "bytes": 233,
+    "sha256": "f1a3db9f28b6c60bd162c88d65b1da195822e372f3bc593a0eee7e1065d3a232"
+  },
+  {
+    "path": "review.json",
+    "bytes": 603,
+    "sha256": "8276010b0e63ebe4c2617b4aade9a7cbf3ff18144b4cbd8a30d5ebf3a9438861"
+  },
+  {
+    "path": "source.patch.gz",
+    "bytes": 2500,
+    "sha256": "ca3cf97c999b9d0d5727800c3ead59165b8f22ff9339652897f3cf2989e56089"
+  },
+  {
+    "path": "sources.json",
+    "bytes": 1420,
+    "sha256": "14183b1529a6aa68a1b30d8a83bd014a879e174210f98c630a569a3f41c1e567"
+  },
+  {
+    "path": "suite-gates.log",
+    "bytes": 38,
+    "sha256": "9dbaeda37da424493a0057a1d54b636bc8c9da7e77a14322d41d4e63b18196d9"
+  },
+  {
+    "path": "workspace-check.log",
+    "bytes": 939,
+    "sha256": "c1b3417223875317693c464fddd0724f67d570b34d4f231ca1b5ff406cd166ff"
+  }
+]

@@ -381,9 +381,6 @@ pub struct AppState {
     pub startup_mode: bool,
     starting_session_seed: bool,
     pub startup_launcher_action: StartupLauncherAction,
-    post_run_handoff_action: PostRunHandoffAction,
-    continued_post_run_handoff_active: bool,
-    continued_live_reopen_surface_active: bool,
     pub session_history_visible: bool,
     pub model_switcher_visible: bool,
     pub(crate) product_info: product_info::ProductInfo,
@@ -703,9 +700,6 @@ impl Default for AppState {
             startup_mode: false,
             starting_session_seed: false,
             startup_launcher_action: StartupLauncherAction::default(),
-            post_run_handoff_action: PostRunHandoffAction::default(),
-            continued_post_run_handoff_active: false,
-            continued_live_reopen_surface_active: false,
             session_history_visible: false,
             model_switcher_visible: false,
             product_info: Default::default(),
@@ -1807,7 +1801,6 @@ impl AppState {
             .flatten();
         let previous_phase = self.current_live_turn_phase();
         if !historical {
-            self.continued_live_reopen_surface_active = false;
             self.note_live_turn_status_timing(&event);
         }
         self.update_transient_state_for_event(&event);

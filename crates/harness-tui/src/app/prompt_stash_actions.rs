@@ -38,7 +38,6 @@ impl AppState {
         self.composer.selection_anchor = entry.selection_anchor;
         self.composer.prompt_history_index = None;
         self.composer.prompt_history_draft = None;
-        self.continued_live_reopen_surface_active = false;
         self.slash_draft_snapshot = None;
         self.sync_slash_overlay();
         self.sync_file_mention_overlay();
@@ -110,7 +109,6 @@ impl AppState {
         self.composer.selection_anchor = entry.selection_anchor;
         self.composer.prompt_history_index = None;
         self.composer.prompt_history_draft = None;
-        self.continued_live_reopen_surface_active = false;
         self.slash_draft_snapshot = None;
         self.sync_slash_overlay();
         self.sync_file_mention_overlay();

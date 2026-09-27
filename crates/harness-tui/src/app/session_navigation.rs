@@ -14,7 +14,7 @@ use super::session_slash::{
 use super::{
     auth_status_banner, set_pending_live_launch_metadata, set_pending_live_prompt_draft, AppState,
     Focus, PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
-    PostRunHandoffAction, StartupLauncherAction, Tab, UiIntent,
+    StartupLauncherAction, Tab, UiIntent,
 };
 use crate::keybindings::{self, Action};
 use crate::leaf_actions::group_d_dashboard::{action_for_command, DashboardAction};
@@ -58,27 +58,6 @@ impl AppState {
         let run_id = self.run_id().and_then(non_empty_str)?;
         let session_path = self.session_path.as_ref()?;
         Some((run_id, session_path))
-    }
-
-    fn default_post_run_handoff_action(&self) -> PostRunHandoffAction {
-        if self.post_run_can_reopen() {
-            PostRunHandoffAction::ContinueSession
-        } else {
-            PostRunHandoffAction::StartAnotherSession
-        }
-    }
-
-    pub(crate) fn selected_post_run_handoff_action(&self) -> PostRunHandoffAction {
-        let selected = self.post_run_handoff_action;
-        if self.post_run_handoff_actions().contains(&selected) {
-            selected
-        } else {
-            self.default_post_run_handoff_action()
-        }
-    }
-
-    fn reset_post_run_handoff_selection(&mut self) {
-        self.post_run_handoff_action = self.default_post_run_handoff_action();
     }
 
     pub(in crate::app) fn handle_navigation_overlay_key(&mut self, key: &KeyEvent) -> bool {
@@ -370,8 +349,6 @@ impl AppState {
         self.toggles_yolo_confirm_visible = false;
         self.lineage_browser_visible = false;
         self.fork_selector_visible = false;
-        self.continued_post_run_handoff_active = false;
-        self.continued_live_reopen_surface_active = false;
         self.continue_disabled_banner = None;
         self.dismissed_permissions.clear();
         self.submitted_permission_id = None;
@@ -1057,8 +1034,6 @@ impl AppState {
         self.replay_mode = false;
         self.session_path = None;
         self.session_lineage = Default::default();
-        self.continued_post_run_handoff_active = false;
-        self.continued_live_reopen_surface_active = false;
         self.active_tab = Tab::Run;
         self.live_details_drawer_open = false;
         self.continue_disabled_banner = None;
@@ -1120,79 +1095,6 @@ impl AppState {
             self.focus = focus;
         }
         self.modal_interaction.invalidate();
-    }
-
-    pub(in crate::app) fn select_previous_post_run_handoff_action(&mut self) {
-        let actions = self.post_run_handoff_actions();
-        let current = self.selected_post_run_handoff_action();
-        let current_index = actions
-            .iter()
-            .position(|action| *action == current)
-            .unwrap_or(0);
-        let previous_index = if current_index == 0 {
-            actions.len().saturating_sub(1)
-        } else {
-            current_index - 1
-        };
-        self.post_run_handoff_action = actions[previous_index];
-    }
-
-    pub(in crate::app) fn select_next_post_run_handoff_action(&mut self) {
-        let actions = self.post_run_handoff_actions();
-        let current = self.selected_post_run_handoff_action();
-        let current_index = actions
-            .iter()
-            .position(|action| *action == current)
-            .unwrap_or(0);
-        let next_index = if current_index + 1 >= actions.len() {
-            0
-        } else {
-            current_index + 1
-        };
-        self.post_run_handoff_action = actions[next_index];
-    }
-
-    pub(in crate::app) fn execute_post_run_handoff_action(&mut self) {
-        match self.selected_post_run_handoff_action() {
-            PostRunHandoffAction::ContinueSession => {
-                if self.continued_post_run_handoff_active {
-                    self.continued_post_run_handoff_active = false;
-                    self.continued_live_reopen_surface_active = true;
-                    self.active_tab = Tab::Run;
-                    self.focus = Focus::Prompt;
-                    return;
-                }
-                let Some((run_id, run_dir)) = self.post_run_reopen_target() else {
-                    self.reset_post_run_handoff_selection();
-                    return;
-                };
-                set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
-                self.emit_ui_intent(UiIntent::ContinueSession {
-                    run_id: run_id.to_string(),
-                    run_dir: run_dir.clone(),
-                });
-                self.should_quit = true;
-            }
-            PostRunHandoffAction::ReplayRun => {
-                let Some((run_id, run_dir)) = self.post_run_reopen_target() else {
-                    self.reset_post_run_handoff_selection();
-                    return;
-                };
-                set_pending_live_prompt_draft(Some(self.composer.prompt_buffer.clone()));
-                self.emit_ui_intent(UiIntent::ReplaySession {
-                    run_id: run_id.to_string(),
-                    run_dir: run_dir.clone(),
-                });
-                self.should_quit = true;
-            }
-            PostRunHandoffAction::StartAnotherSession => {
-                self.apply_new_session_launcher_selection();
-            }
-            PostRunHandoffAction::Quit => {
-                self.should_quit = true;
-                self.emit_ui_intent(UiIntent::QuitRequested);
-            }
-        }
     }
 }
 

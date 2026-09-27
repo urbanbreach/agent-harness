@@ -1,0 +1,5 @@
+{
+  "commit": "410779f3818e97b91efbcaa24421fcd581177a4c",
+  "lifecycle_sha256": "66588867d2324b2f595eb73eb98a9f77e6a699ec2f78a10fb3a52473f6c546b0",
+  "acceptance": "No public or observed behavior changes; existing full-frame, completed-session, replay/historical and PTY checks must pass. No new resource speedup claim."
+}

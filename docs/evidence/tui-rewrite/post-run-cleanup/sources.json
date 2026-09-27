@@ -1,0 +1,43 @@
+{
+  "base": "410779f3818e97b91efbcaa24421fcd581177a4c",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/app.rs",
+      "sha256": "6d744d0bc3de9084e8d6efb3f7b09565052804926f52566f856f3e593c2e9f4e",
+      "lines": 3894
+    },
+    {
+      "path": "crates/harness-tui/src/app/composer_editing.rs",
+      "sha256": "dce73075d4bb65d3dbdbfe7082521b601ba996855ba5bd7991227673e62a8588",
+      "lines": 642
+    },
+    {
+      "path": "crates/harness-tui/src/app/key_interaction.rs",
+      "sha256": "b50b1cce6ee7e4b8d0b47b274318fd19184ad312bdc900aa701fe832634865f1",
+      "lines": 1858
+    },
+    {
+      "path": "crates/harness-tui/src/app/mouse_interaction.rs",
+      "sha256": "c6d9737417284daf47f994f4276828bc392a63ccf4136ccc0b87b1f5587755bc",
+      "lines": 1726
+    },
+    {
+      "path": "crates/harness-tui/src/app/prompt_input.rs",
+      "sha256": "1e15db60eeb63548de3270d17f777e96b95af21d427916d24dd7310ef3a29b18",
+      "lines": 774
+    },
+    {
+      "path": "crates/harness-tui/src/app/prompt_stash_actions.rs",
+      "sha256": "1b2a689f0ec1cffbbfc00caf8f21e9c0516858c363f0dce9997c552a44a1405c",
+      "lines": 140
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_navigation.rs",
+      "sha256": "c4ef83a2dfb3fc5885bc876293d703ce3031bfd9ff1beb33d103e78091a5071c",
+      "lines": 1230
+    }
+  ],
+  "production_lines_removed_net": 133,
+  "test_lines_changed": 0,
+  "all_tui_src_lines": 166914
+}

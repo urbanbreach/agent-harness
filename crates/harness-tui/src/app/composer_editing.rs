@@ -96,7 +96,6 @@ impl AppState {
             return;
         }
         self.reset_clear_prompt_confirmation();
-        self.continued_live_reopen_surface_active = false;
         self.adjust_file_mention_tags_for_delete(start, end);
         let start_byte = self.prompt_char_byte_index(start);
         let end_byte = self.prompt_char_byte_index(end);
