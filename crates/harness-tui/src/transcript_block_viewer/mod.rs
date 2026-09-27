@@ -299,8 +299,8 @@ impl state::ViewerState {
         focus: CellPoint,
         viewport: Viewport,
     ) -> Result<DragResult, ViewerError> {
-        let result = self.wrapped.drag_with_autoscroll(anchor, focus, viewport);
-        self.selection = Some(self.wrapped.drag(anchor, result.focus));
+        let result = self.wrapped.drag_with_autoscroll(focus, viewport);
+        self.selection = Some(SelectionRange::new(anchor, result.focus));
         self.cursor = result.focus;
         if result.autoscroll.lines != 0 {
             self.scroll_by(f64::from(result.autoscroll.lines))?;

@@ -1,0 +1,950 @@
+diff --git i/crates/harness-tui/src/dashboard_integration/reply.rs w/crates/harness-tui/src/dashboard_integration/reply.rs
+index a4a4d338..9c7983b8 100644
+--- i/crates/harness-tui/src/dashboard_integration/reply.rs
++++ w/crates/harness-tui/src/dashboard_integration/reply.rs
+@@ -9,8 +9,7 @@ impl DashboardIntegration {
+         let rows = self
+             .reply_editor()
+             .and_then(|editor| {
+-                crate::transcript_selection::WrappedText::new(&editor.text(), usize::from(width))
+-                    .ok()
++                crate::transcript_selection::TextLayout::new(editor.text(), usize::from(width)).ok()
+             })
+             .map_or(1, |wrapped| {
+                 u16::try_from(wrapped.row_count()).unwrap_or(u16::MAX)
+diff --git i/crates/harness-tui/src/transcript_block_viewer/mod.rs w/crates/harness-tui/src/transcript_block_viewer/mod.rs
+index ac058d5e..017dc734 100644
+--- i/crates/harness-tui/src/transcript_block_viewer/mod.rs
++++ w/crates/harness-tui/src/transcript_block_viewer/mod.rs
+@@ -299,8 +299,8 @@ impl state::ViewerState {
+         focus: CellPoint,
+         viewport: Viewport,
+     ) -> Result<DragResult, ViewerError> {
+-        let result = self.wrapped.drag_with_autoscroll(anchor, focus, viewport);
+-        self.selection = Some(self.wrapped.drag(anchor, result.focus));
++        let result = self.wrapped.drag_with_autoscroll(focus, viewport);
++        self.selection = Some(SelectionRange::new(anchor, result.focus));
+         self.cursor = result.focus;
+         if result.autoscroll.lines != 0 {
+             self.scroll_by(f64::from(result.autoscroll.lines))?;
+diff --git i/crates/harness-tui/src/transcript_block_viewer/render.rs w/crates/harness-tui/src/transcript_block_viewer/render.rs
+index c41d192e..7e3ff7d2 100644
+--- i/crates/harness-tui/src/transcript_block_viewer/render.rs
++++ w/crates/harness-tui/src/transcript_block_viewer/render.rs
+@@ -20,25 +20,16 @@ pub fn render_surface(state: &ViewerState, _area: Rect) -> ViewerRenderSurface {
+ pub(crate) fn render_viewer(buffer: &mut Buffer, area: Rect, state: &ViewerState, theme: &Theme) {
+     let body = super::viewer_layout(area).content_body(state.input_active() || state.visual_mode);
+     let first = state.scroll_top();
+-    let rows = first
+-        ..first
+-            .saturating_add(usize::from(body.height))
+-            .min(state.wrapped.row_count());
++    let count = state.wrapped.row_count();
++    let rows = first..first.saturating_add(usize::from(body.height)).min(count);
+     let surface = project_rows(state, rows);
+-    paint(
+-        buffer,
+-        area,
+-        &surface,
+-        first,
+-        state.wrapped.row_count(),
+-        theme,
+-    );
++    paint(buffer, area, &surface, first, count, theme);
+ }
+ 
+ fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface {
+     let mut filter_search = super::SearchState::new();
+     if state.filter_editing {
+-        let _ = filter_search.set_query(&state.display_text, &regex::escape(&state.filter_query));
++        let _ = filter_search.set_query(state.wrapped.text(), &regex::escape(&state.filter_query));
+     }
+     let highlights = if state.filter_editing {
+         &filter_search
+@@ -72,7 +63,7 @@ fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface
+         .map(|(row, match_ranges)| {
+             let selection_range = selection.and_then(|(start, end)| cells_in_row(start, end, row));
+             RenderedLine {
+-                text: state.wrapped.row_text(row),
++                text: state.wrapped.row_text(row).to_owned(),
+                 styled: state.styled_lines.get(row).cloned(),
+                 selected: selection_range.is_some(),
+                 current_match: current
+@@ -426,14 +417,28 @@ fn render_line<'a>(
+     theme: &Theme,
+ ) -> ratatui::text::Line<'a> {
+     let mut column = 0;
++    let mut source_styles = line
++        .styled
++        .iter()
++        .flat_map(|line| &line.spans)
++        .scan(0, |end, span| {
++            *end += span.width();
++            Some((*end, span.style))
++        })
++        .peekable();
+     let spans = line
+         .text
+         .graphemes(true)
+         .map(|grapheme| {
+             let start = column;
+             column += grapheme.width();
+-            let mut style = source_style(line, start)
+-                .unwrap_or_else(|| Style::default().fg(theme.terminal_colors.primary));
++            while source_styles.peek().is_some_and(|(end, _)| *end <= start) {
++                let _ = source_styles.next();
++            }
++            let mut style = source_styles.peek().map_or_else(
++                || Style::default().fg(theme.terminal_colors.primary),
++                |(_, style)| *style,
++            );
+             if line
+                 .match_ranges
+                 .iter()
+@@ -478,14 +483,6 @@ const fn mode_label(mode: ViewerMode) -> &'static str {
+     }
+ }
+ 
+-fn source_style(line: &RenderedLine, column: usize) -> Option<Style> {
+-    let mut end = 0;
+-    line.styled.as_ref()?.spans.iter().find_map(|span| {
+-        end += span.width();
+-        (column < end).then_some(span.style)
+-    })
+-}
+-
+ #[expect(
+     clippy::cast_possible_truncation,
+     clippy::cast_sign_loss,
+diff --git i/crates/harness-tui/src/transcript_block_viewer/state.rs w/crates/harness-tui/src/transcript_block_viewer/state.rs
+index b07f92a3..c6187c79 100644
+--- i/crates/harness-tui/src/transcript_block_viewer/state.rs
++++ w/crates/harness-tui/src/transcript_block_viewer/state.rs
+@@ -3,7 +3,7 @@ use crate::transcript_scroll::{
+     EasingKind, LogicalAnchor, MotionPreference, ScrollError, ScrollFrame, ScrollTransition,
+     TranscriptLayout, TransitionRequest,
+ };
+-use crate::transcript_selection::{CellPoint, SelectionRange, WrappedText};
++use crate::transcript_selection::{CellPoint, SelectionRange, TextLayout};
+ 
+ use super::search::{SearchDirection, SearchNavigation, SearchState};
+ use super::{render_surface, ViewerRenderSurface};
+@@ -17,7 +17,6 @@ const DEFAULT_HEIGHT: usize = 24;
+ pub struct ViewerState {
+     block_id: BlockId,
+     content: ViewerBlockContent,
+-    pub(super) display_text: String,
+     pub(super) styled_lines: Vec<ratatui::text::Line<'static>>,
+     pub(super) row_joiners: Vec<String>,
+     theme: crate::theme::Theme,
+@@ -25,7 +24,7 @@ pub struct ViewerState {
+     mode: ViewerMode,
+     width: usize,
+     height: usize,
+-    pub(super) wrapped: WrappedText,
++    pub(super) wrapped: TextLayout,
+     pub(super) selection: Option<SelectionRange>,
+     pub(super) cursor: CellPoint,
+     pub(super) body_start: usize,
+@@ -50,7 +49,6 @@ impl ViewerState {
+     ) -> Result<Self, ViewerError> {
+         let mut state = Self {
+             block_id,
+-            display_text: String::new(),
+             content,
+             styled_lines: Vec::new(),
+             row_joiners: Vec::new(),
+@@ -59,7 +57,7 @@ impl ViewerState {
+             mode: ViewerMode::Wrapped,
+             width: 80,
+             height: DEFAULT_HEIGHT,
+-            wrapped: WrappedText::new("", 1).map_err(ViewerError::Selection)?,
++            wrapped: TextLayout::new(String::new(), 1).map_err(ViewerError::Selection)?,
+             selection: None,
+             cursor: CellPoint::new(0, 0),
+             body_start: 0,
+@@ -120,7 +118,7 @@ impl ViewerState {
+     }
+ 
+     pub fn set_search_query(&mut self, query: &str) -> SearchNavigation {
+-        let navigation = self.search.set_query(&self.display_text, query);
++        let navigation = self.search.set_query(self.wrapped.text(), query);
+         self.reveal_search_match();
+         navigation
+     }
+@@ -219,7 +217,7 @@ impl ViewerState {
+     }
+     pub(crate) fn quote_text(&self) -> String {
+         self.copy_selection_text()
+-            .unwrap_or_else(|_| self.wrapped.row_text(self.cursor.row))
++            .unwrap_or_else(|_| self.wrapped.row_text(self.cursor.row).to_owned())
+     }
+     pub(crate) fn command_text(&self) -> Option<String> {
+         match &self.content.preamble {
+@@ -449,7 +447,7 @@ impl ViewerState {
+             let joiners = vec!["\n".to_owned(); lines.len()];
+             (lines, joiners)
+         };
+-        self.display_text = self
++        let display_text = self
+             .styled_lines
+             .iter()
+             .map(ratatui::text::Line::to_string)
+@@ -458,15 +456,14 @@ impl ViewerState {
+         let width = if self.wrap_enabled {
+             self.width
+         } else {
+-            self.display_text
++            display_text
+                 .lines()
+                 .map(unicode_width::UnicodeWidthStr::width)
+                 .max()
+                 .unwrap_or(1)
+                 .max(self.width)
+         };
+-        self.wrapped =
+-            WrappedText::new(&self.display_text, width).map_err(ViewerError::Selection)?;
++        self.wrapped = TextLayout::new(display_text, width).map_err(ViewerError::Selection)?;
+         self.layout = viewer_layout(self.block_id, self.wrapped.row_count(), self.height)?;
+         if self.cursor.row >= previous_body {
+             self.cursor.row = self
+@@ -482,7 +479,7 @@ impl ViewerState {
+         self.scroll_top = self.scroll_top.min(self.layout.max_scroll());
+         if !self.search.query().is_empty() {
+             let query = self.search.query().to_owned();
+-            let _ = self.search.set_query(&self.display_text, &query);
++            let _ = self.search.set_query(self.wrapped.text(), &query);
+         }
+         Ok(())
+     }
+diff --git i/crates/harness-tui/src/transcript_selection/layout.rs w/crates/harness-tui/src/transcript_selection/layout.rs
+new file mode 100644
+index 00000000..e52c6b76
+--- /dev/null
++++ w/crates/harness-tui/src/transcript_selection/layout.rs
+@@ -0,0 +1,287 @@
++use std::ops::Range;
++
++use unicode_segmentation::UnicodeSegmentation;
++use unicode_width::UnicodeWidthStr;
++
++use super::{
++    Autoscroll, CellPoint, DragResult, Grapheme, GraphemeRange, NavigationKey, SelectionError,
++    SelectionMode, SelectionRange, Viewport,
++};
++
++#[derive(Debug, Clone)]
++struct Row {
++    bytes: Range<usize>,
++    graphemes: Range<usize>,
++    line_start: usize,
++    width: usize,
++}
++
++struct Cluster<'a> {
++    text: &'a str,
++    bytes: Range<usize>,
++    cells: Range<usize>,
++}
++
++/// One source string, compact byte/cell ends, and display-row ranges.
++/// Geometry is immutable; no owned grapheme strings or mutable paint cache.
++#[derive(Debug, Clone)]
++pub(crate) struct TextLayout {
++    text: String,
++    rows: Vec<Row>,
++    ends: Vec<(usize, usize)>,
++}
++
++impl TextLayout {
++    pub(crate) fn new(text: String, width: usize) -> Result<Self, SelectionError> {
++        if width == 0 {
++            return Err(SelectionError::ZeroWidth);
++        }
++        let mut rows = Vec::new();
++        let mut ends = Vec::new();
++        let mut line_start = 0;
++        for line in text.split('\n') {
++            let mut first = ends.len();
++            let mut bytes = line_start..line_start;
++            let mut cell = 0;
++            for (offset, value) in line.grapheme_indices(true) {
++                let byte = line_start + offset;
++                let cells = value.width().max(1);
++                let wrapped = cell > 0 && cell + cells > width;
++                if wrapped {
++                    rows.push(Row {
++                        bytes,
++                        graphemes: first..ends.len(),
++                        line_start,
++                        width: cell,
++                    });
++                    bytes = byte..byte;
++                    first = ends.len();
++                    cell = 0;
++                }
++                // Only the whitespace that triggered the soft wrap is omitted.
++                if wrapped && value.chars().all(char::is_whitespace) {
++                    bytes = byte + value.len()..byte + value.len();
++                    continue;
++                }
++                if cell == 0 {
++                    bytes.start = byte;
++                }
++                bytes.end = byte + value.len();
++                cell += cells;
++                ends.push((bytes.end, cell));
++            }
++            rows.push(Row {
++                bytes,
++                graphemes: first..ends.len(),
++                line_start,
++                width: cell,
++            });
++            line_start += line.len() + 1;
++        }
++        Ok(Self { text, rows, ends })
++    }
++
++    pub(crate) fn text(&self) -> &str {
++        &self.text
++    }
++
++    pub(crate) fn row_count(&self) -> usize {
++        self.rows.len()
++    }
++
++    pub(crate) fn row_text(&self, row: usize) -> &str {
++        self.rows
++            .get(row)
++            .map_or("", |row| &self.text[row.bytes.clone()])
++    }
++
++    pub(crate) fn point_for_byte(&self, byte: usize) -> CellPoint {
++        let cluster = self.ends.partition_point(|(end, _)| *end <= byte);
++        let row = self
++            .rows
++            .partition_point(|row| row.graphemes.end <= cluster);
++        if let Some(geometry) = self.rows.get(row) {
++            let cell = if cluster == geometry.graphemes.start {
++                0
++            } else {
++                self.ends[cluster - 1].1
++            };
++            return CellPoint::new(row, cell);
++        }
++        CellPoint::new(
++            self.rows.len() - 1,
++            self.rows.last().map_or(0, |row| row.width),
++        )
++    }
++
++    pub(crate) fn drag_with_autoscroll(&self, focus: CellPoint, viewport: Viewport) -> DragResult {
++        let last = viewport
++            .top
++            .saturating_add(viewport.height.saturating_sub(1));
++        let lines = if focus.row < viewport.top {
++            -i32::try_from(viewport.top - focus.row).unwrap_or(i32::MAX)
++        } else if focus.row > last {
++            i32::try_from(focus.row - last).unwrap_or(i32::MAX)
++        } else {
++            0
++        };
++        DragResult {
++            focus: self.snap_point(focus),
++            autoscroll: Autoscroll { lines },
++        }
++    }
++
++    pub(crate) fn select(&self, point: CellPoint, mode: SelectionMode) -> SelectionRange {
++        let row = point.row.min(self.rows.len() - 1);
++        match mode {
++            SelectionMode::Character => SelectionRange::new(point, point),
++            SelectionMode::Line => SelectionRange::new(
++                CellPoint::new(row, 0),
++                CellPoint::new(row, self.last_cell(row)),
++            ),
++            SelectionMode::Word => {
++                let mut first = 0;
++                let mut clusters = self.clusters(row);
++                let Some(found) = clusters.find(|cluster| {
++                    if cluster.cells.contains(&point.cell) {
++                        return true;
++                    }
++                    if cluster.text.chars().all(char::is_whitespace) {
++                        first = cluster.cells.end;
++                    }
++                    false
++                }) else {
++                    let point = CellPoint::new(row, point.cell);
++                    return SelectionRange::new(point, point);
++                };
++                let mut end = found.cells.end;
++                if found.text.chars().all(char::is_whitespace) {
++                    first = found.cells.start;
++                } else {
++                    end = clusters
++                        .take_while(|cluster| !cluster.text.chars().all(char::is_whitespace))
++                        .last()
++                        .map_or(end, |cluster| cluster.cells.end);
++                }
++                SelectionRange::new(CellPoint::new(row, first), CellPoint::new(row, end - 1))
++            }
++        }
++    }
++
++    pub(crate) fn copy(&self, selection: SelectionRange) -> Result<String, SelectionError> {
++        let (start, end) = selection.normalized();
++        let first = start.row.min(self.rows.len() - 1);
++        let last = end.row.min(self.rows.len() - 1);
++        let from = self
++            .clusters(first)
++            .find(|cluster| cluster.cells.end > start.cell)
++            .map_or(self.rows[first].line_start, |cluster| cluster.bytes.start);
++        let to = self
++            .clusters(last)
++            .filter(|cluster| cluster.cells.start <= end.cell)
++            .last()
++            .map_or(self.rows[last].line_start, |cluster| cluster.bytes.end);
++        if from >= to {
++            return Err(SelectionError::EmptySelection);
++        }
++        self.text
++            .get(from..to)
++            .map(str::to_owned)
++            .ok_or(SelectionError::InvalidPoint)
++    }
++
++    pub(crate) fn move_focus(&self, point: CellPoint, key: NavigationKey) -> CellPoint {
++        let point = self.snap_point(point);
++        match key {
++            NavigationKey::Up => {
++                self.snap_point(CellPoint::new(point.row.saturating_sub(1), point.cell))
++            }
++            NavigationKey::Down => {
++                self.snap_point(CellPoint::new(point.row.saturating_add(1), point.cell))
++            }
++            NavigationKey::Home => CellPoint::new(point.row, 0),
++            NavigationKey::End => CellPoint::new(point.row, self.last_cell(point.row)),
++            NavigationKey::Left | NavigationKey::Right => {
++                let mut previous = None;
++                let mut clusters = self.clusters(point.row);
++                let found = clusters.find(|cluster| {
++                    if cluster.cells.contains(&point.cell) {
++                        return true;
++                    }
++                    previous = Some(cluster.cells.start);
++                    false
++                });
++                if found.is_none() {
++                    return point;
++                }
++                if key == NavigationKey::Left {
++                    if let Some(cell) = previous {
++                        CellPoint::new(point.row, cell)
++                    } else if point.row > 0 {
++                        CellPoint::new(point.row - 1, self.last_cell(point.row - 1))
++                    } else {
++                        point
++                    }
++                } else if let Some(next) = clusters.next() {
++                    CellPoint::new(point.row, next.cells.start)
++                } else if point.row + 1 < self.rows.len() {
++                    CellPoint::new(point.row + 1, 0)
++                } else {
++                    point
++                }
++            }
++        }
++    }
++
++    pub(super) fn owned_graphemes(&self) -> Vec<Vec<Grapheme>> {
++        self.rows
++            .iter()
++            .enumerate()
++            .map(|(row, geometry)| {
++                self.clusters(row)
++                    .map(|cluster| Grapheme {
++                        text: cluster.text.to_owned(),
++                        end: CellPoint::new(0, cluster.cells.end - 1),
++                        range: GraphemeRange {
++                            byte_range: cluster.bytes.start - geometry.line_start
++                                ..cluster.bytes.end - geometry.line_start,
++                            cell_range: cluster.cells,
++                        },
++                    })
++                    .collect()
++            })
++            .collect()
++    }
++
++    fn clusters(&self, row: usize) -> impl Iterator<Item = Cluster<'_>> {
++        let (range, first) = self
++            .rows
++            .get(row)
++            .map_or((0..0, 0), |row| (row.graphemes.clone(), row.bytes.start));
++        self.ends[range]
++            .iter()
++            .scan((first, 0), move |start, &(end, cell)| {
++                let (byte, column) = *start;
++                *start = (end, cell);
++                Some(Cluster {
++                    text: &self.text[byte..end],
++                    bytes: byte..end,
++                    cells: column..cell,
++                })
++            })
++    }
++
++    fn last_cell(&self, row: usize) -> usize {
++        self.rows
++            .get(row)
++            .map_or(0, |row| row.width.saturating_sub(1))
++    }
++
++    fn snap_point(&self, point: CellPoint) -> CellPoint {
++        let row = point.row.min(self.rows.len() - 1);
++        let point = CellPoint::new(row, point.cell.min(self.last_cell(row)));
++        self.clusters(row)
++            .find(|cluster| cluster.cells.contains(&point.cell))
++            .map_or(point, |cluster| CellPoint::new(row, cluster.cells.start))
++    }
++}
+diff --git i/crates/harness-tui/src/transcript_selection/mod.rs w/crates/harness-tui/src/transcript_selection/mod.rs
+index 3f208e18..87206fc0 100644
+--- i/crates/harness-tui/src/transcript_selection/mod.rs
++++ w/crates/harness-tui/src/transcript_selection/mod.rs
+@@ -5,6 +5,7 @@
+ 
+ mod copy_metadata;
+ mod hyperlinks;
++mod layout;
+ mod local_clipboard;
+ mod osc52;
+ mod selection;
+@@ -13,6 +14,7 @@ mod selection_types;
+ pub use copy_metadata::{copy_with_metadata, BlockKind, CopyMetadata, CopyMetadataPolicy};
+ pub(crate) use hyperlinks::safe_external_url;
+ pub use hyperlinks::{hyperlink_sequence, Hyperlink, HyperlinkError, HyperlinkMap, LinkRange};
++pub(crate) use layout::TextLayout;
+ pub use local_clipboard::{
+     copy_local, copy_local_with_runner, ClipboardCommand, LocalClipboardError, LocalPlatform,
+ };
+diff --git i/crates/harness-tui/src/transcript_selection/selection.rs w/crates/harness-tui/src/transcript_selection/selection.rs
+index f04be8de..af8ceaf2 100644
+--- i/crates/harness-tui/src/transcript_selection/selection.rs
++++ w/crates/harness-tui/src/transcript_selection/selection.rs
+@@ -1,114 +1,38 @@
+-use std::ops::Range;
+-
+-use unicode_segmentation::UnicodeSegmentation;
+-use unicode_width::UnicodeWidthStr;
+-
+-use super::selection_types::{
+-    Autoscroll, CellPoint, DragResult, Grapheme, GraphemeRange, NavigationKey, SelectionError,
+-    SelectionMode, SelectionRange, Viewport,
++use super::{
++    CellPoint, DragResult, Grapheme, NavigationKey, SelectionError, SelectionMode, SelectionRange,
++    TextLayout, Viewport,
+ };
+ 
+-#[derive(Debug, Clone)]
+-struct Row {
+-    graphemes: Range<usize>,
+-    source_offset: usize,
+-    width: usize,
+-}
+-
++/// Owned grapheme inspection remains available to public callers. Application
++/// surfaces use the same layout directly without materializing these strings.
+ #[derive(Debug, Clone)]
+ pub struct WrappedText {
+-    source: String,
+-    graphemes: Vec<Grapheme>,
+-    rows: Vec<Row>,
++    layout: TextLayout,
++    graphemes: Vec<Vec<Grapheme>>,
+ }
+ 
+ impl WrappedText {
+     pub fn new(text: &str, width: usize) -> Result<Self, SelectionError> {
+-        if width == 0 {
+-            return Err(SelectionError::ZeroWidth);
+-        }
+-        let mut graphemes = Vec::new();
+-        let mut rows = Vec::new();
+-        let mut source_offset = 0;
+-        for line in text.split('\n') {
+-            let mut start = graphemes.len();
+-            let mut cell = 0;
+-            for (byte, value) in line.grapheme_indices(true) {
+-                let cells = value.width().max(1);
+-                let wrapped = cell + cells > width && start < graphemes.len();
+-                if wrapped {
+-                    rows.push(Row {
+-                        graphemes: start..graphemes.len(),
+-                        source_offset,
+-                        width: cell,
+-                    });
+-                    start = graphemes.len();
+-                    cell = 0;
+-                }
+-                // Only the whitespace that caused a soft wrap is omitted.
+-                if wrapped && value.chars().all(char::is_whitespace) {
+-                    continue;
+-                }
+-                graphemes.push(Grapheme {
+-                    text: value.to_owned(),
+-                    range: GraphemeRange {
+-                        byte_range: byte..byte + value.len(),
+-                        cell_range: cell..cell + cells,
+-                    },
+-                    end: CellPoint::new(0, cell + cells - 1),
+-                });
+-                cell += cells;
+-            }
+-            rows.push(Row {
+-                graphemes: start..graphemes.len(),
+-                source_offset,
+-                width: cell,
+-            });
+-            source_offset += line.len() + 1;
+-        }
+-        Ok(Self {
+-            source: text.to_owned(),
+-            graphemes,
+-            rows,
+-        })
++        let layout = TextLayout::new(text.to_owned(), width)?;
++        let graphemes = layout.owned_graphemes();
++        Ok(Self { layout, graphemes })
+     }
+ 
+     pub fn row_count(&self) -> usize {
+-        self.rows.len()
++        self.layout.row_count()
+     }
+ 
+     pub fn row_text(&self, row: usize) -> String {
+-        let Some(row) = self.rows.get(row) else {
+-            return String::new();
+-        };
+-        let clusters = &self.graphemes[row.graphemes.clone()];
+-        match (clusters.first(), clusters.last()) {
+-            (Some(first), Some(last)) => self.source[row.source_offset
+-                + first.range.byte_range.start
+-                ..row.source_offset + last.range.byte_range.end]
+-                .to_owned(),
+-            _ => String::new(),
+-        }
++        self.layout.row_text(row).to_owned()
+     }
+ 
+     pub fn point_for_byte(&self, byte: usize) -> CellPoint {
+-        for (index, row) in self.rows.iter().enumerate() {
+-            let clusters = &self.graphemes[row.graphemes.clone()];
+-            let cluster = clusters.partition_point(|cluster| {
+-                row.source_offset + cluster.range.byte_range.end <= byte
+-            });
+-            if let Some(cluster) = clusters.get(cluster) {
+-                return CellPoint::new(index, cluster.range.cell_range.start);
+-            }
+-        }
+-        CellPoint::new(
+-            self.rows.len().saturating_sub(1),
+-            self.rows.last().map_or(0, |row| row.width),
+-        )
++        self.layout.point_for_byte(byte)
+     }
+ 
+     pub fn grapheme_at(&self, point: CellPoint) -> Option<&Grapheme> {
+-        self.clusters(point.row)
++        self.graphemes
++            .get(point.row)?
+             .iter()
+             .find(|cluster| cluster.range.cell_range.contains(&point.cell))
+     }
+@@ -123,140 +47,18 @@ impl WrappedText {
+         focus: CellPoint,
+         viewport: Viewport,
+     ) -> DragResult {
+-        let last = viewport
+-            .top
+-            .saturating_add(viewport.height.saturating_sub(1));
+-        let lines = if focus.row < viewport.top {
+-            -i32::try_from(viewport.top - focus.row).unwrap_or(i32::MAX)
+-        } else if focus.row > last {
+-            i32::try_from(focus.row - last).unwrap_or(i32::MAX)
+-        } else {
+-            0
+-        };
+-        DragResult {
+-            focus: self.snap_point(focus),
+-            autoscroll: Autoscroll { lines },
+-        }
++        self.layout.drag_with_autoscroll(focus, viewport)
+     }
+ 
+     pub fn select(&self, point: CellPoint, mode: SelectionMode) -> SelectionRange {
+-        let row = point.row.min(self.rows.len().saturating_sub(1));
+-        let clusters = self.clusters(row);
+-        match mode {
+-            SelectionMode::Character => SelectionRange::new(point, point),
+-            SelectionMode::Line => SelectionRange::new(
+-                CellPoint::new(row, 0),
+-                CellPoint::new(row, self.last_cell(row)),
+-            ),
+-            SelectionMode::Word => {
+-                let Some(index) = clusters
+-                    .iter()
+-                    .position(|cluster| cluster.range.cell_range.contains(&point.cell))
+-                else {
+-                    let point = CellPoint::new(row, point.cell);
+-                    return SelectionRange::new(point, point);
+-                };
+-                let mut first = index;
+-                let mut last = index;
+-                if !clusters[index].text.chars().all(char::is_whitespace) {
+-                    while first > 0 && !clusters[first - 1].text.chars().all(char::is_whitespace) {
+-                        first -= 1;
+-                    }
+-                    while last + 1 < clusters.len()
+-                        && !clusters[last + 1].text.chars().all(char::is_whitespace)
+-                    {
+-                        last += 1;
+-                    }
+-                }
+-                SelectionRange::new(
+-                    CellPoint::new(row, clusters[first].range.cell_range.start),
+-                    CellPoint::new(row, clusters[last].range.cell_range.end - 1),
+-                )
+-            }
+-        }
++        self.layout.select(point, mode)
+     }
+ 
+     pub fn copy(&self, selection: SelectionRange) -> Result<String, SelectionError> {
+-        let (start, end) = selection.normalized();
+-        let first_row = start.row.min(self.rows.len().saturating_sub(1));
+-        let last_row = end.row.min(self.rows.len().saturating_sub(1));
+-        let from = self.rows[first_row].source_offset
+-            + self
+-                .clusters(first_row)
+-                .iter()
+-                .find(|cluster| cluster.range.cell_range.end > start.cell)
+-                .map_or(0, |cluster| cluster.range.byte_range.start);
+-        let to = self.rows[last_row].source_offset
+-            + self
+-                .clusters(last_row)
+-                .iter()
+-                .rev()
+-                .find(|cluster| cluster.range.cell_range.start <= end.cell)
+-                .map_or(0, |cluster| cluster.range.byte_range.end);
+-        if from >= to {
+-            return Err(SelectionError::EmptySelection);
+-        }
+-        self.source
+-            .get(from..to)
+-            .map(str::to_owned)
+-            .ok_or(SelectionError::InvalidPoint)
++        self.layout.copy(selection)
+     }
+ 
+     pub fn move_focus(&self, point: CellPoint, key: NavigationKey) -> CellPoint {
+-        let point = self.snap_point(point);
+-        match key {
+-            NavigationKey::Up => {
+-                self.snap_point(CellPoint::new(point.row.saturating_sub(1), point.cell))
+-            }
+-            NavigationKey::Down => {
+-                self.snap_point(CellPoint::new(point.row.saturating_add(1), point.cell))
+-            }
+-            NavigationKey::Home => CellPoint::new(point.row, 0),
+-            NavigationKey::End => CellPoint::new(point.row, self.last_cell(point.row)),
+-            NavigationKey::Left | NavigationKey::Right => {
+-                let clusters = self.clusters(point.row);
+-                let Some(index) = clusters
+-                    .iter()
+-                    .position(|cluster| cluster.range.cell_range.contains(&point.cell))
+-                else {
+-                    return point;
+-                };
+-                if key == NavigationKey::Left {
+-                    if index > 0 {
+-                        CellPoint::new(point.row, clusters[index - 1].range.cell_range.start)
+-                    } else if point.row > 0 {
+-                        CellPoint::new(point.row - 1, self.last_cell(point.row - 1))
+-                    } else {
+-                        point
+-                    }
+-                } else if let Some(next) = clusters.get(index + 1) {
+-                    CellPoint::new(point.row, next.range.cell_range.start)
+-                } else if point.row + 1 < self.rows.len() {
+-                    CellPoint::new(point.row + 1, 0)
+-                } else {
+-                    point
+-                }
+-            }
+-        }
+-    }
+-
+-    fn clusters(&self, row: usize) -> &[Grapheme] {
+-        self.rows
+-            .get(row)
+-            .map_or(&[], |row| &self.graphemes[row.graphemes.clone()])
+-    }
+-
+-    fn last_cell(&self, row: usize) -> usize {
+-        self.rows
+-            .get(row)
+-            .map_or(0, |row| row.width.saturating_sub(1))
+-    }
+-
+-    fn snap_point(&self, point: CellPoint) -> CellPoint {
+-        let row = point.row.min(self.rows.len().saturating_sub(1));
+-        let point = CellPoint::new(row, point.cell.min(self.last_cell(row)));
+-        self.grapheme_at(point).map_or(point, |cluster| {
+-            CellPoint::new(row, cluster.range.cell_range.start)
+-        })
++        self.layout.move_focus(point, key)
+     }
+ }
+diff --git i/crates/harness-tui/src/ui_overlays/status_dialog.rs w/crates/harness-tui/src/ui_overlays/status_dialog.rs
+index f0001ce5..f83eec0a 100644
+--- i/crates/harness-tui/src/ui_overlays/status_dialog.rs
++++ w/crates/harness-tui/src/ui_overlays/status_dialog.rs
+@@ -453,11 +453,6 @@ fn render_dashboard_reply(
+         }
+         return;
+     }
+-    let Ok(wrapped) =
+-        crate::transcript_selection::WrappedText::new(&text, usize::from(inner.width.max(1)))
+-    else {
+-        return;
+-    };
+     let byte = dashboard.reply_editor().map_or(text.len(), |editor| {
+         use unicode_segmentation::UnicodeSegmentation;
+         text.graphemes(true)
+@@ -465,6 +460,11 @@ fn render_dashboard_reply(
+             .map(str::len)
+             .sum()
+     });
++    let Ok(wrapped) =
++        crate::transcript_selection::TextLayout::new(text, usize::from(inner.width.max(1)))
++    else {
++        return;
++    };
+     let cursor = wrapped.point_for_byte(byte);
+     let top = cursor
+         .row
+diff --git i/crates/harness-tui/tests/transcript_block_viewer_test.rs w/crates/harness-tui/tests/transcript_block_viewer_test.rs
+index 8579b274..debddaa8 100644
+--- i/crates/harness-tui/tests/transcript_block_viewer_test.rs
++++ w/crates/harness-tui/tests/transcript_block_viewer_test.rs
+@@ -14,6 +14,9 @@ use ratatui::layout::Rect;
+ 
+ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+ 
++#[path = "support/rewrite_journey.rs"]
++mod journey;
++
+ fn block_id() -> BlockId {
+     ReplayTurn::event(41, 2, 1).block_id(0)
+ }
+@@ -292,3 +295,62 @@ fn wrapped_and_raw_render_surfaces_highlight_current_match_and_selection() -> Te
+     assert_eq!(buffer[(0, 1)].fg, ratatui::style::Color::Rgb(88, 88, 88));
+     Ok(())
+ }
++
++#[test]
++fn searching_long_unwrapped_output_keeps_its_tail_reachable() -> TestResult {
++    use crossterm::event::{KeyCode, KeyModifiers};
++    use harness_tui::{app::Focus, ui::render_app};
++    use ratatui::{backend::TestBackend, Terminal};
++    use serde_json::json;
++
++    let workspace = tempfile::tempdir()?;
++    std::env::set_current_dir(workspace.path())?;
++    let mut j = journey::Journey::new(false);
++    j.start("turn", "Inspect recorded output")?;
++    let output = format!("{}\n{}end-row", "a".repeat(20_000), "z\n".repeat(64));
++    j.event("tool_call_requested", json!({"tool_call_id":"long-output", "tool_id":"bash",
++        "args_summary":"{\"command\":\"printf fixture\"}", "args_digest":"fixture", "metadata":null}))?;
++    j.event(
++        "provider_request_finished",
++        json!({"request_id":"turn", "finish_reason":"tool_calls",
++        "output_digest":null,"usage":null,"metadata":null}),
++    )?;
++    j.event("tool_call_started", json!({"tool_call_id":"long-output"}))?;
++    j.event(
++        "tool_call_finished",
++        json!({"tool_call_id":"long-output", "status":"succeeded",
++        "output_summary":output,"output_digest":null,
++        "output_json":{"stdout":output,"stderr":"","exit_code":0},"metadata":null}),
++    )?;
++    let area = Rect::new(0, 0, 80, 32);
++    let mut terminal = Terminal::new(TestBackend::new(area.width, area.height))?;
++    j.app.set_frame_area(area);
++    terminal.draw(|frame| render_app(frame, &j.app))?;
++    j.app.focus = Focus::Details;
++    assert!(j.app.select_transcript_tool("long-output"));
++    for key in [
++        KeyCode::Enter,
++        KeyCode::Char('w'),
++        KeyCode::Char('/'),
++        KeyCode::Char('a'),
++        KeyCode::Enter,
++        KeyCode::End,
++    ] {
++        j.key(key, KeyModifiers::NONE);
++    }
++    j.app.set_frame_area(area);
++    // Offscreen matches must not make a short tail frame stall past the nextest deadline.
++    let painted = terminal.draw(|frame| render_app(frame, &j.app))?;
++    let text = painted
++        .buffer
++        .content
++        .iter()
++        .map(|cell| cell.symbol())
++        .collect::<String>();
++    assert!(text.contains("[search: a]") && text.contains("end-row"));
++    assert!(!text.contains("aaaa"));
++    j.key(KeyCode::Esc, KeyModifiers::NONE);
++    j.key(KeyCode::Esc, KeyModifiers::NONE);
++    assert!(j.app.transcript_viewer_mode().is_none());
++    Ok(())
++}
+diff --git i/crates/harness-tui/tests/transcript_selection_test.rs w/crates/harness-tui/tests/transcript_selection_test.rs
+index a1c811de..1555b5e0 100644
+--- i/crates/harness-tui/tests/transcript_selection_test.rs
++++ w/crates/harness-tui/tests/transcript_selection_test.rs
+@@ -28,6 +28,29 @@ fn wrapped_drag_selection_joins_soft_line_breaks() {
+     // Then: soft wrapping does not insert a spurious newline.
+     // assert
+     assert_eq!(copied, "hello world");
++
++    // Explicit empty rows and whitespace omitted at a soft wrap keep source offsets.
++    let text = WrappedText::new("\n界  e\u{301}\n\nend", 3).expect("valid width");
++    assert_eq!(
++        (0..text.row_count())
++            .map(|row| text.row_text(row))
++            .collect::<Vec<_>>(),
++        ["", "界 ", "e\u{301}", "", "end"],
++    );
++    for (byte, point) in [
++        (0, CellPoint::new(1, 0)),
++        (4, CellPoint::new(1, 2)),
++        (5, CellPoint::new(2, 0)),
++        (9, CellPoint::new(4, 0)),
++        (14, CellPoint::new(4, 3)),
++    ] {
++        assert_eq!(text.point_for_byte(byte), point, "source byte {byte}");
++    }
++    assert_eq!(
++        text.copy(text.drag(CellPoint::new(1, 0), CellPoint::new(2, 0)))
++            .expect("selection has text"),
++        "界  e\u{301}",
++    );
+ }
+ 
+ #[test]

@@ -1,0 +1,32 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.99s
+────────────
+ Nextest run ID e5883d34-dbcd-440e-afc7-200ed39a1a08 with nextest profile: ci
+    Starting 1 test across 1 binary (8 tests skipped)
+        SLOW [>  2.000s] (───) harness-tui::transcript_block_viewer_test searching_long_unwrapped_output_keeps_its_tail_reachable
+        SLOW [>  4.000s] (───) harness-tui::transcript_block_viewer_test searching_long_unwrapped_output_keeps_its_tail_reachable
+        SLOW [>  6.000s] (───) harness-tui::transcript_block_viewer_test searching_long_unwrapped_output_keeps_its_tail_reachable
+        SLOW [>  8.000s] (───) harness-tui::transcript_block_viewer_test searching_long_unwrapped_output_keeps_its_tail_reachable
+        SLOW [> 10.000s] (───) harness-tui::transcript_block_viewer_test searching_long_unwrapped_output_keeps_its_tail_reachable
+        SLOW [> 12.000s] (───) harness-tui::transcript_block_viewer_test searching_long_unwrapped_output_keeps_its_tail_reachable
+        SLOW [> 14.000s] (───) harness-tui::transcript_block_viewer_test searching_long_unwrapped_output_keeps_its_tail_reachable
+        SLOW [> 16.000s] (───) harness-tui::transcript_block_viewer_test searching_long_unwrapped_output_keeps_its_tail_reachable
+        SLOW [> 18.000s] (───) harness-tui::transcript_block_viewer_test searching_long_unwrapped_output_keeps_its_tail_reachable
+ TERMINATING [> 20.000s] (───) harness-tui::transcript_block_viewer_test searching_long_unwrapped_output_keeps_its_tail_reachable
+     TIMEOUT [  20.015s] (1/1) harness-tui::transcript_block_viewer_test searching_long_unwrapped_output_keeps_its_tail_reachable
+  stdout ───
+
+    running 1 test
+
+    (test timed out)
+
+────────────
+     Summary [  20.016s] 1 test run: 0 passed, 1 timed out, 8 skipped
+     TIMEOUT [  20.015s] (1/1) harness-tui::transcript_block_viewer_test searching_long_unwrapped_output_keeps_its_tail_reachable
+  stdout ───
+
+    running 1 test
+
+    (test timed out)
+
+error: test run failed

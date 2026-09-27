@@ -3,7 +3,7 @@ use crate::transcript_scroll::{
     EasingKind, LogicalAnchor, MotionPreference, ScrollError, ScrollFrame, ScrollTransition,
     TranscriptLayout, TransitionRequest,
 };
-use crate::transcript_selection::{CellPoint, SelectionRange, WrappedText};
+use crate::transcript_selection::{CellPoint, SelectionRange, TextLayout};
 
 use super::search::{SearchDirection, SearchNavigation, SearchState};
 use super::{render_surface, ViewerRenderSurface};
@@ -17,7 +17,6 @@ const DEFAULT_HEIGHT: usize = 24;
 pub struct ViewerState {
     block_id: BlockId,
     content: ViewerBlockContent,
-    pub(super) display_text: String,
     pub(super) styled_lines: Vec<ratatui::text::Line<'static>>,
     pub(super) row_joiners: Vec<String>,
     theme: crate::theme::Theme,
@@ -25,7 +24,7 @@ pub struct ViewerState {
     mode: ViewerMode,
     width: usize,
     height: usize,
-    pub(super) wrapped: WrappedText,
+    pub(super) wrapped: TextLayout,
     pub(super) selection: Option<SelectionRange>,
     pub(super) cursor: CellPoint,
     pub(super) body_start: usize,
@@ -50,7 +49,6 @@ impl ViewerState {
     ) -> Result<Self, ViewerError> {
         let mut state = Self {
             block_id,
-            display_text: String::new(),
             content,
             styled_lines: Vec::new(),
             row_joiners: Vec::new(),
@@ -59,7 +57,7 @@ impl ViewerState {
             mode: ViewerMode::Wrapped,
             width: 80,
             height: DEFAULT_HEIGHT,
-            wrapped: WrappedText::new("", 1).map_err(ViewerError::Selection)?,
+            wrapped: TextLayout::new(String::new(), 1).map_err(ViewerError::Selection)?,
             selection: None,
             cursor: CellPoint::new(0, 0),
             body_start: 0,
@@ -120,7 +118,7 @@ impl ViewerState {
     }
 
     pub fn set_search_query(&mut self, query: &str) -> SearchNavigation {
-        let navigation = self.search.set_query(&self.display_text, query);
+        let navigation = self.search.set_query(self.wrapped.text(), query);
         self.reveal_search_match();
         navigation
     }
@@ -219,7 +217,7 @@ impl ViewerState {
     }
     pub(crate) fn quote_text(&self) -> String {
         self.copy_selection_text()
-            .unwrap_or_else(|_| self.wrapped.row_text(self.cursor.row))
+            .unwrap_or_else(|_| self.wrapped.row_text(self.cursor.row).to_owned())
     }
     pub(crate) fn command_text(&self) -> Option<String> {
         match &self.content.preamble {
@@ -449,7 +447,7 @@ impl ViewerState {
             let joiners = vec!["\n".to_owned(); lines.len()];
             (lines, joiners)
         };
-        self.display_text = self
+        let display_text = self
             .styled_lines
             .iter()
             .map(ratatui::text::Line::to_string)
@@ -458,15 +456,14 @@ impl ViewerState {
         let width = if self.wrap_enabled {
             self.width
         } else {
-            self.display_text
+            display_text
                 .lines()
                 .map(unicode_width::UnicodeWidthStr::width)
                 .max()
                 .unwrap_or(1)
                 .max(self.width)
         };
-        self.wrapped =
-            WrappedText::new(&self.display_text, width).map_err(ViewerError::Selection)?;
+        self.wrapped = TextLayout::new(display_text, width).map_err(ViewerError::Selection)?;
         self.layout = viewer_layout(self.block_id, self.wrapped.row_count(), self.height)?;
         if self.cursor.row >= previous_body {
             self.cursor.row = self
@@ -482,7 +479,7 @@ impl ViewerState {
         self.scroll_top = self.scroll_top.min(self.layout.max_scroll());
         if !self.search.query().is_empty() {
             let query = self.search.query().to_owned();
-            let _ = self.search.set_query(&self.display_text, &query);
+            let _ = self.search.set_query(self.wrapped.text(), &query);
         }
         Ok(())
     }

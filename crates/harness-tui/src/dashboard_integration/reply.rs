@@ -9,8 +9,7 @@ impl DashboardIntegration {
         let rows = self
             .reply_editor()
             .and_then(|editor| {
-                crate::transcript_selection::WrappedText::new(&editor.text(), usize::from(width))
-                    .ok()
+                crate::transcript_selection::TextLayout::new(editor.text(), usize::from(width)).ok()
             })
             .map_or(1, |wrapped| {
                 u16::try_from(wrapped.row_count()).unwrap_or(u16::MAX)

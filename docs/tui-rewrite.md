@@ -550,6 +550,30 @@ needed before attributing that difference. No new resource-performance or PTY
 latency claim is made. Evidence is in
 [`evidence/tui-rewrite/selection-layout`](evidence/tui-rewrite/selection-layout).
 
+## Viewer projection and compact geometry
+
+The viewer now materializes visible rows only, while its public owned surface
+API still exposes the complete content. Selection and search keep absolute
+positions. The viewer and dashboard share immutable geometry backed by one text
+string, compact byte/cell ends and row ranges. Public owned-grapheme inspection
+remains available. Paint advances through style spans once per row.
+
+The [frozen viewer workload](evidence/tui-rewrite/viewer-baseline/README.md) uses
+2,000 Unicode lines and public AppState input/preparation/paint/diff/ANSI paths.
+The [visible-row slice](evidence/tui-rewrite/viewer-window/README.md) reduced frame
+cost but still failed resize RSS. The
+[compact geometry slice](evidence/tui-rewrite/compact-layout/README.md) passes all
+viewer limits: resize RSS is 44,784 KiB versus the original 90,672 KiB, allocations
+are 2.45 GB versus 16.13 GB, and p95 is 32,777 µs versus 71,036 µs. These are
+renderer/process measurements, not terminal latency or runtime-idle results.
+
+All 1,739 TUI tests pass. The 539 recorded frames and 51 viewer ANSI captures
+retain their approved output; two representative xterm PNGs match byte for byte.
+Independent review caught a long-line search regression in the first compact
+attempt. The retained failure and corrected public journey protect the indexed
+replacement. Whole-rewrite source, state/formatter replacement, runtime and
+absolute timing requirements remain outstanding.
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

@@ -1,0 +1,45 @@
+{
+  "base": "c5b3f811a764c7363e768a4f65eb339ab1cc2fa4",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/dashboard_integration/reply.rs",
+      "sha256": "4d2d0d47a5a046620f166f5b2a04af30024c29c2ac23e72998594f40615745ae"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_block_viewer/mod.rs",
+      "sha256": "c168bd8fc6c9137e30609d04b33069a1104abb839205046ccabc24d4fb7a364a"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_block_viewer/render.rs",
+      "sha256": "896a0580bc0110831994cf76dbf5de786cdf83fdcbe233d642116858e7160074"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_block_viewer/state.rs",
+      "sha256": "9f4f5e79cb118d1e6aae2e744b18a88853c4e509881dab6437c8cc83e9a97a94"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_selection/layout.rs",
+      "sha256": "9f3cbc955bdaeb48fdd37ad2b78938d4c3ce129b64ffac064ec0542e24b86e52"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_selection/mod.rs",
+      "sha256": "5aa4d77bef104e63aab5dec428860c42d359b79d1c50f0c430dc7679ff7e2074"
+    },
+    {
+      "path": "crates/harness-tui/src/transcript_selection/selection.rs",
+      "sha256": "03b9bc45dc7a1a2234ffd9834a42a4b7b671aae71a4d89130178d522d5fd4b23"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/status_dialog.rs",
+      "sha256": "d8425a2b88c931ef9320c20f7353a65057245bc8a272797fcb1d5f6d8b64beeb"
+    },
+    {
+      "path": "crates/harness-tui/tests/transcript_block_viewer_test.rs",
+      "sha256": "a2cf729605dc6e9f2c17500c660794aea85b9277407b6dad536b0dc8641e461d"
+    },
+    {
+      "path": "crates/harness-tui/tests/transcript_selection_test.rs",
+      "sha256": "43256485949654dc887a97dee66afb8492df7b3fb20b52435ae5c18f6db25f79"
+    }
+  ]
+}

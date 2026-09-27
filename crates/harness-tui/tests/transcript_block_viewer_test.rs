@@ -14,6 +14,9 @@ use ratatui::layout::Rect;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
+#[path = "support/rewrite_journey.rs"]
+mod journey;
+
 fn block_id() -> BlockId {
     ReplayTurn::event(41, 2, 1).block_id(0)
 }
@@ -290,5 +293,64 @@ fn wrapped_and_raw_render_surfaces_highlight_current_match_and_selection() -> Te
     assert_eq!(raw.mode, ViewerMode::Raw);
     assert!(buffer.content.iter().any(|cell| cell.symbol() == "b"));
     assert_eq!(buffer[(0, 1)].fg, ratatui::style::Color::Rgb(88, 88, 88));
+    Ok(())
+}
+
+#[test]
+fn searching_long_unwrapped_output_keeps_its_tail_reachable() -> TestResult {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    use harness_tui::{app::Focus, ui::render_app};
+    use ratatui::{backend::TestBackend, Terminal};
+    use serde_json::json;
+
+    let workspace = tempfile::tempdir()?;
+    std::env::set_current_dir(workspace.path())?;
+    let mut j = journey::Journey::new(false);
+    j.start("turn", "Inspect recorded output")?;
+    let output = format!("{}\n{}end-row", "a".repeat(20_000), "z\n".repeat(64));
+    j.event("tool_call_requested", json!({"tool_call_id":"long-output", "tool_id":"bash",
+        "args_summary":"{\"command\":\"printf fixture\"}", "args_digest":"fixture", "metadata":null}))?;
+    j.event(
+        "provider_request_finished",
+        json!({"request_id":"turn", "finish_reason":"tool_calls",
+        "output_digest":null,"usage":null,"metadata":null}),
+    )?;
+    j.event("tool_call_started", json!({"tool_call_id":"long-output"}))?;
+    j.event(
+        "tool_call_finished",
+        json!({"tool_call_id":"long-output", "status":"succeeded",
+        "output_summary":output,"output_digest":null,
+        "output_json":{"stdout":output,"stderr":"","exit_code":0},"metadata":null}),
+    )?;
+    let area = Rect::new(0, 0, 80, 32);
+    let mut terminal = Terminal::new(TestBackend::new(area.width, area.height))?;
+    j.app.set_frame_area(area);
+    terminal.draw(|frame| render_app(frame, &j.app))?;
+    j.app.focus = Focus::Details;
+    assert!(j.app.select_transcript_tool("long-output"));
+    for key in [
+        KeyCode::Enter,
+        KeyCode::Char('w'),
+        KeyCode::Char('/'),
+        KeyCode::Char('a'),
+        KeyCode::Enter,
+        KeyCode::End,
+    ] {
+        j.key(key, KeyModifiers::NONE);
+    }
+    j.app.set_frame_area(area);
+    // Offscreen matches must not make a short tail frame stall past the nextest deadline.
+    let painted = terminal.draw(|frame| render_app(frame, &j.app))?;
+    let text = painted
+        .buffer
+        .content
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(text.contains("[search: a]") && text.contains("end-row"));
+    assert!(!text.contains("aaaa"));
+    j.key(KeyCode::Esc, KeyModifiers::NONE);
+    j.key(KeyCode::Esc, KeyModifiers::NONE);
+    assert!(j.app.transcript_viewer_mode().is_none());
     Ok(())
 }

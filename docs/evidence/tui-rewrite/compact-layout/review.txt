@@ -1,0 +1,17 @@
+Independent reviewer: /root/tui_review
+Result: approved to commit this migration slice; no blockers.
+
+Verified all 63 pre-receipt artifacts, ten source hashes and exact patch,
+current debug/release binaries, unchanged fixture and driver, all 16 raw/log
+measurement reports, medians, phase sums, original/prior output parity and
+all 20 frozen viewer limits. All pass.
+
+The 539 current frames and 51 ANSI frames match their references. Both PNGs
+were visually inspected and are byte-identical to the originals, with only
+the disclosed browser renderCount field differing.
+
+Review found the long-line repeated-scan regression in the first compact
+attempt. The corrected indexed lookup and public regression journey resolve
+it. Final source, API/copy/navigation/style behavior and evidence are approved.
+Published counts and scope are accurate. Whole-rewrite acceptance remains open.
+Reviewer performed no builds, tests or edits.
