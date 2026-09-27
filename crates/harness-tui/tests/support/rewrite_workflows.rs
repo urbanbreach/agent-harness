@@ -4,11 +4,45 @@ use super::{
     Recorder, K, M,
 };
 use harness_core::{event::EventEnvelopeV1, memory::DurableMemoryStore, proj::SessionCatalogEntry};
-use harness_tui::app::{AppState, SessionHistoryEntry, UiIntent};
+use harness_tui::app::{AppState, LaunchMetadata, ModelOption, SessionHistoryEntry, UiIntent};
 use serde_json::json;
 use std::{fs, path::Path, sync::Arc};
 
 impl Recorder {
+    pub(super) fn mentions(&mut self) -> Result {
+        fs::create_dir_all("src")?;
+        fs::write("src/main.rs", "fn main() {}\n")?;
+        for (name, query, expected) in [
+            ("file", "@main", "src/main.rs"),
+            ("subagent", "@expl", "explore"),
+        ] {
+            let mut j = Journey::new(false);
+            j.app.set_file_mention_workspace_root_for_test(".".into());
+            j.app.set_launch_metadata(
+                LaunchMetadata::from_model_ref("worker", "mock:reference")
+                    .with_available_models(vec![
+                        ModelOption::from_model_ref("worker", "mock:reference"),
+                        ModelOption::from_model_ref("explore", "mock:reference"),
+                    ])
+                    .with_switchable_profiles(vec!["worker".into()]),
+            );
+            j.text(query);
+            self.frame(&format!("{name}-mention-picker"), &mut j)?;
+            j.key(K::Enter, M::NONE);
+            self.frame(&format!("{name}-mention-selected"), &mut j)?;
+            j.key(K::Enter, M::NONE);
+            self.frame(&format!("{name}-mention-submitted"), &mut j)?;
+            let intents = j.intents.lock().unwrap_or_else(|error| error.into_inner());
+            assert!(
+                intents
+                    .iter()
+                    .any(|intent| intent.starts_with("SubmitPrompt") && intent.contains(expected)),
+                "mention was not submitted: {intents:?}"
+            );
+        }
+        Ok(())
+    }
+
     pub(super) fn working_permissions(&mut self) -> Result {
         for (name, question, reject) in [
             ("allow", false, false),

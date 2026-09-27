@@ -9,7 +9,7 @@ use vt100::Parser;
 
 const MARKER_TIMEOUT: Duration = Duration::from_secs(12);
 const EXIT_TIMEOUT: Duration = Duration::from_secs(5);
-const SETTINGS_FOOTER: &str = "↑/↓ navigate · Enter edit · Esc close";
+const SETTINGS_FOOTER: &str = "↑↓ navigate · / search · Tab switch · Enter edit · Esc close";
 
 pub(crate) fn run_modal_journey(cols: u16, rows: u16) {
     let mut helper = Helper::spawn(cols, rows);

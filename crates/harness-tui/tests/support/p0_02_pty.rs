@@ -1,9 +1,10 @@
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestFinishedEvent,
-    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RuntimeEvent, TaskScheduleState,
-    TaskScheduledEvent, ToolCallFinishedEvent, ToolCallRequestedEvent, ToolCallStatus,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+    ActorKind, AssistantMessageFinishedEvent, EventActor, EventEnvelopeV1, EventV1,
+    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
+    RuntimeEvent, TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent,
+    ToolCallRequestedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
+use harness_core::session::{AssistantPart, AssistantToolCall};
 use harness_tui::UnwrapOrAbort;
 use harness_tui::{
     live_update_channel, run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent,
@@ -111,9 +112,31 @@ fn completed_turn(request_id: &str, turn: usize) -> Vec<EventEnvelopeV1> {
             }),
         ),
         provider_started(request_id, &prompt),
-        provider_delta(request_id, response),
     ];
     if turn == 1 {
+        events.push(provider_finished(request_id, "tool_calls"));
+        events.push(envelope(
+            0,
+            request_id,
+            EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
+                request_id: request_id.into(),
+                tool_call_count: 14,
+                parts: (1..=14)
+                    .map(|command| {
+                        AssistantPart::ToolCall(AssistantToolCall {
+                            tool_call_id: format!("tool_p0_02_command_{command:02}").into(),
+                            provider_tool_call_id: None,
+                            provider_call_id: Some(request_id.to_owned()),
+                            tool_id: "bash".into(),
+                            args_summary: format!(r#"{{"command":"printf command-{command:02}"}}"#),
+                            args_digest: format!("digest-p0-02-command-{command:02}"),
+                        })
+                    })
+                    .collect(),
+                provenance: None,
+                assistant_message: None,
+            }),
+        ));
         for command in 1..=14 {
             let tool_call_id = format!("tool_p0_02_command_{command:02}");
             events.push(envelope(
@@ -141,7 +164,32 @@ fn completed_turn(request_id: &str, turn: usize) -> Vec<EventEnvelopeV1> {
             ));
         }
     }
-    events.push(provider_finished(request_id, "stop"));
+    let answer_id = if turn == 1 {
+        format!("{request_id}-answer")
+    } else {
+        request_id.to_owned()
+    };
+    if turn == 1 {
+        let mut started = provider_started(&answer_id, &prompt);
+        started.correlation_id = Some(request_id.to_owned());
+        events.push(started);
+    }
+    let mut finished = provider_finished(&answer_id, "stop");
+    finished.correlation_id = Some(request_id.to_owned());
+    events.push(finished);
+    events.push(envelope(
+        0,
+        request_id,
+        EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
+            request_id: answer_id.into(),
+            tool_call_count: 0,
+            parts: vec![AssistantPart::Text {
+                text: response.into(),
+            }],
+            provenance: None,
+            assistant_message: None,
+        }),
+    ));
     events
 }
 

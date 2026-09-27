@@ -40,7 +40,14 @@ fn p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append() {
     // and a fourth open response containing a failed command.
     let mut helper = Helper::spawn();
     helper.wait_for("P0-02 active streaming block remains open.");
+    helper.wait_for("Run false");
+    assert!(!helper.screen().contains("deterministic active failure"));
+    helper.double_click("Run false");
+    helper.send(b"\x1b[F");
     helper.wait_for("deterministic active failure");
+    helper.double_click("Run false");
+    helper.wait_until_absent("deterministic active failure");
+    helper.send(b"\t");
 
     // act
     // When: the prompt surface detaches, then transcript focus navigates responses.
@@ -49,35 +56,43 @@ fn p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append() {
     helper.send(b"\t");
     helper.send(shifted('K').as_bytes());
     helper.wait_for("Harness 1/3");
-    helper.wait_for("4 more");
 
-    // Then: first and last response navigation clamp rather than wrap.
-    helper.send(shifted('K').as_bytes());
-    helper.send(shifted('J').as_bytes());
-    helper.wait_for("Harness 2/3");
-    helper.send(shifted('J').as_bytes());
-    helper.wait_for("Harness 3/3");
-    helper.send(shifted('J').as_bytes());
-    helper.send(shifted('K').as_bytes());
-    helper.wait_for("Harness 2/3");
-    helper.send(shifted('K').as_bytes());
-    helper.wait_for("Harness 1/3");
+    // R4: the reference clips the selected answer and cannot reliably advance from it.
+    if std::env::var_os("HARNESS_TUI_RECORD_REFERENCE_DEFECTS").is_none() {
+        // Then: first and last response navigation clamp rather than wrap.
+        helper.send(shifted('K').as_bytes());
+        helper.send(shifted('J').as_bytes());
+        helper.wait_for("Harness 2/3");
+        helper.wait_for("P0-02 completed response two");
+        helper.send(shifted('J').as_bytes());
+        helper.wait_for("Harness 3/3");
+        helper.send(shifted('J').as_bytes());
+        helper.send(shifted('K').as_bytes());
+        helper.wait_for("Harness 2/3");
+        helper.send(shifted('K').as_bytes());
+        helper.wait_for("Harness 1/3");
+    }
 
     // assert
-    // And: keyboard and SGR-mouse activation disclose the same dense fold.
+    // And: response navigation and group selection are separate gestures.
+    helper.send(b"\x1b[H");
+    helper.wait_for("Ran 4 commands");
+    helper.click("Ran 4 commands", 1);
     helper.send(b"\r");
-    helper.wait_until_absent("4 more");
-    helper.send(b"\r");
-    helper.wait_for("4 more");
-    helper.click("Ran 14 commands");
-    helper.wait_until_absent("4 more");
-    helper.click("Ran 14 commands");
-    helper.wait_for("4 more");
+    helper.send(b"\x1b[H");
+    helper.wait_for("Ran 14 commands");
+    helper.click("Ran 14 commands", 1);
+    helper.send(b"\x05");
+    helper.wait_for("Ran 4 commands");
+    helper.double_click("Ran 4 commands");
+    helper.send(b"\x1b[H");
+    helper.wait_for("Ran 14 commands");
+    helper.double_click("Ran 14 commands");
+    helper.wait_for("Ran 4 commands");
 
-    // And: a real PTY resize reflows while preserving response and fold identity.
+    // And: a real PTY resize reflows while preserving the selected fold.
     helper.resize(REFLOW_COLS, REFLOW_ROWS);
-    helper.wait_for("Harness 1/3");
-    helper.wait_for("4 more");
+    helper.wait_for("Ran 4 commands");
     let reflowed = helper.screen();
     assert_eq!(helper.parser.screen().size(), (REFLOW_ROWS, REFLOW_COLS));
     assert!(reflowed
@@ -250,7 +265,13 @@ impl Helper {
         self.parser = Parser::new(rows, cols, 0);
     }
 
-    fn click(&mut self, needle: &str) {
+    fn double_click(&mut self, needle: &str) {
+        self.click(needle, 2);
+    }
+
+    fn click(&mut self, needle: &str, count: usize) {
+        // Start a fresh gesture; the production double-click window is 300 ms.
+        thread::sleep(Duration::from_millis(320));
         let screen = self.screen();
         let (row, column) = screen
             .lines()
@@ -264,7 +285,8 @@ impl Helper {
                 })
             })
             .unwrap_or_abort();
-        self.send(format!("\x1b[<0;{column};{row}M\x1b[<0;{column};{row}m").as_bytes());
+        let click = format!("\x1b[<0;{column};{row}M\x1b[<0;{column};{row}m");
+        self.send(click.repeat(count).as_bytes());
     }
 
     #[allow(

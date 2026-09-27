@@ -200,6 +200,18 @@ impl Recorder {
         j.text("queued fixture");
         j.key(K::Enter, M::NONE);
         self.frame("queued-prompt", &mut j)?;
+        let before_queue_navigation = self.frames.last().cloned().ok_or("missing queued frame")?;
+        j.key(K::Up, M::NONE);
+        self.frame("queued-entry-navigation", &mut j)?;
+        j.key(K::Esc, M::NONE);
+        self.frame("queued-entry-return", &mut j)?;
+        let after_queue_navigation = self.frames.last().ok_or("missing return frame")?;
+        for field in ["cells", "cursor", "intents"] {
+            assert_eq!(
+                before_queue_navigation[field], after_queue_navigation[field],
+                "queued return changed {field}"
+            );
+        }
         j.finish("turn", message)?;
         self.frame("completed-turn", &mut j)?;
         for index in 0..30 {
@@ -217,7 +229,7 @@ impl Recorder {
         self.frame("detached-append", &mut j)?;
         let initial = self.area;
         self.area.width = if initial.width > 80 { 80 } else { 120 };
-        self.frame("detached-resize", &mut j)?;
+        self.frame(&format!("detached-resize-from-{}", initial.width), &mut j)?;
         self.area = initial;
         j.key(K::Tab, M::NONE);
         j.key(K::Char('/'), M::NONE);
@@ -294,7 +306,7 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
         frames: Vec::new(),
         output,
         area: Rect::default(),
-        original,
+        original: original_renderer()?,
     };
     for (width, height) in [(40, 24), (80, 24), (120, 40), (160, 50)] {
         r.area = Rect::new(0, 0, width, height);
@@ -304,6 +316,7 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
         r.menus()?;
         r.working_permissions()?;
         r.populated_dialogs(std::path::Path::new("."))?;
+        r.mentions()?;
         for theme in [ThemeChoice::Dark, ThemeChoice::Light, ThemeChoice::Auto] {
             let mut j = Journey::new(true);
             j.app.restore_theme_choice(&serialize_choice(theme)?)?;
@@ -361,6 +374,28 @@ fn original_source() -> Result<bool> {
             BASE,
             "--",
             "crates/harness-tui/src",
+            "crates/harness-core/src",
+            "Cargo.lock",
+        ])
+        .status()?
+        .success())
+}
+
+// During the terminal migration the pinned renderer still has R3. Only unchanged
+// projection/rendering source can use its settled-frame allowance.
+fn original_renderer() -> Result<bool> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    Ok(Command::new("git")
+        .current_dir(root)
+        .args([
+            "diff",
+            "--quiet",
+            BASE,
+            "--",
+            "crates/harness-tui/src",
+            ":(exclude)crates/harness-tui/src/runtime.rs",
+            ":(exclude)crates/harness-tui/src/terminal.rs",
+            ":(exclude)crates/harness-tui/src/terminal/**",
             "crates/harness-core/src",
             "Cargo.lock",
         ])

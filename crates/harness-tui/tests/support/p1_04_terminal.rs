@@ -47,6 +47,8 @@ pub(crate) struct RecordedTerminal {
     query_tail: Vec<u8>,
     replies: Vec<u8>,
     raw: Vec<u8>,
+    frames: usize,
+    frame_open: bool,
 }
 
 impl RecordedTerminal {
@@ -56,6 +58,8 @@ impl RecordedTerminal {
             query_tail: Vec::new(),
             replies: Vec::new(),
             raw: Vec::new(),
+            frames: 0,
+            frame_open: false,
         }
     }
 
@@ -64,6 +68,12 @@ impl RecordedTerminal {
         for byte in bytes {
             self.parser.process(std::slice::from_ref(byte));
             self.query_tail.push(*byte);
+            if self.query_tail.ends_with(b"\x1b[?2026h") {
+                self.frame_open = true;
+            } else if self.query_tail.ends_with(b"\x1b[?2026l") {
+                self.frame_open = false;
+                self.frames += 1;
+            }
             self.collect_replies();
         }
     }
@@ -98,6 +108,32 @@ impl RecordedTerminal {
 
     pub(crate) fn state_size(&self) -> (u16, u16) {
         self.parser.screen().size()
+    }
+
+    pub(crate) fn frames(&self) -> usize {
+        self.frames
+    }
+
+    pub(crate) fn completed_frame(&self, after: usize) -> bool {
+        self.frames > after && !self.frame_open
+    }
+
+    pub(crate) fn composer_border(&self) -> Option<(u16, u16, u16)> {
+        let screen = self.parser.screen();
+        let (rows, cols) = screen.size();
+        (0..rows).find_map(|row| {
+            let left = (0..cols).find(|col| {
+                screen
+                    .cell(row, *col)
+                    .is_some_and(|cell| matches!(cell.contents(), "╭" | "+"))
+            })?;
+            let right = (left + 1..cols).rev().find(|col| {
+                screen
+                    .cell(row, *col)
+                    .is_some_and(|cell| matches!(cell.contents(), "╮" | "+"))
+            })?;
+            Some((row, left, right))
+        })
     }
 
     pub(crate) fn state(&self) -> ScreenState {

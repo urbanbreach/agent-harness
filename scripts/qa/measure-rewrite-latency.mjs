@@ -19,8 +19,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 if (!process.argv[2] || !process.argv[3]) throw new Error("Usage: measure-rewrite-latency.mjs PROBE_BINARY EVIDENCE_DIR [SAMPLES>=100]");
 const binary = resolve(process.argv[2]);
 const output = await validateEvidenceDir(process.argv[3], root);
-const count = Number(process.argv[4] ?? 120);
-assert(Number.isSafeInteger(count) && count >= 100);
+const workflowOnly = process.argv[4] === "--workflow-only";
+const count = workflowOnly ? 0 : Number(process.argv[4] ?? 120);
+assert(workflowOnly || (Number.isSafeInteger(count) && count >= 100));
 await mkdir(output, { recursive: true });
 const temp = await mkdtemp(join(tmpdir(), "harness-xterm-latency-"));
 const fixture = await prepareHarnessWorkspace(temp);
@@ -35,6 +36,20 @@ let socket;
 let failure;
 let sequence = 0;
 let outputBytes = 0;
+let pendingMeasurement;
+let controlTail = Buffer.alloc(0);
+const intents = [];
+function recordOutput(bytes) {
+  outputBytes += bytes.length;
+  const controls = Buffer.concat([controlTail, bytes]);
+  if (pendingMeasurement && controls.includes(Buffer.from("\x1b[?2026l"))) {
+    const { name, start } = pendingMeasurement;
+    (report.samples_ms[`${name}_pty_frame`] ??= []).push(performance.now() - start);
+    pendingMeasurement = null;
+  }
+  controlTail = controls.subarray(-7);
+  return terminal.write(bytes);
+}
 const event = (type, data, live = false) => {
   sequence += 1;
   socket.write(`${JSON.stringify({ delivery: live ? "live" : "durable", event: {
@@ -46,8 +61,57 @@ const event = (type, data, live = false) => {
 };
 async function measure(name, operation) {
   const start = performance.now();
+  pendingMeasurement = { name, start };
   await operation();
+  assert.equal(pendingMeasurement, null, `${name}: no complete PTY frame arrived`);
   (report.samples_ms[name] ??= []).push(performance.now() - start);
+}
+async function takeIntent(name) {
+  const deadline = performance.now() + 15000;
+  while (!intents.some((intent) => name in intent)) {
+    assert(performance.now() < deadline, `missing ${name} intent`);
+    await delay(10);
+  }
+  return intents.splice(intents.findIndex((intent) => name in intent), 1)[0];
+}
+async function rewindJourney() {
+  event("assistant_message_finished", { request_id: "turn", tool_call_count: 0,
+    parts: [{ kind: "text", text: "Completed offline fixture." }], provenance: null, assistant_message: null });
+  event("provider_request_finished", { request_id: "turn", finish_reason: "stop", output_digest: "fixture", usage: null, metadata: null });
+  await terminal.waitForPaintedText("Completed offline fixture.");
+  pty.write("preserved rewind draft");
+  await terminal.waitForPaintedText("preserved rewind draft");
+  const point = { seq: 2, request_id: "turn", text: "Restored rewind prompt" };
+  const respond = (kind, generation, result) => socket.write(`${JSON.stringify({ [kind]: { generation, result } })}\n`);
+  for (const success of [false, true]) {
+    // Inline slash dispatch saves the existing composer draft before opening the dialog.
+    pty.write(" /rewind");
+    await terminal.waitForPaintedText("Rewind the conversation");
+    pty.write("\r");
+    const { load_rewind_points: generation } = await takeIntent("load_rewind_points");
+    await terminal.waitForPaintedText("Loading rewind points...");
+    respond("rewind_points", generation + 1, { Err: "stale points must be ignored" });
+    respond("rewind_points", generation, { Ok: [point] });
+    await terminal.waitForPaintedText("Rewind to which turn?");
+    await terminal.capture(join(output, `rewind-${success ? "success" : "failure"}-picker.png`));
+    pty.write("\r");
+    await terminal.waitForPaintedText("Rewind conversation to");
+    pty.write("\r");
+    const requested = await takeIntent("rewind_conversation");
+    assert.equal(requested.rewind_conversation, generation);
+    assert.equal(requested.request_id, point.request_id);
+    await terminal.waitForPaintedText("Rewinding...");
+    respond("rewind_complete", generation + 1, { Ok: { ...point, text: "stale result must be ignored" } });
+    // A visible marker and a full observer round trip keep the check before the real acknowledgement.
+    await terminal.waitForPaintedText("Rewinding...");
+    await terminal.capture(join(output, `rewind-${success ? "success" : "failure"}-pending.png`));
+    respond("rewind_complete", generation, success ? { Ok: point } : { Err: "Synthetic rewind failure" });
+    await terminal.waitForPaintedText(success ? "Reverted conversation" : "Rewind failed");
+    await terminal.capture(join(output, `rewind-${success ? "success" : "failure"}-result.png`));
+    if (!success) pty.write("\x1b");
+    await terminal.waitForPaintedText(success ? point.text : "preserved rewind draft");
+  }
+  report.rewind = { failure_preserves_draft: true, success_restores_prompt: true, stale_generations_ignored: true };
 }
 try {
   terminal = await openBrowserTerminal({ cols: 120, rows: 40, browser: "/usr/bin/chromium",
@@ -58,12 +122,21 @@ try {
   await measure("startup", async () => {
     pty = spawnHarnessPty({ command, cols: 120, rows: 40, cwd: fixture.workspace,
       sessionDir: fixture.sessionDir, tempRoot: temp, disableAnimations: true,
-      environment: { TERM: "xterm-256color", COLORTERM: "truecolor" },
-      onOutput: (bytes) => { outputBytes += bytes.length; return terminal.write(bytes); } });
+      environment: { TERM: "xterm-256color", COLORTERM: "truecolor", HARNESS_TUI_TEST_WORKSPACE: "1" },
+      onOutput: recordOutput });
     await terminal.waitForPaintedText("Build, inspect, or fix this workspace.");
   });
   socket = connect(socketPath);
   await once(socket, "connect");
+  let incoming = "";
+  socket.setEncoding("utf8");
+  socket.on("data", (chunk) => {
+    incoming += chunk;
+    for (let end; (end = incoming.indexOf("\n")) >= 0;) {
+      intents.push(JSON.parse(incoming.slice(0, end)));
+      incoming = incoming.slice(end + 1);
+    }
+  });
   event("run_started", { run_name: "latency fixture", workspace_root: fixture.workspace });
   await terminal.waitForPaintedText("Ctrl+x:shortcuts");
   await terminal.capture(join(output, "startup.png"));
@@ -106,8 +179,9 @@ try {
   }
   await terminal.capture(join(output, "resized.png"));
   report.emulator = await terminal.metadata();
+  report.pty_boundary = "controller write/TIOCSWINSZ to first complete synchronized PTY frame; reduced motion and one operation at a time; does not include emulator paint";
+  await rewindJourney();
   socket.end();
-  await once(socket, "close");
   // Confirmation expires after one second; deliver both keys without observer delay.
   pty.write("\x11\x11");
   report.exit = await pty.waitForExit(15000);
@@ -123,6 +197,9 @@ try {
 } catch (error) {
   failure = error;
   report.failure = String(error.stack ?? error);
+  if (terminal) {
+    report.failed_screen = await terminal.capture(join(output, "failure.png"));
+  }
 } finally {
   socket?.destroy();
   if (pty) {

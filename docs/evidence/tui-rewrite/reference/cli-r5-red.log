@@ -1,0 +1,79 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.27s
+────────────
+ Nextest run ID 00ec6fd6-70aa-4fb9-b8cc-5fd64ab03903 with nextest profile: ci
+    Starting 1 test across 1 binary
+        FAIL [   0.928s] (1/1) harness::pty_happy_path_recorded scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit
+  stdout ───
+
+    running 1 test
+    test scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit ... FAILED
+
+    failures:
+
+    failures:
+        scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.92s
+
+  stderr ───
+    [pty-happy-path] phase=main:record_prompt
+    [pty-happy-path] phase=prompt:spawn
+    [pty-happy-path] phase=prompt:wait_for_composer
+    [pty-happy-path] phase=prompt:type
+    [pty-happy-path] phase=prompt:wait_for_draft
+    [pty-happy-path] phase=prompt:submit
+    [pty-happy-path] phase=prompt:wait_for_response
+    [pty-happy-path] phase=prompt:quit
+    [pty-happy-path] phase=prompt:wait_success
+    [pty-happy-path] phase=prompt:done
+    [pty-happy-path] phase=main:record_permission_tool_edit
+    [pty-happy-path] phase=scenario:spawn
+    [pty-happy-path] phase=scenario:wait_permission_modal
+    [pty-happy-path] phase=scenario:wait_permission_choices
+    [pty-happy-path] phase=scenario:allow
+    [pty-happy-path] phase=scenario:wait_tool_completed
+    [pty-happy-path] phase=scenario:wait_success
+
+    thread 'scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit' (2007238) panicked at crates/harness/tests/pty_happy_path_recorded.rs:368:21:
+    scenario PTY child left terminal modes active
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.929s] 1 test run: 0 passed, 1 failed, 0 skipped
+        FAIL [   0.928s] (1/1) harness::pty_happy_path_recorded scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit
+  stdout ───
+
+    running 1 test
+    test scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit ... FAILED
+
+    failures:
+
+    failures:
+        scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.92s
+
+  stderr ───
+    [pty-happy-path] phase=main:record_prompt
+    [pty-happy-path] phase=prompt:spawn
+    [pty-happy-path] phase=prompt:wait_for_composer
+    [pty-happy-path] phase=prompt:type
+    [pty-happy-path] phase=prompt:wait_for_draft
+    [pty-happy-path] phase=prompt:submit
+    [pty-happy-path] phase=prompt:wait_for_response
+    [pty-happy-path] phase=prompt:quit
+    [pty-happy-path] phase=prompt:wait_success
+    [pty-happy-path] phase=prompt:done
+    [pty-happy-path] phase=main:record_permission_tool_edit
+    [pty-happy-path] phase=scenario:spawn
+    [pty-happy-path] phase=scenario:wait_permission_modal
+    [pty-happy-path] phase=scenario:wait_permission_choices
+    [pty-happy-path] phase=scenario:allow
+    [pty-happy-path] phase=scenario:wait_tool_completed
+    [pty-happy-path] phase=scenario:wait_success
+
+    thread 'scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit' (2007238) panicked at crates/harness/tests/pty_happy_path_recorded.rs:368:21:
+    scenario PTY child left terminal modes active
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed
