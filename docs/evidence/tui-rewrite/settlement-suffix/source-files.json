@@ -1,0 +1,16 @@
+{
+  ".config/nextest.toml": "f0d2e558651703491c011b4382ded2e13ebb7e85cf0fbfe268c336db1d648ce2",
+  "crates/harness-tui/src/app.rs": "6dc5f8b5170e7f44b6b09095150bcbad96c315cfd447034835989d2f311e4169",
+  "crates/harness-tui/src/app/prompt_input.rs": "0ff40e35e8b4beebbf34a570055b1efdcca67ade6db79a74c1f711bf6fa3fed5",
+  "crates/harness-tui/src/app/session_navigation.rs": "999c706e88a337ed9d4c9378eca0bf7ccca09bee0d6cde77bb403d877a84b739",
+  "crates/harness-tui/src/app/session_projection.rs": "13904b8d789b0e3ee711097218b710f19c2d5d10f8d1f872a6b041186b0896f0",
+  "crates/harness-tui/src/app/session_projection/settled_presentation.rs": "9c903c94a55b7f8f30e327f0c88d9e12ef4c2647ac13965e12ddea16e8698640",
+  "crates/harness-tui/src/app/tests.rs": "782444e69ddfc268e4456d4e96f20a93aa54a4325f5fd7f6ac90d3e8fcf1c7e5",
+  "crates/harness-tui/src/app/tests/lifecycle_shell_part2_test.rs": "77f1518896983ada9f15d1e7554273de8662ca192974aed268ac56b9a281d088",
+  "crates/harness-tui/src/app/transcript_state.rs": "52a0218cc11f57f5fe364a1ded3c0d371c5ca3d96d390b54b6478af3f17dbdd8",
+  "crates/harness-tui/tests/rewrite_performance_test.rs": "9875f290eab6d8367395609279da69ce68274206d1cac942ec2274229154eead",
+  "crates/harness-tui/tests/typed_runtime_event_settle_test.rs": "e159a24e3f14c7b6022fcb959a0f0cf456235b32c3081f20c0ceb6a858b56cce",
+  "crates/harness-tui/src/app/session_projection/settled_presentation/suffix.rs": "690c95317391ee2ed01d38a1a431233ceead3c8f97c05553b13c205b32bdf685",
+  "crates/harness-tui/src/app/tests/new_session_test.rs": "d9eea77be711ed0a3515fc24502ae6cbaea57d76ef1039de782595e14d44802b",
+  "crates/harness-tui/tests/typed_runtime_event_settle/settlement.rs": "25062070e3edddaf117322f665a4c568534c1a388efb31d3b56a79d3b1932e33"
+}

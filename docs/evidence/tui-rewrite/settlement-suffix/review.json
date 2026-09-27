@@ -1,0 +1,16 @@
+{
+  "reviewer": "/root/tui_review",
+  "recorded_at": "2026-09-27T17:45:31.769475+00:00",
+  "verdict": "Approved for atomic commit; no remaining blocking findings for this bounded slice.",
+  "scope": "Read-only independent review of source, behavioral coverage, parity, resource measurements, cleanup and honest remaining work. This does not complete the full rewrite.",
+  "verified": [
+    "All 14 source receipts and patch contents match; all 488 artifact hashes pass before this review receipt is added.",
+    "Useful regression red/green and pinned-original evidence.",
+    "555 frame records, 733 animation frames and 6 PNG pairs match; callback differences are disclosed.",
+    "PTY workflow and restoration receipts support cleanup claims.",
+    "All 84 raw measurement runs reproduce summaries; all 19 unchanged limits pass.",
+    "README accurately reports essentially unchanged peak heap, added source, retained legacy code, R15 and outstanding runtime goals."
+  ],
+  "source_receipts_sha256": "c905e0bb3bc414cbbaa8ca64e0c5a02ef99b74ea9b932eb7267798b9473741b2",
+  "reviewer_actions": "No builds, tests or source edits."
+}

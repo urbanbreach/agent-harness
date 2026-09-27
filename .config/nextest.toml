@@ -28,7 +28,7 @@ junit = { path = "junit.xml" }
 
 # Opt-in resource fixtures include unoptimized histories and allocation tracing.
 [[profile.perf.overrides]]
-filter = 'test(perf_interactive_resources) | test(perf_rewrite_viewer_public_boundary)'
+filter = 'test(perf_interactive_resources) | test(perf_rewrite_viewer_public_boundary) | test(perf_rewrite_public_boundary_workloads)'
 slow-timeout = { period = "30s", terminate-after = 10 }
 
 [test-groups.process-global-state]

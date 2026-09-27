@@ -51,8 +51,8 @@ fn resources() -> Result<serde_json::Value> {
     )
 }
 
-fn history(turns: usize) -> Result<Vec<EventEnvelopeV1>> {
-    let mut result = Vec::with_capacity(turns * 4);
+fn history(turns: usize, turn_tasks: bool) -> Result<Vec<EventEnvelopeV1>> {
+    let mut result = Vec::with_capacity(turns * if turn_tasks { 6 } else { 4 });
     for index in 0..turns {
         let request = format!("history-{index}");
         for (kind, data) in [
@@ -81,6 +81,26 @@ fn history(turns: usize) -> Result<Vec<EventEnvelopeV1>> {
             let mut value = envelope(seq, kind, data);
             value["correlation_id"] = json!(request);
             result.push(serde_json::from_value(value)?);
+            if turn_tasks && kind == "user_message_submitted" {
+                let mut value = envelope(
+                    u64::try_from(result.len())? + 1,
+                    "task_scheduled",
+                    json!({"task_id": request, "queue_key": "provider_model:mock:reference",
+                        "state": "started", "metadata": null}),
+                );
+                value["correlation_id"] = json!(request);
+                result.push(serde_json::from_value(value)?);
+            }
+        }
+        if turn_tasks {
+            let mut value = envelope(
+                u64::try_from(result.len())? + 1,
+                "task_completed",
+                json!({"task_id": request, "result_summary": "Fixture completed",
+                    "result_digest": "fixture", "metadata": {"task_scope": "agent_turn"}}),
+            );
+            value["correlation_id"] = json!(request);
+            result.push(serde_json::from_value(value)?);
         }
     }
     Ok(result)
@@ -107,7 +127,8 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
     assert!(frames >= 100, "p99 needs at least 100 samples");
     let workspace = tempfile::tempdir()?;
     std::env::set_current_dir(workspace.path())?;
-    let events = history(count)?;
+    let events = history(count, scenario == "settle")?;
+    let event_count = events.len();
     let construction = Instant::now();
     let mut j = Journey::new(scenario == "startup");
     if count > 0 {
@@ -126,6 +147,14 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
             )?);
         }
     }
+    let mut durable_updates = if scenario == "settle" {
+        history(count + frames + 10, true)?
+            .into_iter()
+            .skip(event_count)
+            .collect::<VecDeque<_>>()
+    } else {
+        VecDeque::new()
+    };
     let mut area = Rect::new(0, 0, 160, 48);
     let output_bytes = Cell::new(0);
     let mut terminal = Terminal::with_options(
@@ -163,6 +192,12 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
             "stream" => j
                 .app
                 .ingest_runtime_event(updates.pop_front().ok_or("missing stream event")?),
+            "settle" => {
+                for _ in 0..6 {
+                    j.app
+                        .ingest_event(durable_updates.pop_front().ok_or("missing durable event")?);
+                }
+            }
             "scroll" => {
                 if index % 40 < 20 {
                     j.app.scroll_page_up(1);
@@ -191,6 +226,18 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
             "stream output never became visible"
         );
     }
+    if scenario == "settle" {
+        assert!(durable_updates.is_empty(), "durable updates were dropped");
+        assert_eq!(j.app.canonical_projection_error(), None);
+        assert_eq!(
+            j.app.canonical_projection_generation(),
+            u64::try_from(usize::from(count > 0) + 3 * (frames + 10))?
+        );
+        assert!(
+            visible.contains(&format!("Response {:05}", count + frames + 9)),
+            "last settled response must be visible: {visible}"
+        );
+    }
     let mut oldest = String::new();
     if count > 0 {
         j.app.scroll_goto_top();
@@ -205,7 +252,7 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
     let mut sorted = samples_us.clone();
     sorted.sort_unstable();
     let report = json!({"schema": "tui-rewrite-public-perf-v1", "scenario": scenario,
-        "history_turns": count, "history_events": count * 4, "frames": frames,
+        "history_turns": count, "history_events": event_count, "frames": frames,
         "construction_us": construction_us, "cold_us": cold_us, "samples_us": samples_us,
         "p50_us": sorted[frames * 50 / 100 - 1], "p95_us": sorted[frames * 95 / 100 - 1],
         "p99_us": sorted[frames * 99 / 100 - 1], "before": before, "after": after,

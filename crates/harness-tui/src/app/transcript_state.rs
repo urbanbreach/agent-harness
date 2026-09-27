@@ -56,7 +56,7 @@ impl AppState {
     pub(crate) fn sync_transcript_state(&mut self, animate_tool_transitions: bool) {
         let projection_delta = self.projection.take_transcript_delta();
         match projection_delta {
-            ProjectionDelta::Activity { index } => {
+            ProjectionDelta::Activity { index } | ProjectionDelta::RetainedPrefix { index } => {
                 self.transcript_view.prepared.invalidate_from(index)
             }
             ProjectionDelta::None => self.transcript_view.prepared.invalidate_from(usize::MAX),
@@ -112,7 +112,10 @@ impl AppState {
             let from = match (animate_tool_transitions, projection_delta) {
                 (false, ProjectionDelta::ReplayPending) => None,
                 (true, ProjectionDelta::None) => Some(usize::MAX),
-                (true, ProjectionDelta::Activity { index }) => Some(index),
+                (
+                    true,
+                    ProjectionDelta::Activity { index } | ProjectionDelta::RetainedPrefix { index },
+                ) => Some(index),
                 _ => Some(0),
             };
             if let Some(from) = from {
@@ -353,7 +356,9 @@ impl AppState {
         self.todo_pane_focused().hash(hasher);
         self.transcript_view.selected_entry.hash(hasher);
         self.replay_mode.hash(hasher);
-        self.transcript_view.selected_activity_index.hash(hasher);
+        if self.focus == super::Focus::Details && !self.todo_pane_focused() {
+            self.transcript_view.selected_activity_index.hash(hasher);
+        }
         self.transcript_view.show_transcript_thinking.hash(hasher);
         self.transcript_view.show_transcript_timestamps.hash(hasher);
         self.transcript_view.show_tool_details.hash(hasher);
@@ -442,6 +447,31 @@ impl AppState {
             has_running_tool,
             self.transcript_view.visible_running_tool_motion,
         )
+    }
+
+    pub(in crate::app) fn invalidate_transcript_after_durable_event(&mut self) {
+        // Queued badges and tool rows depend on other turns. Only terminal text
+        // turns can keep their prepared layout when a durable suffix changes.
+        let retained = match self.projection.transcript_delta {
+            ProjectionDelta::RetainedPrefix { index }
+                if self
+                    .projection
+                    .activities
+                    .iter()
+                    .take(index)
+                    .all(|activity| {
+                        matches!(
+                            activity.status,
+                            ActivityStatus::Done | ActivityStatus::Error
+                        ) && activity.tool_calls.is_empty()
+                            && activity.permissions.is_empty()
+                    }) =>
+            {
+                index
+            }
+            _ => 0,
+        };
+        self.transcript_view.prepared.invalidate_from(retained);
     }
 
     pub(in crate::app) fn bump_transcript_render_epoch(&mut self) {

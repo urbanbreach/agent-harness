@@ -471,6 +471,11 @@ impl AppState {
     }
 
     fn echo_submitted_prompt(&mut self, text: String, status: ActivityStatus) {
+        // Preserve the initial empty-view echo timing. Later local echoes used
+        // to invalidate through their changed selection index.
+        if !self.activities.is_empty() {
+            self.bump_transcript_render_epoch();
+        }
         let profile_label = self.active_profile().to_string();
         self.activities.push_back(ActivityEntry {
             request_id: String::new(),

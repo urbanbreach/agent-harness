@@ -1,0 +1,13 @@
+{
+  "reference": {
+    "head": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+    "changed_source_paths": [
+      "crates/harness-tui/src/app/tests.rs",
+      "crates/harness-tui/src/app/tests/lifecycle_shell_part2_test.rs"
+    ],
+    "note": "Only shared test changes under src; production remains pinned."
+  },
+  "candidate": {
+    "source_files_unchanged_since_build": true
+  }
+}

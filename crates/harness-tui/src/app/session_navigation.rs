@@ -334,6 +334,7 @@ impl AppState {
 
     fn navigate_to_home_shell(&mut self, draft: String) {
         self.projection.reset();
+        self.bump_transcript_render_epoch();
         self.selected_event_index = 0;
         self.transcript_view.selected_activity_index = 0;
         self.transcript_view.reset_entry_navigation();
@@ -1034,6 +1035,7 @@ impl AppState {
         set_pending_live_launch_metadata(self.launch_metadata.clone());
 
         self.projection.reset();
+        self.bump_transcript_render_epoch();
         self.selected_event_index = 0;
         self.transcript_view.selected_activity_index = 0;
         self.transcript_view.reset_entry_navigation();

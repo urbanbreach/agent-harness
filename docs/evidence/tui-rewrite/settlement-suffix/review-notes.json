@@ -1,0 +1,15 @@
+{
+  "reviewer": "/root/tui_review",
+  "scope": "independent read-only source review; final evidence review pending",
+  "resolved_findings": [
+    "Nested tool/artifact changes do not necessarily advance parent message provenance; use request, event, provider and task ownership checks.",
+    "Pending questions can move during transient ingestion; reject reuse while permissions or live assistant fragments exist.",
+    "Provider/task/turn identifiers share some presentation lookups; exclude aliases across the boundary.",
+    "A reopened terminal task can restore the sixth-oldest display row; use full conversion for that case.",
+    "Queued badges and tool presentation read global state; prepared prefix reuse requires terminal, tool-free, permission-free activities.",
+    "Buffered user/task/provider-start reuse needs a journey beginning with two settled turns; added turn-buffered to the existing behavioral test.",
+    "Conditional selection hashing exposed local-echo invalidation dependency; explicitly invalidate nonempty local appends, preserve independently confirmed first-empty-view timing defect R15.",
+    "Both navigation resets cleared activities without invalidating prepared layout. Added explicit invalidation at both resets and extended the existing /new public journey; red, green and original checks recorded."
+  ],
+  "source_verdict": "Source approved for final validation and measurements; independent caller audit found no remaining production activity mutation missing invalidation."
+}

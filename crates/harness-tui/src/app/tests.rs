@@ -1181,6 +1181,7 @@ mod lifecycle_shell_tests;
 #[cfg(test)]
 #[path = "tests/lifecycle_shell_part2_test.rs"]
 mod lifecycle_shell_part2_test;
+mod new_session_test;
 
 #[cfg(test)]
 #[path = "tests/lifecycle_shell_part3_test.rs"]
@@ -1256,7 +1257,7 @@ delegate_test!(startup_ctrl_w_with_draft_still_deletes_word => lifecycle_shell_p
 delegate_test!(palette_new_worktree_requests_new_worktree_session => lifecycle_shell_part2_test::palette_new_worktree_requests_new_worktree_session);
 delegate_test!(startup_prompt_enter_echoes_prompt_and_selects_new_session => lifecycle_shell_part2_test::startup_prompt_enter_echoes_prompt_and_selects_new_session);
 
-delegate_test!(slash_new_then_submit_bootstraps_fresh_session_instead_of_live_turn_submit => lifecycle_shell_part2_test::slash_new_then_submit_bootstraps_fresh_session_instead_of_live_turn_submit);
+delegate_test!(slash_new_then_submit_bootstraps_fresh_session_instead_of_live_turn_submit => new_session_test::slash_new_then_submit_bootstraps_fresh_session_instead_of_live_turn_submit);
 
 #[cfg(test)]
 #[path = "tests/activity_lifecycle_tests.rs"]

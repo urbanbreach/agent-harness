@@ -1,0 +1,17 @@
+{
+  "reference": {
+    "crates/harness-tui/tests/rewrite_performance_test.rs": "9875f290eab6d8367395609279da69ce68274206d1cac942ec2274229154eead",
+    "crates/harness-tui/tests/support/rewrite_journey.rs": "a3e48bb45948409ca6d4e4c9a695f7ba8900920a1d17613cb22b889815473b74",
+    ".config/nextest.toml": "f0d2e558651703491c011b4382ded2e13ebb7e85cf0fbfe268c336db1d648ce2"
+  },
+  "before": {
+    "crates/harness-tui/tests/rewrite_performance_test.rs": "9875f290eab6d8367395609279da69ce68274206d1cac942ec2274229154eead",
+    "crates/harness-tui/tests/support/rewrite_journey.rs": "a3e48bb45948409ca6d4e4c9a695f7ba8900920a1d17613cb22b889815473b74",
+    ".config/nextest.toml": "f0d2e558651703491c011b4382ded2e13ebb7e85cf0fbfe268c336db1d648ce2"
+  },
+  "candidate": {
+    "crates/harness-tui/tests/rewrite_performance_test.rs": "9875f290eab6d8367395609279da69ce68274206d1cac942ec2274229154eead",
+    "crates/harness-tui/tests/support/rewrite_journey.rs": "a3e48bb45948409ca6d4e4c9a695f7ba8900920a1d17613cb22b889815473b74",
+    ".config/nextest.toml": "f0d2e558651703491c011b4382ded2e13ebb7e85cf0fbfe268c336db1d648ce2"
+  }
+}
