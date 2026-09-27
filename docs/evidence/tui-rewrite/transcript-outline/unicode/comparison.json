@@ -1,0 +1,17 @@
+{
+  "comparison": "full cell/style/text JSON equality after timeline jumps",
+  "exact": {
+    "ascii-120-3.json": true,
+    "ascii-120-4.json": true,
+    "ascii-40-3.json": true,
+    "ascii-40-4.json": true,
+    "ascii-80-3.json": true,
+    "ascii-80-4.json": true,
+    "joined-120-3.json": true,
+    "joined-120-4.json": true,
+    "joined-40-3.json": true,
+    "joined-40-4.json": true,
+    "joined-80-3.json": true,
+    "joined-80-4.json": true
+  }
+}

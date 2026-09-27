@@ -77,11 +77,7 @@ fn filtered_viewer_quotes_the_visible_line_without_selection() {
     app.set_frame_area(Rect::new(0, 0, 80, 24));
     assert!(app.select_transcript_tool(&ids[0]));
     assert!(app.open_selected_transcript_viewer());
-    let viewer = app
-        .transcript_integration
-        .as_mut()
-        .and_then(TranscriptComposite::viewer_mut)
-        .unwrap_or_abort();
+    let viewer = app.transcript_viewer.as_mut().unwrap_or_abort();
     viewer
         .update_content(
             crate::transcript_block_viewer::ViewerBlockContent::new(

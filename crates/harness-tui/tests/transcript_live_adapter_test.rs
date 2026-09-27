@@ -5,7 +5,6 @@ use harness_core::event::{
 };
 use harness_core::session::AssistantPart;
 use harness_tui::app::{AppState, Focus};
-use harness_tui::transcript_blocks::BlockKind;
 use harness_tui::transcript_identity::TranscriptScreenMode;
 
 fn user_event() -> EventEnvelopeV1 {
@@ -25,26 +24,6 @@ fn user_event() -> EventEnvelopeV1 {
             text: "show the live adapter".to_owned(),
         }),
     }
-}
-
-#[test]
-fn live_projection_reaches_the_production_transcript_adapter() {
-    // arrange
-    // Given: a real live AppState receiving a replayable user event.
-    let mut app = AppState::new_live(None, false, None);
-
-    // When: the production ingestion path accepts the event.
-    app.ingest_event(user_event());
-
-    // act
-    // Then: the new identity/block owner contains the live turn and user block.
-    let view = app
-        .transcript_view_model()
-        .expect("live AppState must expose the integrated transcript");
-    // assert
-    assert_eq!(view.identity.turns().len(), 1);
-    assert_eq!(view.blocks.len(), 1);
-    assert_eq!(view.blocks[0].kind, BlockKind::User);
 }
 
 #[test]

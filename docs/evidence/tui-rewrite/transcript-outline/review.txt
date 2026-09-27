@@ -1,0 +1,27 @@
+Independent reviewer: /root/tui_review
+Scope: transcript-outline migration slice, read-only source and evidence review.
+No builds or tests run by the reviewer.
+
+Approved to commit this migration slice. No blocking source or evidence findings.
+
+Verified:
+- All 162 artifact hashes, 562 source hashes, and release/probe binary receipts.
+- Identical benchmark fixtures; raw percentiles, medians, CPU, allocation totals,
+  and reported changes recompute correctly.
+- All timed byte counts and oldest screens match; only the documented R8
+  diagnostic screen differs.
+- The 539 checkpoints, 12 R9 frame pairs, streaming PNGs, and selection/cleanup
+  reports support the claims.
+- Removed structural coverage is replaced adequately by public navigation and
+  pager journeys.
+
+The timeout and successful isolated rerun are reported accurately. Streaming,
+typing, and source-reduction targets remain explicitly unmet.
+
+The earlier source review found a zero-height status-update regression. The
+public journey reproduced it, the source was corrected, and the reviewer approved
+the fix before this final evidence review. R9 is a numeric display-width/scroll
+offset correction; its captures do not demonstrate a visible improvement.
+
+This review does not approve completion of the whole rewrite. This receipt was
+added after the 162 reviewed artifacts; the final manifest includes it.

@@ -610,40 +610,28 @@ fn render_integrated_timeline(frame: &mut Frame, app: &AppState, area: Rect) {
     if !app.transcript_following() || app.transcript_page_flip_scroll_top().is_some() {
         return;
     }
-    let Some(view) = app.transcript_view_model() else {
+    let Some(outline) = app.transcript_outline.as_ref() else {
         return;
     };
-    for marker in &view.timeline.marker_rects {
-        if marker.rect.x < area.x
-            || marker.rect.y < area.y
-            || marker.rect.right() > area.right()
-            || marker.rect.bottom() > area.bottom()
+    for (rect, marker) in outline.markers() {
+        if rect.x < area.x
+            || rect.y < area.y
+            || rect.right() > area.right()
+            || rect.bottom() > area.bottom()
         {
             continue;
         }
-        let Some(turn) = view
-            .turns
-            .iter()
-            .find(|turn| turn.turn_id() == marker.turn_id)
-        else {
-            continue;
-        };
-        let scroll_top = view.scroll_top.floor().to_string().parse::<usize>();
-        let interaction = if scroll_top == Ok(view.timeline.scroll_top)
-            && view.screen.focus_follow().focus
-                == crate::transcript_identity::TranscriptFocus::Timeline
-            && view.screen.focus_follow().follow
-        {
-            crate::transcript_timeline::MarkerInteraction::Active
-        } else {
-            crate::transcript_timeline::MarkerInteraction::Normal
-        };
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                marker.label.clone(),
-                turn.marker.style(interaction, app.theme()).ratatui_style(),
+                marker.glyph(),
+                marker
+                    .style(
+                        crate::transcript_timeline::MarkerInteraction::Normal,
+                        app.theme(),
+                    )
+                    .ratatui_style(),
             ))),
-            marker.rect,
+            rect,
         );
     }
 }
@@ -653,8 +641,9 @@ fn render_response_position_affordance(frame: &mut Frame, area: Rect, app: &AppS
         return;
     }
     let Some(position) = app.transcript_view.response_position.or_else(|| {
-        app.transcript_view_model()
-            .and_then(|view| view.response_position)
+        app.transcript_outline
+            .as_ref()
+            .and_then(|outline| outline.response_position())
     }) else {
         return;
     };
@@ -1214,8 +1203,11 @@ pub(crate) fn transcript_timeline_turn_at(
     if !app.transcript_following() || app.transcript_page_flip_scroll_top().is_some() {
         return None;
     }
-    app.transcript_view_model()
-        .and_then(|view| view.hit_map.hit_test(column, row))
+    app.transcript_outline
+        .as_ref()?
+        .markers()
+        .find(|(rect, _)| rect.contains((column, row).into()))
+        .map(|(_, marker)| marker.turn_id)
 }
 
 pub(crate) fn transcript_selection_text(
@@ -1330,42 +1322,8 @@ mod response_position_tests {
     fn response_position_affordance_paints_index_and_total_with_contrast() {
         // arrange
         let mut app = AppState::new_live(None, false, None);
-        let mut composite =
-            crate::transcript_integration::TranscriptComposite::new(Rect::new(0, 0, 30, 2))
-                .unwrap_or_abort();
-        for index in 0..3 {
-            let replay = crate::transcript_identity::ReplayTurn::event(index + 1, index, 1);
-            composite
-                .apply(crate::transcript_integration::TranscriptEvent::TurnStarted(
-                    crate::transcript_integration::TurnSeed::new(
-                        replay,
-                        crate::transcript_timeline::TimelineStatus::Completed,
-                        crate::theme_tokens::LifecycleState::Completed,
-                    ),
-                ))
-                .unwrap_or_abort();
-            composite
-                .apply(
-                    crate::transcript_integration::TranscriptEvent::BlockCreated(
-                        crate::transcript_integration::BlockSeed {
-                            id: replay.block_id(0),
-                            turn_id: replay.turn_id(),
-                            kind: crate::transcript_blocks::BlockKind::Assistant,
-                            lifecycle: crate::transcript_blocks::BlockLifecycle::Completed,
-                            content: index.to_string(),
-                            raw: None,
-                        },
-                    ),
-                )
-                .unwrap_or_abort();
-        }
-        composite
-            .jump(crate::transcript_timeline::TimelineJump::NextResponse)
-            .unwrap_or_abort();
-        composite
-            .jump(crate::transcript_timeline::TimelineJump::NextResponse)
-            .unwrap_or_abort();
-        app.transcript_integration = Some(composite);
+        app.transcript_view.response_position =
+            Some(crate::transcript_timeline::ResponsePosition { index: 2, total: 3 });
         let backend = TestBackend::new(30, 2);
         let mut terminal = Terminal::new(backend).unwrap_or_abort();
 

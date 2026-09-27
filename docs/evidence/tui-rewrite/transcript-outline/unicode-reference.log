@@ -1,0 +1,50 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/.codex/worktrees/tui-reference/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.12s
+────────────
+ Nextest run ID 9523a76b-8495-4b1d-b6e6-f0459d50c62c with nextest profile: ci
+    Starting 2 tests across 1 binary
+        FAIL [   0.579s] (2/2) harness-tui::rewrite_outline_test timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize
+  stdout ───
+
+    running 1 test
+    test timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize ... FAILED
+
+    failures:
+
+    failures:
+        timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.57s
+
+  stderr ───
+
+    thread 'timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize' (2263416) panicked at crates/harness-tui/tests/rewrite_outline_test.rs:64:5:
+    assertion `left == right` failed: equal display-cell widths must produce equal jump positions
+      left: [(80, 3, 24), (80, 4, 23), (40, 3, 24), (40, 4, 23), (120, 3, 8), (120, 4, 7)]
+     right: [(80, 3, 21), (80, 4, 20), (40, 3, 21), (40, 4, 20), (120, 3, 8), (120, 4, 7)]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.581s] 2 tests run: 1 passed, 1 failed, 0 skipped
+        FAIL [   0.579s] (2/2) harness-tui::rewrite_outline_test timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize
+  stdout ───
+
+    running 1 test
+    test timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize ... FAILED
+
+    failures:
+
+    failures:
+        timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.57s
+
+  stderr ───
+
+    thread 'timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize' (2263416) panicked at crates/harness-tui/tests/rewrite_outline_test.rs:64:5:
+    assertion `left == right` failed: equal display-cell widths must produce equal jump positions
+      left: [(80, 3, 24), (80, 4, 23), (40, 3, 24), (40, 4, 23), (120, 3, 8), (120, 4, 7)]
+     right: [(80, 3, 21), (80, 4, 20), (40, 3, 21), (40, 4, 20), (120, 3, 8), (120, 4, 7)]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

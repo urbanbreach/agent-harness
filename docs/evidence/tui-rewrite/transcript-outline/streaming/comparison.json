@@ -1,0 +1,14 @@
+{
+  "stream-markdown-40x24-reduced-0ms": {
+    "cells": true,
+    "text": true,
+    "cursor": true,
+    "png_bytes": true
+  },
+  "stream-markdown-120x40-reduced-0ms": {
+    "cells": true,
+    "text": true,
+    "cursor": true,
+    "png_bytes": true
+  }
+}

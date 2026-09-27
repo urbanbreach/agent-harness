@@ -1108,9 +1108,9 @@ mod ui10_tests {
         activity.tool_calls.push(tool);
         app.activities = std::collections::VecDeque::from([activity]);
 
-        app.sync_transcript_integration(true);
+        app.sync_transcript_state(true);
         app.activities[0].tool_calls[0].status = ToolCallDisplayStatus::Succeeded;
-        app.sync_transcript_integration(true);
+        app.sync_transcript_state(true);
         assert_eq!(
             app.tool_finish_elapsed("completion-edit"),
             Some(std::time::Duration::ZERO)

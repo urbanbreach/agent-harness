@@ -43,24 +43,6 @@ fn batch_children_settle_and_batch_output_opens_after_the_response_commit() -> R
         )?;
         state.action(&json!({"op":"advance", "ms":1000}), &fixture)?;
 
-        let view = state
-            .app
-            .transcript_view_model()
-            .ok_or("missing transcript")?;
-        let tools = view
-            .blocks
-            .iter()
-            .filter(|block| block.kind == harness_tui::transcript_blocks::BlockKind::Tool)
-            .collect::<Vec<_>>();
-        assert_eq!(tools.len(), 2);
-        assert!(
-            tools.iter().all(|tool| {
-                tool.lifecycle == harness_tui::transcript_blocks::BlockLifecycle::Completed
-                    && tool.fold_state == harness_tui::transcript_blocks::FoldState::Collapsed
-            }),
-            "completed tool previews must stay collapsed while the turn continues"
-        );
-
         let settled = render(&mut state.app, area.width, area.height)?;
         state.action(&json!({"op":"advance", "ms":330}), &fixture)?;
         let later = render(&mut state.app, area.width, area.height)?;

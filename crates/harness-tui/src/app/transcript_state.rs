@@ -1,15 +1,6 @@
 // allow: SIZE_OK — TUI app state (session projection + interaction)
 use crate::prompt_queue_actions::{QueueLifecycle, QueueState};
-use crate::scheduling::FrameNow;
-use crate::theme_tokens::LifecycleState;
-use crate::transcript_blocks::{BlockKind, BlockLifecycle, RawDisclosure};
-use crate::transcript_identity::ReplayTurn;
-use crate::transcript_integration::{
-    BlockSeed, TranscriptComposite, TranscriptEvent, TranscriptIntegrationError, TurnSeed,
-};
-use crate::transcript_pager::{run_pager, PagerCommand, PagerExit, PagerStdio, TerminalControl};
 use crate::transcript_scroll::PageFlipState;
-use crate::transcript_timeline::TimelineStatus;
 use crate::UnwrapOrAbort;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -48,25 +39,21 @@ impl ToastState {
 }
 
 impl AppState {
-    pub fn transcript_view_model(&self) -> Option<&TranscriptViewModel> {
-        self.transcript_integration
-            .as_ref()
-            .map(TranscriptComposite::view)
-    }
-
     pub fn transcript_screen_mode(&self) -> Option<TranscriptScreenMode> {
-        self.transcript_integration
-            .as_ref()
-            .map(|composite| composite.screen().mode())
+        self.transcript_outline.as_ref().map(|_| {
+            if self.transcript_viewer.is_some() {
+                TranscriptScreenMode::SelectedBlockViewer
+            } else {
+                TranscriptScreenMode::InPlace(crate::transcript_identity::InPlaceMode::Transcript)
+            }
+        })
     }
 
     pub(crate) fn transcript_viewer(&self) -> Option<&crate::transcript_block_viewer::ViewerState> {
-        self.transcript_integration
-            .as_ref()
-            .and_then(TranscriptComposite::viewer)
+        self.transcript_viewer.as_ref()
     }
 
-    pub(crate) fn sync_transcript_integration(&mut self, animate_tool_transitions: bool) {
+    pub(crate) fn sync_transcript_state(&mut self, animate_tool_transitions: bool) {
         let projection_delta = self.projection.take_transcript_delta();
         match projection_delta {
             ProjectionDelta::Activity { index } => {
@@ -118,39 +105,24 @@ impl AppState {
         let viewport = crate::layout::FrameLayoutPlan::for_app(self, frame_area)
             .transcript
             .unwrap_or(frame_area);
-        if self.transcript_integration.is_none() {
-            self.transcript_integration = TranscriptComposite::new(viewport).ok();
+        if self.transcript_outline.is_none() && viewport.width > 0 && viewport.height > 0 {
+            self.transcript_outline = Some(TranscriptOutline::new(viewport));
         }
-        let Some(mut composite) = self.transcript_integration.take() else {
-            return;
-        };
-        let _ = composite.resize(viewport);
-        match (animate_tool_transitions, projection_delta) {
-            (false, ProjectionDelta::ReplayPending) | (true, ProjectionDelta::None) => {}
-            (false, _) | (true, ProjectionDelta::FullRebuild | ProjectionDelta::ReplayPending) => {
-                let _ = composite.replace_events(transcript_events_for_activities(self));
-            }
-            (true, ProjectionDelta::Activity { index }) => {
-                let incremental = self
-                    .activities
-                    .get(index)
-                    .map(|activity| transcript_events_for_activity(index, activity));
-                let incremental_applied =
-                    incremental.is_some_and(|events| composite.sync_turn(events).is_ok());
-                if !incremental_applied {
-                    let _ = composite.replace_events(transcript_events_for_activities(self));
-                }
+        if let Some(outline) = self.transcript_outline.as_mut() {
+            let from = match (animate_tool_transitions, projection_delta) {
+                (false, ProjectionDelta::ReplayPending) => None,
+                (true, ProjectionDelta::None) => Some(usize::MAX),
+                (true, ProjectionDelta::Activity { index }) => Some(index),
+                _ => Some(0),
+            };
+            if let Some(from) = from {
+                outline.update(&self.projection.activities, viewport, from);
             }
         }
-        self.transcript_integration = Some(composite);
         if self.transcript_viewer().is_some() {
             if let Some(entry) = self.selected_transcript_entry() {
                 let content = self.selected_entry_content(&entry);
-                if let Some(viewer) = self
-                    .transcript_integration
-                    .as_mut()
-                    .and_then(TranscriptComposite::viewer_mut)
-                {
+                if let Some(viewer) = self.transcript_viewer.as_mut() {
                     let _ = viewer.update_content(content);
                 }
             }
@@ -210,81 +182,98 @@ impl AppState {
     }
 
     pub fn select_transcript_turn_at(&mut self, index: usize) -> bool {
-        let Some(turn_id) = self
-            .transcript_view_model()
-            .and_then(|view| view.turns.get(index).map(|turn| turn.turn_id()))
-        else {
+        if !self
+            .transcript_outline
+            .as_mut()
+            .is_some_and(|outline| outline.select(index))
+        {
             return false;
-        };
+        }
         self.transcript_view.selected_activity_index = index;
-        self.select_transcript_turn(turn_id)
+        self.cancel_transcript_page_flip();
+        true
     }
 
     pub fn toggle_selected_transcript_fold(&mut self) -> bool {
         self.fold_selected_entry()
     }
 
-    pub fn run_transcript_pager<T: TerminalControl>(
-        &mut self,
-        pager_command: &PagerCommand,
-        stdio: PagerStdio,
-        terminal: &mut T,
-    ) -> Result<PagerExit, TranscriptIntegrationError> {
-        let snapshot = self
-            .transcript_integration
-            .as_mut()
-            .ok_or(TranscriptIntegrationError::NoPager)?
-            .suspend_pager()?
-            .clone();
-        let pager_result = run_pager(&snapshot, pager_command, stdio, terminal);
-        let restore_result = self
-            .transcript_integration
-            .as_mut()
-            .ok_or(TranscriptIntegrationError::NoPager)?
-            .restore_pager();
-        restore_result?;
-        pager_result.map_err(Into::into)
-    }
-
     pub(crate) fn open_selected_transcript_viewer(&mut self) -> bool {
+        use super::transcript_outline::{activity_blocks, replay_turn, rows_as_f64};
+        use crate::transcript_block_viewer::{ViewerReturnSnapshot, ViewerState};
+        use crate::transcript_blocks::default_fold;
+        use crate::transcript_identity::{FocusFollowState, TranscriptFocus};
+
         let Some(entry) = self.selected_transcript_entry() else {
             return false;
         };
         self.transcript_view.selected_entry = Some(entry.id);
         let content = self.selected_entry_content(&entry);
-        let Some(index) = self
+        let Some((index, activity)) = self
             .activities
             .iter()
-            .position(|activity| activity.first_seq == entry.activity_first_seq)
+            .enumerate()
+            .find(|(_, activity)| activity.first_seq == entry.activity_first_seq)
         else {
             return false;
         };
-        let Some(block_id) = self
-            .transcript_view_model()
-            .and_then(|view| view.turns.get(index))
-            .map(|turn| turn.replay_turn().block_id(0))
-        else {
+        let Some(outline) = self.transcript_outline.as_ref() else {
             return false;
         };
-        let opened = self
-            .transcript_integration
-            .as_mut()
-            .is_some_and(|composite| composite.open_viewer_content(block_id, content).is_ok());
+        let Some(layout) = outline.layout() else {
+            return false;
+        };
+        let Ok(anchor) = layout.capture_anchor(rows_as_f64(outline.scroll_top)) else {
+            return false;
+        };
+        let Some(block) = activity_blocks(activity).next() else {
+            return false;
+        };
+        let focus = if outline.selected_index().is_some() {
+            TranscriptFocus::Timeline
+        } else {
+            TranscriptFocus::Transcript
+        };
+        let snapshot = ViewerReturnSnapshot::new(
+            default_fold(block.kind, block.lifecycle),
+            FocusFollowState::new(focus, focus == TranscriptFocus::Transcript),
+            anchor,
+        );
+        let Ok(viewer) = ViewerState::open(
+            replay_turn(index, activity, 0).block_id(0),
+            content,
+            snapshot,
+        ) else {
+            return false;
+        };
+        self.transcript_viewer = Some(viewer);
         self.resize_transcript_viewer(self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24)));
-        opened
+        true
     }
 
     pub(crate) fn close_transcript_viewer(&mut self) -> bool {
-        self.transcript_integration
-            .as_mut()
-            .is_some_and(|composite| composite.close_viewer().is_ok())
+        let Some(viewer) = self.transcript_viewer.take() else {
+            return false;
+        };
+        if let Some(outline) = self.transcript_outline.as_mut() {
+            outline.restore_viewer_anchor(viewer.close().return_snapshot().anchor);
+        }
+        true
     }
 
     pub(crate) fn select_transcript_turn(&mut self, turn_id: TurnId) -> bool {
+        let Some(index) = self
+            .transcript_outline
+            .as_ref()
+            .and_then(|outline| outline.index_of(turn_id))
+        else {
+            return false;
+        };
+        // Timeline clicks preserve the entry selection; message commands move it explicitly.
         let selected = self
-            .transcript_integration
+            .transcript_outline
             .as_mut()
-            .is_some_and(|composite| composite.select_turn(turn_id).is_ok());
+            .is_some_and(|outline| outline.select(index));
         if selected {
             self.cancel_transcript_page_flip();
         }
@@ -312,31 +301,16 @@ impl AppState {
                 jump == crate::transcript_timeline::TimelineJump::NextResponse,
             );
         }
-        let Some(snapshot) = self
-            .transcript_integration
-            .as_mut()
-            .and_then(|composite| composite.jump(jump).ok())
-        else {
+        let Some(outline) = self.transcript_outline.as_mut() else {
             return false;
         };
-        if response_jump && snapshot.response_position.is_none() {
-            return false;
-        }
-        if let Some(selected) = snapshot.selected_turn_id {
-            if let Some(index) = self.transcript_view_model().and_then(|view| {
-                view.turns
-                    .iter()
-                    .position(|turn| turn.turn_id() == selected)
-            }) {
-                self.transcript_view.selected_activity_index = index;
-            }
+        let scroll_top = outline.jump(jump);
+        if let Some(index) = outline.selected_index() {
+            self.transcript_view.selected_activity_index = index;
         }
         let max_scroll = self.transcript_view.viewport.max_scroll();
         self.transcript_view
-            .set_measured_viewport(TranscriptViewport::detached(
-                snapshot.scroll_top,
-                max_scroll,
-            ));
+            .set_measured_viewport(TranscriptViewport::detached(scroll_top, max_scroll));
         self.cancel_transcript_page_flip();
         true
     }
@@ -401,16 +375,6 @@ impl AppState {
         let now = self.now();
         self.clear_expired_interrupt_confirmation();
         self.refresh_toast_motion(now);
-        #[cfg(test)]
-        if let Some(composite) = self.transcript_integration.as_mut() {
-            let animation_ms = u64::try_from(self.transcript_view.transcript_animation_phase)
-                .unwrap_or(u64::MAX)
-                .saturating_mul(crate::scheduling::active_animation_period_ms());
-            let _ = composite.tick_at(FrameNow {
-                animation_ms,
-                flush_ms: animation_ms,
-            });
-        }
     }
 
     pub fn advance_animation_tick(&mut self) {
@@ -823,122 +787,6 @@ impl AppState {
         for tool_call_id in self.selected_activity_expandable_tool_ids() {
             self.set_tool_output_expanded(&tool_call_id, expanded);
         }
-    }
-}
-
-fn transcript_events_for_activities(app: &AppState) -> Vec<TranscriptEvent> {
-    let mut events = Vec::new();
-    for (activity_index, activity) in app.activities.iter().enumerate() {
-        events.extend(transcript_events_for_activity(activity_index, activity));
-    }
-    events
-}
-
-pub(super) fn transcript_events_for_activity(
-    activity_index: usize,
-    activity: &ActivityEntry,
-) -> Vec<TranscriptEvent> {
-    let mut blocks = Vec::new();
-    let lifecycle = block_lifecycle(activity.status);
-    if let Some(user_message) = activity.user_message.as_ref() {
-        blocks.push((BlockKind::User, user_message.text.clone(), None, lifecycle));
-    }
-    if !activity.thinking_text.is_empty() {
-        blocks.push((
-            BlockKind::Thinking,
-            activity.thinking_text.clone(),
-            None,
-            lifecycle,
-        ));
-    }
-    if !activity.transcript_text.is_empty() {
-        blocks.push((
-            BlockKind::Assistant,
-            activity.transcript_text.clone(),
-            None,
-            lifecycle,
-        ));
-    }
-    for tool in &activity.tool_calls {
-        let content = tool
-            .output_summary
-            .as_deref()
-            .unwrap_or(tool.args_summary.as_str())
-            .to_owned();
-        let raw = tool.output_json.as_ref().map(RawDisclosure::from_json);
-        let lifecycle = match tool.status {
-            ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
-                BlockLifecycle::Waiting
-            }
-            ToolCallDisplayStatus::Running => BlockLifecycle::Tool,
-            ToolCallDisplayStatus::Succeeded => BlockLifecycle::Completed,
-            ToolCallDisplayStatus::Failed => BlockLifecycle::Failed,
-        };
-        blocks.push((BlockKind::Tool, content, raw, lifecycle));
-    }
-    if blocks.is_empty() {
-        blocks.push((
-            BlockKind::System,
-            activity.status.to_string(),
-            None,
-            lifecycle,
-        ));
-    }
-
-    let turn_index = u64::try_from(activity_index).unwrap_or(u64::MAX);
-    let replay = ReplayTurn::event(
-        activity.first_seq.max(1),
-        turn_index,
-        u64::try_from(blocks.len()).unwrap_or(u64::MAX),
-    );
-    let mut events = Vec::with_capacity(blocks.len().saturating_add(1));
-    events.push(TranscriptEvent::TurnStarted(TurnSeed::new(
-        replay,
-        timeline_status(activity.status),
-        lifecycle_state(activity),
-    )));
-    events.extend(blocks.into_iter().enumerate().map(
-        |(block_index, (kind, content, raw, lifecycle))| {
-            let block_index = u64::try_from(block_index).unwrap_or(u64::MAX);
-            TranscriptEvent::BlockCreated(BlockSeed {
-                id: replay.block_id(block_index),
-                turn_id: replay.turn_id(),
-                kind,
-                lifecycle,
-                content,
-                raw,
-            })
-        },
-    ));
-    events
-}
-
-fn timeline_status(status: ActivityStatus) -> TimelineStatus {
-    match status {
-        ActivityStatus::Queued => TimelineStatus::Queued,
-        ActivityStatus::Streaming => TimelineStatus::Streaming,
-        ActivityStatus::Done => TimelineStatus::Completed,
-        ActivityStatus::Error => TimelineStatus::Failed,
-    }
-}
-
-fn lifecycle_state(activity: &ActivityEntry) -> LifecycleState {
-    match activity.status {
-        ActivityStatus::Queued => LifecycleState::Queued,
-        ActivityStatus::Streaming if !activity.tool_calls.is_empty() => LifecycleState::Tool,
-        ActivityStatus::Streaming if !activity.thinking_text.is_empty() => LifecycleState::Thinking,
-        ActivityStatus::Streaming => LifecycleState::Streaming,
-        ActivityStatus::Done => LifecycleState::Completed,
-        ActivityStatus::Error => LifecycleState::Failed,
-    }
-}
-
-fn block_lifecycle(status: ActivityStatus) -> BlockLifecycle {
-    match status {
-        ActivityStatus::Queued => BlockLifecycle::Waiting,
-        ActivityStatus::Streaming => BlockLifecycle::Streaming,
-        ActivityStatus::Done => BlockLifecycle::Completed,
-        ActivityStatus::Error => BlockLifecycle::Failed,
     }
 }
 

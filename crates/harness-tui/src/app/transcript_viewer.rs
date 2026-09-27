@@ -5,11 +5,7 @@ impl AppState {
     pub(crate) fn resize_transcript_viewer(&mut self, area: Rect) {
         let theme = *self.theme();
         let layout = crate::transcript_block_viewer::viewer_layout(area);
-        if let Some(viewer) = self
-            .transcript_integration
-            .as_mut()
-            .and_then(TranscriptComposite::viewer_mut)
-        {
+        if let Some(viewer) = self.transcript_viewer.as_mut() {
             let _ = viewer.set_theme(theme);
             let body = layout.content_body(viewer.input_active() || viewer.visual_mode());
             let _ = viewer.resize(
@@ -20,11 +16,7 @@ impl AppState {
     }
 
     pub(crate) fn handle_transcript_viewer_key(&mut self, key: KeyEvent) -> bool {
-        let Some(viewer) = self
-            .transcript_integration
-            .as_mut()
-            .and_then(TranscriptComposite::viewer_mut)
-        else {
+        let Some(viewer) = self.transcript_viewer.as_mut() else {
             return false;
         };
         if viewer.search_editing() || viewer.filter_editing() {
@@ -194,11 +186,7 @@ impl AppState {
         {
             return self.close_transcript_viewer();
         }
-        let Some(viewer) = self
-            .transcript_integration
-            .as_mut()
-            .and_then(TranscriptComposite::viewer_mut)
-        else {
+        let Some(viewer) = self.transcript_viewer.as_mut() else {
             return false;
         };
         let body = layout.content_body(viewer.input_active() || viewer.visual_mode());
