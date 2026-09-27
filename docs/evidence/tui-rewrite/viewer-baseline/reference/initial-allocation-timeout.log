@@ -1,0 +1,31 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.23s
+────────────
+ Nextest run ID f99701fe-db0c-4561-a303-7f5fc52e2b01 with nextest profile: perf
+    Starting 1 test across 1 binary
+        SLOW [>  2.000s] (───) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+        SLOW [>  4.000s] (───) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+        SLOW [>  6.000s] (───) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+        SLOW [>  8.000s] (───) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+        SLOW [> 10.000s] (───) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+        SLOW [> 12.000s] (───) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+        SLOW [> 14.000s] (───) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+        SLOW [> 16.000s] (───) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+        SLOW [> 18.000s] (───) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+ TERMINATING [> 20.000s] (───) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+     TIMEOUT [  20.018s] (1/1) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+  stdout ───
+
+    running 1 test
+
+    (test timed out)
+
+────────────
+     Summary [  20.019s] 1 test run: 0 passed, 1 timed out, 0 skipped
+     TIMEOUT [  20.018s] (1/1) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+  stdout ───
+
+    running 1 test
+
+    (test timed out)
+
+error: test run failed

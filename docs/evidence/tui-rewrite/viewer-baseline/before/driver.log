@@ -1,0 +1,5 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.23s
+idle-2000: p95=1834us RSS=59492KiB
+scroll-2000: p95=1928us RSS=59772KiB
+search-2000: p95=8009us RSS=59680KiB
+resize-2000: p95=48020us RSS=81548KiB

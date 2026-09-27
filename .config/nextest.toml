@@ -26,9 +26,9 @@ status-level = "pass"
 final-status-level = "none"
 junit = { path = "junit.xml" }
 
-# This opt-in resource fixture also measures unoptimized baseline histories.
+# Opt-in resource fixtures include unoptimized histories and allocation tracing.
 [[profile.perf.overrides]]
-filter = 'test(perf_interactive_resources)'
+filter = 'test(perf_interactive_resources) | test(perf_rewrite_viewer_public_boundary)'
 slow-timeout = { period = "30s", terminate-after = 10 }
 
 [test-groups.process-global-state]

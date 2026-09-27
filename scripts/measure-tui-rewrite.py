@@ -18,33 +18,41 @@ def main():
     parser.add_argument("--frames", type=int, default=200)
     parser.add_argument("--history", type=int, default=1000)
     parser.add_argument("--allocations", action="store_true", help="separate glibc memusage run")
+    parser.add_argument("--viewer-lines", type=int, help="measure viewer workloads with this many lines")
     args = parser.parse_args()
     if args.repetitions < 1 or args.frames < 100 or args.history < 1:
         parser.error("need positive repetitions/history and at least 100 frames")
+    if args.viewer_lines is not None and args.viewer_lines < 1000:
+        parser.error("viewer measurements need at least 1000 lines")
     root, output = args.root.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    target = ["--release", "-p", "harness-tui", "--all-features", "--test", "rewrite_performance_test"]
+    viewer = args.viewer_lines is not None
+    test = "rewrite_viewer_performance_test" if viewer else "rewrite_performance_test"
+    target = ["--release", "-p", "harness-tui", "--all-features", "--test", test]
     # Finish compilation before taking any timing samples.
     metadata = json.loads(subprocess.check_output(
         ["cargo", "nextest", "list", *target, "--message-format", "json"], cwd=root))
     binary = next(iter(metadata["rust-suites"].values()))["binary-path"]
     command = ["cargo", "nextest", "run", *target, "--profile", "perf", "-j", "1", "--success-output", "immediate"]
-    summary = {"schema": "tui-rewrite-renderer-v1", "platform": platform.platform(),
+    summary = {"schema": "tui-rewrite-viewer-v1" if viewer else "tui-rewrite-renderer-v1", "platform": platform.platform(),
                "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
                "binary_sha256": hashlib.file_digest(open(binary, "rb"), "sha256").hexdigest(),
                "rustc": subprocess.check_output(["rustc", "--version"], text=True).strip(),
                "command": command, "scenarios": {}}
     workloads = [("startup", 0), ("idle", args.history), ("typing", args.history),
                  ("stream", args.history), ("scroll", args.history), ("resize", args.history)]
+    if viewer:
+        workloads = [(scenario, args.viewer_lines) for scenario in ["idle", "scroll", "search", "resize"]]
     for scenario, count in workloads:
         samples = []
         for repetition in range(args.repetitions + int(args.allocations)):
             allocation = repetition == args.repetitions
             stem = f"{scenario}-{count}-{'alloc' if allocation else repetition + 1}"
             path = output / f"{stem}.json"
-            env = {**os.environ, "HARNESS_REWRITE_SCENARIO": scenario,
-                   "HARNESS_REWRITE_HISTORY": str(count), "HARNESS_REWRITE_FRAMES": str(args.frames),
-                   "HARNESS_REWRITE_PERF_OUT": str(path)}
+            prefix = "HARNESS_VIEWER" if viewer else "HARNESS_REWRITE"
+            env = {**os.environ, f"{prefix}_SCENARIO": scenario,
+                   f"{prefix}_{'LINES' if viewer else 'HISTORY'}": str(count),
+                   f"{prefix}_FRAMES": str(args.frames), f"{prefix}_PERF_OUT": str(path)}
             run = (["memusage", "-n", Path(binary).name, "--no-timer", *command]
                    if allocation else command)
             with (output / f"{stem}.log").open("w") as log:

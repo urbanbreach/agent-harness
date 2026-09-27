@@ -1,0 +1,7 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.24s
+────────────
+ Nextest run ID 8764db0f-b925-432e-8162-275fb6acfe74 with nextest profile: perf
+    Starting 1 test across 1 binary
+        PASS [   0.802s] (1/1) harness-tui::rewrite_viewer_performance_test perf_rewrite_viewer_public_boundary
+────────────
+     Summary [   0.803s] 1 test run: 1 passed, 0 skipped

@@ -1,0 +1,37 @@
+{
+  "reference": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+  "before": "706d00bf25efdb349540a099dc113e42f73eb311",
+  "fixtures": [
+    {
+      "path": "crates/harness-tui/tests/rewrite_viewer_performance_test.rs",
+      "sha256": "103cdff460fedd4b6fe6f643fb5472006c2c9ba196494a03efb37997698a0ecd",
+      "reference_identical": true
+    },
+    {
+      "path": "crates/harness-tui/tests/support/rewrite_journey.rs",
+      "sha256": "a3e48bb45948409ca6d4e4c9a695f7ba8900920a1d17613cb22b889815473b74",
+      "reference_identical": true
+    },
+    {
+      "path": "crates/harness-tui/tests/rewrite_performance_test.rs",
+      "sha256": "9928404a38cc966814620c26b90332d90500123575a7be9ff909df2bbd03e9d9",
+      "reference_identical": true
+    }
+  ],
+  "driver_sha256": "35d19a228d4939f23162616ab67e21c9c3d1e6b9ce545119ba94b64ba7cfe705",
+  "reference_production_sources_unchanged": true,
+  "binaries": [
+    {
+      "side": "reference",
+      "sha256": "48ca8847e0f59377564b4b72245b704a470f963d333d718add1a6badcfe0c813",
+      "bytes": 15375048,
+      "path": "/home/urbanbreach/.codex/worktrees/tui-reference/agent-harness/target/release/deps/rewrite_viewer_performance_test-b265f26a46eacb6a"
+    },
+    {
+      "side": "before",
+      "sha256": "6582d52558769bc10e71b4a16b612ac7ca4b7d91be7fccf678affd0ed6b9a1fc",
+      "bytes": 15034896,
+      "path": "/home/urbanbreach/Projects/agent-harness/target/release/deps/rewrite_viewer_performance_test-6fb2a40aef914a48"
+    }
+  ]
+}
