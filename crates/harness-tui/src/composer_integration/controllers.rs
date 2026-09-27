@@ -187,7 +187,7 @@ impl ComposerSlice {
     fn after_edit(&mut self) -> Result<(), ComposerSliceError> {
         self.queue.draft = self.editor.text();
         self.cancel_completion();
-        let context = self.editor.text();
+        let context = self.queue.draft.clone();
         let (suggestions, clock) = (&mut self.suggestions, &self.clock);
         let _ = suggestions.on_edit(clock, context)?;
         Ok(())

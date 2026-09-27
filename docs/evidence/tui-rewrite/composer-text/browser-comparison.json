@@ -1,0 +1,128 @@
+{
+  "comparisons": [
+    {
+      "name": "01-prompt.png",
+      "pixels_equal": true,
+      "png_sha256": "390fd0e558c2caa77fa1cd4d65a569cbed16e5b8dbef814b8f80a5d9f2f9728c",
+      "observer_differences": {
+        "renderCount": {
+          "before": 7,
+          "candidate": 6
+        },
+        "parsedCount": {
+          "before": 3,
+          "candidate": 4
+        }
+      }
+    },
+    {
+      "name": "02-unicode-draft.png",
+      "pixels_equal": true,
+      "png_sha256": "fb64f3944d3d84fe7c91768f2761fa42c7508fc7093413e154d5cc5eb85163da",
+      "observer_differences": {
+        "renderCount": {
+          "before": 11,
+          "candidate": 10
+        },
+        "parsedCount": {
+          "before": 4,
+          "candidate": 5
+        }
+      }
+    },
+    {
+      "name": "03-insert.png",
+      "pixels_equal": true,
+      "png_sha256": "a12bf800ec2f428dae01fc913a16e601f869b9605475a405a092a9aa4c73428f",
+      "observer_differences": {
+        "renderCount": {
+          "before": 15,
+          "candidate": 14
+        },
+        "parsedCount": {
+          "before": 5,
+          "candidate": 6
+        }
+      }
+    },
+    {
+      "name": "04-delete.png",
+      "pixels_equal": true,
+      "png_sha256": "fb64f3944d3d84fe7c91768f2761fa42c7508fc7093413e154d5cc5eb85163da",
+      "observer_differences": {
+        "renderCount": {
+          "before": 19,
+          "candidate": 18
+        },
+        "parsedCount": {
+          "before": 6,
+          "candidate": 7
+        }
+      }
+    },
+    {
+      "name": "05-middle-edit.png",
+      "pixels_equal": true,
+      "png_sha256": "b24ce505c3c92c1b99d34001c5cec21fac76afbd5862e7d6dda19edda9617bdc",
+      "observer_differences": {
+        "renderCount": {
+          "before": 23,
+          "candidate": 22
+        },
+        "parsedCount": {
+          "before": 7,
+          "candidate": 8
+        }
+      }
+    },
+    {
+      "name": "06-undo.png",
+      "pixels_equal": true,
+      "png_sha256": "1b6f76277dc19e67b536daf1c65c512ac93457de99e5c36e4c7162de32449fd9",
+      "observer_differences": {
+        "renderCount": {
+          "before": 27,
+          "candidate": 26
+        },
+        "parsedCount": {
+          "before": 8,
+          "candidate": 9
+        }
+      }
+    },
+    {
+      "name": "07-escape.png",
+      "pixels_equal": true,
+      "png_sha256": "1b6f76277dc19e67b536daf1c65c512ac93457de99e5c36e4c7162de32449fd9",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 10,
+          "candidate": 11
+        }
+      }
+    },
+    {
+      "name": "08-multiline-paste.png",
+      "pixels_equal": true,
+      "png_sha256": "e89ca3d26117d8c493fc4d2cd431d4f123a66693af65da64c662b148eb3a18b6",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 11,
+          "candidate": 12
+        }
+      }
+    },
+    {
+      "name": "09-expanded-paste.png",
+      "pixels_equal": true,
+      "png_sha256": "9cdaf612c65221770dad2296f6c08672f1ed71c5f160803865e190f4142c04ee",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 12,
+          "candidate": 13
+        }
+      }
+    }
+  ],
+  "both_runs_restore_and_cleanup": true
+}

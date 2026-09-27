@@ -161,6 +161,12 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
     if count > 0 {
         j.app.replace_events(events);
     }
+    let mut draft = String::new();
+    if scenario == "typing-long" {
+        draft = "plain 界 e\u{301} 👩‍💻 ".repeat(32);
+        j.app.handle_paste(&draft);
+        assert_eq!(j.app.composer.prompt_buffer, draft);
+    }
     let construction_us = construction.elapsed().as_micros();
     let mut updates = VecDeque::new();
     if scenario == "stream" {
@@ -229,7 +235,7 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
             "tools" => j
                 .app
                 .set_generic_tool_output_visible_for_test(index % 2 == 0),
-            "typing" => j.app.handle_key(KeyEvent::new(
+            "typing" | "typing-long" => j.app.handle_key(KeyEvent::new(
                 if index % 2 == 0 {
                     KeyCode::Char('x')
                 } else {
@@ -264,8 +270,24 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
         if index >= 10 {
             samples_us.push(start.elapsed().as_micros());
         }
+        if scenario == "typing-long" {
+            match index {
+                10 => assert_eq!(
+                    j.app.composer.prompt_buffer.strip_suffix('x'),
+                    Some(draft.as_str())
+                ),
+                11 => assert_eq!(j.app.composer.prompt_buffer, draft),
+                _ => {}
+            }
+        }
     }
     let after = resources()?;
+    if scenario == "typing-long" {
+        if frames % 2 != 0 {
+            draft.push('x');
+        }
+        assert_eq!(j.app.composer.prompt_buffer, draft);
+    }
     let bytes = output_bytes.get() - bytes_before;
     let visible = screen(&mut j, area)?;
     if scenario == "stream" {

@@ -1,0 +1,21 @@
+{
+  "reviewer": "/root/tui_review",
+  "decision": "approved for committing this bounded allocation reduction",
+  "blocking_findings": [],
+  "resolved_findings": [
+    "Added intermediate insertion/deletion assertions to identical final performance fixtures",
+    "Reproduction script diffs against explicit predecessor so clean committed checkouts retain the production patch"
+  ],
+  "verified_artifacts_before_review_receipt": 34,
+  "verified_source_files": 5,
+  "verified_performance_runs": 40,
+  "verified": [
+    "exact source patch, source receipts and retained executable hashes",
+    "recomputed performance summaries and frozen comparisons",
+    "nine exact PNG/cell/cursor pairs; observer count differences disclosed",
+    "visible insertion/deletion and natural terminal/resource restoration",
+    "1668 TUI and seven gated PTY passes, quality checks and intended mutation failures"
+  ],
+  "unmet_gate": "Short-draft p99: candidate187us, predecessor188us, frozen limit179.3us. Approval does not waive this gate or establish whole-rewrite completion.",
+  "reviewer_actions": "Read-only; no builds, tests or edits."
+}

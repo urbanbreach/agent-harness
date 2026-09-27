@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt::Write;
 
 use super::atom::{AtomId, AtomKind, ComposerAtom};
 use super::cursor::{AtomBoundary, AtomCursor};
@@ -86,15 +87,20 @@ impl AtomBuffer {
     }
 
     pub fn text(&self) -> String {
-        self.atoms
-            .iter()
-            .map(|atom| match &atom.kind {
-                AtomKind::Text(cluster) => cluster.as_str().to_owned(),
-                AtomKind::Newline => "\n".to_owned(),
-                AtomKind::FileMention(id) => format!("@mention:{}", id.get()),
-                AtomKind::Attachment(id) => format!("[attachment:{}]", id.get()),
-            })
-            .collect()
+        let mut text = String::new();
+        for atom in &self.atoms {
+            match &atom.kind {
+                AtomKind::Text(cluster) => text.push_str(cluster.as_str()),
+                AtomKind::Newline => text.push('\n'),
+                AtomKind::FileMention(id) => {
+                    let _ = write!(text, "@mention:{}", id.get());
+                }
+                AtomKind::Attachment(id) => {
+                    let _ = write!(text, "[attachment:{}]", id.get());
+                }
+            }
+        }
+        text
     }
 
     pub fn insert_text_at(

@@ -1,0 +1,32 @@
+{
+  "base": "92bd235d0d8a70e84ee3a7f333fcbb7a10f8aa30",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/app.rs",
+      "sha256": "eeed81da87c9650361a858018ae7862c51cf270af72a78f29beef48274b31e4a",
+      "lines": 3889
+    },
+    {
+      "path": "crates/harness-tui/src/composer_atoms/buffer.rs",
+      "sha256": "5800199d4dcdcf498e32ec660e51db7e4b5b57aad67bd3138aa155a105cceba7",
+      "lines": 214
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/controllers.rs",
+      "sha256": "197a3172d2451e83cbc02f43e9e58ee914e496a5a18d1609cd6f54fbfd4c003c",
+      "lines": 195
+    },
+    {
+      "path": "crates/harness-tui/tests/composer_atoms_test.rs",
+      "sha256": "9b8b8b4858863a60784f6c6bf3165dc9a0a5f9c5c8e1e913ab62ed9dcc6c6c4b",
+      "lines": 176
+    },
+    {
+      "path": "crates/harness-tui/tests/rewrite_performance_test.rs",
+      "sha256": "fa5b0c431ab96ba012a01486bbbf6fc485ef899f9ac2ef92d3fccfb3563bb51d",
+      "lines": 350
+    }
+  ],
+  "production_lines_added_net": 1,
+  "all_tui_src_lines": 166915
+}

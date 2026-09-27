@@ -1258,12 +1258,7 @@ impl AppState {
         if let Some((text, _)) = self.collapsed_paste_presentation() {
             return text;
         }
-        let editor_text = self.composer.editor_text();
-        if editor_text != self.composer.prompt_buffer {
-            self.composer.prompt_buffer.clone()
-        } else {
-            editor_text
-        }
+        self.composer.prompt_buffer.clone()
     }
 
     pub(crate) fn composer_render_cursor(&self) -> usize {

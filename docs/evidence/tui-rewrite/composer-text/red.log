@@ -1,0 +1,148 @@
+warning: unnecessary parentheses around closure body
+  --> vendor/crossterm/src/terminal/sys/unix.rs:87:50
+   |
+87 |     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+   |                                                  ^                            ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+87 -     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+87 +     let file = File::open("/dev/tty").map(|file| FileDesc::Owned(file.into()));
+   |
+
+warning: `crossterm` (lib) generated 1 warning (run `cargo fix --lib -p crossterm` to apply 1 suggestion)
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.78s
+────────────
+ Nextest run ID 2a5cfecd-5974-40c1-b832-070d4c0c36be with nextest profile: ci
+    Starting 7 tests across 1 binary
+        FAIL [   0.003s] (3/7) harness-tui::composer_atoms_test insertion_and_deletion_preserve_unaffected_atom_ids
+  stdout ───
+
+    running 1 test
+    test insertion_and_deletion_preserve_unaffected_atom_ids ... FAILED
+
+    failures:
+
+    failures:
+        insertion_and_deletion_preserve_unaffected_atom_ids
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'insertion_and_deletion_preserve_unaffected_atom_ids' (3318532) panicked at crates/harness-tui/tests/composer_atoms_test.rs:98:5:
+    assertion `left == right` failed
+      left: ""
+     right: "abc"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.003s] (4/7) harness-tui::composer_atoms_test serialization_preserves_atom_identity_and_typed_nontext_kinds
+  stdout ───
+
+    running 1 test
+    test serialization_preserves_atom_identity_and_typed_nontext_kinds ... FAILED
+
+    failures:
+
+    failures:
+        serialization_preserves_atom_identity_and_typed_nontext_kinds
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'serialization_preserves_atom_identity_and_typed_nontext_kinds' (3318535) panicked at crates/harness-tui/tests/composer_atoms_test.rs:145:5:
+    assertion `left == right` failed
+      left: ""
+     right: "@mention:9[attachment:11]\n"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.004s] (7/7) harness-tui::composer_atoms_test newlines_are_atoms_and_text_round_trips_without_byte_offsets
+  stdout ───
+
+    running 1 test
+    test newlines_are_atoms_and_text_round_trips_without_byte_offsets ... FAILED
+
+    failures:
+
+    failures:
+        newlines_are_atoms_and_text_round_trips_without_byte_offsets
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'newlines_are_atoms_and_text_round_trips_without_byte_offsets' (3318538) panicked at crates/harness-tui/tests/composer_atoms_test.rs:72:5:
+    assertion `left == right` failed
+      left: ""
+     right: "first\nse\u{301}cond\n"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.004s] 7 tests run: 4 passed, 3 failed, 0 skipped
+        FAIL [   0.003s] (3/7) harness-tui::composer_atoms_test insertion_and_deletion_preserve_unaffected_atom_ids
+  stdout ───
+
+    running 1 test
+    test insertion_and_deletion_preserve_unaffected_atom_ids ... FAILED
+
+    failures:
+
+    failures:
+        insertion_and_deletion_preserve_unaffected_atom_ids
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'insertion_and_deletion_preserve_unaffected_atom_ids' (3318532) panicked at crates/harness-tui/tests/composer_atoms_test.rs:98:5:
+    assertion `left == right` failed
+      left: ""
+     right: "abc"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.003s] (4/7) harness-tui::composer_atoms_test serialization_preserves_atom_identity_and_typed_nontext_kinds
+  stdout ───
+
+    running 1 test
+    test serialization_preserves_atom_identity_and_typed_nontext_kinds ... FAILED
+
+    failures:
+
+    failures:
+        serialization_preserves_atom_identity_and_typed_nontext_kinds
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'serialization_preserves_atom_identity_and_typed_nontext_kinds' (3318535) panicked at crates/harness-tui/tests/composer_atoms_test.rs:145:5:
+    assertion `left == right` failed
+      left: ""
+     right: "@mention:9[attachment:11]\n"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.004s] (7/7) harness-tui::composer_atoms_test newlines_are_atoms_and_text_round_trips_without_byte_offsets
+  stdout ───
+
+    running 1 test
+    test newlines_are_atoms_and_text_round_trips_without_byte_offsets ... FAILED
+
+    failures:
+
+    failures:
+        newlines_are_atoms_and_text_round_trips_without_byte_offsets
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'newlines_are_atoms_and_text_round_trips_without_byte_offsets' (3318538) panicked at crates/harness-tui/tests/composer_atoms_test.rs:72:5:
+    assertion `left == right` failed
+      left: ""
+     right: "first\nse\u{301}cond\n"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

@@ -974,6 +974,25 @@ No tests or snapshots changed, and no resource improvement is claimed. This remo
 The full rewrite remains unfinished. Evidence is in
 [`evidence/tui-rewrite/post-run-cleanup`](evidence/tui-rewrite/post-run-cleanup).
 
+## Composer text projection
+
+Atom text now writes directly into one output string. Rendering and suggestion
+updates also reuse the current draft where the old paths reconstructed identical
+bytes. This adds one net production line and preserves the public editor contract.
+All 1,668 TUI tests, seven gated PTY checks and quality checks pass. Nine paired
+actual-runtime xterm screenshots and complete terminal states match, with cleanup
+and terminal restoration confirmed.
+
+The fixed long-draft release workload reduces malloc calls by 38%, allocated bytes
+by 2.1%, and CPU from 0.44 to 0.38 ms/frame in the confirmation pair. Its seven
+frozen limits pass. The short-draft p99 limit remains unmet in both builds:
+188 µs before and 187 µs after, against 179.3 µs. Both paired runs and the original
+limits are retained; the cause of that initial-baseline timing shift is unverified.
+These are input/render/encoding measurements, excluding terminal-emulator latency.
+Duplicate editor state and undo history, the source target and full rewrite remain
+unfinished. Evidence is in
+[`evidence/tui-rewrite/composer-text`](evidence/tui-rewrite/composer-text).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal
