@@ -1,0 +1,4 @@
+[?1049h[>3u[?2004h[?1000h[?1002h[?1003h[?1015h[?1006h[?1004h[?2026l[?1006l[?1015l[?1003l[?1002l[?1000l[?2004l[?1004l[<1u[?1049l[?25hError: failed to initialize local presentation telemetry
+
+Caused by:
+    File exists (os error 17)

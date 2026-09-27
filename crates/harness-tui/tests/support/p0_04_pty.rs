@@ -17,11 +17,21 @@ pub(crate) const REPLACE_INTERRUPT_MARKER: &str = "P0-04 replacement interrupted
 pub(crate) const REPLACE_MARKER: &str = "P0-04 replacement submitted queued";
 pub(crate) const EMPTY_MARKER: &str = "P0-04 empty submitted";
 pub(crate) const PHANTOM_MARKER: &str = "P0-04 phantom";
+pub(crate) const ORDERED_BURST_MARKER: &str = "P0-04 ordered input burst submitted";
 pub(crate) const HELPER_CONTRACT: &str = "P0-04 helper command: HARNESS_TUI_P0_04_SCENARIO=1 HARNESS_DETERMINISTIC=1 HARNESS_DISABLE_ANIMATIONS=1 HARNESS_SEED=42 cargo test -p harness-tui --test p0_04_pty_recorded -- --exact p0_04_pty_helper --nocapture; toggle multiline with Alt+M; type first, Enter, second, then send with Alt+Enter; interject with Alt+I; cancel and replace with Ctrl+Enter; enhanced terminals may also use the modified Enter bindings; exit with the command palette.";
 
 const FIRST_DRAFT: &str = "first\nsecond";
 const INTERJECT_DRAFT: &str = "interject draft";
 const REPLACEMENT_DRAFT: &str = "replacement draft";
+
+pub(crate) fn ordered_input_burst() -> String {
+    use std::fmt::Write as _;
+    let mut draft = String::new();
+    for index in 0..300 {
+        write!(draft, "α{index:03}|").unwrap_or_abort();
+    }
+    draft
+}
 
 pub(crate) fn run_helper() {
     if std::env::var(SCENARIO_ENV).as_deref() != Ok("1") {
@@ -37,6 +47,7 @@ pub(crate) fn run_helper() {
                 FIRST_DRAFT => Some(QUEUED_MARKER),
                 INTERJECT_DRAFT => Some(INTERJECT_MARKER),
                 REPLACEMENT_DRAFT => Some(REPLACE_MARKER),
+                text if text == ordered_input_burst() => Some(ORDERED_BURST_MARKER),
                 _ => Some(SUBMITTED_MARKER),
             },
             _ => None,

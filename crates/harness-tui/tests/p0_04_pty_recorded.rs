@@ -95,6 +95,11 @@ fn p0_04_real_pty_records_multiline_composer_shortcuts() {
     // When: the empty replacement shortcut is pressed.
     helper.send(modified_enter(5).as_bytes());
 
+    // A single write larger than the reader buffer must reach submission in order.
+    let burst = scenario::ordered_input_burst();
+    helper.send(format!("{burst}{}", modified_enter(2)).as_bytes());
+    helper.wait_for_raw(scenario::ORDERED_BURST_MARKER);
+
     // Then: processing a later palette action proves the empty shortcut produced no activity.
     helper.send(b"\x10");
     helper.wait_for("Commands");

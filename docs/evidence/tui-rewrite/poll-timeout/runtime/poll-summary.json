@@ -1,0 +1,25 @@
+{
+  "diagnostic_only": true,
+  "resources": {
+    "scenario": "idle",
+    "seconds": 2,
+    "cadence_ms": null,
+    "cpu_percent_one_core": 0.0,
+    "rss_before_kib": 10276,
+    "rss_after_kib": 10276,
+    "frames": 0,
+    "frames_per_second": 0.0,
+    "bytes": 0,
+    "input_events": 0,
+    "frame_interval_p95_ms": null
+  },
+  "poll_calls": 70,
+  "timeout_counts": {
+    "0": 1,
+    "50": 69
+  },
+  "threads": {
+    "2788868": 1,
+    "2788870": 69
+  }
+}

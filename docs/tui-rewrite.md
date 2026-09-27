@@ -736,6 +736,37 @@ The change removes 20 production and 55 test lines. Whole TUI source remains
 source reduction and final signoff are unfinished. Raw evidence is in
 [`evidence/tui-rewrite/surface-painter`](evidence/tui-rewrite/surface-painter).
 
+## Terminal polling timeout correction
+
+Fresh runtime measurements exposed an idle CPU regression from the earlier
+level-triggered reader choice. `filedescriptor` truncated a positive fractional
+millisecond to zero, and Crossterm retried until its deadline. A local patch to
+the existing dependency rounds waits up and clamps overflow. The parser, owned
+reader, event order, bounded queue and joined shutdown remain unchanged. The
+reader still checks shutdown through blocking 50 ms waits; removing periodic
+terminal polling remains unfinished.
+
+Three paired release repeats restore idle CPU from 1.5% of one core to zero,
+with zero output or redraws. The diagnostic poll trace falls from 99,094 calls
+to 70 over about 3.5 s. Browser input/stream/resize p95 and p99 pass the unchanged
++16.7 ms allowance against both fresh and frozen references. Nine screenshots
+and the final terminal cells match across all six browser runs. The burst and
+rewind workflow, restoration checks, 1,666 deterministic tests and seven gated
+PTY checks pass. An extended existing PTY journey verifies exact ordered
+submission of a single 1,800-byte Unicode burst.
+
+The runtime resource target remains unmet. Fresh original/candidate typing CPU
+is 11.75%/13%, with unequal injected input counts; burst CPU is 11.25%/10.75%.
+Neither demonstrates the required 30% reduction. Startup's short-window frame
+counts also differ from the original and do not establish cadence parity.
+
+The patch adds 1,563 upstream Rust lines plus 29 net local lines outside the
+TUI, including a 22-line test block. Its original platform files exceed 500
+lines. This is dependency maintenance, not source reduction. TUI source remains
+167,968 lines and the broader rewrite is unfinished. Windows and macOS are
+unverified. Raw samples, source provenance, comparisons and commands are in
+[`evidence/tui-rewrite/poll-timeout`](evidence/tui-rewrite/poll-timeout).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

@@ -1,0 +1,44 @@
+{
+  "candidate_base": "90739ad29213be5289341f049b2ab6bc9c64c352",
+  "candidate_patch": "/tmp/tui-poll-timeout-runtime/source.patch",
+  "reference_commit": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+  "binaries": {
+    "reference": {
+      "path": "/home/urbanbreach/.codex/worktrees/tui-reference/agent-harness/target/release/examples/poll_timeout_resource_probe",
+      "sha256": "91ab32bb5e2979ea997a1c55aba7fb399c8a19cf847c7f66dfa917974fc5c1cc",
+      "bytes": 14552080
+    },
+    "before": {
+      "path": "/tmp/tui-runtime-90739ad2-resource-probe.bin",
+      "sha256": "f741b67d384e752817c86565c8245ac2c094572f7bf919da91296705936cb5f8",
+      "bytes": 13998816
+    },
+    "candidate": {
+      "path": "/tmp/tui-poll-timeout-resource-probe.bin",
+      "sha256": "768a819ec429477e5cc375cc009b6219eb2061d03c37a622e979737b82fb78f2",
+      "bytes": 13998912
+    }
+  },
+  "runner_sha256": "36d58ffa2066319267e3a8c63dfa5902d6bc394f1741fe7fd42eea39bdc25506",
+  "fixture_sha256": "e26b8b1d13ee955390a36a4a9863c39b276eed7232be51d5b44c55a550b816f1",
+  "reference_fixture_sha256": "e26b8b1d13ee955390a36a4a9863c39b276eed7232be51d5b44c55a550b816f1",
+  "started_utc": "2026-09-27T15:42:53Z",
+  "seconds": 4,
+  "warmup_seconds": 1.5,
+  "repetitions": 3,
+  "cadence_override": null,
+  "boundary": "process CPU and RSS through PTY; output frame delivery, no display emulator; disposable fixture terminated by SIGTERM, cleanup verified separately",
+  "input_caveat": "unchanged frozen driver targets 1ms typing but actual input counts depend on event-loop scheduling; report raw counts and do not treat typing CPU alone as fixed-count efficiency",
+  "vendor_files": {
+    "vendor/filedescriptor/Cargo.toml": "1279a4640ce9a6e4e404648d35635f2edf01289e71b64e053922363ef9533b37",
+    "vendor/filedescriptor/Cargo.toml.orig": "bb89a7ac6f6eee16731daad92bfca5c0472bcd70205d87b3dbdd6d467399e8aa",
+    "vendor/filedescriptor/LICENSE.md": "191c46fcf52061382b1c51a70311eb9081381cc158e5899f3739473a9432185b",
+    "vendor/filedescriptor/README.md": "c62d3e02be0f4d2d3298a85e318bf690cbd9a3b59097084f98617a6fb1ef1854",
+    "vendor/filedescriptor/UPSTREAM.json": "95a97c76f3158c8e484c713c6254c15ebc0bbe0f70c596fb960502ba5c672946",
+    "vendor/filedescriptor/.gitignore": "9e7e5b8470baad143c828fe1f9e34ad2d856cf515e63ab8654a9eff82c591ce1",
+    "vendor/filedescriptor/PATCHES.md": "966efe62699cf3b97143126ddce483c7706608f9cc483f87dbff76ad2c53d16f",
+    "vendor/filedescriptor/src/lib.rs": "57b6bfebba3d414e5804f6453bfdd02f55e85b5c29913d107174428b1b5cd4b2",
+    "vendor/filedescriptor/src/unix.rs": "33174332d407ad9d5b76388a217e75db350b11037f60ac3f0d9d1157190fe5f1",
+    "vendor/filedescriptor/src/windows.rs": "15cc4fa54bb60b9c520e8f9ace41044ba5ca0b64b6431758332b45feb3a82612"
+  }
+}

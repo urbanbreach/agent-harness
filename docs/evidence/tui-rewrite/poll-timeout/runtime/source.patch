@@ -1,0 +1,80 @@
+diff --git i/Cargo.lock w/Cargo.lock
+index 7feff066..c1a6e3fb 100644
+--- i/Cargo.lock
++++ w/Cargo.lock
+@@ -1192,8 +1192,6 @@ dependencies = [
+ [[package]]
+ name = "filedescriptor"
+ version = "0.8.3"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "e40758ed24c9b2eeb76c35fb0aebc66c626084edd827e07e1552279814c6682d"
+ dependencies = [
+  "libc",
+  "thiserror 1.0.69",
+diff --git i/Cargo.toml w/Cargo.toml
+index 63a2aa0f..8e733198 100644
+--- i/Cargo.toml
++++ w/Cargo.toml
+@@ -8,6 +8,11 @@ members = [
+     "crates/harness-testkit",
+ ]
+ resolver = "2"
++exclude = ["vendor/filedescriptor"]
++
++[patch.crates-io]
++# Keep Crossterm's level-triggered reader from spinning on sub-millisecond waits.
++filedescriptor = { path = "vendor/filedescriptor" }
+ 
+ [workspace.package]
+ edition = "2021"
+diff --git i/crates/harness-tui/tests/p0_04_pty_recorded.rs w/crates/harness-tui/tests/p0_04_pty_recorded.rs
+index a48fb3d8..e3ad7211 100644
+--- i/crates/harness-tui/tests/p0_04_pty_recorded.rs
++++ w/crates/harness-tui/tests/p0_04_pty_recorded.rs
+@@ -95,6 +95,11 @@ fn p0_04_real_pty_records_multiline_composer_shortcuts() {
+     // When: the empty replacement shortcut is pressed.
+     helper.send(modified_enter(5).as_bytes());
+ 
++    // A single write larger than the reader buffer must reach submission in order.
++    let burst = scenario::ordered_input_burst();
++    helper.send(format!("{burst}{}", modified_enter(2)).as_bytes());
++    helper.wait_for_raw(scenario::ORDERED_BURST_MARKER);
++
+     // Then: processing a later palette action proves the empty shortcut produced no activity.
+     helper.send(b"\x10");
+     helper.wait_for("Commands");
+diff --git i/crates/harness-tui/tests/support/p0_04_pty.rs w/crates/harness-tui/tests/support/p0_04_pty.rs
+index 0b5aa9b6..cf933bed 100644
+--- i/crates/harness-tui/tests/support/p0_04_pty.rs
++++ w/crates/harness-tui/tests/support/p0_04_pty.rs
+@@ -17,12 +17,22 @@ pub(crate) const REPLACE_INTERRUPT_MARKER: &str = "P0-04 replacement interrupted
+ pub(crate) const REPLACE_MARKER: &str = "P0-04 replacement submitted queued";
+ pub(crate) const EMPTY_MARKER: &str = "P0-04 empty submitted";
+ pub(crate) const PHANTOM_MARKER: &str = "P0-04 phantom";
++pub(crate) const ORDERED_BURST_MARKER: &str = "P0-04 ordered input burst submitted";
+ pub(crate) const HELPER_CONTRACT: &str = "P0-04 helper command: HARNESS_TUI_P0_04_SCENARIO=1 HARNESS_DETERMINISTIC=1 HARNESS_DISABLE_ANIMATIONS=1 HARNESS_SEED=42 cargo test -p harness-tui --test p0_04_pty_recorded -- --exact p0_04_pty_helper --nocapture; toggle multiline with Alt+M; type first, Enter, second, then send with Alt+Enter; interject with Alt+I; cancel and replace with Ctrl+Enter; enhanced terminals may also use the modified Enter bindings; exit with the command palette.";
+ 
+ const FIRST_DRAFT: &str = "first\nsecond";
+ const INTERJECT_DRAFT: &str = "interject draft";
+ const REPLACEMENT_DRAFT: &str = "replacement draft";
+ 
++pub(crate) fn ordered_input_burst() -> String {
++    use std::fmt::Write as _;
++    let mut draft = String::new();
++    for index in 0..300 {
++        write!(draft, "α{index:03}|").unwrap_or_abort();
++    }
++    draft
++}
++
+ pub(crate) fn run_helper() {
+     if std::env::var(SCENARIO_ENV).as_deref() != Ok("1") {
+         return;
+@@ -37,6 +47,7 @@ pub(crate) fn run_helper() {
+                 FIRST_DRAFT => Some(QUEUED_MARKER),
+                 INTERJECT_DRAFT => Some(INTERJECT_MARKER),
+                 REPLACEMENT_DRAFT => Some(REPLACE_MARKER),
++                text if text == ordered_input_burst() => Some(ORDERED_BURST_MARKER),
+                 _ => Some(SUBMITTED_MARKER),
+             },
+             _ => None,

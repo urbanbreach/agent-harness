@@ -1,0 +1,112 @@
+{
+  "idle": {
+    "reference": {
+      "cpu_percent_one_core": 0.0,
+      "rss_before_kib": 13112,
+      "rss_after_kib": 13112,
+      "frames": 0,
+      "frames_per_second": 0.0,
+      "bytes": 0,
+      "input_events": 0,
+      "frame_interval_p95_ms": null
+    },
+    "candidate": {
+      "cpu_percent_one_core": 1.7500000000000002,
+      "rss_before_kib": 10040,
+      "rss_after_kib": 10040,
+      "frames": 0,
+      "frames_per_second": 0.0,
+      "bytes": 0,
+      "input_events": 0,
+      "frame_interval_p95_ms": null
+    }
+  },
+  "startup": {
+    "reference": {
+      "cpu_percent_one_core": 0.49999999999999994,
+      "rss_before_kib": 12960,
+      "rss_after_kib": 12988,
+      "frames": 24,
+      "frames_per_second": 6.0,
+      "bytes": 18760,
+      "input_events": 0,
+      "frame_interval_p95_ms": 331.8164149823133
+    },
+    "candidate": {
+      "cpu_percent_one_core": 2.0,
+      "rss_before_kib": 9836,
+      "rss_after_kib": 9864,
+      "frames": 23,
+      "frames_per_second": 5.75,
+      "bytes": 18619,
+      "input_events": 0,
+      "frame_interval_p95_ms": 332.91488100076094
+    }
+  },
+  "typing": {
+    "reference": {
+      "cpu_percent_one_core": 12.0,
+      "rss_before_kib": 12588,
+      "rss_after_kib": 14396,
+      "frames": 998,
+      "frames_per_second": 249.5,
+      "bytes": 94711,
+      "input_events": 2084,
+      "frame_interval_p95_ms": 5.054827983258292
+    },
+    "candidate": {
+      "cpu_percent_one_core": 12.25,
+      "rss_before_kib": 9788,
+      "rss_after_kib": 11712,
+      "frames": 809,
+      "frames_per_second": 202.25,
+      "bytes": 78838,
+      "input_events": 2361,
+      "frame_interval_p95_ms": 6.679760001134127
+    }
+  },
+  "burst": {
+    "reference": {
+      "cpu_percent_one_core": 11.0,
+      "rss_before_kib": 12388,
+      "rss_after_kib": 12396,
+      "frames": 1027,
+      "frames_per_second": 256.75,
+      "bytes": 87124,
+      "input_events": 0,
+      "frame_interval_p95_ms": 5.614735011477023
+    },
+    "candidate": {
+      "cpu_percent_one_core": 11.75,
+      "rss_before_kib": 9732,
+      "rss_after_kib": 9736,
+      "frames": 896,
+      "frames_per_second": 224.0,
+      "bytes": 76078,
+      "input_events": 0,
+      "frame_interval_p95_ms": 6.003007001709193
+    }
+  },
+  "slow-burst": {
+    "reference": {
+      "cpu_percent_one_core": 5.500000000000001,
+      "rss_before_kib": 12748,
+      "rss_after_kib": 12748,
+      "frames": 237,
+      "frames_per_second": 59.25,
+      "bytes": 20308,
+      "input_events": 0,
+      "frame_interval_p95_ms": 50.523220998002216
+    },
+    "candidate": {
+      "cpu_percent_one_core": 6.25,
+      "rss_before_kib": 9696,
+      "rss_after_kib": 9976,
+      "frames": 237,
+      "frames_per_second": 59.25,
+      "bytes": 20309,
+      "input_events": 0,
+      "frame_interval_p95_ms": 50.514636997831985
+    }
+  }
+}

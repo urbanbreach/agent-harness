@@ -1,0 +1,12 @@
+{
+  "resource_probe": {
+    "shared_sha256": "e26b8b1d13ee955390a36a4a9863c39b276eed7232be51d5b44c55a550b816f1",
+    "reference_example": "poll_timeout_resource_probe",
+    "candidate_example": "resource_probe"
+  },
+  "rewrite_probe": {
+    "shared_sha256": "c4cf6da4e4cc06f10fe54101c7913b054cb7db0e41e14a22ce3f682c95c07c24",
+    "reference_example": "poll_timeout_rewrite_probe",
+    "candidate_example": "rewrite_probe"
+  }
+}

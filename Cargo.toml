@@ -8,6 +8,11 @@ members = [
     "crates/harness-testkit",
 ]
 resolver = "2"
+exclude = ["vendor/filedescriptor"]
+
+[patch.crates-io]
+# Keep Crossterm's level-triggered reader from spinning on sub-millisecond waits.
+filedescriptor = { path = "vendor/filedescriptor" }
 
 [workspace.package]
 edition = "2021"

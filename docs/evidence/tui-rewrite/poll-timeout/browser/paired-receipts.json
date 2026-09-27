@@ -1,0 +1,392 @@
+[
+  {
+    "build": "reference",
+    "repetition": 1,
+    "path": "/home/urbanbreach/Projects/agent-harness/.omo/evidence/tui-rewrite/poll-timeout/reference-1",
+    "summary": {
+      "startup_pty_frame": {
+        "p50_ms": 37.48731399999997,
+        "p95_ms": 37.48731399999997,
+        "p99_ms": 37.48731399999997
+      },
+      "startup": {
+        "p50_ms": 97.86569899999995,
+        "p95_ms": 97.86569899999995,
+        "p99_ms": 97.86569899999995
+      },
+      "input_pty_frame": {
+        "p50_ms": 1.1169370000006893,
+        "p95_ms": 1.428360999999768,
+        "p99_ms": 4.720584000000599
+      },
+      "input": {
+        "p50_ms": 67.30990099999963,
+        "p95_ms": 70.38309800000025,
+        "p99_ms": 75.39664599999969
+      },
+      "stream_pty_frame": {
+        "p50_ms": 1.0090620000009949,
+        "p95_ms": 1.187434999999823,
+        "p99_ms": 1.255646000001434
+      },
+      "stream": {
+        "p50_ms": 66.63408300000083,
+        "p95_ms": 66.92202700000053,
+        "p99_ms": 67.08374299999923
+      },
+      "resize_pty_frame": {
+        "p50_ms": 16.91834299999755,
+        "p95_ms": 21.364692000002833,
+        "p99_ms": 22.675729999995383
+      },
+      "resize": {
+        "p50_ms": 59.65837200000169,
+        "p95_ms": 65.62303500000053,
+        "p99_ms": 73.46862800000235
+      }
+    },
+    "cleanup": {
+      "at": "2026-09-27T15:48:50.161Z",
+      "childPid": 2789108,
+      "childExited": true,
+      "processGroupAlive": false,
+      "stdinClosed": true,
+      "terminatedByCleanup": false,
+      "temporarySockets": []
+    },
+    "browser_cleanup": {
+      "pageClosed": true,
+      "contextClosed": true,
+      "browserConnectedAfterClose": false,
+      "profileRemoved": true,
+      "profilePath": "/tmp/harness-xterm-latency-vfofx0/browser",
+      "boundPorts": []
+    },
+    "idle_output_bytes": 0
+  },
+  {
+    "build": "candidate",
+    "repetition": 1,
+    "path": "/home/urbanbreach/Projects/agent-harness/.omo/evidence/tui-rewrite/poll-timeout/candidate-1",
+    "summary": {
+      "startup_pty_frame": {
+        "p50_ms": 41.818809999999985,
+        "p95_ms": 41.818809999999985,
+        "p99_ms": 41.818809999999985
+      },
+      "startup": {
+        "p50_ms": 98.66659200000004,
+        "p95_ms": 98.66659200000004,
+        "p99_ms": 98.66659200000004
+      },
+      "input_pty_frame": {
+        "p50_ms": 1.1487639999995736,
+        "p95_ms": 3.909030000000712,
+        "p99_ms": 4.800011999999697
+      },
+      "input": {
+        "p50_ms": 66.32321799999954,
+        "p95_ms": 69.41285599999901,
+        "p99_ms": 69.81575299999895
+      },
+      "stream_pty_frame": {
+        "p50_ms": 0.9550789999993867,
+        "p95_ms": 1.2272420000008424,
+        "p99_ms": 1.3592050000006566
+      },
+      "stream": {
+        "p50_ms": 66.66691500000161,
+        "p95_ms": 66.9421250000014,
+        "p99_ms": 67.22081500000058
+      },
+      "resize_pty_frame": {
+        "p50_ms": 16.711091999997734,
+        "p95_ms": 22.459399999999732,
+        "p99_ms": 25.807730000000447
+      },
+      "resize": {
+        "p50_ms": 59.6974360000022,
+        "p95_ms": 68.64205899999797,
+        "p99_ms": 74.82008599999972
+      }
+    },
+    "cleanup": {
+      "at": "2026-09-27T15:50:02.045Z",
+      "childPid": 2790141,
+      "childExited": true,
+      "processGroupAlive": false,
+      "stdinClosed": true,
+      "terminatedByCleanup": false,
+      "temporarySockets": []
+    },
+    "browser_cleanup": {
+      "pageClosed": true,
+      "contextClosed": true,
+      "browserConnectedAfterClose": false,
+      "profileRemoved": true,
+      "profilePath": "/tmp/harness-xterm-latency-n08uJp/browser",
+      "boundPorts": []
+    },
+    "idle_output_bytes": 0
+  },
+  {
+    "build": "candidate",
+    "repetition": 2,
+    "path": "/home/urbanbreach/Projects/agent-harness/.omo/evidence/tui-rewrite/poll-timeout/candidate-2",
+    "summary": {
+      "startup_pty_frame": {
+        "p50_ms": 36.26675799999998,
+        "p95_ms": 36.26675799999998,
+        "p99_ms": 36.26675799999998
+      },
+      "startup": {
+        "p50_ms": 97.82727999999997,
+        "p95_ms": 97.82727999999997,
+        "p99_ms": 97.82727999999997
+      },
+      "input_pty_frame": {
+        "p50_ms": 1.1695220000001427,
+        "p95_ms": 4.136059000000387,
+        "p99_ms": 4.492879000001267
+      },
+      "input": {
+        "p50_ms": 66.47393799999918,
+        "p95_ms": 69.10391999999956,
+        "p99_ms": 69.7421459999996
+      },
+      "stream_pty_frame": {
+        "p50_ms": 0.9975720000002184,
+        "p95_ms": 1.1300309999969613,
+        "p99_ms": 1.303088000000571
+      },
+      "stream": {
+        "p50_ms": 66.65527799999836,
+        "p95_ms": 66.9185359999974,
+        "p99_ms": 66.98543200000131
+      },
+      "resize_pty_frame": {
+        "p50_ms": 16.58602299999984,
+        "p95_ms": 24.658128999995824,
+        "p99_ms": 26.479744000003848
+      },
+      "resize": {
+        "p50_ms": 58.33434699999998,
+        "p95_ms": 70.6021480000054,
+        "p99_ms": 75.91368800000055
+      }
+    },
+    "cleanup": {
+      "at": "2026-09-27T15:51:14.554Z",
+      "childPid": 2791111,
+      "childExited": true,
+      "processGroupAlive": false,
+      "stdinClosed": true,
+      "terminatedByCleanup": false,
+      "temporarySockets": []
+    },
+    "browser_cleanup": {
+      "pageClosed": true,
+      "contextClosed": true,
+      "browserConnectedAfterClose": false,
+      "profileRemoved": true,
+      "profilePath": "/tmp/harness-xterm-latency-lhGGIw/browser",
+      "boundPorts": []
+    },
+    "idle_output_bytes": 0
+  },
+  {
+    "build": "reference",
+    "repetition": 2,
+    "path": "/home/urbanbreach/Projects/agent-harness/.omo/evidence/tui-rewrite/poll-timeout/reference-2",
+    "summary": {
+      "startup_pty_frame": {
+        "p50_ms": 44.844704999999976,
+        "p95_ms": 44.844704999999976,
+        "p99_ms": 44.844704999999976
+      },
+      "startup": {
+        "p50_ms": 97.25353099999984,
+        "p95_ms": 97.25353099999984,
+        "p99_ms": 97.25353099999984
+      },
+      "input_pty_frame": {
+        "p50_ms": 1.1284879999984696,
+        "p95_ms": 3.899386000000959,
+        "p99_ms": 4.63173900000038
+      },
+      "input": {
+        "p50_ms": 67.24097799999981,
+        "p95_ms": 70.53926700000011,
+        "p99_ms": 71.06963999999971
+      },
+      "stream_pty_frame": {
+        "p50_ms": 0.9815760000019509,
+        "p95_ms": 1.2043230000017502,
+        "p99_ms": 1.2579719999994268
+      },
+      "stream": {
+        "p50_ms": 66.65479100000084,
+        "p95_ms": 67.02449500000148,
+        "p99_ms": 67.25857799999721
+      },
+      "resize_pty_frame": {
+        "p50_ms": 16.952139000000898,
+        "p95_ms": 21.788244000003033,
+        "p99_ms": 26.563931999997294
+      },
+      "resize": {
+        "p50_ms": 58.3702689999991,
+        "p95_ms": 63.818561000000045,
+        "p99_ms": 72.36824299999716
+      }
+    },
+    "cleanup": {
+      "at": "2026-09-27T15:52:27.206Z",
+      "childPid": 2792096,
+      "childExited": true,
+      "processGroupAlive": false,
+      "stdinClosed": true,
+      "terminatedByCleanup": false,
+      "temporarySockets": []
+    },
+    "browser_cleanup": {
+      "pageClosed": true,
+      "contextClosed": true,
+      "browserConnectedAfterClose": false,
+      "profileRemoved": true,
+      "profilePath": "/tmp/harness-xterm-latency-zv3Ab1/browser",
+      "boundPorts": []
+    },
+    "idle_output_bytes": 0
+  },
+  {
+    "build": "reference",
+    "repetition": 3,
+    "path": "/home/urbanbreach/Projects/agent-harness/.omo/evidence/tui-rewrite/poll-timeout/reference-3",
+    "summary": {
+      "startup_pty_frame": {
+        "p50_ms": 38.745451,
+        "p95_ms": 38.745451,
+        "p99_ms": 38.745451
+      },
+      "startup": {
+        "p50_ms": 100.73403300000018,
+        "p95_ms": 100.73403300000018,
+        "p99_ms": 100.73403300000018
+      },
+      "input_pty_frame": {
+        "p50_ms": 1.0691589999996722,
+        "p95_ms": 1.3153459999994084,
+        "p99_ms": 4.586667999999918
+      },
+      "input": {
+        "p50_ms": 67.07515899999999,
+        "p95_ms": 70.1980139999996,
+        "p99_ms": 73.18229000000065
+      },
+      "stream_pty_frame": {
+        "p50_ms": 1.0064480000000913,
+        "p95_ms": 1.1760799999974552,
+        "p99_ms": 1.1958010000016657
+      },
+      "stream": {
+        "p50_ms": 66.65390399999887,
+        "p95_ms": 66.97354199999972,
+        "p99_ms": 67.16261999999915
+      },
+      "resize_pty_frame": {
+        "p50_ms": 16.442002000003413,
+        "p95_ms": 22.240534000004118,
+        "p99_ms": 24.352974999987055
+      },
+      "resize": {
+        "p50_ms": 57.840799999998126,
+        "p95_ms": 70.68686199999502,
+        "p99_ms": 72.95643900000141
+      }
+    },
+    "cleanup": {
+      "at": "2026-09-27T15:53:39.816Z",
+      "childPid": 2793141,
+      "childExited": true,
+      "processGroupAlive": false,
+      "stdinClosed": true,
+      "terminatedByCleanup": false,
+      "temporarySockets": []
+    },
+    "browser_cleanup": {
+      "pageClosed": true,
+      "contextClosed": true,
+      "browserConnectedAfterClose": false,
+      "profileRemoved": true,
+      "profilePath": "/tmp/harness-xterm-latency-xgFiZf/browser",
+      "boundPorts": []
+    },
+    "idle_output_bytes": 0
+  },
+  {
+    "build": "candidate",
+    "repetition": 3,
+    "path": "/home/urbanbreach/Projects/agent-harness/.omo/evidence/tui-rewrite/poll-timeout/candidate-3",
+    "summary": {
+      "startup_pty_frame": {
+        "p50_ms": 39.50815699999998,
+        "p95_ms": 39.50815699999998,
+        "p99_ms": 39.50815699999998
+      },
+      "startup": {
+        "p50_ms": 99.27413899999988,
+        "p95_ms": 99.27413899999988,
+        "p99_ms": 99.27413899999988
+      },
+      "input_pty_frame": {
+        "p50_ms": 1.1923409999999421,
+        "p95_ms": 4.08862500000032,
+        "p99_ms": 5.297162999999728
+      },
+      "input": {
+        "p50_ms": 66.34213399999953,
+        "p95_ms": 69.5534519999992,
+        "p99_ms": 69.84984399999848
+      },
+      "stream_pty_frame": {
+        "p50_ms": 0.9990150000012363,
+        "p95_ms": 1.1939490000004298,
+        "p99_ms": 1.2751500000013039
+      },
+      "stream": {
+        "p50_ms": 66.65828800000236,
+        "p95_ms": 66.93553200000315,
+        "p99_ms": 67.17972100000043
+      },
+      "resize_pty_frame": {
+        "p50_ms": 16.81155099999887,
+        "p95_ms": 22.667296999999962,
+        "p99_ms": 30.396435000002384
+      },
+      "resize": {
+        "p50_ms": 58.82549700000527,
+        "p95_ms": 73.2437260000006,
+        "p99_ms": 75.76382500000182
+      }
+    },
+    "cleanup": {
+      "at": "2026-09-27T15:54:52.212Z",
+      "childPid": 2794128,
+      "childExited": true,
+      "processGroupAlive": false,
+      "stdinClosed": true,
+      "terminatedByCleanup": false,
+      "temporarySockets": []
+    },
+    "browser_cleanup": {
+      "pageClosed": true,
+      "contextClosed": true,
+      "browserConnectedAfterClose": false,
+      "profileRemoved": true,
+      "profilePath": "/tmp/harness-xterm-latency-Am3aDe/browser",
+      "boundPorts": []
+    },
+    "idle_output_bytes": 0
+  }
+]
