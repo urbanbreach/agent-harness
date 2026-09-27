@@ -78,7 +78,6 @@ pub(super) fn populate(
                     command,
                     output,
                     description,
-                    expand_hint: None,
                 });
             }
             header.visual_style = Block;

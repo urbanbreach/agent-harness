@@ -1,0 +1,298 @@
+{
+  "resize-1000-alloc.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "scroll-1000-alloc.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": [
+      "visible"
+    ]
+  },
+  "stream-1000-alloc.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "typing-1000-alloc.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "idle-1000-alloc.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "startup-0-alloc.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "resize-1000-3.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "resize-1000-2.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "resize-1000-1.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "scroll-1000-3.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": [
+      "visible"
+    ]
+  },
+  "scroll-1000-2.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": [
+      "visible"
+    ]
+  },
+  "scroll-1000-1.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": [
+      "visible"
+    ]
+  },
+  "stream-1000-3.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "stream-1000-2.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "stream-1000-1.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "typing-1000-3.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "typing-1000-2.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "typing-1000-1.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "idle-1000-3.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "idle-1000-2.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "idle-1000-1.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "startup-0-3.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "startup-0-2.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  },
+  "startup-0-1.json": {
+    "before_candidate_equal": true,
+    "fields": [
+      "bytes",
+      "oldest",
+      "visible",
+      "frames",
+      "history_events",
+      "history_turns"
+    ],
+    "original_differences": []
+  }
+}

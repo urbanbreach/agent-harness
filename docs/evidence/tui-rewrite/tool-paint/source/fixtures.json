@@ -1,0 +1,42 @@
+{
+  "crates/harness-tui/tests/tool_body_capture_test.rs": {
+    "sha256": "7b51b5c19b37e87edcc2e7593a02a5607e1588fac7b916aaf33e6ebad7b1b49c",
+    "unchanged_from_before": true
+  },
+  "crates/harness-tui/tests/tool_order_capture_test.rs": {
+    "sha256": "aba5639e2635322b52efc6e1abaff94a7e967ecb076397fdc1ce13333d98b504",
+    "unchanged_from_before": true
+  },
+  "crates/harness-tui/tests/tool_interaction_capture_test.rs": {
+    "sha256": "85b9a1a837c15a8cdd8b44ed76735a625276af26ab3819bcdb739f43ae03eac2",
+    "unchanged_from_before": true
+  },
+  "crates/harness-tui/tests/grok_parity_render_test.rs": {
+    "sha256": "df82a6a04f148164f3c50b9f92c300578f94e36e00a7fe407aa2cc60f6eed098",
+    "unchanged_from_before": true
+  },
+  "crates/harness-tui/tests/rewrite_reference_test.rs": {
+    "sha256": "bb08fb1e0c78f93c34b55d1e1edde2e33042dd87240f0731d6084f3f9e3a0e92",
+    "unchanged_from_before": true
+  },
+  "crates/harness-tui/tests/rewrite_performance_test.rs": {
+    "sha256": "72caa81e03d5f90a5f5642fda350263dd476aca075752868bc4c1781c06fd9a8",
+    "unchanged_from_before": true
+  },
+  "crates/harness-tui/tests/support/rewrite_journey.rs": {
+    "sha256": "a3e48bb45948409ca6d4e4c9a695f7ba8900920a1d17613cb22b889815473b74",
+    "unchanged_from_before": true
+  },
+  "scripts/qa/fixtures/tool-body-scenarios.json": {
+    "sha256": "c42c2d669eb5b8cf7d45813bfb9ed9328c299087362d80f3f3cf320303dbcc9f",
+    "unchanged_from_before": true
+  },
+  "scripts/qa/fixtures/tool-order-scenarios.json": {
+    "sha256": "6983770683d2fcffe12039cbcd6917827f598fb26689c86f942f74e275c80eb5",
+    "unchanged_from_before": true
+  },
+  "scripts/qa/fixtures/tool-interaction-scenarios.json": {
+    "sha256": "536ae433258aa5780bd188119218be5d67f4429e9f6f54de0973a28c740c8438",
+    "unchanged_from_before": true
+  }
+}

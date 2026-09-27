@@ -34,9 +34,7 @@ use super::ui_tool_paths::{
     tool_call_path_metadata, tool_match_count_description, tool_path_display,
     TranscriptPathMetadata,
 };
-use super::ui_tool_question_todo::{
-    ordered_todo_items, question_tool_title, resolved_question_answer_items, TranscriptTodoItem,
-};
+use super::ui_tool_question_todo::{question_tool_title, resolved_question_answer_items};
 use super::ui_tool_style::{
     generic_tool_visual_style, tool_call_header_style, TranscriptToolCallVisualStyle,
 };
@@ -58,11 +56,10 @@ use super::ui_transcript_events::{
     activity_has_thinking_text, provider_event_matches_activity, turn_event_matches_activity,
 };
 use super::ui_transcript_interaction::{
-    append_nested_surface_row_with_target, append_noninteractive_rows,
-    append_surface_row_with_bounded_target, append_surface_row_with_target,
-    bounded_interaction_row, full_width_interaction_row, rect_contains, subagent_session_target,
-    tool_header_target, transcript_mouse_target_at, transcript_surface_focused,
-    transcript_target_is_hovered, NestedSurfaceChrome, TranscriptInteractionRow,
+    append_noninteractive_rows, append_surface_row_with_bounded_target,
+    append_surface_row_with_target, bounded_interaction_row, full_width_interaction_row,
+    rect_contains, subagent_session_target, tool_header_target, transcript_mouse_target_at,
+    transcript_surface_focused, transcript_target_is_hovered, TranscriptInteractionRow,
     TranscriptMouseTarget,
 };
 #[cfg(test)]
@@ -92,9 +89,8 @@ use super::ui_transcript_style::{
     transcript_running_tool_marker_color,
 };
 use super::ui_transcript_surface::{
-    append_nested_surface_row, append_prebuilt_nested_surface_lines, append_prebuilt_surface_lines,
-    append_prefixed_wrapped_spans_line, append_surface_row, append_user_surface_text_block,
-    nested_surface_prefix_width, surface_prefix_width, surface_span,
+    append_prebuilt_surface_lines, append_prefixed_wrapped_spans_line, append_surface_row,
+    append_user_surface_text_block, surface_prefix_width, surface_span,
     transcript_surface_content_width, transcript_surface_render_width, user_surface_line,
     wrap_surface_spans, TRANSCRIPT_RAIL_GLYPH,
 };

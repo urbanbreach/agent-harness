@@ -1,0 +1,44 @@
+{
+  "reference": {
+    "construction_us": 5861,
+    "cold_us": 8373,
+    "p50_us": 8558,
+    "p95_us": 12013,
+    "p99_us": 12099,
+    "bytes": 772800,
+    "rss_kib": 45548,
+    "cpu_ms_per_frame": 9.95,
+    "allocated_bytes": 9251013983,
+    "peak_heap_bytes": 30279848,
+    "disclosed_median_us": 11864.0,
+    "collapsed_median_us": 8097.0
+  },
+  "before": {
+    "construction_us": 4241,
+    "cold_us": 5160,
+    "p50_us": 5283,
+    "p95_us": 9008,
+    "p99_us": 9056,
+    "bytes": 772800,
+    "rss_kib": 39188,
+    "cpu_ms_per_frame": 7.05,
+    "allocated_bytes": 7928203764,
+    "peak_heap_bytes": 25377327,
+    "disclosed_median_us": 8911.5,
+    "collapsed_median_us": 5138.5
+  },
+  "candidate": {
+    "construction_us": 4459,
+    "cold_us": 5193,
+    "p50_us": 5196,
+    "p95_us": 8871,
+    "p99_us": 8939,
+    "bytes": 772800,
+    "rss_kib": 39108,
+    "cpu_ms_per_frame": 6.9,
+    "allocated_bytes": 7927932588,
+    "peak_heap_bytes": 25379438,
+    "disclosed_median_us": 8810.5,
+    "collapsed_median_us": 5045.0
+  }
+}

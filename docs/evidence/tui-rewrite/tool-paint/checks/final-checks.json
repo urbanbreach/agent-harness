@@ -1,0 +1,46 @@
+[
+  {
+    "name": "selection-before",
+    "command": [
+      "node",
+      "scripts/qa/capture-rewrite-selection.mjs",
+      "/tmp/tui-tool-layout/rewrite_probe",
+      ".omo/evidence/tui-rewrite/tool-paint/selection-before"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "selection-candidate",
+    "command": [
+      "node",
+      "scripts/qa/capture-rewrite-selection.mjs",
+      "/tmp/tui-tool-paint/rewrite_probe",
+      ".omo/evidence/tui-rewrite/tool-paint/selection-candidate"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "measure",
+    "command": [
+      "python3",
+      "/tmp/tui-tool-paint/measure.py"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "measure-general",
+    "command": [
+      "python3",
+      "/tmp/tui-tool-paint/measure-general.py"
+    ],
+    "exit_code": 0
+  },
+  {
+    "name": "compare-general",
+    "command": [
+      "python3",
+      "/tmp/tui-tool-paint/compare-general.py"
+    ],
+    "exit_code": 0
+  }
+]

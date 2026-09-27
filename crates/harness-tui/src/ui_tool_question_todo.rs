@@ -90,10 +90,6 @@ pub(crate) fn todo_items_from_tool_call(
         .unwrap_or_default()
 }
 
-pub(super) fn ordered_todo_items(items: &[TranscriptTodoItem]) -> Vec<&TranscriptTodoItem> {
-    items.iter().collect()
-}
-
 fn todo_items_from_artifacts(
     tool_call: &ToolCallEntry,
     session_path: Option<&Path>,

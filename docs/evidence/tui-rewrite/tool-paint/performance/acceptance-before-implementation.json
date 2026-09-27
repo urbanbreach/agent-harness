@@ -1,0 +1,71 @@
+{
+  "recorded_at": "2026-09-27T19:03:05.677496+00:00",
+  "baseline_head": "125143b3a603223894c0f9c60a84dda03e9ae8e7",
+  "original_head": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+  "baseline_evidence": "docs/evidence/tui-rewrite/tool-assembly/performance/raw.tar.gz",
+  "previous": {
+    "construction_us": 4645,
+    "cold_us": 6181,
+    "p50_us": 6725,
+    "p95_us": 15359,
+    "p99_us": 15445,
+    "bytes": 772800,
+    "rss_kib": 39464,
+    "cpu_ms_per_frame": 10.65,
+    "allocated_bytes": 7956018736,
+    "peak_heap_bytes": 25619429
+  },
+  "original": {
+    "construction_us": 5634,
+    "cold_us": 8466,
+    "p50_us": 8526,
+    "p95_us": 11856,
+    "p99_us": 12046,
+    "bytes": 772800,
+    "rss_kib": 45500,
+    "cpu_ms_per_frame": 9.9,
+    "allocated_bytes": 9251009010,
+    "peak_heap_bytes": 30279848
+  },
+  "limits": {
+    "p95_us": 16547.300000000003,
+    "p99_us": 13250.6,
+    "rss_kib": 43428.0,
+    "cpu_ms_per_frame": 9.9,
+    "allocated_bytes": 8785050485.2,
+    "peak_heap_bytes": 28183691.8
+  },
+  "red": {
+    "p95_us": {
+      "observed": 15359,
+      "limit": 16547.300000000003,
+      "pass": true
+    },
+    "p99_us": {
+      "observed": 15445,
+      "limit": 13250.6,
+      "pass": false
+    },
+    "rss_kib": {
+      "observed": 39464,
+      "limit": 43428.0,
+      "pass": true
+    },
+    "cpu_ms_per_frame": {
+      "observed": 10.65,
+      "limit": 9.9,
+      "pass": false
+    },
+    "allocated_bytes": {
+      "observed": 7956018736,
+      "limit": 8785050485.2,
+      "pass": true
+    },
+    "peak_heap_bytes": {
+      "observed": 25619429,
+      "limit": 28183691.8,
+      "pass": true
+    }
+  },
+  "scope": "Same tools-200 fixture and build settings, three serial timing repeats and separate allocation run. Require original-relative p99 within frozen global 10%/100us rule and CPU no worse than original; retain all other preceding acceptance limits. Exact visible/oldest history, counts and terminal bytes. No claim of end-to-end keyboard/emulator latency. Temporary timing instrumentation is diagnostic only and must be removed before candidate measurements."
+}

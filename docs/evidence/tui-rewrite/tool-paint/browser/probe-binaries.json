@@ -1,0 +1,10 @@
+{
+  "before": {
+    "path": "/tmp/tui-tool-layout/rewrite_probe",
+    "sha256": "ee4556d3c5e40de43fa4eb537981fcdbe1aeced0cafc30eab54fd6e5af11dff2"
+  },
+  "candidate": {
+    "path": "/tmp/tui-tool-paint/rewrite_probe",
+    "sha256": "44e545f765bae0cb52bbb04ff3521ee8efab77aa3de846b53a53a1f74b809170"
+  }
+}

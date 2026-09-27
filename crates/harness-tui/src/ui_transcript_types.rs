@@ -70,14 +70,6 @@ pub(in crate::ui::ui_transcript) fn tool_family(
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(super) struct TranscriptToolCardShell {
-    pub(super) indent: &'static str,
-    pub(super) rail_color: Color,
-    pub(super) surface: Color,
-    pub(super) content_leading_spaces: &'static str,
-}
-
 pub(super) const THINKING_TRACE_LABEL: &str = "Thinking:";
 
 #[derive(Debug, Clone)]
@@ -652,17 +644,10 @@ pub(in crate::ui) enum TranscriptToolCallDetailBlock {
         text: String,
         tone: TranscriptToolCallDetailTone,
     },
-    Markdown {
-        text: String,
-    },
-    TodoList {
-        items: Vec<TranscriptTodoItem>,
-    },
     BashPanel {
         command: String,
         output: String,
         description: Option<String>,
-        expand_hint: Option<String>,
     },
     StructuredDiff {
         diff_content: String,

@@ -65,8 +65,6 @@ fn detail_blocks_surface_error(
             super::ui_recorded_tool_output::RecordedToolOutput::Mcp { error: Some(_), .. },
         ) => true,
         TranscriptToolCallDetailBlock::ReadOutput { .. }
-        | TranscriptToolCallDetailBlock::Markdown { .. }
-        | TranscriptToolCallDetailBlock::TodoList { .. }
         | TranscriptToolCallDetailBlock::StructuredDiff { .. }
         | TranscriptToolCallDetailBlock::Recorded(_) => false,
     })
