@@ -1,0 +1,338 @@
+[
+  {
+    "side": "before",
+    "sample": "typing-long-1",
+    "started_at": "2026-09-27T22:04:18.350896+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-long-1",
+    "started_at": "2026-09-27T22:04:18.614522+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-long-2",
+    "started_at": "2026-09-27T22:04:18.871712+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-long-2",
+    "started_at": "2026-09-27T22:04:19.131286+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-long-3",
+    "started_at": "2026-09-27T22:04:19.396791+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-long-3",
+    "started_at": "2026-09-27T22:04:19.662137+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-long-alloc",
+    "started_at": "2026-09-27T22:04:19.913527+00:00",
+    "command": [
+      "memusage",
+      "-n",
+      "before.bin",
+      "--no-timer",
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-long-alloc",
+    "started_at": "2026-09-27T22:04:20.382497+00:00",
+    "command": [
+      "memusage",
+      "-n",
+      "candidate.bin",
+      "--no-timer",
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-1",
+    "started_at": "2026-09-27T22:04:20.842996+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-1",
+    "started_at": "2026-09-27T22:04:20.951432+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-2",
+    "started_at": "2026-09-27T22:04:21.066196+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-2",
+    "started_at": "2026-09-27T22:04:21.178885+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-3",
+    "started_at": "2026-09-27T22:04:21.286911+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-3",
+    "started_at": "2026-09-27T22:04:21.396428+00:00",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "before",
+    "sample": "typing-alloc",
+    "started_at": "2026-09-27T22:04:21.508850+00:00",
+    "command": [
+      "memusage",
+      "-n",
+      "before.bin",
+      "--no-timer",
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/before/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  },
+  {
+    "side": "candidate",
+    "sample": "typing-alloc",
+    "started_at": "2026-09-27T22:04:21.624322+00:00",
+    "command": [
+      "memusage",
+      "-n",
+      "candidate.bin",
+      "--no-timer",
+      "cargo",
+      "nextest",
+      "run",
+      "--binaries-metadata",
+      "/tmp/tui-undo-sharing/candidate/binaries.json",
+      "--cargo-metadata",
+      "/tmp/tui-undo-sharing/cargo.json",
+      "--profile",
+      "perf",
+      "-j1",
+      "--success-output",
+      "immediate"
+    ],
+    "exit": 0
+  }
+]

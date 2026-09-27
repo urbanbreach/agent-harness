@@ -131,6 +131,7 @@ before changing the implementation.
 | R15 | A first local file/subagent mention can remain absent from a warmed empty transcript until another update invalidates it | Preserve the recorded first-echo timing during the settlement optimization. Explicitly invalidate later local echoes, whose changed selection index previously caused the refresh. A separate correction needs an intentional first-echo behavior change; the original and unconditional-invalidation captures are retained under `evidence/tui-rewrite/settlement-suffix/diagnostics`. |
 | R16 | Rewinding a later turn can leave a retained older tool labeled Patch or showing a discarded rejection, because prior display state overwrites the active-history edit proposal | Fold edit state from active events after successful complete-history or untrimmed-inline reconstruction. The pinned original fails the public rewind check. Capped inline child histories retain their prior edit state because the proposal may no longer be available; exact edit rewind there remains unverified. |
 | R17 | Tool-row assembly eagerly parses todo data for every visible tool and may read unrelated JSON/text artifacts before discarding the result | Remove the eager todo call and unreachable todo row branches. Production transcript dispatch already hides todo calls; retain the active todo pane parser. This is a source-traced side-effect correction with unchanged visible output, not a syscall-count claim. |
+| R18 | Default bindings assign Ctrl+Y to Redo and then overwrite it with AllowPermission, so it does nothing in the ordinary composer | Record the unchanged no-op on both builds. Use the working Ctrl+Shift+Z binding for redo parity. Defer the shortcut-policy correction separately from snapshot ownership; the failed predecessor capture is retained in undo-sharing evidence. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -992,6 +993,29 @@ These are input/render/encoding measurements, excluding terminal-emulator latenc
 Duplicate editor state and undo history, the source target and full rewrite remain
 unfinished. Evidence is in
 [`evidence/tui-rewrite/composer-text`](evidence/tui-rewrite/composer-text).
+
+## Shared undo snapshots
+
+Adjacent edits now share immutable snapshots when their complete buffer, cursor,
+selection and prompt history match. Restoring shared values preserves independent
+editing; public owned snapshot APIs, delete grouping and redo invalidation retain
+their behavior. This adds 38 production lines in two small files. Whole TUI source
+is 166,953 lines, only 8.21% below the original; the source target remains unmet.
+
+The identical long-draft release workload cuts peak heap from 21.9 MB to 12.0 MB
+(45.2%) and RSS from 40,608 to 25,248 KiB (37.8%). CPU remains 0.38 ms/frame.
+All fourteen original/current effective limits pass in this paired run. Earlier
+short-draft latency failures remain recorded and their cause remains unverified;
+this passing pair does not establish a lasting resolution. Unique undo history
+is still unbounded, and other editor mirrors remain.
+
+All 1,668 TUI tests, seven gated PTY checks and quality checks pass. Fifteen paired
+actual-runtime xterm captures match exactly, including undo/redo and restored
+selection, with natural exit and terminal/resource cleanup. Capture preparation
+also exposed the existing Ctrl+Y default-binding conflict with AllowPermission;
+it is documented and left unchanged. The working Ctrl+Shift+Z binding exercises
+redo. State/text replacement, sustained targets and the full rewrite remain open.
+Evidence is in [`evidence/tui-rewrite/undo-sharing`](evidence/tui-rewrite/undo-sharing).
 
 ## Verification sequence
 

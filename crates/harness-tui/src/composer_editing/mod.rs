@@ -11,6 +11,7 @@ pub use selection::{MousePoint, Selection, SelectionError, VisualSelection};
 pub use undo::{EditGroup, EditorSnapshot, UndoStack};
 
 use std::fmt::{Display, Formatter};
+use std::sync::Arc;
 
 use crate::composer_atoms::{AtomBuffer, AtomBufferError, AtomCursor};
 
@@ -111,16 +112,26 @@ impl ComposerEditor {
         }
     }
 
-    fn snapshot(&self) -> EditorSnapshot {
-        EditorSnapshot {
+    fn snapshot(&self) -> Arc<EditorSnapshot> {
+        let selection = self.selection();
+        if let Some(previous) = self.undo.latest().filter(|previous| {
+            previous.buffer == self.buffer
+                && previous.cursor == self.cursor
+                && previous.selection == selection
+                && previous.history == self.history
+        }) {
+            return Arc::clone(previous);
+        }
+        Arc::new(EditorSnapshot {
             buffer: self.buffer.clone(),
             cursor: self.cursor,
-            selection: self.selection(),
+            selection,
             history: self.history.clone(),
-        }
+        })
     }
 
-    fn restore(&mut self, snapshot: EditorSnapshot) {
+    fn restore(&mut self, snapshot: Arc<EditorSnapshot>) {
+        let snapshot = Arc::unwrap_or_clone(snapshot);
         self.buffer = snapshot.buffer;
         self.cursor = snapshot.cursor;
         self.selection = snapshot.selection;
@@ -128,8 +139,8 @@ impl ComposerEditor {
         self.mouse_anchor = None;
     }
 
-    fn record(&mut self, before: EditorSnapshot, group: EditGroup) {
-        self.undo.record(before, self.snapshot(), group);
+    fn record(&mut self, before: Arc<EditorSnapshot>, group: EditGroup) {
+        self.undo.record_shared(before, self.snapshot(), group);
     }
 }
 

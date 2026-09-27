@@ -1,0 +1,22 @@
+{
+  "reviewer": "/root/tui_review",
+  "decision": "approved for this bounded snapshot-ownership commit",
+  "blocking_findings": [],
+  "verified_artifacts_before_review_receipt": 37,
+  "verified_source_files": 4,
+  "verified_performance_runs": 16,
+  "verified": [
+    "exact production patch and retained executable hashes",
+    "all fourteen original/current effective performance limits",
+    "15 exact PNG/terminal-state pairs except disclosed observer counters",
+    "observable undo/redo/selection restoration and natural terminal/resource cleanup",
+    "1668 TUI tests, seven gated PTY tests, final editor and quality checks"
+  ],
+  "limits_retained": [
+    "earlier short-draft timing misses remain unexplained",
+    "unique undo history remains unbounded",
+    "R18 Ctrl+Y conflict unchanged",
+    "whole-rewrite goals remain incomplete"
+  ],
+  "reviewer_actions": "Read-only; no builds, tests or edits."
+}

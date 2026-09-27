@@ -1,0 +1,50 @@
+{
+  "recorded_at": "2026-09-27T21:56:34.171312+00:00",
+  "source": "ae0fdaab99e2d1c88f9e141253075a76065f6b9f",
+  "baseline": {
+    "typing-long": {
+      "p50_us": 384,
+      "p95_us": 412,
+      "p99_us": 434,
+      "bytes": 20000,
+      "rss_kib": 40604,
+      "cpu_ms_per_frame": 0.38,
+      "allocated_bytes": 372702031,
+      "peak_heap_bytes": 21892879,
+      "malloc_calls": 5440072
+    },
+    "typing": {
+      "p50_us": 107,
+      "p95_us": 124,
+      "p99_us": 187,
+      "bytes": 140750,
+      "rss_kib": 9520,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 9766267,
+      "peak_heap_bytes": 2097598,
+      "malloc_calls": 110880
+    }
+  },
+  "limits": {
+    "typing-long": {
+      "p95_us": 453.20000000000005,
+      "p99_us": 477.40000000000003,
+      "rss_kib": 34513.4,
+      "peak_heap_bytes": 14230371.35,
+      "cpu_ms_per_frame": 0.4,
+      "allocated_bytes": 380156071.62,
+      "malloc_calls": 5548873.44
+    },
+    "typing": {
+      "p95_us": 136.4,
+      "p99_us": 205.70000000000002,
+      "rss_kib": 10472.0,
+      "peak_heap_bytes": 2307357.8000000003,
+      "cpu_ms_per_frame": 0.12000000000000001,
+      "allocated_bytes": 9961592.34,
+      "malloc_calls": 113097.6
+    }
+  },
+  "scope": "Reuse retained measured predecessor executable and unchanged performance fixture. Target35% lower long-draft peak heap and15% lower RSS; preserve output and input effects. This does not replace earlier frozen limits, including the still-unmet short-draft p99 limit179.3us.",
+  "original_short_draft_p99_us": 179.3
+}
