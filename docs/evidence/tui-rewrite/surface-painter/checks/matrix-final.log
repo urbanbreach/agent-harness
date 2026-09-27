@@ -1,0 +1,10 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+────────────
+ Nextest run ID 67a5c456-8d7f-4cfb-ab65-cdd7f9066190 with nextest profile: ci
+    Starting 3 tests across 1 binary
+        SLOW [>  2.000s] (───) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  4.000s] (───) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  6.000s] (───) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+────────────
+     Summary [   6.072s] 3 tests run: 3 passed (1 slow), 0 skipped
+        SLOW [   6.072s] (3/3) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents

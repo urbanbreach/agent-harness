@@ -1,38 +1,31 @@
-// allow: SIZE_OK — TUI transcript rendering (indivisible view model)
+use std::time::Duration;
+
 use ratatui::{
-    layout::Rect,
+    buffer::{Buffer, CellWidth},
+    layout::{Alignment, Rect},
     style::{Color, Style},
-    text::{Line, Span, Text},
-    widgets::{Block, Paragraph},
+    text::{Line, Span},
     Frame,
 };
-#[cfg(test)]
-use std::borrow::Borrow;
-use std::time::Duration;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::theme::Theme;
 
-use super::ui_chrome::{display_width, panel_style};
-use super::ui_transcript::{
-    ToolRailMotion, TranscriptRenderSurfaceKind, TranscriptVisualEntryDraft,
-};
+use super::ui_transcript::{ToolRailMotion, TranscriptRenderSurfaceKind};
 use super::ui_transcript_layout::TranscriptVisualEntry;
 use super::ui_transcript_style::{
     blend_color, glyph_routed_streaming_spinner_frame, pending_diamond_color,
 };
 
+#[path = "ui_transcript_surface/rows.rs"]
+mod rows;
+pub(super) use rows::*;
 #[path = "ui_transcript_surface/wrapping.rs"]
 mod wrapping;
 pub(super) use wrapping::{
     expand_preformatted_tabs, wrap_preformatted_spans, wrap_surface_spans,
     wrap_surface_spans_with_links, SurfaceLinkRun, WrappedSurfaceRow,
 };
-
-const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
-// Grok Build HorizontalLayout::ACCENT (1) + LayoutConfig::block_pad_left (2).
-pub(super) const TRANSCRIPT_ENTRY_CONTENT_PREFIX: &str = "   ";
-pub(super) const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
-pub(super) const TRANSCRIPT_RAIL_GLYPH: &str = " ";
 
 pub(super) fn render_transcript_surface(
     frame: &mut Frame,
@@ -42,236 +35,239 @@ pub(super) fn render_transcript_surface(
     animation_phase: usize,
     theme: &Theme,
 ) {
-    if area.width == 0 || area.height == 0 {
+    let buffer = frame.buffer_mut();
+    let area = area.intersection(buffer.area);
+    if area.is_empty() {
         return;
     }
-
-    frame.render_widget(
-        Block::default().style(Style::default().bg(surface.surface)),
+    buffer.set_style(
         area,
+        Style::default().bg(surface.surface).fg(theme.text.primary),
     );
-
-    let tool_rail_overlay = surface.tool_rail_motion.is_some()
-        && surface
-            .lines
-            .iter()
-            .any(|line| line_has_tool_rail(line, surface.rail_glyph));
-    let rail_visible = surface.show_outer_rail || tool_rail_overlay;
-    let rail_width = 0;
-
-    if area.width <= rail_width {
-        return;
-    }
-
-    let content_rect = Rect::new(
-        area.x.saturating_add(rail_width),
-        area.y,
-        area.width.saturating_sub(rail_width),
-        area.height,
-    );
-    let mut visible_lines =
-        visible_surface_lines(surface, local_scroll, usize::from(content_rect.height));
-    apply_surface_animation_phase(
-        &mut visible_lines,
-        surface,
-        local_scroll,
-        animation_phase,
-        theme,
-    );
-    let paragraph = Paragraph::new(Text::from(visible_lines))
-        .style(panel_style(surface.surface, theme.text.primary));
-    frame.render_widget(paragraph, content_rect);
-    if rail_visible {
-        let rail_rect = Rect::new(
-            area.x,
-            area.y,
-            area.width.min(TRANSCRIPT_SURFACE_RAIL_WIDTH),
-            area.height,
-        );
-        frame.render_widget(
-            Paragraph::new(transcript_surface_rail_lines_for_motion(
-                surface,
-                local_scroll,
-                usize::from(area.height),
-                animation_phase,
-            ))
-            .style(Style::default().bg(surface.surface)),
-            rail_rect,
-        );
-    }
-}
-
-fn apply_surface_animation_phase(
-    lines: &mut [Line<'static>],
-    surface: &TranscriptVisualEntry,
-    local_scroll: usize,
-    animation_phase: usize,
-    theme: &Theme,
-) {
-    for (local_row, line) in lines.iter_mut().enumerate() {
-        for span in &mut line.spans {
-            if matches!(
-                span.content.as_ref(),
-                "⠋" | "⠙" | "⠹" | "⠸" | "⠼" | "⠴" | "⠦" | "⠧"
-            ) {
-                span.content =
-                    glyph_routed_streaming_spinner_frame(theme, animation_phase, true).into();
-            }
-        }
-        let absolute_row = local_scroll.saturating_add(local_row);
-        apply_tool_header_motion_color(line, surface, absolute_row, animation_phase, theme);
-        if matches!(
-            surface.kind,
-            TranscriptRenderSurfaceKind::User | TranscriptRenderSurfaceKind::AssistantFooter
-        ) {
-            let marker_glyphs = [
-                theme.live_shell.glyphs.pending_permission,
-                theme.live_shell.transcript_glyphs.tool_marker,
-                theme.live_shell.transcript_glyphs.thought_marker,
-                theme.live_shell.transcript_glyphs.group_marker,
-            ];
-            if let Some(marker) = line
-                .spans
-                .iter_mut()
-                .find(|span| marker_glyphs.contains(&span.content.trim()))
-            {
-                marker.style = marker
-                    .style
-                    .fg(pending_diamond_color(theme, animation_phase));
-            }
-        }
-    }
-}
-
-fn apply_tool_header_motion_color(
-    line: &mut Line<'static>,
-    surface: &TranscriptVisualEntry,
-    absolute_row: usize,
-    animation_phase: usize,
-    theme: &Theme,
-) {
-    let Some(motion) = surface.tool_rail_motion else {
-        return;
-    };
-    if matches!(motion, ToolRailMotion::FinishFlash { .. }) {
-        return;
-    }
-    if surface.kind == TranscriptRenderSurfaceKind::AssistantReasoning {
-        if absolute_row == 0 {
-            let color = tool_rail_motion_color(
-                surface.surface,
-                surface.rail_color,
-                Some(motion),
-                absolute_row,
-                animation_phase,
-            );
-            if let Some(marker) = line
-                .spans
-                .iter_mut()
-                .find(|span| span.content.trim() == theme.live_shell.transcript_glyphs.tool_marker)
-            {
-                marker.style = marker.style.fg(color);
-            }
-        }
-        return;
-    }
-    let semantic_group_surface = surface.lines.first().is_some_and(|header| {
-        let marker_index = header.spans.iter().position(|span| {
-            span.content
-                .trim_start()
-                .starts_with(theme.live_shell.transcript_glyphs.group_marker)
-        });
-        marker_index.is_some_and(|marker_index| {
+    let spinner = glyph_routed_streaming_spinner_frame(theme, animation_phase, true);
+    let group = surface.tool_rail_motion.is_some()
+        && surface.lines.first().is_some_and(|header| {
             header
                 .spans
                 .iter()
-                .skip(marker_index + 1)
-                .find(|span| !span.content.trim().is_empty())
-                .is_some_and(|span| span.content.as_ref() != "Ran ")
+                .position(|span| {
+                    span.content
+                        .trim_start()
+                        .starts_with(theme.live_shell.transcript_glyphs.group_marker)
+                })
+                .and_then(|index| {
+                    header.spans[index + 1..]
+                        .iter()
+                        .find(|span| !span.content.trim().is_empty())
+                })
+                .is_some_and(|span| span.content != "Ran ")
+        });
+    for (y, line) in surface
+        .lines
+        .iter()
+        .skip(local_scroll)
+        .take(usize::from(area.height))
+        .enumerate()
+    {
+        let row = local_scroll.saturating_add(y);
+        let tool = tool_marker(line, surface, row, group, spinner, theme).map(|index| {
+            (
+                index,
+                tool_rail_motion_color(
+                    surface.surface,
+                    surface.rail_color,
+                    surface.tool_rail_motion,
+                    row,
+                    animation_phase,
+                ),
+            )
+        });
+        let pending = matches!(
+            surface.kind,
+            TranscriptRenderSurfaceKind::User | TranscriptRenderSurfaceKind::AssistantFooter
+        )
+        .then(|| {
+            marker_index(
+                line,
+                spinner,
+                &[
+                    theme.live_shell.glyphs.pending_permission,
+                    theme.live_shell.transcript_glyphs.tool_marker,
+                    theme.live_shell.transcript_glyphs.thought_marker,
+                    theme.live_shell.transcript_glyphs.group_marker,
+                ],
+            )
         })
-    });
-    if semantic_group_surface && absolute_row != 0 {
-        return;
+        .flatten()
+        .map(|index| (index, pending_diamond_color(theme, animation_phase)));
+        paint_line(
+            buffer,
+            line,
+            Rect::new(
+                area.x,
+                area.y + u16::try_from(y).unwrap_or(0),
+                area.width,
+                1,
+            ),
+            [pending, tool],
+            spinner,
+        );
     }
-    let marker_glyphs = [
-        theme.live_shell.glyphs.running,
-        theme.live_shell.transcript_glyphs.tool_marker,
-        theme.live_shell.transcript_glyphs.thought_marker,
-        theme.live_shell.transcript_glyphs.group_marker,
-    ];
-    let marker_index = line.spans.iter().position(|span| {
-        marker_glyphs
-            .iter()
-            .any(|marker| span.content.trim() == *marker)
-    });
-    let Some(marker_index) = marker_index else {
-        return;
-    };
-    let color = tool_rail_motion_color(
-        surface.surface,
-        surface.rail_color,
-        Some(motion),
-        absolute_row,
-        animation_phase,
-    );
-    line.spans[marker_index].style = line.spans[marker_index].style.fg(color);
-}
 
-fn transcript_surface_rail_lines_for_motion(
-    surface: &TranscriptVisualEntry,
-    local_scroll: usize,
-    visible_height: usize,
-    animation_phase: usize,
-) -> Vec<Line<'static>> {
-    let row_scoped_rail = !surface.show_outer_rail
-        && (matches!(
-            surface.tool_rail_motion,
-            Some(ToolRailMotion::FinishFlash { .. })
-        ) || surface
-            .lines
-            .iter()
-            .any(|line| line_has_tool_rail(line, surface.rail_glyph)));
-    (0..visible_height)
-        .map(|local_row| {
-            let absolute_row = local_scroll.saturating_add(local_row);
-            let glyph = surface
+    if surface.show_outer_rail
+        || (surface.tool_rail_motion.is_some()
+            && surface
                 .lines
-                .get(absolute_row)
-                .filter(|line| !row_scoped_rail || line_has_tool_rail(line, surface.rail_glyph))
-                .map_or(" ", |_| surface.rail_glyph);
-            let tool_surface = matches!(
-                surface.kind,
-                TranscriptRenderSurfaceKind::AssistantTool
-                    | TranscriptRenderSurfaceKind::AssistantCommandTool
-            );
-            let color = tool_rail_motion_color(
-                surface.surface,
-                surface.rail_color,
-                if tool_surface && !surface.show_outer_rail {
-                    None
-                } else {
-                    surface.tool_rail_motion
-                },
-                absolute_row,
+                .iter()
+                .any(|line| line_has_tool_rail(line, surface.rail_glyph)))
+    {
+        for y in 0..area.height {
+            paint_rail(
+                buffer,
+                surface,
+                (area.x, area.y + y),
+                local_scroll.saturating_add(usize::from(y)),
                 animation_phase,
             );
-            let color = surface
-                .lines
-                .get(absolute_row)
-                .filter(|line| {
-                    tool_surface
-                        && !surface.show_outer_rail
-                        && line_has_tool_rail(line, surface.rail_glyph)
-                })
-                .and_then(|line| line.spans.first())
-                .and_then(|span| span.style.fg)
-                .unwrap_or(color);
-            Line::from(Span::styled(
-                glyph,
-                Style::default().fg(color).bg(surface.surface),
-            ))
+        }
+    }
+}
+
+fn paint_content<'a>(span: &'a Span<'_>, spinner: &'a str) -> &'a str {
+    match span.content.as_ref() {
+        "⠋" | "⠙" | "⠹" | "⠸" | "⠼" | "⠴" | "⠦" | "⠧" => spinner,
+        content => content,
+    }
+}
+
+fn marker_index(line: &Line<'_>, spinner: &str, markers: &[&str]) -> Option<usize> {
+    line.spans
+        .iter()
+        .position(|span| markers.contains(&paint_content(span, spinner).trim()))
+}
+
+fn tool_marker(
+    line: &Line<'_>,
+    surface: &TranscriptVisualEntry,
+    row: usize,
+    group: bool,
+    spinner: &str,
+    theme: &Theme,
+) -> Option<usize> {
+    if matches!(
+        surface.tool_rail_motion,
+        None | Some(ToolRailMotion::FinishFlash { .. })
+    ) {
+        return None;
+    }
+    if surface.kind == TranscriptRenderSurfaceKind::AssistantReasoning {
+        return (row == 0)
+            .then(|| {
+                marker_index(
+                    line,
+                    spinner,
+                    &[theme.live_shell.transcript_glyphs.tool_marker],
+                )
+            })
+            .flatten();
+    }
+    if group && row != 0 {
+        return None;
+    }
+    marker_index(
+        line,
+        spinner,
+        &[
+            theme.live_shell.glyphs.running,
+            theme.live_shell.transcript_glyphs.tool_marker,
+            theme.live_shell.transcript_glyphs.thought_marker,
+            theme.live_shell.transcript_glyphs.group_marker,
+        ],
+    )
+}
+
+fn paint_line(
+    buffer: &mut Buffer,
+    line: &Line<'_>,
+    area: Rect,
+    markers: [Option<(usize, Color)>; 2],
+    spinner: &str,
+) {
+    let width = usize::from(area.width);
+    let clipped = || {
+        let mut used = 0;
+        line.spans.iter().enumerate().flat_map(|(index, span)| {
+            let mut style = line.style.patch(span.style);
+            if let Some((_, color)) = markers.iter().flatten().find(|(marker, _)| *marker == index) {
+                style = style.fg(*color);
+            }
+            paint_content(span, spinner).graphemes(true)
+                .filter(|symbol| !symbol.contains(char::is_control))
+                .map(move |symbol| (symbol, style, usize::from(symbol.cell_width())))
         })
-        .collect()
+        // Paragraph skips oversized graphemes, then truncates at the first overflow.
+        .filter(|(_, _, cells)| *cells <= width)
+        .map_while(move |item| {
+            used += item.2;
+            (used <= width).then_some(item)
+        })
+    };
+    let mut x = area.x;
+    if let Some(alignment @ (Alignment::Center | Alignment::Right)) = line.alignment {
+        let used = clipped().map(|(_, _, cells)| cells).sum::<usize>();
+        let offset = match alignment {
+            Alignment::Center => width / 2 - used / 2,
+            _ => width - used,
+        };
+        x += u16::try_from(offset).unwrap_or(0);
+    }
+    for (symbol, style, cells) in clipped().filter(|(_, _, cells)| *cells > 0) {
+        buffer[(x, area.y)].set_symbol(symbol).set_style(style);
+        x += u16::try_from(cells).unwrap_or(0);
+    }
+}
+
+fn paint_rail(
+    buffer: &mut Buffer,
+    surface: &TranscriptVisualEntry,
+    position: (u16, u16),
+    row: usize,
+    phase: usize,
+) {
+    let line = surface.lines.get(row);
+    let has_rail = line.is_some_and(|line| line_has_tool_rail(line, surface.rail_glyph));
+    let glyph = if line.is_some() && (surface.show_outer_rail || has_rail) {
+        surface.rail_glyph
+    } else {
+        " "
+    };
+    let tool = matches!(
+        surface.kind,
+        TranscriptRenderSurfaceKind::AssistantTool
+            | TranscriptRenderSurfaceKind::AssistantCommandTool
+    ) && !surface.show_outer_rail;
+    let color = if tool {
+        line.filter(|_| has_rail)
+            .and_then(|line| line.spans.first())
+            .and_then(|span| span.style.fg)
+            .unwrap_or(surface.rail_color)
+    } else {
+        tool_rail_motion_color(
+            surface.surface,
+            surface.rail_color,
+            surface.tool_rail_motion,
+            row,
+            phase,
+        )
+    };
+    if let Some(symbol) = glyph
+        .graphemes(true)
+        .find(|symbol| !symbol.contains(char::is_control) && symbol.cell_width() == 1)
+    {
+        buffer[position]
+            .set_symbol(symbol)
+            .set_style(Style::default().fg(color).bg(surface.surface));
+    }
 }
 
 pub(super) fn line_has_tool_rail(line: &Line<'_>, rail_glyph: &str) -> bool {
@@ -283,17 +279,13 @@ pub(super) fn line_has_tool_rail(line: &Line<'_>, rail_glyph: &str) -> bool {
         })
 }
 
-const TOOL_RAIL_WAVE_ROWS: usize = 32;
-// Preserve the reference wave's speed while sampling continuously at the display cadence.
-const TOOL_RAIL_ANGULAR_SPEED: f32 = 0.15;
-
 pub(super) fn wave_brightness(elapsed: Duration, row: usize, wave_rows: usize) -> f32 {
     let tick = elapsed.as_secs_f32() / 0.033;
     let wave_rows = wave_rows.max(1);
     let row = u16::try_from(row % wave_rows).unwrap_or(0);
     let wave_rows = u16::try_from(wave_rows).unwrap_or(u16::MAX);
     let spatial_phase = f32::from(row) / f32::from(wave_rows) * std::f32::consts::TAU;
-    let sine = (tick * TOOL_RAIL_ANGULAR_SPEED + spatial_phase).sin();
+    let sine = (tick * 0.15 + spatial_phase).sin();
     sine * sine
 }
 
@@ -304,698 +296,22 @@ pub(super) fn tool_rail_motion_color(
     row: usize,
     animation_phase: usize,
 ) -> Color {
-    match motion {
-        Some(ToolRailMotion::Running { .. }) => {
-            let elapsed = motion_elapsed(motion, animation_phase);
-            let brightness = wave_brightness(elapsed, row, TOOL_RAIL_WAVE_ROWS);
-            blend_color(surface, accent, brightness)
-        }
-        Some(ToolRailMotion::FinishFlash { .. })
-        | Some(ToolRailMotion::Waiting)
-        | Some(ToolRailMotion::Queued)
-        | Some(ToolRailMotion::Settled)
-        | None => accent,
-    }
-}
-
-fn motion_elapsed(motion: Option<ToolRailMotion>, animation_phase: usize) -> Duration {
-    let (elapsed, sampled_phase) = match motion {
-        Some(ToolRailMotion::Running {
-            elapsed,
-            sampled_phase,
-        }) => (elapsed, sampled_phase),
-        _ => return Duration::ZERO,
+    let Some(ToolRailMotion::Running {
+        elapsed,
+        sampled_phase,
+    }) = motion
+    else {
+        return accent;
     };
     let phase_delta = animation_phase.saturating_sub(sampled_phase);
-    elapsed.saturating_add(Duration::from_millis(
+    let elapsed = elapsed.saturating_add(Duration::from_millis(
         u64::try_from(phase_delta)
             .unwrap_or(u64::MAX)
             .saturating_mul(crate::scheduling::active_animation_period_ms()),
-    ))
-}
-
-pub(super) fn visible_surface_lines(
-    surface: &TranscriptVisualEntry,
-    local_scroll: usize,
-    visible_height: usize,
-) -> Vec<Line<'static>> {
-    if visible_height == 0 {
-        return Vec::new();
-    }
-
-    surface
-        .lines
-        .iter()
-        .skip(local_scroll)
-        .take(visible_height)
-        .cloned()
-        .collect()
-}
-
-#[cfg(test)]
-pub(super) fn render_transcript_surface_lines<Entry>(surfaces: &[Entry]) -> Vec<Line<'static>>
-where
-    Entry: Borrow<TranscriptVisualEntryDraft>,
-{
-    let mut lines = Vec::new();
-    for entry in surfaces {
-        let surface = entry.borrow();
-        for _ in 0..surface.leading_gap_rows {
-            lines.push(Line::default());
-        }
-        lines.extend(surface.lines.iter().cloned());
-        for _ in 0..surface.trailing_gap_rows {
-            lines.push(Line::default());
-        }
-    }
-    lines
-}
-
-pub(super) fn transcript_surface_content_width(width: u16, show_outer_rail: bool) -> u16 {
-    if show_outer_rail {
-        width.saturating_sub(TRANSCRIPT_SURFACE_RAIL_WIDTH).max(1)
-    } else {
-        width.max(1)
-    }
-}
-
-pub(super) fn transcript_surface_render_width(
-    width: u16,
-    kind: TranscriptRenderSurfaceKind,
-) -> u16 {
-    match kind {
-        // User surfaces pack wall-clock on the first content row. A trailing gap of 2
-        // drops content_width below freeze packing (e.g. "all names" + clock at 120x32
-        // with dual gutter + scrollbar needs content_width >= 108).
-        TranscriptRenderSurfaceKind::User => width.max(1),
-        TranscriptRenderSurfaceKind::AssistantCommandTool
-        | TranscriptRenderSurfaceKind::AssistantTool
-        | TranscriptRenderSurfaceKind::Compaction => width
-            .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
-            .max(1),
-        _ => width.max(1),
-    }
-}
-
-pub(super) fn append_prebuilt_nested_surface_lines(
-    lines: &mut Vec<Line<'static>>,
-    indent: &str,
-    rail_color: Color,
-    surface: Color,
-    prebuilt: Vec<Line<'static>>,
-    width: u16,
-) {
-    let prefix = nested_surface_prefix(indent, rail_color, surface);
-    let prefix_width = nested_surface_prefix_width(indent);
-    for line in prebuilt {
-        lines.push(surface_line(
-            prefix.clone(),
-            prefix_width,
-            line.spans,
-            width,
-            surface,
-        ));
-    }
-}
-
-pub(super) fn append_prebuilt_surface_lines(
-    lines: &mut Vec<Line<'static>>,
-    indent: &str,
-    surface: Color,
-    prebuilt: Vec<Line<'static>>,
-    width: u16,
-) {
-    let prefix = surface_prefix(indent);
-    let prefix_width = surface_prefix_width(indent);
-    for line in prebuilt {
-        // A tool can mix unbacked metadata with backed output rows. Preserve
-        // that row's style through the shared surface without painting the rail.
-        let row_surface = line.style.bg.unwrap_or(surface);
-        let spans = line
-            .spans
-            .into_iter()
-            .map(|span| Span::styled(span.content, line.style.patch(span.style)))
-            .collect();
-        lines.push(surface_line(
-            prefix.clone(),
-            prefix_width,
-            spans,
-            width,
-            row_surface,
-        ));
-    }
-}
-
-pub(super) fn append_surface_row(
-    lines: &mut Vec<Line<'static>>,
-    indent: &str,
-    surface: Color,
-    content_spans: Vec<Span<'static>>,
-    width: u16,
-) {
-    let prefix = surface_prefix(indent);
-    let prefix_width = surface_prefix_width(indent);
-    let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
-    let wrapped_rows = wrap_surface_spans(content_spans, content_width);
-
-    if wrapped_rows.is_empty() {
-        lines.push(surface_line(
-            prefix,
-            prefix_width,
-            Vec::new(),
-            width,
-            surface,
-        ));
-        return;
-    }
-
-    for row in wrapped_rows {
-        lines.push(surface_line(
-            prefix.clone(),
-            prefix_width,
-            row,
-            width,
-            surface,
-        ));
-    }
-}
-
-pub(super) fn append_user_surface_text_block(
-    lines: &mut Vec<Line<'static>>,
-    text: &str,
-    color: Color,
-    prefix: &str,
-    width: u16,
-    surface: Color,
-) {
-    append_user_surface_text_block_with_first_line_reserve(
-        lines, text, color, prefix, width, surface, 0,
-    );
-}
-
-pub(super) fn append_user_surface_text_block_with_first_line_reserve(
-    lines: &mut Vec<Line<'static>>,
-    text: &str,
-    color: Color,
-    prefix: &str,
-    width: u16,
-    surface: Color,
-    first_line_reserve: usize,
-) {
-    let base_style = Style::default().fg(color);
-    let mut first_line = true;
-    for line in text.lines() {
-        let reserve = if first_line { first_line_reserve } else { 0 };
-        first_line = false;
-        append_user_surface_wrapped_line(
-            lines,
-            if line.is_empty() {
-                Vec::new()
-            } else {
-                vec![Span::styled(line.to_string(), base_style)]
-            },
-            prefix,
-            base_style,
-            width,
-            surface,
-            reserve,
-        );
-    }
-
-    if text.is_empty() {
-        append_user_surface_wrapped_line(
-            lines,
-            Vec::new(),
-            prefix,
-            base_style,
-            width,
-            surface,
-            first_line_reserve,
-        );
-    }
-}
-
-pub(super) fn append_user_surface_wrapped_line(
-    lines: &mut Vec<Line<'static>>,
-    content_spans: Vec<Span<'static>>,
-    prefix: &str,
-    prefix_style: Style,
-    width: u16,
-    surface: Color,
-    first_row_reserve: usize,
-) {
-    let prefix_width = display_width(prefix);
-    let full_content_width = usize::from(width).saturating_sub(prefix_width).max(1);
-    let first_content_width = full_content_width.saturating_sub(first_row_reserve).max(1);
-    if content_spans.is_empty() {
-        lines.push(user_surface_line(prefix, Vec::new(), prefix_style, surface));
-        return;
-    }
-
-    if first_row_reserve == 0 || first_content_width == full_content_width {
-        for row in wrap_surface_spans(content_spans, full_content_width) {
-            lines.push(user_surface_line(prefix, row, prefix_style, surface));
-        }
-        return;
-    }
-
-    let mut trimming_leading_whitespace = true;
-    let content_spans = content_spans
-        .into_iter()
-        .filter_map(|mut span| {
-            if !trimming_leading_whitespace {
-                return Some(span);
-            }
-            let start = span
-                .content
-                .find(|character: char| !character.is_whitespace())?;
-            trimming_leading_whitespace = false;
-            if start > 0 {
-                span.content = span.content[start..].to_string().into();
-            }
-            Some(span)
-        })
-        .collect::<Vec<_>>();
-    let narrow_rows = wrap_surface_spans(content_spans.clone(), first_content_width);
-    let Some(first) = narrow_rows.first().cloned() else {
-        return;
-    };
-    let consumed_characters = first
-        .iter()
-        .map(|span| span.content.chars().count())
-        .sum::<usize>();
-    lines.push(user_surface_line(prefix, first, prefix_style, surface));
-    if narrow_rows.len() <= 1 {
-        return;
-    }
-    let mut characters_to_skip = consumed_characters;
-    let remainder_spans = content_spans
-        .into_iter()
-        .filter_map(|span| {
-            let content = span.content.into_owned();
-            let character_count = content.chars().count();
-            if characters_to_skip >= character_count {
-                characters_to_skip = characters_to_skip.saturating_sub(character_count);
-                return None;
-            }
-            let remainder = content.chars().skip(characters_to_skip).collect::<String>();
-            characters_to_skip = 0;
-            Some(Span::styled(remainder, span.style))
-        })
-        .collect::<Vec<_>>();
-    if remainder_spans.is_empty() {
-        return;
-    }
-    for row in wrap_surface_spans(remainder_spans, full_content_width) {
-        lines.push(user_surface_line(prefix, row, prefix_style, surface));
-    }
-}
-
-pub(super) fn user_surface_line(
-    prefix: &str,
-    content_spans: Vec<Span<'static>>,
-    prefix_style: Style,
-    surface: Color,
-) -> Line<'static> {
-    let mut spans = vec![surface_span(prefix, prefix_style, surface)];
-    for span in content_spans {
-        spans.push(surface_span(span.content.into_owned(), span.style, surface));
-    }
-    Line::from(spans)
-}
-
-pub(super) fn append_prefixed_wrapped_spans_line(
-    lines: &mut Vec<Line<'static>>,
-    prefix: &str,
-    prefix_style: Style,
-    content_spans: Vec<Span<'static>>,
-    width: u16,
-) {
-    if content_spans.is_empty() {
-        lines.push(Line::from(Span::styled(prefix.to_string(), prefix_style)));
-        return;
-    }
-
-    let prefix_width = display_width(prefix);
-    let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
-    for row in wrap_surface_spans(content_spans, content_width) {
-        let mut spans = vec![Span::styled(prefix.to_string(), prefix_style)];
-        spans.extend(row);
-        lines.push(Line::from(spans));
-    }
-}
-
-pub(super) fn append_prebuilt_plain_lines(
-    lines: &mut Vec<Line<'static>>,
-    prefix: &str,
-    prebuilt: Vec<Line<'static>>,
-    width: u16,
-) {
-    let content_width = usize::from(width)
-        .saturating_sub(display_width(prefix))
-        .max(1);
-    for line in prebuilt {
-        for row in wrap_preformatted_spans(line.spans, content_width) {
-            let mut spans = vec![Span::raw(prefix.to_string())];
-            spans.extend(row);
-            lines.push(Line::from(spans));
-        }
-    }
-}
-
-fn surface_prefix(indent: &str) -> Vec<Span<'static>> {
-    if indent.is_empty() {
-        Vec::new()
-    } else {
-        vec![Span::raw(indent.to_string())]
-    }
-}
-
-pub(super) fn surface_prefix_width(indent: &str) -> usize {
-    display_width(indent)
-}
-
-fn surface_line(
-    mut prefix: Vec<Span<'static>>,
-    prefix_width: usize,
-    content_spans: Vec<Span<'static>>,
-    width: u16,
-    surface: Color,
-) -> Line<'static> {
-    let mut visible_width = prefix_width;
-    for span in content_spans {
-        visible_width += span.width();
-        prefix.push(surface_span(span.content.into_owned(), span.style, surface));
-    }
-    let remaining = usize::from(width).saturating_sub(visible_width);
-    if remaining > 0 {
-        prefix.push(surface_span(
-            " ".repeat(remaining),
-            Style::default(),
-            surface,
-        ));
-    }
-    Line::from(prefix)
-}
-
-pub(super) fn surface_span(text: impl Into<String>, style: Style, surface: Color) -> Span<'static> {
-    Span::styled(text.into(), Style::default().bg(surface).patch(style))
-}
-
-pub(super) fn append_nested_surface_row(
-    lines: &mut Vec<Line<'static>>,
-    indent: &str,
-    rail_color: Color,
-    surface: Color,
-    content_leading_spaces: &str,
-    content_spans: Vec<Span<'static>>,
-    width: u16,
-) {
-    let prefix = nested_surface_prefix(indent, rail_color, surface);
-    let prefix_width = nested_surface_prefix_width(indent);
-    let leading_width = display_width(content_leading_spaces);
-    let content_width = usize::from(width)
-        .saturating_sub(prefix_width)
-        .saturating_sub(leading_width)
-        .max(1);
-    let wrapped_rows = wrap_surface_spans(content_spans, content_width);
-
-    if wrapped_rows.is_empty() {
-        lines.push(surface_line(
-            prefix,
-            prefix_width,
-            Vec::new(),
-            width,
-            surface,
-        ));
-        return;
-    }
-
-    let leading_span = if content_leading_spaces.is_empty() {
-        None
-    } else {
-        Some(Span::styled(
-            content_leading_spaces.to_string(),
-            Style::default().bg(surface),
-        ))
-    };
-
-    for row in wrapped_rows {
-        let mut row = row;
-        if let Some(leading) = leading_span.clone() {
-            row.insert(0, leading);
-        }
-        lines.push(surface_line(
-            prefix.clone(),
-            prefix_width,
-            row,
-            width,
-            surface,
-        ));
-    }
-}
-
-fn nested_surface_prefix(indent: &str, rail_color: Color, surface: Color) -> Vec<Span<'static>> {
-    let mut spans = Vec::new();
-    if !indent.is_empty() {
-        spans.push(Span::raw(indent.to_string()));
-    }
-    spans.push(Span::styled(
-        TRANSCRIPT_RAIL_GLYPH,
-        Style::default().fg(rail_color).bg(surface),
     ));
-    spans.push(surface_span(" ", Style::default(), surface));
-    spans
-}
-
-pub(super) fn nested_surface_prefix_width(indent: &str) -> usize {
-    display_width(indent) + display_width(TRANSCRIPT_RAIL_GLYPH) + 1
+    blend_color(surface, accent, wave_brightness(elapsed, row, 32))
 }
 
 #[cfg(test)]
-mod animation_phase_tests {
-    use super::{apply_surface_animation_phase, render_transcript_surface};
-    use crate::theme::Theme;
-    use crate::ui::ui_transcript::{
-        ToolRailMotion, TranscriptBlockPlacement, TranscriptRenderSurfaceKind,
-        TranscriptVisualEntryDisplayMode, TranscriptVisualEntryHitRegion,
-        TranscriptVisualEntryMetadata,
-    };
-    use crate::ui::ui_transcript_layout::TranscriptVisualEntry;
-    use ratatui::{backend::TestBackend, layout::Rect, style::Style, text::Span, Terminal};
-
-    fn reasoning_surface(
-        theme: &Theme,
-        marker: &str,
-        motion: Option<ToolRailMotion>,
-    ) -> TranscriptVisualEntry {
-        TranscriptVisualEntry {
-            source_text: None,
-            rendered_text: std::sync::Arc::from(""),
-            metadata: TranscriptVisualEntryMetadata::settled(
-                0,
-                0,
-                TranscriptVisualEntryDisplayMode::Flow,
-            ),
-            kind: TranscriptRenderSurfaceKind::AssistantReasoning,
-            leading_gap_rows: 0,
-            placement: TranscriptBlockPlacement::Flow,
-            top_offset: 0,
-            height: 1,
-            width: 80,
-            show_outer_rail: true,
-            rail_glyph: "┃",
-            rail_color: theme.text.tertiary,
-            surface: theme.surface.canvas,
-            lines: vec![ratatui::text::Line::from(vec![
-                Span::raw("  "),
-                Span::styled(
-                    format!("{marker} "),
-                    Style::default().fg(theme.text.tertiary),
-                ),
-                Span::styled(
-                    "Thinking…",
-                    Style::default()
-                        .fg(theme.text.secondary)
-                        .add_modifier(ratatui::style::Modifier::BOLD),
-                ),
-            ])],
-            interaction_rows: None,
-            selection_rows: Vec::new(),
-            semantic_selection: false,
-            diff_hunk_offsets: Vec::new(),
-            selected_rail: false,
-            tool_rail_motion: motion,
-            hit_region: TranscriptVisualEntryHitRegion::new(0, 80, 1),
-        }
-    }
-
-    #[test]
-    fn cached_assistant_footer_rehydrates_the_pending_diamond_phase() {
-        // arrange
-        // Given: a cached waiting footer with independently styled marker and label spans.
-        let theme = Theme::default();
-        let surface = TranscriptVisualEntry {
-            source_text: None,
-            rendered_text: std::sync::Arc::from(""),
-            metadata: TranscriptVisualEntryMetadata::settled(
-                0,
-                0,
-                TranscriptVisualEntryDisplayMode::Flow,
-            ),
-            kind: TranscriptRenderSurfaceKind::AssistantFooter,
-            leading_gap_rows: 0,
-            placement: TranscriptBlockPlacement::Flow,
-            top_offset: 0,
-            height: 1,
-            width: 80,
-            show_outer_rail: false,
-            rail_glyph: " ",
-            rail_color: theme.text.secondary,
-            surface: theme.surface.canvas,
-            lines: vec![ratatui::text::Line::from(vec![
-                Span::raw("    "),
-                Span::styled("◆ ", Style::default().fg(theme.text.secondary)),
-                Span::styled(
-                    "Waiting on answers",
-                    Style::default().fg(theme.text.secondary),
-                ),
-            ])],
-            interaction_rows: None,
-            selection_rows: Vec::new(),
-            semantic_selection: false,
-            diff_hunk_offsets: Vec::new(),
-            selected_rail: false,
-            tool_rail_motion: None,
-            hit_region: TranscriptVisualEntryHitRegion::new(0, 80, 1),
-        };
-
-        // When: cached lines are rehydrated at two runtime animation phases.
-        let mut first = surface.lines.clone();
-        apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
-        let mut later = surface.lines.clone();
-        apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
-
-        // act
-        // Then: the marker changes color while the waiting label remains muted.
-        // assert
-        assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
-        assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
-        assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
-    }
-
-    #[test]
-    fn active_reasoning_wave_animates_only_the_diamond() {
-        // arrange
-        let theme = Theme::default();
-        let surface = reasoning_surface(
-            &theme,
-            "◆",
-            Some(ToolRailMotion::Running {
-                elapsed: std::time::Duration::ZERO,
-                sampled_phase: 0,
-            }),
-        );
-
-        // act
-        let mut first = surface.lines.clone();
-        apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
-        let mut later = surface.lines.clone();
-        apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
-
-        // assert
-        assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
-        assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
-        assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
-    }
-
-    #[test]
-    fn active_reasoning_wave_animates_the_ascii_marker() {
-        // arrange
-        let theme = Theme::default().with_glyph_mode(crate::theme::GlyphMode::Ascii);
-        let surface = reasoning_surface(
-            &theme,
-            "*",
-            Some(ToolRailMotion::Running {
-                elapsed: std::time::Duration::ZERO,
-                sampled_phase: 0,
-            }),
-        );
-
-        // act
-        let mut first = surface.lines.clone();
-        apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
-        let mut later = surface.lines.clone();
-        apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
-
-        // assert
-        assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
-        assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
-        assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
-    }
-
-    #[test]
-    fn cached_running_tool_repaints_only_its_lifecycle_marker() {
-        for glyph_mode in [
-            crate::theme::GlyphMode::Preferred,
-            crate::theme::GlyphMode::Ascii,
-        ] {
-            let theme = Theme::default().with_glyph_mode(glyph_mode);
-            let mut surface = reasoning_surface(
-                &theme,
-                theme.live_shell.glyphs.running,
-                Some(ToolRailMotion::Running {
-                    elapsed: std::time::Duration::ZERO,
-                    sampled_phase: 0,
-                }),
-            );
-            surface.kind = TranscriptRenderSurfaceKind::AssistantTool;
-            surface.show_outer_rail = false;
-            surface.rail_glyph = " ";
-            surface.lines[0].spans[2].content = "Run cargo test".into();
-            let mut terminal = Terminal::new(TestBackend::new(40, 1)).expect("test terminal");
-            let mut frames = Vec::new();
-            for phase in [0, 10] {
-                terminal
-                    .draw(|frame| {
-                        render_transcript_surface(
-                            frame,
-                            &surface,
-                            Rect::new(0, 0, 40, 1),
-                            0,
-                            phase,
-                            &theme,
-                        );
-                    })
-                    .expect("render cached tool");
-                frames.push(terminal.backend().buffer().clone());
-            }
-            assert_ne!(frames[0][(2, 0)].fg, frames[1][(2, 0)].fg, "{glyph_mode:?}");
-            assert_eq!(
-                frames[0][(4, 0)],
-                frames[1][(4, 0)],
-                "tool label must not pulse"
-            );
-            assert_eq!(frames[1][(4, 0)].fg, theme.text.secondary);
-        }
-    }
-
-    #[test]
-    fn static_reasoning_rail_is_painted_after_content() {
-        // arrange
-        let theme = Theme::default();
-        let surface = reasoning_surface(&theme, "◆", None);
-        let backend = TestBackend::new(20, 1);
-        let mut terminal = Terminal::new(backend).expect("test terminal");
-
-        // act
-        terminal
-            .draw(|frame| {
-                render_transcript_surface(frame, &surface, Rect::new(0, 0, 20, 1), 0, 0, &theme);
-            })
-            .expect("render reasoning surface");
-
-        // assert
-        assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "┃");
-    }
-}
+#[path = "ui_transcript_surface/paint_tests.rs"]
+mod paint_tests;

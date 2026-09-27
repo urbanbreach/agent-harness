@@ -1,0 +1,65 @@
+{
+  "reference": "../../reference/performance/summary.json",
+  "metrics": {
+    "startup-0": {
+      "p99_us": {
+        "frozen_reference": 254,
+        "limit": 354,
+        "candidate": 173,
+        "passes": true
+      }
+    },
+    "idle-1000": {
+      "p99_us": {
+        "frozen_reference": 136,
+        "limit": 236,
+        "candidate": 133,
+        "passes": true
+      }
+    },
+    "typing-1000": {
+      "p99_us": {
+        "frozen_reference": 148,
+        "limit": 248,
+        "candidate": 140,
+        "passes": true
+      }
+    },
+    "stream-1000": {
+      "p95_us": {
+        "frozen_reference": 4135,
+        "limit": 2894.5,
+        "candidate": 968,
+        "passes": true
+      },
+      "p99_us": {
+        "frozen_reference": 4388,
+        "limit": 3071.6,
+        "candidate": 998,
+        "passes": true
+      }
+    },
+    "scroll-1000": {
+      "p99_us": {
+        "frozen_reference": 173,
+        "limit": 273,
+        "candidate": 169,
+        "passes": true
+      }
+    },
+    "resize-1000": {
+      "p95_us": {
+        "frozen_reference": 4996,
+        "limit": 3497.2,
+        "candidate": 2660,
+        "passes": true
+      },
+      "p99_us": {
+        "frozen_reference": 5192,
+        "limit": 3634.4,
+        "candidate": 2772,
+        "passes": true
+      }
+    }
+  }
+}

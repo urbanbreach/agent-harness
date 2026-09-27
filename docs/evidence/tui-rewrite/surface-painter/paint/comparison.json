@@ -1,0 +1,10 @@
+{
+  "records": 10788,
+  "all_records_byte_equal": true,
+  "before_sha256": "b9960089cdd0b74084510f2a34f64d1822dd16c56fc6e13acb6e3722689abf48",
+  "candidate_sha256": "b9960089cdd0b74084510f2a34f64d1822dd16c56fc6e13acb6e3722689abf48",
+  "bytes_per_recording": 215014378,
+  "shared_raw_artifact": "records.json.gz",
+  "before_source": "db0e5b67",
+  "fixture_is_temporary": true
+}

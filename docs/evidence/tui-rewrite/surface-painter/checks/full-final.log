@@ -1,0 +1,18 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.61s
+────────────
+ Nextest run ID 642b3660-2d13-4d83-b393-aad30c4e831d with nextest profile: ci
+    Starting 1666 tests across 78 binaries (7 tests and 1 binary skipped, including 5 tests and 1 binary via profile.default.default-filter)
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::completed_stream_more_below_affordance_is_actionable
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  2.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  2.000s] (─────────) harness-tui::tool_body_capture_test production_tool_body_captures
+        SLOW [>  4.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  4.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  6.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+────────────
+     Summary [   8.108s] 1666 tests run: 1666 passed (4 slow), 7 skipped
+        SLOW [   2.218s] (1358/1666) harness-tui app::tests::completed_stream_more_below_affordance_is_actionable
+        SLOW [   3.316s] (1664/1666) harness-tui::tool_body_capture_test production_tool_body_captures
+        SLOW [   7.232s] (1665/1666) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [   5.688s] (1666/1666) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents

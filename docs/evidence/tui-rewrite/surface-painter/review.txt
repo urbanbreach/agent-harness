@@ -1,0 +1,15 @@
+Independent reviewer: /root/tui_review
+Scope: transcript painter at db0e5b67 plus source.patch.gz.
+
+Approved to commit this slice. No remaining blockers.
+
+- Source hashes and patch match the reviewed CellWidth correction; all 371 artifact hashes verify.
+- Recomputed all 72 performance reports and summaries. Streaming p99 improves 1,098 to 998 microseconds; allocations fall 3.82%. All 14 frozen checks pass.
+- Verified 555 frame/ANSI comparisons, 733 motion captures, 10,788 painter records and six identical PNG pairs. Only the documented render counters differ.
+- Validation logs support 1,666 tests, seven gated PTY checks and quality checks. All six responsive sessions exited and closed their PTYs.
+- Counts and limitations in the evidence README are accurate. Rejected measurements are excluded; sustained runtime measurements and whole-rewrite completion remain open.
+
+Resolved source finding: the first replacement used UnicodeWidthStr and
+undercounted halfwidth dakuten/handakuten. Text and rail clipping now use
+Ratatui CellWidth. The extended existing check failed on the rejected version
+and passed on both the preceding painter and the correction.

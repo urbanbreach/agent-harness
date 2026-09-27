@@ -1,0 +1,43 @@
+{
+  "base": "db0e5b67010ef198874c03569c1f5fd5ab4f41a4",
+  "files": [
+    {
+      "path": "crates/harness-tui/src/ui_transcript.rs",
+      "before_sha256": "d55d5803d0a96848cc4614c00181b17c8570919be2b30714240b7670ef872c1f",
+      "sha256": "5025c52c30890c64e11862b6e0b25a3320661dde369c9cb6910d2e48739e0e37"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_surface.rs",
+      "before_sha256": "a9c3f852fb19e1373a6add036d70dc3d5cdc25f99d5db3834445f8566ed53cb6",
+      "sha256": "37aaef916de23e6faaee8b9e62a68f3e573b812ac3ff8c4a27bcdd73f726b5dd"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_surface/paint_tests.rs",
+      "before_sha256": null,
+      "sha256": "967d79734111c49af60bc10ed31c23368a9510ecb970d613b6798011d5b6851c"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_surface/rows.rs",
+      "before_sha256": null,
+      "sha256": "6784b581202a2c99f0268cf75d5ad496eb3293db7f1c15849c781b48572b0459"
+    }
+  ],
+  "fixtures": [
+    {
+      "path": "crates/harness-tui/tests/rewrite_performance_test.rs",
+      "sha256": "9928404a38cc966814620c26b90332d90500123575a7be9ff909df2bbd03e9d9"
+    },
+    {
+      "path": "crates/harness-tui/tests/support/rewrite_journey.rs",
+      "sha256": "a3e48bb45948409ca6d4e4c9a695f7ba8900920a1d17613cb22b889815473b74"
+    },
+    {
+      "path": "crates/harness-tui/tests/grok_parity_render_test.rs",
+      "sha256": "df82a6a04f148164f3c50b9f92c300578f94e36e00a7fe407aa2cc60f6eed098"
+    },
+    {
+      "path": "crates/harness-tui/tests/support/grok_alignment_recorded.rs",
+      "sha256": "c0a17bc55b7af57f112101bb2e01fcbb45b3fceccc79f84c3db02b2afe8d60fb"
+    }
+  ]
+}
