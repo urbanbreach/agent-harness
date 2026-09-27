@@ -1,7 +1,6 @@
 use crate::dashboard::SelectionKey;
 use crate::dashboard::{DashboardReadModel, DashboardStatus};
 use crate::transcript_blocks::BlockSnapshot;
-use crate::transcript_integration::TranscriptViewModel;
 use crate::transcript_scroll::FollowMode;
 use std::collections::BTreeMap;
 
@@ -90,18 +89,6 @@ impl super::DashboardPeek {
 
     pub fn draft_for(&self, session_id: &SelectionKey) -> Option<&str> {
         self.drafts.get(session_id)
-    }
-
-    pub fn replace_from_view(
-        &mut self,
-        session_id: &SelectionKey,
-        view: &TranscriptViewModel,
-    ) -> Result<super::TailUpdate, super::DashboardPeekError> {
-        let update = self.replace_blocks(session_id, &view.blocks)?;
-        if let Some(layout) = view.layout.clone() {
-            self.set_layout(session_id, layout)?;
-        }
-        Ok(update)
     }
 
     pub fn view(&self) -> Result<DashboardPeekView, super::DashboardPeekError> {

@@ -64,6 +64,7 @@ use harness_core::workspace::WorkspaceEnvironment;
 use harness_core::workspace_hub::WorkspaceHubAvailability;
 use ratatui::layout::Rect;
 
+use self::transcript_outline::TranscriptOutline;
 use crate::attachment_lifecycle::{
     Attachment, AttachmentError, AttachmentIngestor, AttachmentPolicy, CancellationToken,
 };
@@ -92,7 +93,6 @@ use crate::theme_family::{
 };
 use crate::theme_tokens::ViewportId;
 use crate::transcript_identity::{TranscriptFocus, TranscriptScreenMode, TurnId};
-use crate::transcript_integration::{TranscriptComposite, TranscriptViewModel};
 use crate::ui::{
     OperatorSidebarKeyboardTarget, OperatorSidebarKeyboardTargetKind, OperatorSidebarSelection,
     OperatorSidebarSelectionCell, SubagentFooterTarget, TranscriptMouseTarget,
@@ -162,6 +162,8 @@ mod toggles;
 mod tool_call;
 mod tool_output;
 mod transcript_entry;
+mod transcript_export;
+mod transcript_outline;
 mod transcript_state;
 mod transcript_view;
 mod transcript_viewer;
@@ -356,7 +358,8 @@ pub struct AppState {
     dashboard: Option<DashboardIntegration>,
     dashboard_return_focus: Option<Focus>,
     pub(crate) transcript_view: TranscriptViewState,
-    pub(crate) transcript_integration: Option<TranscriptComposite>,
+    pub(crate) transcript_outline: Option<TranscriptOutline>,
+    pub(crate) transcript_viewer: Option<crate::transcript_block_viewer::ViewerState>,
     pub auto_exit_on_finish: bool,
     pub composer: ComposerState,
     pub prompt_stash: PromptStashState,
@@ -676,7 +679,8 @@ impl Default for AppState {
             dashboard: None,
             dashboard_return_focus: None,
             transcript_view: TranscriptViewState::default(),
-            transcript_integration: None,
+            transcript_outline: None,
+            transcript_viewer: None,
             auto_exit_on_finish: false,
             composer: ComposerState::default(),
             prompt_stash: PromptStashState::default(),
@@ -1176,9 +1180,13 @@ impl AppState {
         let mut peek = DashboardPeek::new(8.0).map_err(|error| error.to_string())?;
         peek.sync_dashboard(&model)
             .map_err(|error| error.to_string())?;
-        if let (Some(run_id), Some(view)) = (self.run_id(), self.transcript_view_model()) {
+        if let (Some(run_id), Some(outline)) = (self.run_id(), self.transcript_outline.as_ref()) {
             let key = crate::dashboard::SelectionKey::new(run_id);
-            let _ = peek.replace_from_view(&key, view);
+            if peek.replace_blocks(&key, &self.transcript_blocks()).is_ok() {
+                if let Some(layout) = outline.layout() {
+                    let _ = peek.set_layout(&key, layout);
+                }
+            }
         }
         if let Some(key) = selected.as_ref() {
             peek.select(key).map_err(|error| error.to_string())?;
@@ -1707,7 +1715,7 @@ impl AppState {
             .replace_settled_projection(&events, self.is_inline_child_view());
         self.refresh_todo_items();
         self.resume_live_turn_timing_from_projection();
-        self.sync_transcript_integration(false);
+        self.sync_transcript_state(false);
 
         if self.projection.events.is_empty() {
             self.selected_event_index = 0;
@@ -1748,7 +1756,7 @@ impl AppState {
         self.note_live_fragment_timing(event);
         self.projection.ingest_live_event(event);
         self.sync_live_turn_phase_timing(previous_phase);
-        self.sync_transcript_integration(true);
+        self.sync_transcript_state(true);
         if self.status_dashboard_is_active() {
             self.refresh_status_dashboard();
         }
@@ -1866,7 +1874,7 @@ impl AppState {
         }
 
         self.update_queued_prompt_count();
-        self.sync_transcript_integration(!historical);
+        self.sync_transcript_state(!historical);
         if self.status_dashboard_is_active() {
             self.refresh_status_dashboard();
         }

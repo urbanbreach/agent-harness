@@ -123,54 +123,6 @@ impl TimelineMarker {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TimelineTurn {
-    pub marker: TimelineMarker,
-    pub row: usize,
-    pub height: usize,
-    pub label: String,
-    replay: ReplayTurn,
-}
-
-impl TimelineTurn {
-    pub fn from_replay(
-        replay: ReplayTurn,
-        row: usize,
-        height: usize,
-        status: TimelineStatus,
-        lifecycle_state: LifecycleState,
-    ) -> Self {
-        Self {
-            marker: TimelineMarker::from_replay(replay, status, lifecycle_state),
-            row,
-            height: height.max(1),
-            label: String::new(),
-            replay,
-        }
-    }
-
-    pub fn with_label(mut self, label: impl Into<String>) -> Self {
-        self.label = label.into();
-        self
-    }
-
-    pub const fn replay_turn(&self) -> ReplayTurn {
-        self.replay
-    }
-
-    pub const fn turn_id(&self) -> TurnId {
-        self.marker.turn_id
-    }
-
-    pub fn marker_label(&self) -> &str {
-        if self.label.is_empty() {
-            self.marker.glyph()
-        } else {
-            self.label.as_str()
-        }
-    }
-}
-
 fn state_binding(state: LifecycleState) -> StateColorBinding {
     DESIGN_TOKENS
         .state_colors

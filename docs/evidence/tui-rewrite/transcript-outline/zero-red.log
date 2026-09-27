@@ -1,0 +1,50 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.73s
+────────────
+ Nextest run ID 34a26135-735f-4e06-ade3-d67f9061eb36 with nextest profile: ci
+    Starting 2 tests across 1 binary
+        FAIL [   0.129s] (2/2) harness-tui::transcript_timeline_test timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize
+  stdout ───
+
+    running 1 test
+    test timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize ... FAILED
+
+    failures:
+
+    failures:
+        timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.12s
+
+  stderr ───
+
+    thread 'timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize' (2261460) panicked at crates/harness-tui/tests/transcript_timeline_test.rs:121:5:
+    assertion `left == right` failed: the tail must retain its new failure status while the terminal has no transcript rows
+      left: 3
+     right: 4
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.131s] 2 tests run: 1 passed, 1 failed, 0 skipped
+        FAIL [   0.129s] (2/2) harness-tui::transcript_timeline_test timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize
+  stdout ───
+
+    running 1 test
+    test timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize ... FAILED
+
+    failures:
+
+    failures:
+        timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.12s
+
+  stderr ───
+
+    thread 'timeline_keys_select_failed_streaming_and_adjacent_messages_after_resize' (2261460) panicked at crates/harness-tui/tests/transcript_timeline_test.rs:121:5:
+    assertion `left == right` failed: the tail must retain its new failure status while the terminal has no transcript rows
+      left: 3
+     right: 4
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

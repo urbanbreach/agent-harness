@@ -122,6 +122,7 @@ before changing the implementation.
 | R6 | Setup flush failures can leave enabled modes untracked; shutdown can hide the first error or leave synchronized output open after a partial frame | Track completed keyboard pushes before flushing, arm idempotent mode cleanup before setup, end synchronization, and attempt every cleanup while retaining the first error. |
 | R7 | Selection drops the sticky prompt separator from its screen-row map, so a drag below the prompt selects the following source row | Keep an empty slot for the separator. Verify painted highlight placement, release, and copying after the selected text scrolls offscreen. |
 | R8 | A viewport anchor in a blank gap resolves to a neighboring content row. Repainting can move the viewport without input or trap one-row scrolling at that boundary | Preserve the signed gap distance from the content anchor. Require repeated preparation and paint to preserve position, including a width round trip. |
+| R9 | The margin timeline sums scalar widths, so joined emoji produce different jump offsets from ASCII with the same display width | Measure string display width. A public navigation journey fails on the original and passes on the replacement; its 12 paired post-jump frames remain identical, so this is a numeric geometry correction without a demonstrated visual improvement. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -426,6 +427,40 @@ source tree now contains 176,400 lines, 3.0% below the original 181,882. The old
 composite state engine and lower-level formatters remain during migration. Raw
 samples, source/binary receipts, red/green logs and browser comparisons are in
 [`evidence/tui-rewrite/direct-entries`](evidence/tui-rewrite/direct-entries).
+
+## Transcript outline replacement
+
+The old composite, block/event mirrors, cache/invalidation layers and duplicated
+timeline state are removed. A compact outline retains only identities, markers
+and row geometry. `AppState` owns the viewer; pager and dashboard content is
+materialized when requested. The existing activity projection remains the content
+source. There are no backend or dependency changes.
+
+Independent review caught lost status updates while the terminal height was zero.
+The public navigation journey fails on that regression, passes on the original,
+and passes after the replacement retains and updates its last valid geometry.
+The same journey exposes R9: scalar width sums mismeasure joined emoji. String
+display widths fix the numeric jump offsets; all 12 paired post-jump frames remain
+identical. The pager check passed before the rewrite and retains exact export and
+terminal-restoration assertions.
+
+All 539 frozen checkpoints pass with the same two R8 corrections. Both streaming
+xterm screenshots are byte-identical to the reference, and the real PTY selection
+capture matches the previous candidate and restores terminal and process state.
+The full run passes 1,737 checks and times out one viewer capture during concurrent
+release compilation. That capture passes in 16.8 seconds on its isolated rerun;
+both logs are retained. Seven gated PTY checks, scoped Clippy, workspace check,
+formatting and test-suite gates pass.
+
+Paired release measurements show resize CPU down 63.4%, allocations down 42.1%,
+RSS down 30.4%, and p95/p99 down 43.0%/41.9%. Streaming allocations fall 38.0%,
+but its tail latency barely improves. Typing CPU remains above the reference.
+The frozen whole-rewrite targets are unchanged and still unmet.
+
+The slice removes 3,252 source lines. The source tree now has 173,148 lines,
+4.8% below the original, including inline tests. Whole-history projection and
+lower-level formatters still remain. Evidence and reproducible commands are in
+[`evidence/tui-rewrite/transcript-outline`](evidence/tui-rewrite/transcript-outline).
 
 ## Verification sequence
 

@@ -1,5 +1,5 @@
 use harness_tui::scheduling::DualClock;
-use harness_tui::transcript_identity::{BlockId, ReplayTurn, TranscriptIdentity};
+use harness_tui::transcript_identity::{BlockId, ReplayTurn};
 use harness_tui::transcript_scroll::{
     DragAutoscroll, DragViewport, EasingKind, FollowState, FractionalScroll, LogicalAnchor,
     MotionPreference, ScrollTransition, ScrollbarDrag, ScrollbarGeometry, TranscriptLayout,
@@ -12,20 +12,10 @@ fn assert_close(actual: f64, expected: f64) {
     assert!((actual - expected).abs() < 1e-9);
 }
 
-fn stable_block_ids() -> Result<Vec<BlockId>, Box<dyn std::error::Error>> {
-    let identity = TranscriptIdentity::from_replay([
-        ReplayTurn::event(10, 0, 1),
-        ReplayTurn::event(20, 1, 1),
-        ReplayTurn::event(30, 2, 1),
-        ReplayTurn::event(40, 3, 1),
-        ReplayTurn::event(50, 4, 1),
-        ReplayTurn::event(60, 5, 1),
-    ])?;
-    Ok(identity
-        .turns()
-        .iter()
-        .map(|turn| turn.blocks()[0].id())
-        .collect())
+fn stable_block_ids() -> Vec<BlockId> {
+    (0..6)
+        .map(|index| ReplayTurn::event((index + 1) * 10, index, 1).block_id(0))
+        .collect()
 }
 
 #[test]
@@ -52,7 +42,7 @@ fn fractional_scroll_conserves_signed_distance_for_property_inputs() {
 fn logical_anchor_survives_concurrent_append_fold_and_resize() -> TestResult {
     // arrange
     // Given: replay-derived IDs and a viewport whose visible point is inside block three.
-    let ids = stable_block_ids()?;
+    let ids = stable_block_ids();
     for scenario in 1..=64_u32 {
         let before = TranscriptLayout::from_heights(
             vec![
@@ -178,7 +168,7 @@ fn scrollbar_drag_keeps_the_pointer_grab_anchor() -> TestResult {
     // arrange
     // Given: a scroll track and a fractional scroll offset.
     let geometry = ScrollbarGeometry::new(0.0, 100.0, 1_000.0, 100.0)?;
-    let ids = stable_block_ids()?;
+    let ids = stable_block_ids();
     let layout = TranscriptLayout::from_heights(vec![(ids[0], 8.0), (ids[1], 8.0)], 4.0)?;
     let logical_anchor = LogicalAnchor::capture(&layout, 3.0)?;
     let offset = 250.5;

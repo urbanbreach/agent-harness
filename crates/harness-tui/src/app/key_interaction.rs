@@ -1354,7 +1354,7 @@ impl AppState {
     fn execute_message_navigation_action(&mut self, action: Action) {
         match action {
             Action::FirstMessage | Action::MoveBufferStart => {
-                if self.transcript_view_model().is_some() {
+                if self.transcript_outline.is_some() {
                     let _ = self.select_transcript_turn_at(0);
                 } else if !self.activities.is_empty() {
                     self.transcript_view.selected_activity_index = 0;
@@ -1365,8 +1365,9 @@ impl AppState {
             }
             Action::LastMessage | Action::MoveBufferEnd => {
                 if let Some(last) = self
-                    .transcript_view_model()
-                    .map(|view| view.turns.len().saturating_sub(1))
+                    .transcript_outline
+                    .as_ref()
+                    .map(|_| self.activities.len().saturating_sub(1))
                 {
                     let _ = self.select_transcript_turn_at(last);
                 } else if !self.activities.is_empty() {
@@ -1378,7 +1379,7 @@ impl AppState {
                 }
             }
             Action::NextMessage => {
-                if self.transcript_view_model().is_some() {
+                if self.transcript_outline.is_some() {
                     let next = self
                         .transcript_view
                         .selected_activity_index
@@ -1395,7 +1396,7 @@ impl AppState {
                 }
             }
             Action::PreviousMessage => {
-                if self.transcript_view_model().is_some() {
+                if self.transcript_outline.is_some() {
                     let previous = self
                         .transcript_view
                         .selected_activity_index
@@ -2042,35 +2043,6 @@ mod tests {
     fn response_keys_no_op_without_completed_responses() {
         // arrange
         let mut app = AppState::new_live(None, false, None);
-        let mut composite = crate::transcript_integration::TranscriptComposite::new(
-            ratatui::layout::Rect::new(0, 0, 80, 24),
-        )
-        .unwrap_or_abort();
-        let replay = crate::transcript_identity::ReplayTurn::event(1, 0, 1);
-        composite
-            .apply(crate::transcript_integration::TranscriptEvent::TurnStarted(
-                crate::transcript_integration::TurnSeed::new(
-                    replay,
-                    crate::transcript_timeline::TimelineStatus::Streaming,
-                    crate::theme_tokens::LifecycleState::Thinking,
-                ),
-            ))
-            .unwrap_or_abort();
-        composite
-            .apply(
-                crate::transcript_integration::TranscriptEvent::BlockCreated(
-                    crate::transcript_integration::BlockSeed {
-                        id: replay.block_id(0),
-                        turn_id: replay.turn_id(),
-                        kind: crate::transcript_blocks::BlockKind::Assistant,
-                        lifecycle: crate::transcript_blocks::BlockLifecycle::Streaming,
-                        content: "streaming response".to_string(),
-                        raw: None,
-                    },
-                ),
-            )
-            .unwrap_or_abort();
-        app.transcript_integration = Some(composite);
         app.focus = Focus::Details;
         app.composer.vim_mode = true;
         app.transcript_view.record_measured_max_scroll(10);
@@ -2094,11 +2066,7 @@ mod tests {
         // assert
         assert!(next_handled);
         assert!(previous_handled);
-        assert_eq!(
-            app.transcript_view_model()
-                .and_then(|view| view.response_position),
-            None
-        );
+        assert_eq!(app.transcript_view.response_position, None);
         assert_eq!(app.transcript_view.measured_viewport(), before_viewport);
         assert_eq!(app.transcript_following(), before_following);
         assert_eq!(app.transcript_page_flip_state(), before_page_flip);

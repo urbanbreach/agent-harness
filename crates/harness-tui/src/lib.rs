@@ -129,11 +129,7 @@ pub mod transcript_blocks;
     reason = "task 22 requires transcript_identity/mod.rs as the public facade"
 )]
 pub mod transcript_identity;
-#[expect(
-    clippy::mod_module_files,
-    reason = "task 29 requires transcript_integration/mod.rs as the public facade"
-)]
-pub mod transcript_integration;
+
 #[expect(
     clippy::mod_module_files,
     reason = "task 26 requires transcript_pager/mod.rs as the public facade"
@@ -145,6 +141,10 @@ pub mod transcript_pager;
 )]
 pub mod transcript_scroll;
 pub mod transcript_selection;
+#[expect(
+    clippy::mod_module_files,
+    reason = "timeline appearance and key bindings share a public facade"
+)]
 pub mod transcript_timeline;
 pub mod ui;
 pub mod viewport;

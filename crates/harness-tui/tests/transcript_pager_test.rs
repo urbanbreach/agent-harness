@@ -1,6 +1,13 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+#[allow(
+    dead_code,
+    reason = "shared journey fixture also covers other workflows"
+)]
+#[path = "support/rewrite_journey.rs"]
+mod journey;
+
 use harness_tui::transcript_pager::{
     run_pager, LifecycleEvent, PagerCommand, PagerError, PagerExit, PagerStdio, TerminalControl,
     TerminalState, TranscriptSnapshot,
@@ -157,21 +164,33 @@ fn pager_success_suspends_launches_and_restores_in_order() {
     // arrange
     // Given: an active terminal and a pager that exits successfully.
     let mut terminal = FakeTerminal::new();
-    let snapshot = TranscriptSnapshot::from_text("hello");
+    let mut scene = journey::Journey::new(false);
+    scene.start("turn", "Inspect the source").expect("start");
+    scene
+        .finish("turn", "Recorded answer 川山")
+        .expect("finish");
+    let before = scene.app.transcript_screen_mode();
 
     // When: the external pager lifecycle runs.
-    let exit = run_pager(
-        &snapshot,
-        &command("cat >/dev/null"),
-        PagerStdio::capture(),
-        &mut terminal,
-    )
-    .unwrap_or_else(|error| panic!("pager should succeed: {error}"));
+    let exit = scene
+        .app
+        .run_transcript_pager(&command("cat"), PagerStdio::capture(), &mut terminal)
+        .unwrap_or_else(|error| panic!("pager should succeed: {error}"));
 
     // act
     // Then: exit and terminal operations are observable and ordered.
     // assert
-    assert_eq!(exit, PagerExit::code(0, Vec::new(), Vec::new()));
+    assert_eq!(
+        exit,
+        PagerExit::code(
+            0,
+            "user\nInspect the source\nassistant\nRecorded answer 川山\n"
+                .as_bytes()
+                .to_vec(),
+            Vec::new()
+        )
+    );
+    assert_eq!(scene.app.transcript_screen_mode(), before);
     assert_eq!(terminal.event_log(), expected_restore_order());
     assert_eq!(terminal.state, TerminalState::active(120, 40));
 }

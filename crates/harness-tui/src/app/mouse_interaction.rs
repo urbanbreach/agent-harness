@@ -580,8 +580,8 @@ impl AppState {
         let transcript_area = crate::layout::FrameLayoutPlan::for_app(self, area)
             .transcript
             .unwrap_or(area);
-        if let Some(composite) = self.transcript_integration.as_mut() {
-            let _ = composite.resize(transcript_area);
+        if let Some(outline) = self.transcript_outline.as_mut() {
+            outline.update(&self.projection.activities, transcript_area, usize::MAX);
         }
         self.resize_transcript_viewer(area);
         crate::ui::prepare_transcript(self, area);
