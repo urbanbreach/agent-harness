@@ -344,7 +344,8 @@ impl Capture {
 
 include!("tool_order_capture/background_notification_test.rs");
 
-fn render(app: &AppState, width: u16, height: u16) -> Result<Buffer> {
+fn render(app: &mut AppState, width: u16, height: u16) -> Result<Buffer> {
+    app.set_frame_area(Rect::new(0, 0, width, height));
     let mut terminal = Terminal::new(TestBackend::new(width, height))?;
     terminal.draw(|frame| render_app(frame, app))?;
     Ok(terminal.backend().buffer().clone())
@@ -358,7 +359,7 @@ fn assistant_timestamp_keeps_a_gutter_at_the_wrap_boundary() -> Result<()> {
     state.live("provider_text_delta", json!({"request_id":"provider", "delta":
         "I’ll inspect the first transcript section before continuing with the ordered delay and projection read."}))?;
     for width in [80, 120] {
-        let buffer = render(&state.app, width, 40)?;
+        let buffer = render(&mut state.app, width, 40)?;
         let rows = buffer
             .content
             .chunks(usize::from(width))
@@ -415,7 +416,7 @@ fn reasoning_headers_and_answer_rows_stay_in_place_across_response_commits() -> 
                 state.live("provider_reasoning_delta", json!({"request_id":request, "delta":delta}))?;
                 state.action(&json!({"op":"advance", "ms":100}), &fixture)?;
             }
-            let thinking = render(&state.app, width, 80)?;
+            let thinking = render(&mut state.app, width, 80)?;
             assert!(thinking.content.chunks(usize::from(width)).any(|row|
                 row.iter().map(|cell| cell.symbol()).collect::<String>().contains("Thinking…")),
                 "each response must show its own live reasoning header");
@@ -435,7 +436,7 @@ fn reasoning_headers_and_answer_rows_stay_in_place_across_response_commits() -> 
                         "parts":parts, "tool_call_count":usize::from(request == "provider")}))?,
                     _ => {}
                 }
-                let buffer = render(&state.app, width, 80)?;
+                let buffer = render(&mut state.app, width, 80)?;
                 let rows = buffer.content.chunks(usize::from(width))
                     .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>()).collect::<Vec<_>>();
                 let durations = rows.iter().filter_map(|row| row.split_once("Thought for ")
@@ -463,7 +464,7 @@ fn reasoning_headers_and_answer_rows_stay_in_place_across_response_commits() -> 
                 state.event("task_completed", json!({"task_id":"turn-task", "result_summary":"Complete",
                     "result_digest":"synthetic", "metadata":{"task_scope":"agent_turn", "outcome":"completed"}}))?;
             }
-            let buffer = render(&state.app, width, 26)?;
+            let buffer = render(&mut state.app, width, 26)?;
             let rows = buffer
                 .content
                 .chunks(usize::from(width))
@@ -537,10 +538,10 @@ fn production_ordering_capture() -> Result<()> {
                     action["name"].as_str().ok_or("snapshot name")?,
                     state.now_ms
                 );
-                let buffer = render(&state.app, width, height)?;
+                let buffer = render(&mut state.app, width, height)?;
                 assert_eq!(
                     buffer,
-                    render(&state.app, width, height)?,
+                    render(&mut state.app, width, height)?,
                     "nondeterministic {name}"
                 );
                 assert_eq!(state.app.canonical_projection_error(), None);

@@ -337,32 +337,32 @@ pub(super) fn pointer_drag_suppresses_stale_hover_feedback() {
 pub(super) fn transcript_navigation_keys_match_scroll_expectations() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::Details;
-    app.transcript_view.last_transcript_max_scroll.set(42);
-    app.transcript_view.last_transcript_viewport_height.set(12);
+    app.transcript_view.record_measured_max_scroll(42);
+    app.transcript_view.last_transcript_viewport_height = 12;
 
     app.handle_key(key(KeyCode::PageUp));
-    assert_eq!(app.transcript_view.transcript_scroll, 10);
-    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 10);
+    assert!(!app.transcript_view.viewport.is_following());
 
     app.handle_key(key(KeyCode::PageDown));
-    assert_eq!(app.transcript_view.transcript_scroll, 0);
-    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 0);
+    assert!(!app.transcript_view.viewport.is_following());
 
     app.handle_key(key(KeyCode::PageDown));
-    assert_eq!(app.transcript_view.transcript_scroll, 0);
-    assert!(app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 0);
+    assert!(app.transcript_view.viewport.is_following());
 
     app.handle_key(key(KeyCode::Home));
-    assert_eq!(app.transcript_view.transcript_scroll, 42);
-    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 42);
+    assert!(!app.transcript_view.viewport.is_following());
 
     app.handle_key(key(KeyCode::PageDown));
-    assert_eq!(app.transcript_view.transcript_scroll, 32);
-    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 32);
+    assert!(!app.transcript_view.viewport.is_following());
 
     app.handle_key(key(KeyCode::End));
-    assert_eq!(app.transcript_view.transcript_scroll, 0);
-    assert!(app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 0);
+    assert!(app.transcript_view.viewport.is_following());
 }
 
 fn detached_resize_app() -> AppState {
@@ -402,7 +402,7 @@ fn detached_resize_app() -> AppState {
     let compact = Rect::new(0, 0, 80, 20);
     app.set_frame_area(compact);
     let _ = render_text(&app, compact.width, compact.height);
-    let max_scroll = app.transcript_view.last_transcript_max_scroll.get();
+    let max_scroll = app.transcript_view.viewport.max_scroll();
     assert!(max_scroll > 5, "fixture must provide detached scroll range");
     // Keep the real prompt's page-flip reserve while scrolling away. A pin to
     // nonexistent sequence 0 is consumed at the unpadded tail on the next paint.
@@ -425,15 +425,15 @@ pub(super) fn debounced_resize_preserves_detached_wide_glyph_display_column_anch
     let initial = Rect::new(0, 0, 64, 14);
     app.set_frame_area(initial);
     let _ = render_text(&app, initial.width, initial.height);
-    let max_scroll = app.transcript_view.last_transcript_max_scroll.get();
+    let max_scroll = app.transcript_view.viewport.max_scroll();
     app.transcript_view.set_measured_viewport(
-        super::super::transcript_viewport::MeasuredTranscriptViewport::detached(6, max_scroll),
+        super::super::transcript_viewport::TranscriptViewport::detached(6, max_scroll),
     );
+    app.set_frame_area(initial);
     let _ = render_text(&app, initial.width, initial.height);
     let anchor_before = app
         .transcript_view
         .measured_anchor
-        .get()
         .expect("detached long line must have a measured content anchor");
     let mut ingress = crate::input::RuntimeInputIngress::default();
 
@@ -474,7 +474,7 @@ pub(super) fn debounced_resize_preserves_detached_wide_glyph_display_column_anch
 
     // Then: measured reflow retains the exact logical line and source display column.
     assert_eq!(
-        app.transcript_view.measured_anchor.get(),
+        app.transcript_view.measured_anchor,
         Some(anchor_before)
     );
 }
@@ -559,7 +559,7 @@ pub(super) fn shift_right_left_on_details_focus_navigates_user_turns() {
 
     app.focus = Focus::Details;
     app.transcript_view.selected_activity_index = 0;
-    app.transcript_view.follow_mode = false;
+    app.transcript_view.set_following(false);
 
     app.handle_key(key_with_modifiers(KeyCode::Right, KeyModifiers::SHIFT));
     assert_eq!(
@@ -581,22 +581,22 @@ pub(super) fn page_up_down_with_prompt_focus_scrolls_transcript_without_clearing
     app.focus = Focus::Prompt;
     app.composer.prompt_buffer = "draft text".to_string();
     app.composer.prompt_cursor = 10;
-    app.transcript_view.last_transcript_max_scroll.set(42);
-    app.transcript_view.last_transcript_viewport_height.set(12);
+    app.transcript_view.record_measured_max_scroll(42);
+    app.transcript_view.last_transcript_viewport_height = 12;
 
     app.handle_key(key(KeyCode::PageUp));
-    assert_eq!(app.transcript_view.transcript_scroll, 10);
-    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 10);
+    assert!(!app.transcript_view.viewport.is_following());
     assert_eq!(app.focus, Focus::Prompt);
     assert_eq!(app.composer.prompt_buffer, "draft text");
     assert_eq!(app.composer.prompt_cursor, 10);
 
     app.handle_key(key(KeyCode::PageDown));
-    assert_eq!(app.transcript_view.transcript_scroll, 0);
-    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 0);
+    assert!(!app.transcript_view.viewport.is_following());
 
     app.handle_key(key(KeyCode::PageDown));
-    assert!(app.transcript_view.follow_mode);
+    assert!(app.transcript_view.viewport.is_following());
     assert_eq!(app.focus, Focus::Prompt);
     assert_eq!(app.composer.prompt_buffer, "draft text");
     assert_eq!(app.composer.prompt_cursor, 10);
@@ -607,18 +607,18 @@ pub(super) fn ctrl_up_down_with_prompt_focus_scrolls_transcript_by_one_row() {
     app.focus = Focus::Prompt;
     app.composer.prompt_buffer = "draft text".to_string();
     app.composer.prompt_cursor = 10;
-    app.transcript_view.last_transcript_max_scroll.set(42);
+    app.transcript_view.record_measured_max_scroll(42);
 
     app.handle_key(key_with_modifiers(KeyCode::Up, KeyModifiers::CONTROL));
-    assert_eq!(app.transcript_view.transcript_scroll, 1);
-    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 1);
+    assert!(!app.transcript_view.viewport.is_following());
     assert_eq!(app.composer.prompt_buffer, "draft text");
 
     app.handle_key(key_with_modifiers(KeyCode::Up, KeyModifiers::CONTROL));
-    assert_eq!(app.transcript_view.transcript_scroll, 2);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 2);
 
     app.handle_key(key_with_modifiers(KeyCode::Down, KeyModifiers::CONTROL));
-    assert_eq!(app.transcript_view.transcript_scroll, 1);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 1);
     assert_eq!(app.focus, Focus::Prompt);
 }
 
@@ -702,7 +702,7 @@ pub(super) fn completed_stream_more_below_affordance_is_actionable() {
 
 pub(super) fn detached_measured_viewport_has_no_stale_timeline_targets() {
     // Given: a measured transcript viewport detached without a page-flip override.
-    let app = detached_resize_app();
+    let mut app = detached_resize_app();
     let area = Rect::new(0, 0, 80, 20);
     app.cancel_transcript_page_flip();
     assert!(!app.transcript_following());

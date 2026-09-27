@@ -95,7 +95,7 @@ pub(super) fn live_submitted_event_merges_duplicate_local_echo_before_rendering_
             "Ack.",
         ));
     app.transcript_view.selected_activity_index = 1;
-    app.transcript_view.follow_mode = false;
+    app.transcript_view.set_following(false);
 
     app.ingest_event(envelope(
         1,
@@ -322,8 +322,8 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
         ),
     ));
     // Inverted scroll: MAX shows the top of the transcript so wrapped first lines stay visible.
-    app.transcript_view.follow_mode = false;
-    app.transcript_view.transcript_scroll = usize::MAX;
+    app.transcript_view.set_following(false);
+    app.transcript_view.set_offset(usize::MAX);
 
     let rendered = render_live_lines(&app, 60, 36);
     let lines = rendered.lines().collect::<Vec<_>>();

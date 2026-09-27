@@ -64,8 +64,9 @@ fn question_mouse_click_preserves_shell_state_and_emits_only_answer_intent() {
     app.focus = Focus::List;
     app.composer.prompt_buffer = "preserved question draft".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
-    app.transcript_view.transcript_scroll = 4;
-    app.transcript_view.follow_mode = false;
+    app.record_transcript_max_scroll(42);
+    app.transcript_view.set_offset(4);
+    app.transcript_view.set_following(false);
     let composer_before = FrameLayoutPlan::for_app(&app, frame_area).composer;
     app.ingest_event(three_choice_question_event("question_mouse_select"));
     let option_area = app
@@ -130,8 +131,8 @@ fn question_mouse_click_preserves_shell_state_and_emits_only_answer_intent() {
     );
     assert_eq!(app.focus, Focus::Prompt);
     assert_eq!(app.composer.prompt_buffer, "preserved question draft");
-    assert_eq!(app.transcript_view.transcript_scroll, 4);
-    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 4);
+    assert!(!app.transcript_view.viewport.is_following());
     let composer_after = FrameLayoutPlan::for_app(&app, frame_area).composer;
     assert_eq!(composer_after.map(|area| area.y), Some(frame_area.bottom()));
     assert_eq!(composer_after.map(|area| area.height), Some(0));
@@ -573,8 +574,9 @@ fn permission_decision_waits_for_resolution_then_resumes_and_settles_tool() {
     app.focus = Focus::List;
     app.composer.prompt_buffer = "stable permission draft".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
-    app.transcript_view.transcript_scroll = 3;
-    app.transcript_view.follow_mode = false;
+    app.record_transcript_max_scroll(42);
+    app.transcript_view.set_offset(3);
+    app.transcript_view.set_following(false);
     let composer_before = FrameLayoutPlan::for_app(&app, frame_area).composer;
     app.ingest_event(envelope(
         1,
@@ -678,8 +680,8 @@ fn permission_decision_waits_for_resolution_then_resumes_and_settles_tool() {
     );
     assert_eq!(app.focus, Focus::List);
     assert_eq!(app.composer.prompt_buffer, "stable permission draft");
-    assert_eq!(app.transcript_view.transcript_scroll, 3);
-    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 3);
+    assert!(!app.transcript_view.viewport.is_following());
     assert_eq!(
         FrameLayoutPlan::for_app(&app, frame_area).composer,
         composer_before

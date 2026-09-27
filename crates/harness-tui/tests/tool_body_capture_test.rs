@@ -171,7 +171,8 @@ fn payload(config: &Value, case: &Value, alias: &str) -> Result<(Value, String, 
     };
     Ok((args, text, result))
 }
-fn render(app: &AppState, width: u16, height: u16) -> Result<Buffer> {
+fn render(app: &mut AppState, width: u16, height: u16) -> Result<Buffer> {
+    app.set_frame_area(Rect::new(0, 0, width, height));
     let mut terminal = Terminal::new(TestBackend::new(width, height))?;
     terminal.draw(|frame| render_app(frame, app))?;
     Ok(terminal.backend().buffer().clone())
@@ -274,7 +275,7 @@ fn capture(
     let terminal = state.starts_with("success") || state.starts_with("failure");
     if terminal {
         // Establish the running frame, then settle at an exact age without sleeping.
-        render(&app, width, height)?;
+        render(&mut app, width, height)?;
         let failed = state.starts_with("failure");
         ingest(
             &mut app,
@@ -368,12 +369,12 @@ fn capture(
         app.focus = Focus::Prompt;
     }
     if width == 80 {
-        render(&app, 120, height)?;
+        render(&mut app, 120, height)?;
     }
-    let buffer = render(&app, width, height)?;
+    let buffer = render(&mut app, width, height)?;
     assert_eq!(
         buffer,
-        render(&app, width, height)?,
+        render(&mut app, width, height)?,
         "same exact clock must produce identical cells"
     );
     assert_eq!(app.canonical_projection_error(), None);

@@ -339,7 +339,7 @@ impl AppState {
         self.transcript_view.reset_entry_navigation();
         self.prompt_history_picker = Default::default();
         self.queued_prompt_navigation = None;
-        self.transcript_view.follow_mode = true;
+        self.transcript_view.set_following(true);
         self.active_tab = Tab::Run;
         self.live_details_drawer_open = false;
         self.secondary_surfaces.close_status_dialog();
@@ -347,7 +347,7 @@ impl AppState {
         self.startup_launcher_action = StartupLauncherAction::NewSession;
         self.status_banner = None;
         self.details_scroll = 0;
-        self.transcript_view.transcript_scroll = 0;
+        self.transcript_view.set_offset(0);
         self.composer.prompt_history_index = None;
         self.composer.prompt_history_draft = None;
         self.replay_mode = false;
@@ -1038,9 +1038,9 @@ impl AppState {
         self.transcript_view.reset_entry_navigation();
         self.prompt_history_picker = Default::default();
         self.queued_prompt_navigation = None;
-        self.transcript_view.follow_mode = true;
+        self.transcript_view.set_following(true);
         self.details_scroll = 0;
-        self.transcript_view.transcript_scroll = 0;
+        self.transcript_view.set_offset(0);
         self.status_banner = None;
         self.dismissed_permissions.clear();
         self.submitted_permission_id = None;

@@ -1,0 +1,82 @@
+[
+  {
+    "path": "browser.json.gz",
+    "bytes": 7470,
+    "sha256": "9cb7a8fdcbd47fb3a8a9a07904fed79b9c1ac5d7aaf5cbe8e632242b395faa8e"
+  },
+  {
+    "path": "browser.log",
+    "bytes": 540,
+    "sha256": "e124e9b8d7be7c629a0c8063b26f6bf27c6e427c23b03e203d9c92651b9dc2d4"
+  },
+  {
+    "path": "click-burst.png",
+    "bytes": 30863,
+    "sha256": "61b517666e4405f2b3eecd9fc3641ea423eb908d060f55f9bb5742110f2328ef"
+  },
+  {
+    "path": "clippy.log",
+    "bytes": 167,
+    "sha256": "57308d47e9c41b8950381d4b362ae00ce6a743dd9d002dd16eda9bece4f024e9"
+  },
+  {
+    "path": "final.log",
+    "bytes": 7372,
+    "sha256": "06c58eae8ec05e89f8c7559932f26a312de8ecbeafdce7b04b14597d16fbb679"
+  },
+  {
+    "path": "format.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "gates.log",
+    "bytes": 38,
+    "sha256": "9dbaeda37da424493a0057a1d54b636bc8c9da7e77a14322d41d4e63b18196d9"
+  },
+  {
+    "path": "oracle.log",
+    "bytes": 1219,
+    "sha256": "e3db905d6065c5ff57b0371a4a6477a16874bb66354fefc7316412fd13c1ff2e"
+  },
+  {
+    "path": "perf.log.gz",
+    "bytes": 1956,
+    "sha256": "26f336a0121028c4f66809028cc7c9da948362c856af88871d6c98f8df41d476"
+  },
+  {
+    "path": "pty.log",
+    "bytes": 8961,
+    "sha256": "2a0160cd0e7e28046ad9138dcfdcf5fbafdeb45bb8ff38e99d3b91a865c56322"
+  },
+  {
+    "path": "red.log",
+    "bytes": 1981,
+    "sha256": "e09c488c0931649e6ea2e40e3d1074cfcf58f06d8dc294cda0caad2df03c81b0"
+  },
+  {
+    "path": "review.txt",
+    "bytes": 295,
+    "sha256": "4d972f4c44c446b661c82a3ebaf669f51eb3d721b8064ce3d596bbc440beed32"
+  },
+  {
+    "path": "selection.log",
+    "bytes": 513,
+    "sha256": "770f4000bd68e3df41a09da10f46efbc71b79c7806f4952cd98f1aebda17cd36"
+  },
+  {
+    "path": "stream.json.gz",
+    "bytes": 1164,
+    "sha256": "06abe6daa705b677b6a7ecba3c0f9a4b9f965f7c35ad2b3b344eeac98a5f747a"
+  },
+  {
+    "path": "terminal.ansi.gz",
+    "bytes": 2220,
+    "sha256": "064469323d799c59ed85299aa5f60ac3c22fb3d2941b8345c2b6028cf3f7c2c2"
+  },
+  {
+    "path": "workspace.log",
+    "bytes": 253,
+    "sha256": "14e409e17649efa04f6120c21e229479f83b28a69706be71a6fd85f4a02acb71"
+  }
+]

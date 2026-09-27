@@ -128,8 +128,9 @@ pub(super) fn overlay_wheel_routing_preserved() {
     let frame_area = ratatui::layout::Rect::new(0, 0, 140, 40);
     let mut palette_overlay = app::AppState::new_live(None, false, None);
     palette_overlay.details_scroll = 6;
-    palette_overlay.transcript_view.transcript_scroll = 4;
-    palette_overlay.transcript_view.follow_mode = false;
+    palette_overlay.record_transcript_max_scroll(42);
+    palette_overlay.transcript_view.set_offset(4);
+    palette_overlay.transcript_view.set_following(false);
     palette_overlay.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
@@ -162,13 +163,20 @@ pub(super) fn overlay_wheel_routing_preserved() {
 
     assert!(palette_overlay.palette_visible);
     assert_eq!(palette_overlay.details_scroll, 6);
-    assert_eq!(palette_overlay.transcript_view.transcript_scroll, 4);
-    assert!(!palette_overlay.transcript_view.follow_mode);
+    assert_eq!(
+        palette_overlay
+            .transcript_view
+            .viewport
+            .offset_from_bottom(),
+        4
+    );
+    assert!(!palette_overlay.transcript_view.viewport.is_following());
 
     let mut permission_overlay = app::AppState::new_live(None, false, None);
     permission_overlay.details_scroll = 8;
-    permission_overlay.transcript_view.transcript_scroll = 3;
-    permission_overlay.transcript_view.follow_mode = false;
+    permission_overlay.record_transcript_max_scroll(42);
+    permission_overlay.transcript_view.set_offset(3);
+    permission_overlay.transcript_view.set_following(false);
     permission_overlay.ingest_event(permission_requested_event(
         1,
         "perm_overlay_wheel",
@@ -202,8 +210,14 @@ pub(super) fn overlay_wheel_routing_preserved() {
 
     assert!(permission_overlay.active_permission().is_some());
     assert_eq!(permission_overlay.details_scroll, 8);
-    assert_eq!(permission_overlay.transcript_view.transcript_scroll, 3);
-    assert!(!permission_overlay.transcript_view.follow_mode);
+    assert_eq!(
+        permission_overlay
+            .transcript_view
+            .viewport
+            .offset_from_bottom(),
+        3
+    );
+    assert!(!permission_overlay.transcript_view.viewport.is_following());
 }
 
 pub(super) fn replay_secondary_surfaces_remain_reachable_after_live_shell_refactor() {

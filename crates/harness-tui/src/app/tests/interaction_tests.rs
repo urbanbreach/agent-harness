@@ -87,7 +87,8 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
         }),
     ));
 
-    app.transcript_view.follow_mode = false;
+    app.record_transcript_max_scroll(42);
+    app.transcript_view.set_following(false);
     app.focus = Focus::Details;
     app.transcript_view.selected_activity_index = 0;
     app.details_scroll = 7;
@@ -96,7 +97,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
     assert!(app.details_drawer_open());
     assert_eq!(app.active_tab, Tab::Run);
     assert_eq!(app.focus, Focus::Details);
-    assert!(!app.transcript_view.follow_mode);
+    assert!(!app.transcript_view.viewport.is_following());
     assert_eq!(app.transcript_view.selected_activity_index, 0);
     assert_eq!(app.details_scroll, 7);
 
@@ -104,7 +105,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
     assert!(!app.details_drawer_open());
     assert_eq!(app.active_tab, Tab::Run);
     assert_eq!(app.focus, Focus::Details);
-    assert!(!app.transcript_view.follow_mode);
+    assert!(!app.transcript_view.viewport.is_following());
     assert_eq!(app.transcript_view.selected_activity_index, 0);
     assert_eq!(app.details_scroll, 7);
 }
@@ -112,7 +113,7 @@ pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
 pub(super) fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::Prompt;
-    app.transcript_view.last_transcript_max_scroll.set(42);
+    app.transcript_view.record_measured_max_scroll(42);
 
     app.handle_mouse(
         MouseEvent {
@@ -126,8 +127,8 @@ pub(super) fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
         None,
         None,
     );
-    assert!(!app.transcript_view.follow_mode);
-    assert_eq!(app.transcript_view.transcript_scroll, 3);
+    assert!(!app.transcript_view.viewport.is_following());
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 3);
     assert_eq!(app.focus, Focus::Prompt);
 
     app.handle_mouse(
@@ -142,8 +143,8 @@ pub(super) fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
         None,
         None,
     );
-    assert_eq!(app.transcript_view.transcript_scroll, 0);
-    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 0);
+    assert!(!app.transcript_view.viewport.is_following());
 
     app.handle_mouse(
         MouseEvent {
@@ -157,7 +158,7 @@ pub(super) fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
         None,
         None,
     );
-    assert!(app.transcript_view.follow_mode);
+    assert!(app.transcript_view.viewport.is_following());
     assert_eq!(app.focus, Focus::Prompt);
 }
 

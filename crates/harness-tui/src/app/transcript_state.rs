@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 use super::session_projection::ProjectionDelta;
 #[cfg(test)]
 use super::transcript_cache::TranscriptRenderCache;
-use super::transcript_viewport::MeasuredTranscriptViewport;
+use super::transcript_viewport::TranscriptViewport;
 use super::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,7 +151,7 @@ impl AppState {
     }
 
     pub fn transcript_following(&self) -> bool {
-        if self.transcript_view.page_flip.get().scroll_top().is_some() {
+        if self.transcript_view.page_flip.scroll_top().is_some() {
             return false;
         }
         self.transcript_view.measured_viewport().is_following()
@@ -173,35 +173,33 @@ impl AppState {
     }
 
     pub(in crate::app) fn begin_transcript_page_flip(&mut self, activity_first_seq: u64) {
-        let current = self.transcript_view.page_flip.get();
+        let current = self.transcript_view.page_flip;
         let next = current.begin(activity_first_seq);
         if next == current {
             return;
         }
         self.set_transcript_following(true);
-        self.transcript_view.page_flip.set(next);
+        self.transcript_view.page_flip = next;
     }
 
     pub(crate) fn transcript_page_flip_preserving(&self) -> bool {
-        self.transcript_view.page_flip.get().is_preserving()
+        self.transcript_view.page_flip.is_preserving()
     }
 
     pub(crate) fn transcript_page_flip_state(&self) -> PageFlipState {
-        self.transcript_view.page_flip.get()
+        self.transcript_view.page_flip
     }
 
     pub(crate) fn transcript_page_flip_scroll_top(&self) -> Option<usize> {
-        self.transcript_view.page_flip.get().scroll_top()
+        self.transcript_view.page_flip.scroll_top()
     }
 
-    pub(crate) fn set_transcript_page_flip_state(&self, state: PageFlipState) {
-        self.transcript_view.page_flip.set(state);
+    pub(crate) fn set_transcript_page_flip_state(&mut self, state: PageFlipState) {
+        self.transcript_view.page_flip = state;
     }
 
-    pub(in crate::app) fn cancel_transcript_page_flip(&self) {
-        self.transcript_view
-            .page_flip
-            .set(self.transcript_view.page_flip.get().cancel());
+    pub(in crate::app) fn cancel_transcript_page_flip(&mut self) {
+        self.transcript_view.page_flip = self.transcript_view.page_flip.cancel();
     }
 
     pub fn select_transcript_turn_at(&mut self, index: usize) -> bool {
@@ -326,9 +324,9 @@ impl AppState {
                 self.transcript_view.selected_activity_index = index;
             }
         }
-        let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
+        let max_scroll = self.transcript_view.viewport.max_scroll();
         self.transcript_view
-            .set_measured_viewport(MeasuredTranscriptViewport::detached(
+            .set_measured_viewport(TranscriptViewport::detached(
                 snapshot.scroll_top,
                 max_scroll,
             ));
@@ -617,10 +615,8 @@ impl AppState {
             .finish_elapsed(tool_call_id, self.now())
     }
 
-    pub(crate) fn record_visible_running_tool_motion(&self, visible: bool) {
-        self.transcript_view
-            .visible_running_tool_motion
-            .set(visible);
+    pub(crate) fn record_visible_running_tool_motion(&mut self, visible: bool) {
+        self.transcript_view.visible_running_tool_motion = visible;
     }
 
     pub(crate) fn active_turn_tool_motion_demand(&self) -> bool {
@@ -649,7 +645,7 @@ impl AppState {
         super::transcript_view::active_turn_motion_demand(
             has_active_tool,
             has_running_tool,
-            self.transcript_view.visible_running_tool_motion.get(),
+            self.transcript_view.visible_running_tool_motion,
         )
     }
 
@@ -1206,7 +1202,7 @@ impl AppState {
             return false;
         }
 
-        let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
+        let max_scroll = self.transcript_view.viewport.max_scroll();
         let current_top = self
             .transcript_page_flip_scroll_top()
             .unwrap_or_else(|| max_scroll.saturating_sub(self.transcript_scroll_offset()));
@@ -1242,13 +1238,11 @@ impl AppState {
 
     pub(in crate::app) fn scroll_transcript_up(&mut self, amount: u16) {
         if let Some(scroll_top) = self.transcript_page_flip_scroll_top() {
-            let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
-            let next = MeasuredTranscriptViewport::detached(scroll_top, max_scroll)
+            let max_scroll = self.transcript_view.viewport.max_scroll();
+            let next = TranscriptViewport::detached(scroll_top, max_scroll)
                 .scroll_up(usize::from(amount.max(1)));
             self.transcript_view.set_measured_viewport(next);
-            self.transcript_view
-                .page_flip
-                .set(self.transcript_view.page_flip.get().detach_at(next.top()));
+            self.transcript_view.page_flip = self.transcript_view.page_flip.detach_at(next.top());
             return;
         }
         self.cancel_transcript_page_flip();
@@ -1263,7 +1257,6 @@ impl AppState {
         u16::try_from(
             self.transcript_view
                 .last_transcript_viewport_height
-                .get()
                 .saturating_sub(2)
                 .max(1),
         )
@@ -1272,16 +1265,15 @@ impl AppState {
 
     pub(in crate::app) fn scroll_transcript_down(&mut self, amount: u16) {
         if let Some(scroll_top) = self.transcript_page_flip_scroll_top() {
-            let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
-            let next = MeasuredTranscriptViewport::detached(scroll_top, max_scroll)
+            let max_scroll = self.transcript_view.viewport.max_scroll();
+            let next = TranscriptViewport::detached(scroll_top, max_scroll)
                 .scroll_down(usize::from(amount.max(1)));
             self.transcript_view.set_measured_viewport(next);
             if next.is_following() {
                 self.cancel_transcript_page_flip();
             } else {
-                self.transcript_view
-                    .page_flip
-                    .set(self.transcript_view.page_flip.get().detach_at(next.top()));
+                self.transcript_view.page_flip =
+                    self.transcript_view.page_flip.detach_at(next.top());
             }
             return;
         }
@@ -1298,7 +1290,7 @@ impl AppState {
             self.cancel_transcript_page_flip();
             return;
         };
-        let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
+        let max_scroll = self.transcript_view.viewport.max_scroll();
         self.set_transcript_scroll_from_top_with_max(scroll_top, max_scroll);
     }
 
@@ -1308,7 +1300,7 @@ impl AppState {
         max_scroll: usize,
     ) {
         let clamped = scroll_top.min(max_scroll);
-        let page_flip = self.transcript_view.page_flip.get();
+        let page_flip = self.transcript_view.page_flip;
         self.transcript_view.record_measured_max_scroll(max_scroll);
         let next = self.transcript_view.measured_viewport().detach_at(clamped);
         self.transcript_view.set_measured_viewport(next);
@@ -1317,9 +1309,7 @@ impl AppState {
             return;
         }
 
-        self.transcript_view
-            .page_flip
-            .set(page_flip.detach_at(clamped));
+        self.transcript_view.page_flip = page_flip.detach_at(clamped);
     }
 
     pub fn transcript_interaction_snapshot(&self) -> TranscriptInteractionSnapshot {
@@ -1339,13 +1329,13 @@ impl AppState {
     }
 
     pub fn set_transcript_scroll_for_test(&mut self, scroll: usize) {
-        self.transcript_view.transcript_scroll = scroll;
-        self.transcript_view.follow_mode = scroll == 0;
+        self.transcript_view.set_offset(scroll);
+        self.transcript_view.set_following(scroll == 0);
     }
 
     pub fn set_selected_activity_index_for_test(&mut self, index: usize) {
         self.transcript_view.selected_activity_index = index;
-        if self.transcript_view.last_transcript_max_scroll.get() == 0 {
+        if self.transcript_view.viewport.max_scroll() == 0 {
             self.transcript_view.record_measured_max_scroll(1);
         }
         self.set_transcript_following(false);

@@ -27,7 +27,8 @@ fn new_app(session: Option<&Path>) -> AppState {
     app
 }
 
-fn screen(app: &AppState, width: u16) -> Result<String> {
+fn screen(app: &mut AppState, width: u16) -> Result<String> {
+    app.set_frame_area(Rect::new(0, 0, width, 44));
     let mut terminal = Terminal::new(TestBackend::new(width, 44))?;
     terminal.draw(|frame| render_app(frame, app))?;
     Ok(terminal
@@ -97,7 +98,7 @@ fn edit_diff_keeps_lsp_errors_and_unavailable_checks_visible() -> Result<()> {
             ];
             for (index, payload) in payloads.into_iter().enumerate() {
                 if matches!(&payload, EventV1::ToolCallFinished(_)) {
-                    screen(&app, 80)?;
+                    screen(&mut app, 80)?;
                 }
                 app.ingest_event(EventEnvelopeV1 {
                     schema_version: SCHEMA_VERSION,
@@ -116,7 +117,7 @@ fn edit_diff_keeps_lsp_errors_and_unavailable_checks_visible() -> Result<()> {
             app.expand_all_tool_outputs_for_test();
             app.advance_wall_clock_for_motion_evidence(Duration::from_secs(60));
             app.refresh_motion_for_evidence();
-            let text = screen(&app, 80)?;
+            let text = screen(&mut app, 80)?;
             assert!(
                 text.contains("pub fn broken"),
                 "{tool} did not render the diff:\n{text}"
@@ -147,7 +148,7 @@ fn capture_recorded_lsp_tool_results_through_production_renderer() -> Result<()>
             let mut app = new_app(Some(&session));
             for event in &events {
                 if matches!(&event.payload, EventV1::ToolCallFinished(_)) {
-                    screen(&app, width)?;
+                    screen(&mut app, width)?;
                 }
                 app.ingest_event(event.clone());
                 assert_eq!(app.canonical_projection_error(), None);
@@ -157,7 +158,7 @@ fn capture_recorded_lsp_tool_results_through_production_renderer() -> Result<()>
                 app.expand_all_tool_outputs_for_test();
                 app.advance_wall_clock_for_motion_evidence(Duration::from_secs(60 + event.seq));
                 app.refresh_motion_for_evidence();
-                let text = screen(&app, width)?;
+                let text = screen(&mut app, width)?;
                 let summary = finished
                     .output_summary
                     .as_deref()

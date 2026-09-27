@@ -387,10 +387,12 @@ pub(super) fn context_group_disclosure_preserves_detached_anchor() {
             metadata: None,
         }),
     ));
+    app.set_frame_area(TEST_FRAME_AREA);
     let _ = render_text(&app, TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
     app.scroll_transcript_up(12);
+    app.set_frame_area(TEST_FRAME_AREA);
     let _ = render_text(&app, TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
-    let anchor_before = app.transcript_view.measured_anchor.get();
+    let anchor_before = app.transcript_view.measured_anchor;
     let top_before = app.transcript_view.measured_viewport().top();
     assert!(anchor_before.is_some());
 
@@ -398,12 +400,13 @@ pub(super) fn context_group_disclosure_preserves_detached_anchor() {
     app.activate_transcript_mouse_target(TranscriptMouseTarget::ToolGroup {
         tool_call_ids: vec!["tc_group_read".to_string(), "tc_group_skill".to_string()],
     });
+    app.set_frame_area(TEST_FRAME_AREA);
     let _ = render_text(&app, TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
 
     // assert
     assert!(app.tool_group_expanded("tc_group_read"));
     assert!(app.transcript_view.expanded_tool_outputs.is_empty());
-    assert_eq!(app.transcript_view.measured_anchor.get(), anchor_before);
+    assert_eq!(app.transcript_view.measured_anchor, anchor_before);
     assert!(app.transcript_view.measured_viewport().top() > top_before);
     app.toggle_tool_output("tc_group_read");
     let target = ui::transcript_navigation_entries(&app, TEST_FRAME_AREA)

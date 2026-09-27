@@ -2,14 +2,13 @@
 
 mod backend;
 mod capture;
-mod hyperlinks;
 mod model;
 mod queue;
 mod worker;
 
+pub(crate) use backend::FrameHyperlink;
 pub use backend::{FrameBackendMetrics, FrameOutputBackend};
 pub use capture::FrameOutputWriter;
-pub(crate) use hyperlinks::{set_frame_hyperlinks, FrameHyperlink};
 pub use model::{
     FrameAck, FrameAckOutcome, FrameKind, FrameOutputFailure, FrameOutputMetrics, FrameSubmission,
     FrameWriteStage, FrameWriterMetrics, SerializedFrame,

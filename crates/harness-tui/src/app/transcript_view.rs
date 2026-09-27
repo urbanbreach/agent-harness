@@ -1,9 +1,8 @@
-use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 use super::transcript_cache::TranscriptRenderCache;
-use super::transcript_viewport::MeasuredTranscriptViewport;
+use super::transcript_viewport::TranscriptViewport;
 use super::{AppState, TranscriptScrollbarDragState};
 use crate::transcript_scroll::PageFlipState;
 use crate::ui::{TranscriptContentAnchor, TranscriptMouseTarget, TranscriptSelection};
@@ -92,13 +91,11 @@ impl ToolMotionTracker {
 
 #[derive(Debug)]
 pub(crate) struct TranscriptViewState {
-    pub(crate) transcript_scroll: usize,
-    pub(crate) follow_mode: bool,
     pub(crate) transcript_scrollbar_visible: bool,
     pub(crate) transcript_scrollbar_drag: Option<TranscriptScrollbarDragState>,
     pub(crate) transcript_selection: Option<TranscriptSelection>,
     pub(crate) transcript_selection_anchors:
-        Cell<Option<(TranscriptContentAnchor, TranscriptContentAnchor)>>,
+        Option<(TranscriptContentAnchor, TranscriptContentAnchor)>,
     pub(crate) transcript_selection_dragging: bool,
     pub(crate) transcript_click_activated_on_down: bool,
     pub(crate) last_tool_click: Option<(Instant, crate::ui::TranscriptVisualEntryId, u8)>,
@@ -119,11 +116,10 @@ pub(crate) struct TranscriptViewState {
     pub(crate) expanded_patch_file_outputs: BTreeSet<String>,
     pub(crate) transcript_cache: TranscriptRenderCache,
     pub(crate) transcript_animation_phase: usize,
-    pub(crate) last_transcript_max_scroll: Cell<usize>,
-    pub(crate) last_transcript_viewport_height: Cell<usize>,
-    pub(crate) measured_viewport: Cell<MeasuredTranscriptViewport>,
-    pub(crate) legacy_scroll_snapshot: Cell<(bool, usize)>,
-    pub(crate) measured_anchor: Cell<Option<TranscriptContentAnchor>>,
+    pub(crate) last_transcript_viewport_height: usize,
+    pub(crate) viewport: TranscriptViewport,
+    pub(crate) hyperlinks: Vec<crate::terminal::FrameHyperlink>,
+    pub(crate) measured_anchor: Option<TranscriptContentAnchor>,
     pub(crate) selected_activity_index: usize,
     pub(crate) selected_entry: Option<crate::ui::TranscriptVisualEntryId>,
     pub(crate) search_query: String,
@@ -132,9 +128,9 @@ pub(crate) struct TranscriptViewState {
     pub(crate) search_match_count: usize,
     pub(crate) response_position: Option<crate::transcript_timeline::ResponsePosition>,
     pub(crate) viewer_pointer_anchor: Option<crate::transcript_selection::CellPoint>,
-    pub(crate) page_flip: Cell<PageFlipState>,
+    pub(crate) page_flip: PageFlipState,
     pub(crate) tool_motion: ToolMotionTracker,
-    pub(crate) visible_running_tool_motion: Cell<bool>,
+    pub(crate) visible_running_tool_motion: bool,
 }
 
 impl TranscriptViewState {
@@ -153,12 +149,10 @@ impl TranscriptViewState {
 impl Default for TranscriptViewState {
     fn default() -> Self {
         Self {
-            transcript_scroll: 0,
-            follow_mode: true,
             transcript_scrollbar_visible: true,
             transcript_scrollbar_drag: None,
             transcript_selection: None,
-            transcript_selection_anchors: Cell::new(None),
+            transcript_selection_anchors: None,
             transcript_selection_dragging: false,
             transcript_click_activated_on_down: false,
             last_tool_click: None,
@@ -179,11 +173,10 @@ impl Default for TranscriptViewState {
             expanded_patch_file_outputs: BTreeSet::new(),
             transcript_cache: TranscriptRenderCache::default(),
             transcript_animation_phase: 0,
-            last_transcript_max_scroll: Cell::new(0),
-            last_transcript_viewport_height: Cell::new(0),
-            measured_viewport: Cell::new(MeasuredTranscriptViewport::following(0)),
-            legacy_scroll_snapshot: Cell::new((true, 0)),
-            measured_anchor: Cell::new(None),
+            last_transcript_viewport_height: 0,
+            viewport: TranscriptViewport::following(0),
+            hyperlinks: Vec::new(),
+            measured_anchor: None,
             selected_activity_index: 0,
             selected_entry: None,
             search_query: String::new(),
@@ -192,9 +185,9 @@ impl Default for TranscriptViewState {
             search_match_count: 0,
             response_position: None,
             viewer_pointer_anchor: None,
-            page_flip: Cell::new(PageFlipState::Idle),
+            page_flip: PageFlipState::Idle,
             tool_motion: ToolMotionTracker::default(),
-            visible_running_tool_motion: Cell::new(true),
+            visible_running_tool_motion: true,
         }
     }
 }

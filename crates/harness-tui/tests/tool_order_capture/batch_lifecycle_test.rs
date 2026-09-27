@@ -61,9 +61,9 @@ fn batch_children_settle_and_batch_output_opens_after_the_response_commit() -> R
             "completed tool previews must stay collapsed while the turn continues"
         );
 
-        let settled = render(&state.app, area.width, area.height)?;
+        let settled = render(&mut state.app, area.width, area.height)?;
         state.action(&json!({"op":"advance", "ms":330}), &fixture)?;
-        let later = render(&state.app, area.width, area.height)?;
+        let later = render(&mut state.app, area.width, area.height)?;
         for label in ["Batch 1 tool", "printf alpha"] {
             let row = settled
                 .content
@@ -87,7 +87,7 @@ fn batch_children_settle_and_batch_output_opens_after_the_response_commit() -> R
             .app
             .handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
         assert!(state.app.is_tool_output_expanded_for_test("batch"));
-        let opened = render(&state.app, area.width, area.height)?;
+        let opened = render(&mut state.app, area.width, area.height)?;
         assert!(opened.content.chunks(120).any(|row| row
             .iter()
             .map(|cell| cell.symbol())
@@ -145,7 +145,7 @@ fn context_tools_after_thinking_start_a_new_group() -> Result<()> {
                 "Searched 4 websites"
             };
             for width in [40, 120] {
-                let buffer = render(&state.app, width, 40)?;
+                let buffer = render(&mut state.app, width, 40)?;
                 let rows = buffer
                     .content
                     .chunks(usize::from(width))

@@ -206,7 +206,7 @@ fn chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text() {
     }
 }
 
-fn chat_app(scene: &str, reduced: bool) -> AppState {
+fn chat_app(scene: &str, reduced: bool, area: Rect) -> AppState {
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderReasoningDeltaEvent,
         ProviderRequestStartedEvent, ProviderStreamDeltaEvent, ToolCallFinishedEvent,
@@ -336,11 +336,11 @@ fn chat_app(scene: &str, reduced: bool) -> AppState {
             }));
         }
     }
-    expand_chat_scene(&mut app, scene);
+    expand_chat_scene(&mut app, scene, area);
     app
 }
 
-fn expand_chat_scene(app: &mut AppState, scene: &str) {
+fn expand_chat_scene(app: &mut AppState, scene: &str, area: Rect) {
     if matches!(scene, "contextopen" | "commandsopen") {
         app.focus = harness_tui::app::Focus::Details;
         assert!(app.select_transcript_tool("chat-group-0"));
@@ -353,6 +353,7 @@ fn expand_chat_scene(app: &mut AppState, scene: &str) {
         app.toggle_tool_output_for_test("chat-parity-tool");
         assert!(app.is_tool_output_expanded_for_test("chat-parity-tool"));
     }
+    app.set_frame_area(area);
     if scene.starts_with("commands") {
         app.set_transcript_scroll_for_test(usize::MAX);
     }
@@ -369,7 +370,7 @@ fn chat_scene_label(scene: &str) -> &'static str {
 }
 
 fn verify_chat_scene(width: u16, height: u16, reduced: bool, scene: &str) {
-    let mut app = chat_app(scene, reduced);
+    let mut app = chat_app(scene, reduced, Rect::new(0, 0, width, height));
     let transcript =
         harness_tui::layout::FrameLayoutPlan::for_app(&app, Rect::new(0, 0, width, height))
             .transcript

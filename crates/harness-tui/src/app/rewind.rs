@@ -218,7 +218,7 @@ impl AppState {
                 self.clear_prompt_input();
                 self.replace_prompt_input(point.text);
                 self.show_toast("Reverted conversation", ToastVariant::Rewind);
-                self.transcript_view.follow_mode = true;
+                self.transcript_view.set_following(true);
             }
             Err(message) => self.rewind_error(message),
         }

@@ -1,0 +1,112 @@
+    Blocking waiting for file lock on build directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.79s
+────────────
+ Nextest run ID acdaa7c5-4d32-430e-ad39-c12bc68545d2 with nextest profile: ci
+    Starting 19 tests across 6 binaries
+        SLOW [>  2.000s] (─────) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+        SLOW [>  4.000s] (─────) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+        SLOW [>  6.000s] (─────) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+        SLOW [>  8.000s] (─────) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+        SLOW [> 10.000s] (─────) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+        SLOW [> 12.000s] (─────) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+        FAIL [  13.548s] (18/19) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+  stdout ───
+
+    running 1 test
+    test p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append ... FAILED
+
+    failures:
+
+    failures:
+        p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 13.54s
+
+  stderr ───
+
+    thread 'p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append' (2077139) panicked at crates/harness-tui/tests/p0_02_pty_recorded.rs:245:51:
+    timed out waiting for "Harness 2/3" present=true
+
+      git:test-workspace /workspace/agent-harness
+
+                                                                                          Harness 1/3│
+         ❯ P0-02 deterministic prompt 1                                                    12:00 PM  │
+                                                                                                     │
+                                                                                                     │
+                                                                                                     │
+                                                                                                     │
+                                                                                                     │
+         ❯ P0-02 deterministic prompt 2                                                    12:00 PM  █
+                                                                                                     █
+                                                                                                     █
+         P0-02 completed response two confirms deterministic response navigation.          12:00 PM  █
+                                                                                                     █
+                                                                                                     █
+                                                                                                     █
+                                                                                                     █
+         ❯ P0-02 deterministic prompt 3                                                    12:00 PM  █
+                                                                                                     │
+                                                                                                     │
+         P0-02 completed response three confirms final-response clamping.                  12:00 PM  │
+                                                                                                     │
+                                                     ▼
+      ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+      │ ❯ Build anything                                                                             │
+      ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+      ctrl+c interrupt
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        SLOW [> 30.000s] (─────) harness-tui::p1_03_pty_recorded p1_03_native_pty_owner_records_startup_reveal_terminal_states
+────────────
+     Summary [  55.726s] 19 tests run: 18 passed (1 slow), 1 failed, 0 skipped
+        SLOW [  55.725s] (19/19) harness-tui::p1_03_pty_recorded p1_03_native_pty_owner_records_startup_reveal_terminal_states
+        FAIL [  13.548s] (18/19) harness-tui::p0_02_pty_recorded p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+  stdout ───
+
+    running 1 test
+    test p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append ... FAILED
+
+    failures:
+
+    failures:
+        p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 13.54s
+
+  stderr ───
+
+    thread 'p0_02_real_pty_proves_dense_navigation_reflow_and_detached_append' (2077139) panicked at crates/harness-tui/tests/p0_02_pty_recorded.rs:245:51:
+    timed out waiting for "Harness 2/3" present=true
+
+      git:test-workspace /workspace/agent-harness
+
+                                                                                          Harness 1/3│
+         ❯ P0-02 deterministic prompt 1                                                    12:00 PM  │
+                                                                                                     │
+                                                                                                     │
+                                                                                                     │
+                                                                                                     │
+                                                                                                     │
+         ❯ P0-02 deterministic prompt 2                                                    12:00 PM  █
+                                                                                                     █
+                                                                                                     █
+         P0-02 completed response two confirms deterministic response navigation.          12:00 PM  █
+                                                                                                     █
+                                                                                                     █
+                                                                                                     █
+                                                                                                     █
+         ❯ P0-02 deterministic prompt 3                                                    12:00 PM  █
+                                                                                                     │
+                                                                                                     │
+         P0-02 completed response three confirms final-response clamping.                  12:00 PM  │
+                                                                                                     │
+                                                     ▼
+      ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+      │ ❯ Build anything                                                                             │
+      ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+      ctrl+c interrupt
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

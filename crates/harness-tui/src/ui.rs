@@ -80,6 +80,10 @@ mod ui_tool_titles_harness;
 mod ui_tool_visibility;
 #[path = "ui_tool_wrapping.rs"]
 mod ui_tool_wrapping;
+#[path = "ui_transcript_viewport.rs"]
+mod ui_transcript_viewport;
+pub(crate) use ui_transcript_viewport::{capture_selection_anchors, prepare_transcript};
+
 #[path = "ui_transcript.rs"]
 mod ui_transcript;
 #[path = "ui_transcript_bash.rs"]

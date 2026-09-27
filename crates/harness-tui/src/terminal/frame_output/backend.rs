@@ -6,7 +6,13 @@ use ratatui::buffer::Cell;
 use ratatui::layout::{Position, Size};
 
 use super::capture::FrameOutputWriter;
-use super::hyperlinks::{take_frame_hyperlinks, FrameHyperlink};
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FrameHyperlink {
+    pub(crate) row: u16,
+    pub(crate) start_column: u16,
+    pub(crate) end_column: u16,
+    pub(crate) destination: String,
+}
 
 #[cfg(test)]
 #[path = "backend_tests.rs"]
@@ -28,6 +34,7 @@ pub struct FrameOutputBackend {
     metrics: FrameBackendMetrics,
     cells: BTreeMap<(u16, u16), Cell>,
     hyperlinks: Vec<FrameHyperlink>,
+    pending_hyperlinks: Vec<FrameHyperlink>,
 }
 
 impl FrameOutputBackend {
@@ -44,7 +51,12 @@ impl FrameOutputBackend {
             metrics: FrameBackendMetrics::default(),
             cells: BTreeMap::new(),
             hyperlinks: Vec::new(),
+            pending_hyperlinks: Vec::new(),
         }
+    }
+
+    pub(crate) fn set_hyperlinks(&mut self, links: Vec<FrameHyperlink>) {
+        self.pending_hyperlinks = links;
     }
 
     pub fn invalidate_cursor_state(&mut self) {
@@ -102,7 +114,7 @@ impl Backend for FrameOutputBackend {
         I: Iterator<Item = (u16, u16, &'a Cell)>,
     {
         self.metrics.draw_calls = self.metrics.draw_calls.saturating_add(1);
-        let current_links = take_frame_hyperlinks();
+        let current_links = std::mem::take(&mut self.pending_hyperlinks);
         let mut changed = content
             .map(|(x, y, cell)| ((y, x), cell.clone()))
             .collect::<BTreeMap<_, _>>();

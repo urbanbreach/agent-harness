@@ -45,7 +45,7 @@ fn background_notification_keeps_launch_identity_and_replays_without_a_user_mess
             state.app.focus = Focus::Details;
             assert!(state.app.select_transcript_tool("task"));
             state.app.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
-            let buffer = render(&state.app, 120, 40)?;
+            let buffer = render(&mut state.app, 120, 40)?;
             let text = buffer
                 .content
                 .chunks(120)
@@ -133,7 +133,7 @@ fn subagent_rows_show_current_status_and_model_without_unfolding() -> Result<()>
                 assert!(state.app.select_transcript_tool("core"));
                 state.app.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
             }
-            let buffer = render(&state.app, width, 30)?;
+            let buffer = render(&mut state.app, width, 30)?;
             let text = buffer.content.chunks(usize::from(width))
                 .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
                 .collect::<Vec<_>>().join("\n");
