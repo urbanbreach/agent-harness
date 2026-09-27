@@ -1,0 +1,28 @@
+{
+  "schema": "tui-prepared-release-binaries-v1",
+  "features": "--all-features",
+  "profile": "release",
+  "binaries": [
+    {
+      "checkout": "candidate",
+      "suite": "harness_tui",
+      "path": "/home/urbanbreach/Projects/agent-harness/target/release/deps/harness_tui-d90bd4523d2aa481",
+      "bytes": 26432120,
+      "sha256": "fdab08d038797d0bd134335309f6570d43b07217ce3da1f59eb4d6ea0f3847b6"
+    },
+    {
+      "checkout": "candidate",
+      "suite": "rewrite_performance_test",
+      "path": "/home/urbanbreach/Projects/agent-harness/target/release/deps/rewrite_performance_test-cbb137c337ae7103",
+      "bytes": 15324768,
+      "sha256": "2b49c2d7d8a651943d3874c80fc0764934ea39fe20c637d922de8a35c35a4f6c"
+    },
+    {
+      "checkout": "reference",
+      "suite": "rewrite_performance_test",
+      "path": "/home/urbanbreach/.codex/worktrees/tui-reference/agent-harness/target/release/deps/rewrite_performance_test-aa215cfe2ad6594e",
+      "bytes": 15518744,
+      "sha256": "bddeb9916e8b64b9f015690eece455cd1266561e72f55df97232e2b5e9bd3508"
+    }
+  ]
+}

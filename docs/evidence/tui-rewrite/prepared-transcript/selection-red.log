@@ -1,0 +1,46 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.61s
+────────────
+ Nextest run ID e3ac1f5b-7d50-4837-9b30-38205fb4ef91 with nextest profile: ci
+    Starting 1 test across 1 binary (1334 tests skipped)
+        FAIL [   0.039s] (1/1) harness-tui app::tests::disabled_copy_on_select_supports_ctrl_c_and_escape
+  stdout ───
+
+    running 1 test
+    test app::tests::disabled_copy_on_select_supports_ctrl_c_and_escape ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::disabled_copy_on_select_supports_ctrl_c_and_escape
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1334 filtered out; finished in 0.03s
+
+  stderr ───
+
+    thread 'app::tests::disabled_copy_on_select_supports_ctrl_c_and_escape' (2132737) panicked at crates/harness-tui/src/app/tests/transcript_selection_tests.rs:252:5:
+    assertion failed: copy_app.transcript_selection().is_some()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.045s] 1 test run: 0 passed, 1 failed, 1334 skipped
+        FAIL [   0.039s] (1/1) harness-tui app::tests::disabled_copy_on_select_supports_ctrl_c_and_escape
+  stdout ───
+
+    running 1 test
+    test app::tests::disabled_copy_on_select_supports_ctrl_c_and_escape ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::disabled_copy_on_select_supports_ctrl_c_and_escape
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1334 filtered out; finished in 0.03s
+
+  stderr ───
+
+    thread 'app::tests::disabled_copy_on_select_supports_ctrl_c_and_escape' (2132737) panicked at crates/harness-tui/src/app/tests/transcript_selection_tests.rs:252:5:
+    assertion failed: copy_app.transcript_selection().is_some()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

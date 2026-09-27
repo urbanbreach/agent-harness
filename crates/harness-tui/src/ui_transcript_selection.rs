@@ -1,7 +1,5 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use crate::UnwrapOrAbort;
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
 
 use ratatui::{
     layout::{Alignment, Rect},
@@ -30,13 +28,6 @@ use super::ui_transcript_surface::{
 
 const TRANSCRIPT_SELECTION_RAIL_GLYPH: &str = " ";
 
-thread_local! {
-    static TRANSCRIPT_SELECTION_CACHE: RefCell<Vec<TranscriptSelectionCacheEntry>> = const { RefCell::new(Vec::new()) };
-
-    #[cfg(test)]
-    static TRANSCRIPT_SELECTION_CACHE_BUILD_COUNT: Cell<usize> = const { Cell::new(0) };
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct TranscriptSelectionCell {
     pub row: usize,
@@ -62,6 +53,8 @@ impl TranscriptSelection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SelectionRow {
     pub line_index: usize,
+    pub text: String,
+    pub continues_previous: bool,
     pub copy_joiner: Option<String>,
     pub start_cell: usize,
     pub end_cell: usize,
@@ -77,45 +70,11 @@ impl SelectionRow {
 #[derive(Debug, Clone)]
 pub(super) struct TranscriptSelectionSnapshot {
     pub(super) viewport: Rect,
-    pub(super) visible_rows: Vec<usize>,
-    pub(super) rows: Rc<[SelectionRow]>,
-    pub(super) line_texts: Rc<[String]>,
-    pub(super) continues_previous: Rc<[bool]>,
+    pub(super) visible_rows: Vec<Option<usize>>,
+    pub(super) rows: Vec<SelectionRow>,
+    pub(super) total_rows: usize,
     pub(super) row_width: usize,
     pub(super) resolved_selection: Option<TranscriptSelection>,
-}
-
-#[derive(Debug, Clone)]
-struct TranscriptSelectionCacheEntry {
-    key: TranscriptSelectionCacheKey,
-    snapshot: TranscriptSelectionSnapshot,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(super) struct TranscriptSelectionCacheKey {
-    pub(super) render_width: u16,
-    pub(super) app_instance_id: u64,
-    pub(super) render_key: u64,
-    pub(super) theme: Theme,
-    pub(super) area: Rect,
-    pub(super) follow_mode: bool,
-    pub(super) transcript_scroll: usize,
-}
-
-impl TranscriptSelectionCacheKey {
-    fn same_content(self, other: Self) -> bool {
-        self.render_width == other.render_width
-            && self.app_instance_id == other.app_instance_id
-            && self.render_key == other.render_key
-            && self.theme == other.theme
-    }
-
-    fn matches(self, other: Self) -> bool {
-        self.same_content(other)
-            && self.area == other.area
-            && self.follow_mode == other.follow_mode
-            && self.transcript_scroll == other.transcript_scroll
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,9 +107,11 @@ impl TranscriptSelectionSnapshot {
         }
 
         Some(TranscriptSelectionCell {
-            row: *self
+            row: self
                 .visible_rows
-                .get(usize::from(row.saturating_sub(self.viewport.y)))?,
+                .get(usize::from(row.saturating_sub(self.viewport.y)))
+                .copied()
+                .flatten()?,
             column: usize::from(column.saturating_sub(self.viewport.x)),
         })
     }
@@ -177,7 +138,7 @@ impl TranscriptSelectionSnapshot {
             return None;
         }
 
-        let last_row = self.rows.len().saturating_sub(1);
+        let last_row = self.total_rows.saturating_sub(1);
         let start_row = start.row.min(last_row);
         let end_row = end.row.min(last_row);
         if start_row > end_row {
@@ -187,12 +148,12 @@ impl TranscriptSelectionSnapshot {
         let mut lines = Vec::new();
         let mut destinations = Vec::new();
         for row_idx in start_row..=end_row {
-            let row = self.rows.get(row_idx)?;
-            let continues_previous = self
-                .continues_previous
-                .get(row_idx)
-                .copied()
-                .unwrap_or(false);
+            let index = self
+                .rows
+                .binary_search_by_key(&row_idx, |row| row.line_index)
+                .ok()?;
+            let row = &self.rows[index];
+            let continues_previous = row.continues_previous;
 
             if !row.has_content() {
                 if row_idx == start_row || !continues_previous || lines.is_empty() {
@@ -201,11 +162,7 @@ impl TranscriptSelectionSnapshot {
                 continue;
             }
 
-            let line_text = self
-                .line_texts
-                .get(row.line_index)
-                .map(|s| s.as_str())
-                .unwrap_or("");
+            let line_text = &row.text;
 
             let row_start = if row_idx == start_row {
                 start
@@ -261,10 +218,13 @@ impl TranscriptSelectionSnapshot {
         self.visible_rows
             .iter()
             .map(|row_index| {
-                let row = self.rows.get(*row_index);
-                self.line_texts
-                    .get(row.map_or(0, |row| row.line_index))
-                    .cloned()
+                row_index
+                    .and_then(|row_index| {
+                        self.rows
+                            .binary_search_by_key(&row_index, |row| row.line_index)
+                            .ok()
+                    })
+                    .map(|index| self.rows[index].text.clone())
                     .unwrap_or_default()
             })
             .collect()
@@ -311,6 +271,8 @@ pub(super) fn compact_selection_row(
     match selection_row_content_end(row, content_start) {
         Some(end_cell) => SelectionRow {
             line_index,
+            text: selection_row_line_text(row),
+            continues_previous: row.continues_previous,
             copy_joiner: row.copy_joiner.clone(),
             start_cell,
             end_cell,
@@ -318,12 +280,59 @@ pub(super) fn compact_selection_row(
         },
         None => SelectionRow {
             line_index,
+            text: selection_row_line_text(row),
+            continues_previous: row.continues_previous,
             copy_joiner: row.copy_joiner.clone(),
             start_cell: 1,
             end_cell: 0,
             links: Vec::new(),
         },
     }
+}
+
+pub(super) fn surface_selection_rows(
+    lines: &[Line<'static>],
+    width: u16,
+    show_outer_rail: bool,
+    rail_glyph: &str,
+) -> Vec<SelectionRow> {
+    let surface_width = usize::from(width.max(1));
+    let content_width =
+        usize::from(super::ui_transcript_surface::transcript_surface_content_width(width, false))
+            .max(1);
+    let mut rows = Vec::new();
+    for line in lines {
+        for (index, mut cells) in transcript_selection_line_rows(line, content_width)
+            .into_iter()
+            .enumerate()
+        {
+            if show_outer_rail {
+                if let Some(first) = cells.first_mut() {
+                    *first = rail_glyph.to_string();
+                }
+            }
+            cells.truncate(surface_width);
+            let padding = surface_width.saturating_sub(cells.len());
+            let mut row = compact_selection_row(
+                &TranscriptSelectionRow {
+                    cells,
+                    continues_previous: index > 0,
+                    copy_offset: usize::from(show_outer_rail),
+                    copy_joiner: None,
+                    links: Vec::new(),
+                },
+                rows.len(),
+            );
+            row.text.extend(std::iter::repeat_n(' ', padding));
+            rows.push(row);
+        }
+    }
+    if rows.is_empty() {
+        let mut row = compact_selection_row(&blank_selection_row(), 0);
+        row.text = " ".repeat(surface_width);
+        rows.push(row);
+    }
+    rows
 }
 
 pub(super) fn selection_row_line_text(row: &TranscriptSelectionRow) -> String {
@@ -345,46 +354,6 @@ fn extract_text_by_display_columns(text: &str, start_col: usize, end_col: usize)
         }
     }
     result
-}
-
-pub(super) fn with_cached_transcript_selection_snapshot<R>(
-    key: TranscriptSelectionCacheKey,
-    build_snapshot: impl FnOnce(
-        Option<&TranscriptSelectionSnapshot>,
-    ) -> Option<TranscriptSelectionSnapshot>,
-    render: impl FnOnce(&TranscriptSelectionSnapshot) -> R,
-) -> Option<R> {
-    TRANSCRIPT_SELECTION_CACHE.with(|cache| {
-        let snapshot = {
-            let cache = cache.borrow();
-            if let Some(entry) = cache.iter().find(|entry| entry.key.matches(key)) {
-                return Some(render(&entry.snapshot));
-            }
-            let previous = cache.iter().find(|entry| entry.key.same_content(key));
-            build_snapshot(previous.map(|entry| &entry.snapshot))?
-        };
-
-        #[cfg(test)]
-        TRANSCRIPT_SELECTION_CACHE_BUILD_COUNT
-            .with(|count| count.set(count.get().saturating_add(1)));
-
-        {
-            let mut cache = cache.borrow_mut();
-            cache.retain(|entry| {
-                entry.key.app_instance_id != key.app_instance_id
-                    || entry.key.render_key == key.render_key
-            });
-            cache.push(TranscriptSelectionCacheEntry { key, snapshot });
-            if cache.len() > 8 {
-                let overflow = cache.len().saturating_sub(8);
-                cache.drain(0..overflow);
-            }
-        }
-
-        let cache = cache.borrow();
-        let entry = cache.last().unwrap_or_abort();
-        Some(render(&entry.snapshot))
-    })
 }
 
 pub(super) fn transcript_selection_line_rows(
@@ -845,14 +814,14 @@ pub(super) fn lifecycle_selection_snapshot(
     let mut rows: Vec<SelectionRow> = (0..height)
         .map(|line_index| SelectionRow {
             line_index,
+            text: " ".repeat(width),
+            continues_previous: false,
             copy_joiner: None,
             start_cell: 1,
             end_cell: 0,
             links: Vec::new(),
         })
         .collect();
-    let mut line_texts = vec![" ".repeat(width); height];
-    let mut continues_previous = vec![false; height];
 
     for text in surface.text_rows {
         let rendered_rows = aligned_selection_rows_for_line(&text.line, width, text.alignment);
@@ -863,17 +832,15 @@ pub(super) fn lifecycle_selection_snapshot(
                 break;
             }
             rows[target] = compact_selection_row(&row, target);
-            line_texts[target] = selection_row_line_text(&row);
-            continues_previous[target] = offset > 0;
+            rows[target].continues_previous = offset > 0;
         }
     }
 
     Some(TranscriptSelectionSnapshot {
         viewport: surface.viewport,
-        visible_rows: (0..height).collect(),
-        rows: Rc::from(rows),
-        line_texts: Rc::from(line_texts),
-        continues_previous: Rc::from(continues_previous),
+        visible_rows: (0..height).map(Some).collect(),
+        rows,
+        total_rows: height,
         row_width: width,
         resolved_selection: None,
     })
@@ -961,7 +928,7 @@ pub(super) fn render_transcript_selection(
 
     let visible_height = usize::from(area.height);
     let buffer = frame.buffer_mut();
-    let max_row = snapshot.rows.len().saturating_sub(1);
+    let max_row = snapshot.total_rows.saturating_sub(1);
     let start_row = start.row.min(max_row);
     let end_row = end.row.min(max_row);
 
@@ -972,6 +939,9 @@ pub(super) fn render_transcript_selection(
         .take(visible_height)
         .enumerate()
     {
+        let Some(absolute_row) = absolute_row else {
+            continue;
+        };
         if absolute_row < start_row || absolute_row > end_row {
             continue;
         }
@@ -1013,17 +983,6 @@ fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
         && column < area.x.saturating_add(area.width)
         && row >= area.y
         && row < area.y.saturating_add(area.height)
-}
-
-#[cfg(test)]
-pub(crate) fn reset_transcript_selection_cache_metrics_for_test() {
-    TRANSCRIPT_SELECTION_CACHE.with(|cache| cache.borrow_mut().clear());
-    TRANSCRIPT_SELECTION_CACHE_BUILD_COUNT.with(|count| count.set(0));
-}
-
-#[cfg(test)]
-pub(crate) fn transcript_selection_cache_build_count_for_test() -> usize {
-    TRANSCRIPT_SELECTION_CACHE_BUILD_COUNT.with(Cell::get)
 }
 
 #[cfg(test)]
@@ -1107,10 +1066,9 @@ mod tests {
             .collect::<Vec<_>>();
         let snapshot = TranscriptSelectionSnapshot {
             viewport: Rect::new(0, 0, 40, 1),
-            visible_rows: vec![0],
-            line_texts: Rc::from(rows.iter().map(selection_row_line_text).collect::<Vec<_>>()),
-            continues_previous: Rc::from(vec![false]),
-            rows: Rc::from(compact),
+            visible_rows: vec![Some(0)],
+            rows: compact,
+            total_rows: 1,
             row_width: 40,
             resolved_selection: Some(TranscriptSelection {
                 anchor: TranscriptSelectionCell { row: 0, column: 2 },
@@ -1146,10 +1104,9 @@ mod tests {
         };
         let snapshot_for = |anchor, focus| TranscriptSelectionSnapshot {
             viewport: Rect::new(0, 0, 10, 1),
-            visible_rows: vec![0],
-            rows: Rc::from(vec![compact_selection_row(&row, 0)]),
-            line_texts: Rc::from(vec![selection_row_line_text(&row)]),
-            continues_previous: Rc::from(vec![false]),
+            visible_rows: vec![Some(0)],
+            rows: vec![compact_selection_row(&row, 0)],
+            total_rows: 1,
             row_width: 10,
             resolved_selection: Some(TranscriptSelection {
                 anchor: TranscriptSelectionCell {
@@ -1300,16 +1257,17 @@ mod tests {
         // Given: a snapshot whose anchored surface disappeared during reflow.
         let snapshot = TranscriptSelectionSnapshot {
             viewport: Rect::new(0, 0, 5, 1),
-            visible_rows: vec![0],
-            rows: Rc::from(vec![SelectionRow {
+            visible_rows: vec![Some(0)],
+            rows: vec![SelectionRow {
                 line_index: 0,
+                text: "stale".into(),
+                continues_previous: false,
                 copy_joiner: None,
                 start_cell: 0,
                 end_cell: 4,
                 links: Vec::new(),
-            }]),
-            line_texts: Rc::from(vec!["stale".to_string()]),
-            continues_previous: Rc::from(vec![false]),
+            }],
+            total_rows: 1,
             row_width: 5,
             resolved_selection: None,
         };

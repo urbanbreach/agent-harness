@@ -273,7 +273,7 @@ pub(in crate::ui) fn semantic_key<'a>(values: impl IntoIterator<Item = &'a str>)
 pub(in crate::ui) struct ResolvedTranscriptVisualEntryDraft {
     pub(in crate::ui) metadata: TranscriptVisualEntryMetadata,
     pub(in crate::ui) draft: TranscriptVisualEntryDraft,
-    pub(in crate::ui) source_text: Option<std::rc::Rc<str>>,
+    pub(in crate::ui) source_text: Option<std::sync::Arc<str>>,
 }
 
 impl Deref for ResolvedTranscriptVisualEntryDraft {

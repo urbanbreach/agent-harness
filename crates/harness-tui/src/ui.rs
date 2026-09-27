@@ -80,6 +80,8 @@ mod ui_tool_titles_harness;
 mod ui_tool_visibility;
 #[path = "ui_tool_wrapping.rs"]
 mod ui_tool_wrapping;
+pub(crate) use ui_transcript::PreparedTranscript;
+
 #[path = "ui_transcript_viewport.rs"]
 mod ui_transcript_viewport;
 pub(crate) use ui_transcript_viewport::{capture_selection_anchors, prepare_transcript};
@@ -169,11 +171,7 @@ pub(crate) use ui_transcript::{
 pub use ui_transcript_interaction::hovered_wheel_target;
 pub(crate) use ui_transcript_interaction::TranscriptMouseTarget;
 pub(crate) use ui_transcript_scrollbar::TranscriptScrollbarHit;
-#[cfg(test)]
-pub(crate) use ui_transcript_selection::{
-    reset_transcript_selection_cache_metrics_for_test,
-    transcript_selection_cache_build_count_for_test,
-};
+
 pub(crate) use ui_transcript_selection::{TranscriptSelection, TranscriptSelectionCell};
 
 #[cfg(test)]

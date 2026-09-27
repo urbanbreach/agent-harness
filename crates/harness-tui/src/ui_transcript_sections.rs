@@ -2,9 +2,15 @@
 use super::ui_transcript_tool_sections::{build_tool_call_section, edit_tool_action};
 use super::*;
 
-pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSection> {
-    #[cfg(test)]
-    TRANSCRIPT_SEMANTIC_BUILD_COUNT.with(|count| count.set(count.get().saturating_add(1)));
+pub(super) fn build_transcript_sections(app: &AppState) -> Vec<Arc<TranscriptTurnSection>> {
+    prepare_transcript_sections(app, &[], 0)
+}
+
+pub(super) fn prepare_transcript_sections(
+    app: &AppState,
+    previous: &[Arc<TranscriptTurnSection>],
+    dirty_from: usize,
+) -> Vec<Arc<TranscriptTurnSection>> {
     let motion_enabled = app.transcript_motion_enabled() && !app.replay_mode;
     let hidden_child_request_ids = hidden_delegated_child_request_ids(app);
     let mut notifications = super::ui_transcript_subagent::notification_sections(app);
@@ -28,7 +34,16 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
         .rposition(|(_, activity)| activity.status == ActivityStatus::Streaming);
 
     for (visible_index, (activity_index, activity)) in visible_activities.iter().enumerate() {
-        turn_sections.push(build_turn_section(BuildTurnSectionArgs {
+        if *activity_index < dirty_from {
+            if let Some(section) = previous.get(visible_index).filter(|section| {
+                (section.activity_first_seq, &section.request_id)
+                    == (activity.first_seq, &activity.request_id)
+            }) {
+                turn_sections.push(Arc::clone(section));
+                continue;
+            }
+        }
+        turn_sections.push(Arc::new(build_turn_section(BuildTurnSectionArgs {
             activity_first_seq: activity.first_seq,
             activity,
             notifications: notifications
@@ -47,25 +62,30 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
             motion_enabled,
             session_path: app.session_path.as_deref(),
             app,
-        }));
+        })));
     }
 
-    if let Some(latest_assistant_footer_index) = turn_sections
+    let latest_assistant_footer_index = turn_sections
         .iter()
-        .rposition(|turn| turn_supports_assistant_footer(turn, app))
-    {
-        let original_activity_index = visible_activities[latest_assistant_footer_index].0;
-        if let Some(turn) = turn_sections.get_mut(latest_assistant_footer_index) {
-            turn.show_footer = true;
-            turn.footer_timestamp = app.activities[original_activity_index]
-                .user_timestamp
-                .as_deref()
-                .filter(|_| app.transcript_timestamps_visible())
-                .map(crate::time_format::wall_clock_12h);
+        .rposition(|turn| turn_supports_assistant_footer(turn, app));
+    for (index, turn) in turn_sections.iter_mut().enumerate() {
+        let footer = Some(index) == latest_assistant_footer_index;
+        if turn.show_footer != footer {
+            let turn = Arc::make_mut(turn);
+            turn.show_footer = footer;
+            turn.footer_timestamp = footer
+                .then(|| {
+                    app.activities[visible_activities[index].0]
+                        .user_timestamp
+                        .as_deref()
+                        .filter(|_| app.transcript_timestamps_visible())
+                        .map(crate::time_format::wall_clock_12h)
+                })
+                .flatten();
         }
     }
 
-    inject_compaction_events(app, &visible_activities, &mut turn_sections);
+    inject_compaction_events(app, &visible_activities, &mut turn_sections, dirty_from);
 
     turn_sections
 }
@@ -73,7 +93,8 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
 fn inject_compaction_events(
     app: &AppState,
     visible_activities: &[(usize, &ActivityEntry)],
-    turn_sections: &mut Vec<TranscriptTurnSection>,
+    turn_sections: &mut [Arc<TranscriptTurnSection>],
+    dirty_from: usize,
 ) {
     for event in &app.events {
         let compaction_section = match &event.payload {
@@ -104,8 +125,11 @@ fn inject_compaction_events(
             .next_back()
             .or_else(|| (!visible_activities.is_empty()).then_some(0));
 
-        if let Some(turn_index) = target_turn_index {
+        if let Some(turn_index) =
+            target_turn_index.filter(|index| visible_activities[*index].0 >= dirty_from)
+        {
             if let Some(turn) = turn_sections.get_mut(turn_index) {
+                let turn = Arc::make_mut(turn);
                 turn.assistant_parts
                     .push(TranscriptAssistantPart::Compaction(compaction_section));
                 turn.assistant_part_source_ids

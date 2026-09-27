@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use ratatui::{
     layout::Rect,
@@ -19,7 +19,7 @@ use super::ui_transcript::{
 };
 use super::ui_transcript_interaction::TranscriptInteractionRow;
 use super::ui_transcript_selection::{
-    compact_selection_row, TranscriptSelectionCell, TranscriptSelectionRow,
+    compact_selection_row, surface_selection_rows, SelectionRow, TranscriptSelectionCell,
 };
 use super::ui_transcript_surface::{
     render_transcript_surface, render_transcript_surface_lines, transcript_surface_content_width,
@@ -46,7 +46,7 @@ impl MeasuredTranscriptSection {
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct MeasuredTranscriptLayout {
-    pub(super) sections: Vec<Rc<MeasuredTranscriptSection>>,
+    pub(super) sections: Vec<Arc<MeasuredTranscriptSection>>,
     pub(super) total_height: usize,
 }
 
@@ -59,6 +59,7 @@ pub(crate) struct TranscriptContentAnchor {
     row_within_surface: usize,
     column_within_surface: usize,
     selection_backed: bool,
+    row_bias: isize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,7 +203,13 @@ impl MeasuredTranscriptLayout {
         &self,
         scroll_top: usize,
     ) -> Option<TranscriptContentAnchor> {
-        self.capture_content_position(scroll_top, 0)
+        let mut anchor = self.capture_content_position(scroll_top, 0)?;
+        let resolved = self.resolve_content_anchor(anchor)?;
+        let top = scroll_top.min(self.total_height.saturating_sub(1));
+        let distance = isize::try_from(top.abs_diff(resolved)).ok()?;
+        // Keep a viewport in a gap at that distance from its neighboring content.
+        anchor.row_bias = if top < resolved { -distance } else { distance };
+        Some(anchor)
     }
 
     pub(crate) fn capture_selection_anchor(
@@ -239,9 +246,9 @@ impl MeasuredTranscriptLayout {
             .saturating_sub(surface_top)
             .min(surface.height.saturating_sub(1));
         let logical_position = surface
-            .selection_rows
-            .as_ref()
-            .and_then(|rows| logical_position_for_cell(rows, row_within_surface, column));
+            .semantic_selection
+            .then(|| logical_position_for_cell(&surface.selection_rows, row_within_surface, column))
+            .flatten();
         let (logical_line, display_column, selection_backed) = logical_position
             .map_or((row_within_surface, 0, false), |(line, column)| {
                 (line, column, true)
@@ -254,6 +261,7 @@ impl MeasuredTranscriptLayout {
             row_within_surface,
             column_within_surface: column,
             selection_backed,
+            row_bias: 0,
         })
     }
 
@@ -281,9 +289,14 @@ impl MeasuredTranscriptLayout {
             .iter()
             .find(|surface| surface.metadata.id == anchor.entry_id)?;
         let (row_within_surface, column) = if anchor.selection_backed {
-            surface.selection_rows.as_ref().and_then(|rows| {
-                cell_for_logical_position(rows, anchor.logical_line, anchor.display_column)
-            })?
+            if !surface.semantic_selection {
+                return None;
+            }
+            cell_for_logical_position(
+                &surface.selection_rows,
+                anchor.logical_line,
+                anchor.display_column,
+            )?
         } else {
             (
                 anchor
@@ -297,14 +310,15 @@ impl MeasuredTranscriptLayout {
                 .top_row
                 .saturating_add(section.leading_gap_height)
                 .saturating_add(surface.top_offset)
-                .saturating_add(row_within_surface),
+                .saturating_add(row_within_surface)
+                .saturating_add_signed(anchor.row_bias),
             column,
         })
     }
 }
 
 fn logical_position_for_cell(
-    rows: &[TranscriptSelectionRow],
+    rows: &[SelectionRow],
     target_row: usize,
     target_column: usize,
 ) -> Option<(usize, usize)> {
@@ -327,7 +341,7 @@ fn logical_position_for_cell(
 }
 
 fn cell_for_logical_position(
-    rows: &[TranscriptSelectionRow],
+    rows: &[SelectionRow],
     target_line: usize,
     target_column: usize,
 ) -> Option<(usize, usize)> {
@@ -342,8 +356,7 @@ fn cell_for_logical_position(
         if logical_line != target_line {
             continue;
         }
-        let compact = compact_selection_row(row, 0);
-        let row_column = compact.start_cell.saturating_add(
+        let row_column = row.start_cell.saturating_add(
             target_column
                 .saturating_sub(display_column)
                 .min(selection_row_width(row)),
@@ -358,25 +371,22 @@ fn cell_for_logical_position(
     last_target_cell
 }
 
-fn selection_row_width(row: &TranscriptSelectionRow) -> usize {
-    let compact = compact_selection_row(row, 0);
-    compact
-        .end_cell
-        .checked_sub(compact.start_cell)
+fn selection_row_width(row: &SelectionRow) -> usize {
+    row.end_cell
+        .checked_sub(row.start_cell)
         .map_or(0, |width| width.saturating_add(1))
 }
 
-fn selection_row_column(row: &TranscriptSelectionRow, column: usize) -> usize {
-    let compact = compact_selection_row(row, 0);
+fn selection_row_column(row: &SelectionRow, column: usize) -> usize {
     column
-        .saturating_sub(compact.start_cell)
+        .saturating_sub(row.start_cell)
         .min(selection_row_width(row))
 }
 
 #[derive(Debug, Clone)]
 pub(super) struct TranscriptVisualEntry {
-    pub(super) source_text: Option<Rc<str>>,
-    pub(super) rendered_text: Rc<str>,
+    pub(super) source_text: Option<Arc<str>>,
+    pub(super) rendered_text: Arc<str>,
     pub(super) metadata: TranscriptVisualEntryMetadata,
     pub(super) kind: TranscriptRenderSurfaceKind,
     pub(super) leading_gap_rows: usize,
@@ -390,7 +400,9 @@ pub(super) struct TranscriptVisualEntry {
     pub(super) surface: Color,
     pub(super) lines: Vec<Line<'static>>,
     pub(super) interaction_rows: Option<Vec<Option<TranscriptInteractionRow>>>,
-    pub(super) selection_rows: Option<Vec<TranscriptSelectionRow>>,
+    pub(super) selection_rows: Vec<SelectionRow>,
+    // Only renderer-provided wrap metadata can anchor a logical source position.
+    pub(super) semantic_selection: bool,
     pub(super) diff_hunk_offsets: Vec<usize>,
     pub(super) selected_rail: bool,
     pub(super) tool_rail_motion: Option<ToolRailMotion>,
@@ -403,7 +415,7 @@ pub(super) fn measure_transcript_layout<Section, Entry>(
     width: u16,
     base_surface: Color,
     mut activity_first_seq: impl FnMut(&Section) -> u64,
-    mut cached_section: impl FnMut(usize, &Section) -> Option<Rc<MeasuredTranscriptSection>>,
+    mut cached_section: impl FnMut(usize, &Section) -> Option<Arc<MeasuredTranscriptSection>>,
     mut render_surfaces: impl FnMut(&Section, &Theme, u16, Color) -> Vec<Entry>,
 ) -> MeasuredTranscriptLayout
 where
@@ -443,7 +455,7 @@ where
             let content_width = usize::from(transcript_surface_content_width(render_width, false));
             let height = transcript_visual_rows(&surface.lines, content_width);
             content_height = top_offset + height + surface.trailing_gap_rows;
-            let rendered_text = Rc::from(
+            let rendered_text = Arc::from(
                 surface
                     .lines
                     .iter()
@@ -455,6 +467,23 @@ where
                     })
                     .collect::<Vec<_>>()
                     .join("\n"),
+            );
+            let semantic_selection = surface.selection_rows.is_some();
+            let selection_rows = surface.selection_rows.as_ref().map_or_else(
+                || {
+                    surface_selection_rows(
+                        &surface.lines,
+                        render_width,
+                        surface.show_outer_rail,
+                        surface.rail_glyph,
+                    )
+                },
+                |rows| {
+                    rows.iter()
+                        .enumerate()
+                        .map(|(index, row)| compact_selection_row(row, index))
+                        .collect()
+                },
             );
             measured_surfaces.push(TranscriptVisualEntry {
                 source_text,
@@ -472,7 +501,8 @@ where
                 surface: surface.surface,
                 lines: surface.lines,
                 interaction_rows: surface.interaction_rows,
-                selection_rows: surface.selection_rows,
+                selection_rows,
+                semantic_selection,
                 diff_hunk_offsets: surface.diff_hunk_offsets,
                 selected_rail: surface.selected_rail,
                 tool_rail_motion: surface.tool_rail_motion,
@@ -493,7 +523,7 @@ where
             lines,
         };
         top_row += measured_section.total_height();
-        measured_sections.push(Rc::new(measured_section));
+        measured_sections.push(Arc::new(measured_section));
     }
 
     MeasuredTranscriptLayout {
@@ -1118,7 +1148,7 @@ mod pin_tests {
     fn run_write_layout(total_content_rows: usize) -> MeasuredTranscriptLayout {
         let body_height = total_content_rows.saturating_sub(1).max(1);
         MeasuredTranscriptLayout {
-            sections: vec![Rc::new(MeasuredTranscriptSection {
+            sections: vec![Arc::new(MeasuredTranscriptSection {
                 activity_first_seq: 0,
                 top_row: 0,
                 leading_gap_height: 0,
@@ -1126,7 +1156,7 @@ mod pin_tests {
                 surfaces: vec![
                     TranscriptVisualEntry {
                         source_text: None,
-                        rendered_text: Rc::from(""),
+                        rendered_text: Arc::from(""),
                         metadata: test_metadata(TranscriptRenderSurfaceKind::AssistantTool, 0),
                         kind: TranscriptRenderSurfaceKind::AssistantTool,
                         leading_gap_rows: 0,
@@ -1140,7 +1170,8 @@ mod pin_tests {
                         surface: Color::Reset,
                         lines: vec![Line::from("Creating demo.txt")],
                         interaction_rows: None,
-                        selection_rows: None,
+                        selection_rows: Vec::new(),
+                        semantic_selection: false,
                         diff_hunk_offsets: Vec::new(),
                         selected_rail: false,
                         tool_rail_motion: None,
@@ -1148,7 +1179,7 @@ mod pin_tests {
                     },
                     TranscriptVisualEntry {
                         source_text: None,
-                        rendered_text: Rc::from(""),
+                        rendered_text: Arc::from(""),
                         metadata: test_metadata(TranscriptRenderSurfaceKind::AssistantFooter, 1),
                         kind: TranscriptRenderSurfaceKind::AssistantFooter,
                         leading_gap_rows: 0,
@@ -1162,7 +1193,8 @@ mod pin_tests {
                         surface: Color::Reset,
                         lines: vec![Line::from(Span::raw("     ◆ Run Write `demo.txt` 19s"))],
                         interaction_rows: None,
-                        selection_rows: None,
+                        selection_rows: Vec::new(),
+                        semantic_selection: false,
                         diff_hunk_offsets: Vec::new(),
                         selected_rail: false,
                         tool_rail_motion: None,
@@ -1228,7 +1260,7 @@ mod pin_tests {
         footer.top_offset = 2;
         footer.hit_region = test_hit_region(2, 120, 1);
         let after = MeasuredTranscriptLayout {
-            sections: vec![Rc::new(MeasuredTranscriptSection {
+            sections: vec![Arc::new(MeasuredTranscriptSection {
                 activity_first_seq: 0,
                 top_row: 0,
                 leading_gap_height: 0,
@@ -1252,7 +1284,7 @@ mod pin_tests {
         // arrange
         // act
         let mut layout = run_write_layout(4);
-        let footer = Rc::make_mut(&mut layout.sections[0])
+        let footer = Arc::make_mut(&mut layout.sections[0])
             .surfaces
             .last_mut()
             .expect("footer");
@@ -1384,7 +1416,7 @@ mod pin_tests {
     fn scroll_turn_layout(user_height: usize, body_height: usize) -> MeasuredTranscriptLayout {
         let content_height = user_height + body_height;
         MeasuredTranscriptLayout {
-            sections: vec![Rc::new(MeasuredTranscriptSection {
+            sections: vec![Arc::new(MeasuredTranscriptSection {
                 activity_first_seq: 0,
                 top_row: 0,
                 leading_gap_height: 0,
@@ -1392,7 +1424,7 @@ mod pin_tests {
                 surfaces: vec![
                     TranscriptVisualEntry {
                         source_text: None,
-                        rendered_text: Rc::from(""),
+                        rendered_text: Arc::from(""),
                         metadata: test_metadata(TranscriptRenderSurfaceKind::User, 0),
                         kind: TranscriptRenderSurfaceKind::User,
                         leading_gap_rows: 0,
@@ -1408,7 +1440,8 @@ mod pin_tests {
                             .map(|i| Line::from(format!("user line {i}")))
                             .collect(),
                         interaction_rows: None,
-                        selection_rows: None,
+                        selection_rows: Vec::new(),
+                        semantic_selection: false,
                         diff_hunk_offsets: Vec::new(),
                         selected_rail: false,
                         tool_rail_motion: None,
@@ -1416,7 +1449,7 @@ mod pin_tests {
                     },
                     TranscriptVisualEntry {
                         source_text: None,
-                        rendered_text: Rc::from(""),
+                        rendered_text: Arc::from(""),
                         metadata: test_metadata(TranscriptRenderSurfaceKind::AssistantBody, 1),
                         kind: TranscriptRenderSurfaceKind::AssistantBody,
                         leading_gap_rows: 0,
@@ -1432,7 +1465,8 @@ mod pin_tests {
                             .map(|i| Line::from(format!("body line {i}")))
                             .collect(),
                         interaction_rows: None,
-                        selection_rows: None,
+                        selection_rows: Vec::new(),
+                        semantic_selection: false,
                         diff_hunk_offsets: Vec::new(),
                         selected_rail: false,
                         tool_rail_motion: None,
@@ -1464,7 +1498,7 @@ mod pin_tests {
     fn sticky_prompt_selection_is_surface_kind_independent() {
         // arrange
         let mut layout = scroll_turn_layout(4, 40);
-        let section = Rc::make_mut(&mut layout.sections[0]);
+        let section = Arc::make_mut(&mut layout.sections[0]);
         section.surfaces[0].kind = TranscriptRenderSurfaceKind::AssistantBody;
 
         // act
@@ -1509,7 +1543,8 @@ mod pin_tests {
             hit_width: 20,
         });
         interaction_rows[5] = interaction_rows[4].clone();
-        Rc::make_mut(&mut layout.sections[0]).surfaces[1].interaction_rows = Some(interaction_rows);
+        Arc::make_mut(&mut layout.sections[0]).surfaces[1].interaction_rows =
+            Some(interaction_rows);
         let viewport = Rect::new(0, 0, 120, 10);
         let rows = transcript_viewport_rows(&layout, usize::from(viewport.height), 4);
 
@@ -1534,7 +1569,7 @@ mod pin_tests {
         let mut next = (*layout.sections[0]).clone();
         next.activity_first_seq = 2;
         next.top_row = 48;
-        layout.sections.push(Rc::new(next));
+        layout.sections.push(Arc::new(next));
         layout.total_height = 96;
         for (scroll, height, source_row, gap) in [
             (1, 7, 0, 1),
@@ -1585,7 +1620,7 @@ mod pin_tests {
             .capture_content_anchor(10)
             .expect("assistant surface anchor");
         let mut after = before.clone();
-        let section = Rc::make_mut(&mut after.sections[0]);
+        let section = Arc::make_mut(&mut after.sections[0]);
         section.surfaces[0].height += 5;
         section.surfaces[1].top_offset += 5;
         section.content_height += 5;
@@ -1607,12 +1642,13 @@ mod pin_tests {
         // arrange
         // Given: a detached viewport on a wrapped assistant line with streaming rows below it.
         let mut before = scroll_turn_layout(4, 3);
-        let section = Rc::make_mut(&mut before.sections[0]);
-        section.surfaces[1].selection_rows = Some(vec![
+        let section = Arc::make_mut(&mut before.sections[0]);
+        section.surfaces[1].semantic_selection = true;
+        section.surfaces[1].selection_rows = vec![
             selection_row(5, false),
             selection_row(5, true),
             selection_row(5, true),
-        ]);
+        ];
         section.surfaces[1].lines = vec![
             Line::from("abcde"),
             Line::from("fghij"),
@@ -1627,7 +1663,8 @@ mod pin_tests {
         streaming.height = 1;
         streaming.top_offset = 7;
         streaming.lines = vec![Line::from("streaming")];
-        streaming.selection_rows = None;
+        streaming.selection_rows.clear();
+        streaming.semantic_selection = false;
         streaming.hit_region = test_hit_region(7, 120, 1);
         section.surfaces.push(streaming);
         section.content_height = 8;
@@ -1650,9 +1687,9 @@ mod pin_tests {
         // When: streaming appends below the detached viewport while the width reflows the line.
         let mut after = before.clone();
         {
-            let section = Rc::make_mut(&mut after.sections[0]);
+            let section = Arc::make_mut(&mut after.sections[0]);
             section.surfaces[1].selection_rows =
-                Some(vec![selection_row(7, false), selection_row(7, true)]);
+                vec![selection_row(7, false), selection_row(7, true)];
             section.surfaces[1].height = 2;
             section.surfaces[1].lines = vec![Line::from("abcdefg"), Line::from("hijklmn")];
             section.surfaces[2].top_offset = 6;
@@ -1684,17 +1721,19 @@ mod pin_tests {
         // arrange
         // Given: a detached viewport on the third wrapped row of one logical line.
         let mut before = scroll_turn_layout(1, 3);
-        Rc::make_mut(&mut before.sections[0]).surfaces[1].selection_rows = Some(vec![
+        Arc::make_mut(&mut before.sections[0]).surfaces[1].semantic_selection = true;
+        Arc::make_mut(&mut before.sections[0]).surfaces[1].selection_rows = vec![
             selection_row(4, false),
             selection_row(4, true),
             selection_row(4, true),
-        ]);
+        ];
         let anchor = before
             .capture_content_anchor(3)
             .expect("wrapped line anchor");
         let mut after = scroll_turn_layout(1, 2);
-        Rc::make_mut(&mut after.sections[0]).surfaces[1].selection_rows =
-            Some(vec![selection_row(6, false), selection_row(6, true)]);
+        Arc::make_mut(&mut after.sections[0]).surfaces[1].semantic_selection = true;
+        Arc::make_mut(&mut after.sections[0]).surfaces[1].selection_rows =
+            vec![selection_row(6, false), selection_row(6, true)];
 
         // When: width reflow changes the number of visual rows.
         let restored = after
@@ -1712,17 +1751,19 @@ mod pin_tests {
         // arrange
         // Given: a selection endpoint two cells into the third wrapped row.
         let mut before = scroll_turn_layout(1, 3);
-        Rc::make_mut(&mut before.sections[0]).surfaces[1].selection_rows = Some(vec![
+        Arc::make_mut(&mut before.sections[0]).surfaces[1].semantic_selection = true;
+        Arc::make_mut(&mut before.sections[0]).surfaces[1].selection_rows = vec![
             selection_row(4, false),
             selection_row(4, true),
             selection_row(4, true),
-        ]);
+        ];
         let anchor = before
             .capture_selection_anchor(TranscriptSelectionCell { row: 3, column: 2 })
             .expect("selection endpoint anchor");
         let mut after = scroll_turn_layout(1, 2);
-        Rc::make_mut(&mut after.sections[0]).surfaces[1].selection_rows =
-            Some(vec![selection_row(6, false), selection_row(6, true)]);
+        Arc::make_mut(&mut after.sections[0]).surfaces[1].semantic_selection = true;
+        Arc::make_mut(&mut after.sections[0]).surfaces[1].selection_rows =
+            vec![selection_row(6, false), selection_row(6, true)];
 
         // When: width reflow packs that logical cell into two rows.
         let restored = after
@@ -1735,13 +1776,16 @@ mod pin_tests {
         assert_eq!(restored, TranscriptSelectionCell { row: 2, column: 4 });
     }
 
-    fn selection_row(width: usize, continues_previous: bool) -> TranscriptSelectionRow {
-        TranscriptSelectionRow {
-            cells: vec!["x".to_string(); width],
-            continues_previous,
-            copy_offset: 0,
-            copy_joiner: None,
-            links: Vec::new(),
-        }
+    fn selection_row(width: usize, continues_previous: bool) -> SelectionRow {
+        compact_selection_row(
+            &crate::ui::ui_transcript_selection::TranscriptSelectionRow {
+                cells: vec!["x".to_string(); width],
+                continues_previous,
+                copy_offset: 0,
+                copy_joiner: None,
+                links: Vec::new(),
+            },
+            0,
+        )
     }
 }

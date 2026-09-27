@@ -1,0 +1,50 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.96s
+────────────
+ Nextest run ID a93238b1-4c8a-4e4d-afd4-9353a2118258 with nextest profile: ci
+    Starting 1 test across 1 binary
+        FAIL [   0.546s] (1/1) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+  stdout ───
+
+    running 1 test
+    test recorded_terminal_journeys_match_reference_cells_and_intents ... FAILED
+
+    failures:
+
+    failures:
+        recorded_terminal_journeys_match_reference_cells_and_intents
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+
+  stderr ───
+
+    thread 'recorded_terminal_journeys_match_reference_cells_and_intents' (2170353) panicked at crates/harness-tui/tests/rewrite_reference_test.rs:56:9:
+    assertion `left == right` failed: repeated frame preparation changed interaction state: detached-history
+      left: TranscriptInteractionSnapshot { scroll: 12, follow_mode: false, selected_activity_index: 30, show_tool_details: true, expanded_tool_call_ids: [] }
+     right: TranscriptInteractionSnapshot { scroll: 11, follow_mode: false, selected_activity_index: 30, show_tool_details: true, expanded_tool_call_ids: [] }
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.547s] 1 test run: 0 passed, 1 failed, 0 skipped
+        FAIL [   0.546s] (1/1) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+  stdout ───
+
+    running 1 test
+    test recorded_terminal_journeys_match_reference_cells_and_intents ... FAILED
+
+    failures:
+
+    failures:
+        recorded_terminal_journeys_match_reference_cells_and_intents
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+
+  stderr ───
+
+    thread 'recorded_terminal_journeys_match_reference_cells_and_intents' (2170353) panicked at crates/harness-tui/tests/rewrite_reference_test.rs:56:9:
+    assertion `left == right` failed: repeated frame preparation changed interaction state: detached-history
+      left: TranscriptInteractionSnapshot { scroll: 12, follow_mode: false, selected_activity_index: 30, show_tool_details: true, expanded_tool_call_ids: [] }
+     right: TranscriptInteractionSnapshot { scroll: 11, follow_mode: false, selected_activity_index: 30, show_tool_details: true, expanded_tool_call_ids: [] }
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

@@ -1,0 +1,308 @@
+{
+  "schema": "tui-sticky-selection-comparison-v1",
+  "before": {
+    "changed_cells": 0,
+    "changes": [],
+    "cursor_equal": true
+  },
+  "selected": {
+    "changed_cells": 21,
+    "changes": [
+      {
+        "column": 5,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 6,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 7,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 8,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 9,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 10,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 11,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 12,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 13,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 14,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 15,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 16,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 17,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 18,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 19,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 20,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 21,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 22,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 23,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 24,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      },
+      {
+        "column": 25,
+        "row": 15,
+        "changes": {
+          "fgColor": [
+            13158600,
+            1315860
+          ],
+          "bgColor": [
+            1315860,
+            8245247
+          ]
+        }
+      }
+    ],
+    "cursor_equal": true
+  }
+}

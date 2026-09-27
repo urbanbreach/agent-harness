@@ -1,0 +1,34 @@
+{
+  "schema": "tui-gap-anchor-comparison-v1",
+  "frozen_reference_sha256": "20de2a9f8dee74d48a07daa0e78d8a1ff66bdcc8245dfa04afddf768c2b2e69a",
+  "frames": 539,
+  "exact": 537,
+  "corrections": [
+    {
+      "id": "detached-history-40x24-reduced-0ms",
+      "changed_cells": 326,
+      "columns": [
+        2,
+        36
+      ],
+      "rows": [
+        3,
+        16
+      ],
+      "change": "Retain original blank row 2 and shift the recorded transcript body down one row; all other cells unchanged."
+    },
+    {
+      "id": "detached-append-40x24-reduced-0ms",
+      "changed_cells": 256,
+      "columns": [
+        2,
+        36
+      ],
+      "rows": [
+        3,
+        14
+      ],
+      "change": "Retain original blank row 2 and shift the recorded transcript body down one row; all other cells unchanged."
+    }
+  ]
+}

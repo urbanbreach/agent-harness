@@ -161,7 +161,6 @@ pub(crate) mod todo_pane;
 mod toggles;
 mod tool_call;
 mod tool_output;
-mod transcript_cache;
 mod transcript_entry;
 mod transcript_state;
 mod transcript_view;
@@ -1745,7 +1744,6 @@ impl AppState {
             return;
         }
         self.starting_session_seed = false;
-        self.bump_transcript_render_epoch();
         let previous_phase = self.current_live_turn_phase();
         self.note_live_fragment_timing(event);
         self.projection.ingest_live_event(event);

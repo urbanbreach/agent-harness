@@ -228,11 +228,44 @@ pub(super) fn disabled_copy_on_select_supports_ctrl_c_and_escape() {
         Ok(())
     })));
 
-    let mut copy_app = transcript_selection_test_app();
-    drag_transcript_selection(&mut copy_app, "Copy this exact reply");
-    assert!(copy_app.transcript_selection().is_some());
-
+    let text = (0..70)
+        .map(|index| {
+            if index == 10 {
+                "Copy this exact reply".to_owned()
+            } else {
+                format!("Other reply {index:02}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let mut copy_app = transcript_selection_test_app_with_text(&text);
     copy_app.set_frame_area(TEST_FRAME_AREA);
+    copy_app.scroll_goto_top();
+    copy_app.scroll_page_down(10);
+    copy_app.set_frame_area(TEST_FRAME_AREA);
+    let painted = render_text(&copy_app, TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
+    assert!(painted.contains("Select this"), "sticky prompt is visible");
+    let (column, row) =
+        transcript_click_position_in_area(&copy_app, TEST_FRAME_AREA, "Copy this exact reply");
+    let column = column - 1; // The click helper targets one cell inside the label.
+    drag_transcript_selection_range(&mut copy_app, (column, row), (column + 20, row));
+    assert!(copy_app.transcript_selection().is_some());
+    assert_eq!(
+        rendered_cell_bg(&copy_app, column, row),
+        copy_app.theme().status.info
+    );
+    assert_ne!(
+        rendered_cell_bg(&copy_app, column, row + 1),
+        copy_app.theme().status.info
+    );
+
+    // Copy still owns the selected source after the viewport leaves it.
+    copy_app.scroll_goto_bottom();
+    copy_app.set_frame_area(TEST_FRAME_AREA);
+    assert!(
+        !render_text(&copy_app, TEST_FRAME_AREA.width, TEST_FRAME_AREA.height)
+            .contains("Copy this exact reply")
+    );
     copy_app.handle_key(key_with_modifiers(
         KeyCode::Char('c'),
         KeyModifiers::CONTROL,
@@ -442,19 +475,6 @@ fn production_render_app_emits_only_balanced_safe_osc8_through_frame_backend() {
     assert_eq!(markers, opens.saturating_mul(2));
 }
 
-pub(super) fn transcript_selection_hit_testing_reuses_cached_snapshot_during_drag() {
-    let app = transcript_selection_test_app();
-    let (column, row, width) = transcript_selection_text_bounds(&app, "Copy this exact reply");
-
-    reset_transcript_selection_cache_metrics_for_test();
-
-    for offset in 0..width {
-        assert!(transcript_selection_cell(&app, TEST_FRAME_AREA, column + offset, row,).is_some());
-    }
-
-    assert_eq!(transcript_selection_cache_build_count_for_test(), 1);
-}
-
 pub(super) fn transcript_selection_snapshot_preserves_user_card_marker() {
     let app = transcript_selection_test_app();
     let snapshot = transcript_selection_debug_snapshot(&app, TEST_FRAME_AREA).unwrap_or_abort();
@@ -473,69 +493,6 @@ pub(super) fn transcript_selection_snapshot_preserves_user_card_marker() {
         !user_row.contains("█Select this"),
         "user selection row must not use the downgraded prompt rail block\n{user_row}"
     );
-}
-
-pub(super) fn mouse_wheel_does_not_build_transcript_selection_snapshot() {
-    let mut app = transcript_selection_test_app();
-
-    reset_transcript_selection_cache_metrics_for_test();
-
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::ScrollDown,
-            column: 5,
-            row: 5,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        Some(WheelTarget::Transcript),
-        None,
-        None,
-    );
-
-    assert_eq!(transcript_selection_cache_build_count_for_test(), 0);
-}
-
-pub(super) fn transcript_selection_render_reuses_cached_snapshot() {
-    let mut app = transcript_selection_test_app();
-    let (column, row, width) = transcript_selection_text_bounds(&app, "Copy this exact reply");
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Drag(MouseButton::Left),
-            column: column + width.saturating_sub(1),
-            row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
-
-    reset_transcript_selection_cache_metrics_for_test();
-
-    let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
-    let mut terminal = Terminal::new(backend).unwrap_or_abort();
-    terminal
-        .draw(|frame| render_app(frame, &app))
-        .unwrap_or_abort();
-    terminal
-        .draw(|frame| render_app(frame, &app))
-        .unwrap_or_abort();
-
-    assert_eq!(transcript_selection_cache_build_count_for_test(), 1);
 }
 
 pub(super) fn transcript_selection_render_stays_aligned_after_large_reasoning_block() {
@@ -585,65 +542,4 @@ pub(super) fn transcript_selection_render_stays_aligned_after_large_reasoning_bl
     if far_above_row != row {
         assert_ne!(buffer[(column, far_above_row)].bg, highlight);
     }
-}
-
-pub(super) fn transcript_render_key_is_cached_across_selection_drag_path() {
-    let mut app = transcript_selection_test_app();
-
-    AppState::reset_transcript_render_key_metrics_for_test();
-
-    let (column, row, width) = transcript_selection_text_bounds(&app, "Copy this exact reply");
-
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Drag(MouseButton::Left),
-            column: column + width.saturating_sub(1),
-            row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
-
-    let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
-    let mut terminal = Terminal::new(backend).unwrap_or_abort();
-    terminal
-        .draw(|frame| render_app(frame, &app))
-        .unwrap_or_abort();
-    terminal
-        .draw(|frame| render_app(frame, &app))
-        .unwrap_or_abort();
-
-    assert_eq!(AppState::transcript_render_key_build_count_for_test(), 1);
-}
-
-pub(super) fn transcript_render_key_reuses_cache_until_marked_dirty() {
-    let mut app = transcript_selection_test_app();
-
-    AppState::reset_transcript_render_key_metrics_for_test();
-
-    let initial_key = app.transcript_render_cache_key();
-    let cached_key = app.transcript_render_cache_key();
-    assert_eq!(initial_key, cached_key);
-    assert_eq!(AppState::transcript_render_key_build_count_for_test(), 1);
-
-    app.mark_transcript_dirty_for_test();
-
-    let dirty_key = app.transcript_render_cache_key();
-    assert_ne!(initial_key, dirty_key);
-    assert_eq!(AppState::transcript_render_key_build_count_for_test(), 2);
 }

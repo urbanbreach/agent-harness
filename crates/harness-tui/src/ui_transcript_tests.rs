@@ -41,220 +41,7 @@ fn transcript_test_line_texts_joins_spans() {
 }
 
 #[test]
-fn transcript_render_key_reuses_content_hash_across_animation_frames() {
-    // arrange
-    // Given: a streaming transcript whose content is unchanged between animation frames.
-    let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
-        request_id: "request-streaming-cache".to_string(),
-        profile_label: "default".to_string(),
-        model_id: "gpt-5.4-mini".to_string(),
-        provider_id: "openai".to_string(),
-        status: ActivityStatus::Streaming,
-        user_message: None,
-        user_timestamp: None,
-        request_data: None,
-        thinking_text: String::new(),
-        thinking_first_mono_ms: None,
-        thinking_last_mono_ms: None,
-        transcript_text: String::new(),
-        first_delta_mono_ms: None,
-        usage: None,
-        cache_usage: None,
-        error_message: None,
-        permissions: Vec::new(),
-        tool_calls: Vec::new(),
-        first_seq: 1,
-        last_seq: 1,
-        first_mono_ms: 1,
-        last_mono_ms: 1,
-        request_started_mono_ms: None,
-        revision: 0,
-    }]);
-    app.transcript_view.selected_activity_index = 0;
-
-    AppState::reset_transcript_render_key_metrics_for_test();
-    let initial_key = app.transcript_render_cache_key();
-    assert_eq!(AppState::transcript_render_key_build_count_for_test(), 1);
-
-    // When: the animation advances to a different visible frame.
-    for _ in 0..4 {
-        app.advance_transcript_animation_phase();
-    }
-
-    // act
-    // Then: animation-only paint state does not re-hash the full transcript.
-    // assert
-    assert_eq!(app.transcript_render_cache_key(), initial_key);
-    assert_eq!(AppState::transcript_render_key_build_count_for_test(), 1);
-    assert_eq!(
-        AppState::transcript_render_expansion_hash_count_for_test(),
-        1
-    );
-}
-
-#[test]
-fn transcript_render_key_changes_after_tool_output_expansion() {
-    // Given: a transcript whose tool output has not been expanded.
-    let mut activity = transcript_section_model_test_activity(
-        "request-tool-cache",
-        ActivityStatus::Done,
-        "assistant reply",
-    );
-    activity
-        .tool_calls
-        .push(transcript_section_model_test_tool_call(
-            "tool-cache",
-            "fs.read",
-        ));
-    let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from([activity]);
-    let collapsed_key = app.transcript_render_cache_key();
-
-    // When: the tool output expansion changes.
-    app.toggle_tool_output_for_test("tool-cache");
-
-    // Then: generation-based invalidation rebuilds the render key.
-    assert_ne!(app.transcript_render_cache_key(), collapsed_key);
-}
-
-#[test]
-fn transcript_measure_cache_key_stable_across_animation_phase_changes() {
-    // arrange
-    let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
-        request_id: "request-measure-stable".to_string(),
-        profile_label: "default".to_string(),
-        model_id: "gpt-5.4-mini".to_string(),
-        provider_id: "openai".to_string(),
-        status: ActivityStatus::Streaming,
-        user_message: None,
-        user_timestamp: None,
-        request_data: None,
-        thinking_text: String::new(),
-        thinking_first_mono_ms: None,
-        thinking_last_mono_ms: None,
-        transcript_text: String::new(),
-        first_delta_mono_ms: None,
-        usage: None,
-        cache_usage: None,
-        error_message: None,
-        permissions: Vec::new(),
-        tool_calls: Vec::new(),
-        first_seq: 1,
-        last_seq: 1,
-        first_mono_ms: 1,
-        last_mono_ms: 1,
-        request_started_mono_ms: None,
-        revision: 0,
-    }]);
-    app.transcript_view.selected_activity_index = 0;
-    // act
-    let initial_key = app.transcript_measure_cache_key();
-    app.advance_transcript_animation_phase();
-    let updated_key = app.transcript_measure_cache_key();
-    // assert
-    assert_eq!(
-        initial_key, updated_key,
-        "measure cache key must not change when only animation phase changes"
-    );
-}
-
-#[test]
-fn transcript_layout_cache_does_not_rebuild_on_animation_phase_change() {
-    // arrange
-    let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
-        request_id: "request-layout-rebuild".to_string(),
-        profile_label: "default".to_string(),
-        model_id: "gpt-5.4-mini".to_string(),
-        provider_id: "openai".to_string(),
-        status: ActivityStatus::Streaming,
-        user_message: None,
-        user_timestamp: None,
-        request_data: None,
-        thinking_text: String::new(),
-        thinking_first_mono_ms: None,
-        thinking_last_mono_ms: None,
-        transcript_text: String::new(),
-        first_delta_mono_ms: None,
-        usage: None,
-        cache_usage: None,
-        error_message: None,
-        permissions: Vec::new(),
-        tool_calls: Vec::new(),
-        first_seq: 1,
-        last_seq: 1,
-        first_mono_ms: 1,
-        last_mono_ms: 1,
-        request_started_mono_ms: None,
-        revision: 0,
-    }]);
-    app.transcript_view.selected_activity_index = 0;
-    // act
-    AppState::reset_transcript_render_key_metrics_for_test();
-    let _ = app.transcript_measure_cache_key();
-    // assert
-    let builds_after_first = AppState::transcript_render_key_build_count_for_test();
-    assert_eq!(builds_after_first, 1, "first call should build once");
-
-    app.advance_transcript_animation_phase();
-    let _ = app.transcript_measure_cache_key();
-    let builds_after_animation = AppState::transcript_render_key_build_count_for_test();
-    assert_eq!(
-        builds_after_animation, 1,
-        "animation phase change must not rebuild the measure cache key"
-    );
-}
-
-#[test]
-fn long_transcript_reuses_measured_sections_across_animation_frames() {
-    // arrange
-    // Given: a long transcript with one visible running tool that requests animation frames.
-    let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from(
-        (0..500)
-            .map(|index| {
-                let mut entry = transcript_section_model_test_activity(
-                    &format!("request-animation-cache-{index}"),
-                    if index == 499 {
-                        ActivityStatus::Streaming
-                    } else {
-                        ActivityStatus::Done
-                    },
-                    &format!("assistant response {index}"),
-                );
-                if index == 499 {
-                    let mut tool =
-                        transcript_section_model_test_tool_call("tool-animation-cache", "bash");
-                    tool.status = ToolCallDisplayStatus::Running;
-                    entry.tool_calls.push(tool);
-                }
-                entry
-            })
-            .collect::<Vec<_>>(),
-    );
-    app.transcript_view.selected_activity_index = 499;
-    let theme = Theme::default();
-    reset_transcript_section_render_count_for_test();
-    let _ = build_transcript_lines_for_width(&app, &theme, 120);
-    let rendered_sections = transcript_section_render_count_for_test();
-
-    // When: only the animation clock advances and the transcript is rendered again.
-    app.advance_transcript_animation_phase();
-    let _ = build_transcript_lines_for_width(&app, &theme, 120);
-
-    // act
-    // Then: historical and active sections both reuse their measured render surfaces.
-    // assert
-    assert_eq!(
-        transcript_section_render_count_for_test(),
-        rendered_sections
-    );
-}
-
-#[test]
-fn streaming_delta_reuses_unrelated_running_tool_section() {
+fn streaming_delta_preserves_unrelated_tool_and_selection() {
     // arrange
     // Given: an earlier turn has a running background tool while the latest turn streams.
     let mut background = transcript_section_model_test_activity(
@@ -291,33 +78,41 @@ fn streaming_delta_reuses_unrelated_running_tool_section() {
                 snapshot.viewport,
                 snapshot.visible_rows,
                 snapshot.rows,
-                snapshot.line_texts,
-                snapshot.continues_previous,
             )
         };
         let _ = render(&mut app);
-        reset_transcript_section_render_count_for_test();
-        TRANSCRIPT_SEMANTIC_BUILD_COUNT.with(|count| count.set(0));
 
         // When: a live turn changes while both scrollbar widths are needed for paint.
-        let active = app.activities.back_mut().unwrap_or_abort();
-        active
-            .transcript_text
-            .push_str(" grows [link](https://example.com) \u{754c}e\u{301}");
-        active.revision = active.revision.wrapping_add(1);
-        app.mark_transcript_dirty_for_test();
+        app.ingest_runtime_event(harness_core::event::RuntimeEvent::Live(Box::new(
+            harness_core::event::LiveEventEnvelope {
+                event_id: format!("fragment-{width}"),
+                run_id: "fixture".into(),
+                mono_ms: 100,
+                ts: None,
+                actor: harness_core::event::EventActor::new(
+                    harness_core::event::ActorKind::Worker,
+                    None,
+                ),
+                correlation_id: Some("request-active-stream".into()),
+                causation_id: None,
+                stream_key: None,
+                payload: harness_core::event::LiveEventV1::ProviderTextDelta {
+                    request_id: "request-active-stream".into(),
+                    delta: " grows [link](https://example.com) 界e\u{301}".into(),
+                },
+            },
+        )));
         app.advance_transcript_animation_phase();
         let cached = render(&mut app);
+        assert!(cached.3.iter().any(|row| row.text.contains("grows")));
 
-        // Then: semantics build once, only the active turn is remeasured at each width,
-        // and painted cells plus selection geometry/text match an uncached render.
+        // Then: painted cells and selection geometry/text match a cold projection.
         assert!(app.transcript_view.viewport.max_scroll() > 0);
-        assert_eq!(TRANSCRIPT_SEMANTIC_BUILD_COUNT.with(Cell::get), 1);
-        assert_eq!(transcript_section_render_count_for_test(), 2);
+        let theme = *app.theme();
         let context = transcript_pane_context(
             &app,
             resolved_transcript_area(&app, area).unwrap_or_abort(),
-            app.theme(),
+            &theme,
         );
         let widths = [context.inner_area.width, cached.1.width];
         assert_ne!(widths[0], widths[1]);
@@ -330,11 +125,15 @@ fn streaming_delta_reuses_unrelated_running_tool_section() {
             );
             (
                 transcript_layout_lines(&layout, app.transcript_animation_phase(), app.theme()),
-                transcript_selection_rows(&layout, usize::from(width)),
+                transcript_selection_rows(
+                    &layout,
+                    usize::from(width),
+                    &(0..layout.total_height).collect(),
+                ),
             )
         });
         for (width, cached_layout) in widths.into_iter().zip(layouts) {
-            TRANSCRIPT_LAYOUT_CACHE.with(|cache| cache.borrow_mut().clear());
+            app.transcript_view.prepared = PreparedTranscript::default();
             let cold = build_measured_transcript_layout_for_width_on_surface(
                 &app,
                 app.theme(),
@@ -345,12 +144,15 @@ fn streaming_delta_reuses_unrelated_running_tool_section() {
                 cached_layout,
                 (
                     transcript_layout_lines(&cold, app.transcript_animation_phase(), app.theme()),
-                    transcript_selection_rows(&cold, usize::from(width)),
+                    transcript_selection_rows(
+                        &cold,
+                        usize::from(width),
+                        &(0..cold.total_height).collect()
+                    ),
                 )
             );
         }
-        TRANSCRIPT_LAYOUT_CACHE.with(|cache| cache.borrow_mut().clear());
-        reset_transcript_selection_cache_metrics_for_test();
+        app.transcript_view.prepared = PreparedTranscript::default();
         assert_eq!(cached, render(&mut app));
     }
 }
@@ -2426,175 +2228,6 @@ fn transcript_measurement_wrap_correctness_across_widths_and_styles() {
             );
         }
     }
-}
-
-#[test]
-fn transcript_selection_rows_proportional_to_visual_lines_not_cell_count() {
-    // arrange
-    let message_count = 50usize;
-    let mut activities = Vec::with_capacity(message_count);
-    for idx in 0..message_count {
-        activities.push(transcript_section_model_test_activity(
-            &format!("request-perf-{idx}"),
-            ActivityStatus::Done,
-            &format!("Assistant reply number {idx} with some content to render."),
-        ));
-    }
-    let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from(activities);
-    app.transcript_view.selected_activity_index = message_count.saturating_sub(1);
-
-    let area = Rect::new(0, 0, 140, 40);
-    // act
-    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 80);
-    let total_height = layout.total_height;
-
-    let row_count = transcript_selection_row_count(&app, area).unwrap_or_abort();
-    // assert
-    assert_eq!(
-        row_count, total_height,
-        "SelectionRow count must equal visual line count, not scale with width"
-    );
-
-    assert!(
-        row_count < message_count * 80,
-        "SelectionRow count ({row_count}) must be much less than message_count * width ({}), \
-         proving selection does not allocate per-cell",
-        message_count * 80
-    );
-
-    assert!(
-        row_count >= message_count,
-        "SelectionRow count ({row_count}) must be at least proportional to message count ({message_count})"
-    );
-
-    let wide_layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
-    let wide_total_height = wide_layout.total_height;
-    let wide_row_count =
-        transcript_selection_row_count(&app, Rect::new(0, 0, 140, 40)).unwrap_or_abort();
-
-    assert_eq!(
-        wide_row_count, wide_total_height,
-        "SelectionRow count must equal visual line count at any width"
-    );
-
-    let width_ratio = 120.0 / 80.0;
-    let row_ratio = f64::from(u32::try_from(wide_row_count).unwrap_or(u32::MAX))
-        / f64::from(u32::try_from(row_count.max(1)).unwrap_or(u32::MAX));
-    assert!(
-        row_ratio < width_ratio,
-        "SelectionRow count should not scale linearly with width: \
-         narrow={row_count}, wide={wide_row_count}, width_ratio={width_ratio:.2}, row_ratio={row_ratio:.2}"
-    );
-}
-
-#[test]
-fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
-    use std::time::{Duration, Instant};
-
-    // arrange
-    const ACTIVITY_COUNT: usize = 500;
-    const STREAMING_DELTA_COUNT: usize = 20;
-    const CACHE_KEY_BUDGET: Duration = Duration::from_millis(15);
-    const LAYOUT_BUDGET: Duration = Duration::from_millis(75);
-
-    let activities: Vec<ActivityEntry> = (0..ACTIVITY_COUNT)
-        .map(|index| {
-            let status = if index == ACTIVITY_COUNT - 1 {
-                ActivityStatus::Streaming
-            } else {
-                ActivityStatus::Done
-            };
-            let mut entry = transcript_section_model_test_activity(
-                &format!("req-{index:04}"),
-                status,
-                &format!(
-                    "Assistant reply {index}: the workspace looks consistent and the \
-                     transcript cache should remain stable across streaming deltas."
-                ),
-            );
-            entry.user_message = Some(UserMessageSubmittedEvent {
-                request_id: format!("req-{index:04}").into(),
-                text: format!("User turn {index}: inspect the workspace."),
-            });
-            if index % 10 == 0 {
-                let mut tool_call =
-                    transcript_section_model_test_tool_call(&format!("tc-{index:04}"), "fs.read");
-                tool_call.status = ToolCallDisplayStatus::Succeeded;
-                entry.tool_calls.push(tool_call);
-            }
-            entry
-        })
-        .collect();
-
-    let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from(activities);
-    app.transcript_view.selected_activity_index = ACTIVITY_COUNT - 1;
-
-    let theme = Theme::default();
-    let width: u16 = 120;
-    // act
-    let _ = build_transcript_lines_for_width(&app, &theme, width);
-    reset_transcript_section_render_count_for_test();
-
-    let mut max_cache_key = Duration::ZERO;
-    let mut max_layout = Duration::ZERO;
-    let mut total_delta = Duration::ZERO;
-
-    for delta_index in 0..STREAMING_DELTA_COUNT {
-        if let Some(last) = app.activities.back_mut() {
-            last.transcript_text.push_str(&format!(
-                " Delta {delta_index}: appending streaming text to exercise the \
-                 transcript render cache and layout pipeline."
-            ));
-            last.revision = last.revision.wrapping_add(1);
-        }
-        app.mark_transcript_dirty_for_test();
-
-        app.advance_transcript_animation_phase();
-
-        let key_start = Instant::now();
-        let _ = app.transcript_render_cache_key();
-        let key_elapsed = key_start.elapsed();
-
-        let layout_start = Instant::now();
-        let lines = build_transcript_lines_for_width(&app, &theme, width);
-        let layout_elapsed = layout_start.elapsed();
-
-        assert!(
-            !lines.is_empty(),
-            "transcript lines must not be empty for delta {delta_index}"
-        );
-
-        max_cache_key = max_cache_key.max(key_elapsed);
-        max_layout = max_layout.max(layout_elapsed);
-        total_delta += key_elapsed + layout_elapsed;
-    }
-
-    let avg_delta = total_delta / u32::try_from(STREAMING_DELTA_COUNT).unwrap_or(u32::MAX);
-
-    eprintln!(
-        "perf_500_event: {ACTIVITY_COUNT} activities, {STREAMING_DELTA_COUNT} deltas | \
-         cache_key max={max_cache_key:?} | layout max={max_layout:?} | \
-         avg_delta={avg_delta:?}"
-    );
-    // assert
-    assert!(
-        max_cache_key < CACHE_KEY_BUDGET,
-        "per-delta cache key time {max_cache_key:?} exceeded budget {CACHE_KEY_BUDGET:?} \
-         (avg delta {avg_delta:?}, {STREAMING_DELTA_COUNT} deltas, {ACTIVITY_COUNT} activities)"
-    );
-
-    assert!(
-        max_layout < LAYOUT_BUDGET,
-        "per-delta layout time {max_layout:?} exceeded budget {LAYOUT_BUDGET:?} \
-         (avg delta {avg_delta:?}, {STREAMING_DELTA_COUNT} deltas, {ACTIVITY_COUNT} activities)"
-    );
-    assert_eq!(
-        transcript_section_render_count_for_test(),
-        STREAMING_DELTA_COUNT,
-        "each streaming delta should rebuild only the changed active section"
-    );
 }
 
 #[test]

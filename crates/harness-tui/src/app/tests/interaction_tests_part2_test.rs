@@ -603,22 +603,37 @@ pub(super) fn page_up_down_with_prompt_focus_scrolls_transcript_without_clearing
 }
 
 pub(super) fn ctrl_up_down_with_prompt_focus_scrolls_transcript_by_one_row() {
-    let mut app = AppState::new_live(None, false, None);
+    let mut app = detached_resize_app();
+    let area = Rect::new(0, 0, 80, 20);
+    app.set_reduced_motion_for_evidence(true);
+    app.restart_motion_epoch_for_evidence();
     app.focus = Focus::Prompt;
     app.composer.prompt_buffer = "draft text".to_string();
     app.composer.prompt_cursor = 10;
-    app.transcript_view.record_measured_max_scroll(42);
-
-    app.handle_key(key_with_modifiers(KeyCode::Up, KeyModifiers::CONTROL));
-    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 1);
-    assert!(!app.transcript_view.viewport.is_following());
+    app.scroll_goto_bottom();
+    app.set_frame_area(area);
+    app.scroll_page_up(24);
+    app.set_frame_area(area);
+    for (direction, offsets) in [
+        (KeyCode::Up, (25..=40).collect::<Vec<_>>()),
+        (KeyCode::Down, (24..40).rev().collect()),
+    ] {
+        for offset in offsets {
+            app.handle_key(key_with_modifiers(direction, KeyModifiers::CONTROL));
+            app.set_frame_area(area);
+            assert_eq!(app.transcript_scroll_offset(), offset);
+            let interaction = app.transcript_interaction_snapshot();
+            let painted = render_text(&app, area.width, area.height);
+            // Extra paints and a width round trip must not snap a blank gap to content.
+            for width in [80, 60, 80] {
+                app.set_frame_area(Rect::new(0, 0, width, area.height));
+                let _ = render_text(&app, width, area.height);
+            }
+            assert_eq!(app.transcript_interaction_snapshot(), interaction);
+            assert_eq!(render_text(&app, area.width, area.height), painted);
+        }
+    }
     assert_eq!(app.composer.prompt_buffer, "draft text");
-
-    app.handle_key(key_with_modifiers(KeyCode::Up, KeyModifiers::CONTROL));
-    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 2);
-
-    app.handle_key(key_with_modifiers(KeyCode::Down, KeyModifiers::CONTROL));
-    assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 1);
     assert_eq!(app.focus, Focus::Prompt);
 }
 

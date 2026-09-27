@@ -60,6 +60,10 @@ fn settled_assistant_block(index: usize) -> ActivityEntry {
 
 // Run each scenario in a fresh nextest process to isolate allocator/cache residency.
 #[test]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "one serial runner keeps the same measurement boundary across scenarios"
+)]
 fn perf_interactive_resources_under_load() -> TestResult {
     use crate::terminal::{FrameOutput, FrameOutputBackend, FrameSubmission};
     use harness_core::event::{LiveEventEnvelope, LiveEventV1, RuntimeEvent};
@@ -73,6 +77,9 @@ fn perf_interactive_resources_under_load() -> TestResult {
         .unwrap_or_else(|_| "120".into())
         .parse()?;
     assert!(frames > 0);
+    let selection = scenario.starts_with("selection");
+    let long_selection = scenario == "selection-long";
+    let history_count = if long_selection { 1 } else { count };
     let mut app = if scenario == "startup" {
         AppState::new_startup(Vec::new(), None)
     } else {
@@ -81,7 +88,35 @@ fn perf_interactive_resources_under_load() -> TestResult {
     if scenario != "startup" {
         // Stress retained history without the normal 200 kB eviction changing its size.
         app.memory_caps.max_transcript_chars = usize::MAX;
-        app.activities = (0..count).map(settled_assistant_block).collect();
+        app.activities = (0..history_count).map(settled_assistant_block).collect();
+    }
+    if long_selection {
+        app.events.push(envelope(
+            1,
+            "resize-perf-0",
+            EventV1::SessionCompaction(harness_core::event::SessionCompactionEvent {
+                summary: (0..count)
+                    .map(|index| format!("block summary {index:05}"))
+                    .collect::<Vec<_>>()
+                    .join("\n\n"),
+                agent_id: "perf".into(),
+                first_kept_event_seq: 0,
+                first_kept_request_id: None,
+                first_kept_entry_id: None,
+                tokens_before: 100_000,
+                tokens_after: None,
+                summary_usage: None,
+                summary_provider_id: None,
+                summary_model_id: None,
+                task_intent: None,
+                current_intent: None,
+                trigger_reason: "manual".into(),
+                from_hook: false,
+                read_files: Vec::new(),
+                modified_files: Vec::new(),
+            }),
+        ));
+        app.transcript_view.compaction_details_expanded = true;
     }
     if matches!(
         scenario.as_str(),
@@ -140,40 +175,94 @@ fn perf_interactive_resources_under_load() -> TestResult {
     let max_scroll = app.transcript_view.viewport.max_scroll();
     if matches!(
         scenario.as_str(),
-        "scroll" | "resize" | "selection" | "hover"
+        "scroll" | "resize" | "selection" | "selection-long" | "hover"
     ) {
         app.set_transcript_scroll_for_test(max_scroll / 2);
         app.set_frame_area(Rect::new(0, 0, 160, 48));
     }
-    if scenario == "selection" {
-        app.transcript_view.transcript_selection = Some(crate::ui::TranscriptSelection {
-            anchor: crate::ui::TranscriptSelectionCell {
-                row: max_scroll / 2,
-                column: 1,
-            },
-            focus: crate::ui::TranscriptSelectionCell {
-                row: max_scroll / 2 + 2,
-                column: 20,
-            },
-        });
-    }
+    let _clipboard_guard = selection.then(ClipboardModeGuard::disabled_copy_on_select);
+    let selection_target = if selection {
+        let snapshot = transcript_selection_debug_snapshot(&app, Rect::new(0, 0, 160, 48))
+            .ok_or("missing selection viewport")?;
+        let (row, column) = snapshot
+            .rows
+            .iter()
+            .enumerate()
+            .find_map(|(row, line)| line.find("block ").map(|column| (row, column)))
+            .ok_or("no visible response to select")?;
+        Some((
+            snapshot.viewport.x + u16::try_from(column)?,
+            snapshot.viewport.y + u16::try_from(row)?,
+        ))
+    } else {
+        None
+    };
+    let paint = |app: &mut AppState,
+                 terminal: &mut Terminal<FrameOutputBackend>,
+                 output: &mut FrameOutput|
+     -> TestResult {
+        app.set_frame_area(terminal.get_frame().area());
+        output.begin_frame()?;
+        terminal
+            .backend_mut()
+            .set_hyperlinks(std::mem::take(&mut app.transcript_view.hyperlinks));
+        black_box(app.motion_plan());
+        terminal.draw(|frame| render_app(frame, app))?;
+        if matches!(output.finish_frame()?, FrameSubmission::Accepted(_)) {
+            receiver.write_next(&mut std::io::sink())?;
+        }
+        let _ = output.take_acknowledgements();
+        Ok(())
+    };
     let step = |app: &mut AppState,
                 terminal: &mut Terminal<FrameOutputBackend>,
                 output: &mut FrameOutput,
                 index: usize|
      -> TestResult {
-        output.begin_frame()?;
         match scenario.as_str() {
             "startup" => {
                 app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(8))
             }
             "static" => {}
-            "scroll" | "selection" => {
+            "scroll" => {
                 if index % 100 < 50 {
                     app.scroll_page_up(1);
                 } else {
                     app.scroll_page_down(1);
                 }
+            }
+            "selection" | "selection-long" => {
+                let (column, row) = selection_target.ok_or("missing selection target")?;
+                let area = Rect::new(0, 0, 160, 48);
+                for (kind, offset) in [
+                    (MouseEventKind::Down(MouseButton::Left), 0),
+                    (MouseEventKind::Drag(MouseButton::Left), 4),
+                    (MouseEventKind::Up(MouseButton::Left), 4),
+                ] {
+                    app.handle_mouse(
+                        MouseEvent {
+                            kind,
+                            column: column + offset,
+                            row,
+                            modifiers: KeyModifiers::NONE,
+                        },
+                        area,
+                        None,
+                        None,
+                        None,
+                    );
+                    paint(app, terminal, output)?;
+                }
+                assert_eq!(
+                    crate::ui::transcript_selection_text(
+                        app,
+                        area,
+                        app.transcript_selection().ok_or("selection was lost")?
+                    ),
+                    Some("block".into())
+                );
+                app.handle_key(key(KeyCode::Esc));
+                assert!(app.transcript_selection().is_none());
             }
             "hover" => {
                 app.handle_mouse(
@@ -235,17 +324,7 @@ fn perf_interactive_resources_under_load() -> TestResult {
             }
             _ => return Err(format!("unknown performance scenario: {scenario}").into()),
         }
-        app.set_frame_area(terminal.get_frame().area());
-        terminal
-            .backend_mut()
-            .set_hyperlinks(std::mem::take(&mut app.transcript_view.hyperlinks));
-        black_box(app.motion_plan());
-        terminal.draw(|frame| render_app(frame, app))?;
-        if matches!(output.finish_frame()?, FrameSubmission::Accepted(_)) {
-            receiver.write_next(&mut std::io::sink())?;
-        }
-        let _ = output.take_acknowledgements();
-        Ok(())
+        paint(app, terminal, output)
     };
     for index in 0..10 {
         step(&mut app, &mut terminal, &mut output, index)?;
@@ -263,7 +342,15 @@ fn perf_interactive_resources_under_load() -> TestResult {
     let after = process_resources()?;
     if matches!(
         scenario.as_str(),
-        "scroll" | "typing" | "stream" | "stream-events" | "code" | "tool" | "resize"
+        "scroll"
+            | "selection"
+            | "selection-long"
+            | "typing"
+            | "stream"
+            | "stream-events"
+            | "code"
+            | "tool"
+            | "resize"
     ) {
         assert!(
             output.metrics().bytes_submitted > bytes_before,
@@ -273,7 +360,9 @@ fn perf_interactive_resources_under_load() -> TestResult {
     let mut sorted = samples_us.clone();
     sorted.sort_unstable();
     let report = serde_json::json!({
-        "benchmark": "interactive_resources", "scenario": scenario, "history": count,
+        "benchmark": "interactive_resources", "scenario": scenario, "history": history_count,
+        "long_surface_lines": if long_selection { count } else { 0 },
+        "paints_per_sample": if selection { 4 } else { 1 },
         "frames": frames, "columns": 160, "rows": 48, "cold_us": cold_us,
         "p50_us": sorted[(frames * 50).div_ceil(100) - 1],
         "p95_us": sorted[(frames * 95).div_ceil(100) - 1],
