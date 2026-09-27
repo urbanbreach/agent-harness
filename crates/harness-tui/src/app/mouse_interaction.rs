@@ -577,9 +577,15 @@ impl AppState {
                 self.status_banner = Some(error.to_string());
             }
         }
-        let transcript_area = crate::layout::FrameLayoutPlan::for_app(self, area)
-            .transcript
-            .unwrap_or(area);
+        let plan = crate::layout::FrameLayoutPlan::for_app(self, area);
+        if let Some(content) = plan
+            .terminal_panel
+            .map(|area| crate::ui::terminal_panel_inner(self, area))
+            .filter(|inner| inner.width > 0 && inner.height > 0)
+        {
+            self.terminal_panel.last_content_area = Some(content);
+        }
+        let transcript_area = plan.transcript.unwrap_or(area);
         if let Some(outline) = self.transcript_outline.as_mut() {
             outline.update(&self.projection.activities, transcript_area, usize::MAX);
         }

@@ -1,0 +1,198 @@
+diff --git i/crates/harness-tui/src/app/key_interaction.rs w/crates/harness-tui/src/app/key_interaction.rs
+index 56b724fa..e9169843 100644
+--- i/crates/harness-tui/src/app/key_interaction.rs
++++ w/crates/harness-tui/src/app/key_interaction.rs
+@@ -1666,7 +1666,7 @@ impl AppState {
+                 }
+                 KeyCode::Home => {
+                     self.terminal_panel.follow = false;
+-                    self.terminal_panel.scroll = self.terminal_panel.last_max_scroll.get();
++                    self.terminal_panel.scroll = crate::ui::terminal_panel_max_scroll(self);
+                     true
+                 }
+                 KeyCode::End => {
+diff --git i/crates/harness-tui/src/app/mouse_interaction.rs w/crates/harness-tui/src/app/mouse_interaction.rs
+index 48f4a16a..b9d98fec 100644
+--- i/crates/harness-tui/src/app/mouse_interaction.rs
++++ w/crates/harness-tui/src/app/mouse_interaction.rs
+@@ -577,9 +577,15 @@ impl AppState {
+                 self.status_banner = Some(error.to_string());
+             }
+         }
+-        let transcript_area = crate::layout::FrameLayoutPlan::for_app(self, area)
+-            .transcript
+-            .unwrap_or(area);
++        let plan = crate::layout::FrameLayoutPlan::for_app(self, area);
++        if let Some(content) = plan
++            .terminal_panel
++            .map(|area| crate::ui::terminal_panel_inner(self, area))
++            .filter(|inner| inner.width > 0 && inner.height > 0)
++        {
++            self.terminal_panel.last_content_area = Some(content);
++        }
++        let transcript_area = plan.transcript.unwrap_or(area);
+         if let Some(outline) = self.transcript_outline.as_mut() {
+             outline.update(&self.projection.activities, transcript_area, usize::MAX);
+         }
+diff --git i/crates/harness-tui/src/app/terminal_panel.rs w/crates/harness-tui/src/app/terminal_panel.rs
+index 32e57e01..c11abfec 100644
+--- i/crates/harness-tui/src/app/terminal_panel.rs
++++ w/crates/harness-tui/src/app/terminal_panel.rs
+@@ -1,6 +1,4 @@
+ // allow: SIZE_OK — TUI app state (session projection + interaction)
+-use std::cell::Cell;
+-
+ use serde_json::Value;
+ 
+ use harness_core::event::{EventV1, ToolCallMetadata};
+@@ -13,7 +11,7 @@ pub(crate) struct TerminalPanelState {
+     pub(crate) visible: bool,
+     pub(crate) scroll: usize,
+     pub(crate) follow: bool,
+-    pub(crate) last_max_scroll: Cell<usize>,
++    pub(crate) last_content_area: Option<ratatui::layout::Rect>,
+ }
+ 
+ impl Default for TerminalPanelState {
+@@ -22,7 +20,7 @@ impl Default for TerminalPanelState {
+             visible: false,
+             scroll: 0,
+             follow: true,
+-            last_max_scroll: Cell::new(0),
++            last_content_area: None,
+         }
+     }
+ }
+diff --git i/crates/harness-tui/src/app/tests/terminal_panel_tests.rs w/crates/harness-tui/src/app/tests/terminal_panel_tests.rs
+index 62a5907b..13fcb348 100644
+--- i/crates/harness-tui/src/app/tests/terminal_panel_tests.rs
++++ w/crates/harness-tui/src/app/tests/terminal_panel_tests.rs
+@@ -1,4 +1,5 @@
+ use super::*;
++use std::fmt::Write as _;
+ 
+ pub(super) fn terminal_panel_is_hidden_by_default_and_toggles_from_keybinding() {
+     let mut app = AppState::new_live(None, false, None);
+@@ -237,10 +238,25 @@ pub(super) fn terminal_panel_replay_reconstructs_from_events_without_execution()
+ 
+ pub(super) fn terminal_panel_focus_scrolls_independently_from_transcript() {
+     let mut app = AppState::new_live(None, false, None);
++    let mut stdout = String::new();
++    for index in 0..40 {
++        let _ = writeln!(stdout, "row {index:02}: {}", "output ".repeat(12));
++    }
++    for event in shell_test_events(
++        ToolCallStatus::Succeeded,
++        serde_json::json!({
++            "command": "terminal fixture",
++            "status": 0,
++            "success": true,
++            "stdout": stdout,
++            "pty": {"interactive": true}
++        }),
++    ) {
++        app.ingest_event(event);
++    }
+     app.focus = Focus::Details;
+     app.handle_key(key(KeyCode::Char('4')));
+     app.focus = Focus::Terminal;
+-    app.terminal_panel.last_max_scroll.set(20);
+ 
+     app.handle_key(key(KeyCode::PageUp));
+     assert_eq!(app.terminal_panel_scroll(), 10);
+@@ -250,4 +266,22 @@ pub(super) fn terminal_panel_focus_scrolls_independently_from_transcript() {
+     app.handle_key(key(KeyCode::End));
+     assert_eq!(app.terminal_panel_scroll(), 0);
+     assert!(app.terminal_panel_follow());
++
++    for area in [Rect::new(0, 0, 140, 40), Rect::new(0, 0, 60, 24)] {
++        app.set_frame_area(area);
++        // Input can arrive after resize and before the first paint at that size.
++        app.handle_key(key(KeyCode::Home));
++        let screen = render_text(&app, area.width, area.height);
++        assert!(screen.contains("stdout> row 00"), "{screen}");
++        let top = app.terminal_panel_scroll();
++        app.handle_key(key(KeyCode::PageDown));
++        assert_eq!(app.terminal_panel_scroll(), top.saturating_sub(10));
++        assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 0);
++
++        app.set_frame_area(Rect::new(0, 0, area.width, 0));
++        app.handle_key(key(KeyCode::Home));
++        app.set_frame_area(area);
++        let screen = render_text(&app, area.width, area.height);
++        assert!(screen.contains("stdout> row 00"), "{screen}");
++    }
+ }
+diff --git i/crates/harness-tui/src/ui.rs w/crates/harness-tui/src/ui.rs
+index 069645ba..adbe92ba 100644
+--- i/crates/harness-tui/src/ui.rs
++++ w/crates/harness-tui/src/ui.rs
+@@ -151,6 +151,7 @@ pub(crate) use ui_secondary::{
+ use ui_secondary::{render_live_details_overlay, render_operator_sidebar};
+ use ui_secondary_events_tab::render_help_tab;
+ use ui_terminal::render_terminal_panel;
++pub(crate) use ui_terminal::{terminal_panel_inner, terminal_panel_max_scroll};
+ use ui_transcript::render_transcript_pane;
+ pub(crate) use ui_transcript::transcript_diff_hunk_rows;
+ pub(crate) use ui_transcript::transcript_entry_scroll_top;
+diff --git i/crates/harness-tui/src/ui_terminal.rs w/crates/harness-tui/src/ui_terminal.rs
+index cb759bfe..f407b82d 100644
+--- i/crates/harness-tui/src/ui_terminal.rs
++++ w/crates/harness-tui/src/ui_terminal.rs
+@@ -18,14 +18,9 @@ pub(super) fn render_terminal_panel(frame: &mut Frame, app: &AppState, area: Rec
+         return;
+     }
+ 
+-    let lines = if entries.is_empty() {
+-        terminal_panel_empty_lines(theme, surface)
+-    } else {
+-        terminal_panel_lines(&entries, theme, surface)
+-    };
++    let lines = terminal_panel_lines(&entries, theme, surface);
+     let lines = wrap_terminal_lines(lines, inner.width);
+     let max_scroll = lines.len().saturating_sub(usize::from(inner.height));
+-    app.terminal_panel.last_max_scroll.set(max_scroll);
+     let scroll_from_bottom = if app.terminal_panel_follow() {
+         0
+     } else {
+@@ -48,6 +43,30 @@ pub(super) fn render_terminal_panel(frame: &mut Frame, app: &AppState, area: Rec
+     );
+ }
+ 
++pub(crate) fn terminal_panel_inner(app: &AppState, area: Rect) -> Rect {
++    let theme = app.theme();
++    let surface = ui_chrome::divided_shell_surface(theme);
++    ui_chrome::panel_block(theme, "", app.focus == Focus::Terminal, surface).inner(area)
++}
++
++pub(crate) fn terminal_panel_max_scroll(app: &AppState) -> usize {
++    let root = app.last_frame_area().unwrap_or(Rect::new(0, 0, 80, 24));
++    let Some(inner) = FrameLayoutPlan::for_app(app, root)
++        .terminal_panel
++        .map(|area| terminal_panel_inner(app, area))
++        .filter(|inner| inner.width > 0 && inner.height > 0)
++        .or(app.terminal_panel.last_content_area)
++    else {
++        return 0;
++    };
++    let theme = app.theme();
++    let surface = ui_chrome::divided_shell_surface(theme);
++    let lines = terminal_panel_lines(&app.terminal_panel_entries(), theme, surface);
++    wrap_terminal_lines(lines, inner.width)
++        .len()
++        .saturating_sub(usize::from(inner.height))
++}
++
+ fn terminal_panel_title(app: &AppState, command_count: usize, theme: &Theme) -> Line<'static> {
+     let meta_style = Style::default().fg(theme.text.secondary);
+     let title_style = Style::default()
+@@ -87,6 +106,9 @@ fn terminal_panel_lines(
+     theme: &Theme,
+     surface: Color,
+ ) -> Vec<Line<'static>> {
++    if entries.is_empty() {
++        return terminal_panel_empty_lines(theme, surface);
++    }
+     let mut lines = Vec::new();
+     for (idx, entry) in entries.iter().enumerate() {
+         if idx > 0 {

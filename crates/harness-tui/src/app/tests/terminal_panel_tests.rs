@@ -1,4 +1,5 @@
 use super::*;
+use std::fmt::Write as _;
 
 pub(super) fn terminal_panel_is_hidden_by_default_and_toggles_from_keybinding() {
     let mut app = AppState::new_live(None, false, None);
@@ -237,10 +238,25 @@ pub(super) fn terminal_panel_replay_reconstructs_from_events_without_execution()
 
 pub(super) fn terminal_panel_focus_scrolls_independently_from_transcript() {
     let mut app = AppState::new_live(None, false, None);
+    let mut stdout = String::new();
+    for index in 0..40 {
+        let _ = writeln!(stdout, "row {index:02}: {}", "output ".repeat(12));
+    }
+    for event in shell_test_events(
+        ToolCallStatus::Succeeded,
+        serde_json::json!({
+            "command": "terminal fixture",
+            "status": 0,
+            "success": true,
+            "stdout": stdout,
+            "pty": {"interactive": true}
+        }),
+    ) {
+        app.ingest_event(event);
+    }
     app.focus = Focus::Details;
     app.handle_key(key(KeyCode::Char('4')));
     app.focus = Focus::Terminal;
-    app.terminal_panel.last_max_scroll.set(20);
 
     app.handle_key(key(KeyCode::PageUp));
     assert_eq!(app.terminal_panel_scroll(), 10);
@@ -250,4 +266,22 @@ pub(super) fn terminal_panel_focus_scrolls_independently_from_transcript() {
     app.handle_key(key(KeyCode::End));
     assert_eq!(app.terminal_panel_scroll(), 0);
     assert!(app.terminal_panel_follow());
+
+    for area in [Rect::new(0, 0, 140, 40), Rect::new(0, 0, 60, 24)] {
+        app.set_frame_area(area);
+        // Input can arrive after resize and before the first paint at that size.
+        app.handle_key(key(KeyCode::Home));
+        let screen = render_text(&app, area.width, area.height);
+        assert!(screen.contains("stdout> row 00"), "{screen}");
+        let top = app.terminal_panel_scroll();
+        app.handle_key(key(KeyCode::PageDown));
+        assert_eq!(app.terminal_panel_scroll(), top.saturating_sub(10));
+        assert_eq!(app.transcript_view.viewport.offset_from_bottom(), 0);
+
+        app.set_frame_area(Rect::new(0, 0, area.width, 0));
+        app.handle_key(key(KeyCode::Home));
+        app.set_frame_area(area);
+        let screen = render_text(&app, area.width, area.height);
+        assert!(screen.contains("stdout> row 00"), "{screen}");
+    }
 }

@@ -1,6 +1,4 @@
 // allow: SIZE_OK — TUI app state (session projection + interaction)
-use std::cell::Cell;
-
 use serde_json::Value;
 
 use harness_core::event::{EventV1, ToolCallMetadata};
@@ -13,7 +11,7 @@ pub(crate) struct TerminalPanelState {
     pub(crate) visible: bool,
     pub(crate) scroll: usize,
     pub(crate) follow: bool,
-    pub(crate) last_max_scroll: Cell<usize>,
+    pub(crate) last_content_area: Option<ratatui::layout::Rect>,
 }
 
 impl Default for TerminalPanelState {
@@ -22,7 +20,7 @@ impl Default for TerminalPanelState {
             visible: false,
             scroll: 0,
             follow: true,
-            last_max_scroll: Cell::new(0),
+            last_content_area: None,
         }
     }
 }

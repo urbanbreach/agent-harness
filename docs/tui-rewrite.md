@@ -123,6 +123,7 @@ before changing the implementation.
 | R7 | Selection drops the sticky prompt separator from its screen-row map, so a drag below the prompt selects the following source row | Keep an empty slot for the separator. Verify painted highlight placement, release, and copying after the selected text scrolls offscreen. |
 | R8 | A viewport anchor in a blank gap resolves to a neighboring content row. Repainting can move the viewport without input or trap one-row scrolling at that boundary | Preserve the signed gap distance from the content anchor. Require repeated preparation and paint to preserve position, including a width round trip. |
 | R9 | The margin timeline sums scalar widths, so joined emoji produce different jump offsets from ASCII with the same display width | Measure string display width. A public navigation journey fails on the original and passes on the replacement; its 12 paired post-jump frames remain identical, so this is a numeric geometry correction without a demonstrated visual improvement. |
+| R10 | Terminal-panel Home reads a scroll limit written by the previous paint, so it stays at the bottom before the first paint and can use stale wrapping after resize | Derive the limit from the current wrapped rows when handling Home. Retain the last drawable geometry during frame preparation for temporarily hidden panels; painting stays immutable. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -461,6 +462,20 @@ The slice removes 3,252 source lines. The source tree now has 173,148 lines,
 4.8% below the original, including inline tests. Whole-history projection and
 lower-level formatters still remain. Evidence and reproducible commands are in
 [`evidence/tui-rewrite/transcript-outline`](evidence/tui-rewrite/transcript-outline).
+
+## Terminal-panel scroll ownership (R10)
+
+Terminal painting no longer writes a scroll limit into `AppState`. Home measures
+the same rows and padding used by painting at the current size. Frame preparation
+retains the last drawable content rectangle so Home also works during a
+zero-height round trip. This keeps geometry ownership outside the renderer.
+
+The existing navigation journey now uses real interactive-PTY output and checks
+Home before painting, reflow at 140 and 60 columns, PageDown, temporary zero height,
+and independent transcript scrolling. It fails before the correction and passes
+after it. The row builder, styles and wrapping remain unchanged; this is a purity
+correction during migration, not a replacement of the remaining terminal formatter.
+Evidence is in [`evidence/tui-rewrite/terminal-panel`](evidence/tui-rewrite/terminal-panel).
 
 ## Verification sequence
 

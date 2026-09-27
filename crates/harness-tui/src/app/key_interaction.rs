@@ -1666,7 +1666,7 @@ impl AppState {
                 }
                 KeyCode::Home => {
                     self.terminal_panel.follow = false;
-                    self.terminal_panel.scroll = self.terminal_panel.last_max_scroll.get();
+                    self.terminal_panel.scroll = crate::ui::terminal_panel_max_scroll(self);
                     true
                 }
                 KeyCode::End => {
