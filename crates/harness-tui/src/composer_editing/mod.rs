@@ -140,7 +140,16 @@ impl ComposerEditor {
     }
 
     fn record(&mut self, before: Arc<EditorSnapshot>, group: EditGroup) {
-        self.undo.record_shared(before, self.snapshot(), group);
+        // Borrow the current state while the journal records only changed atoms.
+        let after = EditorSnapshot {
+            buffer: std::mem::take(&mut self.buffer),
+            cursor: self.cursor,
+            selection: self.selection(),
+            history: std::mem::replace(&mut self.history, PromptHistory::new(Vec::new())),
+        };
+        self.undo.record_shared(before, &after, group);
+        self.buffer = after.buffer;
+        self.history = after.history;
     }
 }
 

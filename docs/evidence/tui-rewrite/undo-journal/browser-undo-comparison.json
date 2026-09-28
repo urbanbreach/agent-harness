@@ -1,0 +1,109 @@
+{
+  "comparisons": [
+    {
+      "name": "01-prompt.png",
+      "pixels_equal": true,
+      "png_sha256": "390fd0e558c2caa77fa1cd4d65a569cbed16e5b8dbef814b8f80a5d9f2f9728c",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 4,
+          "candidate": 3
+        }
+      }
+    },
+    {
+      "name": "02-unicode-draft.png",
+      "pixels_equal": true,
+      "png_sha256": "fb64f3944d3d84fe7c91768f2761fa42c7508fc7093413e154d5cc5eb85163da",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 5,
+          "candidate": 4
+        }
+      }
+    },
+    {
+      "name": "03-120-edits.png",
+      "pixels_equal": true,
+      "png_sha256": "4863e322d742fdd318ceb2864a84826c000648b7775c348fc3c980ceae175c00",
+      "observer_differences": {
+        "parsedCount": {
+          "before": 10,
+          "candidate": 9
+        }
+      }
+    },
+    {
+      "name": "04-110-undos.png",
+      "pixels_equal": true,
+      "png_sha256": "3a43a87473e4f77478af31365e742afc32a3695451545fb6d6cd104f75e7a857",
+      "observer_differences": {
+        "renderCount": {
+          "before": 20,
+          "candidate": 21
+        }
+      }
+    },
+    {
+      "name": "05-110-redos.png",
+      "pixels_equal": true,
+      "png_sha256": "4863e322d742fdd318ceb2864a84826c000648b7775c348fc3c980ceae175c00",
+      "observer_differences": {
+        "renderCount": {
+          "before": 25,
+          "candidate": 26
+        },
+        "parsedCount": {
+          "before": 19,
+          "candidate": 18
+        }
+      }
+    },
+    {
+      "name": "06-branch.png",
+      "pixels_equal": true,
+      "png_sha256": "4418aaf53eacdbf6e89f273bdeecaca7d82069294751cbe56f74b9d9f3acb387",
+      "observer_differences": {
+        "renderCount": {
+          "before": 29,
+          "candidate": 30
+        },
+        "parsedCount": {
+          "before": 20,
+          "candidate": 19
+        }
+      }
+    },
+    {
+      "name": "07-invalidated-redo.png",
+      "pixels_equal": true,
+      "png_sha256": "4418aaf53eacdbf6e89f273bdeecaca7d82069294751cbe56f74b9d9f3acb387",
+      "observer_differences": {
+        "renderCount": {
+          "before": 32,
+          "candidate": 33
+        },
+        "parsedCount": {
+          "before": 20,
+          "candidate": 19
+        }
+      }
+    },
+    {
+      "name": "08-branch-undo.png",
+      "pixels_equal": true,
+      "png_sha256": "c9d293390fa36a0cdb43a5c58982a8f3c3a0cb3d8546f041da84966af1b6a6ca",
+      "observer_differences": {
+        "renderCount": {
+          "before": 36,
+          "candidate": 37
+        },
+        "parsedCount": {
+          "before": 21,
+          "candidate": 20
+        }
+      }
+    }
+  ],
+  "both_runs_restore_and_cleanup": true
+}

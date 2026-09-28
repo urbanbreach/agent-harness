@@ -1,0 +1,34 @@
+before typing-long-1 0
+before typing-long-2 0
+before typing-long-3 0
+before typing-long-alloc 0
+before typing-1 0
+before typing-2 0
+before typing-3 0
+before typing-alloc 0
+{
+  "before": {
+    "typing-long": {
+      "p50_us": 322,
+      "p95_us": 352,
+      "p99_us": 372,
+      "bytes": 20000,
+      "rss_kib": 25172,
+      "cpu_ms_per_frame": 0.32,
+      "allocated_bytes": 339546059,
+      "peak_heap_bytes": 11964372,
+      "malloc_calls": 4840530
+    },
+    "typing": {
+      "p50_us": 110,
+      "p95_us": 125,
+      "p99_us": 140,
+      "bytes": 140750,
+      "rss_kib": 9400,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 9459771,
+      "peak_heap_bytes": 2023491,
+      "malloc_calls": 105509
+    }
+  }
+}

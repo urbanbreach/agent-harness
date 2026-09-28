@@ -1,0 +1,10 @@
+tui 0
+clippy 101
+Traceback (most recent call last):
+  File "/tmp/tui-undo-journal/checks.py", line 18, in <module>
+    result.check_returncode()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/urbanbreach/.local/share/mise/installs/python/3.13.15/lib/python3.13/subprocess.py", line 508, in check_returncode
+    raise CalledProcessError(self.returncode, self.args, self.stdout,
+                             self.stderr)
+subprocess.CalledProcessError: Command '['cargo', 'clippy', '--workspace', '--all-targets', '--all-features', '--', '-D', 'warnings']' returned non-zero exit status 101.

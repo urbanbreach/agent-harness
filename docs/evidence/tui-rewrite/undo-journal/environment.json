@@ -1,0 +1,32 @@
+{
+  "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+  "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+  "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+  "release_profile": {
+    "opt_level": 3,
+    "lto": "fat",
+    "codegen_units": 1
+  },
+  "binaries": {
+    "before.bin": {
+      "path": "/tmp/tui-undo-journal/before.bin",
+      "sha256": "0333edf67001257b79942475cfe56b1a0ba59839b6f76231d3bd24f91b119ff4",
+      "bytes": 15046344
+    },
+    "candidate.bin": {
+      "path": "/tmp/tui-undo-journal/candidate.bin",
+      "sha256": "db95cc823c9db66ff789bb3aa0191edd9019c8f4026ffbac894001c18bac6f79",
+      "bytes": 15059184
+    },
+    "before-probe": {
+      "path": "/tmp/tui-undo-journal/before-probe",
+      "sha256": "5eb5805f8a8663e3cc443e8ce8d4cf24d87b60cad2cab3abe5b76114511e48ca",
+      "bytes": 15207776
+    },
+    "candidate-probe": {
+      "path": "/tmp/tui-undo-journal/candidate-probe",
+      "sha256": "1abf49836e4f9fa07a495f00de3c7930d2181f1dba8782bb0111d9dac0f03554",
+      "bytes": 15220648
+    }
+  }
+}
