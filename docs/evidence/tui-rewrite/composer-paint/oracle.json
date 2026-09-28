@@ -1,0 +1,21 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--all-features",
+    "--test",
+    "rewrite_paint_probe",
+    "--success-output",
+    "immediate"
+  ],
+  "source_path": "crates/harness-tui/src/ui_composer/file_tags.rs",
+  "source_sha256": "ebdf8ac7fc2b8719f075c2616934d09539feacacbcc2a75e44bafeadcd6c41c5",
+  "fixture_sha256": "e4af5a9299a8ed8876a441ca8f13f7fedb58e2be1721afefbcdd7e6375e05d0c",
+  "frozen_source_sha256": "b3548203f35baff2e00eaa6536d6cc8be4dc58162f8e22cdff52419eb7fa770e",
+  "exit": 0
+}

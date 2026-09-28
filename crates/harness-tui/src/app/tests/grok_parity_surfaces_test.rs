@@ -7,6 +7,36 @@ mod recorded_tools;
 
 const STRUCTURED_MARKDOWN: &str = "**outer *inner* end** and **[reference](https://example.com)**.\n\n~~~rust\nfn main() {\n\tlet value = 42;\n    println!(\"{value}\");\n}\n~~~\n\n| Left | Center | Right |\n| :--- | :---: | ---: |\n| alpha | beta | 123 |\n\n> outer quote\n> > nested quote with wrapped words\n\n$E=mc^2$\n\n";
 
+fn assert_composer_selection_styles(app: &mut AppState, terminal: &mut Terminal<TestBackend>) {
+    // Selection keeps mention styling and includes a partial grapheme.
+    let previous = (app.composer.prompt_cursor, app.composer.selection_anchor);
+    app.composer.selection_anchor = Some(0);
+    app.composer.prompt_cursor = app.file_mention_tags[0].end + 5;
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .unwrap_or_abort();
+    let cells = &terminal.backend().buffer().content;
+    let mention = cells
+        .iter()
+        .find(|cell| cell.symbol() == "@")
+        .unwrap_or_abort();
+    assert_eq!(mention.fg, app.theme().status.warning);
+    assert!(mention
+        .modifier
+        .contains(Modifier::BOLD | Modifier::REVERSED));
+    let accent = cells
+        .iter()
+        .find(|cell| cell.symbol() == "e\u{301}")
+        .unwrap_or_abort();
+    assert!(accent.modifier.contains(Modifier::REVERSED));
+    let emoji = cells
+        .iter()
+        .find(|cell| cell.symbol() == "👩‍💻")
+        .unwrap_or_abort();
+    assert!(!emoji.modifier.contains(Modifier::REVERSED));
+    (app.composer.prompt_cursor, app.composer.selection_anchor) = previous;
+}
+
 #[test]
 fn composer_selection_and_mentions_follow_visible_wrapped_cells() {
     for (width, height) in [(40, 24), (80, 24), (120, 40)] {
@@ -66,6 +96,8 @@ fn composer_selection_and_mentions_follow_visible_wrapped_cells() {
             terminal.get_cursor_position().unwrap_or_abort(),
             hello.into()
         );
+
+        assert_composer_selection_styles(&mut app, &mut terminal);
 
         // Drive actual pointer input against the cells the user sees.
         for (kind, column) in [

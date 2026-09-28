@@ -5,7 +5,7 @@ pub(super) fn render_collapsed_composer(
     app: &AppState,
     area: Rect,
     theme: &Theme,
-    context: DocumentComposerRenderContext<'_>,
+    context: ComposerRenderContext<'_>,
 ) {
     let surface = composer_input_surface(theme);
     let text = app.composer_render_text();

@@ -1,0 +1,89 @@
+{
+  "recorded_at": "2026-09-28T01:36:56.034637+00:00",
+  "source": "03784425760ff676c37d9cb8f487ca03106b6cd2",
+  "baseline": {
+    "typing-long": {
+      "p50_us": 216,
+      "p95_us": 234,
+      "p99_us": 356,
+      "bytes": 20000,
+      "rss_kib": 9672,
+      "cpu_ms_per_frame": 0.22,
+      "allocated_bytes": 17621496,
+      "peak_heap_bytes": 2195432,
+      "malloc_calls": 98782
+    },
+    "typing": {
+      "p50_us": 111,
+      "p95_us": 138,
+      "p99_us": 191,
+      "bytes": 140750,
+      "rss_kib": 9692,
+      "cpu_ms_per_frame": 0.12,
+      "allocated_bytes": 8185822,
+      "peak_heap_bytes": 2113413,
+      "malloc_calls": 90184
+    },
+    "undo-long": {
+      "p50_us": 233,
+      "p95_us": 248,
+      "p99_us": 265,
+      "bytes": 20000,
+      "rss_kib": 9984,
+      "cpu_ms_per_frame": 0.22,
+      "allocated_bytes": 39692562,
+      "peak_heap_bytes": 2154753,
+      "malloc_calls": 400956
+    },
+    "delete-long": {
+      "p50_us": 292,
+      "p95_us": 362,
+      "p99_us": 381,
+      "bytes": 31187,
+      "rss_kib": 9868,
+      "cpu_ms_per_frame": 0.3,
+      "allocated_bytes": 54352219,
+      "peak_heap_bytes": 2021379,
+      "malloc_calls": 624384
+    }
+  },
+  "limits": {
+    "typing-long": {
+      "p95_us": 257.40000000000003,
+      "p99_us": 391.6,
+      "rss_kib": 10639.2,
+      "peak_heap_bytes": 2412650.9000000004,
+      "allocated_bytes": 16740421.2,
+      "malloc_calls": 93842.9,
+      "cpu_ms_per_frame": 0.24200000000000002
+    },
+    "typing": {
+      "p95_us": 133.10000000000002,
+      "p99_us": 179.3,
+      "rss_kib": 10472.0,
+      "peak_heap_bytes": 2228162.2,
+      "allocated_bytes": 8185822,
+      "malloc_calls": 90184,
+      "cpu_ms_per_frame": 0.11000000000000001
+    },
+    "undo-long": {
+      "p95_us": 268.40000000000003,
+      "cpu_ms_per_frame": 0.24200000000000002,
+      "allocated_bytes": 39692562,
+      "malloc_calls": 400956,
+      "p99_us": 289.3,
+      "rss_kib": 10982.400000000001,
+      "peak_heap_bytes": 2370228.3000000003
+    },
+    "delete-long": {
+      "p95_us": 398.20000000000005,
+      "cpu_ms_per_frame": 0.33,
+      "rss_kib": 10854.800000000001,
+      "peak_heap_bytes": 2223515.8000000003,
+      "allocated_bytes": 54352219,
+      "malloc_calls": 624384,
+      "p99_us": 419.1
+    }
+  },
+  "requirements": "Replace owned composer style runs with borrowed slices and reuse span assembly; remove unreachable document/metadata fallback. At least 5% fewer long-typing allocated bytes and malloc calls, no increases in either for other workloads; keep all older stricter bounds. Same fixed 500 frames, 10 warmups, 160x48, zero history; excludes PTY/emulator delivery. Diagnostic GDB timings are not acceptance evidence."
+}
