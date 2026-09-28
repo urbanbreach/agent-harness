@@ -1,0 +1,32 @@
+{
+  "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+  "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+  "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+  "release_profile": {
+    "opt_level": 3,
+    "lto": "fat",
+    "codegen_units": 1
+  },
+  "binaries": {
+    "before.bin": {
+      "path": "/tmp/tui-frame-layout/before.bin",
+      "sha256": "a0035fa67a63b2e26924bd06f82da5baed7fec76936d532d31ce7152b01f0f46",
+      "bytes": 15020608
+    },
+    "candidate.bin": {
+      "path": "/tmp/tui-frame-layout/candidate.bin",
+      "sha256": "4f84a1473bbfbbb7f68faeb517c56a27cc22200650592545d29538dcd2aeeb5c",
+      "bytes": 15017872
+    },
+    "before-probe": {
+      "path": "/tmp/tui-frame-layout/before-probe",
+      "sha256": "31ca0c3d0dde0b6ea8ffc13636c33d1e35b392e3aee6a0273d32f9aebae6ef81",
+      "bytes": 15182264
+    },
+    "candidate-probe": {
+      "path": "/tmp/tui-frame-layout/candidate-probe",
+      "sha256": "88b252969c10fe04b8065006211667e5f6ed0c2b01e852c3ce6f3a699e5853e3",
+      "bytes": 15179528
+    }
+  }
+}

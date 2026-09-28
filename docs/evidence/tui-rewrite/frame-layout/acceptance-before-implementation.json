@@ -1,0 +1,89 @@
+{
+  "recorded_at": "2026-09-28T03:14:49.027679+00:00",
+  "source": "f09849404888677de613a5df2646dd9c554a93ce",
+  "baseline": {
+    "typing-long": {
+      "p50_us": 449,
+      "p95_us": 592,
+      "p99_us": 620,
+      "bytes": 20000,
+      "rss_kib": 9776,
+      "cpu_ms_per_frame": 0.46,
+      "allocated_bytes": 16118216,
+      "peak_heap_bytes": 2193318,
+      "malloc_calls": 61413
+    },
+    "typing": {
+      "p50_us": 249,
+      "p95_us": 331,
+      "p99_us": 412,
+      "bytes": 140750,
+      "rss_kib": 9680,
+      "cpu_ms_per_frame": 0.26,
+      "allocated_bytes": 7450321,
+      "peak_heap_bytes": 2113411,
+      "malloc_calls": 56929
+    },
+    "undo-long": {
+      "p50_us": 480,
+      "p95_us": 588,
+      "p99_us": 665,
+      "bytes": 20000,
+      "rss_kib": 9712,
+      "cpu_ms_per_frame": 0.5,
+      "allocated_bytes": 38086354,
+      "peak_heap_bytes": 2154751,
+      "malloc_calls": 359590
+    },
+    "delete-long": {
+      "p50_us": 635,
+      "p95_us": 908,
+      "p99_us": 1048,
+      "bytes": 31187,
+      "rss_kib": 9916,
+      "cpu_ms_per_frame": 0.64,
+      "allocated_bytes": 52253179,
+      "peak_heap_bytes": 2021377,
+      "malloc_calls": 584748
+    }
+  },
+  "limits": {
+    "typing-long": {
+      "p95_us": 257.40000000000003,
+      "p99_us": 272.8,
+      "rss_kib": 10639.2,
+      "peak_heap_bytes": 2412649.8000000003,
+      "allocated_bytes": 15312305.2,
+      "malloc_calls": 55271.700000000004,
+      "cpu_ms_per_frame": 0.24200000000000002
+    },
+    "typing": {
+      "p95_us": 129.8,
+      "p99_us": 139.70000000000002,
+      "rss_kib": 10419.2,
+      "peak_heap_bytes": 2228162.2,
+      "allocated_bytes": 7450321,
+      "malloc_calls": 56929,
+      "cpu_ms_per_frame": 0.11000000000000001
+    },
+    "undo-long": {
+      "p95_us": 268.40000000000003,
+      "cpu_ms_per_frame": 0.24200000000000002,
+      "allocated_bytes": 38086354,
+      "malloc_calls": 359590,
+      "p99_us": 287.1,
+      "rss_kib": 10683.2,
+      "peak_heap_bytes": 2370223.9000000004
+    },
+    "delete-long": {
+      "p95_us": 392.70000000000005,
+      "cpu_ms_per_frame": 0.33,
+      "rss_kib": 10736.0,
+      "peak_heap_bytes": 2221189.3000000003,
+      "allocated_bytes": 52253179,
+      "malloc_calls": 584748,
+      "p99_us": 410.3
+    }
+  },
+  "requirements": "Replace frame/session/dock projection; preserve all public geometry, overlays, hit regions and undersized behavior. At least 10% fewer long-typing malloc calls and 5% fewer allocated bytes; no allocation/call increases elsewhere. Retain every prior stricter bound, including failing timing/CPU limits. Fixed 500 frames, 10 warmups, 160x48, zero history; renderer timings exclude PTY/emulator delivery."
+}

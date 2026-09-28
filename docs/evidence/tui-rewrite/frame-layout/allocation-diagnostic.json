@@ -1,0 +1,6 @@
+{
+  "origin": "/tmp/tui-composer-paint/allocation-stacks.log",
+  "sha256": "2b679bfd791452ebbb4f0aad29e0353e5815da28ecf1567f433c24191fcd409b",
+  "session_shell_layout_stack_mentions": 77,
+  "context": "Earlier diagnostic sampler, every 200th malloc. Reused only to locate repeated layout/rhythm work; not timing or allocation acceptance evidence. Original producer locations remain frozen in legacy/layout.rs."
+}

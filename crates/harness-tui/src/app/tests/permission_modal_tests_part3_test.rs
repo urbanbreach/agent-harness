@@ -67,7 +67,6 @@ fn question_mouse_click_preserves_shell_state_and_emits_only_answer_intent() {
     app.record_transcript_max_scroll(42);
     app.transcript_view.set_offset(4);
     app.transcript_view.set_following(false);
-    let composer_before = FrameLayoutPlan::for_app(&app, frame_area).composer;
     app.ingest_event(three_choice_question_event("question_mouse_select"));
     let option_area = app
         .permission_prompt_hit_regions_for_test(frame_area)
@@ -110,6 +109,23 @@ fn question_mouse_click_preserves_shell_state_and_emits_only_answer_intent() {
         vec![vec!["B".to_string()]]
     );
 
+    // Resize before the second click and use the option's new painted location.
+    let frame_area = Rect::new(0, 0, 60, 20);
+    let option_area = app
+        .permission_prompt_hit_regions_for_test(frame_area)
+        .into_iter()
+        .find_map(|(target, area)| {
+            (target == PermissionPointerTarget::QuestionChoice(1)).then_some(area)
+        })
+        .unwrap_or_abort();
+    let buffer = crate::render_test::render_to_buffer(&app, frame_area, |app, frame, _| {
+        crate::ui::render_app(frame, app);
+    });
+    let row = (option_area.x..option_area.right())
+        .map(|x| buffer[(x, option_area.y)].symbol())
+        .collect::<String>();
+    assert!(row.contains('B'), "painted option: {row}");
+
     // When: the selected row is clicked a second time.
     app.handle_mouse(
         mouse_event(MouseEventKind::Down(MouseButton::Left), option_area),
@@ -138,7 +154,7 @@ fn question_mouse_click_preserves_shell_state_and_emits_only_answer_intent() {
     assert_eq!(composer_after.map(|area| area.height), Some(0));
     assert_eq!(
         composer_after.map(|area| area.width),
-        composer_before.map(|area| area.width)
+        Some(frame_area.width - 4)
     );
 }
 

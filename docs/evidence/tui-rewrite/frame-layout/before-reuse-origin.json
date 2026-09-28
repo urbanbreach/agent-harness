@@ -1,0 +1,54 @@
+{
+  "source_base": "f09849404888677de613a5df2646dd9c554a93ce",
+  "compiled_base": "8c43e0319252c1afc6155c095eba742e0707eb98",
+  "verified_current_source_paths": [
+    "crates/harness-tui/src/app/lifecycle.rs",
+    "crates/harness-tui/src/lib_tests/permission_runtime.rs",
+    "crates/harness-tui/src/lib_tests/runtime_review_surface.rs",
+    "crates/harness-tui/src/runtime_integration.rs",
+    "crates/harness-tui/src/ui_chrome.rs",
+    "crates/harness-tui/src/ui_live_turn_status.rs",
+    "crates/harness-tui/src/view_model.rs",
+    "crates/harness-tui/src/view_model/runtime.rs"
+  ],
+  "previous_receipt": {
+    "base": "8c43e0319252c1afc6155c095eba742e0707eb98",
+    "side": "candidate",
+    "sha256": "a0035fa67a63b2e26924bd06f82da5baed7fec76936d532d31ce7152b01f0f46",
+    "probe_sha256": "31ca0c3d0dde0b6ea8ffc13636c33d1e35b392e3aee6a0273d32f9aebae6ef81",
+    "fixture_sha256": "df377eb5d0762ae30d28270ef4c20a969df28263986356dd2fa45386b80f4d2f",
+    "production_sources": [
+      {
+        "path": "crates/harness-tui/src/view_model.rs",
+        "sha256": "9f2f4145f8ca55413831a9fdaf48def35488ed0f58ffd80ddbfaee7636969231",
+        "deleted": false
+      },
+      {
+        "path": "crates/harness-tui/src/view_model/runtime.rs",
+        "sha256": "345a650b6e8ca020a11b8ac4260aae50c05cf53d56b1c19bdd278b9d8d265de1",
+        "deleted": false
+      },
+      {
+        "path": "crates/harness-tui/src/app/lifecycle.rs",
+        "sha256": "e6f56148b58559a4c19e4720517d38d1aea7f9b9ffeb2f2327d9b24f18b7fa33",
+        "deleted": false
+      },
+      {
+        "path": "crates/harness-tui/src/ui_chrome.rs",
+        "sha256": "74abce09e3b86c50ae73b9b426d1f98e82aae261e202724b1d5531b24f88b7e8",
+        "deleted": false
+      },
+      {
+        "path": "crates/harness-tui/src/ui_live_turn_status.rs",
+        "sha256": "89f2db9a4957588397db0e3df1a7833ddc537a1a69cd148ab81eb285cc6b2698",
+        "deleted": false
+      },
+      {
+        "path": "crates/harness-tui/src/runtime_integration.rs",
+        "sha256": "30bb9ddb8625fd41940420f8fda2665dc1aa119118fa49181ad51509b47b6c62",
+        "deleted": false
+      }
+    ]
+  },
+  "metadata_correction": "compiled_base corrected from rebound baseline HEAD to original compilation base before acceptance freeze; previous_receipt unchanged"
+}

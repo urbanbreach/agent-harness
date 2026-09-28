@@ -1,0 +1,13 @@
+oracle 0
+build 0
+measure 0
+compare 1
+browser 1
+Traceback (most recent call last):
+  File "/tmp/tui-frame-layout/validate.py", line 14, in <module>
+    if required:r.check_returncode()
+                ~~~~~~~~~~~~~~~~~~^^
+  File "/home/urbanbreach/.local/share/mise/installs/python/3.13.15/lib/python3.13/subprocess.py", line 508, in check_returncode
+    raise CalledProcessError(self.returncode, self.args, self.stdout,
+                             self.stderr)
+subprocess.CalledProcessError: Command '['python3', '/tmp/tui-frame-layout/browser.py']' returned non-zero exit status 1.

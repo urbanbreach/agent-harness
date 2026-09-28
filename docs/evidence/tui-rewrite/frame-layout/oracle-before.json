@@ -1,0 +1,21 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--config-file",
+    "/tmp/tui-frame-layout/nextest-oracle.toml",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--lib",
+    "-E",
+    "test(frozen_frame_plan_matches_replacement)",
+    "--success-output",
+    "immediate"
+  ],
+  "exit": 0,
+  "oracle_sha256": "3cd08f181ed27069a40f530bd95011298fef09379a933c7b81dd4c0822e931a3",
+  "cases_sha256": "94528e2d1d1e2d2c298aa0059cab765926d68e9a4d97eb9bc7067fdfc696b9a0"
+}
