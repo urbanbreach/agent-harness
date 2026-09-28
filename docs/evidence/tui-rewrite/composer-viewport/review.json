@@ -1,0 +1,41 @@
+{
+  "reviewer": "/root/tui_review",
+  "decision": "approved for this intermediate atomic commit; full rewrite not approved",
+  "blocking_findings": [],
+  "verified_artifacts_before_review_receipt": 62,
+  "verified_source_files": 3,
+  "verified_executables": 4,
+  "verified_performance_reports": 48,
+  "verified": [
+    "source hashes and exact patch; 129 production lines removed",
+    "all 48 archived performance reports and recomputed summaries",
+    "27/28 frozen limits, older stricter bounds preserved and all 16 output pairs exact",
+    "42 paired PNGs and full terminal states excluding documented observer counters",
+    "four natural process exits, terminal restoration and resource cleanup reports",
+    "visual inspection of dropped-space cursor, leading-space and newline-after-space frames",
+    "1635 TUI checks, seven gated PTY checks, quality checks and 174696 differential comparisons"
+  ],
+  "resolved_findings": [
+    {
+      "finding": "Dropped overflowing whitespace immediately before LF has two cursor boundaries without an extra intermediate row.",
+      "resolution": "Keep LF segment boundaries explicit; frozen differential cases preserve both boundaries and the trailing empty row."
+    },
+    {
+      "finding": "Cursor endpoint widths, scalar starts and viewport lookahead differ from ordinary interior cursor placement.",
+      "resolution": "Separate endpoint measurement from interior cursor calculation; retain absolute scalar starts and all borrowed row slices for clipping."
+    },
+    {
+      "finding": "Clippy rejected excessive nesting in cursor placement.",
+      "resolution": "Extracted an equivalent row-relative cursor helper; repeated differential comparison and all quality checks pass."
+    }
+  ],
+  "limits_retained": [
+    "long typing malloc count104409 exceeds frozen96273 limit; 27/28 acceptance",
+    "long, undo and deletion CPU unchanged at process-tick resolution",
+    "earlier latency failures are retained; cause and stable end-to-end latency remain unresolved",
+    "R21 raw public-mirror CRLF discrepancy preserved; no shipped keyboard reproduction established",
+    "frame-layout engine, atom row budgets, public owned models, duplicate draft state and fallback history remain",
+    "full source reduction, sustained CPU, cadence, remaining feature/environment coverage and final whole-rewrite review remain open"
+  ],
+  "reviewer_actions": "Read-only; no builds, tests or edits."
+}

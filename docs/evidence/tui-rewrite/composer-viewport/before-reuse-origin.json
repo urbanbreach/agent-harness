@@ -1,0 +1,53 @@
+{
+  "base": "16ab0230547d73b0b9468eab683c880b920cda47",
+  "side": "candidate",
+  "sha256": "dd3078c0b48cbff1949824271dd1e6f5d30a3d8d3a3f7625771b9b16e6b9004f",
+  "probe_sha256": "2da3623de53cb8c8d456fc171a2870d332853725a0c6487088c409ab18696d22",
+  "fixture_sha256": "df377eb5d0762ae30d28270ef4c20a969df28263986356dd2fa45386b80f4d2f",
+  "production_sources": [
+    {
+      "path": "crates/harness-tui/src/app/composer.rs",
+      "sha256": "5d62c5e8cc609982d19694d1bd3db8c3ae92b4e928cb79e1c9911a38f7afcaa3"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/mod.rs",
+      "sha256": "35b09cc400006d10419475a700f69b48a471607a6d45fff878cfb6135b4bbd3a"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/presentation.rs",
+      "sha256": "7e3f650bc295fdd36c9258817ba967936f2255174a5c0a45131192adcd8450f6"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/presentation_policy.rs",
+      "sha256": "3ef5207cc91e34cb20f3b5a7c162d98d2785618d518341aaceb2e2db396753f2"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/presentation_tests.rs",
+      "sha256": "6491a3c4ee1854b9902fd2d2f7b33342ac13d252e1d35bd7c159a52ec6f2a18a"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_integration/view_model.rs",
+      "sha256": "f6f01a9be9c1c552e5e40510f3d397c018f9e6f0b94ee9ba664126704be23188"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/bordered.rs",
+      "sha256": "69b4306ec38d826f508d68eaa5e1255436b2778fefc9a76f8f511ba30e9f631a"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/collapsed.rs",
+      "sha256": "d5546f42fc9ca90d3dad202774b31b50cd9c6bfe8d17450553f6399c87bb3f85"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/document.rs",
+      "sha256": "e8ce48783a10da2adb9eea8c1f1539c31d55609c1b462ab95ffc1d212f4c4c40"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/presentation.rs",
+      "sha256": "a548597bd2c71bc17ac068799481502b97fda56bfa52527111752cbfe05a7e8b"
+    },
+    {
+      "path": "crates/harness-tui/src/layout.rs",
+      "sha256": "a98e83f150549c51e5d538d122637302346ef2679e70b6b8265a40a2e072b9ba"
+    }
+  ]
+}

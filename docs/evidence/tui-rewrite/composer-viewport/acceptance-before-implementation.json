@@ -1,0 +1,89 @@
+{
+  "recorded_at": "2026-09-28T00:50:36.313714+00:00",
+  "source": "9681f5322d479a9d819af7fac09e5dfbfa053350",
+  "baseline": {
+    "typing-long": {
+      "p50_us": 215,
+      "p95_us": 235,
+      "p99_us": 367,
+      "bytes": 20000,
+      "rss_kib": 9704,
+      "cpu_ms_per_frame": 0.22,
+      "allocated_bytes": 73547078,
+      "peak_heap_bytes": 2193323,
+      "malloc_calls": 106970
+    },
+    "typing": {
+      "p50_us": 111,
+      "p95_us": 124,
+      "p99_us": 186,
+      "bytes": 140750,
+      "rss_kib": 9764,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 9034596,
+      "peak_heap_bytes": 2115528,
+      "malloc_calls": 93775
+    },
+    "undo-long": {
+      "p50_us": 233,
+      "p95_us": 247,
+      "p99_us": 263,
+      "bytes": 20000,
+      "rss_kib": 10004,
+      "cpu_ms_per_frame": 0.24,
+      "allocated_bytes": 95624896,
+      "peak_heap_bytes": 2154756,
+      "malloc_calls": 409152
+    },
+    "delete-long": {
+      "p50_us": 294,
+      "p95_us": 367,
+      "p99_us": 388,
+      "bytes": 31187,
+      "rss_kib": 9960,
+      "cpu_ms_per_frame": 0.3,
+      "allocated_bytes": 137375977,
+      "peak_heap_bytes": 2021382,
+      "malloc_calls": 633614
+    }
+  },
+  "limits": {
+    "typing-long": {
+      "p95_us": 258.5,
+      "p99_us": 403.70000000000005,
+      "rss_kib": 10674.400000000001,
+      "peak_heap_bytes": 2412655.3000000003,
+      "allocated_bytes": 66192370.2,
+      "malloc_calls": 96273.0,
+      "cpu_ms_per_frame": 0.24200000000000002
+    },
+    "typing": {
+      "p95_us": 133.10000000000002,
+      "p99_us": 179.3,
+      "rss_kib": 10472.0,
+      "peak_heap_bytes": 2228162.2,
+      "allocated_bytes": 9034596.0,
+      "malloc_calls": 93775.0,
+      "cpu_ms_per_frame": 0.11000000000000001
+    },
+    "undo-long": {
+      "p95_us": 271.70000000000005,
+      "cpu_ms_per_frame": 0.264,
+      "allocated_bytes": 95624896.0,
+      "malloc_calls": 409152.0,
+      "p99_us": 289.3,
+      "rss_kib": 11004.400000000001,
+      "peak_heap_bytes": 2370231.6
+    },
+    "delete-long": {
+      "p95_us": 403.70000000000005,
+      "cpu_ms_per_frame": 0.33,
+      "rss_kib": 10956.0,
+      "peak_heap_bytes": 2223520.2,
+      "allocated_bytes": 137375977.0,
+      "malloc_calls": 633614.0,
+      "p99_us": 426.8
+    }
+  },
+  "requirements": "Replace the string composer viewport engine and delete its grapheme records/all-row owned strings. Long typing allocations and malloc calls must fall at least 10%; others may not increase. Preserve stricter existing latency/CPU/memory limits. No cursor/line-start/whitespace/Unicode/viewport geometry difference. Fixed500frames,10warmups,160x48 fixture; timings exclude PTY/emulator delivery."
+}
