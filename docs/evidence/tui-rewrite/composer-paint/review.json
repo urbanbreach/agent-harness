@@ -1,0 +1,28 @@
+{
+  "reviewer": "/root/tui_review",
+  "decision": "approved for this intermediate atomic commit; full rewrite not approved",
+  "blocking_findings": [],
+  "verified_artifacts_before_review_receipt": 52,
+  "verified_source_paths": 7,
+  "verified_executables": 4,
+  "verified_performance_reports": 48,
+  "verified": [
+    "exact source patch, including document/metadata deletions; production falls by 443 lines",
+    "289152 complete styled-Line comparisons; frozen/current source and temporary fixture match receipts",
+    "predecessor mutation, final test logs, quality checks and retained lint failure",
+    "all 48 raw reports, unchanged limits and 16 paired output records",
+    "42 PNG and full terminal-state pairs compared symmetrically; nine disclosed grouped renderCount differences only",
+    "four natural process exits, terminal restoration and complete cleanup",
+    "normalized identical inputs and emulator settings; every reused reference file matches composer-rows archive",
+    "visual inspection of word-selection and collapsed-paste screenshots"
+  ],
+  "limits_retained": [
+    "26/28 performance limits pass",
+    "long allocation bytes 16830430 exceed 16740421.2; malloc calls 94684 exceed 93842.9",
+    "CPU unchanged at process-tick resolution; prior latency uncertainty remains",
+    "legacy dispatcher is 1554 lines and touched test file is 827 lines",
+    "source total 165647 exceeds 90941 target",
+    "full legacy removal, sustained CPU, cadence, feature/environment coverage and final whole-rewrite review remain open"
+  ],
+  "reviewer_actions": "Read-only; no builds, tests or edits."
+}

@@ -30,20 +30,17 @@ use self::ui_control_dock_disclosure::{
 #[path = "ui_composer.rs"]
 mod ui_composer;
 pub(crate) use self::ui_composer::composer_input_viewport;
-use self::ui_composer::render_document_composer_content;
+use self::ui_composer::render_bordered_composer;
 #[cfg(test)]
-use self::ui_composer::{
-    composer_line_with_file_tags, composer_metadata_candidates, composer_viewport,
-};
+use self::ui_composer::{composer_line_with_file_tags, composer_viewport};
 #[cfg(test)]
 use self::ui_control_dock_disclosure::{
     composer_context_summary_candidates, startup_disclosure_candidates,
 };
 
-struct DocumentComposerRenderContext<'a> {
+struct ComposerRenderContext<'a> {
     dock: &'a crate::view_model::ControlDockViewModel,
     composer_lines: u16,
-    disclosure_visible: bool,
 }
 
 const QUIET_SURFACE_PADDING_X: u16 = 1;
@@ -810,15 +807,14 @@ pub(super) fn render_unified_bottom_dock(
     } else {
         composer_input_height(&composer_text, dock_layout.composer.width)
     };
-    render_document_composer_content(
+    render_bordered_composer(
         frame,
         app,
         dock_layout.composer,
         theme,
-        DocumentComposerRenderContext {
+        ComposerRenderContext {
             dock: &dock,
             composer_lines,
-            disclosure_visible: dock_layout.disclosure.is_some(),
         },
     );
 }

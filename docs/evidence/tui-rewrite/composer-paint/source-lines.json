@@ -1,0 +1,26 @@
+{
+  "before": {
+    "crates/harness-tui/src/ui_composer.rs": 82,
+    "crates/harness-tui/src/ui_composer/bordered.rs": 337,
+    "crates/harness-tui/src/ui_composer/collapsed.rs": 49,
+    "crates/harness-tui/src/ui_composer/file_tags.rs": 63,
+    "crates/harness-tui/src/ui_composer/document.rs": 249,
+    "crates/harness-tui/src/ui_composer/metadata.rs": 175,
+    "crates/harness-tui/src/ui_chrome.rs": 1558
+  },
+  "candidate": {
+    "crates/harness-tui/src/ui_composer.rs": 73,
+    "crates/harness-tui/src/ui_composer/bordered.rs": 344,
+    "crates/harness-tui/src/ui_composer/collapsed.rs": 49,
+    "crates/harness-tui/src/ui_composer/file_tags.rs": 50,
+    "crates/harness-tui/src/ui_composer/document.rs": 0,
+    "crates/harness-tui/src/ui_composer/metadata.rs": 0,
+    "crates/harness-tui/src/ui_chrome.rs": 1554
+  },
+  "src_total": 165647,
+  "extended_test": {
+    "path": "crates/harness-tui/src/app/tests/grok_parity_surfaces_test.rs",
+    "before": 795,
+    "candidate": 827
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--all-features",
+    "-E",
+    "test(composer_selection_and_mentions_follow_visible_wrapped_cells) | test(composer_metadata_) | binary(production_composer_reachability_test)"
+  ],
+  "exit": 100
+}

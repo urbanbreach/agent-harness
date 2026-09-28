@@ -1,23 +1,19 @@
 use super::*;
 use unicode_segmentation::UnicodeSegmentation;
 
-pub(crate) fn composer_line_with_file_tags(
-    line: &str,
+pub(crate) fn composer_line_with_file_tags<'a>(
+    line: &'a str,
     line_start: usize,
     tags: &[crate::app::FileMentionTag],
     base_style: Style,
     tag_style: Style,
     selection: Option<std::ops::Range<usize>>,
-) -> Line<'static> {
-    if line.is_empty() {
-        return Line::from(Span::styled(String::new(), base_style));
-    }
-
+) -> Line<'a> {
     let mut spans = Vec::new();
-    let mut current = String::new();
-    let mut current_style = None;
+    let mut start = 0;
+    let mut current_style = base_style;
     let mut char_index = line_start;
-    for grapheme in line.graphemes(true) {
+    for (byte, grapheme) in line.grapheme_indices(true) {
         let end = char_index + grapheme.chars().count();
         let mut style = if tags
             .iter()
@@ -34,22 +30,13 @@ pub(crate) fn composer_line_with_file_tags(
             style = style.add_modifier(Modifier::REVERSED);
         }
         char_index = end;
-        if current_style == Some(style) {
-            current.push_str(grapheme);
-        } else {
-            if !current.is_empty() {
-                spans.push(Span::styled(
-                    std::mem::take(&mut current),
-                    current_style.unwrap_or_abort(),
-                ));
-            }
-            current_style = Some(style);
-            current.push_str(grapheme);
+        if byte > 0 && current_style != style {
+            spans.push(Span::styled(&line[start..byte], current_style));
+            start = byte;
         }
+        current_style = style;
     }
-    if !current.is_empty() {
-        spans.push(Span::styled(current, current_style.unwrap_or(base_style)));
-    }
+    spans.push(Span::styled(&line[start..], current_style));
     Line::from(spans)
 }
 

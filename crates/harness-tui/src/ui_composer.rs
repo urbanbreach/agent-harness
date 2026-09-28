@@ -1,22 +1,17 @@
 use super::*;
 use crate::ui::ui_transcript_style::blend_color;
-use crate::UnwrapOrAbort;
 use ratatui::widgets::BorderType;
 
 #[path = "ui_composer/bordered.rs"]
 mod bordered;
 #[path = "ui_composer/collapsed.rs"]
 mod collapsed;
-#[path = "ui_composer/document.rs"]
-mod document;
 #[path = "ui_composer/file_tags.rs"]
 mod file_tags;
 #[path = "ui_composer/ghost.rs"]
 mod ghost;
 #[path = "ui_composer/identity.rs"]
 mod identity;
-#[path = "ui_composer/metadata.rs"]
-mod metadata;
 #[path = "ui_composer/presentation.rs"]
 mod presentation;
 #[path = "ui_composer/viewport.rs"]
@@ -24,12 +19,8 @@ mod viewport;
 
 pub(crate) use bordered::composer_input_viewport;
 pub(super) use bordered::{connect_waiting_owns_input, render_bordered_composer};
-pub(super) use document::render_document_composer_content;
 pub(super) use file_tags::composer_line_with_file_tags;
 pub(super) use identity::composer_model_badge;
-pub(super) use metadata::{
-    composer_metadata_candidates, composer_metadata_line, ComposerMetadataTone,
-};
 pub(super) use viewport::composer_viewport;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

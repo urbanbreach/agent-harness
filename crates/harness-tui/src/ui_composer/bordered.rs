@@ -5,7 +5,7 @@ pub(crate) fn render_bordered_composer(
     app: &AppState,
     area: Rect,
     theme: &Theme,
-    context: DocumentComposerRenderContext<'_>,
+    context: ComposerRenderContext<'_>,
 ) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -135,6 +135,11 @@ pub(crate) fn render_bordered_composer(
     };
 
     let viewport = &resolved.viewport;
+    let padding = if viewport.lines.len() > 1 {
+        " ".repeat(glyph_cols)
+    } else {
+        String::new()
+    };
 
     let base_style = Style::default().fg(body_color).bg(composer_surface);
     let tag_style = base_style
@@ -150,8 +155,8 @@ pub(crate) fn render_bordered_composer(
         .zip(&viewport.line_starts)
         .enumerate()
         .map(|(row, (line, start))| {
-            let body = if plain_text {
-                Line::from(Span::styled(line.clone(), base_style))
+            let mut body = if plain_text {
+                Line::from(Span::styled(line.as_str(), base_style))
             } else {
                 composer_line_with_file_tags(
                     line,
@@ -162,12 +167,14 @@ pub(crate) fn render_bordered_composer(
                     selection.clone(),
                 )
             };
-            let mut spans = vec![if row == 0 {
-                Span::styled(glyph_prefix.clone(), glyph_style)
-            } else {
-                Span::styled(" ".repeat(glyph_cols), base_style)
-            }];
-            spans.extend(body.spans);
+            body.spans.insert(
+                0,
+                if row == 0 {
+                    Span::styled(glyph_prefix.as_str(), glyph_style)
+                } else {
+                    Span::styled(padding.as_str(), base_style)
+                },
+            );
             if ghost_visible
                 && viewport.cursor.is_some_and(|(cursor_row, cursor_col)| {
                     cursor_row == row && cursor_col == display_width(line)
@@ -177,13 +184,13 @@ pub(crate) fn render_bordered_composer(
                     let cursor_col = viewport.cursor.map_or(0, |(_, cursor_col)| cursor_col);
                     let available_width = usize::from(inner.width)
                         .saturating_sub(glyph_cols.saturating_add(cursor_col));
-                    spans.push(Span::styled(
+                    body.spans.push(Span::styled(
                         super::ghost::truncate_to_width(ghost, available_width),
                         crate::ghost_suggestions::muted_style(),
                     ));
                 }
             }
-            Line::from(spans)
+            body
         })
         .collect::<Vec<_>>();
     frame.render_widget(
@@ -257,7 +264,7 @@ pub(crate) fn composer_input_viewport(
 
 fn bordered_composer_placeholder(
     app: &AppState,
-    context: &DocumentComposerRenderContext<'_>,
+    context: &ComposerRenderContext<'_>,
     focused: bool,
     composer_empty: bool,
     ghost_visible: bool,

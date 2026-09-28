@@ -1187,6 +1187,32 @@ All 48 raw performance reports remain available, with no gate relaxation or
 unchanged rerun. Timings exclude PTY/emulator delivery. Evidence is in
 [`evidence/tui-rewrite/composer-rows`](evidence/tui-rewrite/composer-rows).
 
+## Composer painting replacement
+
+Styled composer runs borrow source slices, and the bordered painter reuses its
+body span vector and measured prefix/gutter. Paragraph clipping, ghost text,
+cursor placement, and disabled/placeholder/collapsed-paste behavior remain.
+The unused document fallback and its metadata module are deleted: replay returns
+before that dispatcher, and its other two variants delegated to the bordered
+painter. Live badge and provider-label checks remain.
+
+Production falls by 443 lines; an existing painted-selection check grows by
+32 lines. The TUI source tree totals 165,647 lines. The legacy dispatcher and
+test file still exceed 500 lines. A style-replacement mutation fails the new
+combined mention/selection assertion. All 289,152 frozen complete-Line
+comparisons match. All 1,635 TUI checks, seven gated PTY checks and quality
+checks pass after extracting the new assertion stage to meet Clippy's complexity
+limit. Forty-two paired PTY/xterm frames match exactly in PNGs, cells, styles and
+cursor; terminal restoration and resource cleanup pass.
+
+Long typing allocation bytes fall 4.5% and malloc calls 4.2%, missing both frozen
+5% targets. The candidate passes 26 of 28 limits. All latency bounds pass in this
+comparison, with short p95/p99 at 121/128 µs; earlier failures remain recorded.
+CPU is unchanged at process-tick resolution. All 48 raw reports remain available;
+there was no gate relaxation or unchanged rerun. Timings exclude PTY/emulator
+delivery. Evidence is in
+[`evidence/tui-rewrite/composer-paint`](evidence/tui-rewrite/composer-paint).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal
