@@ -48,10 +48,6 @@ pub(super) fn slash_command_match_rank(
     description.find(query).map(|index| (3, index))
 }
 
-pub(super) fn slash_command_display_width(command: &str) -> usize {
-    command.chars().count().saturating_add(1)
-}
-
 pub(super) fn auth_slash_args_from_prompt(prompt: &str) -> Vec<String> {
     let trimmed = prompt.trim().trim_start_matches('/');
     let mut parts = trimmed.split_whitespace();

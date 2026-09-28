@@ -7,7 +7,6 @@ use fuzzy_matcher::FuzzyMatcher;
 use crate::app::AppState;
 use crate::keybindings::palette_model::{
     entries, find, DynamicTitle, PaletteCategory, PaletteCommandEntry, PaletteDispatch,
-    SuggestedRule,
 };
 
 static FUZZY_MATCHER: LazyLock<SkimMatcherV2> = LazyLock::new(SkimMatcherV2::default);
@@ -169,16 +168,6 @@ pub fn is_available(app: &AppState, entry: &PaletteCommandEntry) -> bool {
         "prompt.stash.pop" | "prompt.stash.list" => !app.prompt_stash.entries.is_empty(),
 
         _ => true,
-    }
-}
-
-pub fn is_suggested(app: &AppState, entry: &PaletteCommandEntry) -> bool {
-    match entry.suggested {
-        SuggestedRule::Never => false,
-        SuggestedRule::Always => true,
-        SuggestedRule::WhenSessionsExist => !app.session_history_entries.is_empty(),
-        SuggestedRule::WhenSessionRoute => !app.startup_shell_visible(),
-        SuggestedRule::WhenDisconnected => app.provider_disconnected(),
     }
 }
 

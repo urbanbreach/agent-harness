@@ -1,0 +1,31 @@
+{
+  "base": "e421434a7ef274824e87c5201c595600c4d0b748",
+  "functions_removed": 47,
+  "private_type_removed": "StartupCardViewModel",
+  "constants_removed": 5,
+  "source_lines_removed": 555,
+  "source_lines_remaining": 165121,
+  "test_changes": false,
+  "source_files": 28,
+  "touched_files_over_500_lines": 19,
+  "library_dead_code_warnings": {
+    "before": 69,
+    "after": 21
+  },
+  "tui": {
+    "run": 1635,
+    "passed": 1635,
+    "skipped": 7
+  },
+  "pty": {
+    "run": 7,
+    "passed": 7
+  },
+  "workspace_check": "passed",
+  "clippy": "passed",
+  "fmt": "passed",
+  "suite_gates": "passed",
+  "resource_measurements": "not repeated; no runtime improvement claim",
+  "xterm_captures": "not repeated; prior captures remain predecessor-only evidence",
+  "whole_rewrite": "unfinished"
+}

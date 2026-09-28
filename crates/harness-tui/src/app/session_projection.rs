@@ -18,15 +18,14 @@ use harness_core::session::{
 use super::permissions::PendingPermission;
 use super::tool_call::display_status_for_tool_call;
 use super::{
-    mark_activity_event, merge_orchestration_task_completion_metadata,
-    merge_orchestration_task_event, merge_orchestration_task_lineage, merge_resolved_tool_identity,
-    merge_tool_call_metadata, new_streaming_activity_entry, task_child_request_id_from_output,
-    task_child_session_id_from_output, tool_call_is_foreground_child_wait, ActiveContextUsage,
-    ActivityCacheUsage, ActivityEntry, ActivityStatus, ActivityUsage, AppState, CompactionState,
-    CompactionStatus, CompactionUsageMetrics, EditDisplayStatus, EditEntry, Focus, MemoryCaps,
+    mark_activity_event, merge_orchestration_task_event, merge_orchestration_task_lineage,
+    merge_resolved_tool_identity, merge_tool_call_metadata, new_streaming_activity_entry,
+    task_child_request_id_from_output, task_child_session_id_from_output,
+    tool_call_is_foreground_child_wait, ActiveContextUsage, ActivityCacheUsage, ActivityEntry,
+    ActivityStatus, ActivityUsage, AppState, CompactionState, CompactionStatus,
+    CompactionUsageMetrics, EditDisplayStatus, EditEntry, Focus, MemoryCaps,
     NewStreamingActivityEntryArgs, OrchestrationOwnerLabels, OrchestrationSummary,
     OrchestrationTaskRow, OrchestrationTaskState, ToolCallDisplayStatus, ToolCallEntry,
-    TOOL_OUTPUT_DISPLAY_MAX_CHARS,
 };
 use crate::text::{has_trimmed_content, non_empty_preserved_string};
 use crate::view_model;

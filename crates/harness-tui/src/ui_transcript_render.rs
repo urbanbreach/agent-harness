@@ -9,7 +9,6 @@ use super::ui_transcript_tool_render::{
 };
 use super::*;
 use crate::app::ToolCallPresentationStatus;
-use harness_core::event::ProviderRequestRetryMetadata;
 use std::time::Duration;
 
 const USER_MESSAGE_COLLAPSED_MAX_LINES: usize = 3;
@@ -1231,10 +1230,6 @@ fn build_assistant_footer_line(
         ));
     }
     Line::from(spans)
-}
-
-fn retry_attempt(turn: &TranscriptTurnSection) -> Option<&ProviderRequestRetryMetadata> {
-    turn.header.retry.as_ref().filter(|retry| retry.attempt > 0)
 }
 
 fn pack_waiting_on_answers_footer_line(

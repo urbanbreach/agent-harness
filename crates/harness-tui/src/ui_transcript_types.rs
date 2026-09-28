@@ -516,27 +516,6 @@ impl TranscriptTurnSection {
             _ => None,
         })
     }
-
-    pub(super) fn assistant_reasoning(&self) -> Option<&TranscriptLabeledTextSection> {
-        self.assistant_parts.iter().find_map(|part| match part {
-            TranscriptAssistantPart::Reasoning(reasoning) => Some(reasoning),
-            _ => None,
-        })
-    }
-
-    pub(super) fn assistant_bodies(&self) -> impl Iterator<Item = &TranscriptBodyBlock> {
-        self.assistant_parts.iter().filter_map(|part| match part {
-            TranscriptAssistantPart::Body(body) => Some(body),
-            _ => None,
-        })
-    }
-
-    pub(super) fn assistant_error(&self) -> Option<&TranscriptErrorSection> {
-        self.assistant_parts.iter().find_map(|part| match part {
-            TranscriptAssistantPart::Error(error) => Some(error),
-            _ => None,
-        })
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -722,8 +701,6 @@ impl TranscriptAssistantPart {
 pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str =
     super::super::ui_transcript_surface::TRANSCRIPT_ENTRY_CONTENT_PREFIX;
 pub(super) const TRANSCRIPT_USER_BODY_PREFIX: &str = "     ";
-pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = TRANSCRIPT_ASSISTANT_BODY_PREFIX;
-pub(super) const TRANSCRIPT_REASONING_HEADER_PREFIX: &str = TRANSCRIPT_ASSISTANT_BODY_PREFIX;
 pub(super) const TRANSCRIPT_NESTED_INDENT: &str = "     ";
 pub(super) const TRANSCRIPT_TOOL_BODY_PREFIX: &str = TRANSCRIPT_ASSISTANT_BODY_PREFIX;
 

@@ -217,35 +217,6 @@ fn slash_command_overlay_height(app: &AppState, width: u16) -> u16 {
     u16::try_from(rows).unwrap_or(u16::MAX)
 }
 
-fn command_palette_visible_rows(app: &AppState) -> usize {
-    if !app.palette_input.is_empty() {
-        return app.palette_filtered.len();
-    }
-
-    app.palette_filtered
-        .iter()
-        .fold((0usize, None), |(rows, last_category), command| {
-            let id = command
-                .strip_prefix("suggested:")
-                .unwrap_or(command.as_str());
-            let category = crate::keybindings::palette_model::find(id).map(|entry| entry.category);
-            let section_rows = if category.is_some() && category != last_category {
-                if last_category.is_some() {
-                    2
-                } else {
-                    1
-                }
-            } else {
-                0
-            };
-            (
-                rows.saturating_add(section_rows).saturating_add(1),
-                category,
-            )
-        })
-        .0
-}
-
 fn toggles_menu_visible_rows(app: &AppState) -> usize {
     app.toggle_menu_rows()
         .iter()

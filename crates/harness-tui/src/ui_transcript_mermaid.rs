@@ -10,8 +10,6 @@ use super::ui_transcript_mermaid_art::{
 use crate::theme::Theme;
 
 const MAX_NODES: usize = 24;
-const MIN_NODE_WIDTH: usize = 7;
-const MAX_LABEL_WIDTH: usize = 28;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum DiagramDirection {

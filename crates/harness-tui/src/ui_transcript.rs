@@ -73,9 +73,9 @@ use super::ui_transcript_page_flip::{transcript_scroll_position, TranscriptScrol
 use super::ui_transcript_scrollbar::transcript_more_below_hit_rect;
 use super::ui_transcript_scrollbar::{
     current_transcript_scroll_top, render_transcript_more_below_affordance,
-    render_transcript_scrollbar, transcript_more_below_rect, transcript_scroll_offset,
-    transcript_scrollbar_geometry, transcript_scrollbar_needed, transcript_viewport_layout,
-    TranscriptScrollbarHit, TranscriptScrollbarRenderSpec,
+    render_transcript_scrollbar, transcript_more_below_rect, transcript_scrollbar_geometry,
+    transcript_scrollbar_needed, transcript_viewport_layout, TranscriptScrollbarHit,
+    TranscriptScrollbarRenderSpec,
 };
 use super::ui_transcript_selection::{
     blank_selection_row, lifecycle_selection_snapshot, render_transcript_selection,
@@ -85,8 +85,7 @@ use super::ui_transcript_selection::{
 use super::ui_transcript_style::{
     assistant_footer_label, assistant_primary_label_color, assistant_primary_rail_color,
     blend_color, glyph_routed_streaming_spinner_frame, selected_foreground_for_badge,
-    thinking_header_color, transcript_emphasized_surface, transcript_nested_rail_color,
-    transcript_running_tool_marker_color,
+    thinking_header_color, transcript_emphasized_surface, transcript_running_tool_marker_color,
 };
 use super::ui_transcript_surface::{
     append_prebuilt_surface_lines, append_prefixed_wrapped_spans_line, append_surface_row,

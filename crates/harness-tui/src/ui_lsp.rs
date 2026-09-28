@@ -69,11 +69,3 @@ fn path_from_args(args_summary: &str) -> Option<String> {
     let args = serde_json::from_str::<serde_json::Value>(args_summary).ok()?;
     trimmed_json_string_field(Some(&args), &["path", "filePath"])
 }
-
-pub(super) fn path_root_from_args(args_summary: &str) -> Option<String> {
-    let path = path_from_args(args_summary)?;
-    Path::new(&path)
-        .parent()
-        .and_then(Path::to_str)
-        .map(str::to_string)
-}

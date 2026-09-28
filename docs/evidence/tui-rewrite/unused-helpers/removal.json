@@ -1,0 +1,306 @@
+[
+  {
+    "path": "crates/harness-tui/src/app.rs",
+    "name": "provider_disconnected",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/activity.rs",
+    "name": "merge_orchestration_task_completion_metadata",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/lifecycle.rs",
+    "name": "startup_card_view_model",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/model_switcher.rs",
+    "name": "runtime_context_profile",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/palette_controller.rs",
+    "name": "is_suggested",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/permissions.rs",
+    "name": "mark_resolved",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/permissions/question.rs",
+    "name": "question_prompt_is_single_select",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_history.rs",
+    "name": "session_history_time_label",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_history.rs",
+    "name": "format_twelve_hour_time",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_history.rs",
+    "name": "session_history_date_parts",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_history.rs",
+    "name": "epoch_millis_date_parts",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_history.rs",
+    "name": "epoch_millis_time_parts",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_history.rs",
+    "name": "current_utc_date",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_history.rs",
+    "name": "civil_from_days",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_history.rs",
+    "name": "days_from_civil",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_history.rs",
+    "name": "weekday_name",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_history.rs",
+    "name": "month_name",
+    "definition_removed": true,
+    "remaining_same_name_references": [
+      "crates/harness-tui/src/time_format.rs:61:    let Some(month_name) = month.checked_sub(1).and_then(|index| MONTHS.get(index)) else {",
+      "crates/harness-tui/src/time_format.rs:65:        \"{} | {month_name} {}\","
+    ]
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_history.rs",
+    "name": "session_history_visual_row_count",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_navigation.rs",
+    "name": "slash_command_column_width",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_navigation.rs",
+    "name": "palette_command_available",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_slash.rs",
+    "name": "slash_command_display_width",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/transcript_state.rs",
+    "name": "active_turn_tool_motion_demand",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/app/transcript_state.rs",
+    "name": "show_mode_banner",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/layout/overlays.rs",
+    "name": "command_palette_visible_rows",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/startup_logo.rs",
+    "name": "row_spans",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/startup_logo.rs",
+    "name": "padded_row",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_chrome.rs",
+    "name": "command_palette_section",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_chrome.rs",
+    "name": "fork_selector_selection_bg",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_chrome.rs",
+    "name": "fork_selector_selection_fg",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_chrome.rs",
+    "name": "preferred_binding",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_permission_dock.rs",
+    "name": "question_prompt_secondary",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_lsp.rs",
+    "name": "path_root_from_args",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_overlays.rs",
+    "name": "render_command_palette_surface",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+    "name": "permission_modal_metadata_line",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+    "name": "permission_modal_icon",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+    "name": "permission_modal_guidance",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+    "name": "permission_modal_summary_line",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+    "name": "permission_modal_draft_line",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_overlays/release_notes.rs",
+    "name": "push_wrapped_bullet",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_transcript_types.rs",
+    "name": "assistant_reasoning",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_transcript_types.rs",
+    "name": "assistant_bodies",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_transcript_types.rs",
+    "name": "assistant_error",
+    "definition_removed": true,
+    "remaining_same_name_references": [
+      "crates/harness-tui/src/theme.rs:910:    pub assistant_error: Color,",
+      "crates/harness-tui/src/theme.rs:1021:        assistant_error: rgb(113, 116, 122),",
+      "crates/harness-tui/src/theme.rs:1525:                assistant_error: rgb(118, 118, 118),",
+      "crates/harness-tui/src/theme.rs:1817:                assistant_error: q(self.terminal_colors.assistant_error),",
+      "crates/harness-tui/src/theme.rs:1950:                assistant_error: muted_fg,",
+      "crates/harness-tui/src/theme.rs:2083:                assistant_error: Color::Reset,"
+    ]
+  },
+  {
+    "path": "crates/harness-tui/src/ui_transcript_render.rs",
+    "name": "retry_attempt",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/ui_transcript_scrollbar.rs",
+    "name": "transcript_scroll_offset",
+    "definition_removed": true,
+    "remaining_same_name_references": [
+      "crates/harness-tui/src/app.rs:3762:    pub fn transcript_scroll_offset(&self) -> usize {",
+      "crates/harness-tui/src/app/tests/permission_modal_tests_part6_test.rs:219:    assert!(app.transcript_scroll_offset() > 0);",
+      "crates/harness-tui/src/app/tests/permission_modal_tests_part6_test.rs:222:    assert_eq!(app.transcript_scroll_offset(), 0);",
+      "crates/harness-tui/src/app/tests/permission_modal_tests_part6_test.rs:233:    assert!(app.transcript_scroll_offset() > 0);",
+      "crates/harness-tui/src/app/tests/permission_modal_tests_part6_test.rs:234:    let parked_scroll = app.transcript_scroll_offset();",
+      "crates/harness-tui/src/app/tests/permission_modal_tests_part6_test.rs:244:    assert_eq!(app.transcript_scroll_offset(), parked_scroll);",
+      "crates/harness-tui/src/ui_transcript.rs:1027:            app.transcript_scroll_offset(),",
+      "crates/harness-tui/src/app/transcript_state.rs:876:            .unwrap_or_else(|| max_scroll.saturating_sub(self.transcript_scroll_offset()));",
+      "crates/harness-tui/src/app/tests/transcript_return_to_live_tests.rs:44:    assert_eq!(app.transcript_scroll_offset(), 0);",
+      "crates/harness-tui/src/app/tests/interaction_tests_part3_test.rs:347:            .saturating_sub(app.transcript_scroll_offset()),",
+      "crates/harness-tui/src/app/tests/interaction_tests_part2_test.rs:624:            assert_eq!(app.transcript_scroll_offset(), offset);"
+    ]
+  },
+  {
+    "path": "crates/harness-tui/src/ui_transcript_style.rs",
+    "name": "transcript_nested_rail_color",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/view_model.rs",
+    "name": "startup_card_view_model",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  },
+  {
+    "path": "crates/harness-tui/src/rewind_view.rs",
+    "name": "new_cancel_offer",
+    "definition_removed": true,
+    "remaining_same_name_references": []
+  }
+]

@@ -103,10 +103,6 @@ pub(super) fn build_question_answers(
     Ok(answers)
 }
 
-pub(super) fn question_prompt_is_single_select(prompts: &[QuestionPromptView]) -> bool {
-    prompts.len() == 1 && !prompts[0].multiple
-}
-
 pub(super) fn question_prompt_tab_count(prompts: &[QuestionPromptView]) -> usize {
     prompts.len().max(1)
 }

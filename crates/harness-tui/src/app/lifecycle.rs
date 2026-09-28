@@ -739,16 +739,6 @@ impl AppState {
         self.replay_mode || self.runtime_state().composer_disabled
     }
 
-    pub(crate) fn startup_card_view_model(&self) -> view_model::StartupCardViewModel {
-        view_model::startup_card_view_model(
-            self.startup_mode,
-            self.launch_mode_label(),
-            self.active_profile(),
-            self.active_provider(),
-            self.current_model_label(),
-        )
-    }
-
     pub(crate) fn footer_hints_view_model(&self) -> view_model::FooterHintsViewModel {
         view_model::footer_hints_view_model(view_model::FooterHintsInput {
             replay_mode: self.replay_mode,

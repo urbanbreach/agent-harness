@@ -137,33 +137,6 @@ fn session_history_search_fields(entry: &SessionHistoryEntry) -> Vec<String> {
     fields
 }
 
-fn session_history_time_label(timestamp: &str) -> String {
-    if let Some((hour, minute)) = epoch_millis_time_parts(timestamp) {
-        return format_twelve_hour_time(hour, minute);
-    }
-
-    let short = short_time_or_trimmed(timestamp);
-    let Some((hour, minute)) = short.split_once(':').and_then(|(hour, minute)| {
-        Some((
-            hour.parse::<u8>().ok()?,
-            minute.get(..2)?.parse::<u8>().ok()?,
-        ))
-    }) else {
-        return short;
-    };
-
-    format_twelve_hour_time(hour, minute)
-}
-
-fn format_twelve_hour_time(hour: u8, minute: u8) -> String {
-    let suffix = if hour < 12 { "AM" } else { "PM" };
-    let display_hour = match hour % 12 {
-        0 => 12,
-        hour => hour,
-    };
-    format!("{display_hour}:{minute:02} {suffix}")
-}
-
 fn relative_age_label(timestamp: &str) -> String {
     if let Some(ts_seconds) = epoch_millis_seconds(timestamp) {
         return format_relative_age(ts_seconds);
@@ -222,24 +195,6 @@ fn iso_to_epoch_seconds(timestamp: &str) -> Option<i64> {
     Some(days * 86_400 + i64::from(hour) * 3600 + i64::from(minute) * 60 + i64::from(second))
 }
 
-fn session_history_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {
-    iso_date_parts(timestamp).or_else(|| epoch_millis_date_parts(timestamp))
-}
-
-fn epoch_millis_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {
-    let seconds = epoch_millis_seconds(timestamp)?;
-    civil_from_days(seconds.div_euclid(86_400))
-}
-
-fn epoch_millis_time_parts(timestamp: &str) -> Option<(u8, u8)> {
-    let seconds = epoch_millis_seconds(timestamp)?;
-    let seconds_of_day = seconds.rem_euclid(86_400);
-    Some((
-        u8::try_from(seconds_of_day / 3_600).ok()?,
-        u8::try_from((seconds_of_day % 3_600) / 60).ok()?,
-    ))
-}
-
 fn epoch_millis_seconds(timestamp: &str) -> Option<i64> {
     let trimmed = timestamp.trim();
     if trimmed.len() < 10 || !trimmed.chars().all(|ch| ch.is_ascii_digit()) {
@@ -263,69 +218,6 @@ fn iso_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {
     (1..=12).contains(&month).then_some(())?;
     (1..=31).contains(&day).then_some(())?;
     Some((year, month, day))
-}
-
-fn current_utc_date() -> Option<(i32, u8, u8)> {
-    let duration = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?;
-    civil_from_days(i64::try_from(duration.as_secs() / 86_400).ok()?)
-}
-
-fn civil_from_days(days_since_unix_epoch: i64) -> Option<(i32, u8, u8)> {
-    let z = days_since_unix_epoch.checked_add(719_468)?;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let year = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = mp + if mp < 10 { 3 } else { -9 };
-    let year = year + i64::from(month <= 2);
-    Some((
-        i32::try_from(year).ok()?,
-        u8::try_from(month).ok()?,
-        u8::try_from(day).ok()?,
-    ))
-}
-
-fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
-    let mut year = i64::from(year);
-    let month = i64::from(month);
-    let day = i64::from(day);
-    year -= i64::from(month <= 2);
-    let era = if year >= 0 { year } else { year - 399 } / 400;
-    let yoe = year - era * 400;
-    let month_prime = month + if month > 2 { -3 } else { 9 };
-    let doy = (153 * month_prime + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
-
-fn weekday_name(year: i32, month: u8, day: u8) -> &'static str {
-    const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
-    let days = days_from_civil(year, month, day);
-    let index = usize::try_from(days.rem_euclid(7)).unwrap_or(0);
-    WEEKDAYS[index]
-}
-
-const fn month_name(month: u8) -> &'static str {
-    match month {
-        1 => "Jan",
-        2 => "Feb",
-        3 => "Mar",
-        4 => "Apr",
-        5 => "May",
-        6 => "Jun",
-        7 => "Jul",
-        8 => "Aug",
-        9 => "Sep",
-        10 => "Oct",
-        11 => "Nov",
-        12 => "Dec",
-        _ => "???",
-    }
 }
 
 pub(super) fn fuzzy_subsequence_score(haystack: &str, needle: &str) -> Option<usize> {
@@ -543,26 +435,6 @@ impl AppState {
         );
         self.session_history_filtered = filtered.into_iter().map(|(index, _, _)| index).collect();
         self.session_history_selected = 0;
-    }
-
-    pub(crate) fn session_history_visual_row_count(&self) -> usize {
-        let mut rows = 0usize;
-        let mut previous_category: Option<String> = None;
-        for entry_index in &self.session_history_filtered {
-            let Some(entry) = self.session_history_entries.get(*entry_index) else {
-                continue;
-            };
-            let category = session_history_category_label(entry);
-            if previous_category.as_deref() != Some(category.as_str()) {
-                if previous_category.is_some() {
-                    rows = rows.saturating_add(1);
-                }
-                rows = rows.saturating_add(1);
-                previous_category = Some(category);
-            }
-            rows = rows.saturating_add(1);
-        }
-        rows
     }
 
     pub(in crate::app) fn begin_session_history_picker(&mut self, action: StartupLauncherAction) {

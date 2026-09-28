@@ -1,0 +1,112 @@
+[
+  {
+    "path": "README.md",
+    "bytes": 4082,
+    "sha256": "da36c45e2f0dc83d39a6a29e73dc0709a001cf9c797b719ca2facb608d6886b3"
+  },
+  {
+    "path": "acceptance-before-removal.json",
+    "bytes": 846,
+    "sha256": "a66e6c9108ba5c075df2157ce1d64fa827bda02b1f56af4507873ed425018b7d"
+  },
+  {
+    "path": "checks.json",
+    "bytes": 1296,
+    "sha256": "ac7c4588fa3cc53e5da456bb366d2a284249d3dcac12e1d95b115672b3f0d608"
+  },
+  {
+    "path": "checks.py",
+    "bytes": 1092,
+    "sha256": "91556257cc6871865ca15dc50d6fb4d4c41675ab5d145e2a21a1fa42c078505c"
+  },
+  {
+    "path": "clippy.log",
+    "bytes": 964,
+    "sha256": "f130e05124e39da40b16dc5b2c0d8fa261c91b64a0d433919cd6d87f13261a23"
+  },
+  {
+    "path": "dead-code-after.log",
+    "bytes": 9083,
+    "sha256": "7f016765ef69c9d3192e75a4fd85082ae4f7621470516e9e26faf320644aba78"
+  },
+  {
+    "path": "dead-code.log",
+    "bytes": 22025,
+    "sha256": "23c7e563d16eb68ee7a37cbf1a6a8765194a31aaf86a9c3cc27f02e7534f2266"
+  },
+  {
+    "path": "fmt.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "pty.log",
+    "bytes": 1276,
+    "sha256": "a65c15d0f22a9e8d7d0b41c5adf6aa03fca5b1744a7b5129294f54b9ee56bf60"
+  },
+  {
+    "path": "removal.json",
+    "bytes": 10695,
+    "sha256": "eb0a8d582da0821a515f898ecb5d45d1a91bb5470af0389e779cbe5224d25fc1"
+  },
+  {
+    "path": "remove.py",
+    "bytes": 2811,
+    "sha256": "69512070e2802bfd3896dab598a776bc7641780ea2f34c70581e6ded988527fb"
+  },
+  {
+    "path": "review.json",
+    "bytes": 757,
+    "sha256": "2fbea07d733a2aa067c58de39e3e8e168baf510dc955db05d3180af7b381bcc2"
+  },
+  {
+    "path": "select.py",
+    "bytes": 3058,
+    "sha256": "ec48c6a756792cac9a432eacb97c6b147d8ef20123d12ddd069b6b1456561caa"
+  },
+  {
+    "path": "selected-source.txt",
+    "bytes": 18891,
+    "sha256": "f4ecbae9f09f9bab7060af11e44f9a1d0ba1863d767b62a6d38440672be5ea50"
+  },
+  {
+    "path": "selected.json",
+    "bytes": 24566,
+    "sha256": "f9f32fb063117161fa532cedf8ed85bcce769a512ac2931a433797e166aa2919"
+  },
+  {
+    "path": "source-numstat.txt",
+    "bytes": 1354,
+    "sha256": "6c8f5839cf97c8eab234596ae09c3bcd4eb80ec0a095fe68ef893ed37caf4e82"
+  },
+  {
+    "path": "source.patch.gz",
+    "bytes": 10847,
+    "sha256": "be9556ea49d9f2ce5729f0b850dea15c9835044f6952665fc70b433f2603dbf1"
+  },
+  {
+    "path": "sources.json",
+    "bytes": 8217,
+    "sha256": "c34db14281879c18192f46de6c16666366b80e7670633fff0b9d13f4be111789"
+  },
+  {
+    "path": "suite-gates.log",
+    "bytes": 38,
+    "sha256": "9dbaeda37da424493a0057a1d54b636bc8c9da7e77a14322d41d4e63b18196d9"
+  },
+  {
+    "path": "tui.log",
+    "bytes": 2582,
+    "sha256": "4e458a532b203a777f9abc00a6fd3822b8c15943d0b8d150df6e892de9628313"
+  },
+  {
+    "path": "verification.json",
+    "bytes": 791,
+    "sha256": "7c397d2f8384e98606a17526af22088746c966df3bac365895cd2767d5e68894"
+  },
+  {
+    "path": "workspace-check.log",
+    "bytes": 939,
+    "sha256": "4c9f46b78ce56c437d6fb6107bb51dd69b30c0c84817a86edbf2a5af052b1bf6"
+  }
+]
