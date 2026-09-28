@@ -1,0 +1,11 @@
+{
+  "same_five_failures_on_predecessor": true,
+  "failures": [
+    "harness tui::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection",
+    "harness tui::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection",
+    "harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_mock_mode_still_boots_through_launcher",
+    "harness::tui_cli_test tui_impl::tests::live_settings_tests::no_config_tui_ignores_legacy_builtin_model_selection",
+    "harness::tui_cli_test tui_impl::tests::live_settings_tests::project_config_tui_ignores_legacy_model_selection"
+  ],
+  "base": "ec2fa068a7658c31ef033540918c4d525366ac94"
+}

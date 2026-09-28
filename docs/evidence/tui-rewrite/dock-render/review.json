@@ -1,0 +1,28 @@
+{
+  "reviewer": "/root/tui_review",
+  "recorded_at": "2026-09-28T16:19:54.739039+00:00",
+  "decision": "approved for bounded dock commit; no blocking findings",
+  "read_only": true,
+  "pre_review_artifact_count": 66,
+  "pre_review_manifest_sha256": "5b4d8ac64fbe1e95bb6368dd361277132fe084b1a14a9ea779cbe90ba8adcc8b",
+  "verified": [
+    "66 artifact hashes, 12 source receipts, exact source patch, 684-line reduction",
+    "12084 exact oracle pairs",
+    "83 exact archived terminal frame pairs and representative visual inspection",
+    "ten natural exits with complete restoration and cleanup",
+    "corrected clear-confirmation and cleared-composer history-suggestion states",
+    "48 raw performance runs and 26 of 28 frozen limits",
+    "all five workspace failures reproduce on predecessor with matching failure details"
+  ],
+  "resolved_findings": [
+    "explicit multiline mode, starting-session and background-task oracle states added",
+    "owned-projection description corrected to avoid claiming only selected candidates are built",
+    "transient capture timing and cleared-history-suggestion assertions corrected"
+  ],
+  "limitations": [
+    "two p99 limits miss, including long typing 267 to 293 microseconds paired regression",
+    "unexplained host timing shift from frozen baseline",
+    "five preexisting CLI test failures",
+    "broader TUI rewrite and whole-rewrite acceptance remain unfinished"
+  ]
+}

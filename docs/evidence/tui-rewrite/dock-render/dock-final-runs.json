@@ -1,0 +1,32 @@
+[
+  {
+    "name": "before",
+    "command": [
+      "node",
+      "/tmp/tui-dock-render/capture-dock.mjs",
+      "/tmp/tui-dock-render/before-probe",
+      ".omo/evidence/tui-rewrite/dock-render/dock/before"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "candidate",
+    "command": [
+      "node",
+      "/tmp/tui-dock-render/capture-dock.mjs",
+      "/tmp/tui-dock-render/candidate-probe",
+      ".omo/evidence/tui-rewrite/dock-render/dock/candidate"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "comparison",
+    "command": [
+      "python3",
+      "/tmp/tui-dock-render/compare-dock.py",
+      ".omo/evidence/tui-rewrite/dock-render/dock",
+      "/tmp/tui-dock-render/browser-dock-comparison.json"
+    ],
+    "exit": 0
+  }
+]

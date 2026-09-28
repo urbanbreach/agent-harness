@@ -1,5 +1,4 @@
 use super::*;
-use crate::view_model;
 use crate::UnwrapOrAbort;
 
 fn runtime_context_model_option(
@@ -74,46 +73,54 @@ pub(super) fn runtime_context_labels_distinguish_live_continue_and_replay() {
 
     let mut startup = AppState::new_startup(Vec::new(), None);
     startup.set_launch_metadata(LaunchMetadata::from_model_option(&launch_option));
-    let startup_dock = startup.control_dock_view_model();
     assert_eq!(
-        startup_dock.primary_summary,
+        startup.runtime_context_primary_summary(),
         "Launch: GPT-5.4 Mini · Deterministic"
     );
-    assert_eq!(startup_dock.summary_segment, None);
-    assert_eq!(startup_dock.runtime_context.as_deref(), Some("default"));
+    assert_eq!(startup.runtime_context_summary_segment_text(), None);
+    assert_eq!(
+        startup.runtime_context_provider_display().as_deref(),
+        Some("default")
+    );
 
     let mut live = AppState::new_live(None, false, None);
     live.set_launch_metadata(LaunchMetadata::from_model_option(&launch_option));
-    let live_dock = live.control_dock_view_model();
     assert_eq!(
-        live_dock.primary_summary,
+        live.runtime_context_primary_summary(),
         "Context: GPT-5.4 Mini · Deterministic"
     );
-    assert_eq!(live_dock.summary_segment, None);
-    assert_eq!(live_dock.runtime_context.as_deref(), Some("default"));
+    assert_eq!(live.runtime_context_summary_segment_text(), None);
+    assert_eq!(
+        live.runtime_context_provider_display().as_deref(),
+        Some("default")
+    );
 
     let mut continued = AppState::new_live(None, false, None);
     continued.set_launch_metadata(
         LaunchMetadata::from_model_option(&launch_option).with_mode_label("Continued"),
     );
-    let continued_dock = continued.control_dock_view_model();
     assert_eq!(
-        continued_dock.primary_summary,
+        continued.runtime_context_primary_summary(),
         "Context: GPT-5.4 Mini · Deterministic"
     );
-    assert_eq!(continued_dock.summary_segment, None);
-    assert_eq!(continued_dock.runtime_context.as_deref(), Some("default"));
+    assert_eq!(continued.runtime_context_summary_segment_text(), None);
+    assert_eq!(
+        continued.runtime_context_provider_display().as_deref(),
+        Some("default")
+    );
 
     let mut replay = AppState::new_replay(PathBuf::from("/tmp/runtime-context-replay"), Vec::new());
     replay.set_launch_metadata(LaunchMetadata::from_model_option(&launch_option));
-    let replay_dock = replay.control_dock_view_model();
     assert_eq!(
-        replay_dock.primary_summary,
+        replay.runtime_context_primary_summary(),
         "Recorded runtime · read-only: GPT-5.4 Mini · Deterministic"
     );
-    assert_eq!(replay_dock.summary_segment, None);
-    assert_eq!(replay_dock.runtime_context.as_deref(), Some("default"));
-    assert!(replay_dock.composer_disabled);
+    assert_eq!(replay.runtime_context_summary_segment_text(), None);
+    assert_eq!(
+        replay.runtime_context_provider_display().as_deref(),
+        Some("default")
+    );
+    assert!(replay.composer_disabled());
 }
 
 pub(super) fn composer_metadata_omits_profile_and_keeps_model_and_source_labels() {
@@ -193,18 +200,13 @@ pub(super) fn live_switch_model_labels_next_turn_only() {
 
     live.handle_key(key(KeyCode::Tab));
 
-    let dock = live.control_dock_view_model();
     assert_eq!(
-        dock.primary_summary,
+        live.runtime_context_primary_summary(),
         "Context: GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(
-        dock.summary_segment,
-        Some(view_model::ControlDockSummarySegment {
-            kind: view_model::ControlDockSummarySegmentKind::Orchestration,
-            text: "Next turns: GPT-5.4 Mini · Creative".to_string(),
-            tone: view_model::ControlDockSummaryTone::Secondary,
-        })
+        live.runtime_context_summary_segment_text(),
+        Some("Next turns: GPT-5.4 Mini · Creative".to_string())
     );
 
     let mut replay = AppState::new_replay(
@@ -219,12 +221,11 @@ pub(super) fn live_switch_model_labels_next_turn_only() {
 
     replay.handle_key(key(KeyCode::Tab));
 
-    let replay_dock = replay.control_dock_view_model();
     assert_eq!(
-        replay_dock.primary_summary,
+        replay.runtime_context_primary_summary(),
         "Recorded runtime · read-only: GPT-5.4 Mini · Deterministic"
     );
-    assert_eq!(replay_dock.summary_segment, None);
+    assert_eq!(replay.runtime_context_summary_segment_text(), None);
     assert_eq!(replay.current_model_label(), "GPT-5.4 Mini · Deterministic");
     assert_eq!(replay.active_profile(), "deep");
 }

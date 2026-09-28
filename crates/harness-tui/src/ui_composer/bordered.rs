@@ -5,7 +5,7 @@ pub(crate) fn render_bordered_composer(
     app: &AppState,
     area: Rect,
     theme: &Theme,
-    context: ComposerRenderContext<'_>,
+    context: ComposerRenderContext,
 ) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -13,7 +13,7 @@ pub(crate) fn render_bordered_composer(
 
     let surface = composer_input_surface(theme);
     let composer_surface = surface;
-    let focused = context.dock.composer_focused && !footer_suppressed_by_overlay(app);
+    let focused = context.focused && !footer_suppressed_by_overlay(app);
     if area.height == 1 {
         super::collapsed::render_collapsed_composer(frame, app, area, theme, context);
         return;
@@ -24,7 +24,7 @@ pub(crate) fn render_bordered_composer(
         &composer_view.identity,
         usize::from(area.width.saturating_sub(5)),
     );
-    let badge = if context.dock.variant == crate::view_model::ControlDockVariant::Startup {
+    let badge = if context.startup {
         startup_composer_badge(badge)
     } else {
         badge
@@ -45,7 +45,7 @@ pub(crate) fn render_bordered_composer(
     let input = composer_text_area(strip);
     let draft_width = usize::from(input.width).max(1);
     let max_visible = usize::from(inner.height.min(content_lines).max(1));
-    let show_cursor = !context.dock.composer_disabled && focused;
+    let show_cursor = !context.disabled && focused;
     let ghost_visible = app.composer_ghost_eligible();
     let placeholder =
         bordered_composer_placeholder(app, &context, focused, composer_empty, ghost_visible);
@@ -53,9 +53,9 @@ pub(crate) fn render_bordered_composer(
         app,
         &composer_view,
         &composer_text,
-        context.dock.composer_focused,
-        context.dock.composer_disabled,
-        context.dock.variant == crate::view_model::ControlDockVariant::Startup,
+        context.focused,
+        context.disabled,
+        context.startup,
         placeholder,
         draft_width,
         max_visible,
@@ -98,9 +98,9 @@ pub(crate) fn render_bordered_composer(
         block
     };
     frame.render_widget(block, strip);
-    let shell_mode_active = resolved.tone == crate::composer_integration::ComposerTone::Shell
-        && !context.dock.composer_disabled;
-    let body_color = if context.dock.composer_disabled {
+    let shell_mode_active =
+        resolved.tone == crate::composer_integration::ComposerTone::Shell && !context.disabled;
+    let body_color = if context.disabled {
         theme.status.disabled
     } else if shell_mode_active {
         theme.status.warning
@@ -110,7 +110,7 @@ pub(crate) fn render_bordered_composer(
         composer_input_text(theme)
     };
     let body_color = live_composer_content_color(theme, body_color, focused);
-    let glyph_style = if context.dock.composer_disabled {
+    let glyph_style = if context.disabled {
         Style::default()
             .fg(theme.status.disabled)
             .bg(composer_surface)
@@ -146,9 +146,8 @@ pub(crate) fn render_bordered_composer(
         .fg(theme.status.warning)
         .add_modifier(Modifier::BOLD);
     let selection = super::file_tags::composer_selection(app);
-    let plain_text = composer_empty
-        || context.dock.composer_disabled
-        || app.collapsed_paste_presentation().is_some();
+    let plain_text =
+        composer_empty || context.disabled || app.collapsed_paste_presentation().is_some();
     let body_lines = viewport
         .lines
         .iter()
@@ -264,7 +263,7 @@ pub(crate) fn composer_input_viewport(
 
 fn bordered_composer_placeholder(
     app: &AppState,
-    context: &ComposerRenderContext<'_>,
+    context: &ComposerRenderContext,
     focused: bool,
     composer_empty: bool,
     ghost_visible: bool,
@@ -273,10 +272,7 @@ fn bordered_composer_placeholder(
     let fallback = if focused { "" } else { "Build anything" };
     if ghost_visible {
         ""
-    } else if context.dock.variant == crate::view_model::ControlDockVariant::Startup
-        || context.dock.composer_disabled
-        || !composer_empty
-    {
+    } else if context.startup || context.disabled || !composer_empty {
         fallback
     } else if live_empty_guidance {
         "Ask Harness to inspect, edit, or explain…"

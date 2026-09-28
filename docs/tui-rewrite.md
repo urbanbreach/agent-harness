@@ -135,6 +135,7 @@ before changing the implementation.
 | R19 | Default bindings assign Ctrl+Home to MoveBufferStart and then overwrite it with FirstMessage, leaving no default buffer-start shortcut | Preserve the existing default. Exercise MoveBufferStart through a configured F12 binding in the public keyboard test; use ordinary Home/End for the navigation workload. Defer the shortcut-policy correction; preparation failures are retained in prompt-editing evidence. |
 | R20 | When public prompt fields diverge from the atom editor while both remain prediction prefixes, ghost eligibility follows the prompt fields but its displayed suffix follows the editor. For example, an editor containing `inspect ` and a prompt mirror containing `inspect the ` can paint `inspect the the workspace`. | Reproduced through the public AppState API at `16ab0230`. Preserve it in the composer projection replacement and retain a behavioral check. Correct it when unifying draft state; no shipped keyboard sequence reproducing this divergence has been established. |
 | R21 | Raw CRLF in the public prompt mirror has different geometry in the atom row budget and painted string layout. At width 20, `one\r\ntwo` can paint `onetwo` plus an empty row; the cursor still counts the CRLF grapheme. | Reproduced at `9681f532` through the public AppState API. Preserve it during the string viewport rewrite and record exact frame/cursor behavior. Resolve when unifying draft geometry; no shipped keyboard sequence establishing this raw mirror value is known. |
+| R22 | Dock disclosure candidates use Unicode scalar counts for fit and priority, while painting uses terminal cells. A selected Unicode label can therefore clip differently from its fit estimate. | Preserve the predecessor's selection and clipping during the dock replacement, including its full-width fit followed by a two-cell-narrower foreground paint. The controlled full-buffer oracle includes Unicode labels and narrow widths. Correcting candidate geometry requires a separate visible-behavior decision. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -1332,3 +1333,42 @@ and cursors; all eight runs restore terminal state and clean up. The layout
 journey covers question resizing, draft restoration, overlapping panes and help.
 The first fixture attempt used an unavailable palette command and is retained
 with its timeout; the corrected journey uses existing keyboard shortcuts.
+
+## Dock projection and disclosure replacement
+
+The dock renders from application state without the owned `ControlDockViewModel`,
+its input/variant enums, duplicate canvas fill or unused shortcut strings.
+Composer context is four small values. Disclosure selection retains weighted
+summary/hint priority and first-tie order, then moves selected spans instead of
+cloning combinations. Public runtime context methods retain cache precedence,
+labels and sanitization. Replay and overlay focus behavior remain unchanged.
+R22 records the intentionally preserved scalar-width candidate-fit defect.
+
+This slice removes 684 source lines overall, including test changes, leaving
+163,794 lines. The replacement disclosure modules are 291, 166 and 107 lines;
+retained chrome and application projection files still exceed 500 lines. An
+extended rendered-disclosure test passes on the predecessor and fails when its
+selection weights are deliberately reversed. Existing public-context and render
+purity checks replace assertions on the removed private model.
+
+All 12,084 full-buffer/cursor/context comparisons match across 53 states, four
+themes and 57 dimensions. All 1,633 TUI checks, seven gated PTY checks and quality
+checks pass. The five actual-runtime terminal journeys match all 83 final PNG,
+cell, style and cursor pairs. All ten final runs restore terminal state and clean
+up. The transient clear-confirmation fixture now checks its saved cells and the
+cleared draft's italic history suggestion; earlier fixture mistakes are retained.
+
+Long typing uses 24.0% fewer malloc calls and 5.2% fewer allocated bytes, meeting
+the dock's frozen allocation targets. CPU is unchanged at the counter resolution.
+Twenty-six of 28 limits pass. Long and short typing p99 still miss their limits;
+long p99 also rises from 267 to 293 µs against the paired predecessor. Peak heap
+rises slightly and RSS moves both ways within their limits. These results support
+an allocation improvement, not a latency or resident-memory improvement.
+
+The full workspace run passes 1,909 of 1,914 tests, with five previously recorded
+CLI failures and eight skipped tests. All five failures are reproduced on the
+pre-dock commit under the same isolated configuration. Raw comparisons, reproduction scripts,
+failed bounds and validation logs are in
+[`evidence/tui-rewrite/dock-render`](evidence/tui-rewrite/dock-render).
+The dock slice is complete; the whole rewrite and its broader resource and
+feature acceptance remain unfinished.

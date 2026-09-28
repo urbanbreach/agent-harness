@@ -1,0 +1,20 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--config-file",
+    "/tmp/tui-dock-render/nextest-oracle.toml",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--lib",
+    "-E",
+    "test(dock_render_reference)",
+    "--success-output",
+    "immediate"
+  ],
+  "exit": 0,
+  "oracle_sha256": "a15af7c18c8e5a32541b9fa2f097587c45a2487e8af05cf987ff6b2ae8ae949f"
+}

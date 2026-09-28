@@ -1,0 +1,41 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--lib",
+    "-E",
+    "test(live_composer_disclosure_keeps_compact_summary_and_commands) | test(runtime_context_labels_distinguish_live_continue_and_replay) | test(live_switch_model_labels_next_turn_only) | test(cache_read_write_tokens_render_as_separate_status_labels)"
+  ],
+  "exit": 0,
+  "production_sources": [
+    {
+      "path": "crates/harness-tui/src/ui_chrome.rs",
+      "sha256": "74abce09e3b86c50ae73b9b426d1f98e82aae261e202724b1d5531b24f88b7e8"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_control_dock_disclosure.rs",
+      "sha256": "6b635959cff9b491cd807652a9fd6ec2cbdc209d97fcd5421fb2249538703443"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/bordered.rs",
+      "sha256": "d8b9ee116b01e484b82c2d2275c694f249a624472f52c55792529f40452649e5"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/collapsed.rs",
+      "sha256": "9cb00b27f2db1e7e440f3a25406a4500ea4ba57eb6696a32cf4dea13710a9417"
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_projection.rs",
+      "sha256": "21b8f0df628e16df27d1b515b1a9443f34e01593a61ceb2ab1f895fcb69e2c8d"
+    },
+    {
+      "path": "crates/harness-tui/src/view_model.rs",
+      "sha256": "9f2f4145f8ca55413831a9fdaf48def35488ed0f58ffd80ddbfaee7636969231"
+    }
+  ]
+}

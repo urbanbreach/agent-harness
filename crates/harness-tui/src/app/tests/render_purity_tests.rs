@@ -53,7 +53,7 @@ fn intent_sink() -> (
 fn project_and_render(app: &AppState) {
     let _runtime = app.runtime_state();
     let _footer = app.footer_hints_view_model();
-    let _dock = app.control_dock_view_model();
+    let _summary = app.runtime_context_primary_summary();
     let _disabled = app.composer_disabled();
     let area = Rect::new(0, 0, 120, 40);
     let _plan = FrameLayoutPlan::for_app(app, area);
@@ -108,7 +108,7 @@ pub(super) fn repeated_replay_projection_and_render_is_side_effect_free() {
 
     let before = projection_fingerprint(&app);
     let first_runtime = app.runtime_state();
-    let first_dock = app.control_dock_view_model();
+    let first_render = render_debug(&app, 120, 40);
     let first_footer = app.footer_hints_view_model();
 
     for _ in 0..4 {
@@ -121,9 +121,9 @@ pub(super) fn repeated_replay_projection_and_render_is_side_effect_free() {
         "runtime projection must be stable across repeated reads"
     );
     assert_eq!(
-        app.control_dock_view_model(),
-        first_dock,
-        "control-dock view model must be stable across repeated reads"
+        render_debug(&app, 120, 40),
+        first_render,
+        "rendered buffer must be stable across repeated reads"
     );
     assert_eq!(
         app.footer_hints_view_model(),

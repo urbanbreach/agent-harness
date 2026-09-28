@@ -1,0 +1,132 @@
+{
+  "tui": {
+    "run": 1633,
+    "passed": 1633,
+    "skipped": 7
+  },
+  "gated_pty": {
+    "run": 7,
+    "passed": 7
+  },
+  "quality_checks": [
+    {
+      "name": "tui",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--profile",
+        "ci",
+        "-p",
+        "harness-tui",
+        "--all-features"
+      ],
+      "environment": {},
+      "exit": 0
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {},
+      "exit": 0
+    },
+    {
+      "name": "workspace-check",
+      "command": [
+        "cargo",
+        "check",
+        "--workspace"
+      ],
+      "environment": {},
+      "exit": 0
+    },
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "environment": {},
+      "exit": 0
+    },
+    {
+      "name": "suite-gates",
+      "command": [
+        "python3",
+        "scripts/check-test-suite-gates.py"
+      ],
+      "environment": {},
+      "exit": 0
+    },
+    {
+      "name": "pty",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--profile",
+        "ci",
+        "-p",
+        "harness-tui",
+        "--all-features",
+        "--ignore-default-filter",
+        "-E",
+        "binary(p0_04_pty_recorded) | binary(p1_04_pty_recorded)"
+      ],
+      "environment": {
+        "HARNESS_TUI_PTY_SIGNOFF": "1"
+      },
+      "exit": 0
+    }
+  ],
+  "workspace": {
+    "run": 1914,
+    "passed": 1909,
+    "failed": 5,
+    "skipped": 8,
+    "same_five_failures_on_predecessor": true
+  },
+  "predecessor_behavior_checks": 4,
+  "scoring_mutation_expected_failure": true,
+  "oracle": {
+    "states": 53,
+    "themes": 4,
+    "dimensions": 57,
+    "pairs": 12084,
+    "exact_cells_styles_cursor_context": true,
+    "temporary_registration_removed": true
+  },
+  "terminal": {
+    "pairs": 83,
+    "exact_png_cells_styles_cursor": true,
+    "excluded_observer_fields": [
+      "renderCount",
+      "parsedCount"
+    ],
+    "final_runs": 10,
+    "all_natural_exits_and_cleanup": true
+  },
+  "performance": {
+    "raw_runs": 48,
+    "paired_output_checks": 16,
+    "frozen_limits": 28,
+    "passed_limits": 26,
+    "failed_limits": 2,
+    "latency_improvement_claim": false,
+    "resident_memory_improvement_claim": false
+  },
+  "scope": "dock replacement completed; full TUI rewrite unfinished",
+  "environments": "Linux; reduced-motion terminal captures; animation cadence and broader environment matrix unverified"
+}

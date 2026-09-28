@@ -1,0 +1,89 @@
+{
+  "recorded_at": "2026-09-28T03:57:28.247166+00:00",
+  "source": "ec2fa068a7658c31ef033540918c4d525366ac94",
+  "baseline": {
+    "typing-long": {
+      "p50_us": 391,
+      "p95_us": 550,
+      "p99_us": 570,
+      "bytes": 20000,
+      "rss_kib": 9652,
+      "cpu_ms_per_frame": 0.42,
+      "allocated_bytes": 15862358,
+      "peak_heap_bytes": 2175257,
+      "malloc_calls": 53380
+    },
+    "typing": {
+      "p50_us": 230,
+      "p95_us": 310,
+      "p99_us": 333,
+      "bytes": 140750,
+      "rss_kib": 9456,
+      "cpu_ms_per_frame": 0.24,
+      "allocated_bytes": 7225899,
+      "peak_heap_bytes": 2095350,
+      "malloc_calls": 50179
+    },
+    "undo-long": {
+      "p50_us": 420,
+      "p95_us": 538,
+      "p99_us": 591,
+      "bytes": 20000,
+      "rss_kib": 9836,
+      "cpu_ms_per_frame": 0.44,
+      "allocated_bytes": 37834736,
+      "peak_heap_bytes": 2138802,
+      "malloc_calls": 351558
+    },
+    "delete-long": {
+      "p50_us": 530,
+      "p95_us": 804,
+      "p99_us": 893,
+      "bytes": 31187,
+      "rss_kib": 9732,
+      "cpu_ms_per_frame": 0.54,
+      "allocated_bytes": 51936653,
+      "peak_heap_bytes": 2002740,
+      "malloc_calls": 576249
+    }
+  },
+  "limits": {
+    "typing-long": {
+      "p95_us": 257.40000000000003,
+      "p99_us": 272.8,
+      "rss_kib": 10617.2,
+      "peak_heap_bytes": 2392782.7,
+      "allocated_bytes": 15069240.1,
+      "malloc_calls": 48042.0,
+      "cpu_ms_per_frame": 0.24200000000000002
+    },
+    "typing": {
+      "p95_us": 129.8,
+      "p99_us": 139.70000000000002,
+      "rss_kib": 10401.6,
+      "peak_heap_bytes": 2228162.2,
+      "allocated_bytes": 7225899,
+      "malloc_calls": 50179,
+      "cpu_ms_per_frame": 0.11000000000000001
+    },
+    "undo-long": {
+      "p95_us": 268.40000000000003,
+      "cpu_ms_per_frame": 0.24200000000000002,
+      "allocated_bytes": 37834736,
+      "malloc_calls": 351558,
+      "p99_us": 287.1,
+      "rss_kib": 10683.2,
+      "peak_heap_bytes": 2352682.2
+    },
+    "delete-long": {
+      "p95_us": 392.70000000000005,
+      "cpu_ms_per_frame": 0.33,
+      "rss_kib": 10705.2,
+      "peak_heap_bytes": 2203014.0,
+      "allocated_bytes": 51936653,
+      "malloc_calls": 576249,
+      "p99_us": 410.3
+    }
+  },
+  "requirements": "Replace owned control-dock projection and disclosure renderer; preserve public context strings, full styled buffers, cursor and input behavior. At least 10% fewer long-typing malloc calls and 5% fewer allocated bytes; no allocation/call increases elsewhere. Retain every prior stricter bound, including failing timing/CPU limits. Fixed 500 frames, 10 warmups, 160x48, zero history; renderer timings exclude PTY/emulator delivery."
+}
