@@ -1,0 +1,19 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--lib",
+    "-E",
+    "test(frozen_runtime_projection_matches_replacement)",
+    "--success-output",
+    "immediate"
+  ],
+  "exit": 0,
+  "reference_sha256": "40d1fa28d1b2079f659a3579038eef07ac41d9cc65947e7d7d87c21d39965925",
+  "cases_sha256": "ddb23834fab9338770811bf303ae9fe6440c38e5ea5a5ea9ec7f81ea4f4d7f63"
+}

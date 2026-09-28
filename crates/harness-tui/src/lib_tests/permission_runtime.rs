@@ -119,7 +119,14 @@ pub(super) fn focus_returns_after_palette_close() {
 
 pub(super) fn live_status_strip_distinguishes_terminal_states() {
     let ready = app::AppState::new_live(None, false, None);
-    assert_eq!(ready.runtime_state().kind, app::RuntimeStateKind::Ready);
+    assert_runtime_state(
+        &ready,
+        app::RuntimeStateKind::Ready,
+        "ready for first turn",
+        None,
+        false,
+        "Type a prompt for the next turn…",
+    );
 
     let mut sending = app::AppState::new_live(None, false, None);
     for c in "hello".chars() {
@@ -127,7 +134,14 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
     }
     sending.handle_key(key(crossterm::event::KeyCode::Enter));
 
-    assert_eq!(sending.runtime_state().kind, app::RuntimeStateKind::Sending);
+    assert_runtime_state(
+        &sending,
+        app::RuntimeStateKind::Sending,
+        "turn 1 · response starting",
+        None,
+        false,
+        "Draft the next prompt while the response starts…",
+    );
 
     sending.ingest_event(envelope(
         1,
@@ -154,9 +168,13 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
         ),
     ));
 
-    assert_eq!(
-        sending.runtime_state().kind,
-        app::RuntimeStateKind::Streaming
+    assert_runtime_state(
+        &sending,
+        app::RuntimeStateKind::Streaming,
+        "turn 1 · response in progress",
+        None,
+        false,
+        "Draft the next prompt while the response continues…",
     );
 
     sending.ingest_event(envelope(
@@ -173,10 +191,14 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
         ),
     ));
 
-    assert!(!matches!(
-        sending.runtime_state().kind,
-        app::RuntimeStateKind::Sending | app::RuntimeStateKind::Streaming
-    ));
+    assert_runtime_state(
+        &sending,
+        app::RuntimeStateKind::Success,
+        "turn 1 · ready for next turn",
+        None,
+        false,
+        "Type a prompt for the next turn…",
+    );
 
     let mut cancelled = app::AppState::new_live(None, false, None);
     cancelled.ingest_event(envelope(
@@ -204,9 +226,13 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
         }),
     ));
     let cancelled_debug = render_live_buffer(&cancelled, 80, 24);
-    assert_eq!(
-        cancelled.runtime_state().kind,
-        app::RuntimeStateKind::Cancelled
+    assert_runtime_state(
+        &cancelled,
+        app::RuntimeStateKind::Cancelled,
+        "last turn cancelled · operator cancelled",
+        Some("operator cancelled"),
+        false,
+        "Type a prompt to retry the cancelled turn…",
     );
     assert!(!cancelled_debug.contains("request_digest="));
 
@@ -236,11 +262,13 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
     assert!(error_debug.contains("API rate limit exceeded"));
 
     assert_permission_and_connection_status_strips();
+    assert_tool_runtime_states();
 }
 
 fn assert_permission_and_connection_status_strips() {
     let mut permission_blocked = app::AppState::new_live(None, false, None);
     permission_blocked.ingest_event(permission_requested_event(1, "perm_blocked", "tool_call_1"));
+    assert_runtime_state(&permission_blocked, app::RuntimeStateKind::PermissionBlocked, "decision required · Apply hashline edit to demo.txt", Some("Apply hashline edit to demo.txt"), false, "Draft preserved under the checkpoint — deny stays fail-closed; allow once only after review.");
     let permission_blocked_debug = render_live_buffer(&permission_blocked, 80, 24);
     assert!(permission_blocked_debug.contains("Allow Edit"));
     assert!(permission_blocked_debug.contains("always-approve"));
@@ -256,6 +284,7 @@ fn assert_permission_and_connection_status_strips() {
         crossterm::event::KeyCode::Char('y'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
+    assert_runtime_state(&permission_blocked, app::RuntimeStateKind::PermissionPending, "decision submitted · awaiting confirmation · Apply hashline edit to demo.txt", Some("Apply hashline edit to demo.txt"), true, "Draft preserved while Harness records the decision. Wait for confirmation before sending again.");
     let permission_pending_debug = render_live_buffer(&permission_blocked, 80, 24);
     assert!(permission_pending_debug.contains("decision sent"));
     // Pending dock actions copy uses "waiting for confirmation" (summary string uses awaiting).
@@ -280,4 +309,91 @@ fn assert_permission_and_connection_status_strips() {
     assert!(!disconnected_debug.contains("Composer ·"));
     assert!(!disconnected_debug.contains("Draft preserved locally"));
     assert!(disconnected_debug.contains("Reopen the TUI, then continue from the transcript."));
+}
+
+fn assert_runtime_state(
+    app: &app::AppState,
+    kind: app::RuntimeStateKind,
+    summary: &str,
+    detail: Option<&str>,
+    disabled: bool,
+    hint: &str,
+) {
+    assert_eq!(
+        app.runtime_state(),
+        app::RuntimeState {
+            kind,
+            summary: summary.to_string(),
+            detail: detail.map(str::to_string),
+            composer_disabled: disabled,
+            composer_hint: hint.to_string(),
+        }
+    );
+    assert_eq!(app.composer_disabled(), disabled);
+}
+
+fn assert_tool_runtime_states() {
+    use harness_core::event::{EventV1, ToolCallMetadata, ToolCallStatus};
+    for (count, failed, kind, summary, detail, hint) in [
+        (
+            7,
+            false,
+            app::RuntimeStateKind::Streaming,
+            "tool queued · agent.spawn",
+            Some("inspect"),
+            "Draft the next prompt while the queued tool waits to start…",
+        ),
+        (
+            8,
+            false,
+            app::RuntimeStateKind::Streaming,
+            "tool running · agent.spawn",
+            Some("inspect"),
+            "Draft the next prompt while the tool runs…",
+        ),
+        (
+            9,
+            false,
+            app::RuntimeStateKind::Streaming,
+            "tool finished · waiting for final response · agent.spawn",
+            None,
+            "Draft the next prompt while the assistant finishes after the tool result…",
+        ),
+        (
+            9,
+            true,
+            app::RuntimeStateKind::Failure,
+            "tool failed · agent.spawn",
+            Some("tool output"),
+            "After review, adjust the draft, then retry or continue.",
+        ),
+    ] {
+        let mut app = app::AppState::new_live(None, false, None);
+        for mut event in session_view_events().into_iter().take(count) {
+            match &mut event.payload {
+                EventV1::ToolCallRequested(tool) => {
+                    tool.tool_id = "task".to_string();
+                    tool.args_summary = "inspect".to_string();
+                    tool.metadata = Some(ToolCallMetadata {
+                        canonical_tool_id: Some("agent.spawn".to_string()),
+                        alias_source_tool_id: Some("task".to_string()),
+                        ..ToolCallMetadata::default()
+                    });
+                }
+                EventV1::ToolCallFinished(tool) if failed => tool.status = ToolCallStatus::Failed,
+                _ => {}
+            }
+            app.ingest_event(event);
+        }
+        // Provider progress keeps the turn active while its tool advances.
+        app.ingest_event(envelope(
+            20,
+            Some("req_001"),
+            EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "req_001".into(),
+                delta: "Checking the result".to_string(),
+            }),
+        ));
+        assert_runtime_state(&app, kind, summary, detail, false, hint);
+    }
 }

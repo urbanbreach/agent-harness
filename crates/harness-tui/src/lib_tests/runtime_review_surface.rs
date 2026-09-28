@@ -39,6 +39,9 @@ pub(super) fn runtime_state_overlay_never_stacks_over_permission_modal() {
 
     let rendered = render_live_lines(&app, 80, 24);
 
+    assert_eq!(app.runtime_state().kind, app::RuntimeStateKind::Degraded);
+    assert!(app.runtime_state().composer_disabled);
+    assert!(app.composer_disabled());
     assert!(ui::runtime_overlay_text_for_test(&app, 72).is_none());
     assert!(rendered.contains("Allow Edit"));
     assert!(rendered.contains("always-approve"));

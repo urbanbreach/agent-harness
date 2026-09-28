@@ -1,0 +1,38 @@
+{
+  "reviewer": "/root/tui_review",
+  "recorded_at": "2026-09-28T03:05:54.327321+00:00",
+  "decision": "approved for intermediate atomic commit",
+  "source_base": "8c43e0319252c1afc6155c095eba742e0707eb98",
+  "pre_review_manifest_sha256": "d3990e0e27c95d277c8c5e8cae272839d825d0edcfacb98082a5230b122130e8",
+  "verified": {
+    "artifact_hashes": 63,
+    "source_receipts": 8,
+    "performance_reports": 48,
+    "quantiles": 144,
+    "paired_output_records": 16,
+    "paired_browser_frames": 54,
+    "terminal_cleanup_reports": 6,
+    "tui_checks": 1635,
+    "pty_checks": 7,
+    "differential_cases": 143640,
+    "quality_gates": "passed"
+  },
+  "resolved_findings": [
+    {
+      "finding": "Fresh cancellation/failure payload IDs retained the original envelope correlation, misattributing cancellation.",
+      "resolution": "Each new request and terminal event now has its own correlation. Both builds pass placement/duration assertions; bad captures remain archived.",
+      "production_changed": false
+    },
+    {
+      "finding": "Proposed assertion that the first completed footer remain visible conflicted with existing latest-footer rendering.",
+      "resolution": "Preserved predecessor behavior; assert first answer text before the new prompt and cancellation below that prompt with its own 20-second duration. Failed footer assertion remains archived.",
+      "production_changed": false
+    }
+  ],
+  "performance_acceptance": {
+    "passed": 15,
+    "total": 28,
+    "unresolved": "Long-typing byte reduction and all twelve timing/CPU bounds fail; slowdown unexplained."
+  },
+  "scope": "No remaining source/evidence blocker for this intermediate commit. Failed bounds are not waived. Whole rewrite completion is not approved."
+}

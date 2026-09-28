@@ -1,0 +1,26 @@
+[
+  {
+    "journey": "runtime",
+    "side": "before",
+    "started_at": "2026-09-28T02:59:40.966669+00:00",
+    "command": [
+      "node",
+      "/tmp/tui-runtime-state/capture-runtime.mjs",
+      "/tmp/tui-runtime-state/before-probe",
+      ".omo/evidence/tui-rewrite/runtime-state/runtime/before"
+    ],
+    "exit": 0
+  },
+  {
+    "journey": "runtime",
+    "side": "candidate",
+    "started_at": "2026-09-28T03:00:20.613313+00:00",
+    "command": [
+      "node",
+      "/tmp/tui-runtime-state/capture-runtime.mjs",
+      "/tmp/tui-runtime-state/candidate-probe",
+      ".omo/evidence/tui-rewrite/runtime-state/runtime/candidate"
+    ],
+    "exit": 0
+  }
+]

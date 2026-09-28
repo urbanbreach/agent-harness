@@ -1249,6 +1249,32 @@ claim or fresh xterm comparison; earlier resource failures remain open. Exact
 source/caller receipts, diagnostic logs and checks are in
 [`evidence/tui-rewrite/unused-helpers`](evidence/tui-rewrite/unused-helpers).
 
+## Runtime-state projection replacement
+
+A compact pure producer now returns a private borrowed runtime-state view.
+Constant/existing summary and detail text use `Cow<str>`; composer hints are
+static. Public `AppState::runtime_state` still returns its owned contract.
+Kind-only and composer-disable callers use the borrowed view. Dynamic summaries
+and permission enhancement still allocate. Precedence, effective tool identity,
+whitespace, sanitization, activity selection and replay disabling remain.
+
+Production falls by 54 lines; 242 lines of unregistered test helpers are removed
+and two existing behavioral tests gain 119 lines. The complete source tree is
+164,944 lines, above the target. The new module has 258 lines and its parent 419.
+The effective-ID mutation fails the intended public check; all 143,640 frozen
+producer comparisons, 1,635 TUI checks, seven gated PTY checks and quality gates
+pass. Fifty-four paired PTY/xterm frames match exact PNGs, cells, styles and
+cursors, with terminal restoration and cleanup on all six final runs. Earlier
+wall-clock timer differences and fixture corrections remain recorded.
+
+Long typing malloc calls fall 24.0% and allocated bytes 3.2%. The byte target is
+missed. All twelve timing/CPU limits also fail: both executables run much slower
+than the initial baseline, and the cause remains unverified. The candidate passes
+15 of 28 frozen bounds, with all malloc-call, peak-heap and RSS limits
+passing. No bound changes or unchanged performance retries are used. Raw samples,
+preparation failures, source receipts and reproduction commands are in
+[`evidence/tui-rewrite/runtime-state`](evidence/tui-rewrite/runtime-state).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

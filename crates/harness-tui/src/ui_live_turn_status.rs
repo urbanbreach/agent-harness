@@ -98,7 +98,7 @@ pub(super) fn render_live_turn_status(
         return;
     }
 
-    let runtime_kind = app.runtime_state().kind;
+    let runtime_kind = app.runtime_state_view().kind;
     let activity = app
         .runtime_state_activity()
         .filter(|entry| entry.status == ActivityStatus::Streaming);

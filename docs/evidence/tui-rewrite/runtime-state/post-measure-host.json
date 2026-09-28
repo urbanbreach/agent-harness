@@ -1,0 +1,40 @@
+{
+  "recorded_at": "2026-09-28T02:45:25.034264+00:00",
+  "note": "Diagnostic snapshot AFTER paired runs, not a baseline CPU-state measurement or proof of cause.",
+  "values": {
+    "/proc/loadavg": "2.15 1.64 1.10 2/1405 3765993",
+    "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor": "powersave",
+    "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq": "884317",
+    "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq": "4700000",
+    "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq": "4700000",
+    "/sys/class/thermal/thermal_zone2/temp": "59050",
+    "/sys/class/thermal/thermal_zone0/temp": "56000",
+    "/sys/class/thermal/thermal_zone9/temp": "56000",
+    "/sys/class/thermal/thermal_zone7/temp": "56050",
+    "/sys/class/thermal/thermal_zone10/temp": "56000",
+    "/sys/class/thermal/thermal_zone5/temp": "54050",
+    "/sys/class/thermal/thermal_zone3/temp": "53050",
+    "/sys/class/thermal/thermal_zone1/temp": "20000",
+    "/sys/class/thermal/thermal_zone8/temp": "56050",
+    "/sys/class/thermal/thermal_zone11/temp": "41000",
+    "/sys/class/thermal/thermal_zone6/temp": "56050",
+    "/sys/class/thermal/thermal_zone4/temp": "49050"
+  },
+  "processes": [
+    "    PID COMMAND         %CPU",
+    "3765976 python3         80.0",
+    "3765334 node-MainThread 57.8",
+    "3765462 chromium        39.1",
+    "3762554 ChatGPT         16.5",
+    "3765356 chromium        14.7",
+    "3765452 chromium        12.9",
+    "3765416 chromium         8.9",
+    "3765975 bash             8.3",
+    "  24995 codex            1.0",
+    "3762103 kworker/12:3-ev  1.0",
+    "3765419 chromium         0.8",
+    "  53430 herdr            0.6",
+    " 125942 opencode         0.6",
+    "3330259 ChatGPT          0.5"
+  ]
+}
