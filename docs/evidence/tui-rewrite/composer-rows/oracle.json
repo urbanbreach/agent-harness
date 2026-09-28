@@ -1,0 +1,63 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--all-features",
+    "--test",
+    "rewrite_viewport_probe",
+    "--test",
+    "rewrite_row_probe",
+    "-E",
+    "test(recorded_)",
+    "--success-output",
+    "immediate"
+  ],
+  "exit": 0,
+  "cases": {
+    "viewport": 174696,
+    "atom_rows": 2431,
+    "frame_height": 45135
+  },
+  "fixtures": [
+    {
+      "path": "crates/harness-tui/tests/rewrite_viewport_probe.rs",
+      "sha256": "e0e419f66499b601e28d29b44e8c963d53cfbfba2aa5f2df6b89fe47d6765a1c"
+    },
+    {
+      "path": "crates/harness-tui/tests/rewrite_row_probe.rs",
+      "sha256": "3993384a5fd30aa1e4d5d49ce05470040fe97e1f8256ede65e5dd6f65611b4e7"
+    }
+  ],
+  "production_sources": [
+    {
+      "path": "crates/harness-tui/src/composer_atoms/buffer.rs",
+      "sha256": "f93e99a5a9270675b7a858be33568fcba33e0dcda12998ebe01b12fa14c2bb03"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/presentation.rs",
+      "sha256": "8b1a2939e835c094ff2cf3e4c7d53897215683700aef8e0b65c72efc99c13a7b"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/viewport.rs",
+      "sha256": "3f4dc55ecc45395faa3a240cf37e6c465c57054f34ee970893b195240c8f5068"
+    },
+    {
+      "path": "crates/harness-tui/src/layout.rs",
+      "sha256": "bfd8069fb59878109bff0826525c6b7239032a5300747c42266c8776c136ed77"
+    },
+    {
+      "path": "crates/harness-tui/src/text.rs",
+      "sha256": "6d12519d8bc6d7db6a47ea37cd29804cf32010922e66620173c921b59aa71ace"
+    },
+    {
+      "path": "crates/harness-tui/src/completion_controller/geometry.rs",
+      "sha256": "7906cb5d916c2e8d44c3f515d342bd460d9c872dea93fe804f276fae13f05364"
+    }
+  ],
+  "temporary_fixtures_removed": true
+}

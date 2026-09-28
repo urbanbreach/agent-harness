@@ -6,8 +6,8 @@
 )]
 
 use harness_tui::composer_atoms::{
-    deserialize, serialize, AtomBoundary, AtomBuffer, AtomBufferError, AtomCursor, AtomId,
-    AtomKind, AttachmentId, ComposerAtom, FileMentionId, GraphemeCluster,
+    deserialize, serialize, AtomBuffer, AtomBufferError, AtomCursor, AtomId, AtomKind,
+    AttachmentId, ComposerAtom, FileMentionId, GraphemeCluster,
 };
 
 #[test]
@@ -194,5 +194,66 @@ fn viewport_wrapping_keeps_atoms_whole_and_identity_ordered() {
         vec![4, 1, 2, 0]
     );
     assert!(lines.iter().all(|line| line.display_width <= 4));
-    assert_eq!(AtomBoundary::Before, AtomCursor::start().boundary);
+    assert_eq!(
+        AtomBuffer::new().wrap(0),
+        vec![harness_tui::composer_atoms::WrappedLine {
+            atom_ids: Vec::new(),
+            display_width: 0,
+        }]
+    );
+    let mut large = ComposerAtom::text(5, GraphemeCluster::new("x"));
+    large.display_width = u16::MAX;
+    let mut newline = ComposerAtom::newline(4);
+    newline.display_width = 99; // Public metadata never changes newline layout.
+    let buffer = AtomBuffer::from_atoms(vec![
+        ComposerAtom::attachment(1, AttachmentId::new(1)),
+        ComposerAtom::text(2, GraphemeCluster::new("界")),
+        ComposerAtom::file_mention(3, FileMentionId::new(1)),
+        newline,
+        large,
+        ComposerAtom::text(6, GraphemeCluster::new("y")),
+        ComposerAtom::newline(7),
+    ])
+    .unwrap();
+    for (width, expected) in [
+        (
+            0,
+            vec![
+                (vec![1, 2], 2),
+                (vec![3, 4], 0),
+                (vec![5], u16::MAX),
+                (vec![6, 7], 1),
+                (vec![], 0),
+            ],
+        ),
+        (
+            2,
+            vec![
+                (vec![1, 2, 3, 4], 2),
+                (vec![5], u16::MAX),
+                (vec![6, 7], 1),
+                (vec![], 0),
+            ],
+        ),
+        (
+            u16::MAX,
+            vec![
+                (vec![1, 2, 3, 4], 2),
+                (vec![5, 6, 7], u16::MAX),
+                (vec![], 0),
+            ],
+        ),
+    ] {
+        let actual: Vec<_> = buffer
+            .wrap(width)
+            .iter()
+            .map(|line| {
+                (
+                    line.atom_ids.iter().map(|id| id.get()).collect::<Vec<_>>(),
+                    line.display_width,
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected, "wrap width {width}");
+    }
 }

@@ -1,5 +1,3 @@
-use unicode_segmentation::UnicodeSegmentation;
-
 pub(crate) fn has_trimmed_content(value: &str) -> bool {
     non_empty_trimmed(value).is_some()
 }
@@ -221,33 +219,6 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
         .take(max_chars.saturating_sub(1))
         .collect::<String>();
     format!("{truncated}…")
-}
-
-// Return the painted byte range and the next row's start, skipping only an
-// overflowing whitespace grapheme when no earlier word boundary can be used.
-pub(crate) fn composer_row_end(text: &str, width: usize) -> (usize, usize) {
-    let width = width.max(1);
-    let mut used = 0usize;
-    let mut word_break = None;
-    for (byte, grapheme) in text.grapheme_indices(true) {
-        let whitespace = grapheme.chars().all(char::is_whitespace);
-        let cells = grapheme
-            .lines()
-            .map(unicode_width::UnicodeWidthStr::width)
-            .sum::<usize>()
-            .max(1);
-        if byte > 0 && used.saturating_add(cells) > width {
-            return match word_break {
-                Some(end) => (end, end),
-                None => (byte, byte + if whitespace { grapheme.len() } else { 0 }),
-            };
-        }
-        used = used.saturating_add(cells);
-        if whitespace && byte > 0 {
-            word_break = Some(byte + grapheme.len());
-        }
-    }
-    (text.len(), text.len())
 }
 
 #[cfg(test)]

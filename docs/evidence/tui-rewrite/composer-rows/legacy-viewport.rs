@@ -27,7 +27,7 @@ pub(crate) fn composer_viewport(
     {
         let mut rest = &text[byte_start..byte_end];
         loop {
-            let (end, next) = crate::text::composer_row_end(rest, width);
+            let (end, next) = row_end(rest, width.max(1));
             let line = &rest[..end];
             let char_end = char_start + line.chars().count();
             if let Some(index) = cursor_char_index {
@@ -86,4 +86,26 @@ fn cursor_column(line: &str, index: usize) -> usize {
         column += display_width(grapheme).max(1);
     }
     column
+}
+
+// Return the painted byte range and the next row's start, skipping only an
+// overflowing whitespace grapheme when no earlier word boundary can be used.
+fn row_end(text: &str, width: usize) -> (usize, usize) {
+    let mut used = 0usize;
+    let mut word_break = None;
+    for (byte, grapheme) in text.grapheme_indices(true) {
+        let whitespace = grapheme.chars().all(char::is_whitespace);
+        let cells = display_width(grapheme).max(1);
+        if byte > 0 && used.saturating_add(cells) > width {
+            return match word_break {
+                Some(end) => (end, end),
+                None => (byte, byte + if whitespace { grapheme.len() } else { 0 }),
+            };
+        }
+        used = used.saturating_add(cells);
+        if whitespace && byte > 0 {
+            word_break = Some(byte + grapheme.len());
+        }
+    }
+    (text.len(), text.len())
 }

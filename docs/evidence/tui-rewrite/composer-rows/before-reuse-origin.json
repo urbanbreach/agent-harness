@@ -1,0 +1,17 @@
+{
+  "base": "9681f5322d479a9d819af7fac09e5dfbfa053350",
+  "side": "candidate",
+  "sha256": "95639a4595834d6947316aaac4a19dcddc701964b2e0c13f0fad89f8fd183c95",
+  "probe_sha256": "54e64146df10b2d037943863c9ea65de5d68f02184a488bbc49222f2a5d78c6b",
+  "fixture_sha256": "df377eb5d0762ae30d28270ef4c20a969df28263986356dd2fa45386b80f4d2f",
+  "production_sources": [
+    {
+      "path": "crates/harness-tui/src/ui_composer.rs",
+      "sha256": "b3e45dc06e809ee593dba8caf7de3d3cd20a5895d88056d650c98d9829dfc15e"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/viewport.rs",
+      "sha256": "438c17aeb5a5db4df5a73eb45fd1f36cc4b129bbf1d06dd9c2994fb1907c6c99"
+    }
+  ]
+}

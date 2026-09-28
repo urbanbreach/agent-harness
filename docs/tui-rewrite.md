@@ -1161,6 +1161,32 @@ against 96,273. All 48 raw performance reports remain available. Measurements
 exclude PTY/emulator delivery. Evidence is in
 [`evidence/tui-rewrite/composer-viewport`](evidence/tui-rewrite/composer-viewport).
 
+## Composer row measurement replacement
+
+Atom wrapping now yields borrowed slices and stored widths. Public `wrap()`
+still materializes ID rows; runtime presentation counts up to its visible cap,
+while completion geometry counts every row. Frame sizing shares the string
+viewport's soft-wrap primitive and stops at its cap. The old per-grapheme height
+vector and duplicate wrapping algorithm are removed. Distinct atom/string and
+LF/CRLF policies remain, including R21.
+
+Two existing behavioral checks cover zero-width and over-wide atoms, saturation,
+newline ownership and hidden completion rows. The predecessor mutation fails as
+expected. Three temporary differential checks verify 222,262 exact geometry
+results, then leave the normal test tree. All 1,635 TUI checks, seven gated PTY
+checks and quality checks pass. Forty-two paired PTY/xterm captures match exact
+PNGs, cells, styles and cursor; restoration and resource cleanup pass.
+
+Production falls by 45 lines to 166,058. The retained frame-layout file is still
+1,306 lines. Long typing allocation bytes fall 72.6%, undo 54.1% and deletion
+56.1%; CPU is unchanged at tick resolution. Only 25 of 28 frozen limits pass:
+long malloc calls fall 5.4% and miss their 10% target, while short p95/p99 of
+161/195 µs exceed 133.1/179.3 µs. Long p99 also rises within its frozen bound.
+Timing variation remains unresolved; this does not establish improved latency.
+All 48 raw performance reports remain available, with no gate relaxation or
+unchanged rerun. Timings exclude PTY/emulator delivery. Evidence is in
+[`evidence/tui-rewrite/composer-rows`](evidence/tui-rewrite/composer-rows).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

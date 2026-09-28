@@ -27,7 +27,7 @@ impl ShellCompletionGeometry {
     pub fn calculate(input: &CompletionGeometryInput<'_>) -> CompletionDropdownGeometry {
         let regions = layout_for_rect(input.viewport, input.state);
         let wrap_width = regions.composer.width.saturating_sub(2).max(1);
-        let wrapped_lines = input.buffer.wrapped_rows(wrap_width).count();
+        let wrapped_lines = input.buffer.wrap(wrap_width).len();
         let cursor_chars = input
             .buffer
             .atoms()

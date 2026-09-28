@@ -90,7 +90,7 @@ fn mouse_and_keyboard_acceptance_return_the_same_event() {
 fn resize_repositions_dropdown_inside_the_wrapped_composer() {
     // arrange
     // act
-    let editor = ComposerEditor::from_text("one two three four five");
+    let editor = ComposerEditor::from_text(&"one two three four five ".repeat(12));
     let wide = ShellCompletionGeometry::calculate(&CompletionGeometryInput {
         viewport: Rect::new(0, 0, 80, 24),
         state: ShellState::Drafting,
@@ -113,6 +113,10 @@ fn resize_repositions_dropdown_inside_the_wrapped_composer() {
     assert!(narrow.rect.right() <= 40 && narrow.rect.bottom() <= 10);
     assert_ne!(wide.rect, narrow.rect);
     assert!(narrow.wrapped_lines >= wide.wrapped_lines);
+    assert!(
+        narrow.wrapped_lines > 5,
+        "row count includes the hidden composer rows"
+    );
 }
 
 #[test]

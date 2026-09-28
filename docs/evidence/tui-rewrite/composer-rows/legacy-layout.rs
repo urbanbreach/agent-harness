@@ -1,6 +1,7 @@
 // allow: SIZE_OK — TUI layout math (frame plan + pane sizing)
 use crate::UnwrapOrAbort;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::{AppState, Focus};
 use crate::overlay::OverlayKind;
@@ -35,6 +36,7 @@ pub(crate) fn centered_overlay_area(area: Rect, width: u16, height: u16) -> Rect
     surfaces::centered_block_area(area, width, height)
 }
 
+const MIN_COMPOSER_LINES: u16 = 1;
 const MAX_COMPOSER_LINES: u16 = 6;
 const PROMPT_MIN_MAX_HEIGHT: u16 = 6;
 const COMPOSER_VISIBLE_TEXT_CHROME: u16 = 6;
@@ -791,25 +793,73 @@ pub(crate) fn startup_composer_input_height(text: &str, width: u16, terminal_hei
 
 fn composer_input_height_with_max_lines(text: &str, width: u16, max_lines: u16) -> u16 {
     let inner_width = usize::from(width.saturating_sub(COMPOSER_VISIBLE_TEXT_CHROME).max(1));
-    let mut rows = 0;
-    for mut line in text.split('\n') {
-        loop {
-            rows += 1;
-            if rows == max_lines {
-                return rows;
-            }
-            let (_, next) = crate::text::composer_row_end(line, inner_width);
-            line = &line[next..];
-            if line.is_empty() {
-                break;
-            }
-        }
-    }
-    rows
+    let wrapped_lines = if text.is_empty() {
+        1
+    } else {
+        text.split('\n')
+            .map(|line| word_wrapped_line_count(line, inner_width))
+            .sum()
+    };
+
+    let clamped_lines =
+        wrapped_lines.clamp(usize::from(MIN_COMPOSER_LINES), usize::from(max_lines));
+    u16::try_from(clamped_lines).unwrap_or(max_lines)
 }
 
 fn prompt_max_height(terminal_height: u16) -> u16 {
     PROMPT_MIN_MAX_HEIGHT.max(terminal_height / 3)
+}
+
+fn display_width(text: &str) -> usize {
+    text.lines()
+        .map(unicode_width::UnicodeWidthStr::width)
+        .sum()
+}
+
+fn word_wrapped_line_count(line: &str, width: usize) -> usize {
+    if line.is_empty() {
+        return 1;
+    }
+
+    let chars = line
+        .graphemes(true)
+        .map(|grapheme| (grapheme, display_width(grapheme).max(1)))
+        .collect::<Vec<_>>();
+    let mut count = 0usize;
+    let mut start = 0usize;
+    while start < chars.len() {
+        count += 1;
+        let fit_end = word_wrap_fit_end(&chars, start, width.max(1));
+        if fit_end >= chars.len() {
+            break;
+        }
+
+        if let Some(break_at) = chars[start..fit_end]
+            .iter()
+            .rposition(|(ch, _)| ch.chars().all(char::is_whitespace))
+            .map(|offset| start + offset)
+            .filter(|break_at| *break_at > start)
+        {
+            start = break_at + 1;
+        } else if chars[fit_end].0.chars().all(char::is_whitespace) {
+            start = fit_end + 1;
+        } else {
+            start = fit_end.max(start + 1);
+        }
+    }
+
+    count.max(1)
+}
+
+fn word_wrap_fit_end(chars: &[(&str, usize)], start: usize, width: usize) -> usize {
+    let mut used = 0usize;
+    for (position, (_, char_width)) in chars.iter().enumerate().skip(start) {
+        if position > start && used.saturating_add(*char_width) > width {
+            return position;
+        }
+        used = used.saturating_add(*char_width);
+    }
+    chars.len()
 }
 
 fn live_dock_rhythm(

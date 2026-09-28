@@ -30,9 +30,9 @@ pub(super) fn resolve_composer<'a>(
         &mirror
     };
     let rows = buffer
-        .wrapped_rows(u16::try_from(body_width).unwrap_or(u16::MAX).max(1))
-        .take(max_text_rows.max(1))
-        .count();
+        .wrap(u16::try_from(body_width).unwrap_or(u16::MAX).max(1))
+        .len()
+        .min(max_text_rows.max(1));
     let surface = surface_for(app, startup);
     let (text_rows, chrome, _) = crate::composer_integration::ComposerPresentationConfig::new(
         surface,

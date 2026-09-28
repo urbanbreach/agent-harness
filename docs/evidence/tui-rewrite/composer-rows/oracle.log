@@ -1,0 +1,51 @@
+warning: unnecessary parentheses around closure body
+  --> vendor/crossterm/src/terminal/sys/unix.rs:87:50
+   |
+87 |     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+   |                                                  ^                            ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+87 -     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+87 +     let file = File::open("/dev/tty").map(|file| FileDesc::Owned(file.into()));
+   |
+
+warning: `crossterm` (lib) generated 1 warning (run `cargo fix --lib -p crossterm` to apply 1 suggestion)
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.45s
+────────────
+ Nextest run ID 54e7df6c-4bab-45b2-b860-8bd7d0ce87c8 with nextest profile: ci
+    Starting 3 tests across 2 binaries (10 tests skipped)
+  stdout ───
+
+    running 1 test
+    test recorded_atom_wrap_contract ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+  stderr ───
+    2431 exact atom-row comparisons
+
+  stdout ───
+
+    running 1 test
+    test recorded_row_height_contract ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.14s
+
+  stderr ───
+    45135 exact frame-height comparisons
+
+  stdout ───
+
+    running 1 test
+    test recorded_composer_viewport_contract ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.63s
+
+  stderr ───
+    174696 exact predecessor/candidate viewport comparisons
+
+────────────
+     Summary [   0.630s] 3 tests run: 3 passed, 10 skipped
