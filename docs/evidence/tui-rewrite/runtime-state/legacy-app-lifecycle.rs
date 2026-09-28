@@ -334,7 +334,7 @@ impl AppState {
         let foreground_work = self.live_turn_stop_available();
         let background_work = self.active_background_task_count() > 0;
         let actionable_work = self.has_live_turn_activity() || foreground_work || background_work;
-        match self.runtime_state_view().kind {
+        match self.runtime_state().kind {
             RuntimeStateKind::Sending | RuntimeStateKind::Streaming => true,
             RuntimeStateKind::Degraded | RuntimeStateKind::Disconnected => actionable_work,
             RuntimeStateKind::Ready | RuntimeStateKind::Success => {
@@ -598,10 +598,6 @@ impl AppState {
     }
 
     pub fn runtime_state(&self) -> RuntimeState {
-        self.runtime_state_view().into()
-    }
-
-    pub(crate) fn runtime_state_view(&self) -> view_model::RuntimeStateView<'_> {
         let active_permission = self.active_permission().map(|(permission_id, summary)| {
             view_model::PermissionRuntimeInput {
                 submission_pending: self.permission_submission_pending(&permission_id),
@@ -624,49 +620,50 @@ impl AppState {
         self.enhance_runtime_state(state)
     }
 
-    fn enhance_runtime_state<'a>(
-        &self,
-        mut state: view_model::RuntimeStateView<'a>,
-    ) -> view_model::RuntimeStateView<'a> {
+    fn enhance_runtime_state(&self, mut state: RuntimeState) -> RuntimeState {
         match state.kind {
             RuntimeStateKind::PermissionBlocked => {
                 if let Some(permission) = self.active_permission_view() {
                     let summary = permission_display_summary(&permission);
-                    state.summary = format!("decision required · {summary}").into();
-                    state.detail = Some(summary.into());
+                    state.summary = format!("decision required · {summary}");
+                    state.detail = Some(summary);
                     state.composer_hint =
-                        "Draft preserved under the checkpoint — deny stays fail-closed; allow once only after review.";
+                        "Draft preserved under the checkpoint — deny stays fail-closed; allow once only after review."
+                            .to_string();
                 }
             }
             RuntimeStateKind::PermissionPending => {
                 if let Some(permission) = self.active_permission_view() {
                     let summary = permission_display_summary(&permission);
                     state.summary =
-                        format!("decision submitted · awaiting confirmation · {}", summary).into();
-                    state.detail = Some(summary.into());
+                        format!("decision submitted · awaiting confirmation · {}", summary);
+                    state.detail = Some(summary);
                     state.composer_hint =
-                        "Draft preserved while Harness records the decision. Wait for confirmation before sending again.";
+                        "Draft preserved while Harness records the decision. Wait for confirmation before sending again."
+                            .to_string();
                 }
             }
             RuntimeStateKind::Degraded => {
                 state.summary = state
                     .detail
                     .as_deref()
-                    .map(|detail| {
-                        format!("recovery in progress · Sending paused · {detail}").into()
-                    })
+                    .map(|detail| format!("recovery in progress · Sending paused · {detail}"))
                     .unwrap_or_else(|| {
-                        "recovery in progress · Sending paused until live state catches up".into()
+                        "recovery in progress · Sending paused until live state catches up"
+                            .to_string()
                     });
-                state.composer_hint = "Draft preserved locally while recovery completes.";
+                state.composer_hint =
+                    "Draft preserved locally while recovery completes.".to_string();
             }
             RuntimeStateKind::Disconnected => {
                 state.summary = if self.activities.is_empty() {
-                    "connection lost · reopen the TUI to establish the live stream".into()
+                    "connection lost · reopen the TUI to establish the live stream".to_string()
                 } else {
-                    "connection lost · transcript preserved · reopen required before sending".into()
+                    "connection lost · transcript preserved · reopen required before sending"
+                        .to_string()
                 };
-                state.composer_hint = "Draft preserved locally — reopen the TUI to reconnect.";
+                state.composer_hint =
+                    "Draft preserved locally — reopen the TUI to reconnect.".to_string();
             }
             RuntimeStateKind::Failure => {
                 if self.status_banner.as_deref().is_some_and(|banner| {
@@ -676,16 +673,18 @@ impl AppState {
                         || banner.contains("no session path")
                 }) {
                     state.summary =
-                        "runtime failure · inspect transcript, then retry or continue".into();
-                    state.composer_hint = "After review, adjust the draft, then retry or continue.";
+                        "runtime failure · inspect transcript, then retry or continue".to_string();
+                    state.composer_hint =
+                        "After review, adjust the draft, then retry or continue.".to_string();
                 } else if self
                     .activities
                     .back()
                     .is_some_and(|activity| activity.status == ActivityStatus::Error)
                 {
                     state.summary =
-                        "turn failed · inspect transcript, then retry or continue".into();
-                    state.composer_hint = "After review, adjust the draft, then retry or continue.";
+                        "turn failed · inspect transcript, then retry or continue".to_string();
+                    state.composer_hint =
+                        "After review, adjust the draft, then retry or continue.".to_string();
                 }
             }
             _ => {}
@@ -737,7 +736,7 @@ impl AppState {
     }
 
     pub fn composer_disabled(&self) -> bool {
-        self.replay_mode || self.runtime_state_view().composer_disabled
+        self.replay_mode || self.runtime_state().composer_disabled
     }
 
     pub(crate) fn footer_hints_view_model(&self) -> view_model::FooterHintsViewModel {
@@ -902,10 +901,7 @@ impl AppState {
 
     pub(crate) fn live_turn_stop_available(&self) -> bool {
         !self.replay_mode
-            && !matches!(
-                self.runtime_state_view().kind,
-                RuntimeStateKind::Disconnected
-            )
+            && !matches!(self.runtime_state().kind, RuntimeStateKind::Disconnected)
             && self.has_active_interrupt_task()
     }
 
@@ -932,10 +928,7 @@ impl AppState {
 
     pub(crate) fn live_turn_background_available(&self) -> bool {
         !self.replay_mode
-            && !matches!(
-                self.runtime_state_view().kind,
-                RuntimeStateKind::Disconnected
-            )
+            && !matches!(self.runtime_state().kind, RuntimeStateKind::Disconnected)
             && self.live_turn_demote_handle_id().is_some()
     }
 

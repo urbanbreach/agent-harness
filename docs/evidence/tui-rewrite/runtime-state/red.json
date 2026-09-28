@@ -1,0 +1,16 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--lib",
+    "-E",
+    "test(live_status_strip_distinguishes_terminal_states) | test(runtime_state_overlay_never_stacks_over_permission_modal)"
+  ],
+  "exit": 100,
+  "mutation": "Display invoked tool ID instead of effective tool ID"
+}

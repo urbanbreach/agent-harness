@@ -85,7 +85,7 @@ impl RuntimeExperience {
 
     pub(crate) fn sync_activity(&mut self, app: &crate::app::AppState) {
         use crate::app::RuntimeStateKind;
-        let activity = match app.runtime_state().kind {
+        let activity = match app.runtime_state_view().kind {
             RuntimeStateKind::PermissionBlocked | RuntimeStateKind::PermissionPending => {
                 TitleActivity::AwaitingPermission
             }

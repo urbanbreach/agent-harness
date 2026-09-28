@@ -1,0 +1,22 @@
+[
+  {
+    "path": "crates/harness-tui/src/ui_chrome.rs",
+    "sha256": "78915abdadab5dfb6849a11ec63ec6d28ad2de635b595be56bb37a7c378857cd"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_live_turn_status.rs",
+    "sha256": "64ac267277fd960dac32d07c92c1eb2b4516092ec4cbde8f96e630a185b0a78c"
+  },
+  {
+    "path": "crates/harness-tui/src/runtime_integration.rs",
+    "sha256": "fb2342ac2dced190b2c5ff4dec2d79ffa08b8be62d86e6f70a6971d2f20d13c6"
+  },
+  {
+    "path": "crates/harness-tui/src/lib_tests/permission_runtime.rs",
+    "sha256": "f42a228805e15f2bae21e256b23fe7fd8ecf43b2bf0e039e39198ac9ac9346cc"
+  },
+  {
+    "path": "crates/harness-tui/src/lib_tests/runtime_review_surface.rs",
+    "sha256": "cfc2d48fbc15cba729d12fabfb3804e57511a14e72b0e71a1f52fa77eb5f980d"
+  }
+]

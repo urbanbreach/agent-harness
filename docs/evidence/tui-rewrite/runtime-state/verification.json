@@ -1,0 +1,42 @@
+{
+  "tui": {
+    "run": 1635,
+    "passed": 1635,
+    "skipped": 7
+  },
+  "pty": {
+    "run": 7,
+    "passed": 7
+  },
+  "public_tests_before": {
+    "run": 2,
+    "passed": 2
+  },
+  "mutation": {
+    "run": 2,
+    "passed": 1,
+    "failed": 1
+  },
+  "differential": {
+    "cases": 143640,
+    "equal": 143640,
+    "temporary_fixture_removed": true
+  },
+  "workspace_check": "passed",
+  "clippy": "passed",
+  "fmt": "passed",
+  "suite_gates": "passed",
+  "performance_runs_retained": 48,
+  "performance_limits": {
+    "run": 28,
+    "passed": 15
+  },
+  "paired_content_checks": 16,
+  "paired_browser_frames": 54,
+  "browser_exact_pngs": true,
+  "browser_exact_terminal_state_except_observer_counts": true,
+  "terminal_and_resource_cleanup": "all six final runs passed",
+  "preparation_runtime_pair": "two elapsed label mismatches retained; timestamps/fixture corrected for final run, production unchanged",
+  "workspace_test_suite": "not rerun; earlier predecessor CLI fixture failures remain",
+  "whole_rewrite": "unfinished"
+}

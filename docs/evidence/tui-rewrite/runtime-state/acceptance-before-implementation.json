@@ -1,0 +1,89 @@
+{
+  "recorded_at": "2026-09-28T02:29:19.804651+00:00",
+  "source": "8c43e0319252c1afc6155c095eba742e0707eb98",
+  "baseline": {
+    "typing-long": {
+      "p50_us": 213,
+      "p95_us": 236,
+      "p99_us": 248,
+      "bytes": 20000,
+      "rss_kib": 9680,
+      "cpu_ms_per_frame": 0.22,
+      "allocated_bytes": 16643622,
+      "peak_heap_bytes": 2193319,
+      "malloc_calls": 80858
+    },
+    "typing": {
+      "p50_us": 106,
+      "p95_us": 120,
+      "p99_us": 173,
+      "bytes": 140750,
+      "rss_kib": 9752,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 7938377,
+      "peak_heap_bytes": 2113412,
+      "malloc_calls": 74840
+    },
+    "undo-long": {
+      "p50_us": 232,
+      "p95_us": 252,
+      "p99_us": 265,
+      "bytes": 20000,
+      "rss_kib": 9900,
+      "cpu_ms_per_frame": 0.22,
+      "allocated_bytes": 38719776,
+      "peak_heap_bytes": 2154752,
+      "malloc_calls": 383036
+    },
+    "delete-long": {
+      "p50_us": 299,
+      "p95_us": 357,
+      "p99_us": 375,
+      "bytes": 31187,
+      "rss_kib": 9760,
+      "cpu_ms_per_frame": 0.3,
+      "allocated_bytes": 52775793,
+      "peak_heap_bytes": 2019266,
+      "malloc_calls": 604195
+    }
+  },
+  "limits": {
+    "typing-long": {
+      "p95_us": 257.40000000000003,
+      "p99_us": 272.8,
+      "rss_kib": 10639.2,
+      "peak_heap_bytes": 2412650.9000000004,
+      "allocated_bytes": 15811440.899999999,
+      "malloc_calls": 72772.2,
+      "cpu_ms_per_frame": 0.24200000000000002
+    },
+    "typing": {
+      "p95_us": 129.8,
+      "p99_us": 139.70000000000002,
+      "rss_kib": 10419.2,
+      "peak_heap_bytes": 2228162.2,
+      "allocated_bytes": 7938377,
+      "malloc_calls": 74840,
+      "cpu_ms_per_frame": 0.11000000000000001
+    },
+    "undo-long": {
+      "p95_us": 268.40000000000003,
+      "cpu_ms_per_frame": 0.24200000000000002,
+      "allocated_bytes": 38719776,
+      "malloc_calls": 383036,
+      "p99_us": 287.1,
+      "rss_kib": 10890.0,
+      "peak_heap_bytes": 2370223.9000000004
+    },
+    "delete-long": {
+      "p95_us": 392.70000000000005,
+      "cpu_ms_per_frame": 0.33,
+      "rss_kib": 10736.0,
+      "peak_heap_bytes": 2221189.3000000003,
+      "allocated_bytes": 52775793,
+      "malloc_calls": 604195,
+      "p99_us": 410.3
+    }
+  },
+  "requirements": "Replace runtime-state projection with a private borrowed view using Cow and static hints; keep the public owned RuntimeState contract and one shared projector, with unchanged precedence, enhancement, permission ownership, redaction, tool detail and replay policies. At least 10% fewer long-typing malloc calls and 5% fewer allocated bytes; no allocation/call increases elsewhere. Retain all prior stricter bounds. Fixed 500 frames, 10 warmups, 160x48, zero history; excludes PTY/emulator delivery."
+}

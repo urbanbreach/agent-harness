@@ -199,7 +199,7 @@ pub(super) fn render_footer(
         hint.action == crate::keybindings::Action::SubmitPrompt && hint.label == ":queue"
     }) || app.has_live_turn_activity()
         || matches!(
-            app.runtime_state().kind,
+            app.runtime_state_view().kind,
             crate::app::RuntimeStateKind::Sending | crate::app::RuntimeStateKind::Streaming
         );
     let multiline_active_turn = app.composer.composer_multiline_mode() && active_turn;
