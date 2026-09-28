@@ -1,0 +1,1132 @@
+// allow: SIZE_OK — keybinding registry and action mapping table
+//! Keybinding system for the TUI.
+//!
+//! Maps KeyEvent to Action with support for configurable overrides.
+
+use crate::UnwrapOrAbort;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::str::FromStr;
+
+mod command_registry;
+pub mod palette_model;
+
+use command_registry::command_metadata;
+pub(crate) use command_registry::HelpCategory;
+pub use command_registry::{
+    slash_command_aliases, slash_command_description, slash_commands, PaletteCommand,
+    PaletteCommandSection, SlashCommand,
+};
+
+/// Actions that can be triggered via keybindings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Action {
+    /// Quit the application
+    Quit,
+    /// Move focus to the next pane
+    FocusNext,
+    /// Toggle focus between the prompt and scrollback
+    TogglePromptFocus,
+    /// Move focus to the previous pane
+    FocusPrev,
+    /// Open the command palette
+    Palette,
+    /// Open/close the help tab
+    Help,
+    /// Open the status dialog (operator status surface)
+    OpenStatusDialog,
+    ToggleTerminalPanel,
+    ToggleTasks,
+    ToggleTodos,
+    /// Toggle follow mode
+    ToggleFollow,
+    /// Submit the prompt
+    SubmitPrompt,
+    /// Submit the current prompt while preserving the active turn
+    InterjectPrompt,
+    /// Cancel the active turn and submit the current prompt immediately
+    CancelAndReplacePrompt,
+    InsertNewline,
+    ToggleMultiline,
+    /// Clear the prompt
+    ClearPrompt,
+    /// Scroll up in the details pane
+    ScrollUp,
+    /// Scroll down in the details pane
+    ScrollDown,
+    /// Scroll down by half the transcript viewport
+    HalfPageDown,
+    /// Return to the transcript-first session shell
+    CloseReviewSurface,
+    OpenEventLog,
+    /// Move down in the list
+    MoveDown,
+    /// Move up in the list
+    MoveUp,
+    Reload,
+    SessionChildFirst,
+    SessionChildCycle,
+    SessionChildCycleReverse,
+    SessionParent,
+    DiffHunkNext,
+    DiffHunkPrevious,
+    VariantCycle,
+    AllowPermission,
+    /// Toggle session approval mode, or open confirmation in a permission modal.
+    AlwaysApprovePermission,
+    /// Deny permission in modal
+    DenyPermission,
+    /// Dismiss modal
+    DismissModal,
+    /// Navigate history up (prompt)
+    HistoryUp,
+    /// Navigate history down (prompt)
+    HistoryDown,
+    /// Move cursor left (prompt)
+    CursorLeft,
+    /// Move cursor right (prompt)
+    CursorRight,
+    /// Backspace (prompt)
+    Backspace,
+    /// Delete (prompt)
+    Delete,
+    /// Character input (prompt)
+    Char(char),
+    SelectCharLeft,
+    SelectCharRight,
+    SelectWordLeft,
+    SelectWordRight,
+    SelectLine,
+    SelectAll,
+    MoveWordLeft,
+    MoveWordRight,
+    MoveLineStart,
+    MoveLineEnd,
+    MoveBufferStart,
+    MoveBufferEnd,
+    DeleteWordForward,
+    DeleteWordBackward,
+    DeleteLine,
+    KillToLineStart,
+    KillToLineEnd,
+    Undo,
+    Redo,
+    RevertWorkspace,
+    OpenThemeDialog,
+    OpenModelSwitcher,
+    FirstMessage,
+    LastMessage,
+    NextMessage,
+    PreviousMessage,
+    CopyMessage,
+    ExportSession,
+    ToggleScrollbar,
+    OpenErrorDetails,
+    PromptStash,
+    PromptStashPop,
+    PromptStashList,
+    OpenLineageBrowser,
+    SessionBackground,
+    OpenSessionHistory,
+    OpenSettings,
+    OpenViewPlan,
+    OpenMemoryBrowser,
+    OpenWorktreePicker,
+}
+
+macro_rules! action_ids {
+    ($($variant:ident => $id:literal $(| $alias:literal)*,)+) => {
+        impl Action {
+            /// Convert action to its string identifier used in config.
+            pub fn as_str(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => $id,)+
+                    Self::Char(_) => "char",
+                }
+            }
+        }
+
+        impl FromStr for Action {
+            type Err = String;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $($id $(| $alias)* => Ok(Self::$variant),)+
+                    _ => Err(format!("unknown action: {s}")),
+                }
+            }
+        }
+    };
+}
+
+action_ids! {
+    Quit => "quit",
+    FocusNext => "focus_next",
+    TogglePromptFocus => "toggle_prompt_focus",
+    FocusPrev => "focus_prev",
+    Palette => "palette",
+    Help => "help",
+    OpenStatusDialog => "open_status_dialog" | "toggle_operator_sidebar",
+    ToggleTerminalPanel => "toggle_terminal_panel",
+    ToggleTasks => "toggle_tasks",
+    ToggleTodos => "toggle_todos",
+    ToggleFollow => "toggle_follow",
+    SubmitPrompt => "submit_prompt",
+    InterjectPrompt => "interject_prompt",
+    CancelAndReplacePrompt => "cancel_and_replace_prompt",
+    InsertNewline => "insert_newline",
+    ToggleMultiline => "toggle_multiline",
+    ClearPrompt => "clear_prompt",
+    ScrollUp => "scroll_up",
+    ScrollDown => "scroll_down",
+    HalfPageDown => "half_page_down",
+    CloseReviewSurface => "close_review_surface",
+    OpenEventLog => "open_event_log",
+    MoveDown => "move_down",
+    MoveUp => "move_up",
+    Reload => "reload",
+    SessionChildFirst => "session_child_first",
+    SessionChildCycle => "session_child_cycle",
+    SessionChildCycleReverse => "session_child_cycle_reverse",
+    SessionParent => "session_parent",
+    DiffHunkNext => "diff_hunk_next",
+    DiffHunkPrevious => "diff_hunk_previous",
+    VariantCycle => "variant_cycle",
+    AllowPermission => "allow_permission",
+    AlwaysApprovePermission => "always_approve_permission",
+    DenyPermission => "deny_permission",
+    DismissModal => "dismiss_modal",
+    HistoryUp => "history_up",
+    HistoryDown => "history_down",
+    CursorLeft => "cursor_left",
+    CursorRight => "cursor_right",
+    Backspace => "backspace",
+    Delete => "delete",
+    SelectCharLeft => "select_char_left",
+    SelectCharRight => "select_char_right",
+    SelectWordLeft => "select_word_left",
+    SelectWordRight => "select_word_right",
+    SelectLine => "select_line",
+    SelectAll => "select_all",
+    MoveWordLeft => "move_word_left",
+    MoveWordRight => "move_word_right",
+    MoveLineStart => "move_line_start",
+    MoveLineEnd => "move_line_end",
+    MoveBufferStart => "move_buffer_start",
+    MoveBufferEnd => "move_buffer_end",
+    DeleteWordForward => "delete_word_forward",
+    DeleteWordBackward => "delete_word_backward",
+    DeleteLine => "delete_line",
+    KillToLineStart => "kill_to_line_start",
+    KillToLineEnd => "kill_to_line_end",
+    Undo => "undo",
+    Redo => "redo",
+    RevertWorkspace => "revert_workspace",
+    OpenThemeDialog => "open_theme_dialog",
+    OpenModelSwitcher => "open_model_switcher",
+    FirstMessage => "first_message",
+    LastMessage => "last_message",
+    NextMessage => "next_message",
+    PreviousMessage => "previous_message",
+    CopyMessage => "copy_message",
+    ExportSession => "export_session",
+    ToggleScrollbar => "toggle_scrollbar",
+    OpenErrorDetails => "open_error_details",
+    PromptStash => "prompt_stash",
+    PromptStashPop => "prompt_stash_pop",
+    PromptStashList => "prompt_stash_list",
+    OpenLineageBrowser => "open_lineage_browser",
+    SessionBackground => "session_background",
+    OpenSessionHistory => "open_session_history" | "resume_session",
+    OpenSettings => "open_settings" | "settings",
+    OpenViewPlan => "open_view_plan" | "view_plan" | "view-plan",
+    OpenMemoryBrowser => "open_memory_browser" | "memory",
+    OpenWorktreePicker => "open_worktree_picker" | "worktree" | "switch_worktree",
+}
+
+impl Action {
+    fn metadata_id(self) -> Option<&'static str> {
+        match self {
+            Self::Char(_) => None,
+            Self::VariantCycle => Some("cycle_variant"),
+            _ => Some(self.as_str()),
+        }
+    }
+
+    pub fn metadata_label(self) -> &'static str {
+        self.metadata_id()
+            .and_then(command_metadata)
+            .map(|metadata| metadata.label)
+            .unwrap_or("")
+    }
+
+    pub fn metadata_description(self) -> &'static str {
+        self.metadata_id()
+            .and_then(command_metadata)
+            .map(|metadata| metadata.description)
+            .unwrap_or("")
+    }
+
+    pub(crate) const fn help_category(self) -> Option<HelpCategory> {
+        command_registry::help_category(self)
+    }
+
+    fn grouped_palette_commands() -> &'static [PaletteCommand] {
+        command_registry::palette_commands()
+    }
+
+    /// Get the list of all palette-executable actions.
+    pub fn palette_commands() -> &'static [PaletteCommand] {
+        Self::grouped_palette_commands()
+    }
+
+    pub fn palette_command_label(command: &str) -> &'static str {
+        Self::palette_command(command)
+            .and_then(|palette_command| command_metadata(palette_command.metadata_id))
+            .map(|metadata| metadata.label)
+            .unwrap_or("")
+    }
+
+    pub fn palette_command_description(command: &str) -> &'static str {
+        Self::palette_command(command)
+            .and_then(|palette_command| command_metadata(palette_command.metadata_id))
+            .map(|metadata| metadata.description)
+            .unwrap_or("")
+    }
+
+    pub fn palette_command_shortcut(command: &str) -> &'static str {
+        Self::palette_command(command)
+            .map(|palette_command| palette_command.shortcut)
+            .unwrap_or("")
+    }
+
+    pub fn palette_command_section(command: &str) -> Option<PaletteCommandSection> {
+        Self::palette_command(command).map(|palette_command| palette_command.section)
+    }
+
+    fn palette_command(command: &str) -> Option<&'static PaletteCommand> {
+        Self::grouped_palette_commands()
+            .iter()
+            .find(|palette_command| palette_command.id == command)
+    }
+
+    pub fn grouped_palette_commands_for_overlay() -> &'static [PaletteCommand] {
+        Self::grouped_palette_commands()
+    }
+}
+
+/// A key binding that can match against KeyEvent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct KeyBinding {
+    pub code: KeyCode,
+    pub modifiers: KeyModifiers,
+}
+
+impl KeyBinding {
+    pub fn new(code: KeyCode, modifiers: KeyModifiers) -> Self {
+        Self { code, modifiers }
+    }
+
+    pub fn matches(&self, event: &KeyEvent) -> bool {
+        self.code == event.code && self.modifiers == event.modifiers
+    }
+}
+
+impl FromStr for KeyBinding {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        let mut modifiers = KeyModifiers::NONE;
+        let mut remaining = s;
+
+        loop {
+            let mut found = false;
+            for (prefix, modifier) in [
+                ("ctrl+", KeyModifiers::CONTROL),
+                ("Ctrl+", KeyModifiers::CONTROL),
+                ("shift+", KeyModifiers::SHIFT),
+                ("Shift+", KeyModifiers::SHIFT),
+                ("alt+", KeyModifiers::ALT),
+                ("Alt+", KeyModifiers::ALT),
+            ] {
+                if let Some(key_part) = remaining.strip_prefix(prefix) {
+                    modifiers |= modifier;
+                    remaining = key_part;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                break;
+            }
+        }
+
+        let code = parse_key_code(remaining)?;
+        Ok(KeyBinding::new(code, modifiers))
+    }
+}
+
+fn parse_key_code(s: &str) -> Result<KeyCode, String> {
+    match s.to_lowercase().as_str() {
+        "tab" => Ok(KeyCode::Tab),
+        "backtab" | "shift-tab" => Ok(KeyCode::BackTab),
+        "enter" => Ok(KeyCode::Enter),
+        "esc" | "escape" => Ok(KeyCode::Esc),
+        "space" | " " => Ok(KeyCode::Char(' ')),
+        "up" => Ok(KeyCode::Up),
+        "down" => Ok(KeyCode::Down),
+        "left" => Ok(KeyCode::Left),
+        "right" => Ok(KeyCode::Right),
+        "backspace" => Ok(KeyCode::Backspace),
+        "delete" | "del" => Ok(KeyCode::Delete),
+        "home" => Ok(KeyCode::Home),
+        "end" => Ok(KeyCode::End),
+        "pageup" => Ok(KeyCode::PageUp),
+        "pagedown" => Ok(KeyCode::PageDown),
+        "insert" => Ok(KeyCode::Insert),
+        "f1" => Ok(KeyCode::F(1)),
+        "f2" => Ok(KeyCode::F(2)),
+        "f3" => Ok(KeyCode::F(3)),
+        "f4" => Ok(KeyCode::F(4)),
+        "f5" => Ok(KeyCode::F(5)),
+        "f6" => Ok(KeyCode::F(6)),
+        "f7" => Ok(KeyCode::F(7)),
+        "f8" => Ok(KeyCode::F(8)),
+        "f9" => Ok(KeyCode::F(9)),
+        "f10" => Ok(KeyCode::F(10)),
+        "f11" => Ok(KeyCode::F(11)),
+        "f12" => Ok(KeyCode::F(12)),
+        s if s.len() == 1 => {
+            let c = s.chars().next().unwrap_or_abort();
+            Ok(KeyCode::Char(c))
+        }
+        _ => Err(format!("unknown key: {s}")),
+    }
+}
+
+/// Manages key bindings mapping keys to actions.
+#[derive(Debug, Clone)]
+pub struct KeyMap {
+    bindings: HashMap<KeyBinding, Action>,
+    reverse: HashMap<Action, Vec<KeyBinding>>,
+    session_bindings: HashMap<KeyBinding, Action>,
+    session_reverse: HashMap<Action, Vec<KeyBinding>>,
+    leader_sequences: HashMap<KeyBinding, Action>,
+    leader_pending: bool,
+}
+
+impl Default for KeyMap {
+    fn default() -> Self {
+        Self::with_defaults()
+    }
+}
+
+impl KeyMap {
+    /// Create a new keymap with default bindings.
+    pub fn with_defaults() -> Self {
+        let mut keymap = Self {
+            bindings: HashMap::new(),
+            reverse: HashMap::new(),
+            session_bindings: HashMap::new(),
+            session_reverse: HashMap::new(),
+            leader_sequences: HashMap::new(),
+            leader_pending: false,
+        };
+
+        // Navigation
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('j'), KeyModifiers::NONE),
+            Action::MoveDown,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Down, KeyModifiers::NONE),
+            Action::MoveDown,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('k'), KeyModifiers::NONE),
+            Action::MoveUp,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Up, KeyModifiers::NONE),
+            Action::MoveUp,
+        );
+
+        keymap.bind(
+            KeyBinding::new(KeyCode::Tab, KeyModifiers::NONE),
+            Action::FocusNext,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::BackTab, KeyModifiers::NONE),
+            Action::VariantCycle,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Tab, KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+            Action::FocusPrev,
+        );
+
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('1'), KeyModifiers::NONE),
+            Action::CloseReviewSurface,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('4'), KeyModifiers::NONE),
+            Action::ToggleTerminalPanel,
+        );
+
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL),
+            Action::Quit,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('d'), KeyModifiers::CONTROL),
+            Action::HalfPageDown,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('q'), KeyModifiers::NONE),
+            Action::Quit,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char(' '), KeyModifiers::NONE),
+            Action::TogglePromptFocus,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('i'), KeyModifiers::NONE),
+            Action::TogglePromptFocus,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('r'), KeyModifiers::NONE),
+            Action::Reload,
+        );
+        keymap.bind_session(
+            KeyBinding::new(KeyCode::Right, KeyModifiers::NONE),
+            Action::SessionChildCycle,
+        );
+        keymap.bind_session(
+            KeyBinding::new(KeyCode::Left, KeyModifiers::NONE),
+            Action::SessionChildCycleReverse,
+        );
+        keymap.bind_session(
+            KeyBinding::new(KeyCode::Up, KeyModifiers::NONE),
+            Action::SessionParent,
+        );
+        keymap.bind_session(
+            KeyBinding::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+            Action::SessionBackground,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('n'), KeyModifiers::ALT),
+            Action::DiffHunkNext,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('p'), KeyModifiers::ALT),
+            Action::DiffHunkPrevious,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char(']'), KeyModifiers::ALT),
+            Action::DiffHunkNext,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('['), KeyModifiers::ALT),
+            Action::DiffHunkPrevious,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('?'), KeyModifiers::NONE),
+            Action::Palette,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            Action::Palette,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+            Action::PromptStash,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('x'), KeyModifiers::CONTROL),
+            Action::Help,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('.'), KeyModifiers::CONTROL),
+            Action::Help,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('t'), KeyModifiers::CONTROL),
+            Action::ToggleTodos,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            Action::DismissModal,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::F(2), KeyModifiers::NONE),
+            Action::OpenStatusDialog,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char(','), KeyModifiers::CONTROL),
+            Action::OpenStatusDialog,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char(','), KeyModifiers::SUPER),
+            Action::OpenStatusDialog,
+        );
+
+        // Prompt navigation (when in prompt focus)
+        keymap.bind(
+            KeyBinding::new(KeyCode::Up, KeyModifiers::NONE),
+            Action::HistoryUp,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Down, KeyModifiers::NONE),
+            Action::HistoryDown,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Left, KeyModifiers::NONE),
+            Action::CursorLeft,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Right, KeyModifiers::NONE),
+            Action::CursorRight,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Enter, KeyModifiers::NONE),
+            Action::SubmitPrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Enter, KeyModifiers::SHIFT),
+            Action::InsertNewline,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('j'), KeyModifiers::CONTROL),
+            Action::InsertNewline,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Enter, KeyModifiers::CONTROL),
+            Action::CancelAndReplacePrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Enter, KeyModifiers::ALT),
+            Action::InsertNewline,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Enter, KeyModifiers::CONTROL | KeyModifiers::ALT),
+            Action::InterjectPrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Enter, KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+            Action::CancelAndReplacePrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('m'), KeyModifiers::ALT),
+            Action::ToggleMultiline,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('s'), KeyModifiers::ALT),
+            Action::PromptStash,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('i'), KeyModifiers::ALT),
+            Action::InterjectPrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('r'), KeyModifiers::ALT),
+            Action::CancelAndReplacePrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Esc, KeyModifiers::NONE),
+            Action::ClearPrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Backspace, KeyModifiers::NONE),
+            Action::Backspace,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Delete, KeyModifiers::NONE),
+            Action::Delete,
+        );
+
+        // Composer editing vocabulary
+        keymap.bind(
+            KeyBinding::new(KeyCode::Left, KeyModifiers::SHIFT),
+            Action::SelectCharLeft,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Right, KeyModifiers::SHIFT),
+            Action::SelectCharRight,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Left, KeyModifiers::SHIFT | KeyModifiers::CONTROL),
+            Action::SelectWordLeft,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('b'), KeyModifiers::SHIFT | KeyModifiers::ALT),
+            Action::SelectWordLeft,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Right, KeyModifiers::SHIFT | KeyModifiers::CONTROL),
+            Action::SelectWordRight,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('f'), KeyModifiers::SHIFT | KeyModifiers::ALT),
+            Action::SelectWordRight,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Home, KeyModifiers::SHIFT),
+            Action::SelectLine,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::End, KeyModifiers::SHIFT),
+            Action::SelectLine,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('a'), KeyModifiers::CONTROL),
+            Action::SelectAll,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('a'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            Action::SelectAll,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Left, KeyModifiers::CONTROL),
+            Action::MoveWordLeft,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('b'), KeyModifiers::ALT),
+            Action::MoveWordLeft,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Right, KeyModifiers::CONTROL),
+            Action::MoveWordRight,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('f'), KeyModifiers::ALT),
+            Action::MoveWordRight,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Home, KeyModifiers::NONE),
+            Action::MoveLineStart,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::End, KeyModifiers::NONE),
+            Action::MoveLineEnd,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Home, KeyModifiers::CONTROL),
+            Action::MoveBufferStart,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::End, KeyModifiers::CONTROL),
+            Action::MoveBufferEnd,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('d'), KeyModifiers::ALT),
+            Action::DeleteWordForward,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Delete, KeyModifiers::CONTROL),
+            Action::DeleteWordForward,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('w'), KeyModifiers::CONTROL),
+            Action::DeleteWordBackward,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Backspace, KeyModifiers::ALT),
+            Action::DeleteWordBackward,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Backspace, KeyModifiers::CONTROL),
+            Action::DeleteWordBackward,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('k'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            Action::DeleteLine,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            Action::KillToLineStart,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('k'), KeyModifiers::CONTROL),
+            Action::KillToLineEnd,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('z'), KeyModifiers::CONTROL),
+            Action::Undo,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('-'), KeyModifiers::CONTROL),
+            Action::Undo,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('y'), KeyModifiers::CONTROL),
+            Action::Redo,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('z'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            Action::Redo,
+        );
+
+        // Permission modal
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('y'), KeyModifiers::CONTROL),
+            Action::AllowPermission,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
+            Action::AlwaysApprovePermission,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
+            Action::DenyPermission,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Esc, KeyModifiers::NONE),
+            Action::DismissModal,
+        );
+
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('g'), KeyModifiers::CONTROL),
+            Action::ToggleTasks,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Home, KeyModifiers::CONTROL),
+            Action::FirstMessage,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('g'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ),
+            Action::LastMessage,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::End, KeyModifiers::CONTROL | KeyModifiers::ALT),
+            Action::LastMessage,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('n'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ),
+            Action::NextMessage,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('p'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ),
+            Action::PreviousMessage,
+        );
+
+        keymap.register_default_leader_sequences();
+        keymap
+    }
+
+    /// Apply custom keybindings from config, overriding defaults.
+    pub fn apply_overrides(&mut self, overrides: &BTreeMap<String, String>) {
+        for (action_str, key_str) in overrides {
+            let Ok(action) = Action::from_str(action_str) else {
+                continue;
+            };
+            if let Some(binding) = parse_leader_sequence(key_str) {
+                self.unbind_action(action);
+                self.bind_sequence(binding, action);
+                continue;
+            }
+            let Ok(binding) = KeyBinding::from_str(key_str) else {
+                continue;
+            };
+            self.unbind_action(action);
+            if session_surface_action(action) {
+                self.bind_session(binding, action);
+            } else {
+                self.bind(binding, action);
+            }
+        }
+    }
+
+    /// Bind a key to an action.
+    fn bind(&mut self, binding: KeyBinding, action: Action) {
+        self.unbind_global_binding(binding);
+        self.bindings.insert(binding, action);
+        self.reverse.entry(action).or_default().push(binding);
+    }
+
+    fn bind_session(&mut self, binding: KeyBinding, action: Action) {
+        self.unbind_session_binding(binding);
+        self.session_bindings.insert(binding, action);
+        self.session_reverse
+            .entry(action)
+            .or_default()
+            .push(binding);
+    }
+
+    fn unbind_action(&mut self, action: Action) {
+        if let Some(existing_bindings) = self.reverse.remove(&action) {
+            for existing in existing_bindings {
+                self.bindings.remove(&existing);
+            }
+        }
+        if let Some(existing_bindings) = self.session_reverse.remove(&action) {
+            for existing in existing_bindings {
+                self.session_bindings.remove(&existing);
+            }
+        }
+        self.leader_sequences
+            .retain(|_, candidate| *candidate != action);
+    }
+
+    fn unbind_global_binding(&mut self, binding: KeyBinding) {
+        if let Some(action) = self.bindings.remove(&binding) {
+            remove_reverse_binding(&mut self.reverse, action, binding);
+        }
+    }
+
+    fn unbind_session_binding(&mut self, binding: KeyBinding) {
+        if let Some(action) = self.session_bindings.remove(&binding) {
+            remove_reverse_binding(&mut self.session_reverse, action, binding);
+        }
+    }
+
+    /// Get the action for a key event, if any.
+    pub fn get_action(&self, event: &KeyEvent) -> Option<Action> {
+        let binding = KeyBinding::new(event.code, event.modifiers);
+        self.bindings.get(&binding).copied().or_else(|| {
+            (event.code == KeyCode::Char('\u{1d}') && event.modifiers == KeyModifiers::NONE)
+                .then(|| {
+                    self.bindings
+                        .get(&KeyBinding::new(KeyCode::Char(']'), KeyModifiers::CONTROL))
+                        .copied()
+                })
+                .flatten()
+        })
+    }
+
+    pub fn get_session_action(&self, event: &KeyEvent) -> Option<Action> {
+        let binding = KeyBinding::new(event.code, event.modifiers);
+        self.session_bindings.get(&binding).copied().or_else(|| {
+            (event.code == KeyCode::Char('\u{1d}') && event.modifiers == KeyModifiers::NONE)
+                .then(|| {
+                    self.session_bindings
+                        .get(&KeyBinding::new(KeyCode::Char(']'), KeyModifiers::CONTROL))
+                        .copied()
+                })
+                .flatten()
+        })
+    }
+
+    pub fn leader_pending(&self) -> bool {
+        self.leader_pending
+    }
+
+    pub fn set_leader_pending(&mut self, pending: bool) {
+        self.leader_pending = pending;
+    }
+
+    pub fn leader_action(&self, event: &KeyEvent) -> Option<Action> {
+        let binding = KeyBinding::new(event.code, event.modifiers);
+        self.leader_sequences.get(&binding).copied()
+    }
+
+    fn bind_sequence(&mut self, binding: KeyBinding, action: Action) {
+        self.leader_sequences.insert(binding, action);
+    }
+
+    fn register_default_leader_sequences(&mut self) {
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Down, KeyModifiers::NONE),
+            Action::SessionChildFirst,
+        );
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Char('t'), KeyModifiers::NONE),
+            Action::OpenThemeDialog,
+        );
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Char('m'), KeyModifiers::NONE),
+            Action::OpenModelSwitcher,
+        );
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Char('y'), KeyModifiers::NONE),
+            Action::CopyMessage,
+        );
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Char('x'), KeyModifiers::NONE),
+            Action::ExportSession,
+        );
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Char('s'), KeyModifiers::NONE),
+            Action::OpenStatusDialog,
+        );
+        self.bind_sequence(
+            KeyBinding::new(KeyCode::Char('g'), KeyModifiers::NONE),
+            Action::OpenLineageBrowser,
+        );
+    }
+
+    /// Get all key bindings for an action.
+    pub fn get_bindings(&self, action: Action) -> Vec<&KeyBinding> {
+        let mut bindings: Vec<&KeyBinding> = self
+            .reverse
+            .get(&action)
+            .map(|v| v.iter().collect())
+            .unwrap_or_default();
+        bindings.extend(
+            self.session_reverse
+                .get(&action)
+                .into_iter()
+                .flat_map(|v| v.iter()),
+        );
+        bindings.extend(
+            self.leader_sequences
+                .iter()
+                .filter_map(|(binding, candidate)| (*candidate == action).then_some(binding)),
+        );
+        bindings
+    }
+
+    /// Get the primary key binding for an action as a string.
+    pub fn get_binding_str(&self, action: Action) -> String {
+        self.get_leader_binding(action)
+            .or_else(|| {
+                self.get_bindings(action)
+                    .first()
+                    .map(|b| format_key_binding(b))
+            })
+            .unwrap_or_else(|| "-".to_string())
+    }
+
+    pub fn get_binding_strs(&self, action: Action) -> Vec<String> {
+        let mut bindings = self
+            .get_bindings(action)
+            .into_iter()
+            .map(format_key_binding)
+            .collect::<Vec<_>>();
+        bindings.sort();
+        bindings.dedup();
+        bindings
+    }
+
+    /// Return every action that currently has at least one active binding.
+    pub fn bound_actions(&self) -> Vec<Action> {
+        self.reverse
+            .keys()
+            .chain(self.session_reverse.keys())
+            .chain(self.leader_sequences.values())
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    pub fn get_binding_label(&self, action: Action, label: &str) -> String {
+        format!("{} {label}", self.get_binding_str(action))
+    }
+
+    /// Get all current bindings as a sorted list of (key, action) pairs.
+    pub fn all_bindings(&self) -> Vec<(&KeyBinding, &Action)> {
+        let mut all: Vec<(&KeyBinding, &Action)> = self.bindings.iter().collect();
+        all.extend(self.session_bindings.iter());
+        all.sort_by(|(left_key, left_action), (right_key, right_action)| {
+            format_key_binding(left_key)
+                .cmp(&format_key_binding(right_key))
+                .then_with(|| left_action.as_str().cmp(right_action.as_str()))
+        });
+        all
+    }
+
+    fn get_leader_binding(&self, action: Action) -> Option<String> {
+        self.leader_sequences
+            .iter()
+            .find(|(_, candidate)| **candidate == action)
+            .map(|(binding, _)| format!("Ctrl+x {}", format_key_binding(binding)))
+    }
+}
+
+/// Format a key binding as a human-readable string.
+fn format_key_binding(binding: &KeyBinding) -> String {
+    let mut parts = Vec::new();
+
+    if binding.modifiers.contains(KeyModifiers::CONTROL) {
+        parts.push("Ctrl");
+    }
+    if binding.modifiers.contains(KeyModifiers::SHIFT) {
+        parts.push("Shift");
+    }
+    if binding.modifiers.contains(KeyModifiers::ALT) {
+        parts.push("Alt");
+    }
+
+    let key_str = match binding.code {
+        KeyCode::Char(c) => c.to_string(),
+        KeyCode::Tab => "Tab".to_string(),
+        KeyCode::BackTab => "Shift+Tab".to_string(),
+        KeyCode::Enter => "Enter".to_string(),
+        KeyCode::Esc => "Esc".to_string(),
+        KeyCode::Up => "↑".to_string(),
+        KeyCode::Down => "↓".to_string(),
+        KeyCode::Left => "←".to_string(),
+        KeyCode::Right => "→".to_string(),
+        KeyCode::Backspace => "Backspace".to_string(),
+        KeyCode::Delete => "Del".to_string(),
+        KeyCode::Home => "Home".to_string(),
+        KeyCode::End => "End".to_string(),
+        KeyCode::PageUp => "PgUp".to_string(),
+        KeyCode::PageDown => "PgDn".to_string(),
+        KeyCode::Insert => "Ins".to_string(),
+        KeyCode::F(n) => format!("F{n}"),
+        _ => format!("{:?}", binding.code),
+    };
+
+    parts.push(&key_str);
+    parts.join("+")
+}
+
+fn parse_leader_sequence(value: &str) -> Option<KeyBinding> {
+    let trimmed = value.trim();
+    let key = trimmed
+        .strip_prefix("<leader>")
+        .or_else(|| trimmed.strip_prefix("ctrl+x "))
+        .or_else(|| trimmed.strip_prefix("Ctrl+x "))
+        .or_else(|| trimmed.strip_prefix("ctrl+x+"))
+        .or_else(|| trimmed.strip_prefix("Ctrl+x+"))?;
+
+    KeyBinding::from_str(key).ok()
+}
+
+fn remove_reverse_binding(
+    reverse: &mut HashMap<Action, Vec<KeyBinding>>,
+    action: Action,
+    binding: KeyBinding,
+) {
+    let Some(bindings) = reverse.get_mut(&action) else {
+        return;
+    };
+    bindings.retain(|candidate| *candidate != binding);
+    if bindings.is_empty() {
+        reverse.remove(&action);
+    }
+}
+
+fn session_surface_action(action: Action) -> bool {
+    matches!(
+        action,
+        Action::SessionChildFirst
+            | Action::SessionChildCycle
+            | Action::SessionChildCycleReverse
+            | Action::SessionParent
+            | Action::SessionBackground
+    )
+}
+
+#[cfg(test)]
+mod tests;

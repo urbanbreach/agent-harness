@@ -1,0 +1,24 @@
+{
+  "reviewer": "/root/tui_review",
+  "reviewed_at": "2026-09-28T02:16:12.872968+00:00",
+  "decision": "approved for intermediate atomic commit",
+  "blocking_findings": [],
+  "verified": [
+    "48 pre-review artifact hashes and exact source patch/counts",
+    "source, binary, fixture and predecessor reuse receipts",
+    "48 raw performance reports, baseline/freeze/paired ordering and unchanged-or-stricter limits",
+    "16 exact workload/output pairs",
+    "28,480-case frozen formatter oracle and temporary-test removal",
+    "40 predecessor checks, 39-pass/1-fail mutation, 1,635 TUI checks, 7 PTY checks and quality logs",
+    "both retained preparation lint failures",
+    "42 exact paired PNGs and terminal states excluding disclosed observer counts",
+    "all reused browser files against the published composer-paint candidate archive",
+    "four natural exits, terminal restoration and resource cleanup",
+    "visual inspection of prompt/footer and word-selection frames"
+  ],
+  "open_findings": [
+    "long typing allocated bytes 16,643,206 exceed 15,994,884",
+    "short typing p99 186 microseconds exceeds 139.7",
+    "whole rewrite remains unfinished; this approval does not waive missing goals or environments"
+  ]
+}

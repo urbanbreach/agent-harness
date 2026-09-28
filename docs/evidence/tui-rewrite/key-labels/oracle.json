@@ -1,0 +1,18 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--all-features",
+    "--test",
+    "rewrite_key_labels_oracle",
+    "--success-output",
+    "immediate"
+  ],
+  "exit": 0,
+  "source_sha256": "61edaadfa815a380cdfce10430f1ae91016b1c8c228f1dc17f0e638e3305c61d"
+}

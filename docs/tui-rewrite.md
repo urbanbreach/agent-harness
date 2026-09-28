@@ -1213,6 +1213,27 @@ there was no gate relaxation or unchanged rerun. Timings exclude PTY/emulator
 delivery. Evidence is in
 [`evidence/tui-rewrite/composer-paint`](evidence/tui-rewrite/composer-paint).
 
+## Shortcut label replacement
+
+The key-label engine now uses `Display` on `KeyBinding` and a borrowed action
+binding iterator. Its fragment vector, temporary key string, join and transient
+lookup vectors are removed. Existing label spelling, insertion order, leader
+priority, sorted/deduplicated lists and routing remain. Two public-method tests
+are extended; the modifier-order mutation fails the intended check. All 28,480
+frozen formatter comparisons match, followed by 1,635 passing TUI checks, seven
+gated PTY checks and passing quality gates. Forty-two PTY/xterm frames match
+exactly in PNGs, cells, styles and cursor; restoration and cleanup pass.
+
+Production falls by five lines; the existing tests grow by 34. The TUI source
+tree totals 165,676 lines, and the retained registry/test files exceed 500 lines.
+Long typing malloc calls fall 14.6%, passing the frozen 10% target. Allocated
+bytes fall 1.2%, missing the 5% target. Short typing p99 is 186 µs against the
+139.7 µs bound; its paired predecessor is also above that bound at 174 µs.
+The candidate passes 26 of 28 limits without changing bounds or rerunning an
+unchanged candidate for a passing result. CPU remains unchanged at process-tick
+resolution. Evidence is in
+[`evidence/tui-rewrite/key-labels`](evidence/tui-rewrite/key-labels).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

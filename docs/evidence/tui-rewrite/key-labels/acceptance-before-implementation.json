@@ -1,0 +1,89 @@
+{
+  "recorded_at": "2026-09-28T02:01:36.842374+00:00",
+  "source": "6f04ab049bc178a26aee2b7cc828b4d75526e6ff",
+  "baseline": {
+    "typing-long": {
+      "p50_us": 215,
+      "p95_us": 234,
+      "p99_us": 366,
+      "bytes": 20000,
+      "rss_kib": 9772,
+      "cpu_ms_per_frame": 0.22,
+      "allocated_bytes": 16836720,
+      "peak_heap_bytes": 2195428,
+      "malloc_calls": 94689
+    },
+    "typing": {
+      "p50_us": 108,
+      "p95_us": 118,
+      "p99_us": 127,
+      "bytes": 140750,
+      "rss_kib": 9472,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 8128763,
+      "peak_heap_bytes": 2115521,
+      "malloc_calls": 88664
+    },
+    "undo-long": {
+      "p50_us": 230,
+      "p95_us": 247,
+      "p99_us": 261,
+      "bytes": 20000,
+      "rss_kib": 9992,
+      "cpu_ms_per_frame": 0.22,
+      "allocated_bytes": 38914274,
+      "peak_heap_bytes": 2154749,
+      "malloc_calls": 396881
+    },
+    "delete-long": {
+      "p50_us": 290,
+      "p95_us": 357,
+      "p99_us": 373,
+      "bytes": 31187,
+      "rss_kib": 9796,
+      "cpu_ms_per_frame": 0.3,
+      "allocated_bytes": 52963419,
+      "peak_heap_bytes": 2019263,
+      "malloc_calls": 618023
+    }
+  },
+  "limits": {
+    "typing-long": {
+      "p95_us": 257.40000000000003,
+      "p99_us": 391.6,
+      "rss_kib": 10639.2,
+      "peak_heap_bytes": 2412650.9000000004,
+      "allocated_bytes": 15994884.0,
+      "malloc_calls": 85220.1,
+      "cpu_ms_per_frame": 0.24200000000000002
+    },
+    "typing": {
+      "p95_us": 129.8,
+      "p99_us": 139.70000000000002,
+      "rss_kib": 10419.2,
+      "peak_heap_bytes": 2228162.2,
+      "allocated_bytes": 8128763,
+      "malloc_calls": 88664,
+      "cpu_ms_per_frame": 0.11000000000000001
+    },
+    "undo-long": {
+      "p95_us": 268.40000000000003,
+      "cpu_ms_per_frame": 0.24200000000000002,
+      "allocated_bytes": 38914274,
+      "malloc_calls": 396881,
+      "p99_us": 287.1,
+      "rss_kib": 10982.400000000001,
+      "peak_heap_bytes": 2370223.9000000004
+    },
+    "delete-long": {
+      "p95_us": 392.70000000000005,
+      "cpu_ms_per_frame": 0.33,
+      "rss_kib": 10775.6,
+      "peak_heap_bytes": 2221189.3000000003,
+      "allocated_bytes": 52963419,
+      "malloc_calls": 618023,
+      "p99_us": 410.3
+    }
+  },
+  "requirements": "Replace owned key label fragment/join engine with Display and borrow action binding iteration; preserve all binding, formatting and ordering contracts. At least 10% fewer long-typing malloc calls and 5% fewer allocated bytes; no allocation/call increases elsewhere. Retain all prior stricter bounds. Fixed 500 frames, 10 warmups, 160x48, zero history; excludes PTY/emulator delivery."
+}
