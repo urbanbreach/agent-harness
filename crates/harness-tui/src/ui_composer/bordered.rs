@@ -18,23 +18,10 @@ pub(crate) fn render_bordered_composer(
         super::collapsed::render_collapsed_composer(frame, app, area, theme, context);
         return;
     }
-    let composer_view = app.composer_view_model_for_area(area);
-    let mut extra_identity = Vec::new();
-    if !composer_view.attachments.is_empty() {
-        let labels = composer_view
-            .attachments
-            .iter()
-            .map(|attachment| attachment.label.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        extra_identity.push(labels);
-    }
-    if let Some(completion) = composer_view.completion.as_ref() {
-        extra_identity.push(format!("{} suggestions", completion.items.len()));
-    }
+    let composer_view = app.composer.render_data();
     let badge = composer_model_badge(
         app,
-        &extra_identity,
+        &composer_view.identity,
         usize::from(area.width.saturating_sub(5)),
     );
     let badge = if context.dock.variant == crate::view_model::ControlDockVariant::Startup {
@@ -62,9 +49,9 @@ pub(crate) fn render_bordered_composer(
     let ghost_visible = app.composer_ghost_eligible();
     let placeholder =
         bordered_composer_placeholder(app, &context, focused, composer_empty, ghost_visible);
-    let Some(resolved) = super::presentation::resolve_composer(
+    let resolved = super::presentation::resolve_composer(
         app,
-        &composer_view.editor,
+        &composer_view,
         &composer_text,
         context.dock.composer_focused,
         context.dock.composer_disabled,
@@ -74,9 +61,7 @@ pub(crate) fn render_bordered_composer(
         max_visible,
         strip.height,
         show_cursor,
-    ) else {
-        return;
-    };
+    );
     let glyph_prefix = format!(
         " {} ",
         resolved
@@ -188,13 +173,13 @@ pub(crate) fn render_bordered_composer(
                     cursor_row == row && cursor_col == display_width(line)
                 })
             {
-                if let Some(ghost) = composer_view.ghost.as_ref() {
+                if let Some(ghost) = composer_view.ghost {
                     let cursor_col = viewport.cursor.map_or(0, |(_, cursor_col)| cursor_col);
                     let available_width = usize::from(inner.width)
                         .saturating_sub(glyph_cols.saturating_add(cursor_col));
                     spans.push(Span::styled(
-                        super::ghost::truncate_to_width(&ghost.text, available_width),
-                        ghost.style,
+                        super::ghost::truncate_to_width(ghost, available_width),
+                        crate::ghost_suggestions::muted_style(),
                     ));
                 }
             }
@@ -256,7 +241,7 @@ pub(crate) fn composer_input_viewport(
     }
     let resolved = super::presentation::resolve_composer(
         app,
-        &app.composer_view_model_for_area(input).editor,
+        &app.composer.render_data(),
         &text,
         app.focus == Focus::Prompt,
         app.composer_disabled(),
@@ -266,7 +251,7 @@ pub(crate) fn composer_input_viewport(
         usize::from(input.height),
         input.height.saturating_add(2),
         app.focus == Focus::Prompt,
-    )?;
+    );
     Some((input, resolved.viewport))
 }
 

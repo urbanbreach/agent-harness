@@ -140,22 +140,6 @@ fn malformed_presentation_fails_closed_without_partial_geometry() {
 }
 
 #[test]
-fn production_wrappers_delegate_body_geometry_to_one_resolver() {
-    let bordered = include_str!("../ui_composer/bordered.rs");
-    let collapsed = include_str!("../ui_composer/collapsed.rs");
-    let document = include_str!("../ui_composer/document.rs");
-    for wrapper in [bordered, document] {
-        assert!(wrapper.contains("presentation::resolve_composer("));
-        assert!(!wrapper.contains("composer_viewport("));
-        assert!(wrapper.contains(".marker()"));
-        assert!(wrapper.contains(".right_label()"));
-    }
-    assert!(bordered.contains("collapsed::render_collapsed_composer("));
-    assert!(collapsed.contains("presentation::resolve_composer("));
-    assert!(collapsed.contains("resolved.body"));
-}
-
-#[test]
 fn plan_surface_owns_a_distinct_presentation_tone() {
     // Given: one editor rendered through the live, shell, and plan surfaces.
     let editor = ComposerEditor::from_text("draft");

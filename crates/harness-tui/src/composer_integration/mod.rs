@@ -27,6 +27,7 @@ pub use presentation_error::ComposerPresentationError;
 pub(crate) use presentation_policy::compact_draft_hint_priority;
 pub use slice::{AttachmentEntry, ComposerSlice, ComposerSliceError};
 pub use submission::{ComposerUiIntent, SubmissionAttachment, SubmissionError, UiIntent};
+pub(crate) use view_model::ComposerRenderData;
 pub use view_model::{
     AttachmentPreviewViewModel, CompletionViewModel, ComposerBorderViewModel, ComposerViewModel,
     GhostSuggestionViewModel,

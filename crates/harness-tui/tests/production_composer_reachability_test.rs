@@ -8,6 +8,14 @@ use harness_tui::composer_atoms::AttachmentId;
 use harness_tui::prompt_queue_actions::QueueAction;
 use harness_tui::theme_tokens::ViewportId;
 
+fn paint(app: &AppState, width: u16) -> String {
+    harness_tui::render_test::render_to_string(
+        app,
+        ratatui::layout::Rect::new(0, 0, width, 24),
+        |app, frame, _| harness_tui::ui::render_app(frame, app),
+    )
+}
+
 #[test]
 fn production_app_state_routes_keyboard_input_through_atom_composer() {
     // arrange
@@ -42,14 +50,20 @@ fn production_app_state_routes_completion_and_queue_actions() {
         "",
         CompletionSource::Slash,
     ));
+    assert!(paint(&app, 100).contains("0 suggestions"));
+    app.composer_apply_completion_results(&request, Vec::new())
+        .expect("empty completion result");
+    assert!(paint(&app, 100).contains("0 suggestions"));
     app.composer_apply_completion_results(
         &request,
         vec![CompletionItem::new(1, "status", "status")],
     )
     .expect("current completion results apply");
+    assert!(paint(&app, 100).contains("1 suggestions"));
 
     // When: Enter accepts the active completion and the queue is edited through AppState.
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(!paint(&app, 100).contains("suggestions"));
     app.composer_apply_queue_action(QueueAction::Queue {
         queued_id: "queued-1".to_owned(),
         text: "queued text".to_owned(),
@@ -85,6 +99,10 @@ fn production_app_state_routes_attachment_ingest_and_submit() {
     // When: the attachment is inserted into the production composer and submitted.
     app.composer_attach(AttachmentId::new(7), attachment)
         .expect("attachment attaches");
+    assert!(paint(&app, 100).contains("hello attachment"));
+    let narrow = paint(&app, 20);
+    assert!(narrow.contains("[attachmen"));
+    assert_eq!(narrow.lines().nth(19), Some("  │              │  "));
     let submission = app.composer_submission().expect("attachment submission");
 
     // act

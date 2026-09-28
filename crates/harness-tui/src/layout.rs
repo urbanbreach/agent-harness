@@ -1,9 +1,6 @@
 // allow: SIZE_OK — TUI layout math (frame plan + pane sizing)
 use crate::UnwrapOrAbort;
-use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    text::Line,
-};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::{AppState, Focus};
@@ -814,7 +811,9 @@ fn prompt_max_height(terminal_height: u16) -> u16 {
 }
 
 fn display_width(text: &str) -> usize {
-    Line::from(text.to_string()).width()
+    text.lines()
+        .map(unicode_width::UnicodeWidthStr::width)
+        .sum()
 }
 
 fn word_wrapped_line_count(line: &str, width: usize) -> usize {

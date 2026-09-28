@@ -1,0 +1,39 @@
+{
+  "reviewer": "/root/tui_review",
+  "decision": "approved for this intermediate atomic commit; full rewrite not approved",
+  "blocking_findings": [],
+  "verified_artifacts_before_review_receipt": 55,
+  "verified_source_files": 13,
+  "verified_performance_reports": 80,
+  "verified": [
+    "exact source patch, source hashes and line counts; net zero production-line change",
+    "all 80 archived performance reports and stage summaries",
+    "final 25/28 frozen limits and 16 exact output pairs",
+    "all 38 paired PNGs and terminal states, excluding disclosed observer counts",
+    "matching input and emulator environment after workspace normalization",
+    "four cleanup and terminal-restoration receipts",
+    "visual inspection of narrow, compact and restored-size frames",
+    "1635 TUI checks, seven gated PTY checks and quality records"
+  ],
+  "resolved_findings": [
+    {
+      "finding": "Atom row budgets differ from string painting, especially attachment placeholders and CRLF mirrors.",
+      "resolution": "Preserved separate layouts; extended public attachment rendering check passes on predecessor and fails deliberate mutation."
+    },
+    {
+      "finding": "Borrowed width calculation must match Ratatui line construction, including empty and newline cases.",
+      "resolution": "Exact str::lines plus UnicodeWidthStr formula matches locked Ratatui 0.1.2; minimum-one-cell caller behavior unchanged."
+    },
+    {
+      "finding": "Short latency failures cannot be dismissed as warmup.",
+      "resolution": "Published final raw tails and medians after first 100 actions; retained p95, p99 and CPU failures with cause unverified."
+    }
+  ],
+  "limits_retained": [
+    "short-draft p95 168 > 133.1 us, p99 200 > 179.3 us and CPU 0.12 > 0.11 ms/frame",
+    "paired short-draft candidate is slower; no material-regression clearance",
+    "public owned models, duplicate draft state, fallback history and retained layout engine remain",
+    "source reduction, sustained CPU, startup cadence, remaining environments and whole-rewrite review remain open"
+  ],
+  "reviewer_actions": "Read-only; no builds, tests or edits."
+}

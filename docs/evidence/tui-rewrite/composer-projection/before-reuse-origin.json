@@ -1,0 +1,27 @@
+{
+  "base": "68dd6c27462ed2435259b441bb06cf01eff7fd99",
+  "side": "before",
+  "sha256": "db95cc823c9db66ff789bb3aa0191edd9019c8f4026ffbac894001c18bac6f79",
+  "probe_sha256": "1abf49836e4f9fa07a495f00de3c7930d2181f1dba8782bb0111d9dac0f03554",
+  "fixture_sha256": "df377eb5d0762ae30d28270ef4c20a969df28263986356dd2fa45386b80f4d2f",
+  "production_sources": [
+    {
+      "path": "crates/harness-tui/src/composer_atoms/buffer.rs",
+      "sha256": "42fd687fa0e4d9088fd4337b4f971409a05c50ebce0e0531ec5a13172e5d41dd"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_atoms/mod.rs",
+      "sha256": "829348ed35be892b870c2a6ba1c52b7bc3d9ca1a8f185970c263d2b2a41ce470"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_editing/undo.rs",
+      "sha256": "adeecb4023636f63c01783ddb458abf9abece7199d2f6fd8949bc6e046fea93f"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_editing/mod.rs",
+      "sha256": "e1fd8eefb5d847180f935d8e24f4d60ecd50d8cacdb40a7491c85a01dafc5ef5"
+    }
+  ],
+  "source": "16ab0230547d73b0b9468eab683c880b920cda47",
+  "reused_from": "/tmp/tui-undo-journal/candidate.bin"
+}

@@ -146,6 +146,35 @@ impl ComposerPresentationConfig {
         }
     }
 
+    pub(crate) fn layout(
+        &self,
+        empty: bool,
+        viewport_rows: usize,
+    ) -> (u16, &'static [ComposerChrome], bool) {
+        let collapsed = empty
+            && !self.focused
+            && matches!(self.surface, ComposerSurface::Live | ComposerSurface::Plan);
+        let rows = if collapsed {
+            1
+        } else {
+            u16::try_from(viewport_rows)
+                .unwrap_or(u16::MAX)
+                .min(self.available_rows)
+                .max(1)
+        };
+        let chrome = if collapsed {
+            &[][..]
+        } else {
+            const CHROME: &[ComposerChrome] = &[
+                ComposerChrome::Border,
+                ComposerChrome::Metadata,
+                ComposerChrome::Title,
+            ];
+            &CHROME[..=usize::from(self.available_rows.saturating_sub(rows)).min(2)]
+        };
+        (rows, chrome, collapsed)
+    }
+
     pub fn with_placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = Some(placeholder.into());
         self
@@ -157,7 +186,7 @@ pub struct ComposerPresentation<'a> {
     editor: &'a ComposerEditorModel,
     config: ComposerPresentationConfig,
     text_rows: u16,
-    chrome: Vec<ComposerChrome>,
+    chrome: &'static [ComposerChrome],
     collapsed: bool,
 }
 
@@ -169,25 +198,8 @@ impl<'a> ComposerPresentation<'a> {
         if config.available_rows == 0 {
             return Err(ComposerPresentationError::ZeroAvailableRows);
         }
-        let collapsed = editor.text.is_empty()
-            && !config.focused
-            && matches!(
-                config.surface,
-                ComposerSurface::Live | ComposerSurface::Plan
-            );
-        let text_rows = if collapsed {
-            1
-        } else {
-            u16::try_from(editor.viewport_rows)
-                .unwrap_or(u16::MAX)
-                .min(config.available_rows)
-                .max(1)
-        };
-        let chrome = if collapsed {
-            Vec::new()
-        } else {
-            visible_chrome(config.available_rows.saturating_sub(text_rows))
-        };
+        let (text_rows, chrome, collapsed) =
+            config.layout(editor.text.is_empty(), editor.viewport_rows);
         Ok(Self {
             editor,
             config,
@@ -214,7 +226,7 @@ impl<'a> ComposerPresentation<'a> {
     }
 
     pub fn visible_chrome(&self) -> &[ComposerChrome] {
-        &self.chrome
+        self.chrome
     }
 
     pub const fn collapsed(&self) -> bool {
@@ -226,29 +238,10 @@ impl<'a> ComposerPresentation<'a> {
     }
 
     pub const fn tone(&self) -> ComposerTone {
-        match self.config.surface {
-            ComposerSurface::Shell => ComposerTone::Shell,
-            ComposerSurface::Plan => ComposerTone::Plan,
-            ComposerSurface::Startup
-            | ComposerSurface::Live
-            | ComposerSurface::Permission
-            | ComposerSurface::InlinePrompt => ComposerTone::Standard,
-        }
+        self.config.surface.tone()
     }
 
     pub fn shows(&self, chrome: ComposerChrome) -> bool {
         self.chrome.contains(&chrome)
     }
-}
-
-fn visible_chrome(mut rows: u16) -> Vec<ComposerChrome> {
-    let mut visible = vec![ComposerChrome::Border];
-    for (chrome, cost) in [(ComposerChrome::Metadata, 1), (ComposerChrome::Title, 1)] {
-        if rows < cost {
-            break;
-        }
-        rows = rows.saturating_sub(cost);
-        visible.push(chrome);
-    }
-    visible
 }

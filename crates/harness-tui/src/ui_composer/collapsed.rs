@@ -13,9 +13,9 @@ pub(super) fn render_collapsed_composer(
     let body_width = usize::from(area.width)
         .saturating_sub(display_width(&glyph))
         .max(1);
-    let Some(resolved) = super::presentation::resolve_composer(
+    let resolved = super::presentation::resolve_composer(
         app,
-        &app.composer_view_model_for_area(area).editor,
+        &app.composer.render_data(),
         &text,
         false,
         context.dock.composer_disabled,
@@ -25,9 +25,7 @@ pub(super) fn render_collapsed_composer(
         1,
         1,
         false,
-    ) else {
-        return;
-    };
+    );
     let line = Line::from(vec![
         Span::styled(
             glyph,

@@ -3,7 +3,7 @@ use ratatui::style::Style;
 
 use crate::attachment_lifecycle::{MimeKind, Preview};
 use crate::completion_controller::{CompletionDropdownGeometry, CompletionItem, CompletionStatus};
-use crate::composer_atoms::{AtomId, AttachmentId, WrappedLine};
+use crate::composer_atoms::{AtomBuffer, AtomId, AttachmentId, WrappedLine};
 use crate::ghost_suggestions::muted_style;
 use crate::prompt_queue_actions::{QueueLifecycle, QueueVisuals};
 use crate::shell_geometry::{cursor_for, layout_for, CursorPlacement, FocusTarget, ShellState};
@@ -12,6 +12,39 @@ use crate::theme_tokens::{BorderRole, ViewportId};
 use super::slice::ComposerSlice;
 use super::view_helpers::{atom_char_count, preview_label};
 use super::ComposerEditorModel;
+
+pub(crate) struct ComposerRenderData<'a> {
+    pub buffer: &'a AtomBuffer,
+    pub text: String,
+    pub identity: Vec<String>,
+    pub ghost: Option<&'a str>,
+}
+
+impl ComposerSlice {
+    pub(crate) fn render_data(&self) -> ComposerRenderData<'_> {
+        let text = self.editor.text();
+        let mut identity = Vec::new();
+        if !self.attachments.is_empty() {
+            identity.push(
+                self.attachments
+                    .iter()
+                    .map(|entry| preview_label(entry.attachment.preview()))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
+        }
+        if self.completion_trigger.is_some() && self.completion.status() != CompletionStatus::Hidden
+        {
+            identity.push(format!("{} suggestions", self.completion_items.len()));
+        }
+        ComposerRenderData {
+            buffer: self.editor.buffer(),
+            ghost: self.suggestions.ghost_for(&text),
+            text,
+            identity,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ComposerBorderViewModel {

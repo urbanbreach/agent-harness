@@ -1,82 +1,63 @@
 use super::*;
 
-pub(super) struct ResolvedComposer {
-    pub(super) body: String,
+pub(super) struct ResolvedComposer<'a> {
+    pub(super) body: &'a str,
     pub(super) surface: crate::composer_integration::ComposerSurface,
     pub(super) tone: crate::composer_integration::ComposerTone,
     pub(super) viewport: ComposerViewport,
-    pub(super) chrome: Vec<crate::composer_integration::ComposerChrome>,
+    pub(super) chrome: &'static [crate::composer_integration::ComposerChrome],
 }
 
-pub(super) fn resolve_composer(
+pub(super) fn resolve_composer<'a>(
     app: &AppState,
-    actual: &crate::composer_integration::ComposerEditorModel,
-    text: &str,
+    actual: &crate::composer_integration::ComposerRenderData<'_>,
+    text: &'a str,
     focused: bool,
     disabled: bool,
     startup: bool,
-    placeholder: &str,
+    placeholder: &'a str,
     body_width: usize,
     max_text_rows: usize,
     available_rows: u16,
     show_cursor: bool,
-) -> Option<ResolvedComposer> {
-    let editor = if actual.text() == text {
-        actual
-            .reflow(
-                u16::try_from(body_width).unwrap_or(u16::MAX).max(1),
-                max_text_rows.max(1),
-            )
-            .ok()?
+) -> ResolvedComposer<'a> {
+    // Atom widths budget rows; the separate string layout places painted cells.
+    let mirror;
+    let buffer = if actual.text == text {
+        actual.buffer
     } else {
-        legacy_mirror_editor(app, text, body_width, max_text_rows)?
+        mirror = crate::composer_atoms::AtomBuffer::from_text(text);
+        &mirror
     };
+    let rows = buffer
+        .wrap(u16::try_from(body_width).unwrap_or(u16::MAX).max(1))
+        .len()
+        .min(max_text_rows.max(1));
     let surface = surface_for(app, startup);
-    let presentation = crate::composer_integration::ComposerPresentation::resolve(
-        &editor,
-        crate::composer_integration::ComposerPresentationConfig::new(
-            surface,
-            focused,
-            disabled,
-            available_rows.max(1),
-        )
-        .with_placeholder(placeholder),
+    let (text_rows, chrome, _) = crate::composer_integration::ComposerPresentationConfig::new(
+        surface,
+        focused,
+        disabled,
+        available_rows.max(1),
     )
-    .ok()?;
+    .layout(text.is_empty(), rows);
+    let body = if text.is_empty() { placeholder } else { text };
     let mut viewport = composer_viewport(
-        presentation.body(),
+        body,
         body_width,
-        usize::from(presentation.text_rows())
-            .min(max_text_rows)
-            .max(1),
+        usize::from(text_rows).min(max_text_rows).max(1),
         show_cursor.then_some(app.composer_render_cursor()),
     );
     if !show_cursor {
         viewport.cursor = None;
     }
-    Some(ResolvedComposer {
-        body: presentation.body().to_owned(),
+    ResolvedComposer {
+        body,
         surface,
-        tone: presentation.tone(),
+        tone: surface.tone(),
         viewport,
-        chrome: presentation.visible_chrome().to_vec(),
-    })
-}
-
-fn legacy_mirror_editor(
-    app: &AppState,
-    text: &str,
-    body_width: usize,
-    max_text_rows: usize,
-) -> Option<crate::composer_integration::ComposerEditorModel> {
-    crate::composer_integration::ComposerEditorModel::legacy_mirror_adapter(
-        text,
-        app.composer_render_cursor(),
-        app.composer.selection_anchor,
-        u16::try_from(body_width).unwrap_or(u16::MAX).max(1),
-        max_text_rows.max(1),
-    )
-    .ok()
+        chrome,
+    }
 }
 
 fn surface_for(app: &AppState, startup: bool) -> crate::composer_integration::ComposerSurface {
