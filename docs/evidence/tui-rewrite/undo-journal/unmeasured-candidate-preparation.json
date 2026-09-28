@@ -1,0 +1,26 @@
+{
+  "base": "68dd6c27462ed2435259b441bb06cf01eff7fd99",
+  "side": "candidate",
+  "sha256": "e63b1d03a35a7703338c1099298a57066fc19dd44fb7dfbab15654db36c0c5e5",
+  "probe_sha256": "1abf49836e4f9fa07a495f00de3c7930d2181f1dba8782bb0111d9dac0f03554",
+  "source_sha256": "4228dbca1a786eb0f1dbfb6c46d2faf40bef8f70c88b9e1439e44c3621db9947",
+  "fixture_sha256": "d1b3648e6013627c23dcc9cd52034ea263bb0863471b687c1e70febafa7106bd",
+  "production_sources": [
+    {
+      "path": "crates/harness-tui/src/composer_editing/undo.rs",
+      "sha256": "adeecb4023636f63c01783ddb458abf9abece7199d2f6fd8949bc6e046fea93f"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_editing/mod.rs",
+      "sha256": "e1fd8eefb5d847180f935d8e24f4d60ecd50d8cacdb40a7491c85a01dafc5ef5"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_atoms/buffer.rs",
+      "sha256": "42fd687fa0e4d9088fd4337b4f971409a05c50ebce0e0531ec5a13172e5d41dd"
+    },
+    {
+      "path": "crates/harness-tui/src/composer_atoms/mod.rs",
+      "sha256": "829348ed35be892b870c2a6ba1c52b7bc3d9ca1a8f185970c263d2b2a41ce470"
+    }
+  ]
+}

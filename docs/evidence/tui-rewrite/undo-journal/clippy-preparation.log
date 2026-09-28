@@ -1,0 +1,28 @@
+warning: unnecessary parentheses around closure body
+  --> vendor/crossterm/src/terminal/sys/unix.rs:87:50
+   |
+87 |     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+   |                                                  ^                            ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+87 -     let file = File::open("/dev/tty").map(|file| (FileDesc::Owned(file.into())));
+87 +     let file = File::open("/dev/tty").map(|file| FileDesc::Owned(file.into()));
+   |
+
+warning: `crossterm` (lib) generated 1 warning (run `cargo clippy --fix --lib -p crossterm -- -D warnings` to apply 1 suggestion)
+    Checking harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Checking harness v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness)
+error: 7 bindings with single-character names in scope
+   --> crates/harness-tui/tests/composer_editing_test.rs:189:10
+    |
+189 |     let [a, b, mut c, d, e, x, y] = ["a", "👩💻", "👩💻", "d", "e", "x", "y"].map(snapshot);
+    |          ^  ^      ^  ^  ^  ^  ^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#many_single_char_names
+    = note: `-D clippy::many-single-char-names` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::many_single_char_names)]`
+
+error: could not compile `harness-tui` (test "composer_editing_test") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

@@ -1,0 +1,39 @@
+{
+  "reviewer": "/root/tui_review",
+  "decision": "approved for this intermediate atomic commit; full rewrite not approved",
+  "blocking_findings": [],
+  "verified_artifacts_before_review_receipt": 68,
+  "verified_source_files": 6,
+  "verified_performance_reports": 80,
+  "verified": [
+    "exact source patch, source hashes and line counts; production increase of 120 lines",
+    "all 80 archived report quantiles and all five stage summaries",
+    "final 26/28 limits and 16 exact output pairs",
+    "34 final terminal pairs plus eight retained earlier pairs; exact PNG/full-state comparisons except disclosed counters",
+    "matching input/environment apart from normalized fixture workspace",
+    "all six run cleanup/restoration receipts and retained binary/source hashes",
+    "visual inspection of grouped deletion and undo images",
+    "1636 TUI checks, seven gated PTY checks and recorded quality checks"
+  ],
+  "resolved_findings": [
+    {
+      "finding": "public snapshot behavior includes arbitrary record gaps, allocator history, empty selection and differing current values",
+      "resolution": "bridges preserve exact complete snapshots; public behavioral sequence and red mutation verify restoration, equality and redo semantics"
+    },
+    {
+      "finding": "deep undo could exhaust an accidentally shortened history while ending with the same text",
+      "resolution": "untimed first and last two undo/redo assertions; rebuild both binaries with matching fixture; preserve original baseline"
+    },
+    {
+      "finding": "grouped deletion can copy a growing deleted range",
+      "resolution": "added predecessor baseline and frozen bounds before candidate measurement; all aggregate bounds pass, late-burst penalty retained explicitly"
+    }
+  ],
+  "limits_retained": [
+    "short-draft p95 140 > 135.3 us and p99 197 > 179.3 us; final 26/28 acceptance",
+    "grouped deletion CPU +10%; last 100 actions median +15.8%; not cost-neutral or demonstrated scalable",
+    "legacy AppState, duplicate editor state and fallback history remain",
+    "whole-rewrite source, sustained CPU, cadence, environment and final review criteria remain incomplete"
+  ],
+  "reviewer_actions": "Read-only; no builds, tests or edits."
+}

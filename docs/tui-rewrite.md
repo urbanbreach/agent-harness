@@ -1082,6 +1082,31 @@ are retained. Earlier typing latency failures and the sustained-runtime targets
 remain open. Evidence is in
 [`evidence/tui-rewrite/prompt-editing`](evidence/tui-rewrite/prompt-editing).
 
+## Undo journal
+
+The atom editor now stores changed atom ranges and state metadata around one
+complete tip per undo/redo stack. Bridges preserve changes between recorded
+edits, and immutable entries share payloads across editor clones. Undo depth,
+delete grouping, atom allocator state, cursor, selection, history and the public
+snapshot contracts remain intact. This adds 120 production lines; whole TUI
+source is 166,248 lines, 8.60% below the original and above the reduction target.
+
+All 1,636 TUI checks, seven gated PTY checks and quality checks pass. Thirty-four
+paired actual-runtime xterm frames match exactly, including deep undo, redo
+branching and single-step restoration of grouped deletion. Terminal and resource
+cleanup pass. The earlier eight-frame deep-undo capture is also retained.
+
+Long typing reduces peak heap by 81.2% and RSS by 60.4%; CPU stays at 0.32 ms/frame.
+Deep undo/redo reduces peak heap by 81.2%. Grouped deletion allocates 4.4% more
+bytes and takes 10% more CPU, within its frozen aggregate limits. The last hundred
+deletions are 15.8% slower at the median, so grouping remains a measured cost.
+The final comparison passes 26 of 28 limits: short typing fails p95 at 140 µs
+against 135.3 and p99 at 197 µs against 179.3. All 80 raw reports, including the
+earlier passing comparison, remain available. Timing excludes terminal-emulator
+latency. Earlier latency failures, source/state replacement and sustained-runtime
+targets remain open. Evidence is in
+[`evidence/tui-rewrite/undo-journal`](evidence/tui-rewrite/undo-journal).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

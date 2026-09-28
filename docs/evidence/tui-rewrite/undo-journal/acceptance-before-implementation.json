@@ -1,0 +1,69 @@
+{
+  "recorded_at": "2026-09-27T23:44:16.282182+00:00",
+  "source": "68dd6c27462ed2435259b441bb06cf01eff7fd99",
+  "baseline": {
+    "typing-long": {
+      "p50_us": 329,
+      "p95_us": 357,
+      "p99_us": 377,
+      "bytes": 20000,
+      "rss_kib": 25064,
+      "cpu_ms_per_frame": 0.34,
+      "allocated_bytes": 339548003,
+      "peak_heap_bytes": 11966484,
+      "malloc_calls": 4840525
+    },
+    "typing": {
+      "p50_us": 111,
+      "p95_us": 124,
+      "p99_us": 131,
+      "bytes": 140750,
+      "rss_kib": 9412,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 9466323,
+      "peak_heap_bytes": 2025603,
+      "malloc_calls": 105517
+    },
+    "undo-long": {
+      "p50_us": 320,
+      "p95_us": 341,
+      "p99_us": 354,
+      "bytes": 20000,
+      "rss_kib": 24968,
+      "cpu_ms_per_frame": 0.32,
+      "allocated_bytes": 351664412,
+      "peak_heap_bytes": 11757517,
+      "malloc_calls": 5040736
+    }
+  },
+  "limits": {
+    "typing-long": {
+      "p95_us": 392.70000000000005,
+      "p99_us": 477,
+      "rss_kib": 18798.0,
+      "peak_heap_bytes": 5983242.0,
+      "allocated_bytes": 332757042.94,
+      "malloc_calls": 4743714.5,
+      "cpu_ms_per_frame": 0.324
+    },
+    "typing": {
+      "p95_us": 135.3,
+      "p99_us": 179.3,
+      "rss_kib": 10472.0,
+      "peak_heap_bytes": 2228162.2,
+      "allocated_bytes": 9891611.16,
+      "malloc_calls": 113097.6,
+      "cpu_ms_per_frame": 0.12000000000000001
+    },
+    "undo-long": {
+      "p95_us": 375.1,
+      "cpu_ms_per_frame": 0.35200000000000004,
+      "allocated_bytes": 386830853.20000005,
+      "malloc_calls": 5544809.600000001,
+      "p99_us": 454,
+      "rss_kib": 18726.0,
+      "peak_heap_bytes": 5878758.5
+    }
+  },
+  "requirements": "Replace full-snapshot retention with an undo journal. At least50% lower peak and25% lower RSS for long typing and deep undo; at least2% fewer long-typing allocated bytes/malloc calls; all prior stricter typing limits retained, including CPU.324 and shortp99 179.3. Undo latency/CPU/allocation bounded independently. Preserve exact content, undo depth, IDs, metadata, branching and cleanup."
+}

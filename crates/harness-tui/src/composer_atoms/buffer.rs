@@ -34,6 +34,24 @@ pub struct AtomBuffer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AtomBufferPatch {
+    start: usize,
+    removed: usize,
+    inserted: Vec<ComposerAtom>,
+    next_atom_id: u64,
+}
+
+impl AtomBufferPatch {
+    pub(crate) fn apply(&self, buffer: &mut AtomBuffer) {
+        buffer.atoms.splice(
+            self.start..self.start + self.removed,
+            self.inserted.iter().cloned(),
+        );
+        buffer.next_atom_id = self.next_atom_id;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrappedLine {
     pub atom_ids: Vec<AtomId>,
     pub display_width: u16,
@@ -71,6 +89,27 @@ impl AtomBuffer {
             atoms,
             next_atom_id,
         })
+    }
+
+    pub(crate) fn patch_to(&self, target: &Self) -> AtomBufferPatch {
+        let start = self
+            .atoms
+            .iter()
+            .zip(&target.atoms)
+            .take_while(|(a, b)| a == b)
+            .count();
+        let suffix = self.atoms[start..]
+            .iter()
+            .rev()
+            .zip(target.atoms[start..].iter().rev())
+            .take_while(|(a, b)| a == b)
+            .count();
+        AtomBufferPatch {
+            start,
+            removed: self.atoms.len() - start - suffix,
+            inserted: target.atoms[start..target.atoms.len() - suffix].to_vec(),
+            next_atom_id: target.next_atom_id,
+        }
     }
 
     pub fn atoms(&self) -> &[ComposerAtom] {

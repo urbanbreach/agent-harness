@@ -10,6 +10,7 @@ use ratatui::{
     Terminal, TerminalOptions, Viewport,
 };
 use serde_json::json;
+use unicode_segmentation::UnicodeSegmentation;
 
 #[path = "support/rewrite_journey.rs"]
 mod journey;
@@ -162,9 +163,22 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
         j.app.replace_events(events);
     }
     let mut draft = String::new();
-    if matches!(scenario.as_str(), "typing-long" | "navigation") {
-        draft = "plain 界 e\u{301} 👩‍💻 ".repeat(32);
+    if matches!(
+        scenario.as_str(),
+        "typing-long" | "navigation" | "undo-long" | "delete-long"
+    ) {
+        draft = "plain 界 e\u{301} 👩‍💻 ".repeat(if scenario == "delete-long" { 64 } else { 32 });
         j.app.handle_paste(&draft);
+        assert_eq!(j.app.composer.prompt_buffer, draft);
+    }
+    if scenario == "undo-long" {
+        assert!(frames > 0 && frames % 4 == 0);
+        for _ in 0..frames / 2 {
+            j.app
+                .handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+            j.app
+                .handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        }
         assert_eq!(j.app.composer.prompt_buffer, draft);
     }
     let construction_us = construction.elapsed().as_micros();
@@ -235,6 +249,23 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
             "tools" => j
                 .app
                 .set_generic_tool_output_visible_for_test(index % 2 == 0),
+            "delete-long" => j
+                .app
+                .handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE)),
+            "undo-long" => {
+                let undo = if index < 10 {
+                    index % 2 == 0
+                } else {
+                    index - 10 < frames / 2
+                };
+                let modifiers = if undo {
+                    KeyModifiers::CONTROL
+                } else {
+                    KeyModifiers::CONTROL | KeyModifiers::SHIFT
+                };
+                j.app
+                    .handle_key(KeyEvent::new(KeyCode::Char('z'), modifiers));
+            }
             "navigation" => {
                 let (code, modifiers) = match index % 4 {
                     0 => (KeyCode::Home, KeyModifiers::NONE),
@@ -286,6 +317,28 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
                 [length, length - 7, 0, 6][index - 10]
             );
         }
+        if scenario == "undo-long"
+            && [
+                10,
+                11,
+                8 + frames / 2,
+                9 + frames / 2,
+                10 + frames / 2,
+                11 + frames / 2,
+                frames + 8,
+                frames + 9,
+            ]
+            .contains(&index)
+        {
+            if index % 2 == 0 {
+                assert_eq!(
+                    j.app.composer.prompt_buffer.strip_suffix('x'),
+                    Some(draft.as_str())
+                );
+            } else {
+                assert_eq!(j.app.composer.prompt_buffer, draft);
+            }
+        }
         if scenario == "typing-long" {
             match index {
                 10 => assert_eq!(
@@ -307,6 +360,21 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
             _ => length - 7,
         };
         assert_eq!(j.app.composer.prompt_cursor, expected);
+    }
+    if scenario == "undo-long" {
+        assert_eq!(j.app.composer.prompt_buffer, draft);
+        assert_eq!(j.app.composer.prompt_cursor, draft.chars().count());
+    }
+    if scenario == "delete-long" {
+        let remaining = draft
+            .graphemes(true)
+            .count()
+            .checked_sub(frames + 10)
+            .ok_or("delete workload must not exhaust the draft")?;
+        assert_eq!(
+            j.app.composer.prompt_buffer,
+            draft.graphemes(true).take(remaining).collect::<String>()
+        );
     }
     let after = resources()?;
     if scenario == "typing-long" {

@@ -1,0 +1,19 @@
+before delete-long-1 0
+before delete-long-2 0
+before delete-long-3 0
+before delete-long-alloc 0
+{
+  "before": {
+    "delete-long": {
+      "p50_us": 394,
+      "p95_us": 540,
+      "p99_us": 564,
+      "bytes": 31187,
+      "rss_kib": 10036,
+      "cpu_ms_per_frame": 0.4,
+      "allocated_bytes": 460283428,
+      "peak_heap_bytes": 2045277,
+      "malloc_calls": 6419287
+    }
+  }
+}
