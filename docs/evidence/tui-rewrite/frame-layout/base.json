@@ -1,0 +1,41 @@
+{
+  "base": "f09849404888677de613a5df2646dd9c554a93ce",
+  "source_tree": "7a94c4de80b4dda34c13f4a45591747a79f68c57",
+  "sources": [
+    {
+      "path": "crates/harness-tui/src/layout.rs",
+      "sha256": "bfd8069fb59878109bff0826525c6b7239032a5300747c42266c8776c136ed77",
+      "lines": 1306
+    },
+    {
+      "path": "crates/harness-tui/src/layout/surfaces.rs",
+      "sha256": "120e7352c43a2d6420038adcf26339809e78040aee32ffa0aa24e73c7b4fbbbb",
+      "lines": 123
+    },
+    {
+      "path": "crates/harness-tui/src/layout/overlays.rs",
+      "sha256": "a897a50f429cf546e1811db3851ef893c4bb98d79710b5503420acbc9b50d116",
+      "lines": 268
+    },
+    {
+      "path": "crates/harness-tui/src/layout/permission.rs",
+      "sha256": "efd8f2df7986281510cc32779fd13d6907b87edd31ce65845d88d82da2fab484",
+      "lines": 814
+    },
+    {
+      "path": "crates/harness-tui/src/layout_live_dock_tests.rs",
+      "sha256": "28aa98b30a1598c2c2260b3105707438d195a4d9b3347ddbda3816aec42a0600",
+      "lines": 227
+    },
+    {
+      "path": "crates/harness-tui/src/layout_live_dock_test_fixtures.rs",
+      "sha256": "e744a08ed1fd02640136d867306c53b29d2fee01c898785b76c1fd845561f17a",
+      "lines": 228
+    },
+    {
+      "path": "crates/harness-tui/src/lib_tests/shell_geometry.rs",
+      "sha256": "94ad5ab7e95b231268ec9daf9b9b73069a687ce955e3448707e7333d1a4f459c",
+      "lines": 269
+    }
+  ]
+}

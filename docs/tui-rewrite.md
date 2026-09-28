@@ -1292,3 +1292,43 @@ preparation failures, source receipts and reproduction commands are in
 
 The rewrite is not complete while a required interaction, unexplained visual
 difference, resource measurement, or review remains outstanding.
+
+## Frame/session/dock replacement
+
+`FrameLayoutPlan::for_app` now projects directly into the plan shared by paint
+and hit testing. Its private session projection measures the composer once,
+retains permission/question dock ownership, and sizes todo before terminal panes.
+The details overlay spans the post-todo body. Fixed vertical partitions use
+saturating rectangle arithmetic, preserving footer priority at tiny heights and
+raw horizontal fields. Public plan fields, zero-height rectangles, replay sidebar
+reserves, child footer rules and startup/live inset differences remain unchanged.
+There is no intermediate `SessionShellLayout`, cache or backend change.
+
+Two existing interaction checks now cover overlapping pane wheel targets and a
+painted question option clicked after compact resizing. They pass on the
+predecessor, and a deliberate overlay-sizing mutation fails the wheel check.
+The frozen oracle matches 75,168 complete frame plans across 29 states, three
+themes and 864 rectangles. Review added help and all rewind phase variants.
+All 1,634 TUI checks, seven gated PTY checks and quality checks pass. One obsolete
+registered test and its test-only lifecycle helper are removed; useful layout
+assertions are retained.
+
+This slice removes 262 production lines and 204 net test/helper lines. The source
+tree totals 164,478 lines, still above the 90,941 target. New/replaced production
+modules remain below 500 lines. The untouched permission geometry module and
+other retained areas still need work.
+
+Paired long typing uses 13.1% fewer malloc calls and 12.5% less measured CPU time.
+Allocated bytes fall only 1.6%, missing the frozen 5% target. Fifteen of 28 limits
+pass; all twelve inherited absolute latency/CPU limits still fail. Raw failed
+samples and unchanged bounds remain in
+[`evidence/tui-rewrite/frame-layout`](evidence/tui-rewrite/frame-layout).
+These renderer/input measurements exclude PTY/emulator latency. The full rewrite,
+visual/environment matrix, animation cadence and sustained resource targets
+remain incomplete.
+
+All 70 final actual-runtime PTY/xterm frame pairs match in PNGs, cells, styles
+and cursors; all eight runs restore terminal state and clean up. The layout
+journey covers question resizing, draft restoration, overlapping panes and help.
+The first fixture attempt used an unavailable palette command and is retained
+with its timeout; the corrected journey uses existing keyboard shortcuts.

@@ -208,6 +208,23 @@ pub(super) fn hovered_wheel_target_uses_layout_plan() {
     assert_ne!(default_plan.details_overlay, themed_plan.details_overlay);
     assert_eq!(default_target, Some(ui::WheelTarget::Transcript));
     assert_eq!(themed_target, Some(ui::WheelTarget::Inspector));
+
+    themed_app.terminal_panel.visible = true;
+    themed_app.todo_pane.visible = true;
+    let plan = layout::FrameLayoutPlan::for_app(&themed_app, area);
+    let todo = plan.todo.unwrap_or_abort();
+    let terminal = plan.terminal_panel.unwrap_or_abort();
+    let overlay = plan.details_overlay.unwrap_or_abort();
+    assert_eq!(overlay.y, plan.shell.y + todo.height + 2);
+    assert_eq!(overlay.bottom(), terminal.bottom());
+    assert_eq!(
+        ui::hovered_wheel_target(&themed_app, area, overlay.x, terminal.y),
+        Some(ui::WheelTarget::Inspector)
+    );
+    assert_eq!(
+        ui::hovered_wheel_target(&themed_app, area, terminal.x, terminal.y),
+        Some(ui::WheelTarget::Terminal)
+    );
 }
 
 pub(super) fn layout_plan_minimum_geometry_matches_shell_contract() {

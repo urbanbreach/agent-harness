@@ -1,0 +1,26 @@
+[
+  {
+    "journey": "layout",
+    "side": "before",
+    "started_at": "2026-09-28T03:42:58.007679+00:00",
+    "command": [
+      "node",
+      "/tmp/tui-frame-layout/capture-layout.mjs",
+      "/tmp/tui-frame-layout/before-probe",
+      ".omo/evidence/tui-rewrite/frame-layout/layout/before"
+    ],
+    "exit": 0
+  },
+  {
+    "journey": "layout",
+    "side": "candidate",
+    "started_at": "2026-09-28T03:43:39.321129+00:00",
+    "command": [
+      "node",
+      "/tmp/tui-frame-layout/capture-layout.mjs",
+      "/tmp/tui-frame-layout/candidate-probe",
+      ".omo/evidence/tui-rewrite/frame-layout/layout/candidate"
+    ],
+    "exit": 0
+  }
+]

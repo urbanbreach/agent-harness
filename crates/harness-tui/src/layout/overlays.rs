@@ -4,9 +4,6 @@ use super::{SessionGeometryContract, SessionSidebarMode};
 use crate::app::AppState;
 use crate::theme::{LiveShellLayout, Theme};
 
-#[cfg(test)]
-use crate::theme::LifecycleSurfaceLayout;
-
 const COMMAND_PALETTE_WIDTH: u16 = 60;
 const SESSION_HISTORY_WIDTH: u16 = 78;
 const FORK_SELECTOR_WIDTH: u16 = 88;
@@ -234,35 +231,4 @@ fn toggles_menu_visible_rows(app: &AppState) -> usize {
             (rows.saturating_add(section_rows).saturating_add(1), section)
         })
         .0
-}
-
-#[cfg(test)]
-pub(super) fn lifecycle_overlay_area(
-    area: Rect,
-    theme: &Theme,
-    lifecycle: LifecycleSurfaceLayout,
-) -> Option<Rect> {
-    let shell_tokens = theme.token_families().live_shell;
-    let horizontal_margin = shell_tokens.spacing.rhythm.modal_margin.saturating_mul(2);
-    let vertical_margin = shell_tokens.spacing.rhythm.modal_margin.saturating_mul(2);
-    let popup_width = lifecycle
-        .overlay
-        .width
-        .min(area.width.saturating_sub(horizontal_margin));
-    let popup_height = lifecycle
-        .overlay
-        .height
-        .min(area.height.saturating_sub(vertical_margin));
-
-    if popup_width == 0 || popup_height == 0 {
-        return None;
-    }
-
-    let popup_x = area
-        .x
-        .saturating_add((area.width.saturating_sub(popup_width)) / 2);
-    let popup_y = area
-        .y
-        .saturating_add((area.height.saturating_sub(popup_height)) / 2);
-    Some(Rect::new(popup_x, popup_y, popup_width, popup_height))
 }

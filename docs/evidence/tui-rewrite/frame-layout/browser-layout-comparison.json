@@ -1,0 +1,101 @@
+{
+  "comparisons": [
+    {
+      "name": "01-ready.png",
+      "pixels_equal": true,
+      "png_sha256": "390fd0e558c2caa77fa1cd4d65a569cbed16e5b8dbef814b8f80a5d9f2f9728c",
+      "observer_differences": {}
+    },
+    {
+      "name": "02-draft.png",
+      "pixels_equal": true,
+      "png_sha256": "b63c1d2255817dbc5fc0b96fbff7f1336af31c84738c1b9d2e37ffff65210a95",
+      "observer_differences": {}
+    },
+    {
+      "name": "03-question.png",
+      "pixels_equal": true,
+      "png_sha256": "0cfdac893519152cc6343d89986592a8503fd95a68c52dedcccc484042ee8c9a",
+      "observer_differences": {}
+    },
+    {
+      "name": "04-question-compact.png",
+      "pixels_equal": true,
+      "png_sha256": "eae31655064a2624cebf8e110af9e0a945020dd4fe5f50e8072dc9397bb4c561",
+      "observer_differences": {}
+    },
+    {
+      "name": "05-question-tiny.png",
+      "pixels_equal": true,
+      "png_sha256": "0ac3793d5278cc15e5ad64aef923d918b4381656435dd0b64d3508aa2d909030",
+      "observer_differences": {}
+    },
+    {
+      "name": "06-question-restored.png",
+      "pixels_equal": true,
+      "png_sha256": "cfb27429afe7a28c48456baf2ad64766be439e4d9b1782d349ff07c9caf30212",
+      "observer_differences": {}
+    },
+    {
+      "name": "07-question-selection.png",
+      "pixels_equal": true,
+      "png_sha256": "b4922b34a577f1177196cd818e384fccc6116f6ca0363e5559063046a1320a20",
+      "observer_differences": {}
+    },
+    {
+      "name": "08-draft-restored.png",
+      "pixels_equal": true,
+      "png_sha256": "b63c1d2255817dbc5fc0b96fbff7f1336af31c84738c1b9d2e37ffff65210a95",
+      "observer_differences": {}
+    },
+    {
+      "name": "09-terminal.png",
+      "pixels_equal": true,
+      "png_sha256": "a3ea3e3f0dbfe3449a778f067b81415e329d2a8996e745b70458e8cece28a348",
+      "observer_differences": {}
+    },
+    {
+      "name": "10-todo.png",
+      "pixels_equal": true,
+      "png_sha256": "c7f871ff5f769e2343611da01ba259974a0943e2973a70c4ee558f491c348c94",
+      "observer_differences": {}
+    },
+    {
+      "name": "11-details.png",
+      "pixels_equal": true,
+      "png_sha256": "9a539b9e2b80c60302394dce1b8202f08c2ab13cfd1b16e733e141af0dabdbd9",
+      "observer_differences": {}
+    },
+    {
+      "name": "12-panes-compact.png",
+      "pixels_equal": true,
+      "png_sha256": "4d4471f092cfc1d3c57829821362eeabe3b10b88bdfd244559be7c18a65fcede",
+      "observer_differences": {}
+    },
+    {
+      "name": "13-panes-restored.png",
+      "pixels_equal": true,
+      "png_sha256": "9a539b9e2b80c60302394dce1b8202f08c2ab13cfd1b16e733e141af0dabdbd9",
+      "observer_differences": {}
+    },
+    {
+      "name": "14-review.png",
+      "pixels_equal": true,
+      "png_sha256": "c8058859f3b9575d62c4f4a490513b0fa4518991764e331afec8b9df1ee53fa4",
+      "observer_differences": {}
+    },
+    {
+      "name": "15-review-compact.png",
+      "pixels_equal": true,
+      "png_sha256": "490a6df247e37636def2c410468343e78a9039eba1a5d477233405c961b96048",
+      "observer_differences": {}
+    },
+    {
+      "name": "16-review-closed.png",
+      "pixels_equal": true,
+      "png_sha256": "1072b3ffd3648db418264267d866d7297162cff5d14f5c4911c9b107996ecb21",
+      "observer_differences": {}
+    }
+  ],
+  "both_runs_restore_and_cleanup": true
+}

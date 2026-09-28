@@ -3,17 +3,13 @@ use super::*;
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision, PermissionRequestedEvent,
     ProviderRequestFinishedEvent, ProviderRequestStartedEvent, RunFailedEvent, TaskCancelledEvent,
-    TaskScheduleState, TaskScheduledEvent, TaskTerminalScope, ToolCallRequestedEvent,
-    ToolCallStartedEvent, SCHEMA_VERSION,
+    TaskTerminalScope, SCHEMA_VERSION,
 };
 
 #[derive(Clone, Copy)]
 pub(super) struct ExpectedDockRows {
     pub(super) width: u16,
     pub(super) height: u16,
-    pub(super) status: u16,
-    pub(super) composer: u16,
-    pub(super) disclosure: u16,
     pub(super) outer_spacer: u16,
 }
 
@@ -21,57 +17,36 @@ pub(super) const VIEWPORTS: [ExpectedDockRows; 7] = [
     ExpectedDockRows {
         width: 120,
         height: 50,
-        status: 42,
-        composer: 44,
-        disclosure: 48,
         outer_spacer: 1,
     },
     ExpectedDockRows {
         width: 120,
         height: 40,
-        status: 32,
-        composer: 34,
-        disclosure: 38,
         outer_spacer: 1,
     },
     ExpectedDockRows {
         width: 100,
         height: 30,
-        status: 22,
-        composer: 24,
-        disclosure: 28,
         outer_spacer: 1,
     },
     ExpectedDockRows {
         width: 80,
         height: 24,
-        status: 16,
-        composer: 18,
-        disclosure: 22,
         outer_spacer: 1,
     },
     ExpectedDockRows {
         width: 79,
         height: 24,
-        status: 16,
-        composer: 18,
-        disclosure: 22,
         outer_spacer: 1,
     },
     ExpectedDockRows {
         width: 60,
         height: 20,
-        status: 15,
-        composer: 16,
-        disclosure: 19,
         outer_spacer: 0,
     },
     ExpectedDockRows {
         width: 140,
         height: 40,
-        status: 32,
-        composer: 34,
-        disclosure: 38,
         outer_spacer: 1,
     },
 ];
@@ -110,59 +85,6 @@ fn provider_started(seq: u64, request_id: &str) -> EventEnvelopeV1 {
 pub(super) fn waiting_app() -> AppState {
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(provider_started(1, "req-waiting"));
-    app
-}
-
-pub(super) fn interruptible_waiting_app() -> AppState {
-    let mut app = waiting_app();
-    app.ingest_event(envelope(
-        2,
-        Some("req-waiting"),
-        EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task-waiting".into(),
-            state: TaskScheduleState::Started,
-            queue_key: Some("provider_model:default:model-1".to_string()),
-            metadata: None,
-        }),
-    ));
-    app
-}
-
-pub(super) fn parked_app() -> AppState {
-    let mut app = waiting_app();
-    app.ingest_event(envelope(
-        2,
-        Some("req-waiting"),
-        EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: "tool-background-output".into(),
-            tool_id: "background_output".to_string(),
-            args_summary: r#"{"task_id":"bg-1","block":true}"#.to_string(),
-            args_digest: "digest-background-output".to_string(),
-            metadata: None,
-        }),
-    ));
-    app.ingest_event(envelope(
-        3,
-        Some("req-waiting"),
-        EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: "tool-background-output".into(),
-        }),
-    ));
-    app
-}
-
-pub(super) fn watcher_app() -> AppState {
-    let mut app = AppState::new_live(None, false, None);
-    app.ingest_event(envelope(
-        1,
-        Some("req-watcher"),
-        EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task-watcher".into(),
-            state: TaskScheduleState::Started,
-            queue_key: Some("background:analysis".to_string()),
-            metadata: None,
-        }),
-    ));
     app
 }
 

@@ -1,0 +1,86 @@
+[
+  {
+    "journey": "runtime",
+    "side": "before",
+    "started_at": "2026-09-28T03:35:03.726492+00:00",
+    "command": [
+      "node",
+      "/tmp/tui-frame-layout/capture-runtime.mjs",
+      "/tmp/tui-frame-layout/before-probe",
+      ".omo/evidence/tui-rewrite/frame-layout/runtime/before"
+    ],
+    "exit": 0
+  },
+  {
+    "journey": "runtime",
+    "side": "candidate",
+    "started_at": "2026-09-28T03:35:43.964329+00:00",
+    "command": [
+      "node",
+      "/tmp/tui-frame-layout/capture-runtime.mjs",
+      "/tmp/tui-frame-layout/candidate-probe",
+      ".omo/evidence/tui-rewrite/frame-layout/runtime/candidate"
+    ],
+    "exit": 0
+  },
+  {
+    "journey": "composer",
+    "side": "before",
+    "started_at": "2026-09-28T03:36:25.722477+00:00",
+    "command": [
+      "node",
+      "/tmp/tui-frame-layout/capture-composer.mjs",
+      "/tmp/tui-frame-layout/before-probe",
+      ".omo/evidence/tui-rewrite/frame-layout/composer/before"
+    ],
+    "exit": 0
+  },
+  {
+    "journey": "composer",
+    "side": "candidate",
+    "started_at": "2026-09-28T03:37:48.331070+00:00",
+    "command": [
+      "node",
+      "/tmp/tui-frame-layout/capture-composer.mjs",
+      "/tmp/tui-frame-layout/candidate-probe",
+      ".omo/evidence/tui-rewrite/frame-layout/composer/candidate"
+    ],
+    "exit": 0
+  },
+  {
+    "journey": "grouped",
+    "side": "before",
+    "started_at": "2026-09-28T03:39:14.897903+00:00",
+    "command": [
+      "node",
+      "/tmp/tui-frame-layout/capture-grouped.mjs",
+      "/tmp/tui-frame-layout/before-probe",
+      ".omo/evidence/tui-rewrite/frame-layout/grouped/before"
+    ],
+    "exit": 0
+  },
+  {
+    "journey": "grouped",
+    "side": "candidate",
+    "started_at": "2026-09-28T03:39:51.049942+00:00",
+    "command": [
+      "node",
+      "/tmp/tui-frame-layout/capture-grouped.mjs",
+      "/tmp/tui-frame-layout/candidate-probe",
+      ".omo/evidence/tui-rewrite/frame-layout/grouped/candidate"
+    ],
+    "exit": 0
+  },
+  {
+    "journey": "layout",
+    "side": "before",
+    "started_at": "2026-09-28T03:40:28.566114+00:00",
+    "command": [
+      "node",
+      "/tmp/tui-frame-layout/capture-layout.mjs",
+      "/tmp/tui-frame-layout/before-probe",
+      ".omo/evidence/tui-rewrite/frame-layout/layout/before"
+    ],
+    "exit": 1
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "reviewer": "/root/tui_review",
+  "recorded_at": "2026-09-28T03:51:48.265061+00:00",
+  "decision": "approved for intermediate atomic commit; no blocking findings",
+  "read_only": true,
+  "pre_review_artifact_count": 91,
+  "pre_review_manifest_sha256": "e87f9a57937735d16fb621739d6bd9bc66dc15430cc47df6ab71fc00fed0c4b2",
+  "verified": [
+    "91 artifact receipts, nine source receipts and staged source patch",
+    "75168 complete frame-plan comparisons",
+    "behavioral predecessor green and overlay mutation red",
+    "1634 TUI checks and seven gated PTY checks",
+    "70 exact PNG/full-state pairs except disclosed observer counters",
+    "eight natural exits with terminal and resource restoration",
+    "compact question, overlapping panes and Help visually inspected",
+    "48 performance reports and all frozen limits",
+    "failed preparation attempts and earlier script versions retained"
+  ],
+  "resolved_findings": [
+    "Added active review and all rewind phase variants to the oracle",
+    "Preserved compiled_base before rebinding baseline receipt",
+    "Generated source patch against explicit frozen base including staged and untracked source changes"
+  ],
+  "limitations": [
+    "15 of 28 frozen performance limits pass",
+    "Long-typing allocation bytes miss the 5% target",
+    "All 12 inherited latency/CPU limits fail",
+    "Earlier slowdown remains unexplained",
+    "Remaining legacy implementation, source-reduction target and whole-rewrite completion remain open"
+  ]
+}

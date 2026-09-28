@@ -1,0 +1,50 @@
+[
+  {
+    "name": "oracle",
+    "command": [
+      "python3",
+      "/tmp/tui-frame-layout/oracle.py",
+      "oracle"
+    ],
+    "started_at": "2026-09-28T03:27:08.811394+00:00",
+    "exit": 0
+  },
+  {
+    "name": "build",
+    "command": [
+      "python3",
+      "/tmp/tui-frame-layout/build.py"
+    ],
+    "started_at": "2026-09-28T03:29:08.924637+00:00",
+    "exit": 0
+  },
+  {
+    "name": "measure",
+    "command": [
+      "python3",
+      "/tmp/tui-frame-layout/measure.py",
+      "before",
+      "candidate"
+    ],
+    "started_at": "2026-09-28T03:34:51.980082+00:00",
+    "exit": 0
+  },
+  {
+    "name": "compare",
+    "command": [
+      "python3",
+      "/tmp/tui-frame-layout/compare.py"
+    ],
+    "started_at": "2026-09-28T03:35:03.641738+00:00",
+    "exit": 1
+  },
+  {
+    "name": "browser",
+    "command": [
+      "python3",
+      "/tmp/tui-frame-layout/browser.py"
+    ],
+    "started_at": "2026-09-28T03:35:03.695208+00:00",
+    "exit": 1
+  }
+]

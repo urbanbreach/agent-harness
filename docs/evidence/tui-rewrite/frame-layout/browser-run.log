@@ -1,0 +1,18 @@
+runtime before 0
+runtime candidate 0
+compare runtime 0
+composer before 0
+composer candidate 0
+compare composer 0
+grouped before 0
+grouped candidate 0
+compare grouped 0
+layout before 1
+Traceback (most recent call last):
+  File "/tmp/tui-frame-layout/browser.py", line 13, in <module>
+    (out/'browser-runs.json').write_text(json.dumps(results,indent=2)+'\n');print(journey,side,result.returncode,flush=True);result.check_returncode()
+                                                                                                                             ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/urbanbreach/.local/share/mise/installs/python/3.13.15/lib/python3.13/subprocess.py", line 508, in check_returncode
+    raise CalledProcessError(self.returncode, self.args, self.stdout,
+                             self.stderr)
+subprocess.CalledProcessError: Command '['node', '/tmp/tui-frame-layout/capture-layout.mjs', '/tmp/tui-frame-layout/before-probe', '.omo/evidence/tui-rewrite/frame-layout/layout/before']' returned non-zero exit status 1.

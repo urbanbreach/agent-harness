@@ -1,0 +1,16 @@
+{
+  "mutation": "Size details overlay after terminal split instead of before it",
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--lib",
+    "-E",
+    "test(hovered_wheel_target_uses_layout_plan) | test(question_mouse_click_preserves_shell_state_and_emits_only_answer_intent)"
+  ],
+  "exit": 100
+}
