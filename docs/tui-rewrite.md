@@ -134,6 +134,7 @@ before changing the implementation.
 | R18 | Default bindings assign Ctrl+Y to Redo and then overwrite it with AllowPermission, so it does nothing in the ordinary composer | Record the unchanged no-op on both builds. Use the working Ctrl+Shift+Z binding for redo parity. Defer the shortcut-policy correction separately from snapshot ownership; the failed predecessor capture is retained in undo-sharing evidence. |
 | R19 | Default bindings assign Ctrl+Home to MoveBufferStart and then overwrite it with FirstMessage, leaving no default buffer-start shortcut | Preserve the existing default. Exercise MoveBufferStart through a configured F12 binding in the public keyboard test; use ordinary Home/End for the navigation workload. Defer the shortcut-policy correction; preparation failures are retained in prompt-editing evidence. |
 | R20 | When public prompt fields diverge from the atom editor while both remain prediction prefixes, ghost eligibility follows the prompt fields but its displayed suffix follows the editor. For example, an editor containing `inspect ` and a prompt mirror containing `inspect the ` can paint `inspect the the workspace`. | Reproduced through the public AppState API at `16ab0230`. Preserve it in the composer projection replacement and retain a behavioral check. Correct it when unifying draft state; no shipped keyboard sequence reproducing this divergence has been established. |
+| R21 | Raw CRLF in the public prompt mirror has different geometry in the atom row budget and painted string layout. At width 20, `one\r\ntwo` can paint `onetwo` plus an empty row; the cursor still counts the CRLF grapheme. | Reproduced at `9681f532` through the public AppState API. Preserve it during the string viewport rewrite and record exact frame/cursor behavior. Resolve when unifying draft geometry; no shipped keyboard sequence establishing this raw mirror value is known. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -1134,6 +1135,31 @@ than its paired short-draft reference; the cause remains unverified. All 80
 raw reports and the first candidate's failed comparison remain available.
 Measurements exclude terminal-emulator latency. Evidence is in
 [`evidence/tui-rewrite/composer-projection`](evidence/tui-rewrite/composer-projection).
+
+## Composer viewport replacement
+
+The string composer layout now wraps borrowed slices and stores absolute scalar
+starts, then allocates only visible strings. The old per-grapheme records and
+all-row string construction are removed. Explicit LF segments preserve dropped
+spaces, hard breaks, trailing empty rows and cursor endpoint rules. Atom row
+budgets remain separate. R21 records the preserved public-mirror CRLF mismatch.
+
+The engine shrinks from 231 to 111 lines; deleting its record type and alias
+removes nine more lines. TUI source totals 166,103 lines, still above the target.
+An existing public rendering check adds eight frame/cursor cases. Its predecessor
+mutation fails as expected. A temporary independent oracle verifies 174,696
+complete viewport results before removal from the normal test tree. All 1,635
+TUI tests, seven gated PTY tests and quality checks pass. Forty-two paired
+PTY/xterm frames match exact PNGs, cells, styles and cursor; restoration and
+resource cleanup pass.
+
+Long typing allocation bytes fall 12.5%; CPU remains at 0.22 ms/frame. Short
+p95/p99 are 122/127 µs and CPU is 0.10 ms/frame in this comparison. Earlier
+latency failures remain recorded. The candidate passes 27 of 28 frozen limits.
+Long typing malloc calls fall 2.4%, missing the 10% target at 104,409 calls
+against 96,273. All 48 raw performance reports remain available. Measurements
+exclude PTY/emulator delivery. Evidence is in
+[`evidence/tui-rewrite/composer-viewport`](evidence/tui-rewrite/composer-viewport).
 
 ## Verification sequence
 

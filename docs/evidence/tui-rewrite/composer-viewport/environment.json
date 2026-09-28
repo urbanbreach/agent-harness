@@ -1,0 +1,32 @@
+{
+  "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+  "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+  "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+  "release_profile": {
+    "opt_level": 3,
+    "lto": "fat",
+    "codegen_units": 1
+  },
+  "binaries": {
+    "before.bin": {
+      "path": "/tmp/tui-composer-viewport/before.bin",
+      "sha256": "dd3078c0b48cbff1949824271dd1e6f5d30a3d8d3a3f7625771b9b16e6b9004f",
+      "bytes": 15040784
+    },
+    "candidate.bin": {
+      "path": "/tmp/tui-composer-viewport/candidate.bin",
+      "sha256": "95639a4595834d6947316aaac4a19dcddc701964b2e0c13f0fad89f8fd183c95",
+      "bytes": 15043840
+    },
+    "before-probe": {
+      "path": "/tmp/tui-composer-viewport/before-probe",
+      "sha256": "2da3623de53cb8c8d456fc171a2870d332853725a0c6487088c409ab18696d22",
+      "bytes": 15202312
+    },
+    "candidate-probe": {
+      "path": "/tmp/tui-composer-viewport/candidate-probe",
+      "sha256": "54e64146df10b2d037943863c9ea65de5d68f02184a488bbc49222f2a5d78c6b",
+      "bytes": 15205368
+    }
+  }
+}

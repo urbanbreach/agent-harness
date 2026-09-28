@@ -38,6 +38,78 @@ fn production_app_state_routes_keyboard_input_through_atom_composer() {
     // assert
     assert_eq!(submission.text, "hi");
     assert!(submission.attachments.is_empty());
+    // Preserve visible word breaks and scalar-to-cell cursor mapping.
+    for (text, cursor, expected, rows) in [
+        (
+            "abcdefghij k",
+            10,
+            (16, 18),
+            vec!["  │ ❯ abcdefghij │  ", "  │   k          │  "],
+        ),
+        (
+            "abcdefghij k",
+            11,
+            (6, 19),
+            vec!["  │ ❯ abcdefghij │  ", "  │   k          │  "],
+        ),
+        (
+            "a bbbbbbbbb",
+            2,
+            (6, 19),
+            vec!["  │ ❯ a          │  ", "  │   bbbbbbbbb  │  "],
+        ),
+        (
+            " abcdefghijk",
+            10,
+            (6, 19),
+            vec!["  │ ❯  abcdefghi │  ", "  │   jk         │  "],
+        ),
+        (
+            "A界e\u{301} 👩‍💻",
+            4,
+            (10, 19),
+            vec!["  │ ❯ A界 e\u{301} 👩‍💻     │  "],
+        ),
+        (
+            "one\n\ntwo\n",
+            8,
+            (9, 18),
+            vec![
+                "  │ ❯ one        │  ",
+                "  │              │  ",
+                "  │   two        │  ",
+                "  │              │  ",
+            ],
+        ),
+        (
+            "one\r\ntwo",
+            5,
+            (10, 18),
+            vec!["  │ ❯ onetwo     │  ", "  │              │  "],
+        ),
+        ("\u{301}x", 1, (7, 19), vec!["  │ ❯ x          │  "]),
+    ] {
+        let mut app = AppState::new_live(None, false, None);
+        app.set_reduced_motion_for_evidence(true);
+        app.composer.prompt_buffer = text.into();
+        app.composer.prompt_cursor = cursor;
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(20, 24)).expect("terminal");
+        terminal
+            .draw(|frame| harness_tui::ui::render_app(frame, &app))
+            .expect("paint");
+        let position = terminal.get_cursor_position().expect("cursor");
+        let lines: Vec<String> = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(20)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .filter(|line| line.contains('│'))
+            .collect();
+        assert_eq!((position.x, position.y), expected, "{text:?} at {cursor}");
+        assert_eq!(lines, rows, "{text:?} at {cursor}");
+    }
 }
 
 #[test]

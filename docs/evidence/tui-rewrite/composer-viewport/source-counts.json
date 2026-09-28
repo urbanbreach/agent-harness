@@ -1,0 +1,23 @@
+{
+  "sources": [
+    {
+      "path": "crates/harness-tui/src/ui_composer.rs",
+      "before_lines": 91,
+      "after_lines": 82,
+      "sha256": "b3e45dc06e809ee593dba8caf7de3d3cd20a5895d88056d650c98d9829dfc15e"
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/viewport.rs",
+      "before_lines": 231,
+      "after_lines": 111,
+      "sha256": "438c17aeb5a5db4df5a73eb45fd1f36cc4b129bbf1d06dd9c2994fb1907c6c99"
+    },
+    {
+      "path": "crates/harness-tui/tests/production_composer_reachability_test.rs",
+      "before_lines": 237,
+      "after_lines": 309,
+      "sha256": "fe6cff8d9380a0f6e586c3d1a1a341efccb84cd714f0462fd263d6cdd32f71d7"
+    }
+  ],
+  "all_src_rs_lines": 166103
+}

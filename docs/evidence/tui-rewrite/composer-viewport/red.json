@@ -1,0 +1,15 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--all-features",
+    "--test",
+    "production_composer_reachability_test"
+  ],
+  "exit": 100
+}

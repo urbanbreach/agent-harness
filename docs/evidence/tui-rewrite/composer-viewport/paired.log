@@ -1,0 +1,126 @@
+before typing-long-1 0
+candidate typing-long-1 0
+candidate typing-long-2 0
+before typing-long-2 0
+before typing-long-3 0
+candidate typing-long-3 0
+before typing-long-alloc 0
+candidate typing-long-alloc 0
+before typing-1 0
+candidate typing-1 0
+candidate typing-2 0
+before typing-2 0
+before typing-3 0
+candidate typing-3 0
+before typing-alloc 0
+candidate typing-alloc 0
+before undo-long-1 0
+candidate undo-long-1 0
+candidate undo-long-2 0
+before undo-long-2 0
+before undo-long-3 0
+candidate undo-long-3 0
+before undo-long-alloc 0
+candidate undo-long-alloc 0
+before delete-long-1 0
+candidate delete-long-1 0
+candidate delete-long-2 0
+before delete-long-2 0
+before delete-long-3 0
+candidate delete-long-3 0
+before delete-long-alloc 0
+candidate delete-long-alloc 0
+{
+  "before": {
+    "typing-long": {
+      "p50_us": 220,
+      "p95_us": 240,
+      "p99_us": 244,
+      "bytes": 20000,
+      "rss_kib": 9896,
+      "cpu_ms_per_frame": 0.22,
+      "allocated_bytes": 73548142,
+      "peak_heap_bytes": 2193323,
+      "malloc_calls": 106974
+    },
+    "typing": {
+      "p50_us": 111,
+      "p95_us": 128,
+      "p99_us": 200,
+      "bytes": 140750,
+      "rss_kib": 9756,
+      "cpu_ms_per_frame": 0.12,
+      "allocated_bytes": 9024948,
+      "peak_heap_bytes": 2113416,
+      "malloc_calls": 93761
+    },
+    "undo-long": {
+      "p50_us": 236,
+      "p95_us": 254,
+      "p99_us": 265,
+      "bytes": 20000,
+      "rss_kib": 10000,
+      "cpu_ms_per_frame": 0.24,
+      "allocated_bytes": 95630200,
+      "peak_heap_bytes": 2156868,
+      "malloc_calls": 409157
+    },
+    "delete-long": {
+      "p50_us": 307,
+      "p95_us": 373,
+      "p99_us": 391,
+      "bytes": 31187,
+      "rss_kib": 9792,
+      "cpu_ms_per_frame": 0.3,
+      "allocated_bytes": 137372201,
+      "peak_heap_bytes": 2019270,
+      "malloc_calls": 633617
+    }
+  },
+  "candidate": {
+    "typing-long": {
+      "p50_us": 216,
+      "p95_us": 237,
+      "p99_us": 243,
+      "bytes": 20000,
+      "rss_kib": 9824,
+      "cpu_ms_per_frame": 0.22,
+      "allocated_bytes": 64343172,
+      "peak_heap_bytes": 2193326,
+      "malloc_calls": 104409
+    },
+    "typing": {
+      "p50_us": 109,
+      "p95_us": 122,
+      "p99_us": 127,
+      "bytes": 140750,
+      "rss_kib": 9704,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 8436330,
+      "peak_heap_bytes": 2113419,
+      "malloc_calls": 92751
+    },
+    "undo-long": {
+      "p50_us": 234,
+      "p95_us": 254,
+      "p99_us": 266,
+      "bytes": 20000,
+      "rss_kib": 9780,
+      "cpu_ms_per_frame": 0.24,
+      "allocated_bytes": 86421622,
+      "peak_heap_bytes": 2154759,
+      "malloc_calls": 406593
+    },
+    "delete-long": {
+      "p50_us": 301,
+      "p95_us": 367,
+      "p99_us": 392,
+      "bytes": 31187,
+      "rss_kib": 9836,
+      "cpu_ms_per_frame": 0.3,
+      "allocated_bytes": 123736095,
+      "peak_heap_bytes": 2019273,
+      "malloc_calls": 630786
+    }
+  }
+}

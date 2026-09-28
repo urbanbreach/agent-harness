@@ -39,15 +39,6 @@ pub(crate) struct ComposerViewport {
     pub(crate) cursor: Option<(usize, usize)>,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct ComposerVisualChar<'a> {
-    index: usize,
-    text: &'a str,
-    width: usize,
-}
-
-type ComposerVisualLines = (Vec<(String, usize)>, Option<(usize, usize)>);
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ComposerModeStyle {
     border: Color,
