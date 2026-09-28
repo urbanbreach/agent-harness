@@ -1,0 +1,17 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "--workspace",
+    "--all-features",
+    "--no-fail-fast"
+  ],
+  "environment": {
+    "XDG_CONFIG_HOME": "fresh empty temporary directory",
+    "HOME": "unchanged"
+  },
+  "exit": 100
+}

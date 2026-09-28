@@ -274,6 +274,19 @@ pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task
 
 pub(super) fn cache_read_write_tokens_render_as_separate_status_labels() {
     let mut app = AppState::new_live(None, false, None);
+    let mut initial = ModelOption::from_model_ref("deep", "default:gpt-5.4-mini");
+    initial.variant = Some("deterministic".into());
+    let mut next = initial.clone();
+    next.variant = Some("creative".into());
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_option(&initial).with_available_models(vec![initial, next]),
+    );
+    app.apply_keybindings(default_navigation_keybindings());
+    app.handle_key(key(KeyCode::Tab));
+    assert!(app
+        .runtime_context_summary_segment_text()
+        .unwrap_or_abort()
+        .starts_with("Next turns:"));
 
     app.ingest_event(envelope(
         1,
@@ -303,11 +316,14 @@ pub(super) fn cache_read_write_tokens_render_as_separate_status_labels() {
         }),
     ));
 
-    let segment = app
-        .control_dock_view_model()
-        .summary_segment
-        .unwrap_or_abort();
-    assert_eq!(segment.text, "cache read 41 · write 17");
+    assert!(
+        app.next_turn_identity().is_some(),
+        "cache metadata competes with the pending model change"
+    );
+    assert_eq!(
+        app.runtime_context_summary_segment_text().as_deref(),
+        Some("cache read 41 · write 17")
+    );
 }
 
 pub(super) fn task_cancelled_marks_matching_activity_as_error() {

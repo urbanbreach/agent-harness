@@ -1,0 +1,57 @@
+{
+  "source_base": "ec2fa068a7658c31ef033540918c4d525366ac94",
+  "compiled_base": "f09849404888677de613a5df2646dd9c554a93ce",
+  "verified_current_source_paths": [
+    "crates/harness-tui/src/app/tests/permission_modal_tests_part3_test.rs",
+    "crates/harness-tui/src/layout.rs",
+    "crates/harness-tui/src/layout/overlays.rs",
+    "crates/harness-tui/src/layout/session.rs",
+    "crates/harness-tui/src/layout/surfaces.rs",
+    "crates/harness-tui/src/layout/tests.rs",
+    "crates/harness-tui/src/layout_live_dock_test_fixtures.rs",
+    "crates/harness-tui/src/layout_live_dock_tests.rs",
+    "crates/harness-tui/src/lib_tests/theme_layout.rs"
+  ],
+  "previous_receipt": {
+    "base": "f09849404888677de613a5df2646dd9c554a93ce",
+    "side": "candidate",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "-p",
+      "harness-tui",
+      "--all-features",
+      "--test",
+      "rewrite_performance_test",
+      "--example",
+      "rewrite_probe"
+    ],
+    "sha256": "4f84a1473bbfbbb7f68faeb517c56a27cc22200650592545d29538dcd2aeeb5c",
+    "probe_sha256": "88b252969c10fe04b8065006211667e5f6ed0c2b01e852c3ce6f3a699e5853e3",
+    "fixture_sha256": "df377eb5d0762ae30d28270ef4c20a969df28263986356dd2fa45386b80f4d2f",
+    "production_sources": [
+      {
+        "path": "crates/harness-tui/src/layout.rs",
+        "sha256": "cc4a1c4de58e6cd108535651c161db8955ae77dc0d8e06924016e8b814894184",
+        "lines": 399
+      },
+      {
+        "path": "crates/harness-tui/src/layout/session.rs",
+        "sha256": "ed3ba4035c9be04f23faaff7aeca024f75ae21143b1932c1fd926497f5f93a99",
+        "lines": 296
+      },
+      {
+        "path": "crates/harness-tui/src/layout/surfaces.rs",
+        "sha256": "ee466dc4da30bff91a2bd9d8c5de8f073a1e0e32fae86d69b00934097f25f0aa",
+        "lines": 204
+      },
+      {
+        "path": "crates/harness-tui/src/layout/overlays.rs",
+        "sha256": "d7fa48b669c8d5b10dac72c95eb299a5e2121897bdb97ba6605ef8932632d726",
+        "lines": 234
+      }
+    ]
+  },
+  "metadata_verification": "compiled_base verified against the unchanged original receipt before acceptance freeze"
+}

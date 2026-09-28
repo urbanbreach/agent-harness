@@ -1,0 +1,185 @@
+{
+  "comparisons": [
+    {
+      "name": "01-ready.png",
+      "pixels_equal": true,
+      "png_sha256": "390fd0e558c2caa77fa1cd4d65a569cbed16e5b8dbef814b8f80a5d9f2f9728c",
+      "observer_differences": {
+        "renderCount": {
+          "before": 6,
+          "candidate": 7
+        },
+        "parsedCount": {
+          "before": 4,
+          "candidate": 3
+        }
+      }
+    },
+    {
+      "name": "02-sending.png",
+      "pixels_equal": true,
+      "png_sha256": "4b39e58f84c58ecf64dd2a189429cff47fbd6a9b24ebd6de96441003f692a007",
+      "observer_differences": {
+        "renderCount": {
+          "before": 10,
+          "candidate": 11
+        },
+        "parsedCount": {
+          "before": 5,
+          "candidate": 4
+        }
+      }
+    },
+    {
+      "name": "03-streaming.png",
+      "pixels_equal": true,
+      "png_sha256": "3df18d806b7a5dabc761f8e2712f6d091f239a0a694dd2929623d99fe09a6d7f",
+      "observer_differences": {
+        "renderCount": {
+          "before": 14,
+          "candidate": 15
+        },
+        "parsedCount": {
+          "before": 6,
+          "candidate": 5
+        }
+      }
+    },
+    {
+      "name": "04-tool-queued.png",
+      "pixels_equal": true,
+      "png_sha256": "76d2e61c0b8bdc035b1dbb4c01a997c39625feacd9abfd14f21faee8255af443",
+      "observer_differences": {
+        "renderCount": {
+          "before": 18,
+          "candidate": 19
+        },
+        "parsedCount": {
+          "before": 7,
+          "candidate": 6
+        }
+      }
+    },
+    {
+      "name": "05-tool-running.png",
+      "pixels_equal": true,
+      "png_sha256": "1c01ba98354507bda672cead1cb8a3c370bb8b81125502d8c8d843889fec4bf1",
+      "observer_differences": {
+        "renderCount": {
+          "before": 22,
+          "candidate": 23
+        },
+        "parsedCount": {
+          "before": 8,
+          "candidate": 7
+        }
+      }
+    },
+    {
+      "name": "06-permission.png",
+      "pixels_equal": true,
+      "png_sha256": "56b2b753a9ce9d4bf2c7ef486e62fd3719051349194b690ffa76c3780cea4716",
+      "observer_differences": {
+        "renderCount": {
+          "before": 26,
+          "candidate": 27
+        },
+        "parsedCount": {
+          "before": 9,
+          "candidate": 8
+        }
+      }
+    },
+    {
+      "name": "07-permission-pending.png",
+      "pixels_equal": true,
+      "png_sha256": "4a42633b125ceda82f6a7d948cbfb0438e93e627bd8a7f0c3ff138c6708ff19b",
+      "observer_differences": {
+        "renderCount": {
+          "before": 30,
+          "candidate": 31
+        },
+        "parsedCount": {
+          "before": 10,
+          "candidate": 9
+        }
+      }
+    },
+    {
+      "name": "08-permission-resolved.png",
+      "pixels_equal": true,
+      "png_sha256": "1c01ba98354507bda672cead1cb8a3c370bb8b81125502d8c8d843889fec4bf1",
+      "observer_differences": {
+        "renderCount": {
+          "before": 34,
+          "candidate": 35
+        },
+        "parsedCount": {
+          "before": 11,
+          "candidate": 10
+        }
+      }
+    },
+    {
+      "name": "09-tool-finished.png",
+      "pixels_equal": true,
+      "png_sha256": "9fe9fa488167acfdac84469d1825630b9dff3ef1e6acad3d7af04531a51c8d8d",
+      "observer_differences": {
+        "renderCount": {
+          "before": 38,
+          "candidate": 39
+        },
+        "parsedCount": {
+          "before": 12,
+          "candidate": 11
+        }
+      }
+    },
+    {
+      "name": "10-success.png",
+      "pixels_equal": true,
+      "png_sha256": "694e0f64771f17134d4926911beb501e7631e984eafc0472175b93a2c292bb0a",
+      "observer_differences": {
+        "renderCount": {
+          "before": 42,
+          "candidate": 43
+        },
+        "parsedCount": {
+          "before": 13,
+          "candidate": 12
+        }
+      }
+    },
+    {
+      "name": "11-cancelled.png",
+      "pixels_equal": true,
+      "png_sha256": "62afd1b7cb0cd838551c5901a27dbec44cf13dec498298f89655c73799543c03",
+      "observer_differences": {
+        "renderCount": {
+          "before": 46,
+          "candidate": 47
+        },
+        "parsedCount": {
+          "before": 14,
+          "candidate": 13
+        }
+      }
+    },
+    {
+      "name": "12-failure.png",
+      "pixels_equal": true,
+      "png_sha256": "6eb4ff222c3b88b5d020fc2ad1331629d7a8dabb443fbef9fb02b32b7813eaab",
+      "observer_differences": {
+        "renderCount": {
+          "before": 50,
+          "candidate": 51
+        },
+        "parsedCount": {
+          "before": 15,
+          "candidate": 14
+        }
+      }
+    }
+  ],
+  "both_runs_restore_and_cleanup": true
+}

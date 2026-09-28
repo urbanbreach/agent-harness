@@ -1,0 +1,94 @@
+{
+  "before": {
+    "typing-long": {
+      "p50_us": 185,
+      "p95_us": 201,
+      "p99_us": 267,
+      "bytes": 20000,
+      "rss_kib": 9808,
+      "cpu_ms_per_frame": 0.18,
+      "allocated_bytes": 15862358,
+      "peak_heap_bytes": 2175257,
+      "malloc_calls": 53380
+    },
+    "typing": {
+      "p50_us": 109,
+      "p95_us": 126,
+      "p99_us": 185,
+      "bytes": 140750,
+      "rss_kib": 9444,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 7225899,
+      "peak_heap_bytes": 2095350,
+      "malloc_calls": 50179
+    },
+    "undo-long": {
+      "p50_us": 198,
+      "p95_us": 215,
+      "p99_us": 231,
+      "bytes": 20000,
+      "rss_kib": 9784,
+      "cpu_ms_per_frame": 0.2,
+      "allocated_bytes": 37830496,
+      "peak_heap_bytes": 2136690,
+      "malloc_calls": 351557
+    },
+    "delete-long": {
+      "p50_us": 253,
+      "p95_us": 310,
+      "p99_us": 342,
+      "bytes": 31187,
+      "rss_kib": 9732,
+      "cpu_ms_per_frame": 0.26,
+      "allocated_bytes": 51932413,
+      "peak_heap_bytes": 2000628,
+      "malloc_calls": 576248
+    }
+  },
+  "candidate": {
+    "typing-long": {
+      "p50_us": 182,
+      "p95_us": 205,
+      "p99_us": 293,
+      "bytes": 20000,
+      "rss_kib": 9704,
+      "cpu_ms_per_frame": 0.18,
+      "allocated_bytes": 15034861,
+      "peak_heap_bytes": 2177372,
+      "malloc_calls": 40581
+    },
+    "typing": {
+      "p50_us": 104,
+      "p95_us": 117,
+      "p99_us": 156,
+      "bytes": 140750,
+      "rss_kib": 9516,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 6824386,
+      "peak_heap_bytes": 2097465,
+      "malloc_calls": 37637
+    },
+    "undo-long": {
+      "p50_us": 196,
+      "p95_us": 216,
+      "p99_us": 232,
+      "bytes": 20000,
+      "rss_kib": 9736,
+      "cpu_ms_per_frame": 0.2,
+      "allocated_bytes": 37002999,
+      "peak_heap_bytes": 2138805,
+      "malloc_calls": 338758
+    },
+    "delete-long": {
+      "p50_us": 249,
+      "p95_us": 294,
+      "p99_us": 313,
+      "bytes": 31187,
+      "rss_kib": 9788,
+      "cpu_ms_per_frame": 0.26,
+      "allocated_bytes": 50964802,
+      "peak_heap_bytes": 2002743,
+      "malloc_calls": 563449
+    }
+  }
+}

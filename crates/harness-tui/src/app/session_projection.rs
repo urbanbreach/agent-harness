@@ -1610,17 +1610,35 @@ fn is_question_permission_kind(kind: &str) -> bool {
 
 impl AppState {
     pub fn runtime_context_primary_summary(&self) -> String {
-        self.control_dock_view_model().primary_summary
+        self.runtime_context_grammar().primary_summary
     }
 
     pub fn runtime_context_summary_segment_text(&self) -> Option<String> {
-        self.control_dock_view_model()
-            .summary_segment
+        self.runtime_context_summary_segment()
             .map(|segment| segment.text)
     }
 
     pub fn runtime_context_provider_display(&self) -> Option<String> {
-        self.control_dock_view_model().runtime_context
+        self.runtime_provider_context()
+    }
+
+    pub(crate) fn runtime_context_summary_segment(
+        &self,
+    ) -> Option<view_model::ControlDockSummarySegment> {
+        if self.startup_shell_visible() || self.replay_mode {
+            None
+        } else {
+            self.cache_status_summary_segment()
+                .or_else(|| self.runtime_context_grammar().summary_segment)
+        }
+    }
+
+    fn runtime_context_grammar(&self) -> view_model::RuntimeContextGrammar {
+        view_model::runtime_context_grammar(view_model::RuntimeContextGrammarInput {
+            label: self.runtime_context_label(),
+            identity: self.runtime_context_identity(),
+            next_turn_identity: self.next_turn_identity(),
+        })
     }
 
     pub(crate) fn active_retry_metadata(&self) -> Option<ProviderRequestRetryMetadata> {
@@ -1650,77 +1668,6 @@ impl AppState {
                 cache.read_tokens, cache.write_tokens
             ),
             tone: view_model::ControlDockSummaryTone::Secondary,
-        })
-    }
-
-    pub(crate) fn control_dock_view_model(&self) -> view_model::ControlDockViewModel {
-        let runtime_state = self.runtime_state();
-        let grammar = view_model::runtime_context_grammar(view_model::RuntimeContextGrammarInput {
-            label: self.runtime_context_label(),
-            identity: self.runtime_context_identity(),
-            next_turn_identity: self.next_turn_identity(),
-        });
-        let runtime_context = self.runtime_provider_context();
-
-        if self.startup_shell_visible() {
-            let composer_text = self.composer_render_text();
-            let composer_body = if composer_text.is_empty() {
-                runtime_state.composer_hint.clone()
-            } else {
-                composer_text
-            };
-            return view_model::control_dock_view_model(view_model::ControlDockInput::Startup {
-                runtime_context,
-                runtime_state,
-                primary_summary: grammar.primary_summary,
-                composer_body,
-                composer_disclosure: String::new(),
-                composer_focused: self.focus == Focus::Prompt,
-            });
-        }
-
-        if self.replay_mode {
-            let composer_body = if runtime_state.kind == crate::app::RuntimeStateKind::Failure {
-                runtime_state
-                    .detail
-                    .as_deref()
-                    .filter(|detail| !detail.trim().is_empty())
-                    .map(|detail| {
-                        format!("Replay is read-only · {} · {detail}", runtime_state.summary)
-                    })
-                    .unwrap_or_else(|| format!("Replay is read-only · {}", runtime_state.summary))
-            } else {
-                "Replay is read-only.".to_string()
-            };
-
-            return view_model::control_dock_view_model(
-                view_model::ControlDockInput::ReplayReadOnly {
-                    runtime_context,
-                    runtime_state,
-                    primary_summary: grammar.primary_summary,
-                    composer_body,
-                    composer_disclosure: String::new(),
-                    composer_focused: self.focus == Focus::Prompt,
-                },
-            );
-        }
-
-        let composer_text = self.composer_render_text();
-        let composer_body = if composer_text.is_empty() {
-            String::new()
-        } else {
-            composer_text
-        };
-        view_model::control_dock_view_model(view_model::ControlDockInput::Live {
-            runtime_context,
-            runtime_state,
-            primary_summary: grammar.primary_summary,
-            summary_segment: self
-                .cache_status_summary_segment()
-                .or(grammar.summary_segment),
-            composer_body,
-            composer_disclosure: String::new(),
-            composer_focused: self.focus == Focus::Prompt,
         })
     }
 

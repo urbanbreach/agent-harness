@@ -190,4 +190,58 @@ pub(super) fn live_composer_disclosure_keeps_compact_summary_and_commands() {
     assert!(!rendered.contains("turn 1"));
     assert!(!rendered.contains("ready for next turn"));
     assert!(!rendered.contains("Current runtime:"));
+    let mut ready = app::AppState::new_live(None, false, None);
+    ready.ingest_event(envelope(
+        1,
+        None,
+        serde_json::from_value(serde_json::json!({
+            "event_type": "session_compaction", "data": {
+                "agent_id": "root", "summary": "Compacted history", "first_kept_event_seq": 1,
+                "tokens_before": 13400, "tokens_after": 1400, "trigger_reason": "fixture"
+            }
+        }))
+        .unwrap_or_abort(),
+    ));
+    assert_eq!(ready.compaction_usage_metrics().completed_count, 1);
+    let full = "compactions 1 · summary 0 tok Enter:send │ Shift+Tab:mode │ Ctrl+x:shortcuts";
+    let disconnected =
+        "connection lost · reopen the TUI to establish the live stream ? commands · Ctrl+q quit";
+    for (status, expected) in [
+        (
+            None,
+            [
+                full,
+                full,
+                "compactions 1 · summary 0 tok Enter:send │ Ctrl+x:shortcuts",
+                "cmp 1 · sum 0 tok Enter:send │ Ctrl+x:shortcuts",
+                "Enter:send │ Ctrl+x:shortcuts",
+            ],
+        ),
+        (
+            Some("disconnected"),
+            [
+                disconnected,
+                disconnected,
+                "connection lost ? commands · Ctrl+q quit",
+                "connection lost ? commands · Ctrl+q quit",
+                "? commands · Ctrl+q quit",
+            ],
+        ),
+    ] {
+        ready.set_status_banner(status.map(str::to_string));
+        for (width, expected) in [160, 100, 80, 60, 40].into_iter().zip(expected) {
+            let plan = layout::FrameLayoutPlan::for_app(
+                &ready,
+                ratatui::layout::Rect::new(0, 0, width, 24),
+            );
+            let area = plan.disclosure.unwrap_or_abort();
+            let rendered = render_live_lines(&ready, width, 24);
+            let row = rendered.lines().nth(usize::from(area.y)).unwrap_or_abort();
+            assert_eq!(
+                row.split_whitespace().collect::<Vec<_>>().join(" "),
+                expected,
+                "disclosure priority at width {width}, status {status:?}"
+            );
+        }
+    }
 }

@@ -1,0 +1,362 @@
+{
+  "checks": {
+    "typing-long": {
+      "p95_us": {
+        "value": 205,
+        "limit": 257.40000000000003,
+        "pass": true
+      },
+      "p99_us": {
+        "value": 293,
+        "limit": 272.8,
+        "pass": false
+      },
+      "rss_kib": {
+        "value": 9704,
+        "limit": 10617.2,
+        "pass": true
+      },
+      "peak_heap_bytes": {
+        "value": 2177372,
+        "limit": 2392782.7,
+        "pass": true
+      },
+      "allocated_bytes": {
+        "value": 15034861,
+        "limit": 15069240.1,
+        "pass": true
+      },
+      "malloc_calls": {
+        "value": 40581,
+        "limit": 48042.0,
+        "pass": true
+      },
+      "cpu_ms_per_frame": {
+        "value": 0.18,
+        "limit": 0.24200000000000002,
+        "pass": true
+      }
+    },
+    "typing": {
+      "p95_us": {
+        "value": 117,
+        "limit": 129.8,
+        "pass": true
+      },
+      "p99_us": {
+        "value": 156,
+        "limit": 139.70000000000002,
+        "pass": false
+      },
+      "rss_kib": {
+        "value": 9516,
+        "limit": 10401.6,
+        "pass": true
+      },
+      "peak_heap_bytes": {
+        "value": 2097465,
+        "limit": 2228162.2,
+        "pass": true
+      },
+      "allocated_bytes": {
+        "value": 6824386,
+        "limit": 7225899,
+        "pass": true
+      },
+      "malloc_calls": {
+        "value": 37637,
+        "limit": 50179,
+        "pass": true
+      },
+      "cpu_ms_per_frame": {
+        "value": 0.1,
+        "limit": 0.11000000000000001,
+        "pass": true
+      }
+    },
+    "undo-long": {
+      "p95_us": {
+        "value": 216,
+        "limit": 268.40000000000003,
+        "pass": true
+      },
+      "cpu_ms_per_frame": {
+        "value": 0.2,
+        "limit": 0.24200000000000002,
+        "pass": true
+      },
+      "allocated_bytes": {
+        "value": 37002999,
+        "limit": 37834736,
+        "pass": true
+      },
+      "malloc_calls": {
+        "value": 338758,
+        "limit": 351558,
+        "pass": true
+      },
+      "p99_us": {
+        "value": 232,
+        "limit": 287.1,
+        "pass": true
+      },
+      "rss_kib": {
+        "value": 9736,
+        "limit": 10683.2,
+        "pass": true
+      },
+      "peak_heap_bytes": {
+        "value": 2138805,
+        "limit": 2352682.2,
+        "pass": true
+      }
+    },
+    "delete-long": {
+      "p95_us": {
+        "value": 294,
+        "limit": 392.70000000000005,
+        "pass": true
+      },
+      "cpu_ms_per_frame": {
+        "value": 0.26,
+        "limit": 0.33,
+        "pass": true
+      },
+      "rss_kib": {
+        "value": 9788,
+        "limit": 10705.2,
+        "pass": true
+      },
+      "peak_heap_bytes": {
+        "value": 2002743,
+        "limit": 2203014.0,
+        "pass": true
+      },
+      "allocated_bytes": {
+        "value": 50964802,
+        "limit": 51936653,
+        "pass": true
+      },
+      "malloc_calls": {
+        "value": 563449,
+        "limit": 576249,
+        "pass": true
+      },
+      "p99_us": {
+        "value": 313,
+        "limit": 410.3,
+        "pass": true
+      }
+    }
+  },
+  "content": [
+    {
+      "scenario": "typing-long",
+      "sample": "1",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "typing-long",
+      "sample": "2",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "typing-long",
+      "sample": "3",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "typing-long",
+      "sample": "alloc",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "typing",
+      "sample": "1",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "typing",
+      "sample": "2",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "typing",
+      "sample": "3",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "typing",
+      "sample": "alloc",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "undo-long",
+      "sample": "1",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "undo-long",
+      "sample": "2",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "undo-long",
+      "sample": "3",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "undo-long",
+      "sample": "alloc",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "delete-long",
+      "sample": "1",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "delete-long",
+      "sample": "2",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "delete-long",
+      "sample": "3",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    },
+    {
+      "scenario": "delete-long",
+      "sample": "alloc",
+      "equal_fields": [
+        "scenario",
+        "history_turns",
+        "history_events",
+        "frames",
+        "bytes",
+        "visible",
+        "oldest"
+      ]
+    }
+  ]
+}

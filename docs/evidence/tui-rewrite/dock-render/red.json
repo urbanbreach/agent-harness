@@ -1,0 +1,16 @@
+{
+  "mutation": "Reverse weighted summary/hint priority in both selection branches",
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "--profile",
+    "ci",
+    "-p",
+    "harness-tui",
+    "--lib",
+    "-E",
+    "test(live_composer_disclosure_keeps_compact_summary_and_commands)"
+  ],
+  "exit": 100
+}

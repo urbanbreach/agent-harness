@@ -24,8 +24,8 @@ use self::ui_permission_dock::render_inline_permission_dock;
 #[path = "ui_control_dock_disclosure.rs"]
 mod ui_control_dock_disclosure;
 use self::ui_control_dock_disclosure::{
-    completed_session_status_summary, composer_shortcut_hints, render_control_dock_disclosure,
-    render_replay_read_only_composer_content, replay_read_only_shortcut_hints, status_context,
+    completed_session_status_summary, render_control_dock_disclosure,
+    render_replay_read_only_composer_content,
 };
 #[path = "ui_composer.rs"]
 mod ui_composer;
@@ -33,13 +33,10 @@ pub(crate) use self::ui_composer::composer_input_viewport;
 use self::ui_composer::render_bordered_composer;
 #[cfg(test)]
 use self::ui_composer::{composer_line_with_file_tags, composer_viewport};
-#[cfg(test)]
-use self::ui_control_dock_disclosure::{
-    composer_context_summary_candidates, startup_disclosure_candidates,
-};
-
-struct ComposerRenderContext<'a> {
-    dock: &'a crate::view_model::ControlDockViewModel,
+struct ComposerRenderContext {
+    startup: bool,
+    focused: bool,
+    disabled: bool,
     composer_lines: u16,
 }
 
@@ -747,24 +744,12 @@ pub(super) fn render_unified_bottom_dock(
         return;
     }
 
-    let dock = build_control_dock_view_model(app, theme);
-    if dock.variant != crate::view_model::ControlDockVariant::Startup {
-        frame.render_widget(control_dock_section(theme, dock.variant), dock_layout.shell);
-        render_control_dock_top_divider(
-            frame,
-            Rect::new(
-                dock_layout.shell.x,
-                dock_layout.shell.y,
-                dock_layout.shell.width,
-                1,
-            ),
-            theme,
-            dock.variant,
-        );
+    let startup = app.startup_shell_visible();
+    if !startup {
+        frame.render_widget(open_canvas(theme.surface.canvas), dock_layout.shell);
     }
-
-    if dock.variant == crate::view_model::ControlDockVariant::ReplayReadOnly {
-        render_replay_read_only_composer_content(frame, dock_layout.composer, theme, &dock);
+    if !startup && app.replay_mode {
+        render_replay_read_only_composer_content(frame, dock_layout.composer, app, theme);
         return;
     }
 
@@ -778,7 +763,7 @@ pub(super) fn render_unified_bottom_dock(
     }
 
     if let Some(disclosure_area) = dock_layout.disclosure {
-        render_control_dock_disclosure(frame, disclosure_area, app, theme, &dock);
+        render_control_dock_disclosure(frame, disclosure_area, app, theme);
     }
 
     if app.rewind.state.is_some() && active_permission.is_none() {
@@ -786,7 +771,7 @@ pub(super) fn render_unified_bottom_dock(
     }
 
     let composer_text = app.composer_render_text();
-    let composer_lines = if dock.variant == crate::view_model::ControlDockVariant::Startup {
+    let composer_lines = if startup {
         startup_composer_input_height(
             &composer_text,
             dock_layout.composer.width,
@@ -801,7 +786,9 @@ pub(super) fn render_unified_bottom_dock(
         dock_layout.composer,
         theme,
         ComposerRenderContext {
-            dock: &dock,
+            startup,
+            focused: app.focus == Focus::Prompt,
+            disabled: app.composer_disabled(),
             composer_lines,
         },
     );
@@ -1050,13 +1037,6 @@ pub(super) fn live_control_dock_surface(theme: &Theme) -> Color {
     theme.surface.canvas
 }
 
-pub(super) fn control_dock_surface(
-    theme: &Theme,
-    _variant: crate::view_model::ControlDockVariant,
-) -> Color {
-    theme.surface.canvas
-}
-
 pub(super) fn elevated_card_surface(theme: &Theme) -> Color {
     semantic_surface(theme, ChromeMode::Card)
 }
@@ -1122,13 +1102,6 @@ pub(super) fn message_surface<'a>(
     )
 }
 
-pub(super) fn unified_bottom_dock(
-    theme: &Theme,
-    variant: crate::view_model::ControlDockVariant,
-) -> Block<'static> {
-    Block::default().style(Style::default().bg(control_dock_surface(theme, variant)))
-}
-
 pub(super) fn modal_card<'a>(
     theme: &Theme,
     title: impl Into<Line<'a>>,
@@ -1147,13 +1120,6 @@ pub(super) fn modal_card<'a>(
 
 pub(super) fn live_transcript_shell_section(surface: Color) -> Block<'static> {
     open_canvas(surface)
-}
-
-pub(super) fn control_dock_section(
-    theme: &Theme,
-    variant: crate::view_model::ControlDockVariant,
-) -> Block<'static> {
-    unified_bottom_dock(theme, variant)
 }
 
 pub(super) fn secondary_pane_block<'a>(
@@ -1391,46 +1357,6 @@ fn primary_shell_context_width(theme: &Theme) -> u16 {
     theme.live_shell.breakpoints.primary.width
 }
 
-fn build_control_dock_view_model(
-    app: &AppState,
-    theme: &Theme,
-) -> crate::view_model::ControlDockViewModel {
-    if app.startup_shell_visible() {
-        let mut dock = app.control_dock_view_model();
-        dock.composer_disclosure = composer_shortcut_hints(app, dock.composer_disabled);
-        return dock;
-    }
-
-    if app.replay_mode {
-        let mut dock = app.control_dock_view_model();
-        dock.composer_disclosure = replay_read_only_shortcut_hints(app);
-        return dock;
-    }
-
-    if app.completed_session_shell_active() {
-        let runtime_state = app.runtime_state();
-        let runtime_context = Some(status_context(app, theme, runtime_state.kind).0.to_string());
-        let primary_summary = completed_session_status_summary(app, &runtime_state)
-            .unwrap_or_else(|| runtime_state.summary.clone());
-
-        return crate::view_model::control_dock_view_model(
-            crate::view_model::ControlDockInput::Live {
-                runtime_context,
-                runtime_state,
-                primary_summary,
-                summary_segment: control_dock_summary_segment(app),
-                composer_body: String::new(),
-                composer_disclosure: String::new(),
-                composer_focused: app.focus == Focus::Prompt,
-            },
-        );
-    }
-
-    let mut dock = app.control_dock_view_model();
-    dock.composer_disclosure = composer_shortcut_hints(app, dock.composer_disabled);
-    dock
-}
-
 fn control_dock_summary_segment(
     app: &AppState,
 ) -> Option<crate::view_model::ControlDockSummarySegment> {
@@ -1479,48 +1405,4 @@ fn control_dock_summary_segment(
         text,
         tone,
     })
-}
-
-fn render_control_dock_top_divider(
-    frame: &mut Frame,
-    area: Rect,
-    theme: &Theme,
-    variant: crate::view_model::ControlDockVariant,
-) {
-    let surface = control_dock_surface(theme, variant);
-    let _ = variant;
-    frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
-}
-
-#[cfg(test)]
-mod surface_tests {
-    use super::{control_dock_surface, live_control_dock_surface, live_transcript_shell_surface};
-    use crate::theme::Theme;
-    use crate::view_model::ControlDockVariant;
-
-    #[test]
-    fn live_control_dock_uses_themed_canvas() {
-        // arrange
-        let theme = Theme::harness_dark();
-
-        // act: resolve each control-dock surface inline below.
-        // assert: themed surfaces use the configured canvas and native surfaces reset.
-        assert_eq!(live_control_dock_surface(&theme), theme.surface.canvas);
-        assert_eq!(
-            live_control_dock_surface(&Theme::terminal_native()),
-            ratatui::style::Color::Reset
-        );
-        for variant in [
-            ControlDockVariant::Startup,
-            ControlDockVariant::Live,
-            ControlDockVariant::ReplayReadOnly,
-        ] {
-            assert_eq!(control_dock_surface(&theme, variant), theme.surface.canvas);
-            assert_eq!(
-                control_dock_surface(&Theme::terminal_native(), variant),
-                ratatui::style::Color::Reset
-            );
-        }
-        assert_eq!(live_transcript_shell_surface(&theme), theme.surface.canvas);
-    }
 }

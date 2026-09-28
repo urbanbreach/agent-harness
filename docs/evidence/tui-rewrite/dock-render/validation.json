@@ -1,0 +1,36 @@
+[
+  {
+    "name": "measure",
+    "command": [
+      "python3",
+      "/tmp/tui-dock-render/measure.py",
+      "before",
+      "candidate"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "compare",
+    "command": [
+      "python3",
+      "/tmp/tui-dock-render/compare.py"
+    ],
+    "exit": 1
+  },
+  {
+    "name": "browser",
+    "command": [
+      "python3",
+      "/tmp/tui-dock-render/browser.py"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "workspace",
+    "command": [
+      "python3",
+      "/tmp/tui-dock-render/workspace.py"
+    ],
+    "exit": 0
+  }
+]

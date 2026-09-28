@@ -94,13 +94,6 @@ pub struct LineageChildDialogViewModel {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ControlDockVariant {
-    Startup,
-    Live,
-    ReplayReadOnly,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ControlDockSummarySegmentKind {
     Retry,
     Orchestration,
@@ -179,111 +172,6 @@ pub(crate) fn runtime_context_grammar(input: RuntimeContextGrammarInput) -> Runt
     RuntimeContextGrammar {
         primary_summary,
         summary_segment,
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ControlDockViewModel {
-    pub variant: ControlDockVariant,
-    pub runtime_context: Option<String>,
-    pub runtime_badge: String,
-    pub runtime_kind: RuntimeStateKind,
-    pub primary_summary: String,
-    pub summary_segment: Option<ControlDockSummarySegment>,
-    pub composer_body: String,
-    pub composer_disclosure: String,
-    pub composer_focused: bool,
-    pub composer_disabled: bool,
-}
-
-pub(crate) enum ControlDockInput {
-    Startup {
-        runtime_context: Option<String>,
-        runtime_state: RuntimeState,
-        primary_summary: String,
-        composer_body: String,
-        composer_disclosure: String,
-        composer_focused: bool,
-    },
-    Live {
-        runtime_context: Option<String>,
-        runtime_state: RuntimeState,
-        primary_summary: String,
-        summary_segment: Option<ControlDockSummarySegment>,
-        composer_body: String,
-        composer_disclosure: String,
-        composer_focused: bool,
-    },
-    ReplayReadOnly {
-        runtime_context: Option<String>,
-        runtime_state: RuntimeState,
-        primary_summary: String,
-        composer_body: String,
-        composer_disclosure: String,
-        composer_focused: bool,
-    },
-}
-
-pub(crate) fn control_dock_view_model(input: ControlDockInput) -> ControlDockViewModel {
-    match input {
-        ControlDockInput::Startup {
-            runtime_context,
-            runtime_state,
-            primary_summary,
-            composer_body,
-            composer_disclosure,
-            composer_focused,
-        } => ControlDockViewModel {
-            variant: ControlDockVariant::Startup,
-            runtime_context,
-            runtime_badge: runtime_state.kind.label().to_string(),
-            runtime_kind: runtime_state.kind,
-            primary_summary,
-            summary_segment: None,
-            composer_body,
-            composer_disclosure,
-            composer_focused,
-            composer_disabled: runtime_state.composer_disabled,
-        },
-        ControlDockInput::Live {
-            runtime_context,
-            runtime_state,
-            primary_summary,
-            summary_segment,
-            composer_body,
-            composer_disclosure,
-            composer_focused,
-        } => ControlDockViewModel {
-            variant: ControlDockVariant::Live,
-            runtime_context,
-            runtime_badge: runtime_state.kind.label().to_string(),
-            runtime_kind: runtime_state.kind,
-            primary_summary,
-            summary_segment,
-            composer_body,
-            composer_disclosure,
-            composer_focused,
-            composer_disabled: runtime_state.composer_disabled,
-        },
-        ControlDockInput::ReplayReadOnly {
-            runtime_context,
-            runtime_state,
-            primary_summary,
-            composer_body,
-            composer_disclosure,
-            composer_focused,
-        } => ControlDockViewModel {
-            variant: ControlDockVariant::ReplayReadOnly,
-            runtime_context,
-            runtime_badge: runtime_state.kind.label().to_string(),
-            runtime_kind: runtime_state.kind,
-            primary_summary,
-            summary_segment: None,
-            composer_body,
-            composer_disclosure,
-            composer_focused,
-            composer_disabled: true,
-        },
     }
 }
 

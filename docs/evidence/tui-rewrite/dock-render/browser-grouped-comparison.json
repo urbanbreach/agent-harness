@@ -1,0 +1,126 @@
+{
+  "comparisons": [
+    {
+      "name": "01-prompt.png",
+      "pixels_equal": true,
+      "png_sha256": "390fd0e558c2caa77fa1cd4d65a569cbed16e5b8dbef814b8f80a5d9f2f9728c",
+      "observer_differences": {
+        "renderCount": {
+          "before": 6,
+          "candidate": 7
+        }
+      }
+    },
+    {
+      "name": "02-unicode-draft.png",
+      "pixels_equal": true,
+      "png_sha256": "fb64f3944d3d84fe7c91768f2761fa42c7508fc7093413e154d5cc5eb85163da",
+      "observer_differences": {
+        "renderCount": {
+          "before": 10,
+          "candidate": 11
+        }
+      }
+    },
+    {
+      "name": "03-120-edits.png",
+      "pixels_equal": true,
+      "png_sha256": "4863e322d742fdd318ceb2864a84826c000648b7775c348fc3c980ceae175c00",
+      "observer_differences": {
+        "renderCount": {
+          "before": 14,
+          "candidate": 16
+        }
+      }
+    },
+    {
+      "name": "04-110-undos.png",
+      "pixels_equal": true,
+      "png_sha256": "3a43a87473e4f77478af31365e742afc32a3695451545fb6d6cd104f75e7a857",
+      "observer_differences": {
+        "renderCount": {
+          "before": 19,
+          "candidate": 22
+        }
+      }
+    },
+    {
+      "name": "05-110-redos.png",
+      "pixels_equal": true,
+      "png_sha256": "4863e322d742fdd318ceb2864a84826c000648b7775c348fc3c980ceae175c00",
+      "observer_differences": {
+        "renderCount": {
+          "before": 24,
+          "candidate": 28
+        }
+      }
+    },
+    {
+      "name": "06-branch.png",
+      "pixels_equal": true,
+      "png_sha256": "4418aaf53eacdbf6e89f273bdeecaca7d82069294751cbe56f74b9d9f3acb387",
+      "observer_differences": {
+        "renderCount": {
+          "before": 28,
+          "candidate": 32
+        }
+      }
+    },
+    {
+      "name": "07-invalidated-redo.png",
+      "pixels_equal": true,
+      "png_sha256": "4418aaf53eacdbf6e89f273bdeecaca7d82069294751cbe56f74b9d9f3acb387",
+      "observer_differences": {
+        "renderCount": {
+          "before": 31,
+          "candidate": 35
+        }
+      }
+    },
+    {
+      "name": "08-branch-undo.png",
+      "pixels_equal": true,
+      "png_sha256": "c9d293390fa36a0cdb43a5c58982a8f3c3a0cb3d8546f041da84966af1b6a6ca",
+      "observer_differences": {
+        "renderCount": {
+          "before": 35,
+          "candidate": 39
+        }
+      }
+    },
+    {
+      "name": "09-grouped-delete.png",
+      "pixels_equal": true,
+      "png_sha256": "b5786bf5e3b3e7f21d5d1d2a563edd68d5e99c6575bbf9b1c7dcd316e7529dab",
+      "observer_differences": {
+        "renderCount": {
+          "before": 40,
+          "candidate": 44
+        }
+      }
+    },
+    {
+      "name": "10-grouped-undo.png",
+      "pixels_equal": true,
+      "png_sha256": "c9d293390fa36a0cdb43a5c58982a8f3c3a0cb3d8546f041da84966af1b6a6ca",
+      "observer_differences": {
+        "renderCount": {
+          "before": 44,
+          "candidate": 48
+        }
+      }
+    },
+    {
+      "name": "11-grouped-redo.png",
+      "pixels_equal": true,
+      "png_sha256": "b5786bf5e3b3e7f21d5d1d2a563edd68d5e99c6575bbf9b1c7dcd316e7529dab",
+      "observer_differences": {
+        "renderCount": {
+          "before": 48,
+          "candidate": 52
+        }
+      }
+    }
+  ],
+  "both_runs_restore_and_cleanup": true
+}
