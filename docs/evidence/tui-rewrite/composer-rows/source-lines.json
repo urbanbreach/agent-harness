@@ -1,0 +1,19 @@
+{
+  "before": {
+    "crates/harness-tui/src/composer_atoms/buffer.rs": 232,
+    "crates/harness-tui/src/ui_composer/presentation.rs": 84,
+    "crates/harness-tui/src/ui_composer/viewport.rs": 111,
+    "crates/harness-tui/src/layout.rs": 1356,
+    "crates/harness-tui/src/text.rs": 271,
+    "crates/harness-tui/src/completion_controller/geometry.rs": 66
+  },
+  "candidate": {
+    "crates/harness-tui/src/composer_atoms/buffer.rs": 230,
+    "crates/harness-tui/src/ui_composer/presentation.rs": 84,
+    "crates/harness-tui/src/ui_composer/viewport.rs": 89,
+    "crates/harness-tui/src/layout.rs": 1306,
+    "crates/harness-tui/src/text.rs": 300,
+    "crates/harness-tui/src/completion_controller/geometry.rs": 66
+  },
+  "src_total": 166058
+}

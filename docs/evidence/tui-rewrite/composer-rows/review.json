@@ -1,0 +1,26 @@
+{
+  "reviewer": "/root/tui_review",
+  "decision": "approved for this intermediate atomic commit; full rewrite not approved",
+  "blocking_findings": [],
+  "verified_artifacts_before_review_receipt": 58,
+  "verified_source_files": 6,
+  "verified_performance_reports": 48,
+  "verified": [
+    "source receipts and exact patch; 45 production lines removed",
+    "222262 frozen geometry comparisons; predecessor red/green and full test logs",
+    "all 48 raw performance reports, frozen limits and 16 exact content pairs",
+    "42 paired PNGs and terminal states excluding disclosed observer counters",
+    "four natural exits, terminal restoration and resource cleanup",
+    "visual inspection of narrow Unicode and newline-boundary screenshots"
+  ],
+  "limits_retained": [
+    "25/28 performance limits pass",
+    "long malloc calls 98782 exceed 93979.8; short p95/p99 161/195 exceed 133.1/179.3 microseconds",
+    "long p99 increases 246 to 363 microseconds within 401.5 bound; timing variation unresolved",
+    "CPU unchanged at process-tick resolution",
+    "R21 public-mirror CRLF discrepancy preserved",
+    "layout.rs remains 1306 lines; source total 166058 exceeds 90941 target",
+    "full legacy removal, sustained CPU, cadence, feature/environment coverage and whole-rewrite review remain open"
+  ],
+  "reviewer_actions": "Read-only; no builds, tests or edits."
+}

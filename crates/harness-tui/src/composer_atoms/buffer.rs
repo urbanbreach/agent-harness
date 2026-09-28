@@ -161,34 +161,32 @@ impl AtomBuffer {
     }
 
     pub fn wrap(&self, width: u16) -> Vec<WrappedLine> {
-        let mut lines = Vec::new();
-        let mut current = WrappedLine {
-            atom_ids: Vec::new(),
-            display_width: 0,
-        };
-        for atom in &self.atoms {
-            if matches!(atom.kind, AtomKind::Newline) {
-                current.atom_ids.push(atom.id);
-                lines.push(current);
-                current = WrappedLine {
-                    atom_ids: Vec::new(),
-                    display_width: 0,
-                };
-            } else if current.display_width > 0
-                && current.display_width.saturating_add(atom.display_width) > width
-            {
-                lines.push(current);
-                current = WrappedLine {
-                    atom_ids: vec![atom.id],
-                    display_width: atom.display_width,
-                };
-            } else {
-                current.atom_ids.push(atom.id);
-                current.display_width = current.display_width.saturating_add(atom.display_width);
+        self.wrapped_rows(width)
+            .map(|(atoms, display_width)| WrappedLine {
+                atom_ids: atoms.iter().map(|atom| atom.id).collect(),
+                display_width,
+            })
+            .collect()
+    }
+
+    pub(crate) fn wrapped_rows(&self, width: u16) -> impl Iterator<Item = (&[ComposerAtom], u16)> {
+        let mut remaining = Some(self.atoms.as_slice());
+        std::iter::from_fn(move || {
+            let atoms = remaining.take()?;
+            let mut used = 0u16;
+            for (index, atom) in atoms.iter().enumerate() {
+                if matches!(atom.kind, AtomKind::Newline) {
+                    remaining = Some(&atoms[index + 1..]);
+                    return Some((&atoms[..=index], used));
+                }
+                if used > 0 && used.saturating_add(atom.display_width) > width {
+                    remaining = Some(&atoms[index..]);
+                    return Some((&atoms[..index], used));
+                }
+                used = used.saturating_add(atom.display_width);
             }
-        }
-        lines.push(current);
-        lines
+            Some((atoms, used))
+        })
     }
 
     fn parse_text(&mut self, text: &str) -> Vec<ComposerAtom> {

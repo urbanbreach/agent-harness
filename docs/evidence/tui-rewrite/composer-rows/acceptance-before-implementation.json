@@ -1,0 +1,89 @@
+{
+  "recorded_at": "2026-09-28T01:16:38.113070+00:00",
+  "source": "b832c3ca0afbe2ec71e473ac63c744f8abdc83a8",
+  "baseline": {
+    "typing-long": {
+      "p50_us": 212,
+      "p95_us": 237,
+      "p99_us": 365,
+      "bytes": 20000,
+      "rss_kib": 9956,
+      "cpu_ms_per_frame": 0.22,
+      "allocated_bytes": 64347766,
+      "peak_heap_bytes": 2193319,
+      "malloc_calls": 104422
+    },
+    "typing": {
+      "p50_us": 108,
+      "p95_us": 122,
+      "p99_us": 186,
+      "bytes": 140750,
+      "rss_kib": 9748,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 8439508,
+      "peak_heap_bytes": 2115524,
+      "malloc_calls": 92749
+    },
+    "undo-long": {
+      "p50_us": 230,
+      "p95_us": 244,
+      "p99_us": 263,
+      "bytes": 20000,
+      "rss_kib": 9992,
+      "cpu_ms_per_frame": 0.22,
+      "allocated_bytes": 86423336,
+      "peak_heap_bytes": 2156864,
+      "malloc_calls": 406587
+    },
+    "delete-long": {
+      "p50_us": 291,
+      "p95_us": 367,
+      "p99_us": 392,
+      "bytes": 31187,
+      "rss_kib": 9960,
+      "cpu_ms_per_frame": 0.3,
+      "allocated_bytes": 123741785,
+      "peak_heap_bytes": 2021378,
+      "malloc_calls": 630791
+    }
+  },
+  "limits": {
+    "typing-long": {
+      "p95_us": 258.5,
+      "p99_us": 401.50000000000006,
+      "rss_kib": 10674.400000000001,
+      "peak_heap_bytes": 2412650.9000000004,
+      "allocated_bytes": 57912989.4,
+      "malloc_calls": 93979.8,
+      "cpu_ms_per_frame": 0.24200000000000002
+    },
+    "typing": {
+      "p95_us": 133.10000000000002,
+      "p99_us": 179.3,
+      "rss_kib": 10472.0,
+      "peak_heap_bytes": 2228162.2,
+      "allocated_bytes": 8439508.0,
+      "malloc_calls": 92749.0,
+      "cpu_ms_per_frame": 0.11000000000000001
+    },
+    "undo-long": {
+      "p95_us": 268.40000000000003,
+      "cpu_ms_per_frame": 0.24200000000000002,
+      "allocated_bytes": 86423336.0,
+      "malloc_calls": 406587.0,
+      "p99_us": 289.3,
+      "rss_kib": 10991.2,
+      "peak_heap_bytes": 2370231.6
+    },
+    "delete-long": {
+      "p95_us": 403.70000000000005,
+      "cpu_ms_per_frame": 0.33,
+      "rss_kib": 10956.0,
+      "peak_heap_bytes": 2223515.8000000003,
+      "allocated_bytes": 123741785.0,
+      "malloc_calls": 630791.0,
+      "p99_us": 426.8
+    }
+  },
+  "requirements": "Replace atom wrapping with borrowed rows, materializing public results only; count-only runtime/completion paths allocate no ID vectors. Replace frame-height grapheme records with shared string soft-wrap primitive, retaining distinct LF policies and caps. Long typing allocation bytes and malloc calls must fall at least10%; retain all older stricter limits and no other allocation/call increases. Fixed500frames,10warmups,160x48; timings exclude PTY/emulator delivery."
+}
