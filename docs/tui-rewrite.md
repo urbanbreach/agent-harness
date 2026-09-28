@@ -133,6 +133,7 @@ before changing the implementation.
 | R17 | Tool-row assembly eagerly parses todo data for every visible tool and may read unrelated JSON/text artifacts before discarding the result | Remove the eager todo call and unreachable todo row branches. Production transcript dispatch already hides todo calls; retain the active todo pane parser. This is a source-traced side-effect correction with unchanged visible output, not a syscall-count claim. |
 | R18 | Default bindings assign Ctrl+Y to Redo and then overwrite it with AllowPermission, so it does nothing in the ordinary composer | Record the unchanged no-op on both builds. Use the working Ctrl+Shift+Z binding for redo parity. Defer the shortcut-policy correction separately from snapshot ownership; the failed predecessor capture is retained in undo-sharing evidence. |
 | R19 | Default bindings assign Ctrl+Home to MoveBufferStart and then overwrite it with FirstMessage, leaving no default buffer-start shortcut | Preserve the existing default. Exercise MoveBufferStart through a configured F12 binding in the public keyboard test; use ordinary Home/End for the navigation workload. Defer the shortcut-policy correction; preparation failures are retained in prompt-editing evidence. |
+| R20 | When public prompt fields diverge from the atom editor while both remain prediction prefixes, ghost eligibility follows the prompt fields but its displayed suffix follows the editor. For example, an editor containing `inspect ` and a prompt mirror containing `inspect the ` can paint `inspect the the workspace`. | Reproduced through the public AppState API at `16ab0230`. Preserve it in the composer projection replacement and retain a behavioral check. Correct it when unifying draft state; no shipped keyboard sequence reproducing this divergence has been established. |
 
 `check-tui-restoration.py` reproduces R1 with a trace path whose parent is a file:
 the original exits with raw mode and alternate-screen/paste/mouse modes enabled.
@@ -1106,6 +1107,33 @@ earlier passing comparison, remain available. Timing excludes terminal-emulator
 latency. Earlier latency failures, source/state replacement and sustained-runtime
 targets remain open. Evidence is in
 [`evidence/tui-rewrite/undo-journal`](evidence/tui-rewrite/undo-journal).
+
+## Composer projection
+
+Runtime composer painting and pointer geometry now borrow atoms and project only
+the text, badges and ghost suffix they consume. The full owned view-model clone,
+editor clone, reflow and mirror adapter leave that path. Public owned models and
+validation remain. Row sizing measures borrowed Unicode width directly, removing
+per-grapheme Ratatui line allocations. Atom row budgets and string paint/cursor
+geometry retain their distinct behavior. R20 records the unchanged ghost defect
+when public prompt mirrors diverge from the editor.
+
+All 1,635 TUI checks, seven gated PTY checks and quality checks pass. Existing
+public checks cover completion badges, narrow attachment geometry and divergent
+ghost text; a predecessor mutation demonstrates the attachment assertion fails.
+Thirty-eight paired PTY/xterm frames match exact PNGs, cells, styles and cursor,
+with terminal restoration and resource cleanup. Production line count is
+unchanged. Removing one structural test brings TUI
+source to 166,232 lines. The retained 1,356-line layout engine remains unfinished.
+
+Long-draft allocation bytes fall 77.7%, malloc calls 97.7% and CPU 31.3%.
+Grouped-deletion CPU falls from 0.44 to 0.30 ms/frame. The corrected comparison
+passes 25 of 28 bounds. Short-draft p95 is 168 µs against 133.1, p99 is 200 µs
+against 179.3, and CPU is 0.12 ms/frame against 0.11. The candidate is slower
+than its paired short-draft reference; the cause remains unverified. All 80
+raw reports and the first candidate's failed comparison remain available.
+Measurements exclude terminal-emulator latency. Evidence is in
+[`evidence/tui-rewrite/composer-projection`](evidence/tui-rewrite/composer-projection).
 
 ## Verification sequence
 

@@ -1,0 +1,89 @@
+{
+  "recorded_at": "2026-09-28T00:25:23.545880+00:00",
+  "source": "16ab0230547d73b0b9468eab683c880b920cda47",
+  "baseline": {
+    "typing-long": {
+      "p50_us": 311,
+      "p95_us": 329,
+      "p99_us": 350,
+      "bytes": 20000,
+      "rss_kib": 10044,
+      "cpu_ms_per_frame": 0.32,
+      "allocated_bytes": 329856359,
+      "peak_heap_bytes": 2248091,
+      "malloc_calls": 4645570
+    },
+    "typing": {
+      "p50_us": 111,
+      "p95_us": 121,
+      "p99_us": 130,
+      "bytes": 140750,
+      "rss_kib": 9780,
+      "cpu_ms_per_frame": 0.1,
+      "allocated_bytes": 9562887,
+      "peak_heap_bytes": 2113418,
+      "malloc_calls": 106277
+    },
+    "undo-long": {
+      "p50_us": 329,
+      "p95_us": 363,
+      "p99_us": 380,
+      "bytes": 20000,
+      "rss_kib": 10120,
+      "cpu_ms_per_frame": 0.34,
+      "allocated_bytes": 351937105,
+      "peak_heap_bytes": 2209524,
+      "malloc_calls": 4947760
+    },
+    "delete-long": {
+      "p50_us": 422,
+      "p95_us": 561,
+      "p99_us": 595,
+      "bytes": 31187,
+      "rss_kib": 10100,
+      "cpu_ms_per_frame": 0.42,
+      "allocated_bytes": 480603464,
+      "peak_heap_bytes": 2055036,
+      "malloc_calls": 6680925
+    }
+  },
+  "limits": {
+    "typing-long": {
+      "p95_us": 361.90000000000003,
+      "p99_us": 450,
+      "rss_kib": 11048.400000000001,
+      "peak_heap_bytes": 2472900.1,
+      "allocated_bytes": 296870723.1,
+      "malloc_calls": 4181013.0,
+      "cpu_ms_per_frame": 0.28800000000000003
+    },
+    "typing": {
+      "p95_us": 133.10000000000002,
+      "p99_us": 179.3,
+      "rss_kib": 10472.0,
+      "peak_heap_bytes": 2228162.2,
+      "allocated_bytes": 9562887,
+      "malloc_calls": 106277,
+      "cpu_ms_per_frame": 0.11000000000000001
+    },
+    "undo-long": {
+      "p95_us": 375.1,
+      "cpu_ms_per_frame": 0.35200000000000004,
+      "allocated_bytes": 386830853.20000005,
+      "malloc_calls": 5442536.0,
+      "p99_us": 454,
+      "rss_kib": 11132.0,
+      "peak_heap_bytes": 2430476.4000000004
+    },
+    "delete-long": {
+      "p95_us": 594.0,
+      "cpu_ms_per_frame": 0.4,
+      "rss_kib": 11039.6,
+      "peak_heap_bytes": 2249804.7,
+      "allocated_bytes": 506311770.8,
+      "malloc_calls": 7061215.7,
+      "p99_us": 664
+    }
+  },
+  "requirements": "Replace the runtime owned composer projection/reflow path with borrowed presentation data. Long typing must reduce allocated bytes, malloc calls and CPU by at least 10%; short typing cannot increase allocated bytes or malloc count. Preserve all older stricter limits; delete-long CPU must recover to the pre-journal .40 ms/frame. No content, geometry, atom-width, badge, ghost, cursor or public API loss. Timings exclude PTY/emulator delivery."
+}

@@ -42,6 +42,10 @@ pub struct ComposerState {
 }
 
 impl ComposerState {
+    pub(crate) fn render_data(&self) -> crate::composer_integration::ComposerRenderData<'_> {
+        self.slice.render_data()
+    }
+
     pub fn composer_multiline_mode(&self) -> bool {
         self.multiline_mode
     }

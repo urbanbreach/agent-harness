@@ -33,7 +33,7 @@ fn render(app: &AppState, width: u16, height: u16) -> String {
 #[test]
 fn bordered_composer_renders_ghost_suggestion_inline_after_draft() {
     // arrange
-    let app = app_with_suggestion("inspect ", "inspect the workspace");
+    let mut app = app_with_suggestion("inspect ", "inspect the workspace");
 
     // act
     let rendered = render(&app, 80, 24);
@@ -44,6 +44,15 @@ fn bordered_composer_renders_ghost_suggestion_inline_after_draft() {
             .lines()
             .any(|line| line.contains("inspect the workspace")),
         "rendered shell:\n{rendered}"
+    );
+    // Public prompt fields can differ from the atom editor. Eligibility follows
+    // these fields, while the existing displayed suffix follows the editor.
+    app.composer.prompt_buffer = "inspect the ".into();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    let divergent = render(&app, 80, 24);
+    assert!(
+        divergent.contains("inspect the the workspace"),
+        "{divergent}"
     );
 }
 

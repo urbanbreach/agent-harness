@@ -125,9 +125,9 @@ pub(crate) fn render_document_composer_content(
     let show_cursor = !context.dock.composer_disabled
         && !footer_suppressed_by_overlay(app)
         && (placeholder_visible || context.dock.composer_focused);
-    let Some(resolved) = super::presentation::resolve_composer(
+    let resolved = super::presentation::resolve_composer(
         app,
-        &app.composer_view_model_for_area(input_area).editor,
+        &app.composer.render_data(),
         &composer_text,
         context.dock.composer_focused,
         context.dock.composer_disabled,
@@ -137,9 +137,7 @@ pub(crate) fn render_document_composer_content(
         usize::from(input_area.height.max(1)),
         body_inner.height,
         show_cursor,
-    ) else {
-        return;
-    };
+    );
     let mode_style = composer_mode_style(theme, resolved.tone, context.dock.composer_focused);
     let shell_mode_active = resolved.tone == crate::composer_integration::ComposerTone::Shell
         && !context.dock.composer_disabled;

@@ -1,8 +1,16 @@
 use crate::keybindings::Action;
 
-use super::ComposerSurface;
+use super::{ComposerSurface, ComposerTone};
 
 impl ComposerSurface {
+    pub(crate) const fn tone(self) -> ComposerTone {
+        match self {
+            Self::Shell => ComposerTone::Shell,
+            Self::Plan => ComposerTone::Plan,
+            _ => ComposerTone::Standard,
+        }
+    }
+
     pub const fn marker(self) -> Option<&'static str> {
         match self {
             Self::Shell => Some("!"),

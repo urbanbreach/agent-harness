@@ -1,0 +1,37 @@
+{
+  "tui": {
+    "run": 1635,
+    "passed": 1635,
+    "skipped": 7
+  },
+  "pty": {
+    "run": 7,
+    "passed": 7
+  },
+  "public_tests_before": {
+    "run": 13,
+    "passed": 13
+  },
+  "mutation": {
+    "run": 13,
+    "passed": 12,
+    "failed": 1
+  },
+  "public_tests_after": {
+    "run": 13,
+    "passed": 13
+  },
+  "workspace_check": "passed",
+  "clippy": "passed",
+  "fmt": "passed",
+  "suite_gates": "passed",
+  "performance_runs_retained": 80,
+  "performance_final": "25/28 limits pass; short-draft p95 168 > 133.1, p99 200 > 179.3, CPU 0.12 > 0.11. All 16 paired content checks exact.",
+  "performance_phase1": "24/28 limits pass; retained, including failed long allocation/malloc/CPU targets and short p99.",
+  "paired_browser_frames": 38,
+  "browser_exact_pngs": true,
+  "browser_exact_terminal_state_except_observer_counts": true,
+  "terminal_and_resource_cleanup": "all four runs passed",
+  "workspace_test_suite": "not rerun; earlier predecessor CLI fixture failures remain",
+  "whole_rewrite": "unfinished"
+}
