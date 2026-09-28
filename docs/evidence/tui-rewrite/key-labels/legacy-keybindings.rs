@@ -6,7 +6,7 @@
 use crate::UnwrapOrAbort;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::{fmt, str::FromStr};
+use std::str::FromStr;
 
 mod command_registry;
 pub mod palette_model;
@@ -329,41 +329,6 @@ impl KeyBinding {
 
     pub fn matches(&self, event: &KeyEvent) -> bool {
         self.code == event.code && self.modifiers == event.modifiers
-    }
-}
-
-impl fmt::Display for KeyBinding {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (modifier, label) in [
-            (KeyModifiers::CONTROL, "Ctrl+"),
-            (KeyModifiers::SHIFT, "Shift+"),
-            (KeyModifiers::ALT, "Alt+"),
-        ] {
-            if self.modifiers.contains(modifier) {
-                f.write_str(label)?;
-            }
-        }
-        f.write_str(match self.code {
-            KeyCode::Char(c) => return write!(f, "{c}"),
-            KeyCode::Tab => "Tab",
-            KeyCode::BackTab => "Shift+Tab",
-            KeyCode::Enter => "Enter",
-            KeyCode::Esc => "Esc",
-            KeyCode::Up => "↑",
-            KeyCode::Down => "↓",
-            KeyCode::Left => "←",
-            KeyCode::Right => "→",
-            KeyCode::Backspace => "Backspace",
-            KeyCode::Delete => "Del",
-            KeyCode::Home => "Home",
-            KeyCode::End => "End",
-            KeyCode::PageUp => "PgUp",
-            KeyCode::PageDown => "PgDn",
-            KeyCode::Insert => "Ins",
-            KeyCode::F(n) => return write!(f, "F{n}"),
-            #[allow(clippy::use_debug, reason = "Preserve existing fallback key labels")]
-            _ => return write!(f, "{:?}", self.code),
-        })
     }
 }
 
@@ -1010,39 +975,41 @@ impl KeyMap {
 
     /// Get all key bindings for an action.
     pub fn get_bindings(&self, action: Action) -> Vec<&KeyBinding> {
-        self.bindings_for_action(action).collect()
-    }
-
-    fn bindings_for_action(&self, action: Action) -> impl Iterator<Item = &KeyBinding> {
-        self.reverse
+        let mut bindings: Vec<&KeyBinding> = self
+            .reverse
             .get(&action)
-            .into_iter()
-            .flatten()
-            .chain(self.session_reverse.get(&action).into_iter().flatten())
-            .chain(
-                self.leader_sequences
-                    .iter()
-                    .filter_map(move |(binding, candidate)| {
-                        (*candidate == action).then_some(binding)
-                    }),
-            )
+            .map(|v| v.iter().collect())
+            .unwrap_or_default();
+        bindings.extend(
+            self.session_reverse
+                .get(&action)
+                .into_iter()
+                .flat_map(|v| v.iter()),
+        );
+        bindings.extend(
+            self.leader_sequences
+                .iter()
+                .filter_map(|(binding, candidate)| (*candidate == action).then_some(binding)),
+        );
+        bindings
     }
 
     /// Get the primary key binding for an action as a string.
     pub fn get_binding_str(&self, action: Action) -> String {
         self.get_leader_binding(action)
             .or_else(|| {
-                self.bindings_for_action(action)
-                    .next()
-                    .map(ToString::to_string)
+                self.get_bindings(action)
+                    .first()
+                    .map(|b| format_key_binding(b))
             })
             .unwrap_or_else(|| "-".to_string())
     }
 
     pub fn get_binding_strs(&self, action: Action) -> Vec<String> {
         let mut bindings = self
-            .bindings_for_action(action)
-            .map(ToString::to_string)
+            .get_bindings(action)
+            .into_iter()
+            .map(format_key_binding)
             .collect::<Vec<_>>();
         bindings.sort();
         bindings.dedup();
@@ -1070,9 +1037,8 @@ impl KeyMap {
         let mut all: Vec<(&KeyBinding, &Action)> = self.bindings.iter().collect();
         all.extend(self.session_bindings.iter());
         all.sort_by(|(left_key, left_action), (right_key, right_action)| {
-            left_key
-                .to_string()
-                .cmp(&right_key.to_string())
+            format_key_binding(left_key)
+                .cmp(&format_key_binding(right_key))
                 .then_with(|| left_action.as_str().cmp(right_action.as_str()))
         });
         all
@@ -1082,8 +1048,47 @@ impl KeyMap {
         self.leader_sequences
             .iter()
             .find(|(_, candidate)| **candidate == action)
-            .map(|(binding, _)| format!("Ctrl+x {binding}"))
+            .map(|(binding, _)| format!("Ctrl+x {}", format_key_binding(binding)))
     }
+}
+
+/// Format a key binding as a human-readable string.
+fn format_key_binding(binding: &KeyBinding) -> String {
+    let mut parts = Vec::new();
+
+    if binding.modifiers.contains(KeyModifiers::CONTROL) {
+        parts.push("Ctrl");
+    }
+    if binding.modifiers.contains(KeyModifiers::SHIFT) {
+        parts.push("Shift");
+    }
+    if binding.modifiers.contains(KeyModifiers::ALT) {
+        parts.push("Alt");
+    }
+
+    let key_str = match binding.code {
+        KeyCode::Char(c) => c.to_string(),
+        KeyCode::Tab => "Tab".to_string(),
+        KeyCode::BackTab => "Shift+Tab".to_string(),
+        KeyCode::Enter => "Enter".to_string(),
+        KeyCode::Esc => "Esc".to_string(),
+        KeyCode::Up => "↑".to_string(),
+        KeyCode::Down => "↓".to_string(),
+        KeyCode::Left => "←".to_string(),
+        KeyCode::Right => "→".to_string(),
+        KeyCode::Backspace => "Backspace".to_string(),
+        KeyCode::Delete => "Del".to_string(),
+        KeyCode::Home => "Home".to_string(),
+        KeyCode::End => "End".to_string(),
+        KeyCode::PageUp => "PgUp".to_string(),
+        KeyCode::PageDown => "PgDn".to_string(),
+        KeyCode::Insert => "Ins".to_string(),
+        KeyCode::F(n) => format!("F{n}"),
+        _ => format!("{:?}", binding.code),
+    };
+
+    parts.push(&key_str);
+    parts.join("+")
 }
 
 fn parse_leader_sequence(value: &str) -> Option<KeyBinding> {

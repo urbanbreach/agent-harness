@@ -211,12 +211,31 @@ fn keymap_override_collision_removes_stale_session_label() {
 #[test]
 fn keymap_returns_binding_str() {
     let keymap = KeyMap::with_defaults();
-    let bindings = keymap.get_binding_strs(Action::Quit);
-    assert!(
-        bindings
-            .iter()
-            .any(|b| b == "q" || b == "Ctrl+q" || b == "Ctrl+d"),
-        "quit bindings present: {bindings:?}"
+    assert_eq!(keymap.get_binding_str(Action::DiffHunkNext), "Alt+n");
+    assert_eq!(
+        keymap.get_bindings(Action::DiffHunkNext),
+        [
+            &KeyBinding::new(KeyCode::Char('n'), KeyModifiers::ALT),
+            &KeyBinding::new(KeyCode::Char(']'), KeyModifiers::ALT),
+        ]
+    );
+    assert_eq!(
+        keymap.get_binding_strs(Action::DiffHunkNext),
+        ["Alt+]", "Alt+n"]
+    );
+    assert_eq!(keymap.get_binding_str(Action::OpenStatusDialog), "Ctrl+x s");
+    assert_eq!(
+        keymap.get_bindings(Action::OpenStatusDialog),
+        [
+            &KeyBinding::new(KeyCode::F(2), KeyModifiers::NONE),
+            &KeyBinding::new(KeyCode::Char(','), KeyModifiers::CONTROL),
+            &KeyBinding::new(KeyCode::Char(','), KeyModifiers::SUPER),
+            &KeyBinding::new(KeyCode::Char('s'), KeyModifiers::NONE),
+        ]
+    );
+    assert_eq!(
+        keymap.get_binding_strs(Action::OpenStatusDialog),
+        [",", "Ctrl+,", "F2", "s"]
     );
 }
 
@@ -232,13 +251,28 @@ fn keymap_returns_ctrl_binding_str() {
 
 #[test]
 fn keymap_formats_binding_labels_from_overrides() {
-    let mut overrides = BTreeMap::new();
-    overrides.insert("quit".to_string(), "x".to_string());
-
-    let mut keymap = KeyMap::with_defaults();
-    keymap.apply_overrides(&overrides);
-
-    assert_eq!(keymap.get_binding_label(Action::Quit, "quit"), "x quit");
+    for (binding, primary, listed) in [
+        ("x", "x", "x"),
+        (
+            "ctrl+shift+alt+enter",
+            "Ctrl+Shift+Alt+Enter",
+            "Ctrl+Shift+Alt+Enter",
+        ),
+        ("shift+backtab", "Shift+Shift+Tab", "Shift+Shift+Tab"),
+        ("ctrl+x up", "Ctrl+x ↑", "↑"),
+        ("alt+pageup", "Alt+PgUp", "Alt+PgUp"),
+        ("space", " ", " "),
+        ("ctrl++", "Ctrl++", "Ctrl++"),
+    ] {
+        let overrides = BTreeMap::from([("quit".to_string(), binding.to_string())]);
+        let mut keymap = KeyMap::with_defaults();
+        keymap.apply_overrides(&overrides);
+        assert_eq!(
+            keymap.get_binding_label(Action::Quit, "quit"),
+            format!("{primary} quit")
+        );
+        assert_eq!(keymap.get_binding_strs(Action::Quit), [listed]);
+    }
 }
 
 #[test]

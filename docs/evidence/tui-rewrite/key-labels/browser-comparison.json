@@ -1,0 +1,228 @@
+{
+  "comparisons": [
+    {
+      "name": "01-prompt.png",
+      "pixels_equal": true,
+      "png_sha256": "390fd0e558c2caa77fa1cd4d65a569cbed16e5b8dbef814b8f80a5d9f2f9728c",
+      "observer_differences": {}
+    },
+    {
+      "name": "02-unicode-draft.png",
+      "pixels_equal": true,
+      "png_sha256": "fb64f3944d3d84fe7c91768f2761fa42c7508fc7093413e154d5cc5eb85163da",
+      "observer_differences": {}
+    },
+    {
+      "name": "03-insert.png",
+      "pixels_equal": true,
+      "png_sha256": "a12bf800ec2f428dae01fc913a16e601f869b9605475a405a092a9aa4c73428f",
+      "observer_differences": {}
+    },
+    {
+      "name": "04-delete.png",
+      "pixels_equal": true,
+      "png_sha256": "fb64f3944d3d84fe7c91768f2761fa42c7508fc7093413e154d5cc5eb85163da",
+      "observer_differences": {}
+    },
+    {
+      "name": "05-middle-edit.png",
+      "pixels_equal": true,
+      "png_sha256": "b24ce505c3c92c1b99d34001c5cec21fac76afbd5862e7d6dda19edda9617bdc",
+      "observer_differences": {}
+    },
+    {
+      "name": "06-undo.png",
+      "pixels_equal": true,
+      "png_sha256": "1b6f76277dc19e67b536daf1c65c512ac93457de99e5c36e4c7162de32449fd9",
+      "observer_differences": {}
+    },
+    {
+      "name": "06b-ctrl-y-conflict.png",
+      "pixels_equal": true,
+      "png_sha256": "1b6f76277dc19e67b536daf1c65c512ac93457de99e5c36e4c7162de32449fd9",
+      "observer_differences": {}
+    },
+    {
+      "name": "07-redo.png",
+      "pixels_equal": true,
+      "png_sha256": "b24ce505c3c92c1b99d34001c5cec21fac76afbd5862e7d6dda19edda9617bdc",
+      "observer_differences": {}
+    },
+    {
+      "name": "08-select-all.png",
+      "pixels_equal": true,
+      "png_sha256": "a269919fb85a1749a069637ed237a3728ece6699cd415c1079a92cb483624c7d",
+      "observer_differences": {}
+    },
+    {
+      "name": "09-replace-selection.png",
+      "pixels_equal": true,
+      "png_sha256": "7fd52deb21aa444182517995dcf258bb7851dd80a38208899e206b805f6ceeae",
+      "observer_differences": {}
+    },
+    {
+      "name": "10-undo-selection.png",
+      "pixels_equal": true,
+      "png_sha256": "a269919fb85a1749a069637ed237a3728ece6699cd415c1079a92cb483624c7d",
+      "observer_differences": {}
+    },
+    {
+      "name": "11-redo-selection.png",
+      "pixels_equal": true,
+      "png_sha256": "7fd52deb21aa444182517995dcf258bb7851dd80a38208899e206b805f6ceeae",
+      "observer_differences": {}
+    },
+    {
+      "name": "12-escape-expired.png",
+      "pixels_equal": true,
+      "png_sha256": "7fd52deb21aa444182517995dcf258bb7851dd80a38208899e206b805f6ceeae",
+      "observer_differences": {}
+    },
+    {
+      "name": "12b-cleared.png",
+      "pixels_equal": true,
+      "png_sha256": "7f0a6573ea1bc30ccfaa4c617860318f67cb59923779b1e9bb4e960fa810af4a",
+      "observer_differences": {}
+    },
+    {
+      "name": "13-multiline-paste.png",
+      "pixels_equal": true,
+      "png_sha256": "392d30ff8f24c24f4b7685d66ad333e53b42921aabd4bf91dbe876c0cbe538d5",
+      "observer_differences": {}
+    },
+    {
+      "name": "14-expanded-paste.png",
+      "pixels_equal": true,
+      "png_sha256": "2fd27cc8779ff479387ab4de6cef0d27bd6e29ac1eee0a7f1927157a85a82e0e",
+      "observer_differences": {}
+    },
+    {
+      "name": "15-navigation-draft.png",
+      "pixels_equal": true,
+      "png_sha256": "d9bf7c410b15f4304be5f5205224cf9897c6b6c698fa5befaf273682f16c061d",
+      "observer_differences": {}
+    },
+    {
+      "name": "17-line-start.png",
+      "pixels_equal": true,
+      "png_sha256": "c9db2c26b0d07742eba4509be576b3cd49d84a6e940870a9d0754fe4e0b0b44c",
+      "observer_differences": {}
+    },
+    {
+      "name": "18-word-left.png",
+      "pixels_equal": true,
+      "png_sha256": "8a96779fe5ee04522fc84d43f4f3daa64115585eb428edba24a75844ef3f8fca",
+      "observer_differences": {}
+    },
+    {
+      "name": "19-word-selection.png",
+      "pixels_equal": true,
+      "png_sha256": "88137853868d11192500b502438429457c154793242824788b0324b22e61e88e",
+      "observer_differences": {}
+    },
+    {
+      "name": "20-word-delete.png",
+      "pixels_equal": true,
+      "png_sha256": "e629d4e9d5c69e90161d4a93afc5d5762cc7c800936c9e36ebf0154117b5b346",
+      "observer_differences": {}
+    },
+    {
+      "name": "21-word-undo.png",
+      "pixels_equal": true,
+      "png_sha256": "88137853868d11192500b502438429457c154793242824788b0324b22e61e88e",
+      "observer_differences": {}
+    },
+    {
+      "name": "22-word-redo.png",
+      "pixels_equal": true,
+      "png_sha256": "e629d4e9d5c69e90161d4a93afc5d5762cc7c800936c9e36ebf0154117b5b346",
+      "observer_differences": {}
+    },
+    {
+      "name": "24-wrap-draft.png",
+      "pixels_equal": true,
+      "png_sha256": "9a367b99fcd79fb3a4238a57a52cf1cea0b697cbb40a2f0bb622e841d2736350",
+      "observer_differences": {}
+    },
+    {
+      "name": "25-narrow.png",
+      "pixels_equal": true,
+      "png_sha256": "48284b3efc38ed65aac67a180f88ebf3b680407fff912071a07cdab7deaee6af",
+      "observer_differences": {}
+    },
+    {
+      "name": "26-compact.png",
+      "pixels_equal": true,
+      "png_sha256": "0ae600797bbe95471a143534c77a36c7c1f7418648a7a33d9370665bdf06819c",
+      "observer_differences": {}
+    },
+    {
+      "name": "27-restored-size.png",
+      "pixels_equal": true,
+      "png_sha256": "9a367b99fcd79fb3a4238a57a52cf1cea0b697cbb40a2f0bb622e841d2736350",
+      "observer_differences": {}
+    },
+    {
+      "name": "28-wrap-boundaries.png",
+      "pixels_equal": true,
+      "png_sha256": "034c30445964236b4f600b9c318c6abe25da32d9487340f0e6d168844f3aaed9",
+      "observer_differences": {
+        "renderCount": {
+          "before": 120,
+          "candidate": 121
+        },
+        "parsedCount": {
+          "before": 32,
+          "candidate": 33
+        }
+      }
+    },
+    {
+      "name": "29-space-cursor.png",
+      "pixels_equal": true,
+      "png_sha256": "09a304bf5cc5b76054d69cb4845a2e34d8bca402747eb99ed6767c1a02bf5eb4",
+      "observer_differences": {
+        "renderCount": {
+          "before": 124,
+          "candidate": 125
+        },
+        "parsedCount": {
+          "before": 33,
+          "candidate": 34
+        }
+      }
+    },
+    {
+      "name": "30-leading-space.png",
+      "pixels_equal": true,
+      "png_sha256": "dc1c70c6237eb309a971fffee3a2b00d3f8653c17164d2d418bf4db6c2145eef",
+      "observer_differences": {
+        "renderCount": {
+          "before": 128,
+          "candidate": 129
+        },
+        "parsedCount": {
+          "before": 34,
+          "candidate": 35
+        }
+      }
+    },
+    {
+      "name": "31-newline-after-space.png",
+      "pixels_equal": true,
+      "png_sha256": "1bb1abf45c7b5765db3c180bcf0ce0d05a01cd56ff8ba026d4497237765b09cc",
+      "observer_differences": {
+        "renderCount": {
+          "before": 132,
+          "candidate": 133
+        },
+        "parsedCount": {
+          "before": 35,
+          "candidate": 36
+        }
+      }
+    }
+  ],
+  "both_runs_restore_and_cleanup": true,
+  "clear_then_history_ghost_and_unprefixed_paste": true
+}

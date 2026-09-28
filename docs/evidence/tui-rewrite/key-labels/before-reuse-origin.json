@@ -1,0 +1,44 @@
+{
+  "base": "03784425760ff676c37d9cb8f487ca03106b6cd2",
+  "side": "candidate",
+  "sha256": "15878afab68ec4c06c6874b75fdc4585cc20875c1cc8da6c57025fa048f050c2",
+  "probe_sha256": "afe37813adbf612dab7934c946ea2502407bbb1837f14dc0ecc5c0d2ffe10853",
+  "fixture_sha256": "df377eb5d0762ae30d28270ef4c20a969df28263986356dd2fa45386b80f4d2f",
+  "production_sources": [
+    {
+      "path": "crates/harness-tui/src/ui_composer.rs",
+      "sha256": "0da33aa0620f91b8b3a7f3e3f6f257f215d3423757f7f8a5e8840e7b8b3e44ef",
+      "deleted": false
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/bordered.rs",
+      "sha256": "d8b9ee116b01e484b82c2d2275c694f249a624472f52c55792529f40452649e5",
+      "deleted": false
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/collapsed.rs",
+      "sha256": "9cb00b27f2db1e7e440f3a25406a4500ea4ba57eb6696a32cf4dea13710a9417",
+      "deleted": false
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/file_tags.rs",
+      "sha256": "ebdf8ac7fc2b8719f075c2616934d09539feacacbcc2a75e44bafeadcd6c41c5",
+      "deleted": false
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/document.rs",
+      "sha256": null,
+      "deleted": true
+    },
+    {
+      "path": "crates/harness-tui/src/ui_composer/metadata.rs",
+      "sha256": null,
+      "deleted": true
+    },
+    {
+      "path": "crates/harness-tui/src/ui_chrome.rs",
+      "sha256": "ea9946a1dcc5d30043b97f8247613ff0eb2a6878d5a53ce34cf3554bc9ee85f0",
+      "deleted": false
+    }
+  ]
+}
