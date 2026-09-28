@@ -142,10 +142,6 @@ pub(super) fn assistant_primary_rail_color(
     }
 }
 
-pub(super) fn transcript_nested_rail_color(theme: &Theme) -> Color {
-    theme.text.secondary
-}
-
 pub(super) fn transcript_emphasized_surface(theme: &Theme, base_surface: Color) -> Color {
     if base_surface == theme.surface.panel {
         elevated_card_surface(theme)

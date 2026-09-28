@@ -8,9 +8,7 @@ pub(crate) use super::session_history::{
     session_history_category_label, session_history_current_marker, session_history_display_title,
     session_history_footer_label,
 };
-use super::session_slash::{
-    auth_slash_args_from_prompt, slash_command_display_width, slash_command_match_rank,
-};
+use super::session_slash::{auth_slash_args_from_prompt, slash_command_match_rank};
 use super::{
     auth_status_banner, set_pending_live_launch_metadata, set_pending_live_prompt_draft, AppState,
     Focus, PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
@@ -269,16 +267,6 @@ impl AppState {
                     .then_some(entry.id)
                 })
             })
-    }
-
-    pub(crate) fn slash_command_column_width(&self) -> usize {
-        keybindings::slash_commands()
-            .iter()
-            .filter(|command| self.slash_command_available(command.id))
-            .map(|command| slash_command_display_width(command.id))
-            .max()
-            .unwrap_or(0)
-            .saturating_add(2)
     }
 
     fn slash_command_available(&self, command: &str) -> bool {
@@ -988,13 +976,6 @@ impl AppState {
             });
         self.sync_slash_overlay();
         self.sync_file_mention_overlay();
-    }
-
-    pub(in crate::app) fn palette_command_available(&self, command_id: &str) -> bool {
-        let Some(entry) = crate::keybindings::palette_model::find(command_id) else {
-            return false;
-        };
-        super::palette_controller::is_available(self, entry)
     }
 
     pub(in crate::app) fn apply_new_session_launcher_selection(&mut self) {

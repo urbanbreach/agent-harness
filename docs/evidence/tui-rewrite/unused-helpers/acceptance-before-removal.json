@@ -1,0 +1,12 @@
+{
+  "recorded_at": "2026-09-28T02:18:50.392292+00:00",
+  "base": "e421434a7ef274824e87c5201c595600c4d0b748",
+  "scope": "Remove 47 uncalled private functions, StartupCardViewModel, five unused constants, and stale imports/empty impls. Keep public APIs, stored fields and test-used helpers.",
+  "acceptance": [
+    "Every selected function is identified by compiler dead_code analysis and a source/caller receipt.",
+    "No test edits or new tests; existing 1,635 TUI and 7 gated PTY checks pass.",
+    "Workspace check, Clippy, formatting and suite gates pass.",
+    "Independent review confirms no reachable behavior or public contract removed."
+  ],
+  "resources": "No runtime performance improvement is claimed for unreachable code removal. Prior measured gates and open failures remain unchanged; no benchmark rerun is used to waive them."
+}

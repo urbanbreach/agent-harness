@@ -1234,6 +1234,21 @@ unchanged candidate for a passing result. CPU remains unchanged at process-tick
 resolution. Evidence is in
 [`evidence/tui-rewrite/key-labels`](evidence/tui-rewrite/key-labels).
 
+## Unused private helper removal
+
+An explicit compiler dead-code diagnostic and caller trace identified 47 private
+functions with no callers outside unused chains. Removing them, one unused view
+model, five constants and stale imports cuts 555 production lines. Tests and
+stored fields are unchanged. The compiler warning count falls from 69 to 21;
+test-used helpers and other leftovers remain. The TUI source tree totals 165,121
+lines, and 19 touched legacy files remain over 500 lines.
+
+All 1,635 TUI checks, including the independent recorded reference, seven gated
+PTY checks and quality gates pass. This deletion makes no runtime performance
+claim or fresh xterm comparison; earlier resource failures remain open. Exact
+source/caller receipts, diagnostic logs and checks are in
+[`evidence/tui-rewrite/unused-helpers`](evidence/tui-rewrite/unused-helpers).
+
 ## Verification sequence
 
 1. Retain the executable, record the full behavior matrix, and capture terminal

@@ -1,0 +1,576 @@
+crates/harness-tui/src/app.rs:3754
+    pub(crate) fn provider_disconnected(&self) -> bool {
+        !self.launch_metadata.has_provider()
+    }
+
+crates/harness-tui/src/app/activity.rs:418
+pub(in crate::app) fn merge_orchestration_task_completion_metadata(
+    row: &mut OrchestrationTaskRow,
+    metadata: Option<&TaskCompletionMetadata>,
+) {
+    let Some(metadata) = metadata else {
+        return;
+    };
+
+    merge_orchestration_task_lineage(row, metadata.lineage.as_ref());
+    if row.timing_elapsed_ms.is_none() {
+        row.timing_elapsed_ms = metadata
+            .timing
+            .as_ref()
+            .and_then(execution_timing_elapsed_ms);
+    }
+}
+
+crates/harness-tui/src/app/lifecycle.rs:742
+    pub(crate) fn startup_card_view_model(&self) -> view_model::StartupCardViewModel {
+        view_model::startup_card_view_model(
+            self.startup_mode,
+            self.launch_mode_label(),
+            self.active_profile(),
+            self.active_provider(),
+            self.current_model_label(),
+        )
+    }
+
+crates/harness-tui/src/app/model_switcher.rs:222
+    pub(in crate::app) fn runtime_context_profile(&self) -> &str {
+        let profile = self.runtime_context_metadata().profile();
+        if Self::launch_value_is_unknown(profile) {
+            self.active_profile()
+        } else {
+            profile
+        }
+    }
+
+crates/harness-tui/src/app/palette_controller.rs:175
+pub fn is_suggested(app: &AppState, entry: &PaletteCommandEntry) -> bool {
+    match entry.suggested {
+        SuggestedRule::Never => false,
+        SuggestedRule::Always => true,
+        SuggestedRule::WhenSessionsExist => !app.session_history_entries.is_empty(),
+        SuggestedRule::WhenSessionRoute => !app.startup_shell_visible(),
+        SuggestedRule::WhenDisconnected => app.provider_disconnected(),
+    }
+}
+
+crates/harness-tui/src/app/permissions.rs:54
+    pub(crate) fn mark_resolved(
+        &mut self,
+        decision: EventPermissionDecision,
+        reason: Option<&str>,
+        seq: u64,
+    ) {
+        self.resolved_decision = Some(decision);
+        self.resolution_reason = reason.map(str::to_owned);
+        self.last_seq = seq;
+    }
+
+crates/harness-tui/src/app/permissions/question.rs:106
+pub(super) fn question_prompt_is_single_select(prompts: &[QuestionPromptView]) -> bool {
+    prompts.len() == 1 && !prompts[0].multiple
+}
+
+crates/harness-tui/src/app/session_history.rs:140
+fn session_history_time_label(timestamp: &str) -> String {
+    if let Some((hour, minute)) = epoch_millis_time_parts(timestamp) {
+        return format_twelve_hour_time(hour, minute);
+    }
+
+    let short = short_time_or_trimmed(timestamp);
+    let Some((hour, minute)) = short.split_once(':').and_then(|(hour, minute)| {
+        Some((
+            hour.parse::<u8>().ok()?,
+            minute.get(..2)?.parse::<u8>().ok()?,
+        ))
+    }) else {
+        return short;
+    };
+
+    format_twelve_hour_time(hour, minute)
+}
+
+crates/harness-tui/src/app/session_history.rs:158
+fn format_twelve_hour_time(hour: u8, minute: u8) -> String {
+    let suffix = if hour < 12 { "AM" } else { "PM" };
+    let display_hour = match hour % 12 {
+        0 => 12,
+        hour => hour,
+    };
+    format!("{display_hour}:{minute:02} {suffix}")
+}
+
+crates/harness-tui/src/app/session_history.rs:225
+fn session_history_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {
+    iso_date_parts(timestamp).or_else(|| epoch_millis_date_parts(timestamp))
+}
+
+crates/harness-tui/src/app/session_history.rs:229
+fn epoch_millis_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {
+    let seconds = epoch_millis_seconds(timestamp)?;
+    civil_from_days(seconds.div_euclid(86_400))
+}
+
+crates/harness-tui/src/app/session_history.rs:234
+fn epoch_millis_time_parts(timestamp: &str) -> Option<(u8, u8)> {
+    let seconds = epoch_millis_seconds(timestamp)?;
+    let seconds_of_day = seconds.rem_euclid(86_400);
+    Some((
+        u8::try_from(seconds_of_day / 3_600).ok()?,
+        u8::try_from((seconds_of_day % 3_600) / 60).ok()?,
+    ))
+}
+
+crates/harness-tui/src/app/session_history.rs:268
+fn current_utc_date() -> Option<(i32, u8, u8)> {
+    let duration = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    civil_from_days(i64::try_from(duration.as_secs() / 86_400).ok()?)
+}
+
+crates/harness-tui/src/app/session_history.rs:275
+fn civil_from_days(days_since_unix_epoch: i64) -> Option<(i32, u8, u8)> {
+    let z = days_since_unix_epoch.checked_add(719_468)?;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = year + i64::from(month <= 2);
+    Some((
+        i32::try_from(year).ok()?,
+        u8::try_from(month).ok()?,
+        u8::try_from(day).ok()?,
+    ))
+}
+
+crates/harness-tui/src/app/session_history.rs:293
+fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
+    let mut year = i64::from(year);
+    let month = i64::from(month);
+    let day = i64::from(day);
+    year -= i64::from(month <= 2);
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let yoe = year - era * 400;
+    let month_prime = month + if month > 2 { -3 } else { 9 };
+    let doy = (153 * month_prime + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+crates/harness-tui/src/app/session_history.rs:306
+fn weekday_name(year: i32, month: u8, day: u8) -> &'static str {
+    const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+    let days = days_from_civil(year, month, day);
+    let index = usize::try_from(days.rem_euclid(7)).unwrap_or(0);
+    WEEKDAYS[index]
+}
+
+crates/harness-tui/src/app/session_history.rs:313
+const fn month_name(month: u8) -> &'static str {
+    match month {
+        1 => "Jan",
+        2 => "Feb",
+        3 => "Mar",
+        4 => "Apr",
+        5 => "May",
+        6 => "Jun",
+        7 => "Jul",
+        8 => "Aug",
+        9 => "Sep",
+        10 => "Oct",
+        11 => "Nov",
+        12 => "Dec",
+        _ => "???",
+    }
+}
+
+crates/harness-tui/src/app/session_history.rs:548
+    pub(crate) fn session_history_visual_row_count(&self) -> usize {
+        let mut rows = 0usize;
+        let mut previous_category: Option<String> = None;
+        for entry_index in &self.session_history_filtered {
+            let Some(entry) = self.session_history_entries.get(*entry_index) else {
+                continue;
+            };
+            let category = session_history_category_label(entry);
+            if previous_category.as_deref() != Some(category.as_str()) {
+                if previous_category.is_some() {
+                    rows = rows.saturating_add(1);
+                }
+                rows = rows.saturating_add(1);
+                previous_category = Some(category);
+            }
+            rows = rows.saturating_add(1);
+        }
+        rows
+    }
+
+crates/harness-tui/src/app/session_navigation.rs:274
+    pub(crate) fn slash_command_column_width(&self) -> usize {
+        keybindings::slash_commands()
+            .iter()
+            .filter(|command| self.slash_command_available(command.id))
+            .map(|command| slash_command_display_width(command.id))
+            .max()
+            .unwrap_or(0)
+            .saturating_add(2)
+    }
+
+crates/harness-tui/src/app/session_navigation.rs:993
+    pub(in crate::app) fn palette_command_available(&self, command_id: &str) -> bool {
+        let Some(entry) = crate::keybindings::palette_model::find(command_id) else {
+            return false;
+        };
+        super::palette_controller::is_available(self, entry)
+    }
+
+crates/harness-tui/src/app/session_slash.rs:51
+pub(super) fn slash_command_display_width(command: &str) -> usize {
+    command.chars().count().saturating_add(1)
+}
+
+crates/harness-tui/src/app/transcript_state.rs:422
+    pub(crate) fn active_turn_tool_motion_demand(&self) -> bool {
+        if self.replay_mode || self.interrupt_requested() || !self.active_turn_in_progress() {
+            return false;
+        }
+        let mut has_active_tool = false;
+        let mut has_running_tool = false;
+        for tool_call in self
+            .activities
+            .iter()
+            .flat_map(|activity| activity.tool_calls.iter())
+        {
+            match tool_call.status {
+                ToolCallDisplayStatus::Running => {
+                    has_active_tool = true;
+                    has_running_tool = true;
+                }
+                ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
+                    has_active_tool = true;
+                    has_running_tool |= tool_call.has_execution_motion();
+                }
+                ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => {}
+            }
+        }
+        super::transcript_view::active_turn_motion_demand(
+            has_active_tool,
+            has_running_tool,
+            self.transcript_view.visible_running_tool_motion,
+        )
+    }
+
+crates/harness-tui/src/app/transcript_state.rs:840
+    pub(in crate::app) fn show_mode_banner(&mut self, message: impl Into<String>) {
+        let now = self.now();
+        self.toast = Some(ToastState {
+            message: message.into(),
+            variant: ToastVariant::Mode,
+            expires_at: now + Duration::from_millis(2_277),
+            paused_remaining: None,
+        });
+        self.motion_revision = self.motion_revision.wrapping_add(1);
+    }
+
+crates/harness-tui/src/layout/overlays.rs:220
+fn command_palette_visible_rows(app: &AppState) -> usize {
+    if !app.palette_input.is_empty() {
+        return app.palette_filtered.len();
+    }
+
+    app.palette_filtered
+        .iter()
+        .fold((0usize, None), |(rows, last_category), command| {
+            let id = command
+                .strip_prefix("suggested:")
+                .unwrap_or(command.as_str());
+            let category = crate::keybindings::palette_model::find(id).map(|entry| entry.category);
+            let section_rows = if category.is_some() && category != last_category {
+                if last_category.is_some() {
+                    2
+                } else {
+                    1
+                }
+            } else {
+                0
+            };
+            (
+                rows.saturating_add(section_rows).saturating_add(1),
+                category,
+            )
+        })
+        .0
+}
+
+crates/harness-tui/src/startup_logo.rs:40
+pub(crate) fn row_spans(logo: Logo, row_index: usize, color: Color) -> Vec<Span<'static>> {
+    vec![Span::styled(
+        padded_row(logo.rows()[row_index], logo.width()),
+        Style::default().fg(color),
+    )]
+}
+
+crates/harness-tui/src/startup_logo.rs:55
+fn padded_row(row: &str, width: usize) -> String {
+    let mut output = row.to_string();
+    while output.chars().count() < width {
+        output.push(' ');
+    }
+    output.chars().take(width).collect()
+}
+
+crates/harness-tui/src/ui_chrome.rs:103
+pub(super) const fn command_palette_section(theme: &Theme) -> Color {
+    theme.terminal_colors.palette_section
+}
+
+crates/harness-tui/src/ui_chrome.rs:119
+pub(super) const fn fork_selector_selection_bg(theme: &Theme) -> Color {
+    theme.terminal_colors.fork_accent
+}
+
+crates/harness-tui/src/ui_chrome.rs:123
+pub(super) const fn fork_selector_selection_fg(theme: &Theme) -> Color {
+    theme.text.inverse
+}
+
+crates/harness-tui/src/ui_chrome.rs:996
+fn preferred_binding(
+    app: &AppState,
+    action: crate::keybindings::Action,
+    preferred: &str,
+) -> String {
+    let bindings = app.keymap.get_binding_strs(action);
+    if bindings.iter().any(|binding| binding == preferred) {
+        return preferred.to_string();
+    }
+    bindings
+        .into_iter()
+        .next()
+        .filter(|binding| binding != "-")
+        .unwrap_or_else(|| preferred.to_string())
+}
+
+crates/harness-tui/src/ui_permission_dock.rs:617
+pub(in crate::ui) const fn question_prompt_secondary(theme: &Theme) -> Color {
+    theme.question_prompt.secondary
+}
+
+crates/harness-tui/src/ui_lsp.rs:73
+pub(super) fn path_root_from_args(args_summary: &str) -> Option<String> {
+    let path = path_from_args(args_summary)?;
+    Path::new(&path)
+        .parent()
+        .and_then(Path::to_str)
+        .map(str::to_string)
+}
+
+crates/harness-tui/src/ui_overlays.rs:617
+fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rect) -> Option<Rect> {
+    if !paint_command_palette_panel(frame, theme, overlay) {
+        return None;
+    }
+
+    let content = inset_rect(overlay, 3.min(overlay.width.saturating_sub(1)), 1);
+    if content.width == 0 || content.height == 0 {
+        return None;
+    }
+
+    Some(content)
+}
+
+crates/harness-tui/src/ui_overlays/permission_modal.rs:5
+pub(in crate::ui) fn permission_modal_metadata_line(
+    _permission: &crate::app::ActivePermissionView,
+) -> String {
+    String::new()
+}
+
+crates/harness-tui/src/ui_overlays/permission_modal.rs:11
+pub(in crate::ui) fn permission_modal_icon(
+    permission: &crate::app::ActivePermissionView,
+) -> &'static str {
+    let kind = permission.kind.as_str();
+    if kind.eq_ignore_ascii_case("question")
+        || kind.eq_ignore_ascii_case("ask")
+        || kind.eq_ignore_ascii_case("ask_user")
+    {
+        return "?";
+    }
+    if kind.eq_ignore_ascii_case("edit")
+        || kind.eq_ignore_ascii_case("edit_fs")
+        || kind.eq_ignore_ascii_case("lsp")
+    {
+        return "→";
+    }
+    if kind.eq_ignore_ascii_case("shell") || kind.eq_ignore_ascii_case("bash") {
+        return "#";
+    }
+    if kind.eq_ignore_ascii_case("task") {
+        return "#";
+    }
+    if kind.eq_ignore_ascii_case("webfetch") {
+        return "%";
+    }
+    if kind.eq_ignore_ascii_case("websearch") {
+        return "◈";
+    }
+    if kind.eq_ignore_ascii_case("codesearch") {
+        return "◇";
+    }
+    "⚙"
+}
+
+crates/harness-tui/src/ui_overlays/permission_modal.rs:184
+pub(in crate::ui) fn permission_modal_guidance(
+    permission: &crate::app::ActivePermissionView,
+    submission_pending: bool,
+) -> &'static str {
+    if submission_pending {
+        "Decision recorded. Wait for confirmation before sending another turn."
+    } else if permission.kind.eq_ignore_ascii_case("question")
+        || permission.kind.eq_ignore_ascii_case("ask")
+        || permission.kind.eq_ignore_ascii_case("ask_user")
+    {
+        "Safest next step: deny. Answer only after review."
+    } else {
+        "Safest next step: deny. Approve only after review."
+    }
+}
+
+crates/harness-tui/src/ui_overlays/permission_modal.rs:200
+pub(in crate::ui) fn permission_modal_summary_line(
+    permission: &crate::app::ActivePermissionView,
+    submission_pending: bool,
+) -> String {
+    if submission_pending {
+        return "Decision submitted — awaiting confirmation.".to_string();
+    }
+
+    permission
+        .tool_label
+        .as_deref()
+        .map(|tool| format!("Tool {tool} is paused for review."))
+        .unwrap_or_else(|| {
+            if permission.summary.chars().count() > 48 {
+                format!(
+                    "{} request is paused for review.",
+                    permission.kind.replace('_', " ")
+                )
+            } else {
+                permission.summary.clone()
+            }
+        })
+}
+
+crates/harness-tui/src/ui_overlays/permission_modal.rs:224
+pub(in crate::ui) fn permission_modal_draft_line(prompt_buffer: &str) -> String {
+    let draft = prompt_buffer.trim();
+    if draft.is_empty() {
+        String::new()
+    } else {
+        format!("Draft preserved · {draft}")
+    }
+}
+
+crates/harness-tui/src/ui_overlays/release_notes.rs:212
+fn push_wrapped_bullet(rows: &mut Vec<ReleaseNoteRow>, title: &str, detail: &str, width: usize) {
+    let text = format!("• {title} {detail}");
+    let start = "• ".len();
+    let end = start + title.len();
+    let first_row = rows.len();
+    push_wrapped(rows, &text, width);
+    if let Some(ReleaseNoteRow::Body { bold_range, .. }) = rows.get_mut(first_row) {
+        *bold_range = Some(start..end);
+    }
+}
+
+crates/harness-tui/src/ui_transcript_types.rs:520
+    pub(super) fn assistant_reasoning(&self) -> Option<&TranscriptLabeledTextSection> {
+        self.assistant_parts.iter().find_map(|part| match part {
+            TranscriptAssistantPart::Reasoning(reasoning) => Some(reasoning),
+            _ => None,
+        })
+    }
+
+crates/harness-tui/src/ui_transcript_types.rs:527
+    pub(super) fn assistant_bodies(&self) -> impl Iterator<Item = &TranscriptBodyBlock> {
+        self.assistant_parts.iter().filter_map(|part| match part {
+            TranscriptAssistantPart::Body(body) => Some(body),
+            _ => None,
+        })
+    }
+
+crates/harness-tui/src/ui_transcript_types.rs:534
+    pub(super) fn assistant_error(&self) -> Option<&TranscriptErrorSection> {
+        self.assistant_parts.iter().find_map(|part| match part {
+            TranscriptAssistantPart::Error(error) => Some(error),
+            _ => None,
+        })
+    }
+
+crates/harness-tui/src/ui_transcript_render.rs:1236
+fn retry_attempt(turn: &TranscriptTurnSection) -> Option<&ProviderRequestRetryMetadata> {
+    turn.header.retry.as_ref().filter(|retry| retry.attempt > 0)
+}
+
+crates/harness-tui/src/ui_transcript_scrollbar.rs:257
+pub(super) fn transcript_scroll_offset(
+    follow_mode: bool,
+    transcript_scroll: usize,
+    total_height: usize,
+    viewport_height: u16,
+) -> usize {
+    let viewport_height = usize::from(viewport_height);
+    if viewport_height == 0 {
+        return 0;
+    }
+
+    let max_scroll = total_height.saturating_sub(viewport_height);
+    if max_scroll == 0 {
+        return 0;
+    }
+
+    if follow_mode {
+        return max_scroll;
+    }
+
+    current_transcript_scroll_top(follow_mode, transcript_scroll, max_scroll)
+}
+
+crates/harness-tui/src/ui_transcript_style.rs:145
+pub(super) fn transcript_nested_rail_color(theme: &Theme) -> Color {
+    theme.text.secondary
+}
+
+crates/harness-tui/src/view_model.rs:436
+pub(crate) fn startup_card_view_model(
+    startup_mode: bool,
+    launch_mode_label: Option<&str>,
+    profile: &str,
+    provider: &str,
+    model: &str,
+) -> StartupCardViewModel {
+    let _ = (startup_mode, launch_mode_label, provider);
+    StartupCardViewModel {
+        metadata: format!("Launch: {profile} · {model}"),
+    }
+}
+
+crates/harness-tui/src/rewind_view.rs:61
+    pub fn new_cancel_offer(
+        anchor: usize,
+        draft: Option<ComposerState>,
+        selected_prompt_index: Option<usize>,
+    ) -> Self {
+        Self {
+            phase: RewindPhase::CancelOffer { active_idx: 0 },
+            anchor_entry_idx: anchor,
+            stashed_draft: draft,
+            selected_prompt_index,
+        }
+    }

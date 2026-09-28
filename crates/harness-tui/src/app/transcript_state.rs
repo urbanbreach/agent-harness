@@ -419,36 +419,6 @@ impl AppState {
         self.transcript_view.visible_running_tool_motion = visible;
     }
 
-    pub(crate) fn active_turn_tool_motion_demand(&self) -> bool {
-        if self.replay_mode || self.interrupt_requested() || !self.active_turn_in_progress() {
-            return false;
-        }
-        let mut has_active_tool = false;
-        let mut has_running_tool = false;
-        for tool_call in self
-            .activities
-            .iter()
-            .flat_map(|activity| activity.tool_calls.iter())
-        {
-            match tool_call.status {
-                ToolCallDisplayStatus::Running => {
-                    has_active_tool = true;
-                    has_running_tool = true;
-                }
-                ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
-                    has_active_tool = true;
-                    has_running_tool |= tool_call.has_execution_motion();
-                }
-                ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => {}
-            }
-        }
-        super::transcript_view::active_turn_motion_demand(
-            has_active_tool,
-            has_running_tool,
-            self.transcript_view.visible_running_tool_motion,
-        )
-    }
-
     pub(in crate::app) fn invalidate_transcript_after_durable_event(&mut self) {
         // Queued badges and tool rows depend on other turns. Only terminal text
         // turns can keep their prepared layout when a durable suffix changes.
@@ -832,17 +802,6 @@ impl AppState {
                 } else {
                     2
                 }),
-            paused_remaining: None,
-        });
-        self.motion_revision = self.motion_revision.wrapping_add(1);
-    }
-
-    pub(in crate::app) fn show_mode_banner(&mut self, message: impl Into<String>) {
-        let now = self.now();
-        self.toast = Some(ToastState {
-            message: message.into(),
-            variant: ToastVariant::Mode,
-            expires_at: now + Duration::from_millis(2_277),
             paused_remaining: None,
         });
         self.motion_revision = self.motion_revision.wrapping_add(1);

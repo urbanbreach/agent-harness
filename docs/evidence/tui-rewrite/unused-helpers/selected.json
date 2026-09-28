@@ -1,0 +1,523 @@
+{
+  "base": "e421434a7ef274824e87c5201c595600c4d0b748",
+  "functions": [
+    {
+      "path": "crates/harness-tui/src/app.rs",
+      "name": "provider_disconnected",
+      "start": 3754,
+      "end": 3756,
+      "sha256": "b50a4ae06c4113551bbb294bde2a0a8a80ccc77b0b3d615c048fb2b14b22d5a7",
+      "references": [
+        "crates/harness-tui/src/app.rs:3754:    pub(crate) fn provider_disconnected(&self) -> bool {",
+        "crates/harness-tui/src/app/palette_controller.rs:181:        SuggestedRule::WhenDisconnected => app.provider_disconnected(),"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/activity.rs",
+      "name": "merge_orchestration_task_completion_metadata",
+      "start": 418,
+      "end": 433,
+      "sha256": "db0f074a64d6c2c58b051949a2aaa91d5b5cad1eda362ad073d56b763c846616",
+      "references": [
+        "crates/harness-tui/src/app.rs:179:    mark_activity_event, merge_orchestration_task_completion_metadata,",
+        "crates/harness-tui/src/app/session_projection.rs:21:    mark_activity_event, merge_orchestration_task_completion_metadata,",
+        "crates/harness-tui/src/app/activity.rs:418:pub(in crate::app) fn merge_orchestration_task_completion_metadata("
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/lifecycle.rs",
+      "name": "startup_card_view_model",
+      "start": 742,
+      "end": 750,
+      "sha256": "a6631a51e235b4042dfff33cbb2edb6b74ee19327052ce2d249045486ec58c1e",
+      "references": [
+        "crates/harness-tui/src/app/lifecycle.rs:742:    pub(crate) fn startup_card_view_model(&self) -> view_model::StartupCardViewModel {",
+        "crates/harness-tui/src/app/lifecycle.rs:743:        view_model::startup_card_view_model(",
+        "crates/harness-tui/src/view_model.rs:436:pub(crate) fn startup_card_view_model("
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/model_switcher.rs",
+      "name": "runtime_context_profile",
+      "start": 222,
+      "end": 229,
+      "sha256": "dd1b73cdd8689625948b9bb8553b3ea223bf4ad30b0b8aac1f281d112d69f3a3",
+      "references": [
+        "crates/harness-tui/src/app/model_switcher.rs:222:    pub(in crate::app) fn runtime_context_profile(&self) -> &str {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/palette_controller.rs",
+      "name": "is_suggested",
+      "start": 175,
+      "end": 183,
+      "sha256": "6fb3ee531c9a267ab62ecf7b31992719b108d070ce797d99625ba913b2ba2d47",
+      "references": [
+        "crates/harness-tui/src/app/palette_controller.rs:175:pub fn is_suggested(app: &AppState, entry: &PaletteCommandEntry) -> bool {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/permissions.rs",
+      "name": "mark_resolved",
+      "start": 54,
+      "end": 63,
+      "sha256": "0e5f3ebb559f89569ee93f184135e5e1fccf62ac0e2f14186b21810873b24497",
+      "references": [
+        "crates/harness-tui/src/app/permissions.rs:54:    pub(crate) fn mark_resolved("
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/permissions/question.rs",
+      "name": "question_prompt_is_single_select",
+      "start": 106,
+      "end": 108,
+      "sha256": "c7e333e5e48c75c4656b11523a8b2762dba7b2e4acf172a03d06f8c127ceff19",
+      "references": [
+        "crates/harness-tui/src/app/permissions/question.rs:106:pub(super) fn question_prompt_is_single_select(prompts: &[QuestionPromptView]) -> bool {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_history.rs",
+      "name": "session_history_time_label",
+      "start": 140,
+      "end": 156,
+      "sha256": "31f7ee64870022e40131c56023e3512c829b0f112a2f61c27fd8c51be6967ef0",
+      "references": [
+        "crates/harness-tui/src/app/session_history.rs:140:fn session_history_time_label(timestamp: &str) -> String {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_history.rs",
+      "name": "format_twelve_hour_time",
+      "start": 158,
+      "end": 165,
+      "sha256": "a2aa9c6d915e587543aa3f1842f43c870bef1b64d3efd60eecc53cc5d6223176",
+      "references": [
+        "crates/harness-tui/src/app/session_history.rs:142:        return format_twelve_hour_time(hour, minute);",
+        "crates/harness-tui/src/app/session_history.rs:155:    format_twelve_hour_time(hour, minute)",
+        "crates/harness-tui/src/app/session_history.rs:158:fn format_twelve_hour_time(hour: u8, minute: u8) -> String {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_history.rs",
+      "name": "session_history_date_parts",
+      "start": 225,
+      "end": 227,
+      "sha256": "b6c46392381be8c3bc1405585959482a2ff2a1a96d5ff45090b95f8ad318049d",
+      "references": [
+        "crates/harness-tui/src/app/session_history.rs:225:fn session_history_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_history.rs",
+      "name": "epoch_millis_date_parts",
+      "start": 229,
+      "end": 232,
+      "sha256": "c45c5baeb521b04defa2a603959d4617f6828a6690a73330f2b1ee11de0e916a",
+      "references": [
+        "crates/harness-tui/src/app/session_history.rs:226:    iso_date_parts(timestamp).or_else(|| epoch_millis_date_parts(timestamp))",
+        "crates/harness-tui/src/app/session_history.rs:229:fn epoch_millis_date_parts(timestamp: &str) -> Option<(i32, u8, u8)> {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_history.rs",
+      "name": "epoch_millis_time_parts",
+      "start": 234,
+      "end": 241,
+      "sha256": "78be25e836b6da782fe80c7163caeca94c52d0a11aa05f3b2853967399ac14d7",
+      "references": [
+        "crates/harness-tui/src/app/session_history.rs:141:    if let Some((hour, minute)) = epoch_millis_time_parts(timestamp) {",
+        "crates/harness-tui/src/app/session_history.rs:234:fn epoch_millis_time_parts(timestamp: &str) -> Option<(u8, u8)> {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_history.rs",
+      "name": "current_utc_date",
+      "start": 268,
+      "end": 273,
+      "sha256": "1530078b3910e0d43a0c82e5c14e9e924bcadcf5e0b15e98b6c95e41559d457a",
+      "references": [
+        "crates/harness-tui/src/app/session_history.rs:268:fn current_utc_date() -> Option<(i32, u8, u8)> {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_history.rs",
+      "name": "civil_from_days",
+      "start": 275,
+      "end": 291,
+      "sha256": "ac934adafd3fb0677acbeb6c70bcfc1b9d435911357e4b08aaeabf2bf5bf5452",
+      "references": [
+        "crates/harness-tui/src/app/session_history.rs:231:    civil_from_days(seconds.div_euclid(86_400))",
+        "crates/harness-tui/src/app/session_history.rs:272:    civil_from_days(i64::try_from(duration.as_secs() / 86_400).ok()?)",
+        "crates/harness-tui/src/app/session_history.rs:275:fn civil_from_days(days_since_unix_epoch: i64) -> Option<(i32, u8, u8)> {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_history.rs",
+      "name": "days_from_civil",
+      "start": 293,
+      "end": 304,
+      "sha256": "3c0409ba4e4386943e8f044379dfe22ab02abc05a80fb065f4672caecf52c186",
+      "references": [
+        "crates/harness-tui/src/app/session_history.rs:293:fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {",
+        "crates/harness-tui/src/app/session_history.rs:308:    let days = days_from_civil(year, month, day);"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_history.rs",
+      "name": "weekday_name",
+      "start": 306,
+      "end": 311,
+      "sha256": "1add9b75dde59000456fb61ceb79f7cea39563f9fd6f84b8ee21400bf8b64b43",
+      "references": [
+        "crates/harness-tui/src/app/session_history.rs:306:fn weekday_name(year: i32, month: u8, day: u8) -> &'static str {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_history.rs",
+      "name": "month_name",
+      "start": 313,
+      "end": 329,
+      "sha256": "53f9cbedbd2da733bd13a76db195aa151e5026c6db8b9a10a42d22cfd23de4a3",
+      "references": [
+        "crates/harness-tui/src/time_format.rs:61:    let Some(month_name) = month.checked_sub(1).and_then(|index| MONTHS.get(index)) else {",
+        "crates/harness-tui/src/time_format.rs:65:        \"{} | {month_name} {}\",",
+        "crates/harness-tui/src/app/session_history.rs:313:const fn month_name(month: u8) -> &'static str {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_history.rs",
+      "name": "session_history_visual_row_count",
+      "start": 548,
+      "end": 566,
+      "sha256": "04ee1de24924c8f95f1789143c4aca344cab92dccac4418403ae0f0a86f4e13e",
+      "references": [
+        "crates/harness-tui/src/app/session_history.rs:548:    pub(crate) fn session_history_visual_row_count(&self) -> usize {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_navigation.rs",
+      "name": "slash_command_column_width",
+      "start": 274,
+      "end": 282,
+      "sha256": "3d7be8171fc0c9154ec3ce791e2d5ea22b3a49696b8601ddfecfd84fb9148ac6",
+      "references": [
+        "crates/harness-tui/src/app/session_navigation.rs:274:    pub(crate) fn slash_command_column_width(&self) -> usize {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_navigation.rs",
+      "name": "palette_command_available",
+      "start": 993,
+      "end": 998,
+      "sha256": "e3c26604b1e44b244654e360acd03080f8066fb2512219f565bde0b09313d6f2",
+      "references": [
+        "crates/harness-tui/src/app/session_navigation.rs:993:    pub(in crate::app) fn palette_command_available(&self, command_id: &str) -> bool {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/session_slash.rs",
+      "name": "slash_command_display_width",
+      "start": 51,
+      "end": 53,
+      "sha256": "829d43595276dfe61adee500efb345d56abc15887bd89356741c5ee96c494690",
+      "references": [
+        "crates/harness-tui/src/app/session_navigation.rs:12:    auth_slash_args_from_prompt, slash_command_display_width, slash_command_match_rank,",
+        "crates/harness-tui/src/app/session_navigation.rs:278:            .map(|command| slash_command_display_width(command.id))",
+        "crates/harness-tui/src/app/session_slash.rs:51:pub(super) fn slash_command_display_width(command: &str) -> usize {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/transcript_state.rs",
+      "name": "active_turn_tool_motion_demand",
+      "start": 422,
+      "end": 450,
+      "sha256": "b76ce695d4256453356d1f0ef02165d649b8e5fdbb45f7a9bcd395b6841e3dae",
+      "references": [
+        "crates/harness-tui/src/app/transcript_state.rs:422:    pub(crate) fn active_turn_tool_motion_demand(&self) -> bool {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/app/transcript_state.rs",
+      "name": "show_mode_banner",
+      "start": 840,
+      "end": 849,
+      "sha256": "4451919f969fe89abe4bdcf6e2d1bb8026de50df427e7f61288138479b13cb23",
+      "references": [
+        "crates/harness-tui/src/app/transcript_state.rs:840:    pub(in crate::app) fn show_mode_banner(&mut self, message: impl Into<String>) {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/layout/overlays.rs",
+      "name": "command_palette_visible_rows",
+      "start": 220,
+      "end": 247,
+      "sha256": "e255a68994cdb2e0654e15bbcb9990f4988f990f4aed1d1f8a9601c3d02219d2",
+      "references": [
+        "crates/harness-tui/src/layout/overlays.rs:220:fn command_palette_visible_rows(app: &AppState) -> usize {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/startup_logo.rs",
+      "name": "row_spans",
+      "start": 40,
+      "end": 45,
+      "sha256": "c5c119efb6606f10d8a96e90d3e1513651b997e58237842790c2aa627d1175a6",
+      "references": [
+        "crates/harness-tui/src/startup_logo.rs:40:pub(crate) fn row_spans(logo: Logo, row_index: usize, color: Color) -> Vec<Span<'static>> {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/startup_logo.rs",
+      "name": "padded_row",
+      "start": 55,
+      "end": 61,
+      "sha256": "5c9ae1f41ba52f822ba9e686e5c4cf80e962b50360d8da737f702dbbd4f2c289",
+      "references": [
+        "crates/harness-tui/src/startup_logo.rs:42:        padded_row(logo.rows()[row_index], logo.width()),",
+        "crates/harness-tui/src/startup_logo.rs:55:fn padded_row(row: &str, width: usize) -> String {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_chrome.rs",
+      "name": "command_palette_section",
+      "start": 103,
+      "end": 105,
+      "sha256": "e0bcc40f869245e54f14e168f87d22173fffbf5d679f7a8a550a010d23607732",
+      "references": [
+        "crates/harness-tui/src/ui_chrome.rs:103:pub(super) const fn command_palette_section(theme: &Theme) -> Color {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_chrome.rs",
+      "name": "fork_selector_selection_bg",
+      "start": 119,
+      "end": 121,
+      "sha256": "d7bbdf2e95b34382490f7c69663e785ee57b7c481fe6df4611f35e8b113b422c",
+      "references": [
+        "crates/harness-tui/src/ui_chrome.rs:119:pub(super) const fn fork_selector_selection_bg(theme: &Theme) -> Color {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_chrome.rs",
+      "name": "fork_selector_selection_fg",
+      "start": 123,
+      "end": 125,
+      "sha256": "798b6da2920e8c0cd1fc9ed3f7f716ccdb0a53d94dc61ffb9c583ae398d9f3f4",
+      "references": [
+        "crates/harness-tui/src/ui_chrome.rs:123:pub(super) const fn fork_selector_selection_fg(theme: &Theme) -> Color {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_chrome.rs",
+      "name": "preferred_binding",
+      "start": 996,
+      "end": 1010,
+      "sha256": "e7869ee904e0e9d2af1e4ee945b440fbfc0ac5a7dbfc2d2f1b66e98ab04b0871",
+      "references": [
+        "crates/harness-tui/src/ui_chrome.rs:996:fn preferred_binding("
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_permission_dock.rs",
+      "name": "question_prompt_secondary",
+      "start": 617,
+      "end": 619,
+      "sha256": "0631c0a231a7c4263a785a8d2b41e27aff501d8c237d657096a7baaf4aea7428",
+      "references": [
+        "crates/harness-tui/src/ui_permission_dock.rs:617:pub(in crate::ui) const fn question_prompt_secondary(theme: &Theme) -> Color {",
+        "crates/harness-tui/src/ui_chrome.rs:23:pub(super) use self::ui_permission_dock::{question_prompt_accent, question_prompt_secondary};"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_lsp.rs",
+      "name": "path_root_from_args",
+      "start": 73,
+      "end": 79,
+      "sha256": "cb96837056d1ce7b23057ef806db944625170d0de2b69465718026dcfc3fe1a4",
+      "references": [
+        "crates/harness-tui/src/ui_lsp.rs:73:pub(super) fn path_root_from_args(args_summary: &str) -> Option<String> {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays.rs",
+      "name": "render_command_palette_surface",
+      "start": 617,
+      "end": 628,
+      "sha256": "bc81f8f927c6f260e72d2bcff5405b04638bac77feeeaee6a70a0ba5852411aa",
+      "references": [
+        "crates/harness-tui/src/ui_overlays.rs:617:fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rect) -> Option<Rect> {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+      "name": "permission_modal_metadata_line",
+      "start": 5,
+      "end": 9,
+      "sha256": "e0d882edbd95de77a605ef987ccb9cb46b3fda5b54034b67b4aaa39720665a15",
+      "references": [
+        "crates/harness-tui/src/ui_overlays.rs:61:    permission_modal_icon, permission_modal_metadata_line, permission_modal_subject_line,",
+        "crates/harness-tui/src/ui_overlays/permission_modal.rs:5:pub(in crate::ui) fn permission_modal_metadata_line(",
+        "crates/harness-tui/src/ui_permission_dock.rs:22:    permission_modal_metadata_line, permission_modal_subject_line, permission_modal_summary_line,"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+      "name": "permission_modal_icon",
+      "start": 11,
+      "end": 43,
+      "sha256": "7d95fd8fc434ee5d3233376e1a640886ca6fe17017cacdfdb38e7ec27fc18a75",
+      "references": [
+        "crates/harness-tui/src/ui_overlays.rs:61:    permission_modal_icon, permission_modal_metadata_line, permission_modal_subject_line,",
+        "crates/harness-tui/src/ui_overlays/permission_modal.rs:11:pub(in crate::ui) fn permission_modal_icon("
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+      "name": "permission_modal_guidance",
+      "start": 184,
+      "end": 198,
+      "sha256": "381f83105c018b22d7298f4205d7f450a68a4d4712b46fa9ecc470deadf51aea",
+      "references": [
+        "crates/harness-tui/src/ui_overlays/permission_modal.rs:184:pub(in crate::ui) fn permission_modal_guidance(",
+        "crates/harness-tui/src/ui_overlays.rs:60:    permission_modal_actions_text, permission_modal_draft_line, permission_modal_guidance,",
+        "crates/harness-tui/src/ui_permission_dock.rs:21:    permission_modal_actions_text, permission_modal_draft_line, permission_modal_guidance,"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+      "name": "permission_modal_summary_line",
+      "start": 200,
+      "end": 222,
+      "sha256": "5b6664b271062732a26ade91588efcb0c7c85cf3aee7e23648d5c7abd0ff77c4",
+      "references": [
+        "crates/harness-tui/src/ui_overlays/permission_modal.rs:200:pub(in crate::ui) fn permission_modal_summary_line(",
+        "crates/harness-tui/src/ui_overlays.rs:62:    permission_modal_summary_line, permission_modal_title, question_permission_actions_text,",
+        "crates/harness-tui/src/ui_permission_dock.rs:22:    permission_modal_metadata_line, permission_modal_subject_line, permission_modal_summary_line,"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+      "name": "permission_modal_draft_line",
+      "start": 224,
+      "end": 231,
+      "sha256": "e57024dfd7046ce8b4f3aec7fd062b2c5579cb65ce2c65de8d890d85bf00a013",
+      "references": [
+        "crates/harness-tui/src/ui_overlays/permission_modal.rs:224:pub(in crate::ui) fn permission_modal_draft_line(prompt_buffer: &str) -> String {",
+        "crates/harness-tui/src/ui_permission_dock.rs:21:    permission_modal_actions_text, permission_modal_draft_line, permission_modal_guidance,",
+        "crates/harness-tui/src/ui_overlays.rs:60:    permission_modal_actions_text, permission_modal_draft_line, permission_modal_guidance,"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_overlays/release_notes.rs",
+      "name": "push_wrapped_bullet",
+      "start": 212,
+      "end": 221,
+      "sha256": "b23b139cafaa67ffb97f005cb60c14cad22a390e59b6dcdcdf9dceb397555a88",
+      "references": [
+        "crates/harness-tui/src/ui_overlays/release_notes.rs:212:fn push_wrapped_bullet(rows: &mut Vec<ReleaseNoteRow>, title: &str, detail: &str, width: usize) {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_types.rs",
+      "name": "assistant_reasoning",
+      "start": 520,
+      "end": 525,
+      "sha256": "2b5869b8615c3dd7e9c2b24e6b20ce6eea1f48e3504656202fb883e78bbc83f9",
+      "references": [
+        "crates/harness-tui/src/ui_transcript_types.rs:520:    pub(super) fn assistant_reasoning(&self) -> Option<&TranscriptLabeledTextSection> {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_types.rs",
+      "name": "assistant_bodies",
+      "start": 527,
+      "end": 532,
+      "sha256": "edc654c14c51c6793d7b792e24f1a6ee423f04c401d0d314949a92081c9dd5fc",
+      "references": [
+        "crates/harness-tui/src/ui_transcript_types.rs:527:    pub(super) fn assistant_bodies(&self) -> impl Iterator<Item = &TranscriptBodyBlock> {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_types.rs",
+      "name": "assistant_error",
+      "start": 534,
+      "end": 539,
+      "sha256": "a909075e9d6010bed4f2154eb9bf9591745f3db86e9020689cc3d23bdf3fc8b5",
+      "references": [
+        "crates/harness-tui/src/theme.rs:910:    pub assistant_error: Color,",
+        "crates/harness-tui/src/theme.rs:1021:        assistant_error: rgb(113, 116, 122),",
+        "crates/harness-tui/src/theme.rs:1525:                assistant_error: rgb(118, 118, 118),",
+        "crates/harness-tui/src/theme.rs:1817:                assistant_error: q(self.terminal_colors.assistant_error),",
+        "crates/harness-tui/src/theme.rs:1950:                assistant_error: muted_fg,",
+        "crates/harness-tui/src/theme.rs:2083:                assistant_error: Color::Reset,",
+        "crates/harness-tui/src/ui_transcript_types.rs:534:    pub(super) fn assistant_error(&self) -> Option<&TranscriptErrorSection> {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_render.rs",
+      "name": "retry_attempt",
+      "start": 1236,
+      "end": 1238,
+      "sha256": "bf080ac8a11bbaae45f0173a6e992b186846a2905cb54a62b6806e08ba691eb0",
+      "references": [
+        "crates/harness-tui/src/ui_transcript_render.rs:1236:fn retry_attempt(turn: &TranscriptTurnSection) -> Option<&ProviderRequestRetryMetadata> {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_scrollbar.rs",
+      "name": "transcript_scroll_offset",
+      "start": 257,
+      "end": 278,
+      "sha256": "e34cd058e38daf4258f0f0a35f5be219e5693dabc0426f7c31f92d91455be0d9",
+      "references": [
+        "crates/harness-tui/src/app.rs:3769:    pub fn transcript_scroll_offset(&self) -> usize {",
+        "crates/harness-tui/src/ui_transcript.rs:76:    render_transcript_scrollbar, transcript_more_below_rect, transcript_scroll_offset,",
+        "crates/harness-tui/src/ui_transcript.rs:1028:            app.transcript_scroll_offset(),",
+        "crates/harness-tui/src/ui_transcript_scrollbar.rs:257:pub(super) fn transcript_scroll_offset(",
+        "crates/harness-tui/src/app/transcript_state.rs:917:            .unwrap_or_else(|| max_scroll.saturating_sub(self.transcript_scroll_offset()));",
+        "crates/harness-tui/src/app/tests/permission_modal_tests_part6_test.rs:219:    assert!(app.transcript_scroll_offset() > 0);",
+        "crates/harness-tui/src/app/tests/permission_modal_tests_part6_test.rs:222:    assert_eq!(app.transcript_scroll_offset(), 0);",
+        "crates/harness-tui/src/app/tests/permission_modal_tests_part6_test.rs:233:    assert!(app.transcript_scroll_offset() > 0);",
+        "crates/harness-tui/src/app/tests/permission_modal_tests_part6_test.rs:234:    let parked_scroll = app.transcript_scroll_offset();",
+        "crates/harness-tui/src/app/tests/permission_modal_tests_part6_test.rs:244:    assert_eq!(app.transcript_scroll_offset(), parked_scroll);",
+        "crates/harness-tui/src/app/tests/interaction_tests_part2_test.rs:624:            assert_eq!(app.transcript_scroll_offset(), offset);",
+        "crates/harness-tui/src/app/tests/transcript_return_to_live_tests.rs:44:    assert_eq!(app.transcript_scroll_offset(), 0);",
+        "crates/harness-tui/src/app/tests/interaction_tests_part3_test.rs:347:            .saturating_sub(app.transcript_scroll_offset()),"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/ui_transcript_style.rs",
+      "name": "transcript_nested_rail_color",
+      "start": 145,
+      "end": 147,
+      "sha256": "c5a6f86370b1757bf9149aa5b2e08c2b7491aeb342f74949cab364712e11c022",
+      "references": [
+        "crates/harness-tui/src/ui_transcript.rs:88:    thinking_header_color, transcript_emphasized_surface, transcript_nested_rail_color,",
+        "crates/harness-tui/src/ui_transcript_style.rs:145:pub(super) fn transcript_nested_rail_color(theme: &Theme) -> Color {"
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/view_model.rs",
+      "name": "startup_card_view_model",
+      "start": 436,
+      "end": 447,
+      "sha256": "a77cbab67ca54f6c7fe9f2b8b2c0e71c403ea7818249d2e160e5c79bebbee1f7",
+      "references": [
+        "crates/harness-tui/src/view_model.rs:436:pub(crate) fn startup_card_view_model(",
+        "crates/harness-tui/src/app/lifecycle.rs:742:    pub(crate) fn startup_card_view_model(&self) -> view_model::StartupCardViewModel {",
+        "crates/harness-tui/src/app/lifecycle.rs:743:        view_model::startup_card_view_model("
+      ]
+    },
+    {
+      "path": "crates/harness-tui/src/rewind_view.rs",
+      "name": "new_cancel_offer",
+      "start": 61,
+      "end": 72,
+      "sha256": "34e3bd61b541620eecf7d0375a9ccd83f0fc5d2bd2adb71804af97535c19fb61",
+      "references": [
+        "crates/harness-tui/src/rewind_view.rs:61:    pub fn new_cancel_offer("
+      ]
+    }
+  ]
+}

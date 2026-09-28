@@ -57,21 +57,6 @@ pub struct RewindState {
     pub selected_prompt_index: Option<usize>,
 }
 
-impl RewindState {
-    pub fn new_cancel_offer(
-        anchor: usize,
-        draft: Option<ComposerState>,
-        selected_prompt_index: Option<usize>,
-    ) -> Self {
-        Self {
-            phase: RewindPhase::CancelOffer { active_idx: 0 },
-            anchor_entry_idx: anchor,
-            stashed_draft: draft,
-            selected_prompt_index,
-        }
-    }
-}
-
 pub enum RewindInput {
     Dismissed,
     CancelTurnThenProceed,

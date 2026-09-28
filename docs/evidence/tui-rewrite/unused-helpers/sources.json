@@ -1,0 +1,198 @@
+[
+  {
+    "path": "crates/harness-tui/src/app.rs",
+    "before_lines": 3889,
+    "after_lines": 3882,
+    "before_sha256": "eeed81da87c9650361a858018ae7862c51cf270af72a78f29beef48274b31e4a",
+    "after_sha256": "17fa4daad36ea851f87508c56c5c4df2d4a448715c10388a0ea2b248b5cae573"
+  },
+  {
+    "path": "crates/harness-tui/src/app/activity.rs",
+    "before_lines": 497,
+    "after_lines": 480,
+    "before_sha256": "7971bb8072414f1f125a77b626f2c2747db64a1b5595a9358cedc0d261816f41",
+    "after_sha256": "bad3debddd8c465cdf149fce82191881cf4446ea614790c36adfe904b6133807"
+  },
+  {
+    "path": "crates/harness-tui/src/app/lifecycle.rs",
+    "before_lines": 1197,
+    "after_lines": 1187,
+    "before_sha256": "66588867d2324b2f595eb73eb98a9f77e6a699ec2f78a10fb3a52473f6c546b0",
+    "after_sha256": "580e775d4a20fda370db251a2d90091b80913bdd8a9529b6bc555d9161d7d0ac"
+  },
+  {
+    "path": "crates/harness-tui/src/app/model_switcher.rs",
+    "before_lines": 861,
+    "after_lines": 852,
+    "before_sha256": "6d9ee5d26906de83ff7730b7b3c355d4543d8b904f3f43abbc756868e73988ac",
+    "after_sha256": "be4fff9dc002a91c367ac572f1f1d6de63783ec92a72727073806a28f2f831e2"
+  },
+  {
+    "path": "crates/harness-tui/src/app/palette_controller.rs",
+    "before_lines": 570,
+    "after_lines": 559,
+    "before_sha256": "82a7aa5864604acd99c45968cee5dfedd1df6b13fe0765222ffd0cdeb6d88a06",
+    "after_sha256": "f4380ca6cdfab30a18ffbee8fe486c28031692b2e81f81560d5e2c62f1522ff4"
+  },
+  {
+    "path": "crates/harness-tui/src/app/permissions.rs",
+    "before_lines": 1503,
+    "after_lines": 1490,
+    "before_sha256": "cb108b1fd388bc90157f115855c8b07d1f27ed28c8a1874223d266b6adf7f24f",
+    "after_sha256": "221235f73902c3cb5c04f6abc9158c1096e94ddfb6578085d55645c769fd5c16"
+  },
+  {
+    "path": "crates/harness-tui/src/app/permissions/question.rs",
+    "before_lines": 162,
+    "after_lines": 158,
+    "before_sha256": "c4e4d1a1c8358e37137e71eb34a6c6cf5c2cf355c3b8c90bd00d4403be9ea95c",
+    "after_sha256": "1ff72e87699fde2d0029386b621ebd41a84663104c52dee57839e07c96c0acb3"
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_history.rs",
+    "before_lines": 823,
+    "after_lines": 695,
+    "before_sha256": "6adcec86ed58fc85d91d0c2c3e0617759217578fd8e652048296cd1fa9fec1b7",
+    "after_sha256": "325f0d0e3524008ed62733a6d08aadfb6555b83b560205dc86008ffdd4b3557c"
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_navigation.rs",
+    "before_lines": 1230,
+    "after_lines": 1211,
+    "before_sha256": "c4ef83a2dfb3fc5885bc876293d703ce3031bfd9ff1beb33d103e78091a5071c",
+    "after_sha256": "b1195d89362bd1d93badebcba003112ae1f1e78c1f49985b6bf84855da8ffc18"
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_projection.rs",
+    "before_lines": 1885,
+    "after_lines": 1884,
+    "before_sha256": "9cefb6ea59190ca3319db100b69f5b2321837950f306450a8edf3150eda05aa8",
+    "after_sha256": "21b8f0df628e16df27d1b515b1a9443f34e01593a61ceb2ab1f895fcb69e2c8d"
+  },
+  {
+    "path": "crates/harness-tui/src/app/session_slash.rs",
+    "before_lines": 87,
+    "after_lines": 83,
+    "before_sha256": "593552a3cf71aa6a5b7f1b1c6be8f33f877d4c4b64456f5128f36f3167f0a4a2",
+    "after_sha256": "144eb9dc7f7d968cab1f9c1b8c78817073be7d00a42484a356d77f9f09f37fbc"
+  },
+  {
+    "path": "crates/harness-tui/src/app/transcript_state.rs",
+    "before_lines": 1088,
+    "after_lines": 1047,
+    "before_sha256": "52a0218cc11f57f5fe364a1ded3c0d371c5ca3d96d390b54b6478af3f17dbdd8",
+    "after_sha256": "3292e351ad2cb0ca8f79e246f36cc1d1eeab2562d77066f52d4d926724a9f174"
+  },
+  {
+    "path": "crates/harness-tui/src/layout/overlays.rs",
+    "before_lines": 297,
+    "after_lines": 268,
+    "before_sha256": "e9339396570f971ed5bbaf068b7bf704393cf5dd26c86767b94c9f516ef75bce",
+    "after_sha256": "a897a50f429cf546e1811db3851ef893c4bb98d79710b5503420acbc9b50d116"
+  },
+  {
+    "path": "crates/harness-tui/src/rewind_view.rs",
+    "before_lines": 589,
+    "after_lines": 574,
+    "before_sha256": "62d10ef9fc56d3a69f8f4670d49865a34e28f52fe8a76c29a196b19936af12d7",
+    "after_sha256": "06df1d8f233c130e85f62b1ef90f09a9d7bd0bd25380b4d2a4f62feed58435f5"
+  },
+  {
+    "path": "crates/harness-tui/src/startup_logo.rs",
+    "before_lines": 147,
+    "after_lines": 132,
+    "before_sha256": "9163ef353c8004ec1123aaa0ffaf44d24e3171a2437f66c3a18d4eeddedb1db8",
+    "after_sha256": "3983ba77fec1d5169ec93a1684cf486f0ea13af4a43d8ebe439cb95d7f59e639"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_chrome.rs",
+    "before_lines": 1554,
+    "after_lines": 1526,
+    "before_sha256": "ea9946a1dcc5d30043b97f8247613ff0eb2a6878d5a53ce34cf3554bc9ee85f0",
+    "after_sha256": "78915abdadab5dfb6849a11ec63ec6d28ad2de635b595be56bb37a7c378857cd"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_lsp.rs",
+    "before_lines": 79,
+    "after_lines": 71,
+    "before_sha256": "5fe9074490bdf996eebeb11ec5ba96bb36e7c8d9488916683b3f3e462a768aeb",
+    "after_sha256": "02a70785df64ec57db8c4fa71077f0c5106594545a9f31b4f074e803dbc754c7"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_overlays.rs",
+    "before_lines": 1257,
+    "after_lines": 1242,
+    "before_sha256": "51c233ee0cc8fad4e573c8b7df3a03b4be89c4769a74275bcc524aba974ac9fa",
+    "after_sha256": "2c03e36cb8cbeecd7592a6143b7b9231c8b8a4f36c46dd9183c33937a956b644"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_overlays/permission_modal.rs",
+    "before_lines": 1004,
+    "after_lines": 915,
+    "before_sha256": "d0ff800546d558e76ec399768d371183b6372c1b3e6669ff00c431a419f4accd",
+    "after_sha256": "c841a3db1a42691089fd6bd0a93c41ae023819665b5e550231f73204d933b4de"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_overlays/release_notes.rs",
+    "before_lines": 349,
+    "after_lines": 338,
+    "before_sha256": "cf02e47ac903155bea1f2c9d27cbcfe8d1c80c1c8c07d6a01d3bcf6041bf4d96",
+    "after_sha256": "2e240c26b7915f4f9d93c273d7b328747ae23ec34d6555d83dc8627e25987efa"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_permission_dock.rs",
+    "before_lines": 895,
+    "after_lines": 890,
+    "before_sha256": "fa72ecaed2b90cae076eee163fa9a755044491ae8b354ff72ce338e9c22f4360",
+    "after_sha256": "48171b0720781600024fe11f61a0de91b4c9bf351d7e5f43e17694d614d7662a"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_transcript.rs",
+    "before_lines": 1396,
+    "after_lines": 1395,
+    "before_sha256": "b950eed4b1dc5d1c0dd10ffeccf82ed13bbd1c7e092147ee93a11b2a684c244c",
+    "after_sha256": "20552b96f100e6485b96a8d130c56fccf884df442797fe81194ebe7a91b1e062"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_transcript_mermaid.rs",
+    "before_lines": 738,
+    "after_lines": 736,
+    "before_sha256": "3db3342aa55855ddadcc2a8fadf450a6c7f780016b503b1c9e31b53d97ebb9da",
+    "after_sha256": "4240b6f5769dbd8baff39f23d320b430ef3ac50315e00c15a6baace91e17a1be"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_transcript_render.rs",
+    "before_lines": 2472,
+    "after_lines": 2467,
+    "before_sha256": "df1664e1ba8415ae66f7fce5d2970ef13e5341e173e92c897e5a985f4ba145d4",
+    "after_sha256": "2614d9ad57ae19ede7419a7a2a7fbf375fa0e58d760f350901623c4ec0a6fc6a"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_transcript_scrollbar.rs",
+    "before_lines": 517,
+    "after_lines": 494,
+    "before_sha256": "eb2e0caa589e77f13e80b3a523bb355c2d4299b06c550892cc5cc7c2be6bb2c5",
+    "after_sha256": "95587408e288c5c182ebed26e5873183c1f512bcedaecbc1e99ab675ceb50bac"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_transcript_style.rs",
+    "before_lines": 307,
+    "after_lines": 303,
+    "before_sha256": "c9c433bcf7c223ffb11ff6c027182a9c28ee975f5d204ff8a8b0e31c1096a247",
+    "after_sha256": "6fa257c91dcbbf27331f3c839e4f35d77c30c110178222c75cc701819599188f"
+  },
+  {
+    "path": "crates/harness-tui/src/ui_transcript_types.rs",
+    "before_lines": 1054,
+    "after_lines": 1031,
+    "before_sha256": "e3b831293d78d338d6f313ab299bf31399be1ce8cb87f5f11e2d66e459d57e85",
+    "after_sha256": "067fc9e6eb340571e88eb7ddff0aa6dc3c3ff597d83cca2aa537dfade92231d7"
+  },
+  {
+    "path": "crates/harness-tui/src/view_model.rs",
+    "before_lines": 998,
+    "after_lines": 980,
+    "before_sha256": "a2bfcd60a02fb034be759751f8c3a0edea0e51c9703bc530a5f2fee925b024ad",
+    "after_sha256": "40d1fa28d1b2079f659a3579038eef07ac41d9cc65947e7d7d87c21d39965925"
+  }
+]

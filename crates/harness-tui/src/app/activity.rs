@@ -415,23 +415,6 @@ pub(in crate::app) fn merge_orchestration_task_lineage(
     }
 }
 
-pub(in crate::app) fn merge_orchestration_task_completion_metadata(
-    row: &mut OrchestrationTaskRow,
-    metadata: Option<&TaskCompletionMetadata>,
-) {
-    let Some(metadata) = metadata else {
-        return;
-    };
-
-    merge_orchestration_task_lineage(row, metadata.lineage.as_ref());
-    if row.timing_elapsed_ms.is_none() {
-        row.timing_elapsed_ms = metadata
-            .timing
-            .as_ref()
-            .and_then(execution_timing_elapsed_ms);
-    }
-}
-
 pub(crate) fn task_completed_updates_assistant_transcript(
     data: &harness_core::event::TaskCompletedEvent,
 ) -> bool {

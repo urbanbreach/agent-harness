@@ -2,46 +2,6 @@
 use super::*;
 use unicode_segmentation::UnicodeSegmentation as _;
 
-pub(in crate::ui) fn permission_modal_metadata_line(
-    _permission: &crate::app::ActivePermissionView,
-) -> String {
-    String::new()
-}
-
-pub(in crate::ui) fn permission_modal_icon(
-    permission: &crate::app::ActivePermissionView,
-) -> &'static str {
-    let kind = permission.kind.as_str();
-    if kind.eq_ignore_ascii_case("question")
-        || kind.eq_ignore_ascii_case("ask")
-        || kind.eq_ignore_ascii_case("ask_user")
-    {
-        return "?";
-    }
-    if kind.eq_ignore_ascii_case("edit")
-        || kind.eq_ignore_ascii_case("edit_fs")
-        || kind.eq_ignore_ascii_case("lsp")
-    {
-        return "→";
-    }
-    if kind.eq_ignore_ascii_case("shell") || kind.eq_ignore_ascii_case("bash") {
-        return "#";
-    }
-    if kind.eq_ignore_ascii_case("task") {
-        return "#";
-    }
-    if kind.eq_ignore_ascii_case("webfetch") {
-        return "%";
-    }
-    if kind.eq_ignore_ascii_case("websearch") {
-        return "◈";
-    }
-    if kind.eq_ignore_ascii_case("codesearch") {
-        return "◇";
-    }
-    "⚙"
-}
-
 pub(in crate::ui) fn permission_modal_subject_line(
     permission: &crate::app::ActivePermissionView,
 ) -> String {
@@ -179,55 +139,6 @@ fn extract_json_string_field(source: &str, field: &str) -> Option<String> {
         }
     }
     None
-}
-
-pub(in crate::ui) fn permission_modal_guidance(
-    permission: &crate::app::ActivePermissionView,
-    submission_pending: bool,
-) -> &'static str {
-    if submission_pending {
-        "Decision recorded. Wait for confirmation before sending another turn."
-    } else if permission.kind.eq_ignore_ascii_case("question")
-        || permission.kind.eq_ignore_ascii_case("ask")
-        || permission.kind.eq_ignore_ascii_case("ask_user")
-    {
-        "Safest next step: deny. Answer only after review."
-    } else {
-        "Safest next step: deny. Approve only after review."
-    }
-}
-
-pub(in crate::ui) fn permission_modal_summary_line(
-    permission: &crate::app::ActivePermissionView,
-    submission_pending: bool,
-) -> String {
-    if submission_pending {
-        return "Decision submitted — awaiting confirmation.".to_string();
-    }
-
-    permission
-        .tool_label
-        .as_deref()
-        .map(|tool| format!("Tool {tool} is paused for review."))
-        .unwrap_or_else(|| {
-            if permission.summary.chars().count() > 48 {
-                format!(
-                    "{} request is paused for review.",
-                    permission.kind.replace('_', " ")
-                )
-            } else {
-                permission.summary.clone()
-            }
-        })
-}
-
-pub(in crate::ui) fn permission_modal_draft_line(prompt_buffer: &str) -> String {
-    let draft = prompt_buffer.trim();
-    if draft.is_empty() {
-        String::new()
-    } else {
-        format!("Draft preserved · {draft}")
-    }
 }
 
 pub(in crate::ui) fn permission_modal_actions_text(

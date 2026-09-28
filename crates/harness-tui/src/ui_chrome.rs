@@ -19,8 +19,8 @@ pub(crate) use self::ui_subagent_footer_navigation::{
 };
 #[path = "ui_permission_dock.rs"]
 mod ui_permission_dock;
+pub(super) use self::ui_permission_dock::question_prompt_accent;
 use self::ui_permission_dock::render_inline_permission_dock;
-pub(super) use self::ui_permission_dock::{question_prompt_accent, question_prompt_secondary};
 #[path = "ui_control_dock_disclosure.rs"]
 mod ui_control_dock_disclosure;
 use self::ui_control_dock_disclosure::{
@@ -100,10 +100,6 @@ pub(super) const fn command_palette_muted(theme: &Theme) -> Color {
     theme.text.tertiary
 }
 
-pub(super) const fn command_palette_section(theme: &Theme) -> Color {
-    theme.terminal_colors.palette_section
-}
-
 pub(super) const fn command_palette_selection_bg(theme: &Theme) -> Color {
     theme.text.accent
 }
@@ -114,14 +110,6 @@ pub(super) const fn command_palette_selection_fg(theme: &Theme) -> Color {
 
 pub(super) const fn command_palette_cursor(theme: &Theme) -> Color {
     theme.text.primary
-}
-
-pub(super) const fn fork_selector_selection_bg(theme: &Theme) -> Color {
-    theme.terminal_colors.fork_accent
-}
-
-pub(super) const fn fork_selector_selection_fg(theme: &Theme) -> Color {
-    theme.text.inverse
 }
 
 pub(super) const fn fork_selector_cursor(theme: &Theme) -> Color {
@@ -991,22 +979,6 @@ fn permission_shell_hints(
         ]);
     }
     hints
-}
-
-fn preferred_binding(
-    app: &AppState,
-    action: crate::keybindings::Action,
-    preferred: &str,
-) -> String {
-    let bindings = app.keymap.get_binding_strs(action);
-    if bindings.iter().any(|binding| binding == preferred) {
-        return preferred.to_string();
-    }
-    bindings
-        .into_iter()
-        .next()
-        .filter(|binding| binding != "-")
-        .unwrap_or_else(|| preferred.to_string())
 }
 
 pub(super) fn panel_style(surface: Color, foreground: Color) -> Style {

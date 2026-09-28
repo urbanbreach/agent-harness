@@ -18,9 +18,8 @@ use crate::layout::{
 use crate::theme::Theme;
 
 use super::super::ui_overlays::{
-    permission_modal_actions_text, permission_modal_draft_line, permission_modal_guidance,
-    permission_modal_metadata_line, permission_modal_subject_line, permission_modal_summary_line,
-    permission_modal_title, question_permission_actions_text, question_permission_body_text,
+    permission_modal_actions_text, permission_modal_subject_line, permission_modal_title,
+    question_permission_actions_text, question_permission_body_text,
 };
 use super::display_width;
 use super::ui_transcript_style::blend_color;
@@ -612,10 +611,6 @@ fn question_selected_visual_area(
 
 pub(in crate::ui) const fn question_prompt_accent(theme: &Theme) -> Color {
     theme.question_prompt.accent
-}
-
-pub(in crate::ui) const fn question_prompt_secondary(theme: &Theme) -> Color {
-    theme.question_prompt.secondary
 }
 
 fn permission_prompt_action_line(

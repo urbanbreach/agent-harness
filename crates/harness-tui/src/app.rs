@@ -26,9 +26,9 @@ use harness_core::edit_attribution::EditAttributionSummary;
 use harness_core::event::{
     ActorKind, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
     LiveEventEnvelope, LiveEventV1, ProviderRequestStartedEvent, ResolvedToolIdentity,
-    RunFinishedEvent, RuntimeEvent, TaskCompletionMetadata, TaskLineageMetadata,
-    TaskScheduleMetadata, ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+    RunFinishedEvent, RuntimeEvent, TaskLineageMetadata, TaskScheduleMetadata,
+    ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus, UserMessageSubmittedEvent,
+    SCHEMA_VERSION,
 };
 use harness_core::extension_manifest::{
     ExtensionDiscoverSummary, ExtensionLoadOutcome, ExtensionManifestSummary,
@@ -176,9 +176,9 @@ pub(crate) use self::activity::{
     humanize_profile_label, task_completed_updates_assistant_transcript,
 };
 pub(in crate::app) use self::activity::{
-    mark_activity_event, merge_orchestration_task_completion_metadata,
-    merge_orchestration_task_event, merge_orchestration_task_lineage, new_streaming_activity_entry,
-    tool_call_is_foreground_child_wait, NewStreamingActivityEntryArgs,
+    mark_activity_event, merge_orchestration_task_event, merge_orchestration_task_lineage,
+    new_streaming_activity_entry, tool_call_is_foreground_child_wait,
+    NewStreamingActivityEntryArgs,
 };
 pub use self::activity::{
     ActiveContextUsage, ActivityCacheUsage, ActivityEntry, ActivityStatus, ActivityUsage,
@@ -277,9 +277,6 @@ pub use prompt_stash::prompt_stash_path_for_session_dir;
 use secondary_surfaces::SecondarySurfaceState;
 pub use toggles::{ToggleEntryConfig, ToggleEntryKind, ToggleMenuRow, TogglesConfig};
 pub use worktree_picker::WorktreePickerState;
-
-/// Truncation limit for tool output display in the TUI (chars)
-const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 
 const CLEAR_PROMPT_CONFIRM_TIMEOUT: Duration = Duration::from_millis(800);
 
@@ -3749,10 +3746,6 @@ impl AppState {
 
     pub(crate) fn has_share_url(&self) -> bool {
         false
-    }
-
-    pub(crate) fn provider_disconnected(&self) -> bool {
-        !self.launch_metadata.has_provider()
     }
 
     /// Record the maximum scroll offset for the current transcript content.

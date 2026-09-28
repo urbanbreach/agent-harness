@@ -35,11 +35,6 @@ pub(crate) struct RuntimeStateInput<'a> {
     pub active_permission: Option<PermissionRuntimeInput>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct StartupCardViewModel {
-    pub metadata: String,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FooterHint {
     pub action: Action,
@@ -431,19 +426,6 @@ pub(crate) fn runtime_state(input: RuntimeStateInput<'_>) -> RuntimeState {
 
 pub(crate) fn post_run_handoff_notice(can_reopen: bool) -> Option<&'static str> {
     (!can_reopen).then_some("current run cannot be reopened")
-}
-
-pub(crate) fn startup_card_view_model(
-    startup_mode: bool,
-    launch_mode_label: Option<&str>,
-    profile: &str,
-    provider: &str,
-    model: &str,
-) -> StartupCardViewModel {
-    let _ = (startup_mode, launch_mode_label, provider);
-    StartupCardViewModel {
-        metadata: format!("Launch: {profile} · {model}"),
-    }
 }
 
 pub(crate) fn footer_hints_view_model(input: FooterHintsInput) -> FooterHintsViewModel {

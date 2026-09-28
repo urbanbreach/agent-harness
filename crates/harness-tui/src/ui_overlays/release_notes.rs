@@ -209,17 +209,6 @@ fn push_wrapped(rows: &mut Vec<ReleaseNoteRow>, text: &str, width: usize) {
     }
 }
 
-fn push_wrapped_bullet(rows: &mut Vec<ReleaseNoteRow>, title: &str, detail: &str, width: usize) {
-    let text = format!("• {title} {detail}");
-    let start = "• ".len();
-    let end = start + title.len();
-    let first_row = rows.len();
-    push_wrapped(rows, &text, width);
-    if let Some(ReleaseNoteRow::Body { bold_range, .. }) = rows.get_mut(first_row) {
-        *bold_range = Some(start..end);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,16 @@
+{
+  "reviewer": "/root/tui_review",
+  "reviewed_at": "2026-09-28T02:24:18.956664+00:00",
+  "decision": "approved for intermediate deletion commit",
+  "blocking_findings": [],
+  "verified": [
+    "21 pre-review artifact hashes",
+    "28 source receipts, frozen function snippets and exact final patch",
+    "47 removed functions, unused type and five constants have no reachable external contract or test callers",
+    "active namesakes and shared helpers remain",
+    "555 production lines removed, no test changes",
+    "1,635 passing TUI checks, 7 passing gated PTY checks and passing quality checks",
+    "documentation correctly makes no fresh performance or xterm claim"
+  ],
+  "whole_rewrite": "unfinished; previous acceptance failures remain open"
+}

@@ -57,10 +57,8 @@ pub(crate) use modal_list_row::{
 use model_switcher::{model_switcher_overlay_title, render_model_switcher_overlay};
 use new_worktree_dialog::render_new_worktree_dialog;
 pub(super) use permission_modal::{
-    permission_modal_actions_text, permission_modal_draft_line, permission_modal_guidance,
-    permission_modal_icon, permission_modal_metadata_line, permission_modal_subject_line,
-    permission_modal_summary_line, permission_modal_title, question_permission_actions_text,
-    question_permission_body_text,
+    permission_modal_actions_text, permission_modal_subject_line, permission_modal_title,
+    question_permission_actions_text, question_permission_body_text,
 };
 use plan_view::render_plan_view_overlay;
 use prompt_stash_dialog::render_prompt_stash_list_overlay;
@@ -612,19 +610,6 @@ fn highlight_slash_label(label: &str, query: &str, label_style: Style) -> Vec<Sp
             )
         })
         .collect()
-}
-
-fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rect) -> Option<Rect> {
-    if !paint_command_palette_panel(frame, theme, overlay) {
-        return None;
-    }
-
-    let content = inset_rect(overlay, 3.min(overlay.width.saturating_sub(1)), 1);
-    if content.width == 0 || content.height == 0 {
-        return None;
-    }
-
-    Some(content)
 }
 
 fn paint_command_palette_panel(frame: &mut Frame, theme: &Theme, overlay: Rect) -> bool {

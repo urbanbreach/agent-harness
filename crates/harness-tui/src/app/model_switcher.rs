@@ -219,15 +219,6 @@ impl AppState {
             .unwrap_or(&self.launch_metadata)
     }
 
-    pub(in crate::app) fn runtime_context_profile(&self) -> &str {
-        let profile = self.runtime_context_metadata().profile();
-        if Self::launch_value_is_unknown(profile) {
-            self.active_profile()
-        } else {
-            profile
-        }
-    }
-
     pub(in crate::app) fn runtime_context_provider(&self) -> &str {
         let provider = self.runtime_context_metadata().provider();
         if Self::launch_value_is_unknown(provider) || provider == "local" {

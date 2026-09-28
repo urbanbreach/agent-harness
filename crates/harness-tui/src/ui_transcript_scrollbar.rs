@@ -254,29 +254,6 @@ pub(super) fn current_transcript_scroll_top(
     max_scroll.saturating_sub(transcript_scroll).min(max_scroll)
 }
 
-pub(super) fn transcript_scroll_offset(
-    follow_mode: bool,
-    transcript_scroll: usize,
-    total_height: usize,
-    viewport_height: u16,
-) -> usize {
-    let viewport_height = usize::from(viewport_height);
-    if viewport_height == 0 {
-        return 0;
-    }
-
-    let max_scroll = total_height.saturating_sub(viewport_height);
-    if max_scroll == 0 {
-        return 0;
-    }
-
-    if follow_mode {
-        return max_scroll;
-    }
-
-    current_transcript_scroll_top(follow_mode, transcript_scroll, max_scroll)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
