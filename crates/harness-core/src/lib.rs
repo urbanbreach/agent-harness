@@ -47,6 +47,7 @@ pub mod session_lineage;
 pub mod session_title;
 pub mod sleep_wake_auth;
 pub mod store;
+pub mod subagent;
 pub mod team_mailbox_journal;
 pub mod team_registry;
 pub mod tool;
