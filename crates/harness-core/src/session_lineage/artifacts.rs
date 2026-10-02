@@ -11,6 +11,7 @@ pub(crate) fn copy(
     child: &Path,
 ) -> Result<usize, SessionLineageError> {
     let mut references: BTreeMap<String, (Option<String>, Option<u64>)> = BTreeMap::new();
+    let mut finalized_digests = BTreeMap::new();
     let mut add = |path: &str, digest: Option<&str>, bytes| -> Result<(), SessionLineageError> {
         if path.len() > 4096
             || path.chars().any(char::is_control)
@@ -37,6 +38,82 @@ pub(crate) fn copy(
         Ok(())
     };
     for event in events {
+        let finalized = match &event.payload {
+            EventV1::FinalizedAgentState(reference) => Some(reference),
+            EventV1::SubagentTransition(transition) => transition.finalized_state.as_ref(),
+            EventV1::AgentContextInitialized(initialized) => Some(&initialized.source),
+            _ => None,
+        };
+        if let Some(reference) = finalized.filter(|r| !r.state.sha256.is_empty()) {
+            if reference.payload_version != 1
+                || reference.state.payload_version != 1
+                || reference.state.sha256.len() != 64
+                || !reference
+                    .state
+                    .sha256
+                    .bytes()
+                    .all(|c| c.is_ascii_hexdigit())
+            {
+                return Err(SessionLineageError::Invalid(
+                    "unsupported finalized-state reference".into(),
+                ));
+            }
+            let path = reference.artifact_path();
+            finalized_digests.insert(path.clone(), reference.state.sha256.clone());
+            add(&path, None, Some(reference.byte_length))?;
+            let state = crate::subagent::read_finalized_payload(
+                source,
+                reference,
+                &reference.owner_run_id,
+                &reference.state.owner,
+                &reference.attempt_id,
+            )
+            .map_err(|reason| {
+                SessionLineageError::Invalid(format!("invalid finalized artifact: {reason:?}"))
+            })?;
+            for attachment in state
+                .conversation_items
+                .iter()
+                .flat_map(|item| {
+                    item.attachments
+                        .iter()
+                        .chain(item.raw_tool_result.iter().flat_map(|result| {
+                            result.output.iter().flat_map(|output| &output.attachments)
+                        }))
+                })
+                .chain(
+                    state
+                        .model_request
+                        .iter()
+                        .flat_map(|request| request.attachments.values().flatten()),
+                )
+            {
+                let digest = attachment
+                    .content_ref
+                    .strip_prefix("attachment:blake3:")
+                    .filter(|s| s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit()))
+                    .ok_or_else(|| {
+                        SessionLineageError::Invalid(
+                            "invalid finalized attachment reference".into(),
+                        )
+                    })?;
+                add(
+                    &format!("artifacts/{digest}.attachment"),
+                    Some(digest),
+                    Some(attachment.size),
+                )?;
+            }
+            for result in state
+                .conversation_items
+                .iter()
+                .filter_map(|item| item.raw_tool_result.as_ref())
+                .filter_map(|result| result.output.as_ref())
+            {
+                for artifact in &result.artifacts {
+                    add(&artifact.path, Some(&artifact.digest), None)?;
+                }
+            }
+        }
         match &event.payload {
             EventV1::ArtifactWritten(e) => add(&e.path, Some(&e.digest), Some(e.bytes))?,
             EventV1::ToolCallFinished(e) => {
@@ -88,6 +165,14 @@ pub(crate) fn copy(
             ));
         }
         let actual = blake3::hash(&body).to_hex().to_string();
+        if let Some(expected) = finalized_digests.get(path) {
+            use sha2::{Digest, Sha256};
+            if format!("{:x}", Sha256::digest(&body)) != *expected {
+                return Err(SessionLineageError::Invalid(
+                    "finalized-state artifact digest mismatch".into(),
+                ));
+            }
+        }
         if bytes.is_some_and(|n| n != count)
             || digest.as_ref().is_some_and(|d| {
                 d.len() < 12

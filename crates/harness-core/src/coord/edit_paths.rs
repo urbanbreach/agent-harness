@@ -83,6 +83,7 @@ impl Runtime {
             ));
         }
         let root = &self.info()?.workspace_root;
+        let cwd = self.execution_cwd(&job.actor)?;
         let policy = job
             .actor
             .agent_id
@@ -93,7 +94,7 @@ impl Runtime {
         let mut always_approve = true;
         let mut resolved = Vec::with_capacity(paths.len());
         for input in paths {
-            let path = crate::tool::resolve_file_path(root, &input)
+            let path = crate::tool::resolve_file_path(&cwd, &input)
                 .map_err(|e| CoordinatorError::Invalid(e.to_string()))?;
             always_approve &= path.starts_with(root);
             if editing {

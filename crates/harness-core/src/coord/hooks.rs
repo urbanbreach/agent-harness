@@ -127,8 +127,8 @@ impl Runtime {
             ));
         }
         let info = self.info()?;
-        let cwd = info
-            .workspace_root
+        let cwd = self
+            .execution_cwd(actor)?
             .join(hook.cwd.as_deref().unwrap_or("."))
             .canonicalize()?;
         if !cwd.is_dir()

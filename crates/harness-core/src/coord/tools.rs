@@ -52,6 +52,13 @@ impl Runtime {
         reply: Option<Reply<ToolResult>>,
     ) -> Result<String, CoordinatorError> {
         self.accepting()?;
+        if self.stopped_sessions.contains(self.info()?.run_id.as_str())
+            || actor.agent_id.as_ref().is_some_and(|id| {
+                self.stopped_sessions.contains(id) || self.killed_agents.contains(id)
+            })
+        {
+            return Err(CoordinatorError::Stopping);
+        }
         if let Some(parent) = &parent {
             self.check_task(parent)?;
         }
@@ -108,6 +115,11 @@ impl Runtime {
             }
         }
         let mut external = Vec::new();
+        let cwd = self.execution_cwd(&actor)?;
+        let policy_root = self.info()?.workspace_root.clone();
+        let tool_state = profile
+            .map(|a| a.tool_state.clone())
+            .unwrap_or_else(|| self.tool_state.clone());
         let mut paths = Vec::new();
         let mut approved_paths = Vec::new();
         let mut always_approve = requirements.iter().all(|(permission, value)| {
@@ -117,9 +129,9 @@ impl Runtime {
             .filesystem_paths(&args)
             .map_err(|e| CoordinatorError::Invalid(e.to_string()))?
         {
-            let path = crate::tool::resolve_file_path(&self.info()?.workspace_root, &input)
+            let path = crate::tool::resolve_file_path(&cwd, &input)
                 .map_err(|e| CoordinatorError::Invalid(e.to_string()))?;
-            approved_paths.push((self.info()?.workspace_root.join(&input), path.clone()));
+            approved_paths.push((cwd.join(&input), path.clone()));
             always_approve &= tool.capability() != ToolCapability::ReadFs
                 || [&input, &path]
                     .into_iter()
@@ -131,9 +143,7 @@ impl Runtime {
                 self.validate_edit_path(&path)?;
             }
             paths.push(path.clone());
-            let selector = path
-                .strip_prefix(&self.info()?.workspace_root)
-                .unwrap_or(&path);
+            let selector = path.strip_prefix(&policy_root).unwrap_or(&path);
             let selector = if selector.as_os_str().is_empty() {
                 ".".into()
             } else {
@@ -147,7 +157,7 @@ impl Runtime {
                 .map(|(permission, _)| (permission.clone(), selector.clone()))
                 .collect();
             requirements.extend(canonical);
-            if !path.starts_with(&self.info()?.workspace_root) {
+            if !path.starts_with(&policy_root) {
                 requirements.push((
                     "external_directory".into(),
                     path.to_string_lossy().into_owned(),
@@ -214,7 +224,8 @@ impl Runtime {
             .map_or_else(CancellationToken::new, |job| job.cancellation.child_token());
         let context = ToolContext {
             run_id: self.info()?.run_id.to_string(),
-            workspace_root: self.info()?.workspace_root.clone(),
+            workspace_root: cwd,
+            policy_roots: vec![policy_root],
             artifacts_dir: self.info()?.artifacts_dir.clone(),
             actor: actor.clone(),
             profile: profile_name,
@@ -225,7 +236,7 @@ impl Runtime {
             cancellation: cancellation.clone(),
             external_directory_allow_prefixes: external,
             approved_paths,
-            tool_state: self.tool_state.clone(),
+            tool_state,
             formatter: Arc::clone(&self.config.formatter),
             redactor: Arc::clone(&self.redactor),
         };

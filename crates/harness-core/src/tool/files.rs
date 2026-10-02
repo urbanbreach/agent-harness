@@ -2,15 +2,59 @@ use super::{ToolContext, ToolError};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, TryLockError, Weak},
 };
+type WriteLockSender = tokio::sync::broadcast::Sender<(PathBuf, bool)>;
 
 #[derive(Clone, Default)]
-pub struct ToolRunState(Arc<Mutex<BTreeMap<PathBuf, String>>>);
+pub struct ToolRunState {
+    reads: Arc<Mutex<BTreeMap<PathBuf, String>>>,
+    writes: Arc<Mutex<BTreeMap<PathBuf, Weak<Mutex<()>>>>>,
+    write_events: Arc<Mutex<Option<WriteLockSender>>>,
+}
 impl ToolRunState {
+    /// A fresh owner has private reads but shares the run's write serialization.
+    pub fn fresh_owner(&self) -> Self {
+        Self {
+            reads: Arc::default(),
+            writes: Arc::clone(&self.writes),
+            write_events: Arc::clone(&self.write_events),
+        }
+    }
+    pub fn read_snapshot(&self) -> Result<BTreeMap<PathBuf, String>, ToolError> {
+        self.reads
+            .lock()
+            .map(|reads| reads.clone())
+            .map_err(|_| ToolError::Execution("file state lock failed".into()))
+    }
+    pub fn with_read_snapshot(&self, reads: BTreeMap<PathBuf, String>) -> Result<Self, ToolError> {
+        if reads.len() > 1024 {
+            return Err(ToolError::InvalidArguments(
+                "read state exceeds 1024 paths".into(),
+            ));
+        }
+        Ok(Self {
+            reads: Arc::new(Mutex::new(reads)),
+            writes: Arc::clone(&self.writes),
+            write_events: Arc::clone(&self.write_events),
+        })
+    }
+    /// Observe actual canonical-path lock attempts; this grants no write capability.
+    #[doc(hidden)]
+    pub fn subscribe_write_locks(
+        &self,
+    ) -> Result<tokio::sync::broadcast::Receiver<(PathBuf, bool)>, ToolError> {
+        let mut events = self
+            .write_events
+            .lock()
+            .map_err(|_| ToolError::Execution("file write observer lock failed".into()))?;
+        Ok(events
+            .get_or_insert_with(|| tokio::sync::broadcast::channel(16).0)
+            .subscribe())
+    }
     pub fn record_read(&self, path: &Path, digest: String) -> Result<(), ToolError> {
         let mut reads = self
-            .0
+            .reads
             .lock()
             .map_err(|_| ToolError::Execution("file state lock failed".into()))?;
         remember(&mut reads, path, digest);
@@ -21,12 +65,55 @@ impl ToolRunState {
         path: &Path,
         write: impl FnOnce(Option<&str>) -> Result<(T, String), ToolError>,
     ) -> Result<T, ToolError> {
-        // ponytail: edits in a run share one lock; use per-path locks if edit throughput warrants it.
+        // Callers resolve canonical paths at the permission/execution boundary.
+        // Weak entries retain only currently held/waited-on locks, not every past path.
+        let path_lock = {
+            let mut writes = self
+                .writes
+                .lock()
+                .map_err(|_| ToolError::Execution("file write lock failed".into()))?;
+            writes.retain(|_, lock| lock.strong_count() > 0);
+            match writes.get(path).and_then(Weak::upgrade) {
+                Some(lock) => lock,
+                None => {
+                    let lock = Arc::new(Mutex::new(()));
+                    writes.insert(path.into(), Arc::downgrade(&lock));
+                    lock
+                }
+            }
+        };
+        let acquired = path_lock.try_lock();
+        if let Some(events) = self
+            .write_events
+            .lock()
+            .map_err(|_| ToolError::Execution("file write observer lock failed".into()))?
+            .as_ref()
+        {
+            let _ = events.send((
+                path.into(),
+                matches!(acquired, Err(TryLockError::WouldBlock)),
+            ));
+        }
+        let _write = match acquired {
+            Ok(guard) => guard,
+            Err(TryLockError::WouldBlock) => path_lock
+                .lock()
+                .map_err(|_| ToolError::Execution("file write lock failed".into()))?,
+            Err(TryLockError::Poisoned(_)) => {
+                return Err(ToolError::Execution("file write lock failed".into()))
+            }
+        };
+        let previous = self
+            .reads
+            .lock()
+            .map_err(|_| ToolError::Execution("file state lock failed".into()))?
+            .get(path)
+            .cloned();
+        let (output, digest) = write(previous.as_deref())?;
         let mut reads = self
-            .0
+            .reads
             .lock()
             .map_err(|_| ToolError::Execution("file state lock failed".into()))?;
-        let (output, digest) = write(reads.get(path).map(String::as_str))?;
         remember(&mut reads, path, digest);
         Ok(output)
     }
@@ -82,7 +169,9 @@ impl ToolContext {
         {
             return Err(ToolError::Execution("path changed after approval".into()));
         }
-        if !path.starts_with(&self.workspace_root) && !self.external_path_authorized(&path) {
+        if !self.policy_roots.iter().any(|root| path.starts_with(root))
+            && !self.external_path_authorized(&path)
+        {
             return Err(ToolError::Execution(
                 "path is outside the authorized workspace".into(),
             ));

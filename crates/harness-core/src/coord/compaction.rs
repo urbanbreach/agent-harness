@@ -298,6 +298,8 @@ impl Worker {
                 seq: 0,
                 turn: None,
                 attachments: Vec::new(),
+                settled_reasoning: Vec::new(),
+                raw_tool_result: None,
             }],
         );
         Ok(ManualCompactionOutcome::Compacted {

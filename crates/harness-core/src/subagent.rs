@@ -5,8 +5,13 @@
 
 use serde::{Deserialize, Serialize};
 
+mod history;
 mod lifecycle;
+mod state;
 mod wire;
+pub use history::*;
+pub(crate) use state::read_finalized_payload;
+pub use state::*;
 
 pub use lifecycle::{
     AcceptedLifecycle, LifecycleEffect, LifecyclePhase, LifecycleReduction, LifecycleState,
@@ -100,11 +105,12 @@ pub struct ResolvedSubagentContext {
     pub isolation: ResolvedSubagentIsolation,
 }
 
-/// Whether finalized child state is exact or was altered by redaction.
+/// Whether finalized state is exact, presentation-only, or altered by redaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FinalizedStateFidelity {
     Exact,
+    SummaryOnly,
     Redacted,
 }
 

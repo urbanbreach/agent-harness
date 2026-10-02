@@ -6,6 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 mod artifacts;
+mod finalized;
 mod identities;
 pub(crate) use artifacts::copy as copy_session_artifacts;
 mod materialize;

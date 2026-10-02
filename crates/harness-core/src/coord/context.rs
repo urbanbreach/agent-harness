@@ -3,12 +3,17 @@ use harness_providers::{CompletionMessage, MessageRole};
 #[derive(Default)]
 pub(super) struct Context {
     pub entries: Vec<Entry>,
+    pub usage: Vec<crate::subagent::FinalizedProviderUsage>,
+    pub unavailable: Option<crate::subagent::FinalizedStateUnavailable>,
+    pub model_request: Option<Box<harness_providers::CompletionRequest>>,
 }
 pub(super) struct Entry {
     pub message: CompletionMessage,
     pub seq: u64,
     pub turn: Option<String>,
     pub attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
+    pub settled_reasoning: Vec<String>,
+    pub raw_tool_result: Option<crate::subagent::FinalizedToolResult>,
 }
 impl Context {
     pub fn new(system: &str) -> Self {
@@ -28,6 +33,8 @@ impl Context {
             seq,
             turn: turn.map(str::to_owned),
             attachments: Vec::new(),
+            settled_reasoning: Vec::new(),
+            raw_tool_result: None,
         });
     }
     pub fn messages(&self) -> Vec<CompletionMessage> {

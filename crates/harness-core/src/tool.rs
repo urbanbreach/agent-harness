@@ -91,6 +91,7 @@ impl ToolResult {
 pub struct ToolContext {
     pub run_id: String,
     pub workspace_root: PathBuf,
+    pub(crate) policy_roots: Vec<PathBuf>,
     pub artifacts_dir: PathBuf,
     pub actor: EventActor,
     pub profile: Option<String>,

@@ -142,11 +142,12 @@ impl Runtime {
             for (id, child) in &mut self.child_journals {
                 child.append(event, id, &source, &self.config.session_dir.join(id))?;
             }
-        } else if let Some((id, child)) = event
-            .actor
-            .agent_id
-            .as_ref()
-            .and_then(|id| self.child_journals.get_mut(id).map(|child| (id, child)))
+        } else if let Some((id, child)) = (match &event.payload {
+            EventV1::AgentContextInitialized(initialized) => Some(&initialized.agent_id.0),
+            EventV1::AgentExecutionContextChanged(changed) => Some(&changed.agent_id.0),
+            _ => event.actor.agent_id.as_ref(),
+        })
+        .and_then(|id| self.child_journals.get_mut(id).map(|child| (id, child)))
         {
             child.append(event, id, &source, &self.config.session_dir.join(id))?;
         }

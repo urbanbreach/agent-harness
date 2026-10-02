@@ -275,6 +275,7 @@ impl CoordinatorHandle {
                 .as_ref()
                 .and_then(|id| s.agents.get(id))
                 .map(|a| &a.policy);
+            let cwd = s.execution_cwd(&job.actor)?;
             let root = &s.info()?.workspace_root;
             let allowed = |path: &std::path::Path| {
                 let relative = path.strip_prefix(root).unwrap_or(path).to_string_lossy();
@@ -288,7 +289,7 @@ impl CoordinatorHandle {
             Ok(paths
                 .into_iter()
                 .filter_map(|path| {
-                    let resolved = crate::tool::resolve_file_path(root, &path).ok()?;
+                    let resolved = crate::tool::resolve_file_path(&cwd, &path).ok()?;
                     (allowed(&path) && allowed(&resolved)).then_some(resolved)
                 })
                 .collect())

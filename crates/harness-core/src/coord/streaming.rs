@@ -12,6 +12,10 @@ pub(super) struct Response {
     pub calls: Vec<AssistantToolCall>,
     pub event_seq: u64,
     pub usage: Option<CompletionUsage>,
+    pub usage_complete: bool,
+    pub settled_reasoning: Option<Vec<String>>,
+    pub thinking: Option<harness_providers::ProviderStreamThinkingMetadata>,
+    pub logical_request: Option<CompletionRequest>,
     metadata: Option<ProviderStreamFinishedMetadata>,
 }
 
@@ -78,10 +82,28 @@ pub(super) async fn complete(
         })
         .await?;
     request.context.request_id = Some(id.clone());
+    let mut logical_request = request.clone();
+    let mut attachments = BTreeMap::new();
+    let mut messages = Vec::new();
+    for (index, message) in logical_request.messages.into_iter().enumerate() {
+        if message.role != harness_providers::MessageRole::System {
+            if let Some(attachment) = logical_request.attachments.remove(&index) {
+                attachments.insert(messages.len(), attachment);
+            }
+            messages.push(message);
+        }
+    }
+    logical_request.messages = messages;
+    logical_request.attachments = attachments;
+    logical_request.tools = None;
     let response = read(
         handle, provider, actor, task, &id, request, cancel, true, progress,
     )
     .await;
+    let response = response.map(|mut response| {
+        response.logical_request = Some(logical_request);
+        response
+    });
     let (request_id, actor, task) = (id.clone(), actor.clone(), task.to_owned());
     let response = handle
         .call(move |s| {
@@ -285,11 +307,17 @@ pub(super) async fn read(
                 None
             }
             Stream::Done { usage } => {
+                response.usage_complete = usage.is_some();
                 response.usage = usage;
                 break;
             }
             Stream::DoneWithMetadata { usage, metadata } => {
+                response.usage_complete = usage.is_some()
+                    && metadata.as_ref().and_then(|m| m.usage_complete) == Some(true);
                 response.usage = usage;
+                response.settled_reasoning =
+                    metadata.as_ref().and_then(|m| m.settled_reasoning.clone());
+                response.thinking = metadata.as_ref().and_then(|m| m.thinking.clone());
                 response.metadata = metadata;
                 break;
             }
@@ -323,6 +351,17 @@ pub(super) async fn read(
     if !unfinished.is_empty() {
         return Err(CoordinatorError::Invalid(
             "provider ended with unfinished tool arguments".into(),
+        ));
+    }
+    let settled_bytes = response
+        .settled_reasoning
+        .iter()
+        .flatten()
+        .map(String::len)
+        .sum::<usize>();
+    if bytes.saturating_add(settled_bytes) > 4 * 1024 * 1024 {
+        return Err(CoordinatorError::Invalid(
+            "settled provider response exceeds the runtime limit".into(),
         ));
     }
     for payload in display.finish(redactor.as_ref()) {
