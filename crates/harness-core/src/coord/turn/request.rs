@@ -25,7 +25,7 @@ impl Worker {
         } else {
             let mut system = super::super::context::Context::new(&text);
             system.entries.append(&mut messages.entries);
-            *messages = system;
+            messages.entries = system.entries;
         }
     }
     fn request(&self, messages: &super::super::context::Context) -> CompletionRequest {

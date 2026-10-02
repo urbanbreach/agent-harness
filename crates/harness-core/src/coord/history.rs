@@ -41,6 +41,8 @@ pub(super) fn messages(
                     seq: event.seq,
                     turn: Some(e.request_id.to_string()),
                     attachments: Vec::new(),
+                    settled_reasoning: Vec::new(),
+                    raw_tool_result: None,
                 }]);
             }
             EventV1::PromptAttachmentsSubmitted(e) => {
@@ -113,6 +115,8 @@ pub(super) fn messages(
                             // Reserve call order, including an explicit unknown result for interrupted tools.
                             results.push(Entry {
                                 attachments: Vec::new(),
+                                settled_reasoning: Vec::new(),
+                                raw_tool_result: None,
                                 seq: event.seq,
                                 turn: Some(request_seqs[index].0.clone()),
                                 message: CompletionMessage {
@@ -140,6 +144,8 @@ pub(super) fn messages(
                 message.assistant_tool_calls = (!calls.is_empty()).then_some(calls);
                 turns[index].push(Entry {
                     attachments: Vec::new(),
+                    settled_reasoning: Vec::new(),
+                    raw_tool_result: None,
                     message,
                     seq: event.seq,
                     turn: Some(request_seqs[index].0.clone()),
@@ -168,6 +174,7 @@ pub(super) fn messages(
         }
     }
     let mut output = Context::new(system_prompt);
+    output.unavailable = Some(crate::subagent::FinalizedStateUnavailable::LegacySummaryOnly);
     if let Some(summary) = summaries.last() {
         output.push(
             CompletionMessage::text(

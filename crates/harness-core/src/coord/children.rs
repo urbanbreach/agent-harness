@@ -20,11 +20,11 @@ pub struct ChildTaskRequest {
 pub(super) struct Child {
     parent_agent: String,
     parent_tool: String,
-    parent_request: Option<String>,
+    pub(super) parent_request: Option<String>,
     parent_session: String,
     description: String,
     pub request: String,
-    background: bool,
+    pub(super) background: bool,
     pub complete: bool,
     reply: Option<Reply<ToolResult>>,
 }
@@ -167,13 +167,25 @@ impl Runtime {
                     "continuation cannot change the child's profile".into(),
                 ));
             }
-            let messages = super::history::messages(
-                &crate::store::read_events(&self.info()?.events_path)?,
+            let events = crate::store::read_events(&self.info()?.events_path)?;
+            let historical = super::history::messages(
+                &events,
                 &session,
                 false,
                 &state.profile.system_prompt,
                 &self.info()?.run_dir,
             )?;
+            let messages = match self.resolve_agent_finalized_state(&session)? {
+                crate::subagent::FinalizedStateResult::Available {
+                    state: mut snapshot,
+                } => super::subagents::current_context(
+                    &mut snapshot,
+                    historical,
+                    &state.profile.system_prompt,
+                    &self.info()?.run_dir,
+                )?,
+                crate::subagent::FinalizedStateResult::Unavailable { .. } => historical,
+            };
             if let Some(state) = self.agents.get_mut(&session) {
                 state.messages = messages;
             }
@@ -469,6 +481,24 @@ impl Runtime {
             if let Some(reply) = child.reply.take() {
                 let _ = reply.send(Err(CoordinatorError::Invalid(message.into())));
             }
+        }
+    }
+    pub(super) fn detach_child_waiter(&mut self, waiter: &str, reason: &str) {
+        for child in self
+            .children
+            .values_mut()
+            .filter(|child| child.parent_tool == waiter)
+        {
+            if let Some(reply) = child.reply.take() {
+                let _ = reply.send(Err(CoordinatorError::Cancelled(reason.into())));
+            }
+        }
+        for job in self
+            .running
+            .values_mut()
+            .filter(|job| job.parent.as_deref() == Some(waiter))
+        {
+            job.parent = None;
         }
     }
     pub fn child_agent_id(&mut self) -> Result<String, CoordinatorError> {

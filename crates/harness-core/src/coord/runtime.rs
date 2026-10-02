@@ -34,6 +34,11 @@ pub(super) struct Runtime {
     pub counter: u64,
     pub last_seq: u64,
     pub tool_state: crate::tool::ToolRunState,
+    pub subagent_history: crate::subagent::SubagentHistory,
+    pub projection_owner: Option<String>,
+    pub raw_tool_results: BTreeMap<String, (String, Result<crate::tool::ToolResult, String>)>,
+    pub stopped_sessions: std::collections::BTreeSet<String>,
+    pub killed_agents: std::collections::BTreeSet<String>,
     pub compacting: BTreeMap<String, (u64, CancellationToken)>,
     pub edits: BTreeMap<String, super::edits::PendingEdit>,
     pub snapshots: BTreeMap<String, super::workspace::Snapshot>,
@@ -47,6 +52,15 @@ pub(super) struct Agent {
     pub messages: Context,
     pub queue: VecDeque<super::turn::Turn>,
     pub busy: bool,
+    pub execution: crate::subagent::ResolvedSubagentContext,
+    pub cwd: PathBuf,
+    pub tool_state: crate::tool::ToolRunState,
+    pub generation: u64,
+    pub attempt: Option<String>,
+    pub attempt_started_ms: u64,
+    pub notification_seq: u64,
+    pub finalized: Option<crate::subagent::FinalizedAgentStateReferenceV1>,
+    pub source_reference: Option<Box<crate::subagent::FinalizedAgentStateReferenceV1>>,
 }
 pub(super) struct Job {
     pub join_id: Option<Id>,
@@ -154,6 +168,11 @@ impl Runtime {
             counter: 0,
             last_seq: 0,
             tool_state: Default::default(),
+            subagent_history: Default::default(),
+            projection_owner: None,
+            raw_tool_results: BTreeMap::new(),
+            stopped_sessions: Default::default(),
+            killed_agents: Default::default(),
             edits: BTreeMap::new(),
             snapshots: BTreeMap::new(),
             compacting: BTreeMap::new(),
@@ -234,7 +253,16 @@ impl Runtime {
         &mut self,
         actor: EventActor,
         correlation: Option<String>,
+        payload: EventV1,
+    ) -> Result<EventEnvelopeV1, CoordinatorError> {
+        self.emit_applied(actor, correlation, payload, |_, _| {})
+    }
+    pub(super) fn emit_applied(
+        &mut self,
+        actor: EventActor,
+        correlation: Option<String>,
         mut payload: EventV1,
+        apply: impl FnOnce(&mut Self, &EventEnvelopeV1),
     ) -> Result<EventEnvelopeV1, CoordinatorError> {
         self.child_lineage(&actor, &mut payload);
         let payload = crate::redact::redact_event_payload(self.redactor.as_ref(), payload)?;
@@ -250,12 +278,14 @@ impl Runtime {
             stream_key: None,
             payload,
         };
-        match self
-            .store
-            .as_ref()
-            .ok_or(CoordinatorError::RunNotStarted)?
-            .append(event)
-        {
+        let store = self.store.clone().ok_or(CoordinatorError::RunNotStarted)?;
+        let mut apply = Some(apply);
+        let appended = store.append_applied(event, &mut |event| {
+            if let Some(apply) = apply.take() {
+                apply(self, event);
+            }
+        });
+        match appended {
             Ok(event) => {
                 self.last_seq = event.seq;
                 if let Err(error) = self.publish_child_event(&event) {

@@ -70,6 +70,7 @@ impl Runtime {
         let mut events = crate::store::read_events(journal.file_path())?;
         crate::proj::checked_history(&events)
             .map_err(|e| CoordinatorError::Invalid(e.to_string()))?;
+        self.projection_owner = checked_projection_owner(&self.config.session_dir, id, &events)?;
         let mut interrupted = crate::proj::InFlight::default();
         for event in &events {
             interrupted.apply(event);
@@ -123,6 +124,24 @@ impl Runtime {
         self.info = Some(info.clone());
         self.store = Some(Arc::new(journal));
         self.agents = agents;
+        for event in &events {
+            if let EventV1::SubagentCancelRequested(intent) = &event.payload {
+                match &intent.command {
+                    crate::subagent::SubagentCommandRequest::ExplicitChildKill { child_id }
+                        if self.agents.contains_key(&child_id.0) =>
+                    {
+                        self.killed_agents.insert(child_id.0.clone());
+                    }
+                    crate::subagent::SubagentCommandRequest::ParentSessionStop { session_id }
+                        if self.agents.contains_key(session_id) =>
+                    {
+                        self.stopped_sessions.insert(session_id.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.subagent_history = crate::subagent::SubagentHistory::from_events(&events);
         self.grants = grants;
         self.fault = None;
         self.metadata = Some(metadata.unwrap_or(self.new_metadata()?));
@@ -142,6 +161,7 @@ impl Runtime {
             events.push(self.emit(event.actor, event.correlation_id, event.payload)?);
         }
         self.restore_children(&events);
+        self.reconcile_subagents()?;
         if was_active {
             self.emit(
                 system(),
@@ -175,6 +195,13 @@ impl Runtime {
             EventV1::AgentSpawned(e) if e.parent_agent_id.is_none() => Some(e.agent_id.as_str()),
             _ => None,
         });
+        let root = events
+            .iter()
+            .find_map(|event| match &event.payload {
+                EventV1::RunStarted(start) => Some(start.workspace_root.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| CoordinatorError::Invalid("run context missing".into()))?;
         for event in active.iter() {
             if let EventV1::AgentSpawned(e) = &event.payload {
                 let profile = self
@@ -198,7 +225,7 @@ impl Runtime {
                     toolset: profile.toolset.clone(),
                     parent_agent_id: e.parent_agent_id.clone(),
                 };
-                let messages = if e.parent_agent_id.is_some() {
+                let mut messages = if e.parent_agent_id.is_some() {
                     super::context::Context::default()
                 } else {
                     super::history::messages(
@@ -209,6 +236,8 @@ impl Runtime {
                         run_dir,
                     )?
                 };
+                messages.unavailable =
+                    Some(crate::subagent::FinalizedStateUnavailable::LegacySummaryOnly);
                 agents.insert(
                     e.agent_id.clone(),
                     Agent {
@@ -223,9 +252,23 @@ impl Runtime {
                         messages,
                         queue: VecDeque::new(),
                         busy: false,
+                        execution: crate::subagent::ResolvedSubagentContext {
+                            effective_cwd: root.clone(),
+                            policy_roots: vec![root.clone()],
+                            isolation: crate::subagent::ResolvedSubagentIsolation::SharedWorkspace,
+                        },
+                        cwd: PathBuf::from(&root),
+                        tool_state: self.tool_state.fresh_owner(),
+                        generation: 0,
+                        attempt: None,
+                        attempt_started_ms: 0,
+                        notification_seq: 0,
+                        finalized: None,
+                        source_reference: None,
                     },
                 );
             }
+            self.restore_owned_event(&mut agents, event, events, primary, run_dir)?;
             let EventV1::ProviderRequestStarted(e) = &event.payload else {
                 continue;
             };
@@ -315,6 +358,7 @@ impl Runtime {
                     .and_then(|m| m.recorded_runtime_context.as_ref()),
             )?;
             self.restore_children(&events);
+            self.subagent_history = crate::subagent::SubagentHistory::from_events(&events);
             Ok(point)
         })();
         let _ = reply.send(result);
@@ -347,6 +391,253 @@ fn recorded_target(
         .map_err(|error| CoordinatorError::Invalid(error.to_string()))?;
     Ok(restored_target(&selection, configured, config))
 }
+impl Runtime {
+    fn restore_owned_event(
+        &self,
+        agents: &mut BTreeMap<String, Agent>,
+        event: &EventEnvelopeV1,
+        events: &[EventEnvelopeV1],
+        primary: Option<&str>,
+        run_dir: &std::path::Path,
+    ) -> Result<(), CoordinatorError> {
+        use crate::subagent::*;
+        let reference = match &event.payload {
+            EventV1::FinalizedAgentState(reference) => Some(reference),
+            EventV1::SubagentTransition(transition)
+                if transition.transition == SubagentTransitionKind::Finished =>
+            {
+                transition.finalized_state.as_ref()
+            }
+            _ => None,
+        };
+        if let Some(reference) = reference {
+            let Some(agent) = agents.get_mut(&reference.state.owner.0) else {
+                return Ok(());
+            };
+            agent.finalized = Some(reference.clone());
+            agent.generation = agent.generation.max(reference.generation);
+            agent.attempt = Some(reference.attempt_id.clone());
+            match resolve_finalized_state(
+                run_dir,
+                reference,
+                self.projection_owner
+                    .as_deref()
+                    .filter(|owner| *owner == reference.owner_run_id)
+                    .unwrap_or(event.run_id.as_str()),
+                &reference.state.owner,
+                &reference.attempt_id,
+            ) {
+                FinalizedStateResult::Available { mut state } => {
+                    let historical = super::history::messages(
+                        events,
+                        &reference.state.owner.0,
+                        primary == Some(reference.state.owner.0.as_str()),
+                        &agent.profile.system_prompt,
+                        run_dir,
+                    )?;
+                    agent.messages = super::subagents::current_context(
+                        &mut state,
+                        historical,
+                        &agent.profile.system_prompt,
+                        run_dir,
+                    )?;
+                    agent.execution = state.execution_context;
+                    agent.cwd = PathBuf::from(&agent.execution.effective_cwd);
+                    agent.tool_state = self
+                        .tool_state
+                        .with_read_snapshot(state.read_state)
+                        .map_err(|e| CoordinatorError::Invalid(e.to_string()))?;
+                    agent.source_reference = state.source_reference;
+                }
+                FinalizedStateResult::Unavailable { .. } => {
+                    if agent.info.parent_agent_id.is_none() {
+                        agent.messages = super::history::messages(
+                            events,
+                            &reference.state.owner.0,
+                            primary == Some(reference.state.owner.0.as_str()),
+                            &agent.profile.system_prompt,
+                            run_dir,
+                        )?;
+                    }
+                    agent.messages.unavailable = reference
+                        .unavailable
+                        .or(Some(FinalizedStateUnavailable::Incomplete));
+                }
+            }
+        }
+        match &event.payload {
+            EventV1::AgentExecutionContextChanged(e) if e.payload_version == 1 => {
+                let Some(agent) = agents.get_mut(&e.agent_id.0) else {
+                    return Ok(());
+                };
+                agent.execution = e.context.clone();
+                agent.cwd = PathBuf::from(&e.context.effective_cwd);
+            }
+            EventV1::SubagentTransition(e) if e.payload_version == 1 => {
+                let Some(agent) = agents.get_mut(&e.child_id.0) else {
+                    return Ok(());
+                };
+                agent.generation = agent.generation.max(e.generation);
+                agent.attempt.clone_from(&e.attempt_id);
+                agent.notification_seq =
+                    agent.notification_seq.max(e.notification_seq.unwrap_or(0));
+            }
+            EventV1::AgentContextInitialized(initialized) if initialized.payload_version == 1 => {
+                let Some(agent) = agents.get_mut(&initialized.agent_id.0) else {
+                    return Ok(());
+                };
+                let FinalizedStateResult::Available { mut state } = resolve_finalized_state(
+                    run_dir,
+                    &initialized.source,
+                    self.projection_owner
+                        .as_deref()
+                        .filter(|owner| *owner == initialized.source.owner_run_id)
+                        .unwrap_or(event.run_id.as_str()),
+                    &initialized.source.state.owner,
+                    &initialized.source.attempt_id,
+                ) else {
+                    return Err(CoordinatorError::Invalid(
+                        "initialized agent source is unavailable".into(),
+                    ));
+                };
+                let historical = super::history::messages(
+                    events,
+                    &initialized.agent_id.0,
+                    primary == Some(initialized.agent_id.0.as_str()),
+                    &agent.profile.system_prompt,
+                    run_dir,
+                )?;
+                agent.messages = super::subagents::current_context(
+                    &mut state,
+                    historical,
+                    &agent.profile.system_prompt,
+                    run_dir,
+                )?;
+                agent.tool_state = self
+                    .tool_state
+                    .with_read_snapshot(state.read_state)
+                    .map_err(|e| CoordinatorError::Invalid(e.to_string()))?;
+                agent.source_reference = Some(Box::new(initialized.source.clone()));
+                if initialized.mode != FinalizedContextCopy::Fork {
+                    agent.execution = state.execution_context;
+                    agent.cwd = PathBuf::from(&agent.execution.effective_cwd);
+                    agent.info.model_ref = state.source_model;
+                    agent.settings = state.model_settings;
+                    agent.target = state.model_target;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+/// Original owners are allowed only for checked child projections whose reference
+/// records agree with the immutable authoritative parent journal.
+fn checked_projection_owner(
+    sessions: &std::path::Path,
+    id: &str,
+    events: &[EventEnvelopeV1],
+) -> Result<Option<String>, CoordinatorError> {
+    let Some(metadata) = crate::proj::read_metadata_value(&sessions.join(id))? else {
+        return Ok(None);
+    };
+    let lineage = &metadata["harness_lineage"];
+    if lineage["relationship"] != "task_child_session" {
+        return Ok(None);
+    }
+    if metadata["run_id"] != id || lineage["child_session_id"] != id {
+        return Err(CoordinatorError::Invalid(
+            "child projection identity mismatch".into(),
+        ));
+    }
+    let owner = lineage["parent_run_id"]
+        .as_str()
+        .ok_or_else(|| CoordinatorError::Invalid("child projection owner missing".into()))?;
+    crate::store::validate_session_id(owner)?;
+    let parent_dir = sessions.join(owner);
+    if owner == id
+        || std::fs::symlink_metadata(&parent_dir)?
+            .file_type()
+            .is_symlink()
+    {
+        return Err(CoordinatorError::Invalid(
+            "invalid child projection owner".into(),
+        ));
+    }
+    let original = crate::store::read_events(&parent_dir.join("events.jsonl"))?;
+    crate::proj::checked_history(&original)
+        .map_err(|e| CoordinatorError::Invalid(e.to_string()))?;
+    if original.iter().any(|event| event.run_id.as_str() != owner) {
+        return Err(CoordinatorError::Invalid(
+            "original projection owner mismatch".into(),
+        ));
+    }
+    let spawn = original
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::AgentSpawned(spawn)
+                if spawn.agent_id == id && spawn.parent_agent_id.is_some() =>
+            {
+                Some(spawn)
+            }
+            _ => None,
+        })
+        .ok_or_else(|| CoordinatorError::Invalid("original child creation is missing".into()))?;
+    let parent = spawn
+        .parent_agent_id
+        .as_deref()
+        .ok_or_else(|| CoordinatorError::Invalid("original child parent is missing".into()))?;
+    let parent_is_root = original.iter().any(|event| {
+        matches!(&event.payload, EventV1::AgentSpawned(spawn) if spawn.agent_id == parent && spawn.parent_agent_id.is_none())
+    });
+    if lineage["parent_session_id"] != if parent_is_root { owner } else { parent }
+        || lineage["profile"] != spawn.profile
+        || !events.iter().any(|event| {
+            matches!(&event.payload, EventV1::AgentSpawned(projected) if projected.agent_id == id
+                && projected.parent_agent_id.is_none() && projected.profile == spawn.profile)
+        })
+    {
+        return Err(CoordinatorError::Invalid(
+            "child projection ancestry mismatch".into(),
+        ));
+    }
+    let mut checked = std::collections::BTreeSet::new();
+    for event in events {
+        let reference = match &event.payload {
+            EventV1::FinalizedAgentState(reference) => Some(reference),
+            EventV1::SubagentTransition(transition) => transition.finalized_state.as_ref(),
+            EventV1::AgentContextInitialized(initialized) => Some(&initialized.source),
+            _ => None,
+        };
+        let Some(reference) = reference.filter(|reference| reference.owner_run_id != id) else {
+            continue;
+        };
+        let key = serde_json::to_string(reference)?;
+        let source = event
+            .event_id
+            .strip_prefix("source:")
+            .and_then(|value| value.rsplit_once(':'));
+        let anchored = source.is_some_and(|(run, seq)| {
+            run == owner
+                && seq.parse::<u64>().is_ok_and(|seq| {
+                    original.iter().any(|saved| {
+                        saved.seq == seq
+                            && saved.payload == event.payload
+                            && saved.actor == event.actor
+                            && saved.correlation_id == event.correlation_id
+                    })
+                })
+        });
+        if reference.owner_run_id != owner || (!anchored && !checked.contains(&key)) {
+            return Err(CoordinatorError::Invalid(
+                "finalized projection source is not authoritative".into(),
+            ));
+        }
+        checked.insert(key);
+    }
+    Ok(Some(owner.into()))
+}
+
 fn id_number(id: &str) -> u64 {
     id.rsplit_once('-')
         .and_then(|(_, n)| n.parse().ok())

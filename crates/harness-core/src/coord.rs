@@ -59,6 +59,9 @@ mod replay_order_tests;
 mod resume;
 mod runtime;
 mod streaming;
+mod subagents;
+#[cfg(test)]
+mod subagents_tests;
 #[cfg(test)]
 mod tests;
 mod tools;

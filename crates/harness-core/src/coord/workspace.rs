@@ -298,6 +298,9 @@ impl Runtime {
             return Err(files::rollback(&changes, error));
         }
         self.tool_state = Default::default();
+        for agent in self.agents.values_mut() {
+            agent.tool_state = self.tool_state.fresh_owner();
+        }
         Ok(summary)
     }
 }

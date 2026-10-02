@@ -76,6 +76,13 @@ impl Runtime {
         parent: Option<String>,
     ) -> Result<String, CoordinatorError> {
         self.accepting()?;
+        if self.stopped_sessions.contains(self.info()?.run_id.as_str())
+            || parent.as_ref().is_some_and(|id| {
+                self.stopped_sessions.contains(id) || self.killed_agents.contains(id)
+            })
+        {
+            return Err(CoordinatorError::Stopping);
+        }
         if let Some(id) = &parent {
             if !self.agents.contains_key(id) {
                 return Err(CoordinatorError::UnknownAgent(id.clone()));
@@ -111,6 +118,13 @@ impl Runtime {
             parent_agent_id: parent,
         };
         let messages = super::context::Context::new(&profile.system_prompt);
+        let execution = crate::subagent::ResolvedSubagentContext {
+            effective_cwd: self.info()?.workspace_root.to_string_lossy().into_owned(),
+            policy_roots: vec![self.info()?.workspace_root.to_string_lossy().into_owned()],
+            isolation: crate::subagent::ResolvedSubagentIsolation::SharedWorkspace,
+        };
+        let tool_state = self.tool_state.fresh_owner();
+        let cwd = self.info()?.workspace_root.clone();
         self.agents.insert(
             id.clone(),
             Agent {
@@ -127,6 +141,15 @@ impl Runtime {
                 messages,
                 queue: VecDeque::new(),
                 busy: false,
+                execution,
+                cwd,
+                tool_state,
+                generation: 0,
+                attempt: None,
+                attempt_started_ms: 0,
+                notification_seq: 0,
+                finalized: None,
+                source_reference: None,
             },
         );
         self.record_selection(&id)?;
@@ -277,6 +300,11 @@ impl Runtime {
         self.snapshots.clear();
         self.compacting.clear();
         self.tool_state = Default::default();
+        self.subagent_history = Default::default();
+        self.projection_owner = None;
+        self.raw_tool_results.clear();
+        self.stopped_sessions.clear();
+        self.killed_agents.clear();
         let _ = reply.send(result.and(closed).and(cleanup));
     }
 

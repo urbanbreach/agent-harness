@@ -11,6 +11,13 @@ impl EventStore for Observer {
     fn append(&self, _: EventEnvelopeWithoutSeqV1) -> Result<EventEnvelopeV1, EventStoreError> {
         Err(EventStoreError::Invalid("event observer is read-only"))
     }
+    fn append_applied(
+        &self,
+        _: EventEnvelopeWithoutSeqV1,
+        _: &mut dyn FnMut(&EventEnvelopeV1),
+    ) -> Result<EventEnvelopeV1, EventStoreError> {
+        Err(EventStoreError::Invalid("event observer is read-only"))
+    }
     fn replay(&self, seq: u64) -> Result<EventStream, EventStoreError> {
         self.0.replay(seq)
     }

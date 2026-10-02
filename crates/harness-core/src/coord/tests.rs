@@ -163,6 +163,14 @@ impl EventStore for InterceptStore {
         (self.before_append)(&event)?;
         self.inner.append(event)
     }
+    fn append_applied(
+        &self,
+        event: crate::store::EventEnvelopeWithoutSeqV1,
+        apply: &mut dyn FnMut(&EventEnvelopeV1),
+    ) -> Result<EventEnvelopeV1, EventStoreError> {
+        (self.before_append)(&event)?;
+        self.inner.append_applied(event, apply)
+    }
     fn replay(&self, seq: u64) -> Result<crate::store::EventStream, EventStoreError> {
         self.inner.replay(seq)
     }

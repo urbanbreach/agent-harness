@@ -43,6 +43,13 @@ impl Runtime {
         target: Option<ResolvedModelTarget>,
     ) -> Result<String, CoordinatorError> {
         self.accepting()?;
+        self.execution_cwd(&EventActor::new(ActorKind::Worker, Some(agent_id.into())))?;
+        if self.killed_agents.contains(agent_id)
+            || self.stopped_sessions.contains(agent_id)
+            || self.stopped_sessions.contains(self.info()?.run_id.as_str())
+        {
+            return Err(CoordinatorError::Stopping);
+        }
         let user_initiated = actor.kind == ActorKind::User;
         prompt.validate(self.redactor.as_ref())?;
         let agent = self
@@ -187,7 +194,20 @@ impl Runtime {
         }
         let handle = self.handle()?;
         let session = self.info()?.run_id.to_string();
-        let workspace = self.info()?.workspace_root.clone();
+        let workspace =
+            self.execution_cwd(&EventActor::new(ActorKind::Worker, Some(agent_id.into())))?;
+        if self
+            .agents
+            .get(agent_id)
+            .is_some_and(|a| !a.busy && !a.queue.is_empty())
+        {
+            let attempt = self.agents[agent_id]
+                .queue
+                .front()
+                .map(|t| t.id.clone())
+                .ok_or_else(|| CoordinatorError::Invalid("attempt queue disappeared".into()))?;
+            self.begin_agent_attempt(agent_id, &attempt)?;
+        }
         let agent = self
             .agents
             .get_mut(agent_id)
@@ -394,6 +414,26 @@ impl Worker {
                 }
             };
             let calls = response.calls;
+            if let Some(request) = response.logical_request {
+                messages.model_request = Some(Box::new(request));
+            }
+            if response.settled_reasoning.is_none() {
+                messages.unavailable =
+                    Some(crate::subagent::FinalizedStateUnavailable::UnsupportedReasoning);
+            } else if !response.usage_complete {
+                messages.unavailable = Some(crate::subagent::FinalizedStateUnavailable::Incomplete);
+            }
+            messages
+                .usage
+                .push(crate::subagent::FinalizedProviderUsage {
+                    request_id: request_id.clone(),
+                    attempt_id: self.turn.id.clone(),
+                    model_ref: self.turn.model.clone(),
+                    usage: response.usage,
+                    thinking: response.thinking,
+                    usage_complete: response.usage_complete,
+                    settled_reasoning: response.settled_reasoning.clone(),
+                });
             messages.push(
                 CompletionMessage {
                     role: MessageRole::Assistant,
@@ -405,6 +445,9 @@ impl Worker {
                 response.event_seq,
                 Some(&self.turn.id),
             );
+            if let Some(entry) = messages.entries.last_mut() {
+                entry.settled_reasoning = response.settled_reasoning.unwrap_or_default();
+            }
             if calls.is_empty() {
                 return Ok(response.text);
             }
@@ -468,6 +511,33 @@ impl Worker {
                     (format!("Tool error: {error}"), Vec::new())
                 }
             };
+            let raw_id = format!("{request}-tool-{index}");
+            let owner = self.actor.agent_id.clone();
+            let raw = self
+                .handle
+                .call(move |s| match s.raw_tool_results.remove(&raw_id) {
+                    Some((agent, output)) if owner.as_deref() == Some(&agent) => {
+                        let (output, error) = match output {
+                            Ok(output) => (Some(output), None),
+                            Err(error) => (None, Some(error)),
+                        };
+                        Ok(Some(crate::subagent::FinalizedToolResult {
+                            tool_call_id: raw_id,
+                            provider_tool_call_id: None,
+                            output,
+                            error,
+                        }))
+                    }
+                    Some(_) => Err(CoordinatorError::PermissionDenied(
+                        "raw tool result owner mismatch".into(),
+                    )),
+                    None => Ok(None),
+                })
+                .await?;
+            if raw.is_none() {
+                messages.unavailable = Some(crate::subagent::FinalizedStateUnavailable::Incomplete);
+            }
+            let provider_call_id = call.tool_call_id.clone();
             messages.push(
                 CompletionMessage {
                     role: MessageRole::Tool,
@@ -481,6 +551,10 @@ impl Worker {
             );
             if let Some(entry) = messages.entries.last_mut() {
                 entry.attachments = attachments;
+                entry.raw_tool_result = raw.map(|mut raw| {
+                    raw.provider_tool_call_id = Some(provider_call_id);
+                    raw
+                });
             }
         }
         if self.cancellation.is_cancelled() {

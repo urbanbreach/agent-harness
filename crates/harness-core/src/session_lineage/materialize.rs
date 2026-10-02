@@ -94,17 +94,51 @@ pub fn materialize_child_session_as(
     };
     let child_dir = staging.path().join(&child_id);
     crate::store::create_private_dir(&child_dir)?;
-    let artifact_count = super::artifacts::copy(prefix, &source, &child_dir)?;
+    let mut artifact_count = super::artifacts::copy(prefix, &source, &child_dir)?;
     let journal = Journal::open(staging.path(), &child_id, true)?;
     let redactor = crate::redact::DefaultRedactor::default();
     let children = super::identities::child_ids(prefix, &child_id);
+    let source_meta =
+        crate::store::read_private_bytes(&source.join(crate::proj::META_FILE_NAME), 1024 * 1024)?
+            .map(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes))
+            .transpose()?;
+    let projection_owner = source_meta
+        .as_ref()
+        .filter(|meta| {
+            meta["harness_lineage"]["relationship"] == "task_child_session"
+                && meta["harness_lineage"]["child_session_id"].as_str()
+                    == validated.run_id.as_deref()
+        })
+        .and_then(|meta| meta["harness_lineage"]["parent_run_id"].as_str());
+    let finalized = super::finalized::references(
+        prefix,
+        &source,
+        &child_dir,
+        validated
+            .run_id
+            .as_deref()
+            .ok_or_else(|| SessionLineageError::Invalid("source run identity missing".into()))?,
+        projection_owner,
+        &child_id,
+        &children,
+    )?;
+    artifact_count += finalized
+        .values()
+        .filter(|r| !r.state.sha256.is_empty())
+        .count();
     let mut state = crate::proj::InFlight::default();
     for event in prefix {
         state.apply(event);
         let mut rewritten =
             rewrite_child_event_envelope(event, validated.run_id.as_deref(), &child_id, event.seq);
-        rewritten =
-            super::identities::remap(rewritten, &children, validated.run_id.as_deref(), &child_id)?;
+        rewritten = super::identities::remap(
+            rewritten,
+            &children,
+            validated.run_id.as_deref(),
+            projection_owner,
+            &child_id,
+            &finalized,
+        )?;
         rewritten.payload = crate::redact::redact_event_payload(&redactor, rewritten.payload)?;
         journal.append(rewritten.into())?;
     }
@@ -114,8 +148,14 @@ pub fn materialize_child_session_as(
         let seq = journal.next_seq()?;
         let mut terminal =
             rewrite_child_event_envelope(&terminal, validated.run_id.as_deref(), &child_id, seq);
-        terminal =
-            super::identities::remap(terminal, &children, validated.run_id.as_deref(), &child_id)?;
+        terminal = super::identities::remap(
+            terminal,
+            &children,
+            validated.run_id.as_deref(),
+            projection_owner,
+            &child_id,
+            &finalized,
+        )?;
         terminal.payload = crate::redact::redact_event_payload(&redactor, terminal.payload)?;
         journal.append(terminal.into())?;
     }

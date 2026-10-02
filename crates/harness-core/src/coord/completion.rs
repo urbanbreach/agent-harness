@@ -2,6 +2,31 @@ use super::{context::Context, runtime::*, *};
 
 impl Runtime {
     pub fn finished(&mut self, completion: Completion) -> Result<(), CoordinatorError> {
+        let id = match &completion {
+            Completion::Turn { id, .. } | Completion::Tool { id, .. } => id,
+        };
+        let agent = self.running.get(id).and_then(|job| match &job.kind {
+            JobKind::Turn { agent } => Some(agent.clone()),
+            JobKind::Tool { .. } => None,
+        });
+        let result = self.finish_completion(completion);
+        if let Err(error) = &result {
+            if let Some(agent) = agent {
+                if let Some(state) = self.agents.get_mut(&agent) {
+                    state.busy = false;
+                }
+                self.raw_tool_results
+                    .retain(|_, (owner, _)| owner != &agent);
+            }
+            if self.fault.is_none() {
+                self.storage_failed(&EventStoreError::Io(std::io::Error::other(
+                    error.to_string(),
+                )));
+            }
+        }
+        result
+    }
+    fn finish_completion(&mut self, completion: Completion) -> Result<(), CoordinatorError> {
         let (id, messages, mut result) = match completion {
             Completion::Turn {
                 id,
@@ -20,6 +45,25 @@ impl Runtime {
         }
         // Keep completion identities even when a large report spills to an artifact.
         let consumed_notifications = self.consumed_child_notifications(&job, &result);
+        let raw_tool_result = if messages.is_none()
+            && job.parent.as_ref().is_some_and(|parent| {
+                self.running
+                    .get(parent)
+                    .is_some_and(|job| matches!(job.kind, JobKind::Turn { .. }))
+            }) {
+            match &result {
+                Ok(output)
+                    if serde_json::to_vec(output)
+                        .is_ok_and(|bytes| bytes.len() <= 8 * 1024 * 1024) =>
+                {
+                    Some(Ok(output.clone()))
+                }
+                Err(error) => Some(Err(error.to_string())),
+                _ => None,
+            }
+        } else {
+            None
+        };
         if messages.is_none() {
             self.reject_unfinished_edits(&id)?;
             result = result.and_then(|output| self.bound_tool_output(&id, &job.actor, output));
@@ -65,6 +109,11 @@ impl Runtime {
             let _ = reply.send(response);
         }
         written?;
+        if let (Some(output), Some(owner)) = (raw_tool_result, job.actor.agent_id.as_ref()) {
+            self.raw_tool_results
+                .insert(id.clone(), (owner.clone(), output));
+        }
+        let retain_snapshot = success && !summary.is_empty();
         let payload = if success {
             EventV1::TaskCompleted(TaskCompletedEvent {
                 task_id: id.clone().into(),
@@ -85,9 +134,21 @@ impl Runtime {
                 task_scope: Some(scope),
             })
         };
-        let terminal = self.emit(job.actor, Some(id), payload)?;
+        if let (Some(agent), Some(messages)) = (&agent, &messages) {
+            self.finish_agent_state(
+                agent,
+                &id,
+                messages,
+                success,
+                retain_snapshot,
+                job.cancellation.is_cancelled(),
+            )?;
+        }
+        let terminal = self.emit(job.actor, Some(id.clone()), payload)?;
         if let Some(agent) = agent {
             self.finish_child(&agent, &terminal)?;
+            self.raw_tool_results
+                .retain(|_, (owner, _)| owner != &agent);
             if let Some(state) = self.agents.get_mut(&agent) {
                 state.messages = if self.children.contains_key(&agent) {
                     Context::default()

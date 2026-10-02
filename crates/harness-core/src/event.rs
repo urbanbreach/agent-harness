@@ -142,6 +142,11 @@ pub enum EventV1 {
     ConversationRewound(crate::conversation_rewind::ConversationRewoundEvent),
     WorkspaceSnapshot(WorkspaceSnapshotEvent),
     WorkspaceReverted(WorkspaceRevertedEvent),
+    SubagentTransition(Box<crate::subagent::SubagentTransitionV1>),
+    FinalizedAgentState(crate::subagent::FinalizedAgentStateReferenceV1),
+    AgentContextInitialized(crate::subagent::AgentContextInitializedV1),
+    AgentExecutionContextChanged(crate::subagent::AgentExecutionContextChangedV1),
+    SubagentCancelRequested(crate::subagent::SubagentCancelIntentV1),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -196,6 +201,11 @@ impl EventV1 {
             Self::ConversationRewound(..) => "conversation_rewound",
             Self::WorkspaceSnapshot(..) => "workspace_snapshot",
             Self::WorkspaceReverted(..) => "workspace_reverted",
+            Self::SubagentTransition(..) => "subagent_transition",
+            Self::FinalizedAgentState(..) => "finalized_agent_state",
+            Self::AgentContextInitialized(..) => "agent_context_initialized",
+            Self::AgentExecutionContextChanged(..) => "agent_execution_context_changed",
+            Self::SubagentCancelRequested(..) => "subagent_cancel_requested",
         }
     }
 

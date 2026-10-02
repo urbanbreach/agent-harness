@@ -91,6 +91,12 @@ pub trait EventStore: Send + Sync {
         &self,
         envelope: EventEnvelopeWithoutSeqV1,
     ) -> Result<EventEnvelopeV1, EventStoreError>;
+    /// Apply accepted coordinator state after durable append and before delivery.
+    fn append_applied(
+        &self,
+        envelope: EventEnvelopeWithoutSeqV1,
+        apply: &mut dyn FnMut(&EventEnvelopeV1),
+    ) -> Result<EventEnvelopeV1, EventStoreError>;
     fn replay(&self, from_seq: u64) -> Result<EventStream, EventStoreError>;
     fn subscribe(&self, from_seq: u64) -> Result<EventStream, EventStoreError>;
     fn subscribe_runtime(&self, from_seq: u64) -> Result<RuntimeEventStream, EventStoreError>;
@@ -273,6 +279,13 @@ impl EventStore for Journal {
         &self,
         envelope: EventEnvelopeWithoutSeqV1,
     ) -> Result<EventEnvelopeV1, EventStoreError> {
+        self.append_applied(envelope, &mut |_| {})
+    }
+    fn append_applied(
+        &self,
+        envelope: EventEnvelopeWithoutSeqV1,
+        apply: &mut dyn FnMut(&EventEnvelopeV1),
+    ) -> Result<EventEnvelopeV1, EventStoreError> {
         if matches!(
             envelope.payload,
             EventV1::ProviderStreamDelta(_) | EventV1::ProviderReasoningDelta(_)
@@ -333,6 +346,7 @@ impl EventStore for Journal {
         state.needs_newline = false;
         state.next_seq = next;
         state.run_id.get_or_insert_with(|| event.run_id.to_string());
+        apply(&event);
         let _ = self.tx.send(RuntimeEvent::Durable(Box::new(event.clone())));
         Ok(event)
     }
