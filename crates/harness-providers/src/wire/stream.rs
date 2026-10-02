@@ -11,11 +11,25 @@ struct ToolCall {
     initial_input: Option<Value>,
 }
 
+#[derive(Default)]
+struct ThinkingBlock {
+    text: String,
+    finished: bool,
+}
+
 pub(crate) struct StreamDecoder {
     protocol: Protocol,
     tools: BTreeMap<u64, ToolCall>,
     usage: Option<CompletionUsage>,
+    usage_prompt_tokens_seen: bool,
+    usage_completion_tokens_seen: bool,
     metadata: ProviderStreamFinishedMetadata,
+    chat_reasoning: String,
+    chat_reasoning_seen: bool,
+    chat_reasoning_available: bool,
+    anthropic_thinking: BTreeMap<u64, ThinkingBlock>,
+    anthropic_reasoning_bytes: usize,
+    anthropic_reasoning_unavailable: bool,
     pub done: bool,
     stopped: bool,
 }
@@ -26,7 +40,15 @@ impl StreamDecoder {
             protocol,
             tools: BTreeMap::new(),
             usage: None,
+            usage_prompt_tokens_seen: false,
+            usage_completion_tokens_seen: false,
             metadata: ProviderStreamFinishedMetadata::default(),
+            chat_reasoning: String::new(),
+            chat_reasoning_seen: false,
+            chat_reasoning_available: true,
+            anthropic_thinking: BTreeMap::new(),
+            anthropic_reasoning_bytes: 0,
+            anthropic_reasoning_unavailable: false,
             done: false,
             stopped: false,
         }
@@ -68,10 +90,23 @@ impl StreamDecoder {
             if let Some(text) = delta["content"].as_str() {
                 events.push(Event::TextDelta(text.into()));
             }
-            if let Some(text) = delta["reasoning_content"]
-                .as_str()
-                .or_else(|| delta["reasoning"].as_str())
+            let reasoning_content = delta.get("reasoning_content");
+            let reasoning = delta.get("reasoning");
+            if reasoning_content.is_some_and(|value| !value.is_null() && value.as_str().is_none())
+                || reasoning.is_some_and(|value| !value.is_null() && value.as_str().is_none())
+                || (reasoning_content.is_some_and(Value::is_string)
+                    && reasoning.is_some_and(Value::is_string))
             {
+                self.chat_reasoning_available = false;
+            }
+            if let Some(text) = reasoning_content
+                .and_then(Value::as_str)
+                .or_else(|| reasoning.and_then(Value::as_str))
+            {
+                self.chat_reasoning_seen = true;
+                if append(&mut self.chat_reasoning, text).is_err() {
+                    self.chat_reasoning_available = false;
+                }
                 events.push(Event::ReasoningDelta(text.into()));
             }
             if let Some(calls) = delta["tool_calls"].as_array() {
@@ -90,6 +125,9 @@ impl StreamDecoder {
                     return Err("provider did not complete the request");
                 }
                 self.metadata.provider_stop_reason = Some(reason.into());
+                if reason == "length" {
+                    self.chat_reasoning_available = false;
+                }
                 self.stopped = true;
             }
         }
@@ -153,19 +191,29 @@ impl StreamDecoder {
                     value["message"]["id"].as_str().map(str::to_owned);
                 self.record_usage(&value["message"]["usage"], "input_tokens", "output_tokens")?;
             }
-            "content_block_start" if value["content_block"]["type"] == "tool_use" => {
-                let tool = self.tool(value["index"].as_u64().ok_or("missing tool index")?)?;
-                label(&mut tool.id, Some(text(&value["content_block"], "id")?))?;
-                label(&mut tool.name, Some(text(&value["content_block"], "name")?))?;
-                tool.initial_input = value["content_block"].get("input").cloned();
-            }
+            "content_block_start" => match value["content_block"]["type"].as_str() {
+                Some("thinking") => {
+                    self.start_anthropic_thinking(value["index"].as_u64(), &value["content_block"]);
+                }
+                Some("redacted_thinking") => self.anthropic_reasoning_unavailable = true,
+                Some("tool_use") => {
+                    let tool = self.tool(value["index"].as_u64().ok_or("missing tool index")?)?;
+                    label(&mut tool.id, Some(text(&value["content_block"], "id")?))?;
+                    label(&mut tool.name, Some(text(&value["content_block"], "name")?))?;
+                    tool.initial_input = value["content_block"].get("input").cloned();
+                }
+                _ => {}
+            },
             "content_block_delta" => match value["delta"]["type"].as_str() {
                 Some("text_delta") => {
                     events.push(Event::TextDelta(text(&value["delta"], "text")?.into()))
                 }
-                Some("thinking_delta") => events.push(Event::ReasoningDelta(
-                    text(&value["delta"], "thinking")?.into(),
-                )),
+                Some("thinking_delta") => {
+                    let fragment = text(&value["delta"], "thinking")?;
+                    self.append_anthropic_reasoning(value["index"].as_u64(), fragment);
+                    events.push(Event::ReasoningDelta(fragment.into()));
+                }
+                Some("signature_delta") => self.anthropic_reasoning_unavailable = true,
                 Some("input_json_delta") => {
                     let tool = self.tool(value["index"].as_u64().ok_or("missing tool index")?)?;
                     let fragment = text(&value["delta"], "partial_json")?;
@@ -174,9 +222,19 @@ impl StreamDecoder {
                 }
                 _ => {}
             },
+            "content_block_stop" => {
+                if let Some(index) = value["index"].as_u64() {
+                    if let Some(block) = self.anthropic_thinking.get_mut(&index) {
+                        block.finished = true;
+                    }
+                }
+            }
             "message_delta" => {
                 self.metadata.provider_stop_reason =
                     value["delta"]["stop_reason"].as_str().map(str::to_owned);
+                if self.metadata.provider_stop_reason.as_deref() == Some("max_tokens") {
+                    self.anthropic_reasoning_unavailable = true;
+                }
                 self.stopped = self
                     .metadata
                     .provider_stop_reason
@@ -197,6 +255,67 @@ impl StreamDecoder {
         Ok(events)
     }
 
+    fn start_anthropic_thinking(&mut self, index: Option<u64>, content: &Value) {
+        let Some(index) = index else {
+            self.anthropic_reasoning_unavailable = true;
+            return;
+        };
+        if self.anthropic_thinking.len() >= 128 && !self.anthropic_thinking.contains_key(&index) {
+            self.anthropic_reasoning_unavailable = true;
+            return;
+        }
+        if self
+            .anthropic_thinking
+            .insert(index, ThinkingBlock::default())
+            .is_some()
+        {
+            self.anthropic_reasoning_unavailable = true;
+            return;
+        }
+        if content
+            .get("signature")
+            .is_some_and(|signature| !signature.is_null())
+        {
+            self.anthropic_reasoning_unavailable = true;
+        }
+        if let Some(thinking) = content.get("thinking") {
+            if let Some(thinking) = thinking.as_str() {
+                self.append_anthropic_reasoning(Some(index), thinking);
+            } else {
+                self.anthropic_reasoning_unavailable = true;
+            }
+        }
+    }
+
+    fn append_anthropic_reasoning(&mut self, index: Option<u64>, fragment: &str) {
+        let Some(index) = index else {
+            self.anthropic_reasoning_unavailable = true;
+            return;
+        };
+        if self
+            .anthropic_thinking
+            .get(&index)
+            .is_some_and(|block| block.finished)
+        {
+            self.anthropic_reasoning_unavailable = true;
+            return;
+        }
+        let Some(block) = self.anthropic_thinking.get_mut(&index) else {
+            self.anthropic_reasoning_unavailable = true;
+            return;
+        };
+        if self
+            .anthropic_reasoning_bytes
+            .saturating_add(fragment.len())
+            > 1_048_576
+            || append(&mut block.text, fragment).is_err()
+        {
+            self.anthropic_reasoning_unavailable = true;
+            return;
+        }
+        self.anthropic_reasoning_bytes += fragment.len();
+    }
+
     fn record_usage(
         &mut self,
         value: &Value,
@@ -209,9 +328,11 @@ impl StreamDecoder {
         let usage = self.usage.get_or_insert_with(CompletionUsage::default);
         if let Some(n) = value.get(input) {
             usage.prompt_tokens = count(n)?;
+            self.usage_prompt_tokens_seen = true;
         }
         if let Some(n) = value.get(output) {
             usage.completion_tokens = count(n)?;
+            self.usage_completion_tokens_seen = true;
         }
         usage.total_tokens = usage
             .prompt_tokens
@@ -259,6 +380,31 @@ impl StreamDecoder {
                 arguments_json: tool.arguments,
             });
         }
+        self.metadata.usage_complete = self
+            .usage
+            .as_ref()
+            .map(|_| self.usage_prompt_tokens_seen && self.usage_completion_tokens_seen);
+        self.metadata.settled_reasoning = match self.protocol {
+            Protocol::Chat if self.chat_reasoning_available => Some(
+                if self.chat_reasoning_seen && !self.chat_reasoning.is_empty() {
+                    vec![std::mem::take(&mut self.chat_reasoning)]
+                } else {
+                    Vec::new()
+                },
+            ),
+            Protocol::Anthropic
+                if !self.anthropic_reasoning_unavailable
+                    && self.anthropic_thinking.values().all(|block| block.finished) =>
+            {
+                Some(
+                    std::mem::take(&mut self.anthropic_thinking)
+                        .into_values()
+                        .map(|block| block.text)
+                        .collect(),
+                )
+            }
+            Protocol::Chat | Protocol::Responses | Protocol::Anthropic => None,
+        };
         events.push(Event::DoneWithMetadata {
             usage: self.usage.take(),
             metadata: Some(std::mem::take(&mut self.metadata)),

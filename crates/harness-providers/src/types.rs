@@ -159,6 +159,13 @@ pub struct ProviderStreamFinishedMetadata {
     pub cache_write_tokens: Option<u32>,
     pub assistant_message_id: Option<String>,
     pub thinking: Option<ProviderStreamThinkingMetadata>,
+    /// Complete settled normalized reasoning, when the transport can supply it.
+    /// None means unavailable, not an empty reasoning response or raw frames.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settled_reasoning: Option<Vec<String>>,
+    /// False when a normalized protocol had to fill a missing usage count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_complete: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
