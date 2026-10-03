@@ -13,10 +13,12 @@ const input = resolve(process.argv[2] ?? "");
 if (!process.argv[2] || !process.argv[3]) throw new Error("Usage: render-recorded-frames.mjs INPUT_DIR EVIDENCE_DIR");
 const output = await validateEvidenceDir(process.argv[3], repoRoot);
 await mkdir(output, { recursive: true });
-const reference = process.argv[4] === "--reference-grok";
+const reference = process.argv.includes("--reference");
 const sourceOption = process.argv.indexOf("--source-root");
-const sourceRoot = sourceOption >= 0 ? resolve(process.argv[sourceOption + 1])
-  : reference ? join(repoRoot, "inspirations/grok-build") : repoRoot;
+if ((reference || sourceOption >= 0) && (!process.argv[sourceOption + 1] || sourceOption < 0)) {
+  throw new Error("Reference recordings require --source-root PATH");
+}
+const sourceRoot = sourceOption >= 0 ? resolve(process.argv[sourceOption + 1]) : repoRoot;
 const source = await currentTree(sourceRoot);
 const producerMetadata = await readFile(join(input, "producer.json"), "utf8")
   .then(JSON.parse).catch((error) => { if (error.code === "ENOENT") return null; throw error; });
@@ -39,7 +41,7 @@ try {
         cols: Number(cols), rows: Number(rows), browser: "/usr/bin/chromium",
         captureAllCells: true,
         profilePath: await mkdtemp(join(tmpdir(), "harness-xterm-frame-profile-")),
-        title: reference ? "Grok Build reference renderer evidence" : "Harness exact-clock parity evidence", timeoutMs: 20000, onInput() {},
+        title: reference ? "Reference renderer evidence" : "Harness exact-clock parity evidence", timeoutMs: 20000, onInput() {},
       });
       dimensions = next;
     }
@@ -57,8 +59,8 @@ try {
 const after = await currentTree(sourceRoot);
 if (source.hash !== after.hash) throw new Error("Source changed while recording frames");
 await writeFile(join(output, "manifest.json"), JSON.stringify({
-  schema: "harness-parity-renderer-xterm-v1", producer: reference ? "Grok Build reference" : "Harness", source,
-  entrypoint: producerMetadata?.entrypoints ?? (reference ? "xai_grok_pager::views::welcome::render_welcome" : "harness_tui::ui::render_app"),
+  schema: "harness-parity-renderer-xterm-v1", producer: reference ? "Reference renderer" : "Harness", source,
+  entrypoint: producerMetadata?.entrypoints ?? (reference ? null : "harness_tui::ui::render_app"),
   producerMetadata,
   timing: producerMetadata?.timing ?? (reference
     ? { mode: "real elapsed time in reference renderer", samples: JSON.parse(await readFile(join(input, "runtime-timing.json"), "utf8")) }
