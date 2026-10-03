@@ -15,6 +15,16 @@ impl harness_providers::Provider for ProgressProvider {
         &self,
         request: harness_providers::CompletionRequest,
     ) -> harness_providers::ProviderEventStream {
+        if request
+            .messages
+            .last()
+            .is_some_and(|message| message.content == "completed sibling")
+        {
+            return Box::pin(tokio_stream::iter([
+                Stream::TextDelta("sibling finished".into()),
+                Stream::Done { usage: None },
+            ]));
+        }
         if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
             return Box::pin(tokio_stream::iter([
                 Stream::TextDelta("Model output already included in reported usage. ".repeat(100)),
@@ -94,6 +104,7 @@ async fn running_child_reports_current_progress_without_double_counting_model_ou
         profile.toolset = vec![
             "spawn_subagent".into(),
             "get_command_or_subagent_output".into(),
+            "wait_commands_or_subagents".into(),
             "write".into(),
         ];
         config.agent_profiles.insert("default".into(), profile);
@@ -182,12 +193,69 @@ async fn running_child_reports_current_progress_without_double_counting_model_ou
             "9K/unknown tokens (unknown context)".into()
         };
         assert!(text.contains(&expected), "{text}");
-        assert!(text.ends_with("Tools used: write\nErrors: 0"), "{text}");
-        assert_eq!(value["raw_output_bytes"], text.len());
+        let (body, hint) = text.split_once("\n\n").ok_or("poll hint missing")?;
+        assert!(body.ends_with("Tools used: write\nErrors: 0"), "{text}");
+        assert!(hint.starts_with("Use timeout_ms to wait for completion. Unless the user specified, do not kill this subagent and do not tell it to stop"));
+        assert_eq!(
+            value["raw_output_bytes"],
+            body.len(),
+            "advisory text is not child output"
+        );
         assert_eq!(
             std::fs::read_to_string(temp.path().join("progress.txt"))?,
             "child side effect"
         );
+        for (tool, timeout, prefix) in [
+            (
+                "get_command_or_subagent_output",
+                1,
+                "Waited the requested 1ms.",
+            ),
+            ("wait_commands_or_subagents", 0, "Waited the requested 0ms."),
+        ] {
+            let mut input = json!({"task_ids":[child], "timeout_ms":timeout});
+            if tool == "wait_commands_or_subagents" {
+                input["mode"] = json!("wait_any");
+            }
+            let output = coordinator
+                .execute_agent_tool_call(actor.clone(), None, tool, input)
+                .await?;
+            let value = output.structured_json.ok_or("timed wait result missing")?;
+            let value = value
+                .get("Result")
+                .unwrap_or(&value["MultiResult"]["results"][0]);
+            assert!(value["output"]
+                .as_str()
+                .ok_or("timed wait body missing")?
+                .contains(prefix));
+            assert_eq!(value["status"], "running");
+        }
+        let sibling = coordinator.execute_agent_tool_call(actor.clone(), None, "spawn_subagent",
+            json!({"prompt":"completed sibling", "description":"completed sibling", "background":false})).await?;
+        let sibling = sibling
+            .structured_json
+            .as_ref()
+            .and_then(|value| value["subagent_id"].as_str())
+            .ok_or("sibling id missing")?;
+        let pending = coordinator
+            .execute_agent_tool_call(
+                actor.clone(),
+                None,
+                "wait_commands_or_subagents",
+                json!({"task_ids":[child,sibling], "mode":"wait_any", "timeout_ms":1}),
+            )
+            .await?;
+        let pending = pending
+            .structured_json
+            .ok_or("pending wait result missing")?;
+        assert!(
+            pending["MultiResult"]["results"][0]["output"]
+                .as_str()
+                .ok_or("pending wait body missing")?
+                .contains("Waited the requested 1ms."),
+            "an already-completed sibling must not end a wait for pending work"
+        );
+        assert_eq!(pending["MultiResult"]["results"][1]["status"], "completed");
         provider.release.add_permits(1);
         let completed = coordinator
             .execute_agent_tool_call(
