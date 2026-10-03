@@ -709,7 +709,7 @@ pub(super) fn question_y_copies_the_focused_option_label_and_description() {
     app.handle_key(key(KeyCode::Down));
     app.handle_key(key(KeyCode::Char('y')));
 
-    // Then: Grok's label-newline-description payload reaches the clipboard.
+    // Then: Reference's label-newline-description payload reaches the clipboard.
     assert_eq!(copied.lock().unwrap_or_abort().as_slice(), ["B\nOption B"]);
 }
 

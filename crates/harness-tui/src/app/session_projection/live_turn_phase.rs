@@ -38,7 +38,7 @@ impl SessionProjection {
             .iter()
             .rev()
             .find(|tool| tool.status == ToolCallDisplayStatus::Running);
-        // Match Grok's tracker: retry, blocking waits, writing/thinking, tools, response.
+        // Match Reference's tracker: retry, blocking waits, writing/thinking, tools, response.
         if matches!(phase, LiveTurnPhase::Retrying(_)) {
             return (phase, started);
         }

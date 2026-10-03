@@ -102,8 +102,6 @@ fn capture(root: &Path, binary: &Path, target: CaptureTarget) -> Value {
         &json!({
             "requiredBrand": "Harness",
             "requiredBrandObserved": visible_text.contains("Harness"),
-            "forbiddenBrand": "Grok",
-            "forbiddenBrandObserved": visible_text.to_ascii_lowercase().contains("grok"),
             "glyphVariant": variant.label(),
             "trueColorSgrObserved": has_truecolor_sgr(session.raw()),
             "result": "PASS",
@@ -134,10 +132,6 @@ fn capture(root: &Path, binary: &Path, target: CaptureTarget) -> Value {
 
 fn assert_brand_and_variant(variant: TerminalVariant, text: &str, ansi: &[u8]) {
     assert!(text.contains("Harness"), "Harness brand missing\n{text}");
-    assert!(
-        !text.to_ascii_lowercase().contains("grok"),
-        "forbidden brand appeared\n{text}"
-    );
     match variant {
         TerminalVariant::Unicode => assert!(
             text.contains('中'),

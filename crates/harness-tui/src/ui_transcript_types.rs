@@ -704,7 +704,7 @@ impl TranscriptAssistantPart {
     }
 }
 
-// Grok Build: HorizontalLayout::ACCENT (1) + LayoutConfig::block_pad_left (2).
+// the reference application: HorizontalLayout::ACCENT (1) + LayoutConfig::block_pad_left (2).
 // Every entry keeps this origin through streaming, folding, selection and settlement.
 pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str =
     super::super::ui_transcript_surface::TRANSCRIPT_ENTRY_CONTENT_PREFIX;

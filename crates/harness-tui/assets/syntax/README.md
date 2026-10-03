@@ -1,11 +1,11 @@
 # Syntax palettes
 
-These unmodified TextMate palettes come from Grok Build's
-`crates/codegen/xai-grok-pager-render/assets/` at revision
-`d5a0335a47221e8c9519936cb693e9b6450227ec`. They use the Apache-2.0 license in
-[`LICENSE.upstream`](LICENSE.upstream).
+These TextMate palettes and the terminal-native foreground mapping derive from
+upstream revision `d5a0335a47221e8c9519936cb693e9b6450227ec`. Copyright and
+Apache-2.0 terms are preserved in [`LICENSE.upstream`](LICENSE.upstream).
+The palette files and display names have been renamed for Harness; color values
+are unchanged.
 
 Harness uses them with two-face 0.4.5 syntax definitions for code, commands, and
-diffs. The terminal-native foreground mapping in
-[`ui_syntax_highlight.rs`](../../src/ui_syntax_highlight.rs) derives from the same
-revision's `xai-grok-pager-render/src/syntax.rs` under that license.
+diffs. The foreground mapping is in
+[`ui_syntax_highlight.rs`](../../src/ui_syntax_highlight.rs).

@@ -1,4 +1,4 @@
-//! Rewind UI ported from the local Grok Build reference. Keep copy and geometry in sync.
+//! Rewind UI. Keep copy and geometry in sync with the recorded fixtures.
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;

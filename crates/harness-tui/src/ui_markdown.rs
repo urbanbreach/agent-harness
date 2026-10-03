@@ -126,7 +126,7 @@ pub(super) fn parse_inline_markdown(
     let mut ancestors = Vec::new();
 
     for (event, range) in Parser::new_ext(&source, options).into_offset_iter() {
-        // Match Grok's double-tilde-only strikethrough contract.
+        // Match Reference's double-tilde-only strikethrough contract.
         if matches!(
             event,
             Event::Start(Tag::Strikethrough) | Event::End(TagEnd::Strikethrough)
@@ -372,7 +372,7 @@ fn markdown_display_source_with_break(text: &str, soft_break: &str) -> String {
     for (event, range) in Parser::new_ext(&source, options).into_offset_iter() {
         match event {
             Event::SoftBreak => {
-                // Match Grok: explicit container/indented continuations stay
+                // Match Reference: explicit container/indented continuations stay
                 // on their own visual lines.
                 if !matches!(
                     source.as_bytes().get(range.end),

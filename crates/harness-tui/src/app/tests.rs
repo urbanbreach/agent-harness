@@ -1457,5 +1457,5 @@ delegate_test!(replay_mode_never_reports_lifecycle_shell_actions => lifecycle_sh
 
 delegate_test!(dashboard_reply_survives_refresh_resize_and_submits_once => secondary_surface_ownership_tests::dashboard_reply_survives_refresh_resize_and_submits_once);
 
-#[path = "tests/grok_parity_surfaces_test.rs"]
-mod grok_parity_surfaces;
+#[path = "tests/reference_parity_surfaces_test.rs"]
+mod reference_parity_surfaces;

@@ -258,7 +258,7 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     exit_via_palette(&mut helper);
 }
 
-pub(crate) fn pty_waiting_for_response_matches_grok_layout_and_timer_motion() {
+pub(crate) fn pty_waiting_for_response_matches_reference_layout_and_timer_motion() {
     if !cfg!(target_os = "linux") || std::env::var(PTY_SIGNOFF_ENV).as_deref() != Ok("1") {
         return;
     }
@@ -290,7 +290,7 @@ pub(crate) fn pty_waiting_for_response_matches_grok_layout_and_timer_motion() {
     );
     assert!(
         !row.contains("ctx "),
-        "Grok's active status row must not contain context metadata\n{screen}"
+        "Reference's active status row must not contain context metadata\n{screen}"
     );
     if std::env::var(WAITING_FOR_RESPONSE_CAPTURE_ENV).as_deref() == Ok("1") {
         println!("--- waiting-for-response PTY capture ---\n{screen}");

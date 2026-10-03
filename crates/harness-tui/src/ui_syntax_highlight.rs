@@ -103,9 +103,15 @@ fn syntax_theme(theme: &Theme) -> Option<&'static SyntectTheme> {
     static DARK: OnceLock<Option<SyntectTheme>> = OnceLock::new();
     static LIGHT: OnceLock<Option<SyntectTheme>> = OnceLock::new();
     let (cache, bytes): (_, &[u8]) = if theme.is_dark() {
-        (&DARK, include_bytes!("../assets/syntax/grok-night.tmTheme"))
+        (
+            &DARK,
+            include_bytes!("../assets/syntax/harness-night.tmTheme"),
+        )
     } else {
-        (&LIGHT, include_bytes!("../assets/syntax/grok-day.tmTheme"))
+        (
+            &LIGHT,
+            include_bytes!("../assets/syntax/harness-day.tmTheme"),
+        )
     };
     cache
         .get_or_init(|| {
@@ -141,7 +147,7 @@ fn syntect_color_to_ratatui(color: syntect::highlighting::Color) -> ratatui::sty
     Color::Rgb(color.r, color.g, color.b)
 }
 
-// Adapted from Grok Build's pager-render/src/syntax.rs (Apache-2.0; see assets/syntax).
+// Adapted from the reference application's pager-render/src/syntax.rs (Apache-2.0; see assets/syntax).
 // Default foreground and base ANSI hues retain contrast on either host polarity.
 fn native_syntax_foreground(color: syntect::highlighting::Color) -> Color {
     let (r, g, b) = (i32::from(color.r), i32::from(color.g), i32::from(color.b));

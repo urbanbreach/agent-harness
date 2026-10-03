@@ -177,7 +177,7 @@ fn submit_immediately_shows_waiting_state_before_any_runtime_event() {
 }
 
 #[test]
-fn submitted_wait_matches_grok_phase_and_turn_timers() {
+fn submitted_wait_matches_reference_phase_and_turn_timers() {
     // Given: a locally submitted turn is adopted before the provider's first token.
     let mut app = submitted_app();
     app.advance_wall_clock_for_motion_evidence(Duration::from_millis(400));
@@ -194,7 +194,7 @@ fn submitted_wait_matches_grok_phase_and_turn_timers() {
         ui::render_app(frame, app);
     });
 
-    // Then: Grok's phase timer follows the label and its turn timer stays right-aligned.
+    // Then: Reference's phase timer follows the label and its turn timer stays right-aligned.
     assert!(
         row.contains("Waiting for response… 0.5s"),
         "status row: {row:?}"
@@ -242,7 +242,7 @@ fn narrow_waiting_row_truncates_label_before_dropping_timers() {
         .map(|cell| cell.symbol())
         .collect();
 
-    // Then: both non-truncating Grok timers survive and only the activity label yields.
+    // Then: both non-truncating Reference timers survive and only the activity label yields.
     assert_eq!(row.matches("0.5s").count(), 2, "status row: {row:?}");
     assert!(
         row.trim_end().ends_with("0.5s [stop]"),

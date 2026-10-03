@@ -45,7 +45,7 @@ impl ViewerState {
             )
             .min(self.layout.max_scroll());
         }
-        // Grok's mode change first rebuilds the full source map, then its next
+        // Reference's mode change first rebuilds the full source map, then its next
         // render appends the unfrozen tail's map without a source-line offset.
         // Retain that numbering for the next toggle, including its cursor jump.
         self.markdown_tail_rebased = true;

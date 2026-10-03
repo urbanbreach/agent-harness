@@ -33,7 +33,7 @@ fn ids() -> Vec<String> {
 
 pub(super) fn binding() -> Result<Value> {
     Ok(json!({
-        "contract": "Harness current settings registry 2026-10-03; not Grok parity",
+        "contract": "Harness current settings registry 2026-10-03; Harness regression coverage",
         "original_base": BASE,
         "original_fixture_sha256": sha256(&fs::read(
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(GOLDEN)

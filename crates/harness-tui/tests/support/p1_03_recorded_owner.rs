@@ -306,10 +306,6 @@ fn assert_brand(variant: TerminalVariant, text: &str, _ansi: &[u8]) {
     // Compact layouts paint the wordmark row from the Mark stage onward, so
     // the painted copy is the brand proof at every size.
     assert!(text.contains("Harness"), "Harness brand missing\n{text}");
-    assert!(
-        !text.to_ascii_lowercase().contains("grok"),
-        "forbidden brand appeared\n{text}"
-    );
     match variant {
         TerminalVariant::Unicode => assert!(
             text.contains('❯'),

@@ -1,13 +1,13 @@
 {
   "source_sha256": {
-    "inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/theme/tokyonight.rs": "1020561d379eb25581a38cfd075c205266bd3c97337193172707d378d135dcb9",
-    "inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/theme/groknight.rs": "c58f35789fad4a1fec3d978673ba9dfd273e7c9e94fa731f975ca297527b5681",
-    "inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/theme/grokday.rs": "2a4bffc5c6bc49deb1c06761aa7a3e6372cc4b0225a3ffaf434ed77913a4d882",
-    "inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/theme/terminal_default.rs": "3f33cfc793414f34fe31ead0b1e350762c1d7d4f78c6588610f94cd9cab81bca",
-    "inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/render/color.rs": "965fe0ac97bf879508f4e14bfd01fe145a81405d4383725320c695aad183a276",
-    "inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/util.rs": "52083857f7570b1fc27caa30ab02ddbfa4ee95158a01c0299f2900d939ef8159",
-    "inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/rewind.rs": "ef9b91bc04182fe2a1d5f8f85ff895a4d3a36539d5502754bd7451cab6dc72ad",
-    "inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/overlay_list.rs": "cbca089f1434579007076bfb793ef3a9a529197f7d5008e02723b905f9a8c498"
+    "theme/tokyonight": "1020561d379eb25581a38cfd075c205266bd3c97337193172707d378d135dcb9",
+    "theme/dark": "c58f35789fad4a1fec3d978673ba9dfd273e7c9e94fa731f975ca297527b5681",
+    "theme/light": "2a4bffc5c6bc49deb1c06761aa7a3e6372cc4b0225a3ffaf434ed77913a4d882",
+    "theme/terminal-default": "3f33cfc793414f34fe31ead0b1e350762c1d7d4f78c6588610f94cd9cab81bca",
+    "render/color": "965fe0ac97bf879508f4e14bfd01fe145a81405d4383725320c695aad183a276",
+    "render/util": "52083857f7570b1fc27caa30ab02ddbfa4ee95158a01c0299f2900d939ef8159",
+    "views/rewind": "ef9b91bc04182fe2a1d5f8f85ff895a4d3a36539d5502754bd7451cab6dc72ad",
+    "views/overlay-list": "cbca089f1434579007076bfb793ef3a9a529197f7d5008e02723b905f9a8c498"
   },
   "cases": [
     {
@@ -3310,5 +3310,6 @@
       "theme": "terminal",
       "width": 120
     }
-  ]
+  ],
+  "source_note": "Source labels are redacted; hashes identify the original upstream files. Recorded case digests are unchanged."
 }

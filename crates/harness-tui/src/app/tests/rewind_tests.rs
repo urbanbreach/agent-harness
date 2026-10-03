@@ -97,7 +97,7 @@ fn rewind_keyboard_mouse_draft_confirmation_and_toast_contract() {
             .content
             .iter()
             .any(|cell| cell.symbol() == "f" && cell.fg == ratatui::style::Color::Rgb(88, 88, 88)),
-        "selected prompt uses Grok gray_dim"
+        "selected prompt uses Reference gray_dim"
     );
     let area = app.rewind_area(Rect::new(0, 0, 80, 24)).unwrap_or_abort();
     app.set_transcript_scroll_from_top_with_max(7, 20);

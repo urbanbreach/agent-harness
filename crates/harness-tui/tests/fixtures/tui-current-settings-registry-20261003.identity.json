@@ -1,6 +1,6 @@
 {
   "binding": {
-    "contract": "Harness current settings registry 2026-10-03; not Grok parity",
+    "contract": "Harness current settings registry 2026-10-03; Harness regression coverage",
     "editor_kinds": [
       [
         "model",

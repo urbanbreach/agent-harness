@@ -239,14 +239,14 @@ fn question_footer_labels_follow_focus_and_selection_state() {
 }
 
 #[test]
-fn multi_question_matches_grok_markers_counter_and_navigation_copy() {
+fn multi_question_matches_reference_markers_counter_and_navigation_copy() {
     // arrange — Given the first page of a multi-question prompt.
     let app = question_app(Focus::Prompt, multi_question());
 
     // act — When the question dock is rendered.
     let rendered = rendered_text(&app);
 
-    // assert — Then Grok's marker anatomy, sticky freeform row, and page footer are visible.
+    // assert — Then Reference's marker anatomy, sticky freeform row, and page footer are visible.
     assert!(rendered.contains("1 [ ] One"), "{rendered}");
     assert!(
         rendered.contains("z [ ] Type your answer here"),
