@@ -276,6 +276,12 @@ impl AppState {
         }
     }
 
+    fn copy_viewer_pointer_text(&mut self, text: &str) {
+        if !clipboard::copy_on_select_disabled() {
+            self.copy_viewer_text(text);
+        }
+    }
+
     fn yank_viewer_line(&mut self) {
         let now = self.now();
         let Some(viewer) = self.transcript_viewer.as_mut() else {
@@ -316,7 +322,7 @@ impl AppState {
         );
         viewer.finish_pointer_drag();
         if let Ok(text) = viewer.copy_selection_text() {
-            self.copy_viewer_text(&text);
+            self.copy_viewer_pointer_text(&text);
         }
     }
 
@@ -380,11 +386,12 @@ impl AppState {
                     return true;
                 }
                 if viewer.is_child() {
-                    if let Some(text) = viewer.pointer_down(point, now) {
-                        let _ = clipboard::copy(&text);
-                    }
+                    let copied = viewer.pointer_down(point, now);
                     self.transcript_view.viewer_pointer_anchor =
                         viewer.pointer_dragging().then_some(point);
+                    if let Some(text) = copied {
+                        self.copy_viewer_pointer_text(&text);
+                    }
                     return true;
                 }
                 self.transcript_view.viewer_pointer_anchor = Some(point);

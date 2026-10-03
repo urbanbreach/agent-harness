@@ -130,6 +130,7 @@ fn assert_pointer_copy(app: &mut AppState, area: Rect) {
         crate::layout::FrameLayoutPlan::for_app(app, area).shell,
     );
     let copied = Arc::new(Mutex::new(Vec::new()));
+    crate::clipboard::set_copy_on_select_disabled_override(Some(false));
     let sink = Arc::clone(&copied);
     crate::clipboard::set_copy_override(Some(Box::new(move |text| {
         sink.lock().unwrap_or_abort().push(text.to_string());
@@ -193,6 +194,13 @@ fn assert_pointer_copy(app: &mut AppState, area: Rect) {
         .selection()
         .is_none());
     assert_eq!(copied.lock().unwrap_or_abort().len(), count);
+    crate::clipboard::set_copy_on_select_disabled_override(Some(true));
+    pointer(app, MouseEventKind::Down(MouseButton::Left), 1);
+    pointer(app, MouseEventKind::Drag(MouseButton::Left), 4);
+    pointer(app, MouseEventKind::Up(MouseButton::Left), 4);
+    assert_eq!(copied.lock().unwrap_or_abort().len(), count);
+    app.handle_key(key(KeyCode::Esc));
+    crate::clipboard::set_copy_on_select_disabled_override(None);
     crate::clipboard::set_copy_override(None);
     app.transcript_viewer
         .as_mut()
