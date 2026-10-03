@@ -89,7 +89,7 @@ impl AppState {
         }
     }
 
-    pub(crate) fn handle_transcript_viewer_key(&mut self, key: KeyEvent) -> bool {
+    fn handle_child_viewer_command(&mut self, key: KeyEvent) -> bool {
         if self.current_subagent_session_present()
             && key.code == KeyCode::Char('r')
             && key.modifiers.is_empty()
@@ -107,6 +107,13 @@ impl AppState {
             && self.transcript_viewer.is_some()
         {
             return self.close_transcript_viewer();
+        }
+        false
+    }
+
+    pub(crate) fn handle_transcript_viewer_key(&mut self, key: KeyEvent) -> bool {
+        if self.handle_child_viewer_command(key) {
+            return true;
         }
         let Some(viewer) = self.transcript_viewer.as_mut() else {
             return false;
@@ -185,16 +192,11 @@ impl AppState {
             KeyCode::Char('w') => {
                 let _ = viewer.toggle_wrap();
             }
-            KeyCode::Char('Y') => {
-                if let Some(command) = viewer.command_text() {
-                    if let Err(error) = clipboard::copy(&command) {
-                        self.show_toast(
-                            format!("clipboard copy failed: {error}"),
-                            ToastVariant::Error,
-                        );
-                    }
-                }
+            KeyCode::Char('y') if viewer.is_child() && key.modifiers.is_empty() => {
+                self.yank_viewer_line();
             }
+            KeyCode::Char('Y') => self.copy_viewer_command(),
+            KeyCode::Esc if viewer.clear_pointer_selection() => {}
             KeyCode::Esc if viewer.visual_mode() => viewer.toggle_visual(),
             KeyCode::Esc | KeyCode::Char('q') => {
                 self.close_transcript_viewer();
@@ -254,6 +256,70 @@ impl AppState {
         true
     }
 
+    fn copy_viewer_command(&mut self) {
+        let Some(text) = self
+            .transcript_viewer
+            .as_ref()
+            .and_then(|viewer| viewer.command_text())
+        else {
+            return;
+        };
+        self.copy_viewer_text(&text);
+    }
+
+    fn copy_viewer_text(&mut self, text: &str) {
+        if let Err(error) = clipboard::copy(text) {
+            self.show_toast(
+                format!("clipboard copy failed: {error}"),
+                ToastVariant::Error,
+            );
+        }
+    }
+
+    fn yank_viewer_line(&mut self) {
+        let now = self.now();
+        let Some(viewer) = self.transcript_viewer.as_mut() else {
+            return;
+        };
+        let text = viewer.yank_text();
+        if text.is_empty() {
+            return;
+        }
+        match clipboard::copy(&text) {
+            Ok(()) => viewer.copied_until = Some(now + Duration::from_millis(500)),
+            Err(error) => self.show_toast(
+                format!("clipboard copy failed: {error}"),
+                ToastVariant::Error,
+            ),
+        }
+    }
+
+    fn finish_viewer_pointer(&mut self, point: CellPoint) {
+        let anchor = self.transcript_view.viewer_pointer_anchor.take();
+        let Some(viewer) = self
+            .transcript_viewer
+            .as_mut()
+            .filter(|viewer| viewer.is_child())
+        else {
+            return;
+        };
+        let Some(anchor) = anchor else {
+            return;
+        };
+        let _ = viewer.mouse_drag(
+            anchor,
+            point,
+            Viewport {
+                top: viewer.scroll_top(),
+                height: viewer.viewport_height(),
+            },
+        );
+        viewer.finish_pointer_drag();
+        if let Ok(text) = viewer.copy_selection_text() {
+            self.copy_viewer_text(&text);
+        }
+    }
+
     pub(crate) fn handle_transcript_viewer_mouse(&mut self, mouse: MouseEvent, area: Rect) -> bool {
         let scroll_step = if self.current_subagent_session_present() {
             1.0
@@ -268,14 +334,39 @@ impl AppState {
         {
             return self.close_transcript_viewer();
         }
+        let now = self.now();
         let Some(viewer) = self.transcript_viewer.as_mut() else {
             return false;
         };
-        let body = layout.content_body(viewer.input_active() || viewer.visual_mode());
-        let point = CellPoint::new(
-            viewer.scroll_top() + usize::from(mouse.row.saturating_sub(layout.body.y)),
-            usize::from(mouse.column.saturating_sub(layout.body.x)),
-        );
+        let body = if viewer.is_child() {
+            layout.child_content_body(viewer.input_active())
+        } else {
+            layout.content_body(viewer.input_active() || viewer.visual_mode())
+        };
+        if viewer.pointer_scrollbar(mouse, body) {
+            self.transcript_view.viewer_pointer_anchor = None;
+            return true;
+        }
+        if viewer.is_child() && matches!(mouse.kind, MouseEventKind::Drag(MouseButton::Left)) {
+            let outside = if mouse.row < body.y {
+                -f64::from((body.y - mouse.row).min(5))
+            } else if mouse.row >= body.bottom() {
+                f64::from((mouse.row - body.bottom() + 1).min(5))
+            } else {
+                0.0
+            };
+            let _ = viewer.scroll_by(outside);
+        }
+        let row = mouse
+            .row
+            .clamp(body.y, body.bottom().saturating_sub(1).max(body.y));
+        let column = mouse
+            .column
+            .clamp(body.x, body.right().saturating_sub(1).max(body.x));
+        let point = viewer.pointer_point(CellPoint::new(
+            viewer.scroll_top() + usize::from(row - body.y),
+            usize::from(column - body.x),
+        ));
         match mouse.kind {
             MouseEventKind::Moved => viewer.set_close_hovered(layout.close.contains(position)),
             MouseEventKind::ScrollUp => {
@@ -286,6 +377,14 @@ impl AppState {
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 if !body.contains(position) {
+                    return true;
+                }
+                if viewer.is_child() {
+                    if let Some(text) = viewer.pointer_down(point, now) {
+                        let _ = clipboard::copy(&text);
+                    }
+                    self.transcript_view.viewer_pointer_anchor =
+                        viewer.pointer_dragging().then_some(point);
                     return true;
                 }
                 self.transcript_view.viewer_pointer_anchor = Some(point);
@@ -311,7 +410,7 @@ impl AppState {
                 }
             }
             MouseEventKind::Up(MouseButton::Left) => {
-                self.transcript_view.viewer_pointer_anchor = None;
+                self.finish_viewer_pointer(point);
             }
             _ => {}
         }

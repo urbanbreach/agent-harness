@@ -61,3 +61,22 @@ pub(super) fn render_line<'a>(
         .collect::<Vec<_>>();
     ratatui::text::Line::from(spans)
 }
+
+pub(super) fn paint_child_selection(
+    buffer: &mut Buffer,
+    row: Rect,
+    line: &RenderedLine,
+    theme: &Theme,
+) {
+    let Some(selection) = &line.selection_range else {
+        return;
+    };
+    let end = selection
+        .end
+        .min(line.text.width())
+        .min(usize::from(row.width));
+    for column in selection.start..end {
+        let cell = &mut buffer[(row.x + u16::try_from(column).unwrap_or(u16::MAX), row.y)];
+        cell.set_fg(theme.surface.shell).set_bg(theme.text.primary);
+    }
+}

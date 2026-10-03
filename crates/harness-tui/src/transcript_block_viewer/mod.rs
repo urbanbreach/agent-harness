@@ -1,5 +1,6 @@
 mod input;
 mod layout;
+mod pointer;
 mod render;
 mod render_input;
 mod search;
@@ -51,6 +52,7 @@ pub struct ViewerRenderSurface {
     pub editing: bool,
     pub input_cursor: usize,
     pub following: bool,
+    pub copied: bool,
     pub child: bool,
     pub filtering: bool,
     pub visual_mode: bool,
@@ -305,9 +307,19 @@ impl state::ViewerState {
         focus: CellPoint,
         viewport: Viewport,
     ) -> Result<DragResult, ViewerError> {
-        let result = self.wrapped.drag_with_autoscroll(focus, viewport);
-        self.selection = Some(SelectionRange::new(anchor, result.focus));
-        self.cursor = result.focus;
+        let mut result = self.wrapped.drag_with_autoscroll(focus, viewport);
+        if self.child {
+            result.focus = self.pointer_point(focus);
+        }
+        self.selection = (!self.child || anchor != result.focus)
+            .then_some(SelectionRange::new(anchor, result.focus));
+        if self.child {
+            self.exit_follow();
+            self.visual_mode = false;
+            self.cursor = CellPoint::new(self.logical_rows(anchor.row).start, 0);
+        } else {
+            self.cursor = result.focus;
+        }
         if result.autoscroll.lines != 0 {
             self.scroll_by(f64::from(result.autoscroll.lines))?;
         }
@@ -318,6 +330,9 @@ impl state::ViewerState {
         let selection = self
             .selection
             .ok_or(ViewerCopyError::Selection(SelectionError::EmptySelection))?;
+        if self.child {
+            return Ok(self.copy_child_selection(selection));
+        }
         let text = self
             .wrapped
             .copy(selection)

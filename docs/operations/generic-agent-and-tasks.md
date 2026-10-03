@@ -73,6 +73,13 @@ even when ordinary skill calls are disabled or denied. Harness keeps shared
 skill permissions for both startup preloads and ordinary calls. Missing, denied,
 disabled, malformed, or unsafe preloads fail preparation before the child runs.
 
+**Accepted clipboard exception:** Child-viewer selection and copy use Harness's
+shared clipboard integration. Unlike Grok, Harness does not write every copied
+selection to a persistent backup file or display that backup path in a toast.
+Mouse release copies a nonempty selection and keeps it highlighted; Escape
+clears it before closing the viewer. `y` copies the current logical line or visual
+range, clears the selection, and briefly shows `Copied!`.
+
 A same-identity wake keeps the original catalog and preload cache. Finalized
 private state retains the body-free catalog and preload names. A live wake after
 restart reloads preloads through the normal permission gates. Replay never
