@@ -12,6 +12,7 @@ use super::super::ui_transcript_style::blend_color;
 pub(super) fn append_reasoning_body_lines(
     lines: &mut Vec<Line<'static>>,
     body: &str,
+    raw: bool,
     theme: &Theme,
     surface: Color,
     prefix: &str,
@@ -20,7 +21,11 @@ pub(super) fn append_reasoning_body_lines(
     // Reasoning shares the answer grammar, syntax palette and wrapping. Blend
     // the rendered colors so nested Markdown and unfinished fences dim too.
     let start = lines.len();
-    append_streaming_rich_text_block(lines, body, theme.markdown.text, prefix, theme, width);
+    if raw {
+        super::super::ui_markdown_raw::append_raw_markdown(lines, body, prefix, theme, width);
+    } else {
+        append_streaming_rich_text_block(lines, body, theme.markdown.text, prefix, theme, width);
+    }
     while lines.len() > start
         && lines
             .last()
@@ -33,9 +38,12 @@ pub(super) fn append_reasoning_body_lines(
             span.style.fg = span.style.fg.map(|color| blend_color(surface, color, 0.7));
         }
     }
-    let rows =
+    let rows = if raw {
+        Vec::new()
+    } else {
         selection_rows_for_rich_text_block(body, theme.markdown.text, prefix, theme, width, true)
-            .unwrap_or_default();
+            .unwrap_or_default()
+    };
     (0..lines.len() - start)
         .map(|index| {
             rows.get(index).cloned().unwrap_or_else(|| {

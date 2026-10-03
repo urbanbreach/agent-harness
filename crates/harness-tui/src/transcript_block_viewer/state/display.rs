@@ -111,6 +111,8 @@ impl ViewerState {
         }) = &self.content.preamble
         {
             crate::ui::viewer_read_lines(self.content.text(self.mode), path, *start, &self.theme)
+        } else if self.child && self.mode == ViewerMode::Raw && self.content.markdown {
+            crate::ui::viewer_raw_markdown_lines(self.content.content(), &self.theme)
         } else if self.mode == ViewerMode::Wrapped && self.content.markdown {
             crate::ui::viewer_markdown_lines(
                 self.content.content(),

@@ -107,6 +107,7 @@ pub mod auth_dialog;
 mod auth_display;
 mod child_inspection;
 mod child_links;
+mod child_markdown;
 mod child_session;
 mod composer;
 mod composer_editing;

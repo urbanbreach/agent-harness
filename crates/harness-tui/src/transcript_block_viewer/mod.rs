@@ -17,7 +17,7 @@ use crate::transcript_selection::{
     TmuxSequence, Viewport,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ViewerMode {
     Wrapped,
     Raw,

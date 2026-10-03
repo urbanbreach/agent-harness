@@ -244,6 +244,14 @@ impl AppState {
         };
         if self.current_subagent_session_present() {
             viewer.set_child_running(self.child_viewer_entry_running(&entry));
+            if let Some((_, mode)) = self
+                .transcript_view
+                .markdown_modes
+                .iter()
+                .find(|(id, _)| *id == entry.id)
+            {
+                let _ = viewer.restore_markdown_mode(*mode);
+            }
         }
         self.transcript_viewer = Some(viewer);
         self.resize_transcript_viewer(self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24)));
@@ -371,6 +379,7 @@ impl AppState {
         (self.focus == super::Focus::Details).hash(hasher);
         self.todo_pane_focused().hash(hasher);
         self.transcript_view.selected_entry.hash(hasher);
+        self.transcript_view.markdown_modes.hash(hasher);
         self.replay_mode.hash(hasher);
         self.current_subagent_session_present().hash(hasher);
         self.inspected_child_cancel_started().is_some().hash(hasher);

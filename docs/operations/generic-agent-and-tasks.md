@@ -89,6 +89,9 @@ entry. Search and other overlays own their input until dismissed.
 
 The child block viewer follows live output until upward navigation detaches it.
 Enter quotes the selected logical line or selection into the parent draft.
+With Vim navigation enabled, `r` toggles the selected Markdown entry in place.
+That entry retains its mode when its block viewer closes and reopens; the viewer
+also accepts `r` directly.
 Raw/Markdown toggles reproduce the pinned Grok renderer's source-map behavior:
 it numbers the unfrozen tail from zero after a mode change. A later toggle can
 therefore select an earlier line, including a blank line near the start. This

@@ -166,10 +166,8 @@ impl AppState {
                 self.toggle_selected_transcript_fold();
             }
             KeyCode::Char('r') => {
-                if self.open_selected_transcript_viewer() {
-                    if let Some(viewer) = &mut self.transcript_viewer {
-                        let _ = viewer.toggle_mode();
-                    }
+                if key.modifiers.is_empty() {
+                    self.toggle_child_markdown();
                 }
             }
             KeyCode::Char('y') | KeyCode::Char('Y') => {

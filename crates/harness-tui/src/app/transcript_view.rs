@@ -123,6 +123,10 @@ pub(crate) struct TranscriptViewState {
     pub(crate) measured_anchor: Option<TranscriptContentAnchor>,
     pub(crate) selected_activity_index: usize,
     pub(crate) selected_entry: Option<crate::ui::TranscriptVisualEntryId>,
+    pub(crate) markdown_modes: Vec<(
+        crate::ui::TranscriptVisualEntryId,
+        crate::transcript_block_viewer::ViewerMode,
+    )>,
     pub(crate) viewer_resume: Option<(
         crate::ui::TranscriptVisualEntryId,
         crate::transcript_block_viewer::ViewerResume,
@@ -188,6 +192,7 @@ impl Default for TranscriptViewState {
             measured_anchor: None,
             selected_activity_index: 0,
             selected_entry: None,
+            markdown_modes: Vec::new(),
             viewer_resume: None,
             search: super::pane_query::PaneQuery::default(),
             search_match: 0,

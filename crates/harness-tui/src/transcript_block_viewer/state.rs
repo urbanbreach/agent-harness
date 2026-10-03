@@ -125,6 +125,16 @@ impl ViewerState {
         self.mode
     }
 
+    pub(crate) const fn is_child(&self) -> bool {
+        self.child
+    }
+
+    pub(crate) fn restore_markdown_mode(&mut self, mode: ViewerMode) -> Result<(), ViewerError> {
+        self.mode = mode;
+        self.markdown_tail_rebased = true;
+        self.rebuild_display()
+    }
+
     pub fn toggle_mode(&mut self) -> Result<(), ViewerError> {
         if self.child && self.content.markdown {
             return self.toggle_child_markdown_mode();

@@ -490,6 +490,7 @@ pub(super) struct TranscriptAssistantPartSourceId(pub(super) u64);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptTurnSection {
+    pub(super) raw_parts: Vec<usize>,
     pub(super) child_view: bool,
     pub(super) activity_first_seq: u64,
     pub(super) request_id: String,
