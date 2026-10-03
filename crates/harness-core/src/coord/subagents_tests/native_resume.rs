@@ -27,7 +27,13 @@ async fn native_resume_retains_committed_raw_state_and_rejects_summary_only_sour
         ],
         vec![
             Stream::TextDelta("child answer".into()),
-            settled_metadata("second"),
+            Stream::DoneWithMetadata {
+                usage: None,
+                metadata: Some(ProviderStreamFinishedMetadata {
+                    settled_reasoning: Some(vec!["second".into()]),
+                    ..Default::default()
+                }),
+            },
         ],
         vec![
             Stream::TextDelta("continued answer".into()),
@@ -81,6 +87,15 @@ async fn native_resume_retains_committed_raw_state_and_rejects_summary_only_sour
     let FinalizedStateResult::Available { state: original } = source else {
         return Err(format!("source unavailable: {source:?}").into());
     };
+    assert_eq!(original.usage[1].usage, None);
+    assert!(!original.usage[1].usage_complete);
+    let history = coordinator.subagent_history().await?;
+    let accounting = history.records[&child]
+        .accounting
+        .as_ref()
+        .ok_or("accounting missing")?;
+    assert_eq!(accounting.total_tokens_used, None);
+    assert!(accounting.output_usage_incomplete);
     for (call_id, error) in [
         ("unknown-call", "unknown tool: missing-tool"),
         (

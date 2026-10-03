@@ -26,6 +26,10 @@ message. A wake retains that child's identity and prepared definition. Missing
 or incompatible retained state returns an error rather than reconstructing a
 conversation by repeating tools or provider calls.
 
+Retained conversations preserve tool errors and missing provider usage exactly.
+Missing usage keeps accounting marked incomplete; it does not prevent resuming
+an otherwise complete conversation.
+
 ## Permissions and skills
 
 The caller needs `spawn_subagent` in its toolset and the shared `task` permission
