@@ -332,7 +332,7 @@ pub fn parse_subagent_definition(text: &str) -> Result<SubagentDefinition, Confi
         .split_once("\n---")
         .ok_or_else(|| ConfigError("missing closing agent frontmatter delimiter".into()))?;
     let mut definition: SubagentDefinition =
-        serde_yaml::from_str(yaml).map_err(super::super::normalize::parse_error)?;
+        serde_yaml_ng::from_str(yaml).map_err(super::super::normalize::parse_error)?;
     if definition.name.is_empty() {
         return Err(ConfigError("agent definition requires a name".into()));
     }
