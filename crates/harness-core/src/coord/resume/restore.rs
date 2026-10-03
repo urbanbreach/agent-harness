@@ -211,6 +211,11 @@ impl Runtime {
                 };
                 agent.execution = e.context.clone();
                 agent.cwd = PathBuf::from(&e.context.effective_cwd);
+                if let Some(prompt) = &e.system_prompt {
+                    Arc::make_mut(&mut agent.profile)
+                        .system_prompt
+                        .clone_from(prompt);
+                }
             }
             EventV1::SubagentTransition(e) if e.payload_version == 1 => {
                 let Some(agent) = agents.get_mut(&e.child_id.0) else {

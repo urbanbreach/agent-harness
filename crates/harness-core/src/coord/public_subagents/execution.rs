@@ -3,6 +3,7 @@ use harness_providers::MessageRole;
 
 mod definition;
 mod preparation;
+mod prompt;
 mod skills;
 
 impl Runtime {

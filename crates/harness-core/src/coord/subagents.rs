@@ -90,6 +90,7 @@ impl CoordinatorHandle {
                     payload_version: 1,
                     agent_id: SubagentId(agent.clone()),
                     context: context.clone(),
+                    system_prompt: None,
                 }),
                 move |runtime, _| {
                     if let Some(state) = runtime.agents.get_mut(&agent) {
