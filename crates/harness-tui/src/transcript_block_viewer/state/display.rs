@@ -7,6 +7,7 @@ impl ViewerState {
         let previous_body = self.body_start;
         let selected_id = self.row_line_ids.get(self.cursor.row).copied();
         let (lines, body_start) = self.source_lines();
+        self.unfiltered_line_count = lines.len();
         let pattern = if self.child {
             self.filter_query.clone()
         } else {
@@ -31,8 +32,9 @@ impl ViewerState {
             })
             .collect::<Vec<_>>();
         self.body_start = lines.iter().take_while(|(id, _)| *id < body_start).count();
+        let wrap_width = self.wrap_width(&lines);
         (self.styled_lines, self.row_joiners, self.row_line_ids) = if self.wrap_enabled {
-            crate::ui::viewer_wrap_lines(lines, self.width)
+            crate::ui::viewer_wrap_lines(lines, wrap_width)
         } else {
             let joiners = vec!["\n".to_owned(); lines.len()];
             let (ids, lines) = lines.into_iter().unzip();
@@ -45,7 +47,7 @@ impl ViewerState {
             .collect::<Vec<_>>()
             .join("\n");
         let width = if self.wrap_enabled {
-            self.width
+            wrap_width
         } else {
             display_text
                 .lines()
@@ -86,6 +88,19 @@ impl ViewerState {
             let _ = self.update_search(&query);
         }
         Ok(())
+    }
+
+    fn wrap_width(&self, lines: &[(usize, ratatui::text::Line<'static>)]) -> usize {
+        // The native pane allocates its scrollbar gutter from the unfiltered
+        // item count. Filtering can make that gutter available to the text.
+        let full_height = self.height + usize::from(self.input_active());
+        if self.child && self.unfiltered_line_count > full_height && lines.len() <= self.height {
+            let wider = self.width.saturating_add(2);
+            if crate::ui::viewer_wrap_lines(lines.to_vec(), wider).0.len() <= self.height {
+                return wider;
+            }
+        }
+        self.width
     }
 
     fn source_lines(&self) -> (Vec<ratatui::text::Line<'static>>, usize) {

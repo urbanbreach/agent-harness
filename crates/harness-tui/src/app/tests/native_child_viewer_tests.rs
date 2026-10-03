@@ -16,6 +16,22 @@ pub(super) fn assert_child_viewer(app: &mut AppState) {
             .render_surface(area)
             .following
     );
+    app.handle_pointer_event(
+        MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: 40,
+            row: 12,
+            modifiers: KeyModifiers::NONE,
+        },
+        area,
+    );
+    assert!(
+        !app.transcript_viewer()
+            .unwrap_or_abort()
+            .render_surface(area)
+            .following
+    );
+    app.handle_key(key(KeyCode::Char('F')));
     app.handle_key(key_with_modifiers(
         KeyCode::Char('k'),
         KeyModifiers::CONTROL,
@@ -68,7 +84,11 @@ pub(super) fn assert_child_viewer(app: &mut AppState) {
         app.transcript_viewer().unwrap_or_abort().search().query(),
         "history"
     );
-    app.handle_key(key(KeyCode::Esc));
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('f'),
+        KeyModifiers::CONTROL,
+    ));
     assert!(app.transcript_viewer().is_none());
     assert_eq!(app.current_session_id(), Some("child"));
     app.handle_key(key(KeyCode::Enter));
@@ -106,6 +126,7 @@ fn assert_raw_roundtrip(app: &mut AppState) {
     assert_eq!(app.transcript_viewer().unwrap_or_abort().quote_text(), "");
     app.handle_key(key(KeyCode::Esc));
     app.handle_key(key(KeyCode::Enter));
+    assert_eq!(app.transcript_viewer().unwrap_or_abort().quote_text(), "");
 }
 
 fn assert_quote_to_parent(app: &mut AppState) {
@@ -129,6 +150,7 @@ fn assert_quote_to_parent(app: &mut AppState) {
 }
 
 fn assert_filter_selection(app: &mut AppState) {
+    app.handle_key(key(KeyCode::End));
     app.handle_key(key(KeyCode::Char('f')));
     app.handle_paste("Second|^Read");
     app.handle_key(key(KeyCode::Enter));

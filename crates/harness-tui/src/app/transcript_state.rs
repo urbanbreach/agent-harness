@@ -247,6 +247,17 @@ impl AppState {
         }
         self.transcript_viewer = Some(viewer);
         self.resize_transcript_viewer(self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24)));
+        if self.current_subagent_session_present() {
+            if let Some((_, resume)) = self
+                .transcript_view
+                .viewer_resume
+                .filter(|(id, _)| *id == entry.id)
+            {
+                if let Some(viewer) = self.transcript_viewer.as_mut() {
+                    viewer.restore_resume(resume);
+                }
+            }
+        }
         true
     }
 
@@ -257,6 +268,12 @@ impl AppState {
         let Some(viewer) = self.transcript_viewer.take() else {
             return false;
         };
+        if self.current_subagent_session_present() {
+            self.transcript_view.viewer_resume = self
+                .transcript_view
+                .selected_entry
+                .map(|id| (id, viewer.resume_snapshot()));
+        }
         if let Some(outline) = self.transcript_outline.as_mut() {
             outline.restore_viewer_anchor(viewer.close().return_snapshot().anchor);
         }

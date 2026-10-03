@@ -41,6 +41,7 @@ pub struct ViewerRenderSurface {
     pub lines: Vec<RenderedLine>,
     pub scroll_top: usize,
     pub body_start: usize,
+    pub unfiltered_line_count: usize,
     pub cursor_rows: std::ops::Range<usize>,
     pub output_panel: bool,
     pub copy_path: bool,
@@ -370,4 +371,5 @@ pub(crate) use layout::viewer_layout;
 pub(crate) use render::render_viewer;
 pub use render::{render_surface, render_to_buffer};
 pub use search::{SearchDirection, SearchMatch, SearchNavigation, SearchState};
+pub(crate) use state::ViewerResume;
 pub use state::ViewerState;

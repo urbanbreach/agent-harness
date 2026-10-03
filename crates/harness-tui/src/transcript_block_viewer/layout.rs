@@ -10,6 +10,13 @@ pub(crate) struct ViewerLayout {
 }
 
 impl ViewerLayout {
+    pub(crate) fn child_content_body(self, query_visible: bool) -> Rect {
+        Rect {
+            height: self.body.height.saturating_sub(u16::from(query_visible)),
+            ..self.body
+        }
+    }
+
     pub(crate) fn content_body(self, status_visible: bool) -> Rect {
         Rect {
             height: self

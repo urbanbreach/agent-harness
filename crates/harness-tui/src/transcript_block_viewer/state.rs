@@ -15,6 +15,8 @@ use super::{
 
 mod display;
 mod markdown_mode;
+mod resume;
+pub(crate) use resume::ViewerResume;
 
 const DEFAULT_HEIGHT: usize = 24;
 
@@ -24,6 +26,7 @@ pub struct ViewerState {
     pub(super) styled_lines: Vec<ratatui::text::Line<'static>>,
     pub(super) row_joiners: Vec<String>,
     row_line_ids: Vec<usize>,
+    pub(super) unfiltered_line_count: usize,
     theme: crate::theme::Theme,
     return_snapshot: ViewerReturnSnapshot,
     mode: ViewerMode,
@@ -63,6 +66,7 @@ impl ViewerState {
             styled_lines: Vec::new(),
             row_joiners: Vec::new(),
             row_line_ids: Vec::new(),
+            unfiltered_line_count: 0,
             theme: crate::theme::Theme::default(),
             return_snapshot,
             mode: ViewerMode::Wrapped,
@@ -146,7 +150,7 @@ impl ViewerState {
         navigation
     }
 
-    fn update_search(&mut self, query: &str) -> SearchNavigation {
+    pub(super) fn update_search(&mut self, query: &str) -> SearchNavigation {
         if self.child {
             self.search
                 .set_wrapped_query(self.wrapped.text(), &self.row_joiners, query)
@@ -180,11 +184,16 @@ impl ViewerState {
     }
 
     pub(crate) fn set_filter_query(&mut self, query: String) -> Result<(), ViewerError> {
+        let old_rows = self.row_line_ids.chunk_by(|a, b| a == b).count();
         self.filter_query = query;
-        self.scroll_top = 0.0;
+        if !self.child {
+            self.scroll_top = 0.0;
+        }
         self.rebuild_display()?;
         if !self.child {
             self.cursor = CellPoint::new(0, 0);
+        } else if self.row_line_ids.chunk_by(|a, b| a == b).count() < old_rows {
+            self.reveal_cursor();
         }
         Ok(())
     }
@@ -276,13 +285,20 @@ impl ViewerState {
     }
 
     pub fn reveal_cursor(&mut self) {
-        let row = f64::from(u32::try_from(self.cursor.row).unwrap_or(u32::MAX));
+        let rows = if self.child {
+            self.logical_rows(self.cursor.row)
+        } else {
+            self.cursor.row..self.cursor.row + 1
+        };
+        let row = f64::from(u32::try_from(rows.start).unwrap_or(u32::MAX));
+        let bottom = f64::from(u32::try_from(rows.end).unwrap_or(u32::MAX));
         let height = f64::from(u32::try_from(self.height).unwrap_or(u32::MAX));
         let margin = ((height - 1.0) / 2.0).floor().min(2.0);
         if row < self.scroll_top + margin {
             self.scroll_top = (row - margin).max(0.0);
-        } else if row + 1.0 + margin > self.scroll_top + height {
-            self.scroll_top = (row + 1.0 + margin - height).min(self.layout.max_scroll());
+        }
+        if bottom + margin > self.scroll_top + height {
+            self.scroll_top = (bottom + margin - height).min(self.layout.max_scroll());
         }
         self.transition = None;
     }
@@ -331,7 +347,7 @@ impl ViewerState {
             anchor.resolve(&self.layout).map_err(ViewerError::Scroll)?
         };
         self.transition = None;
-        if keep_cursor_visible && !self.following {
+        if keep_cursor_visible && !self.following && !self.child {
             self.reveal_cursor();
         }
         Ok(())
