@@ -127,6 +127,7 @@ impl Runtime {
                     crate::subagent::SubagentContextUsage {
                         total_tokens,
                         estimate_at_last_response: Some(total_tokens),
+                        estimate_after_last_response: Some(total_tokens),
                     }
                 });
         }

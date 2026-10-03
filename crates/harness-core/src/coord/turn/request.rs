@@ -172,6 +172,29 @@ impl Worker {
         loop {
             let request = self.request(messages);
             let budget = self.request_budget(&request)?;
+            if self.native {
+                let id = self.turn.id.clone();
+                let owner = self.actor.agent_id.clone().unwrap_or_default();
+                let tokens = messages.native_estimated_tokens();
+                let window = self
+                    .turn
+                    .target
+                    .as_ref()
+                    .and_then(|target| target.limits.context_window.tokens)
+                    .map(u64::from);
+                self.handle
+                    .call(move |runtime| {
+                        runtime.check_task(&id)?;
+                        let agent = runtime
+                            .agents
+                            .get_mut(&owner)
+                            .ok_or(CoordinatorError::UnknownAgent(owner))?;
+                        agent.native_context_tokens = tokens;
+                        agent.native_context_window = window;
+                        Ok(())
+                    })
+                    .await?;
+            }
             if automatic
                 && !prepared
                 && self

@@ -116,6 +116,7 @@ impl CoordinatorHandle {
                     if !reachable {
                         return Ok(None);
                     }
+                    s.refresh_native_progress(&id);
                     let Some(child) = s.native_subagents.get_mut(&id) else {
                         return Ok(None);
                     };

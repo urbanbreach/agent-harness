@@ -56,6 +56,12 @@ impl Context {
     pub fn discard_turn(&mut self, turn: &str) {
         self.entries.retain(|e| e.turn.as_deref() != Some(turn));
     }
+    pub fn native_estimated_tokens(&self) -> Option<u64> {
+        let usage = self.native_context_usage?;
+        Some(usage.total_tokens.saturating_add(
+            native_tokens(&self.entries)?.saturating_sub(usage.estimate_after_last_response?),
+        ))
+    }
     pub fn tokens(&self) -> u32 {
         tokens(&self.entries)
     }

@@ -16,7 +16,7 @@ impl Agent {
                     .iter()
                     .filter_map(|part| {
                         if let crate::session::AssistantPart::ToolCall(call) = part {
-                            Some((call.tool_call_id.to_string(), false))
+                            Some((call.tool_call_id.to_string(), (call.tool_id.clone(), false)))
                         } else {
                             None
                         }
@@ -24,15 +24,24 @@ impl Agent {
                     .collect();
             }
             EventV1::ToolCallStarted(tool) => {
-                if let Some(started) = self.pending_model_tools.get_mut(tool.tool_call_id.as_str())
+                if let Some((_, started)) =
+                    self.pending_model_tools.get_mut(tool.tool_call_id.as_str())
                 {
                     *started = true;
                 }
             }
             EventV1::ToolCallFinished(tool) => {
-                if self.pending_model_tools.remove(tool.tool_call_id.as_str()) == Some(true) {
+                if let Some((name, true)) =
+                    self.pending_model_tools.remove(tool.tool_call_id.as_str())
+                {
                     self.tool_calls = self.tool_calls.saturating_add(1);
+                    if !self.tools_used.contains(&name) {
+                        self.tools_used.push(name);
+                    }
                 }
+            }
+            EventV1::ProviderRequestFinished(response) if response.finish_reason == "error" => {
+                self.error_count = self.error_count.saturating_add(1);
             }
             _ => {}
         }

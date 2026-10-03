@@ -324,6 +324,7 @@ impl Worker {
                             scaled
                         },
                         estimate_at_last_response: Some(estimate),
+                        estimate_after_last_response: Some(estimate),
                     }
                 });
         }

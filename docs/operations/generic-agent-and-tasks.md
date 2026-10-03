@@ -39,6 +39,12 @@ including message wakes and restart. A distinct child created with `resume_from`
 starts its own counters. Calls rejected before execution and startup skill
 preloads do not increase the model tool-call count.
 
+Running-child output includes current prompt turns, executed tool calls, distinct
+tool names, provider errors, elapsed time, and context usage sampled before model
+requests. The live context estimate adds new conversation items to the last
+reported total and excludes model output already covered by that total. Unknown
+context capacity remains unknown.
+
 Children receive the subagent base instructions followed by their definition's
 prompt body. Tool placeholders use the child's available tools, and the workspace
 path reflects its prepared directory or worktree. A same-identity wake keeps the

@@ -157,10 +157,12 @@ impl Worker {
                     result => break result?,
                 }
             };
+            let reported_native_usage = self.native && response.usage.is_some();
             if self.native {
                 if let Some(usage) = &response.usage {
                     messages.native_context_usage = Some(crate::subagent::SubagentContextUsage {
                         total_tokens: u64::from(usage.total_tokens),
+                        estimate_after_last_response: None,
                         estimate_at_last_response: super::super::context::native_tokens(
                             &messages.entries,
                         ),
@@ -199,6 +201,12 @@ impl Worker {
             );
             if let Some(entry) = messages.entries.last_mut() {
                 entry.settled_reasoning = response.settled_reasoning.unwrap_or_default();
+            }
+            if reported_native_usage {
+                let estimate = super::super::context::native_tokens(&messages.entries);
+                if let Some(usage) = &mut messages.native_context_usage {
+                    usage.estimate_after_last_response = estimate;
+                }
             }
             if calls.is_empty() {
                 return Ok(response.text);

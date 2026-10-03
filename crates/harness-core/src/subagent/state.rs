@@ -51,6 +51,9 @@ pub struct FinalizedProviderUsage {
 pub struct SubagentContextUsage {
     pub total_tokens: u64,
     pub estimate_at_last_response: Option<u64>,
+    /// Excludes already-reported model output from subsequent live estimates.
+    #[serde(default)]
+    pub estimate_after_last_response: Option<u64>,
 }
 
 /// Immutable finalized core state. There are deliberately no plans or signals.
