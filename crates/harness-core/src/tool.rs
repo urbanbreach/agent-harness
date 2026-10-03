@@ -37,7 +37,21 @@ pub struct ToolResult {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
 }
-pub(crate) fn provider_text(text: String, data: Option<Value>) -> String {
+pub(crate) fn provider_text(tool: &str, text: String, data: Option<Value>) -> String {
+    if matches!(
+        tool,
+        "spawn_subagent"
+            | "get_command_or_subagent_output"
+            | "wait_commands_or_subagents"
+            | "kill_command_or_subagent"
+            | "send_subagent_message"
+            | "task"
+            | "get_task_output"
+            | "wait_tasks"
+            | "kill_task"
+    ) {
+        return text;
+    }
     match data {
         Some(data) => serde_json::json!({"text":text,"data":data}).to_string(),
         None => text,

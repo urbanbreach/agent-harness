@@ -163,8 +163,12 @@ pub(super) fn messages(
                         ToolCallStatus::Succeeded => "Tool completed.".into(),
                         ToolCallStatus::Failed => "Tool execution failed.".into(),
                     });
-                    turns[turn][result].message.content =
-                        crate::tool::provider_text(summary, e.output_json.clone());
+                    let message = &mut turns[turn][result].message;
+                    message.content = crate::tool::provider_text(
+                        message.name.as_deref().unwrap_or_default(),
+                        summary,
+                        e.output_json.clone(),
+                    );
                 }
             }
             EventV1::SessionCompaction(e) if e.agent_id == agent => {

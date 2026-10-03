@@ -238,17 +238,18 @@ async fn native_current_parent_fork_uses_actual_prefix_without_missing_tool_resu
         .messages
         .first()
         .is_some_and(|message| message.content == "current native definition"));
-    assert_eq!(
-        requests[2]
-            .messages
-            .iter()
-            .filter(|message| {
-                message.role == harness_providers::MessageRole::Tool
-                    && message.tool_call_id.as_deref() == Some("fork-boundary")
-            })
-            .count(),
-        1
-    );
+    let results: Vec<_> = requests[2]
+        .messages
+        .iter()
+        .filter(|message| {
+            message.role == harness_providers::MessageRole::Tool
+                && message.tool_call_id.as_deref() == Some("fork-boundary")
+        })
+        .collect();
+    assert_eq!(results.len(), 1);
+    assert!(results[0]
+        .content
+        .starts_with("fork answer\n\n<subagent_meta>"));
     handle.stop_run().await?;
     Ok(())
 }
