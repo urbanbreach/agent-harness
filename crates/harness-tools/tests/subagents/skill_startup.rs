@@ -205,6 +205,13 @@ async fn native_skill_startup_shares_body_free_catalog_with_authorized_tool_load
         .map(|metadata| &metadata.context)
         .ok_or("child execution")?;
     assert_ne!(Path::new(&execution.effective_cwd), project.canonicalize()?);
+    let system = &initial
+        .messages
+        .first()
+        .ok_or("child system prompt")?
+        .content;
+    assert!(system.contains(&format!("Workspace Path: {}\n", execution.effective_cwd)));
+    assert!(!system.contains(&format!("Workspace Path: {}\n", project.display())));
     assert!(matches!(
         execution.isolation,
         harness_core::subagent::ResolvedSubagentIsolation::Worktree { .. }

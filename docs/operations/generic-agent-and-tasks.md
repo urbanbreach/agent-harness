@@ -30,6 +30,11 @@ Retained conversations preserve tool errors and missing provider usage exactly.
 Missing usage keeps accounting marked incomplete; it does not prevent resuming
 an otherwise complete conversation.
 
+Children receive the subagent base instructions followed by their definition's
+prompt body. Tool placeholders use the child's available tools, and the workspace
+path reflects its prepared directory or worktree. A same-identity wake keeps the
+rendered prompt, including after restart.
+
 ## Permissions and skills
 
 The caller needs `spawn_subagent` in its toolset and the shared `task` permission

@@ -67,6 +67,9 @@ impl Runtime {
             ));
         }
         let skill_startup = self.native_skill_startup(agent, &cwd)?;
+        let system_prompt = self
+            .native_system_prompt(agent, &cwd)?
+            .unwrap_or_else(|| self.agents[agent].profile.system_prompt.clone());
         let child = self
             .native_subagents
             .get(agent)
@@ -85,13 +88,13 @@ impl Runtime {
                 },
             ),
         };
-        let mut context = Context::new(&self.agents[agent].profile.system_prompt);
+        let mut context = Context::new(&system_prompt);
         let mut copied = None;
         if let Some(source) = &child.source_state {
             let mut source = source.clone();
             context = super::super::subagents::restored_context(
                 &mut source,
-                &self.agents[agent].profile.system_prompt,
+                &system_prompt,
                 &self.info()?.run_dir,
             )?;
             let window = self.native_model_window(&source.source_model);
@@ -114,7 +117,7 @@ impl Runtime {
         } else if let Some(fork) = &child.fork_context {
             context = fork_context(
                 fork,
-                &self.agents[agent].profile.system_prompt,
+                &system_prompt,
                 self.native_model_window(&child.registration.model),
             );
         }
@@ -130,6 +133,7 @@ impl Runtime {
                 payload_version: 1,
                 agent_id: SubagentId(agent.into()),
                 context: execution,
+                system_prompt: Some(system_prompt.clone()),
             }),
             move |runtime, _| {
                 if let Some(state) = runtime.agents.get_mut(&owner) {
@@ -137,6 +141,7 @@ impl Runtime {
                     state.cwd = next_cwd;
                     state.messages = context;
                     state.skill_startup = skill_startup;
+                    Arc::make_mut(&mut state.profile).system_prompt = system_prompt;
                 }
             },
         )?;

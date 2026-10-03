@@ -304,6 +304,20 @@ pub fn builtin_subagent_definitions() -> Vec<SubagentDefinition> {
                     _ => "General-purpose implementation and research.",
                 }
                 .into(),
+                prompt_body: Some(
+                    match name {
+                        "explore" => include_str!(
+                            "../../../../../.agent-harness/subagent-prompts/explore.md"
+                        ),
+                        "plan" => {
+                            include_str!("../../../../../.agent-harness/subagent-prompts/plan.md")
+                        }
+                        _ => include_str!(
+                            "../../../../../.agent-harness/subagent-prompts/general-purpose.md"
+                        ),
+                    }
+                    .into(),
+                ),
                 declared_tools: if inspection {
                     let mut tools = vec!["read".into(), "list".into(), "grep".into()];
                     if name == "plan" {

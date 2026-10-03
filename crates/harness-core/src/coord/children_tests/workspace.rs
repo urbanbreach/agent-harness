@@ -196,6 +196,7 @@ async fn native_filters_use_registered_capabilities_aliases_and_mcp_server_metad
         .and_then(|defs| defs.cli.get_mut("native-fixture"))
         .ok_or("native definition absent")?;
     definition.capability_mode = Some(crate::config::SubagentCapabilityMode::ReadOnly);
+    definition.prompt_body = Some("Plan tool: ${{ tools.by_kind.plan }}\n${% if tools.by_kind.edit %}Unexpected editor${% endif %}".into());
     definition.mcp_inheritance =
         crate::config::SubagentMcpInheritance::Mode(crate::config::SubagentMcpMode::None);
     let (handle, parent) = start(config, temp.path()).await?;
@@ -207,6 +208,9 @@ async fn native_filters_use_registered_capabilities_aliases_and_mcp_server_metad
     ))
     .await?;
     let requests = provider.captured_requests().await;
+    let system = &requests[0].messages[0].content;
+    assert!(system.ends_with("Plan tool: todowrite\n"));
+    assert!(!system.contains("<making_code_changes>"));
     let tools: Vec<_> = requests
         .first()
         .ok_or("actual provider request absent")?

@@ -27,12 +27,10 @@ async fn native_new_identity_resume_pins_state_and_same_identity_message_wake(
         done("source answer"),
         done("resumed answer"),
         done("awake answer"),
+        done("recovered answer"),
     ]));
-    let (handle, parent) = start(
-        configuration(temp.path(), Arc::<MockProvider>::clone(&provider)),
-        temp.path(),
-    )
-    .await?;
+    let mut config = configuration(temp.path(), Arc::<MockProvider>::clone(&provider));
+    let (handle, parent) = start(config.clone(), temp.path()).await?;
     let first = join(launch(
         &handle,
         &parent,
@@ -152,7 +150,37 @@ async fn native_new_identity_resume_pins_state_and_same_identity_message_wake(
     );
     let history = handle.subagent_history().await?;
     assert_eq!(history.records[&id].generation, 2);
+    let run = handle.run_info().await?;
     handle.stop_run().await?;
+    config.subagent_definitions = Some(SubagentDefinitionSnapshot::default());
+    let restored = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    restored
+        .resume_run(run.run_id.to_string(), "prompt recovery")
+        .await?;
+    assert_eq!(provider.call_count(), 3);
+    let mut terminal = restored.subscribe_new_events().await?;
+    let _ = join(launch(
+        &restored,
+        &parent,
+        "send_subagent_message",
+        json!({"subagent_id":id,"text":"recovered wake"}),
+    ))
+    .await?;
+    event(&mut terminal, |event| match &event.payload {
+        EventV1::NativeSubagentReceipt(r) if r.child_id == id && r.kind == "terminal_published" => {
+            Some(())
+        }
+        _ => None,
+    })
+    .await?;
+    let requests = provider.captured_requests().await;
+    assert_eq!(requests.len(), 4);
+    assert_eq!(requests[3].messages[0], requests[0].messages[0]);
+    restored.stop_run().await?;
     Ok(())
 }
 
@@ -234,10 +262,14 @@ async fn native_current_parent_fork_uses_actual_prefix_without_missing_tool_resu
                 .as_ref()
                 .is_none_or(Vec::is_empty)
     }));
-    assert!(child
+    let system = &child
         .messages
         .first()
-        .is_some_and(|message| message.content == "current native definition"));
+        .ok_or("child system prompt missing")?
+        .content;
+    assert!(system.starts_with("You are a Harness subagent"));
+    assert!(system.ends_with("\n\ncurrent native definition"));
+    assert!(system.contains(&format!("Workspace Path: {}", temp.path().display())));
     let results: Vec<_> = requests[2]
         .messages
         .iter()
