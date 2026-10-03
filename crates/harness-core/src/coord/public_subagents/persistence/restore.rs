@@ -191,10 +191,11 @@ impl Runtime {
                 cleanup_pending: false,
             };
             let mut snapshot = child.updates.borrow().clone();
-            for event in events
-                .iter()
-                .filter(|event| event.actor.agent_id.as_deref() == Some(&id))
-            {
+            for event in events.iter().filter(|event| {
+                event.actor.agent_id.as_deref() == Some(&id)
+                    || matches!(&event.payload, EventV1::NativeSubagentReceipt(receipt)
+                            if receipt.child_id == id)
+            }) {
                 let cancellation_status = if matches!(&event.payload, EventV1::TaskCancelled(terminal) if terminal.failure)
                 {
                     "failed"
@@ -247,7 +248,10 @@ impl Runtime {
                         child.phase = NativePhase::Terminal;
                     }
                     EventV1::NativeSubagentReceipt(receipt)
-                        if receipt.kind == "notification_consumed" =>
+                        if matches!(
+                            receipt.kind.as_str(),
+                            "notification_consumed" | "completion_reminder_delivered"
+                        ) =>
                     {
                         child.consumed = true
                     }

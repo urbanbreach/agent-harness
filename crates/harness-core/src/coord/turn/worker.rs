@@ -64,6 +64,19 @@ impl Worker {
             if !context.is_empty() {
                 text.push_str(&format!("\n\nSelected context:\n{context}"));
             }
+            if let Some(completion) = self.turn.prompt.child_completion.clone() {
+                let parent = self.actor.agent_id.clone().unwrap_or_default();
+                let request = self.turn.id.clone();
+                let deliver = self
+                    .handle
+                    .call(move |runtime| {
+                        runtime.claim_native_completion_wake(&parent, &completion, &request)
+                    })
+                    .await?;
+                if !deliver {
+                    return Ok(String::new());
+                }
+            }
             messages.push(
                 CompletionMessage::text(MessageRole::User, text),
                 self.turn.seq,

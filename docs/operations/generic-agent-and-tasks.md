@@ -77,7 +77,9 @@ The coordinator owns scheduling, permission checks, message admission, child
 ownership, cancellation, lifecycle transitions, and event appends. UI actions
 submit intents to that owner. Waiting does not hold an execution slot needed by
 the work being awaited. Completion notifications and messages are committed
-before they are delivered.
+before they are delivered. A background completion reaches the parent once,
+through either its wake prompt or a buffered reminder. Polling a finished child
+consumes its pending completion notification.
 
 ## History and inspection
 

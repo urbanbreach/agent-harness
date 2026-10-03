@@ -16,6 +16,7 @@ async fn unrelated_output_and_wait_queries_preserve_parent_completion_notificati
             parent_started: tokio::sync::Notify::new(),
             child_started: tokio::sync::Notify::new(),
             collect_reports: 0,
+            continue_parent: false,
             wakeups: AtomicUsize::new(0),
             collected: tokio::sync::Mutex::new(Vec::new()),
         });
