@@ -40,6 +40,10 @@ async fn native_resume_retains_committed_raw_state_and_rejects_summary_only_sour
             settled_metadata("third"),
         ],
         vec![
+            Stream::TextDelta("woken answer".into()),
+            settled_metadata("wake"),
+        ],
+        vec![
             Stream::TextDelta("summary source".into()),
             Stream::Done { usage: None },
         ],
@@ -56,10 +60,14 @@ async fn native_resume_retains_committed_raw_state_and_rejects_summary_only_sour
         .ok_or("native fixture registry is shared")?
         .register(Arc::new(LargeTool(Arc::new(AtomicUsize::new(0)))));
     let mut root = AgentProfile::fallback("default");
-    root.toolset = vec!["spawn_subagent".into(), "large".into()];
+    root.toolset = vec![
+        "spawn_subagent".into(),
+        "large".into(),
+        "send_subagent_message".into(),
+    ];
     config.agent_profiles.insert("default".into(), root);
     let coordinator = spawn_coordinator(
-        config,
+        config.clone(),
         Arc::new(FakeClock::new()),
         Arc::new(DefaultRedactor::default()),
     );
@@ -94,6 +102,7 @@ async fn native_resume_retains_committed_raw_state_and_rejects_summary_only_sour
         .accounting
         .as_ref()
         .ok_or("accounting missing")?;
+    assert_eq!(accounting.tool_calls, 1, "rejected calls did not execute");
     assert_eq!(accounting.tokens_used, Some(15));
     assert_eq!(accounting.total_tokens_used, None);
     assert!(accounting.output_usage_incomplete);
@@ -156,6 +165,14 @@ async fn native_resume_retains_committed_raw_state_and_rejects_summary_only_sour
         Some(FinalizedStateUnavailable::LegacySummaryOnly),
         "presentation reconstruction is intrinsically summary-only"
     );
+    assert_eq!(
+        coordinator.subagent_history().await?.records[resumed_id]
+            .accounting
+            .as_ref()
+            .map(|a| a.tool_calls),
+        Some(0)
+    );
+    wake_and_check_tool_count(&coordinator, &actor, &child).await?;
     let first = coordinator
         .execute_tool(
             actor.clone(),
@@ -182,7 +199,7 @@ async fn native_resume_retains_committed_raw_state_and_rejects_summary_only_sour
     let calls = provider.call_count();
     let rejected = coordinator
         .execute_tool(
-            actor,
+            actor.clone(),
             None,
             None,
             "spawn_subagent".into(),
@@ -191,6 +208,55 @@ async fn native_resume_retains_committed_raw_state_and_rejects_summary_only_sour
         .await;
     assert!(rejected.is_err());
     assert_eq!(provider.call_count(), calls);
+    let run = coordinator.run_info().await?;
     coordinator.stop_run().await?;
+    let restored = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    restored
+        .resume_run(run.run_id.to_string(), "restore child counters")
+        .await?;
+    assert_eq!(provider.call_count(), calls);
+    wake_and_check_tool_count(&restored, &actor, &child).await?;
+    restored.stop_run().await?;
+    Ok(())
+}
+
+async fn wake_and_check_tool_count(
+    coordinator: &CoordinatorHandle,
+    actor: &EventActor,
+    child: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut events = coordinator.subscribe_new_events().await?;
+    let _ = coordinator
+        .execute_tool(
+            actor.clone(),
+            None,
+            None,
+            "send_subagent_message".into(),
+            json!({"subagent_id":child,"text":"continue source"}),
+        )
+        .await?;
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        while let Some(event) = events.next().await {
+            if matches!(event?.payload, EventV1::NativeSubagentReceipt(receipt)
+                if receipt.child_id == child && receipt.kind == "terminal_published")
+            {
+                return Ok::<_, Box<dyn std::error::Error>>(());
+            }
+        }
+        Err("child wake did not finish".into())
+    })
+    .await??;
+    assert_eq!(
+        coordinator.subagent_history().await?.records[child]
+            .accounting
+            .as_ref()
+            .map(|a| a.tool_calls),
+        Some(1),
+        "same-identity wakes retain tool calls across turns and restart"
+    );
     Ok(())
 }
