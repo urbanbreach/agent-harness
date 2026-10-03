@@ -285,6 +285,7 @@ impl Runtime {
     ) -> Result<(), CoordinatorError> {
         let state = &self.agents[agent];
         let generation = state.generation;
+        let turns = state.prompt_turns;
         let reference = if retain_snapshot {
             Some(self.prepare_finalized_state(agent, attempt, messages)?)
         } else {
@@ -333,7 +334,7 @@ impl Runtime {
                             .count(),
                     )
                     .unwrap_or(u32::MAX),
-                    turns: u32::try_from(request_count).unwrap_or(u32::MAX),
+                    turns,
                     duration_ms: self
                         .clock
                         .mono_ms()
