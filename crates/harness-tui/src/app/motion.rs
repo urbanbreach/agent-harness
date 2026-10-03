@@ -33,6 +33,14 @@ impl AppState {
         if clear_prompt_confirmation_expired {
             self.reset_clear_prompt_confirmation();
         }
+        let viewer_copy_changed = self.transcript_viewer.as_mut().is_some_and(|viewer| {
+            if viewer.copied_until.is_some_and(|deadline| now >= deadline) {
+                viewer.copied_until = None;
+                true
+            } else {
+                false
+            }
+        });
         let toast_changed = self.refresh_toast_motion(now);
         let tool_finished = self
             .transcript_view
@@ -42,7 +50,7 @@ impl AppState {
             self.bump_transcript_render_epoch();
             self.motion_revision = self.motion_revision.wrapping_add(1);
         }
-        clear_prompt_confirmation_expired || toast_changed || tool_finished
+        clear_prompt_confirmation_expired || toast_changed || tool_finished || viewer_copy_changed
     }
 
     pub(crate) fn motion_plan(&self) -> MotionPlan {
@@ -56,6 +64,13 @@ impl AppState {
             }
         }
 
+        if let Some(deadline) = self
+            .transcript_viewer
+            .as_ref()
+            .and_then(|viewer| viewer.copied_until)
+        {
+            plan = plan.merge(MotionDemand::until(deadline.saturating_duration_since(now)));
+        }
         if let Some(remaining) = self.composer_suggestion_delay_remaining() {
             plan = plan.merge(MotionDemand::until(remaining));
         }

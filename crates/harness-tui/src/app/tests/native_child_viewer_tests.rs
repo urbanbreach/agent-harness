@@ -44,6 +44,7 @@ pub(super) fn assert_child_viewer(app: &mut AppState) {
     );
     app.handle_key(key(KeyCode::Char('F')));
     assert_raw_roundtrip(app);
+    assert_pointer_copy(app, area);
     app.handle_key(key(KeyCode::Char('/')));
     app.handle_paste("histoy");
     app.handle_key(key(KeyCode::Left));
@@ -112,6 +113,92 @@ pub(super) fn assert_child_viewer(app: &mut AppState) {
     assert_entry_raw_mode(app);
     app.composer.vim_mode = false;
     app.set_frame_area(Rect::new(0, 0, 120, 40));
+}
+
+fn assert_pointer_copy(app: &mut AppState, area: Rect) {
+    use crate::transcript_block_viewer::ViewerBlockContent;
+    let original = app.transcript_viewer().unwrap_or_abort().content().clone();
+    app.transcript_viewer
+        .as_mut()
+        .unwrap_or_abort()
+        .update_content(ViewerBlockContent::markdown(
+            "alpha beta\n\nsecond paragraph",
+        ))
+        .unwrap_or_abort();
+    app.handle_key(key(KeyCode::Home));
+    let layout = crate::transcript_block_viewer::viewer_layout(
+        crate::layout::FrameLayoutPlan::for_app(app, area).shell,
+    );
+    let copied = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        sink.lock().unwrap_or_abort().push(text.to_string());
+        Ok(())
+    })));
+    let pointer = |app: &mut AppState, kind, column| {
+        app.handle_pointer_event(
+            MouseEvent {
+                kind,
+                column: layout.body.x + column,
+                row: layout.body.y,
+                modifiers: KeyModifiers::NONE,
+            },
+            area,
+        );
+    };
+    pointer(app, MouseEventKind::Down(MouseButton::Left), 1);
+    assert!(app
+        .transcript_viewer()
+        .unwrap_or_abort()
+        .selection()
+        .is_none());
+    pointer(app, MouseEventKind::Drag(MouseButton::Left), 3);
+    pointer(app, MouseEventKind::Up(MouseButton::Left), 4);
+    assert_eq!(
+        copied.lock().unwrap_or_abort().last().map(String::as_str),
+        Some("lpha")
+    );
+    assert_eq!(
+        app.transcript_viewer().unwrap_or_abort().quote_text(),
+        "lpha"
+    );
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app
+        .transcript_viewer()
+        .unwrap_or_abort()
+        .selection()
+        .is_none());
+    app.handle_key(key(KeyCode::Char('y')));
+    assert_eq!(
+        copied.lock().unwrap_or_abort().last().map(String::as_str),
+        Some("alpha beta")
+    );
+    assert!(render_text(app, 80, 24).contains("Copied!"));
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(501));
+    app.refresh_motion_state();
+    assert!(!render_text(app, 80, 24).contains("Copied!"));
+    for expected in [None, Some("alpha"), Some("alpha beta")] {
+        pointer(app, MouseEventKind::Down(MouseButton::Left), 1);
+        pointer(app, MouseEventKind::Up(MouseButton::Left), 1);
+        let viewer = app.transcript_viewer().unwrap_or_abort();
+        assert_eq!(viewer.copy_selection_text().ok().as_deref(), expected);
+    }
+    app.handle_key(key(KeyCode::Esc));
+    let count = copied.lock().unwrap_or_abort().len();
+    pointer(app, MouseEventKind::Down(MouseButton::Left), 40);
+    pointer(app, MouseEventKind::Up(MouseButton::Left), 40);
+    assert!(app
+        .transcript_viewer()
+        .unwrap_or_abort()
+        .selection()
+        .is_none());
+    assert_eq!(copied.lock().unwrap_or_abort().len(), count);
+    crate::clipboard::set_copy_override(None);
+    app.transcript_viewer
+        .as_mut()
+        .unwrap_or_abort()
+        .update_content(original)
+        .unwrap_or_abort();
 }
 
 fn assert_entry_raw_mode(app: &mut AppState) {

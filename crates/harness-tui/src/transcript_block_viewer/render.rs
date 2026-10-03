@@ -155,6 +155,7 @@ fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface 
             .nth(state.input.editor.cursor().insertion_index())
             .map_or(query.len(), |(byte, _)| byte),
         following: state.following,
+        copied: state.copied_until.is_some(),
         child: state.child,
         filtering,
         visual_mode: state.visual_mode,
@@ -276,12 +277,23 @@ fn paint(
         if surface.cursor_rows.contains(&index) || (surface.visual_mode && line.selected) {
             buffer.set_style(row, Style::default().bg(background));
         }
+        if surface.child && !surface.visual_mode {
+            line::paint_child_selection(buffer, row, line, theme);
+        }
         if !surface.wrap_enabled && line.text.width() > usize::from(row.width) {
             buffer[(row.right() - 1, row.y)].set_symbol("…");
         }
     }
     render_scrollbar(buffer, body, surface.scroll_top, row_count, theme);
-    if surface.following && !body.is_empty() {
+    if surface.copied && body.width >= 8 && !body.is_empty() {
+        Paragraph::new(" Copied!")
+            .style(
+                Style::default()
+                    .fg(theme.text.primary)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .render(Rect::new(body.right() - 8, body.bottom() - 1, 8, 1), buffer);
+    } else if surface.following && !body.is_empty() {
         place_indicator(buffer, body, body.bottom() - 1, "▶", theme);
         buffer[(body.right() - 1, body.bottom() - 1)].set_fg(theme.status.warning);
     }
