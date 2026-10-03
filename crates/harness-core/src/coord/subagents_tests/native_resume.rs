@@ -94,6 +94,7 @@ async fn native_resume_retains_committed_raw_state_and_rejects_summary_only_sour
         .accounting
         .as_ref()
         .ok_or("accounting missing")?;
+    assert_eq!(accounting.tokens_used, Some(15));
     assert_eq!(accounting.total_tokens_used, None);
     assert!(accounting.output_usage_incomplete);
     for (call_id, error) in [

@@ -23,11 +23,23 @@ async fn original_reference(
 async fn native_new_identity_resume_pins_state_and_same_identity_message_wake(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
+    let without_usage = |text: &str| {
+        vec![
+            Stream::TextDelta(text.into()),
+            Stream::DoneWithMetadata {
+                usage: None,
+                metadata: Some(ProviderStreamFinishedMetadata {
+                    settled_reasoning: Some(Vec::new()),
+                    ..Default::default()
+                }),
+            },
+        ]
+    };
     let provider = Arc::new(MockProvider::script([
-        done("source answer"),
-        done("resumed answer"),
+        without_usage("source answer"),
+        without_usage("resumed answer"),
         done("awake answer"),
-        done("recovered answer"),
+        without_usage("recovered answer"),
     ]));
     let mut config = configuration(temp.path(), Arc::<MockProvider>::clone(&provider));
     let (handle, parent) = start(config.clone(), temp.path()).await?;
@@ -86,6 +98,25 @@ async fn native_new_identity_resume_pins_state_and_same_identity_message_wake(
         &state.usage[..original.usage.len()],
         original.usage.as_slice()
     );
+    let requests = provider.captured_requests().await;
+    let source_seed = requests[0].messages[0].content.len() as u64 / 4;
+    let resume_seed = requests[1]
+        .messages
+        .iter()
+        .take(requests[1].messages.len() - 1)
+        .map(|message| message.content.len() as u64 / 4)
+        .sum::<u64>();
+    assert_eq!(
+        original
+            .native_context_usage
+            .map(|usage| usage.total_tokens),
+        Some(source_seed)
+    );
+    assert_eq!(
+        state.native_context_usage.map(|usage| usage.total_tokens),
+        Some(resume_seed)
+    );
+    assert!(resume_seed > source_seed);
     assert_eq!(state.source_model, original.source_model);
     assert_eq!(state.execution_context, original.execution_context);
     assert_eq!(
@@ -150,6 +181,13 @@ async fn native_new_identity_resume_pins_state_and_same_identity_message_wake(
     );
     let history = handle.subagent_history().await?;
     assert_eq!(history.records[&id].generation, 2);
+    assert_eq!(
+        history.records[&id]
+            .accounting
+            .as_ref()
+            .and_then(|a| a.tokens_used),
+        Some(14)
+    );
     let run = handle.run_info().await?;
     handle.stop_run().await?;
     config.subagent_definitions = Some(SubagentDefinitionSnapshot::default());
@@ -180,6 +218,14 @@ async fn native_new_identity_resume_pins_state_and_same_identity_message_wake(
     let requests = provider.captured_requests().await;
     assert_eq!(requests.len(), 4);
     assert_eq!(requests[3].messages[0], requests[0].messages[0]);
+    let history = restored.subagent_history().await?;
+    let accounting = history.records[&id]
+        .accounting
+        .as_ref()
+        .ok_or("restored accounting missing")?;
+    assert_eq!(accounting.tokens_used, Some(14));
+    assert_eq!(accounting.total_tokens_used, None);
+    assert!(accounting.output_usage_incomplete);
     restored.stop_run().await?;
     Ok(())
 }

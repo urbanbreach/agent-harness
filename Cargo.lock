@@ -1525,6 +1525,7 @@ dependencies = [
  "json5",
  "landlock",
  "minijinja",
+ "num-traits",
  "regex",
  "reqwest",
  "rustix",

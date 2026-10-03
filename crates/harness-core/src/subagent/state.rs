@@ -45,6 +45,14 @@ pub struct FinalizedProviderUsage {
     pub settled_reasoning: Option<Vec<String>>,
 }
 
+/// Native child context telemetry, separate from cumulative billable usage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubagentContextUsage {
+    pub total_tokens: u64,
+    pub estimate_at_last_response: Option<u64>,
+}
+
 /// Immutable finalized core state. There are deliberately no plans or signals.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -59,6 +67,8 @@ pub struct RawFinalizedState {
     /// Last post-compaction model input; system prompt/tool declarations are not copied.
     pub model_request: Option<Box<harness_providers::CompletionRequest>>,
     pub usage: Vec<FinalizedProviderUsage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_context_usage: Option<SubagentContextUsage>,
     pub source_model: String,
     pub model_target: Option<crate::config::ResolvedModelTarget>,
     pub model_settings: AgentModelSettings,

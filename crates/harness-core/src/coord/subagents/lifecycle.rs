@@ -310,6 +310,28 @@ impl Runtime {
                     ))
                 })
                 .filter(|_| request_count > 0);
+            let tool_calls = u32::try_from(
+                messages
+                    .entries
+                    .iter()
+                    .filter(|e| {
+                        e.turn.as_deref() == Some(attempt)
+                            && e.message.role == harness_providers::MessageRole::Tool
+                    })
+                    .count(),
+            )
+            .unwrap_or(u32::MAX);
+            let tokens_used = if self.native_subagents.contains_key(agent) {
+                if !success && tool_calls == 0 {
+                    Some(0)
+                } else {
+                    messages
+                        .native_context_usage
+                        .map(|usage| usage.total_tokens)
+                }
+            } else {
+                usage.map(|u| u.0)
+            };
             let transition = self.agent_transition(
                 agent,
                 attempt,
@@ -323,23 +345,13 @@ impl Runtime {
                     SubagentTerminalOutcome::SessionError
                 }),
                 Some(SubagentTerminalAccounting {
-                    tool_calls: u32::try_from(
-                        messages
-                            .entries
-                            .iter()
-                            .filter(|e| {
-                                e.turn.as_deref() == Some(attempt)
-                                    && e.message.role == harness_providers::MessageRole::Tool
-                            })
-                            .count(),
-                    )
-                    .unwrap_or(u32::MAX),
+                    tool_calls,
                     turns,
                     duration_ms: self
                         .clock
                         .mono_ms()
                         .saturating_sub(self.agents[agent].attempt_started_ms),
-                    tokens_used: usage.map(|u| u.0),
+                    tokens_used,
                     output_tokens_used: usage.map(|u| u.1),
                     total_tokens_used: usage.map(|u| u.2),
                     output_usage_incomplete: usage.is_none(),
