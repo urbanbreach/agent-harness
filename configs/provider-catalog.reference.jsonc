@@ -11,6 +11,20 @@
         "timeoutMs": 1800000
       },
       "models": {
+        "gpt-6.1-sol": {
+          "name": "GPT 6.1 Sol",
+          "metadata": { "context_window_tokens": 1050000, "supports_tool_calls": true, "supports_reasoning_summaries": true },
+          "max_input_tokens": 288384,
+          "max_output_tokens": 128000,
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoning_effort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoning_effort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoning_effort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoning_effort": "xhigh" } },
+            "max": { "name": "Max", "metadata": { "reasoning_effort": "max" } }
+          }
+        },
         "gpt-6-astra": {
           "name": "GPT 6 Astra",
           "metadata": { "family": "gpt-astra", "context_window_tokens": 1050000, "supports_tool_calls": true, "supports_reasoning_summaries": true },

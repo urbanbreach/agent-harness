@@ -11,11 +11,12 @@ pub enum ProviderAuthProfile {
     GithubCopilot,
 }
 
-/// Subscription support, checked against https://learn.chatgpt.com/docs/models on 2026-09-26.
+/// Subscription support, checked against https://learn.chatgpt.com/docs/models on 2026-10-04.
 pub fn codex_model_allowed(model: &str) -> bool {
     matches!(
         model,
         "gpt-6-astra"
+            | "gpt-6.1-sol"
             | "gpt-6-sol"
             | "gpt-6-luna"
             | "gpt-5.6-sol"
@@ -77,7 +78,9 @@ impl ProviderAuthProfile {
                 if let Some(input) = object.get_mut("input").and_then(Value::as_array_mut) {
                     input.retain(|item| item["role"] != "system");
                 }
-                if request.model_id == "gpt-6-astra" || request.model_id.starts_with("gpt-5") {
+                if matches!(request.model_id.as_str(), "gpt-6-astra" | "gpt-6.1-sol")
+                    || request.model_id.starts_with("gpt-5")
+                {
                     body["include"] = serde_json::json!(["reasoning.encrypted_content"]);
                     let effort = if request.model_id == "gpt-6-astra" {
                         "low"

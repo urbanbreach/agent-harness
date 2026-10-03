@@ -16,7 +16,7 @@ Catalog-derived GPT-5.6 models on the built-in `openai-codex` provider use a 369
 
 ## Codex subscription model availability
 
-Codex authentication accepts only the verified subscription models: `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, and `gpt-5.5` (verified September 25, 2026). GPT-5.5 remains available until October 14, 2026. Retired models, Pro models, and unknown aliases are filtered from runtime catalogs and rejected before requests reach the network, including for custom provider IDs using `authProvider: "codex"`. Separate API-key providers are unaffected. Account and workspace access can further restrict this list.
+Codex authentication accepts only the verified subscription models: `gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, and `gpt-5.5` (verified October 4, 2026). GPT-5.5 remains available until October 14, 2026. Retired models, Pro models, and unknown aliases are filtered from runtime catalogs and rejected before requests reach the network, including for custom provider IDs using `authProvider: "codex"`. Separate API-key providers are unaffected. Account and workspace access can further restrict this list.
 
 Sources: [model availability](https://learn.chatgpt.com/docs/models#deprecated-codex-models), [Spark retirement](https://learn.chatgpt.com/docs/changelog).
 
@@ -47,6 +47,25 @@ only 127,616 tokens after both reserves. Explicit local model entries remain
 authoritative and are not overwritten by catalog refreshes.
 Availability still depends on the account and endpoint;
 `doctor` is offline, so a real prompt is required to verify access.
+
+## GPT-6.1 Sol
+
+`gpt-6.1-sol` is available in the bundled catalog and the workspace, example,
+and reference configurations. Select `openai-codex/gpt-6.1-sol` in the model
+picker, or set it as the top-level `model` in `harness.jsonc`.
+Existing model defaults are unchanged.
+
+Supported reasoning variants are `low`, `medium`, `high`, `xhigh`, and `max`.
+Without an explicit reasoning setting, Codex requests default to `medium` and
+include encrypted reasoning content. Explicit settings take precedence.
+Tool calling uses the Responses API; `none` and `minimal` are not supported.
+
+Bundled API limits are 1,050,000 context tokens, 922,000 maximum input tokens,
+and 128,000 maximum output tokens. The shipped configurations use a 288,384-token
+input limit, preserving the existing 272,000-token compaction threshold with the
+default 16,384-token reserve. Account and workspace rollout still determine access.
+See the [model specifications](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
+and [Codex availability](https://learn.chatgpt.com/docs/models#gpt-61-sol).
 
 ## Known limits
 
