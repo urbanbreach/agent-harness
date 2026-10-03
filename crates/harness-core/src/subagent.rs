@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 mod history;
 mod lifecycle;
+mod output;
 mod schema;
 mod state;
 mod wire;

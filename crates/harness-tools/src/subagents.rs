@@ -8,10 +8,9 @@
 
 use harness_core::{
     subagent::{
-        GetCommandOrSubagentOutputInput, GetCommandOrSubagentOutputResult,
-        GetCommandOrSubagentOutputValue, KillCommandOrSubagentInput, KillCommandOrSubagentValue,
-        SendSubagentMessageInput, SendSubagentMessageOutput, SpawnSubagentInput,
-        WaitCommandsOrSubagentsInput,
+        GetCommandOrSubagentOutputInput, GetCommandOrSubagentOutputValue,
+        KillCommandOrSubagentInput, KillCommandOrSubagentValue, SendSubagentMessageInput,
+        SendSubagentMessageOutput, SpawnSubagentInput, WaitCommandsOrSubagentsInput,
     },
     tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult},
 };
@@ -218,7 +217,7 @@ fn check_count(count: usize) -> Result<(), ToolError> {
 
 fn output_result(value: GetCommandOrSubagentOutputValue) -> Result<ToolResult, ToolError> {
     let text = match &value {
-        GetCommandOrSubagentOutputValue::Result(result) => single_output_text(result),
+        GetCommandOrSubagentOutputValue::Result(result) => result.to_prompt_text(),
         GetCommandOrSubagentOutputValue::TaskNotFound(message) => message.clone(),
         GetCommandOrSubagentOutputValue::MultiResult(multi) => {
             let mut lines = vec![format!("=== Multi-wait ({}) ===", multi.mode)];
@@ -242,36 +241,6 @@ fn output_result(value: GetCommandOrSubagentOutputValue) -> Result<ToolResult, T
     let mut result = structured(text, value)?;
     mark_not_found(&mut result, missing);
     Ok(result)
-}
-
-fn single_output_text(result: &GetCommandOrSubagentOutputResult) -> String {
-    let mut lines = vec![
-        format!("=== Task {} ===", result.task_id),
-        format!("Command: {}", result.command),
-        format!("Status: {}", result.status),
-        format!("Duration: {:.2}s", result.duration_secs),
-    ];
-    if let Some(code) = result.exit_code {
-        lines.push(format!("Exit Code: {code}"));
-    }
-    if !result.output_file.is_empty() {
-        lines.push(format!("Output File: {}", result.output_file));
-    }
-    lines.push(String::new());
-    lines.push("=== Output ===".into());
-    lines.push(if result.output.is_empty() {
-        if result.status == "running" {
-            "(no output yet)".into()
-        } else {
-            "(no output)".into()
-        }
-    } else {
-        result.output.clone()
-    });
-    if result.truncated {
-        lines.push(result.truncation_hint.clone());
-    }
-    lines.join("\n")
 }
 
 fn mark_not_found(result: &mut ToolResult, missing: bool) {

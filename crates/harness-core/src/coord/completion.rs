@@ -52,7 +52,7 @@ impl Runtime {
         }
         // Keep completion identities even when a large report spills to an artifact.
         let consumed_notifications = self.consumed_child_notifications(&job, &result);
-        let raw_tool_result = if messages.is_none()
+        let mut raw_tool_result = if messages.is_none()
             && job.parent.as_ref().is_some_and(|parent| {
                 self.running
                     .get(parent)
@@ -104,6 +104,7 @@ impl Runtime {
         }
         self.snapshots.remove(&id);
         self.finish_hooks(&id, &mut job, messages.is_some(), &mut result);
+        self.attach_native_tool_reminders(&id, &job, &mut result, &mut raw_tool_result)?;
         let success = result.as_ref().is_ok_and(|value| !value.is_error());
         let summary = match &result {
             Ok(value) => value.display_text.clone(),

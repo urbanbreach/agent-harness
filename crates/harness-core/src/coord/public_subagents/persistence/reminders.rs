@@ -1,24 +1,34 @@
 use super::*;
 
 impl Runtime {
-    pub(in crate::coord) fn claim_native_completion_wake(
+    pub(in crate::coord) fn native_completion_wake_text(
         &mut self,
         parent: &str,
         completion: &str,
         request: &str,
-    ) -> Result<bool, CoordinatorError> {
+        fallback: String,
+    ) -> Result<Option<String>, CoordinatorError> {
         let child = self.native_subagents.iter().find(|(_, child)| {
             child.registration.spawner == parent && child.request.as_deref() == Some(completion)
         });
         let Some((id, child)) = child else {
-            return Ok(true);
+            return Ok(Some(fallback));
         };
         if child.consumed {
-            return Ok(false);
+            return Ok(None);
         }
         let id = id.clone();
-        self.record_native_completion_delivery(&id, parent, request)?;
-        Ok(true)
+        let buffered = self.buffered_native_completions(parent);
+        if buffered.contains(&id) {
+            let text = self.native_completion_digest(parent, &buffered);
+            for id in buffered {
+                self.record_native_completion_delivery(&id, parent, request)?;
+            }
+            Ok(Some(text))
+        } else {
+            self.record_native_completion_delivery(&id, parent, request)?;
+            Ok(Some(fallback))
+        }
     }
 
     fn record_native_completion_delivery(
@@ -46,30 +56,81 @@ impl Runtime {
         Ok(event.seq)
     }
 
-    pub(in crate::coord::public_subagents) fn drain_native_completion_reminders(
+    pub(in crate::coord) fn drain_native_completion_reminders(
         &mut self,
         parent: &str,
         request: &str,
     ) -> Result<Vec<(u64, String)>, CoordinatorError> {
+        let buffered = self.buffered_native_completions(parent);
+        if buffered.is_empty() {
+            return Ok(Vec::new());
+        }
+        let text = self.native_completion_digest(parent, &buffered);
+        let mut seq = 0;
+        for id in buffered {
+            seq = self.record_native_completion_delivery(&id, parent, request)?;
+        }
+        Ok(vec![(seq, text)])
+    }
+
+    pub(in crate::coord) fn attach_native_tool_reminders(
+        &mut self,
+        id: &str,
+        job: &Job,
+        result: &mut Result<ToolResult, CoordinatorError>,
+        raw: &mut Option<Result<ToolResult, String>>,
+    ) -> Result<(), CoordinatorError> {
+        let (Some(parent), Some(request), Ok(output)) =
+            (job.actor.agent_id.as_deref(), job.parent.as_deref(), result)
+        else {
+            return Ok(());
+        };
+        if !self
+            .agents
+            .get(parent)
+            .is_some_and(|agent| agent.pending_model_tools.contains_key(id))
+        {
+            return Ok(());
+        }
+        let reminders = self.take_native_tool_reminders(parent, request)?;
+        if !reminders.is_empty() {
+            append(&mut output.display_text, &reminders);
+            if let Some(Ok(raw)) = raw {
+                append(&mut raw.display_text, &reminders);
+            }
+        }
+        Ok(())
+    }
+
+    fn take_native_tool_reminders(
+        &mut self,
+        parent: &str,
+        request: &str,
+    ) -> Result<String, CoordinatorError> {
+        let buffered = self.buffered_native_completions(parent);
+        let mut reminders = Vec::new();
+        for id in buffered {
+            reminders.push(self.native_completion_reminder(&id, parent));
+            self.record_native_completion_delivery(&id, parent, request)?;
+        }
+        Ok(reminders.join("\n\n"))
+    }
+
+    fn buffered_native_completions(&self, parent: &str) -> Vec<String> {
         let mut buffered: Vec<_> = self
             .native_subagents
             .iter()
-            .filter(|(_, child)| child.buffered_for.as_deref() == Some(parent))
+            .filter(|(_, child)| child.buffered_for.as_deref() == Some(parent) && !child.consumed)
             .map(|(id, child)| (child.completion_age, id.clone()))
             .collect();
         buffered.sort();
-        let mut messages = Vec::new();
-        for (_, id) in buffered {
-            let child = &self.native_subagents[&id];
-            let snapshot = child.updates.borrow();
-            let text = format!(
-                "<subagent_completion>\nsubagent_id: {id}\nstatus: {}\n{}\n</subagent_completion>",
-                snapshot.result.status, snapshot.result.output
-            );
-            drop(snapshot);
-            let seq = self.record_native_completion_delivery(&id, parent, request)?;
-            messages.push((seq, text));
-        }
-        Ok(messages)
+        buffered.into_iter().map(|(_, id)| id).collect()
     }
+}
+
+fn append(output: &mut String, reminders: &str) {
+    if !output.is_empty() {
+        output.push_str("\n\n");
+    }
+    output.push_str(reminders);
 }

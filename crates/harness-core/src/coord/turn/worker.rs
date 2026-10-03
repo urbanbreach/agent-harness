@@ -67,15 +67,32 @@ impl Worker {
             if let Some(completion) = self.turn.prompt.child_completion.clone() {
                 let parent = self.actor.agent_id.clone().unwrap_or_default();
                 let request = self.turn.id.clone();
-                let deliver = self
+                let wake_text = self
                     .handle
                     .call(move |runtime| {
-                        runtime.claim_native_completion_wake(&parent, &completion, &request)
+                        runtime.native_completion_wake_text(&parent, &completion, &request, text)
                     })
                     .await?;
-                if !deliver {
+                let Some(wake_text) = wake_text else {
                     return Ok(String::new());
-                }
+                };
+                text = wake_text;
+            }
+            let parent = self.actor.agent_id.clone().unwrap_or_default();
+            let request = self.turn.id.clone();
+            let completions = self
+                .handle
+                .call(move |runtime| {
+                    runtime.check_task(&request)?;
+                    runtime.drain_native_completion_reminders(&parent, &request)
+                })
+                .await?;
+            for (seq, text) in completions {
+                messages.push(
+                    CompletionMessage::text(MessageRole::User, text),
+                    seq,
+                    Some(&self.turn.id),
+                );
             }
             messages.push(
                 CompletionMessage::text(MessageRole::User, text),

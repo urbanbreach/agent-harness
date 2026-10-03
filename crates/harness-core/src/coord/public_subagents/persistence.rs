@@ -2,6 +2,7 @@ use super::*;
 
 mod completion;
 mod disposal;
+mod reminder_text;
 mod reminders;
 mod restore;
 
@@ -127,6 +128,7 @@ impl Runtime {
             || snapshot.error.clone().unwrap_or_default(),
             |output| output.output.clone(),
         );
+        let wake_text = self.native_completion_reminder(agent, &parent);
         let reserved = if should_wake {
             Some(self.id("turn")?)
         } else {
@@ -162,10 +164,7 @@ impl Runtime {
                 EventActor::new(ActorKind::Worker, Some(parent.clone())),
                 &parent,
                 super::super::prompt::Prompt {
-                    text: format!(
-                        "Background subagent {agent} {}.\nReport:\n{summary}",
-                        snapshot.result.status
-                    ),
+                    text: wake_text,
                     reserved_id: Some(reserved),
                     child_completion: Some(request),
                     ..Default::default()

@@ -114,7 +114,7 @@ impl Runtime {
         request: &str,
     ) -> Result<Vec<(u64, String)>, CoordinatorError> {
         if !self.native_subagents.contains_key(target) {
-            return self.drain_native_completion_reminders(target, request);
+            return Ok(Vec::new());
         }
         let Some(child) = self.native_subagents.get_mut(target) else {
             return Ok(Vec::new());
