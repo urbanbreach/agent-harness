@@ -80,12 +80,13 @@ impl ViewerState {
 
     pub(crate) fn set_child_running(&mut self, running: bool) {
         if !self.child {
+            self.child = true;
             self.following = running;
+            let _ = self.rebuild_display();
         } else if self.running && !running {
             self.exit_follow();
             self.select_edge(true);
         }
-        self.child = true;
         self.running = running;
     }
 

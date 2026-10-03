@@ -131,7 +131,7 @@ fn native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row() {
             request_id: "req_child".into(),
             tool_call_count: 0,
             parts: vec![harness_core::session::AssistantPart::Text {
-                text: "Read [guide covering child lifecycles, permissions, navigation, and durable history](https://example.org/guide) and [API](https://example.org/api)."
+                text: "Read [guide covering child lifecycles, permissions, navigation, and durable history](https://example.org/guide) and [API](https://example.org/api).\n\nSecond paragraph for filter selection."
                     .into(),
             }],
             provenance: None,

@@ -800,12 +800,13 @@ pub(crate) fn recorded_tool_viewer_content(
 }
 
 pub(crate) fn viewer_wrap_lines(
-    lines: Vec<Line<'static>>,
+    lines: Vec<(usize, Line<'static>)>,
     width: usize,
-) -> (Vec<Line<'static>>, Vec<String>) {
+) -> (Vec<Line<'static>>, Vec<String>, Vec<usize>) {
     let mut output = Vec::new();
     let mut joiners: Vec<String> = Vec::new();
-    for line in lines {
+    let mut line_ids = Vec::new();
+    for (id, line) in lines {
         let text = line.to_string();
         let mut cursor = 0;
         for (index, spans) in ui_tool_wrapping::words(line.spans, width)
@@ -826,10 +827,11 @@ pub(crate) fn viewer_wrap_lines(
             }
             cursor = start + value.len();
             output.push(wrapped);
+            line_ids.push(id);
             joiners.push("\n".to_owned());
         }
     }
-    (output, joiners)
+    (output, joiners, line_ids)
 }
 
 pub(crate) fn viewer_preamble_lines(

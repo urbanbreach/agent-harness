@@ -13,6 +13,8 @@ use super::{
     ViewerReturnSnapshot,
 };
 
+mod display;
+
 const DEFAULT_HEIGHT: usize = 24;
 
 pub struct ViewerState {
@@ -20,6 +22,7 @@ pub struct ViewerState {
     content: ViewerBlockContent,
     pub(super) styled_lines: Vec<ratatui::text::Line<'static>>,
     pub(super) row_joiners: Vec<String>,
+    row_line_ids: Vec<usize>,
     theme: crate::theme::Theme,
     return_snapshot: ViewerReturnSnapshot,
     mode: ViewerMode,
@@ -56,6 +59,7 @@ impl ViewerState {
             content,
             styled_lines: Vec::new(),
             row_joiners: Vec::new(),
+            row_line_ids: Vec::new(),
             theme: crate::theme::Theme::default(),
             return_snapshot,
             mode: ViewerMode::Wrapped,
@@ -171,7 +175,9 @@ impl ViewerState {
         self.filter_query = query;
         self.scroll_top = 0.0;
         self.rebuild_display()?;
-        self.cursor = CellPoint::new(0, 0);
+        if !self.child {
+            self.cursor = CellPoint::new(0, 0);
+        }
         Ok(())
     }
     pub(crate) fn toggle_wrap(&mut self) -> Result<(), ViewerError> {
@@ -379,109 +385,6 @@ impl ViewerState {
             reason: ViewerCloseReason::Closed,
             return_snapshot: self.return_snapshot,
         }
-    }
-
-    fn rebuild_display(&mut self) -> Result<(), ViewerError> {
-        let previous_body = self.body_start;
-        let mut body = if let Some(super::ViewerPreamble::Read {
-            path,
-            start_line: Some(start),
-            ..
-        }) = &self.content.preamble
-        {
-            crate::ui::viewer_read_lines(self.content.text(self.mode), path, *start, &self.theme)
-        } else if self.mode == ViewerMode::Wrapped && self.content.markdown {
-            crate::ui::viewer_markdown_lines(
-                self.content.content(),
-                if self.child {
-                    u16::MAX
-                } else {
-                    u16::try_from(self.width).unwrap_or(u16::MAX)
-                },
-                &self.theme,
-            )
-        } else {
-            self.content
-                .text(self.mode)
-                .split('\n')
-                .map(|line| ratatui::text::Line::from(line.to_owned()))
-                .collect()
-        };
-        if self.child && self.content.markdown {
-            while body
-                .last()
-                .is_some_and(|line| line.width() == 0 && line.style.bg.is_none())
-            {
-                body.pop();
-            }
-        }
-        let mut lines = self
-            .content
-            .preamble
-            .as_ref()
-            .map(|preamble| crate::ui::viewer_preamble_lines(preamble, self.width, &self.theme))
-            .unwrap_or_default();
-        self.body_start = lines.len();
-        if !self.filter_query.is_empty() {
-            let matcher = regex::RegexBuilder::new(&regex::escape(&self.filter_query))
-                .case_insensitive(!self.filter_query.chars().any(char::is_uppercase))
-                .build()
-                .ok();
-            let matches = |line: &ratatui::text::Line<'_>| {
-                matcher
-                    .as_ref()
-                    .is_some_and(|regex| regex.is_match(&line.to_string()))
-            };
-            lines.retain(matches);
-            self.body_start = lines.len();
-            body.retain(matches);
-        }
-        lines.extend(body);
-        (self.styled_lines, self.row_joiners) = if self.wrap_enabled {
-            crate::ui::viewer_wrap_lines(lines, self.width)
-        } else {
-            let joiners = vec!["\n".to_owned(); lines.len()];
-            (lines, joiners)
-        };
-        let display_text = self
-            .styled_lines
-            .iter()
-            .map(ratatui::text::Line::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-        let width = if self.wrap_enabled {
-            self.width
-        } else {
-            display_text
-                .lines()
-                .map(unicode_width::UnicodeWidthStr::width)
-                .max()
-                .unwrap_or(1)
-                .max(self.width)
-        };
-        self.wrapped = TextLayout::new(display_text, width).map_err(ViewerError::Selection)?;
-        self.layout = viewer_layout(self.block_id, self.wrapped.row_count(), self.height)?;
-        if self.cursor.row >= previous_body {
-            self.cursor.row = self
-                .cursor
-                .row
-                .saturating_sub(previous_body)
-                .saturating_add(self.body_start);
-        }
-        self.cursor.row = self
-            .cursor
-            .row
-            .min(self.wrapped.row_count().saturating_sub(1));
-        self.scroll_top = if self.following {
-            self.layout.max_scroll()
-        } else {
-            self.scroll_top.min(self.layout.max_scroll())
-        };
-        if !self.search.query().is_empty() {
-            let query = self.search.query().to_owned();
-            let _ = self.update_search(&query);
-        }
-        Ok(())
     }
 }
 
