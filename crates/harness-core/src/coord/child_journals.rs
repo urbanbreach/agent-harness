@@ -140,6 +140,13 @@ impl Runtime {
         let source = self.config.session_dir.join(event.run_id.as_str());
         if lifecycle {
             for (id, child) in &mut self.child_journals {
+                if self
+                    .native_subagents
+                    .get(id)
+                    .is_some_and(super::public_subagents::NativeSubagent::is_terminal)
+                {
+                    continue;
+                }
                 child.append(event, id, &source, &self.config.session_dir.join(id))?;
             }
         } else if let Some((id, child)) = (match &event.payload {

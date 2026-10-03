@@ -95,6 +95,9 @@ pub(super) fn app_for_mode(
     }
 }
 pub(super) fn configure(app: &mut AppState, profile: &TerminalProfile) -> bool {
+    app.shortcuts_ctrl_dot = profile.context.brand.supports_enhanced_keyboard()
+        && !profile.context.ctrl_dot_unreliable()
+        && !profile.context.multiplexer.intercepts_csi_queries();
     let ssh = ["SSH_CONNECTION", "SSH_TTY", "SSH_CLIENT"]
         .iter()
         .any(|key| std::env::var_os(key).is_some());

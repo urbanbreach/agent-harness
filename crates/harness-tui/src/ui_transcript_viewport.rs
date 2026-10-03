@@ -8,7 +8,7 @@ use super::ui_transcript_layout::{
     transcript_layout_has_visible_running_tool, MeasuredTranscriptLayout, TranscriptContentAnchor,
 };
 use super::ui_transcript_page_flip::transcript_scroll_position;
-use super::ui_transcript_scrollbar::{transcript_scrollbar_needed, transcript_viewport_layout};
+use super::ui_transcript_scrollbar::app_transcript_viewport_layout;
 use crate::app::{transcript_viewport::TranscriptViewport, AppState};
 
 pub(super) fn resolve_viewport(
@@ -57,9 +57,9 @@ pub(crate) fn prepare_transcript(app: &mut AppState, area: Rect) {
         &theme,
         context.inner_area.width,
         context.base_surface,
-        |layout| transcript_scrollbar_needed(layout.total_height, context.inner_area),
+        |layout| layout.scrollbar_needed(context.inner_area),
     );
-    let content = transcript_viewport_layout(context.inner_area, scrollbar).content;
+    let content = app_transcript_viewport_layout(app, context.inner_area, scrollbar).content;
     super::ui_transcript::prepare_width(app, &theme, content.width, context.base_surface);
     let (viewport, anchor, position, height, running, links) =
         with_measured_transcript_layout_for_width_on_surface(
@@ -121,9 +121,9 @@ pub(crate) fn capture_selection_anchors(
         app.theme(),
         context.inner_area.width,
         context.base_surface,
-        |layout| transcript_scrollbar_needed(layout.total_height, context.inner_area),
+        |layout| layout.scrollbar_needed(context.inner_area),
     );
-    let width = transcript_viewport_layout(context.inner_area, scrollbar)
+    let width = app_transcript_viewport_layout(app, context.inner_area, scrollbar)
         .content
         .width;
     with_measured_transcript_layout_for_width_on_surface(

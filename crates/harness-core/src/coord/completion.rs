@@ -3,11 +3,14 @@ use super::{context::Context, runtime::*, *};
 impl Runtime {
     pub fn finished(&mut self, completion: Completion) -> Result<(), CoordinatorError> {
         let id = match &completion {
-            Completion::Turn { id, .. } | Completion::Tool { id, .. } => id,
+            Completion::Turn { id, .. }
+            | Completion::Tool { id, .. }
+            | Completion::Command { id, .. }
+            | Completion::SubagentPrepared { id, .. } => id,
         };
         let agent = self.running.get(id).and_then(|job| match &job.kind {
             JobKind::Turn { agent } => Some(agent.clone()),
-            JobKind::Tool { .. } => None,
+            JobKind::Tool { .. } | JobKind::Command | JobKind::SubagentPreparation { .. } => None,
         });
         let result = self.finish_completion(completion);
         if let Err(error) = &result {
@@ -34,6 +37,10 @@ impl Runtime {
                 result,
             } => (id, Some(messages), result.map(ToolResult::text)),
             Completion::Tool { id, result } => (id, None, result),
+            Completion::Command { id, result } => return self.finish_command(id, result),
+            Completion::SubagentPrepared { id, result } => {
+                return self.finish_native_subagent_preparation(id, result)
+            }
         };
         let Some(mut job) = self.running.remove(&id) else {
             return Ok(());
@@ -66,7 +73,34 @@ impl Runtime {
         };
         if messages.is_none() {
             self.reject_unfinished_edits(&id)?;
-            result = result.and_then(|output| self.bound_tool_output(&id, &job.actor, output));
+            let command_handle = result
+                .as_ref()
+                .ok()
+                .and_then(|output| output.structured_json.as_ref())
+                .is_some_and(|value| {
+                    value["task_id"].is_string()
+                        && matches!(value["type"].as_str(), Some("Background" | "Foreground"))
+                });
+            let retain_structured = match &job.kind {
+                JobKind::Tool { tool_id, .. } => {
+                    matches!(
+                        tool_id.as_str(),
+                        "spawn_subagent"
+                            | "get_command_or_subagent_output"
+                            | "wait_commands_or_subagents"
+                            | "kill_command_or_subagent"
+                            | "send_subagent_message"
+                            | "task"
+                            | "get_task_output"
+                            | "wait_tasks"
+                            | "kill_task"
+                    ) || tool_id == "bash" && command_handle
+                }
+                _ => false,
+            };
+            result = result.and_then(|output| {
+                self.bound_tool_output(&id, &job.actor, output, retain_structured)
+            });
         }
         self.snapshots.remove(&id);
         self.finish_hooks(&id, &mut job, messages.is_some(), &mut result);
@@ -100,6 +134,7 @@ impl Runtime {
         let (agent, reply) = match job.kind {
             JobKind::Turn { agent } => (Some(agent), None),
             JobKind::Tool { reply, .. } => (None, reply),
+            JobKind::Command | JobKind::SubagentPreparation { .. } => (None, None),
         };
         if let Some(reply) = reply {
             let response = match &written {
@@ -113,7 +148,16 @@ impl Runtime {
             self.raw_tool_results
                 .insert(id.clone(), (owner.clone(), output));
         }
-        let retain_snapshot = success && !summary.is_empty();
+        let retain_snapshot = (success && !summary.is_empty())
+            || (agent
+                .as_ref()
+                .is_some_and(|agent| self.native_subagents.contains_key(agent))
+                && messages.as_ref().is_some_and(|context| {
+                    context
+                        .entries
+                        .iter()
+                        .any(|entry| entry.message.role != harness_providers::MessageRole::System)
+                }));
         let payload = if success {
             EventV1::TaskCompleted(TaskCompletedEvent {
                 task_id: id.clone().into(),
@@ -146,17 +190,19 @@ impl Runtime {
         }
         let terminal = self.emit(job.actor, Some(id.clone()), payload)?;
         if let Some(agent) = agent {
-            self.finish_child(&agent, &terminal)?;
             self.raw_tool_results
                 .retain(|_, (owner, _)| owner != &agent);
             if let Some(state) = self.agents.get_mut(&agent) {
-                state.messages = if self.children.contains_key(&agent) {
+                state.messages = if self.children.contains_key(&agent)
+                    && !self.native_subagents.contains_key(&agent)
+                {
                     Context::default()
                 } else {
                     messages.unwrap_or_default()
                 };
                 state.busy = false;
             }
+            self.finish_child(&agent, &terminal)?;
             self.start_next(&agent)?;
         }
         Ok(())

@@ -30,10 +30,38 @@ impl Worker {
     }
     fn request(&self, messages: &super::super::context::Context) -> CompletionRequest {
         let model = crate::agent::AgentModelRef::parse(&self.turn.model);
+        // Request-only projection: source locations and catalog configuration
+        // never enter conversation buffers, finalized state, or durable events.
+        let mut request_messages = messages.messages();
+        if let Some(metadata) = &self.skill_metadata {
+            let after_system = request_messages
+                .iter()
+                .take_while(|message| message.role == MessageRole::System)
+                .count();
+            request_messages.insert(
+                after_system,
+                harness_providers::CompletionMessage::text(MessageRole::System, metadata),
+            );
+        }
+        if let Some(preloads) = &self.skill_preloads {
+            if !preloads.is_empty() {
+                request_messages.insert(
+                    0,
+                    harness_providers::CompletionMessage::text(
+                        MessageRole::System,
+                        preloads
+                            .iter()
+                            .map(|(_, body)| body.as_str())
+                            .collect::<Vec<_>>()
+                            .join("\n\n"),
+                    ),
+                );
+            }
+        }
         CompletionRequest {
             provider_id: Some(model.provider_id),
             model_id: model.model_id,
-            messages: messages.messages(),
+            messages: request_messages,
             attachments: messages.attachments(),
             temperature: self.profile.temperature,
             max_tokens: self

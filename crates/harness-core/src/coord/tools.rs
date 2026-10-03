@@ -88,6 +88,11 @@ impl Runtime {
                     .then(|| Arc::new(crate::tool::QuestionTool) as Arc<dyn Tool>)
             })
             .ok_or_else(|| CoordinatorError::UnknownTool(tool_id.clone()))?;
+        if tool_id == "skill" {
+            if let Some(agent) = actor.agent_id.as_deref() {
+                self.ensure_skill_startup(agent)?;
+            }
+        }
         let profile = actor
             .agent_id
             .as_ref()
@@ -104,15 +109,10 @@ impl Runtime {
             )));
         }
         let mut requirements = tool.permission_requests(&args);
-        if tool_id == "task" {
-            if let Some(child) = args
-                .get("session_id")
-                .or_else(|| args.get("task_id"))
-                .and_then(Value::as_str)
-                .and_then(|id| self.agents.get(id))
-            {
-                requirements.push(("task".into(), child.profile.name.clone()));
-            }
+        if matches!(tool_id.as_str(), "spawn_subagent" | "task") {
+            let selector = self.native_spawn_selector(&actor, &args)?;
+            requirements.retain(|(permission, _)| permission != "task");
+            requirements.push(("task".into(), selector));
         }
         let mut external = Vec::new();
         let cwd = self.execution_cwd(&actor)?;
@@ -179,14 +179,22 @@ impl Runtime {
                     action
                 }
             })
-            .fold(PermissionAction::Allow, |a, b| match (a, b) {
-                (PermissionAction::Deny, _) | (_, PermissionAction::Deny) => PermissionAction::Deny,
-                (PermissionAction::Ask, _) | (_, PermissionAction::Ask) => PermissionAction::Ask,
-                _ => PermissionAction::Allow,
-            });
+            .fold(
+                self.skill_permission(&actor, &tool_id, &args)?,
+                |a, b| match (a, b) {
+                    (PermissionAction::Deny, _) | (_, PermissionAction::Deny) => {
+                        PermissionAction::Deny
+                    }
+                    (PermissionAction::Ask, _) | (_, PermissionAction::Ask) => {
+                        PermissionAction::Ask
+                    }
+                    _ => PermissionAction::Allow,
+                },
+            );
         let profile_name = profile.map(|a| a.profile.name.clone());
         let model = profile.map(|a| a.info.model_ref.clone());
         let settings = profile.map(|a| a.settings.clone());
+        let skill_startup = profile.and_then(|agent| agent.skill_startup.clone());
         let id = match id {
             Some(id) => id,
             None => self.id("tool")?,
@@ -232,6 +240,7 @@ impl Runtime {
             tool_call_id: id.clone().into(),
             current_model_ref: model,
             current_model_settings: settings,
+            skill_startup,
             coordinator: self.handle()?,
             cancellation: cancellation.clone(),
             external_directory_allow_prefixes: external,
@@ -305,7 +314,7 @@ impl Runtime {
                     s.emit_hooked(actor, Some(id.clone()), EventV1::ToolCallStarted(ToolCallStartedEvent { tool_call_id: id.into() })).map(|_| ())
                 }).await?;
                 // Tools observe cancellation and finish cleanup before this future returns.
-                let result = work.tool.call(work.context, work.args).await.map_err(|e| CoordinatorError::Invalid(e.to_string()));
+                let result = work.tool.call(work.context, work.args).await.map_err(CoordinatorError::from);
                 drop(permit);
                 result
             }.await;

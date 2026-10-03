@@ -13,7 +13,13 @@ fn invoke(root: &Path, args: &[&str]) -> (i32, Vec<u8>, String) {
             .into_iter()
             .chain(args.iter().copied()),
         &mut CliIo::new(&mut input, &mut output, &mut errors),
-        CliDeps::real().with_current_dir(root.into()),
+        CliDeps::real()
+            .with_current_dir(root.into())
+            .without_env("HOME")
+            .without_env("XDG_CONFIG_HOME")
+            .without_env("HARNESS_CONFIG")
+            .without_env("HARNESS_TUI_CONFIG")
+            .without_env("HARNESS_CONFIG_CONTENT"),
     );
     (
         result.code,

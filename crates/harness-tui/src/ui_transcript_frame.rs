@@ -70,7 +70,7 @@ impl PreparedTranscript {
         let previous = self.layouts.iter().rev().find(|entry| {
             entry.theme == *theme && entry.width == width && entry.surface == surface
         });
-        let layout = measure_transcript_layout(
+        let mut layout = measure_transcript_layout(
             &sections,
             theme,
             width,
@@ -86,6 +86,7 @@ impl PreparedTranscript {
                 build_transcript_render_surfaces(section, theme, width, surface)
             },
         );
+        layout.child_view = app.current_subagent_session_present();
         PreparedLayout {
             key,
             settings,

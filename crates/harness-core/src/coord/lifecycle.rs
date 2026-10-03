@@ -75,6 +75,22 @@ impl Runtime {
         name: &str,
         parent: Option<String>,
     ) -> Result<String, CoordinatorError> {
+        let profile = self
+            .profiles
+            .get(name)
+            .cloned()
+            .ok_or_else(|| CoordinatorError::UnknownProfile(name.into()))?;
+        self.spawn_agent_with_profile(actor, profile, parent, None)
+    }
+    pub(super) fn spawn_agent_with_profile(
+        &mut self,
+        actor: EventActor,
+        profile: Arc<AgentProfile>,
+        parent: Option<String>,
+        requested_id: Option<String>,
+    ) -> Result<String, CoordinatorError> {
+        let profile_name = profile.name.clone();
+        let name = profile_name.as_str();
         self.accepting()?;
         if self.stopped_sessions.contains(self.info()?.run_id.as_str())
             || parent.as_ref().is_some_and(|id| {
@@ -88,17 +104,19 @@ impl Runtime {
                 return Err(CoordinatorError::UnknownAgent(id.clone()));
             }
         }
-        let profile = self
-            .profiles
-            .get(name)
-            .cloned()
-            .ok_or_else(|| CoordinatorError::UnknownProfile(name.into()))?;
         let policy = PermissionPolicy::from_rules(profile.permission_ruleset.clone())
             .map_err(|e| CoordinatorError::Invalid(e.to_string()))?;
-        let id = if parent.is_some() {
-            self.child_agent_id()?
-        } else {
-            self.id("agent")?
+        let id = match requested_id {
+            Some(id) => {
+                if self.agents.contains_key(&id) {
+                    return Err(CoordinatorError::Invalid(
+                        "agent identity already exists".into(),
+                    ));
+                }
+                id
+            }
+            None if parent.is_some() => self.child_agent_id()?,
+            None => self.id("agent")?,
         };
         self.emit_hooked(
             actor,
@@ -150,6 +168,8 @@ impl Runtime {
                 notification_seq: 0,
                 finalized: None,
                 source_reference: None,
+                skill_startup: None,
+                skill_preloads: None,
             },
         );
         self.record_selection(&id)?;
@@ -292,6 +312,7 @@ impl Runtime {
         self.metadata = None;
         self.store = None;
         self.agents.clear();
+        self.commands.clear();
         self.children.clear();
         self.child_journals.clear();
         self.grants.clear();

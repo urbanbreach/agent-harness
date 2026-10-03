@@ -25,7 +25,7 @@ pub(super) fn render_help_tab(
     composer: Option<Rect>,
     theme: &Theme,
 ) {
-    let Some(layout) = help_modal_rects(root, composer) else {
+    let Some(layout) = help_modal_rects_for_app(app, root, composer) else {
         return;
     };
     paint_panel(frame, app, theme, layout.popup);
@@ -40,6 +40,19 @@ pub(super) fn render_help_tab(
             render_browse_footer(frame, app, theme, layout);
         }
     }
+}
+
+pub(crate) fn help_modal_rects_for_app(
+    app: &AppState,
+    root: Rect,
+    composer: Option<Rect>,
+) -> Option<HelpModalRects> {
+    let root = if app.current_subagent_session_present() {
+        crate::layout::FrameLayoutPlan::for_app(app, root).shell
+    } else {
+        root
+    };
+    help_modal_rects(root, composer)
 }
 
 pub(crate) fn help_modal_rects(root: Rect, composer: Option<Rect>) -> Option<HelpModalRects> {

@@ -57,6 +57,11 @@ pub(super) fn render_transcript_scrollbar(
         return;
     };
 
+    if scrollbar.lane.x > spec.viewport.content.right() {
+        render_child_scrollbar(frame, theme, scrollbar);
+        return;
+    }
+
     let glyphs = theme.live_shell.transcript_glyphs;
     let buffer = frame.buffer_mut();
     for y in scrollbar.track.y..scrollbar.track.bottom() {
@@ -92,6 +97,19 @@ pub(super) fn render_transcript_scrollbar(
             let cell = &mut buffer[(x, y)];
             cell.set_symbol(glyphs.scrollbar_thumb);
             cell.set_style(thumb_style);
+        }
+    }
+}
+
+fn render_child_scrollbar(frame: &mut Frame, theme: &Theme, scrollbar: TranscriptScrollbarHit) {
+    let track = crate::theme::quantize_color(Color::Rgb(17, 17, 17), theme.color_level());
+    let thumb = crate::theme::quantize_color(Color::Rgb(25, 25, 25), theme.color_level());
+    for y in scrollbar.track.y..scrollbar.track.bottom() {
+        let in_thumb = y >= scrollbar.thumb.y && y < scrollbar.thumb.bottom();
+        if let Some(cell) = frame.buffer_mut().cell_mut((scrollbar.track.x, y)) {
+            let color = if in_thumb { thumb } else { track };
+            cell.set_symbol(if in_thumb { "█" } else { " " })
+                .set_style(Style::default().fg(color).bg(color));
         }
     }
 }
@@ -230,6 +248,24 @@ pub(super) fn transcript_viewport_layout(
         content,
         scrollbar_chrome: Some(scrollbar_chrome),
         scrollbar_lane: Some(scrollbar_lane),
+    }
+}
+
+pub(super) fn app_transcript_viewport_layout(
+    app: &crate::app::AppState,
+    area: Rect,
+    show_scrollbar: bool,
+) -> TranscriptViewportLayout {
+    if !app.current_subagent_session_present() {
+        return transcript_viewport_layout(area, show_scrollbar);
+    }
+    // The child frame reserves an outer gutter; the scrollbar never steals a
+    // transcript column. Painting and pointer hit-testing use this same lane.
+    TranscriptViewportLayout {
+        content: area,
+        scrollbar_chrome: None,
+        scrollbar_lane: (show_scrollbar && app.transcript_view.transcript_scrollbar_visible)
+            .then(|| Rect::new(area.right().saturating_add(1), area.y, 1, area.height)),
     }
 }
 

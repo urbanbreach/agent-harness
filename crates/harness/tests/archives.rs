@@ -16,6 +16,11 @@ fn invoke(root: &Path, args: &[&str]) -> (i32, String) {
         &mut CliIo::new(&mut input, &mut output, &mut errors),
         CliDeps::real()
             .with_current_dir(root.into())
+            .without_env("HOME")
+            .without_env("XDG_CONFIG_HOME")
+            .without_env("HARNESS_CONFIG")
+            .without_env("HARNESS_TUI_CONFIG")
+            .without_env("HARNESS_CONFIG_CONTENT")
             .with_env("OPENAI_API_KEY", "opaque-archive-key"),
     );
     (result.code, String::from_utf8_lossy(&errors).into_owned())

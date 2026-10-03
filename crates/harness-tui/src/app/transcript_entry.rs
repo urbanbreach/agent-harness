@@ -271,12 +271,22 @@ impl AppState {
     }
 
     pub(crate) fn fold_selected_entry(&mut self) -> bool {
+        self.fold_selected_entry_to(None)
+    }
+
+    pub(crate) fn set_selected_entry_expanded(&mut self, expanded: bool) -> bool {
+        self.fold_selected_entry_to(Some(expanded))
+    }
+
+    fn fold_selected_entry_to(&mut self, expand: Option<bool>) -> bool {
         let Some(entry) = self.selected_transcript_entry() else {
             return false;
         };
         match entry.target {
             Some(TranscriptMouseTarget::Reasoning { request_id }) => {
-                self.toggle_reasoning_expansion(&request_id)
+                if expand.is_none_or(|expanded| expanded != self.reasoning_expanded(&request_id)) {
+                    self.toggle_reasoning_expansion(&request_id);
+                }
             }
             Some(
                 TranscriptMouseTarget::Tool { tool_call_id }
@@ -285,16 +295,13 @@ impl AppState {
                 let expanded = self
                     .tool_call_entry(&tool_call_id)
                     .is_some_and(|tool| self.tool_output_expanded(tool));
-                self.set_tool_output_expanded(&tool_call_id, !expanded);
+                self.set_tool_output_expanded(&tool_call_id, expand.unwrap_or(!expanded));
             }
             Some(TranscriptMouseTarget::ToolGroup { tool_call_ids }) => {
                 let expanded = tool_call_ids
                     .first()
                     .is_some_and(|id| self.tool_group_expanded(id));
-                self.set_tool_group_outputs_expanded(&tool_call_ids, !expanded);
-            }
-            Some(TranscriptMouseTarget::SubagentSession { session_id }) => {
-                self.navigate_to_child_session_id(session_id);
+                self.set_tool_group_outputs_expanded(&tool_call_ids, expand.unwrap_or(!expanded));
             }
             _ => return false,
         }

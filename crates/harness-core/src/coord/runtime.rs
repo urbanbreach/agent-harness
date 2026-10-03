@@ -19,6 +19,13 @@ pub(super) struct Runtime {
     pub children: BTreeMap<String, super::children::Child>,
     pub child_journals: BTreeMap<String, super::child_journals::ChildJournal>,
     pub running: BTreeMap<String, Job>,
+    pub commands: BTreeMap<String, super::commands::CommandRun>,
+    pub native_subagents: BTreeMap<String, super::public_subagents::NativeSubagent>,
+    pub native_subagent_queue: VecDeque<String>,
+    pub native_message_ingress: usize,
+    pub native_model_policies: BTreeMap<String, super::public_subagents::SubagentModelPolicy>,
+    pub active_contexts: BTreeMap<String, Context>,
+    pub native_sampling: Arc<Semaphore>,
     pub pending: BTreeMap<String, super::tools::Pending>,
     pub grants: Vec<crate::perm::PermissionGrant>,
     pub last_tool: Option<(String, u32)>,
@@ -61,6 +68,8 @@ pub(super) struct Agent {
     pub notification_seq: u64,
     pub finalized: Option<crate::subagent::FinalizedAgentStateReferenceV1>,
     pub source_reference: Option<Box<crate::subagent::FinalizedAgentStateReferenceV1>>,
+    pub skill_startup: Option<Arc<crate::config::SkillStartupSnapshot>>,
+    pub skill_preloads: Option<Vec<(String, String)>>,
 }
 pub(super) struct Job {
     pub join_id: Option<Id>,
@@ -72,6 +81,10 @@ pub(super) struct Job {
     pub hooks: Vec<HookExecutionMetadata>,
 }
 pub(super) enum JobKind {
+    SubagentPreparation {
+        agent: String,
+    },
+    Command,
     Turn {
         agent: String,
     },
@@ -83,6 +96,14 @@ pub(super) enum JobKind {
     },
 }
 pub(super) enum Completion {
+    SubagentPrepared {
+        id: String,
+        result: Result<super::public_subagents::PreparedSubagent, CoordinatorError>,
+    },
+    Command {
+        id: String,
+        result: Result<super::commands::CommandExit, CoordinatorError>,
+    },
     Turn {
         id: String,
         messages: Context,
@@ -141,6 +162,7 @@ impl Runtime {
             Arc::clone(&config.secret_registry),
         ));
         Self {
+            native_sampling: Arc::new(Semaphore::new(config.subagents.sampling_limit.max(1))),
             profiles: std::mem::take(&mut config.agent_profiles)
                 .into_iter()
                 .map(|(name, profile)| (name, Arc::new(profile)))
@@ -158,6 +180,12 @@ impl Runtime {
             children: BTreeMap::new(),
             child_journals: BTreeMap::new(),
             running: BTreeMap::new(),
+            commands: BTreeMap::new(),
+            native_subagents: BTreeMap::new(),
+            native_subagent_queue: VecDeque::new(),
+            native_message_ingress: 0,
+            native_model_policies: BTreeMap::new(),
+            active_contexts: BTreeMap::new(),
             pending: BTreeMap::new(),
             grants: Vec::new(),
             last_tool: None,
@@ -191,9 +219,13 @@ impl Runtime {
                     let (reply, _) = oneshot::channel();
                     let _ = self.stop(Some("coordinator owner disconnected".into()), reply);
                 }
-                command = rx.recv() => match command {
+                command = rx.recv(), if !closing => match command {
                     Some(command) => command(&mut self),
-                    None => break,
+                    None => {
+                        closing = true;
+                        let (reply, _) = oneshot::channel();
+                        let _ = self.stop(Some("coordinator command channel disconnected".into()), reply);
+                    },
                 },
                 done = self.jobs.join_next_with_id(), if !self.jobs.is_empty() => {
                     match done {
@@ -317,13 +349,16 @@ impl Runtime {
             }
             let reply = match &mut job.kind {
                 JobKind::Tool { reply, .. } => reply.take(),
-                JobKind::Turn { .. } => None,
+                JobKind::Turn { .. } | JobKind::Command | JobKind::SubagentPreparation { .. } => {
+                    None
+                }
             };
             if let Some(reply) = reply {
                 let _ = reply.send(Err(CoordinatorError::Invalid(message.clone())));
             }
             false
         });
+        self.fail_command_waiters(&message);
         if let (Some(store), Some(info)) = (&self.store, &self.info) {
             store.publish_live(LiveEventEnvelope {
                 event_id: "storage-failure".into(),
@@ -397,6 +432,14 @@ impl Runtime {
                 result: Err(failure),
             },
             JobKind::Tool { .. } => Completion::Tool {
+                id: id.clone(),
+                result: Err(failure),
+            },
+            JobKind::Command => Completion::Command {
+                id: id.clone(),
+                result: Err(failure),
+            },
+            JobKind::SubagentPreparation { .. } => Completion::SubagentPrepared {
                 id: id.clone(),
                 result: Err(failure),
             },

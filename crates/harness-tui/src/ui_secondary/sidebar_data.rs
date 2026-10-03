@@ -366,8 +366,13 @@ fn subagent_status_from_output_json(
 }
 
 fn operator_sidebar_tool_call_is_task_spawn(tool_call: &crate::app::ToolCallEntry) -> bool {
-    matches!(tool_call.effective_tool_id(), "agent.spawn" | "task")
-        || matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
+    matches!(
+        tool_call.effective_tool_id(),
+        "spawn_subagent" | "agent.spawn" | "task"
+    ) || matches!(
+        tool_call.tool_id.as_str(),
+        "spawn_subagent" | "agent.spawn" | "task"
+    )
 }
 
 fn subagent_agent_name_from_tool_call(tool_call: &crate::app::ToolCallEntry) -> Option<String> {

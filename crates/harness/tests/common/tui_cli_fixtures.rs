@@ -80,6 +80,11 @@ where
 {
     CliHarness::new()
         .current_dir(current_dir)
+        .env_remove("HOME")
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("HARNESS_CONFIG")
+        .env_remove("HARNESS_TUI_CONFIG")
+        .env_remove("HARNESS_CONFIG_CONTENT")
         .args(args)
         .output()
 }

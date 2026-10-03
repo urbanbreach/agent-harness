@@ -4,13 +4,14 @@
 )]
 
 use super::*;
+mod native_subagent_tests;
 use crate::layout::FrameLayoutPlan;
 use crate::overlay::OverlayKind;
 use crate::theme::Theme;
 use crate::ui::{
-    render_app, subagent_footer_target_at, transcript_mouse_target, transcript_selection_cell,
-    transcript_selection_debug_snapshot, SubagentFooterTarget, TranscriptMouseTarget,
-    TranscriptScrollbarHit, WheelTarget,
+    render_app, transcript_mouse_target, transcript_selection_cell,
+    transcript_selection_debug_snapshot, TranscriptMouseTarget, TranscriptScrollbarHit,
+    WheelTarget,
 };
 use crate::UnwrapOrAbort;
 use crossterm::event::{MouseButton, MouseEvent};

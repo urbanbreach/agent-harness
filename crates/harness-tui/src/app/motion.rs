@@ -37,7 +37,7 @@ impl AppState {
         let tool_finished = self
             .transcript_view
             .tool_motion
-            .expire_finished(now, self.reduced_motion || self.replay_mode);
+            .expire_finished(now, self.reduced_motion || !self.presentation_is_live());
         if tool_finished {
             self.bump_transcript_render_epoch();
             self.motion_revision = self.motion_revision.wrapping_add(1);
@@ -50,7 +50,7 @@ impl AppState {
         let mut plan = MotionPlan::none();
         let fast_cadence = Duration::from_millis(crate::scheduling::runtime_flush_interval_ms());
 
-        if !self.reduced_motion && !self.replay_mode {
+        if !self.reduced_motion && self.presentation_is_live() {
             if let Some(remaining) = self.transcript_view.tool_motion.finish_remaining(now) {
                 plan = plan.merge(MotionDemand::until(remaining));
             }
@@ -200,7 +200,7 @@ impl AppState {
     }
 
     fn streaming_wait_motion_active(&self) -> bool {
-        !self.replay_mode
+        self.presentation_is_live()
             && (self.active_compaction().is_some()
                 || self
                     .active_permission_view()

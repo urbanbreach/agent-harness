@@ -14,6 +14,7 @@ pub(super) fn populate(
         id,
         "edit.hashline_apply"
             | "edit.hashline_scan"
+            | "spawn_subagent"
             | "agent.spawn"
             | "task"
             | "background_output"
@@ -94,7 +95,7 @@ pub(super) fn populate(
             ),
             Some("→"),
         ),
-        "agent.spawn" | "task" => {
+        "spawn_subagent" | "agent.spawn" | "task" => {
             header.visual_style = TaskInline;
             (String::new(), None)
         }
@@ -220,7 +221,7 @@ pub(super) fn subtitle(
             None
         }
         "background_output" => background_output_tool_subtitle(tool),
-        "agent.spawn" | "task" => Some(agent_spawn_subtitle(tool, app)),
+        "spawn_subagent" | "agent.spawn" | "task" => Some(agent_spawn_subtitle(tool, app)),
         _ => None,
     };
     header.subtitle = if tool.status == ToolCallDisplayStatus::Failed

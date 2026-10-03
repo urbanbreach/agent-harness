@@ -20,13 +20,14 @@ mod sessions;
 mod shell;
 pub use shell::register_shell_tool;
 mod skills;
-mod tasks;
+mod subagents;
+pub use subagents::{SubagentOperation, SubagentTool};
 mod todos;
 mod web;
 pub use harness_core::UnwrapOrAbort;
 pub use skills::{
-    discover_skill_catalog, discover_skill_catalog_with_config, SkillCatalog, SkillCatalogEntry,
-    SkillCatalogStatus,
+    discover_skill_catalog, discover_skill_catalog_with_config, NativeSkillCatalogDiscovery,
+    SkillCatalog, SkillCatalogEntry, SkillCatalogStatus,
 };
 
 pub fn coordinator_registry(shell_allowlist: ShellAllowlist) -> ToolRegistry {
@@ -62,9 +63,12 @@ pub fn coordinator_registry_with_skills(
     registry.register(Arc::new(patch::PatchTool));
     registry.register(Arc::new(harness_core::tool::QuestionTool));
     registry.register(Arc::new(skills::load::SkillTool(skills.clone())));
-    registry.register(Arc::new(tasks::TaskTool(skills)));
-    registry.register(Arc::new(tasks::BackgroundTool::Output));
-    registry.register(Arc::new(tasks::BackgroundTool::Cancel));
+    register_subagent_tools(
+        &mut registry,
+        &harness_core::config::SubagentRuntimeConfig::default(),
+        &harness_core::config::SubagentDefinitionSnapshot::default(),
+        None,
+    );
     registry.register(Arc::new(batch::BatchTool));
     registry.register(Arc::new(todos::TodoTool::Read));
     registry.register(Arc::new(todos::TodoTool::Write));
@@ -81,4 +85,69 @@ pub fn coordinator_registry_with_skills(
         registry.register(Arc::new(tool));
     }
     registry
+}
+
+/// Replace native public operations from a resolved startup snapshot.
+/// Read/wait/kill remain available for commands when spawning is disabled.
+pub fn register_subagent_tools(
+    registry: &mut ToolRegistry,
+    settings: &harness_core::config::SubagentRuntimeConfig,
+    definitions: &harness_core::config::SubagentDefinitionSnapshot,
+    catalog: Option<&harness_core::config::SubagentModelCatalog>,
+) {
+    use harness_core::subagent::{
+        GetCommandOrSubagentOutputInput, KillCommandOrSubagentInput, SendSubagentMessageInput,
+        WaitCommandsOrSubagentsInput,
+    };
+    for id in [
+        "spawn_subagent",
+        "get_command_or_subagent_output",
+        "wait_commands_or_subagents",
+        "kill_command_or_subagent",
+        "send_subagent_message",
+        "task",
+        "get_task_output",
+        "wait_tasks",
+        "kill_task",
+    ] {
+        registry.remove(id);
+    }
+    let mut operations: Vec<(SubagentOperation, serde_json::Value, &str)> = vec![
+        (
+            SubagentOperation::Output,
+            schemars::schema_for!(GetCommandOrSubagentOutputInput).into(),
+            "Read command or subagent output; optionally wait for completion.",
+        ),
+        (
+            SubagentOperation::Wait,
+            schemars::schema_for!(WaitCommandsOrSubagentsInput).into(),
+            "Wait for commands or subagents without cancelling their work.",
+        ),
+        (
+            SubagentOperation::Kill,
+            schemars::schema_for!(KillCommandOrSubagentInput).into(),
+            "Cancel the specified command or subagent.",
+        ),
+    ];
+    if settings.enabled {
+        operations.push((
+            SubagentOperation::Spawn,
+            harness_core::subagent::spawn_subagent_schema(settings, definitions, catalog, None),
+            "Spawn a subagent in the background by default; request foreground for its result.",
+        ));
+    }
+    if settings.messaging_enabled {
+        operations.push((
+            SubagentOperation::Send,
+            schemars::schema_for!(SendSubagentMessageInput).into(),
+            "Send a message using the authenticated caller's subagent routing grants.",
+        ));
+    }
+    for (operation, schema, description) in operations {
+        let tool = SubagentTool::new(operation, schema, description.into());
+        if let Some(alias) = tool.reference_alias() {
+            registry.register(Arc::new(alias));
+        }
+        registry.register(Arc::new(tool));
+    }
 }

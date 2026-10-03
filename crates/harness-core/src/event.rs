@@ -147,6 +147,10 @@ pub enum EventV1 {
     AgentContextInitialized(crate::subagent::AgentContextInitializedV1),
     AgentExecutionContextChanged(crate::subagent::AgentExecutionContextChangedV1),
     SubagentCancelRequested(crate::subagent::SubagentCancelIntentV1),
+    NativeSubagentRegistered(Box<crate::coord::NativeSubagentRegistration>),
+    NativeSubagentMessage(Box<crate::coord::NativeMessageReceipt>),
+    NativeSubagentReceipt(Box<crate::coord::NativeSubagentReceipt>),
+    NativeSubagentWorkspace(Box<crate::coord::NativeWorkspaceReceipt>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -206,6 +210,10 @@ impl EventV1 {
             Self::AgentContextInitialized(..) => "agent_context_initialized",
             Self::AgentExecutionContextChanged(..) => "agent_execution_context_changed",
             Self::SubagentCancelRequested(..) => "subagent_cancel_requested",
+            Self::NativeSubagentRegistered(..) => "native_subagent_registered",
+            Self::NativeSubagentMessage(..) => "native_subagent_message",
+            Self::NativeSubagentReceipt(..) => "native_subagent_receipt",
+            Self::NativeSubagentWorkspace(..) => "native_subagent_workspace",
         }
     }
 

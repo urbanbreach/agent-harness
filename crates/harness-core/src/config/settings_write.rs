@@ -49,12 +49,20 @@ pub enum SettingEditorKind {
 }
 pub fn setting_editor_kind(id: &str) -> Option<SettingEditorKind> {
     match id {
-        "runtime.always_approve" => Some(SettingEditorKind::Boolean),
+        "runtime.always_approve"
+        | "subagents.enabled"
+        | "features.active_agent_messages"
+        | "features.subagent_model_inheritance"
+        | "features.subagent_worktree_snapshot" => Some(SettingEditorKind::Boolean),
         "runtime.compaction.reserve_tokens"
         | "runtime.compaction.keep_recent_tokens"
-        | "runtime.compaction.fallback_input_tokens" => Some(SettingEditorKind::Integer),
+        | "runtime.compaction.fallback_input_tokens"
+        | "subagents.max_depth"
+        | "subagents.max_concurrent"
+        | "subagents.sampling_limit" => Some(SettingEditorKind::Integer),
         "runtime.session_dir" => Some(SettingEditorKind::String),
         "permission.bash" => Some(SettingEditorKind::Choice(&["ask", "allow", "deny"])),
+        "subagents.limit_behavior" => Some(SettingEditorKind::Choice(&["queue", "fail"])),
         _ => None,
     }
 }
@@ -188,6 +196,21 @@ fn effective(raw: &OrderedValue, path: &Path, id: &str) -> Result<String, Settin
     let value = normalized
         .pointer(&format!("/{}", id.replace('.', "/")))
         .ok_or_else(|| SettingWriteError::UnsupportedWrite(id.into()))?;
+    if value.is_null() {
+        if id == "subagents.sampling_limit" {
+            let count = normalized
+                .pointer("/subagents/max_concurrent")
+                .and_then(Value::as_i64)
+                .map_or(32, |count| {
+                    usize::try_from(count.max(1)).unwrap_or(usize::MAX)
+                })
+                .min(512);
+            return Ok(count.to_string());
+        }
+        if let Some(default) = setting_definition(id).and_then(|setting| setting.default_value) {
+            return Ok(default.into());
+        }
+    }
     Ok(value
         .as_str()
         .map_or_else(|| value.to_string(), str::to_owned))

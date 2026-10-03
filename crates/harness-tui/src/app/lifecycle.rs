@@ -171,6 +171,12 @@ pub enum UiIntent {
         task_ids: Vec<String>,
         reason: InterruptReason,
     },
+    CancelSubagent {
+        session_id: String,
+    },
+    InspectCommand {
+        task_id: Option<String>,
+    },
     ForkSession {
         source_run_dir: PathBuf,
         events: Vec<EventEnvelopeV1>,

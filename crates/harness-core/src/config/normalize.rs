@@ -7,15 +7,15 @@ pub(super) fn normalize(ordered: ordered::OrderedValue) -> Result<HarnessConfig,
     let object = value
         .as_object_mut()
         .ok_or_else(|| ConfigError("expected an object".into()))?;
-    for (old, new) in [
+    [
         ("provider", "providers"),
         ("agent", "agents"),
         ("permission", "permissions"),
         ("smallModel", "small_model"),
         ("hashlineEdit", "hashline_edit"),
-    ] {
-        rename(object, old, new)?;
-    }
+    ]
+    .into_iter()
+    .try_for_each(|(old, new)| rename(object, old, new))?;
     let model = object
         .remove("model")
         .map(|v| string(&v, "model").map(canonical_model))
@@ -136,6 +136,9 @@ pub(super) fn normalize(ordered: ordered::OrderedValue) -> Result<HarnessConfig,
             }
             profile.insert("tools".into(), Value::Array(enabled));
         }
+        if let Some(tools) = profile.get_mut("tools").and_then(Value::as_array_mut) {
+            canonicalize_subagent_tools(tools);
+        }
     }
     let mut profiles = shipped_profiles(model.as_deref().unwrap_or("mock:default"));
     for (name, value) in std::mem::take(agents) {
@@ -168,6 +171,21 @@ pub(super) fn normalize(ordered: ordered::OrderedValue) -> Result<HarnessConfig,
     config.deterministic = config.runtime.deterministic.clone();
     config.validate()?;
     Ok(config)
+}
+
+fn canonicalize_subagent_tools(tools: &mut [Value]) {
+    for tool in tools {
+        let canonical = match tool.as_str() {
+            Some("task") => Some("spawn_subagent"),
+            Some("get_task_output") => Some("get_command_or_subagent_output"),
+            Some("wait_tasks") => Some("wait_commands_or_subagents"),
+            Some("kill_task") => Some("kill_command_or_subagent"),
+            _ => None,
+        };
+        if let Some(canonical) = canonical {
+            *tool = Value::String(canonical.into());
+        }
+    }
 }
 
 pub(super) fn parse_error(error: impl std::fmt::Display) -> ConfigError {
@@ -351,9 +369,11 @@ fn shipped_profiles(model: &str) -> BTreeMap<String, ProfileConfig> {
                         "todowrite",
                         "todoread",
                         "question",
-                        "task",
-                        "background_output",
-                        "background_cancel",
+                        "spawn_subagent",
+                        "get_command_or_subagent_output",
+                        "wait_commands_or_subagents",
+                        "kill_command_or_subagent",
+                        "send_subagent_message",
                     ]
                     .map(str::to_owned),
                 );

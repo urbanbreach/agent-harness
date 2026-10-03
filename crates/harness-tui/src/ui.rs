@@ -66,6 +66,8 @@ mod ui_tool_question_todo;
 pub(crate) use ui_tool_question_todo::{
     todo_items_from_tool_call, TranscriptTodoItem, TranscriptTodoStatus,
 };
+#[path = "ui_pane_query.rs"]
+mod ui_pane_query;
 #[path = "ui_todo_pane.rs"]
 mod ui_todo_pane;
 #[path = "ui_tool_style.rs"]
@@ -127,7 +129,10 @@ use ui_chrome::{
     render_header, render_unified_bottom_dock, runtime_state_color, status_badge,
     take_width_prefix, truncate_plain_text, ChromeFrame,
 };
-pub(crate) use ui_chrome::{subagent_footer_target_at, SubagentFooterTarget};
+#[path = "ui_subagent.rs"]
+mod ui_subagent;
+#[path = "ui_tasks_pane.rs"]
+mod ui_tasks_pane;
 pub(crate) use ui_diff::structured_diff_stats;
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
 pub(crate) use ui_lifecycle::{live_empty_composer_guidance_visible, live_empty_state_visible};
@@ -148,6 +153,7 @@ pub(crate) use ui_secondary::{
 };
 use ui_secondary::{render_live_details_overlay, render_operator_sidebar};
 use ui_secondary_events_tab::render_help_tab;
+pub(crate) use ui_subagent::{subagent_frame_target_at, SubagentFrameTarget};
 use ui_terminal::render_terminal_panel;
 pub(crate) use ui_terminal::{terminal_panel_inner, terminal_panel_max_scroll};
 use ui_transcript::render_transcript_pane;
@@ -236,8 +242,23 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
         return;
     }
 
+    if app.current_subagent_session_present() {
+        ui_subagent::render(frame, app, &plan, theme);
+        if let Some(surface) = app.review_surface() {
+            render_review_surface(frame, app, theme, &plan, surface);
+        }
+        if let Some(viewer) = app.transcript_viewer() {
+            crate::transcript_block_viewer::render_viewer(frame.buffer_mut(), area, viewer, theme);
+        }
+        render_overlays(frame, app, theme, &plan);
+        render_toast(frame, app, area, theme);
+        return;
+    }
     render_header(frame, app, &plan, theme);
     render_content(frame, app, plan.content, theme, &plan);
+    if let Some(tasks) = plan.tasks {
+        ui_tasks_pane::render(frame, app, tasks, theme);
+    }
     if let (Some(message), Some(notice_area)) = (&app.model_prompt_notice, plan.model_prompt_notice)
     {
         let lines = wrap_completion_text(message, usize::from(notice_area.width));

@@ -28,6 +28,8 @@ mod settings_registry;
 #[cfg(test)]
 mod settings_tests;
 mod settings_write;
+mod skills;
+mod subagents;
 pub use crate::perm::PermissionAction as PermissionMode;
 pub use defaults::{default_permission_rule_set_with_read_env, default_read_env_permission_rules};
 pub use discovery::*;
@@ -46,6 +48,8 @@ pub use schema::config_json_schema;
 pub use selection::*;
 pub use settings_registry::*;
 pub use settings_write::*;
+pub use skills::*;
+pub use subagents::*;
 
 const fn yes() -> bool {
     true
@@ -79,6 +83,8 @@ pub struct HarnessConfig {
     )]
     pub model_profiles: BTreeMap<String, ModelProfileConfig>,
     pub agents: BTreeMap<String, ProfileConfig>,
+    pub subagents: SubagentsConfig,
+    pub features: SubagentFeaturesConfig,
     pub permissions: PermissionsConfig,
     pub runtime: RuntimeConfig,
     pub integrations: IntegrationsConfig,
@@ -198,6 +204,41 @@ mod tests {
             assert_eq!(read_policy.check("read", path, None), mode, "{path}");
         }
         assert!(load_config_from_str("{ runtme: {} }").is_err());
+        let public_defaults = load_config_from_str("{}")?;
+        [
+            "spawn_subagent",
+            "get_command_or_subagent_output",
+            "wait_commands_or_subagents",
+            "kill_command_or_subagent",
+            "send_subagent_message",
+        ]
+        .into_iter()
+        .for_each(|tool| {
+            assert!(public_defaults.agents["default"]
+                .tools
+                .iter()
+                .any(|name| name == tool));
+        });
+        ["task", "background_output", "background_cancel"]
+            .into_iter()
+            .for_each(|tool| {
+                assert!(!public_defaults.agents["default"]
+                    .tools
+                    .iter()
+                    .any(|name| name == tool));
+            });
+        let aliases = load_config_from_str(
+            "{agent:{default:{tools:['task','get_task_output','wait_tasks','kill_task']}}}",
+        )?;
+        assert_eq!(
+            aliases.agents["default"].tools,
+            [
+                "spawn_subagent",
+                "get_command_or_subagent_output",
+                "wait_commands_or_subagents",
+                "kill_command_or_subagent",
+            ]
+        );
         for settings in [
             serde_json::json!({"command":[]}),
             serde_json::json!({"command":["/bin/sh", ""]}),

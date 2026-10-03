@@ -79,6 +79,8 @@ fn definition(
         },
         capability_dependency: id.strip_prefix("permission."),
         restart_required: metadata
+            || id.starts_with("subagents.")
+            || id.starts_with("features.")
             || matches!(id, "runtime.always_approve" | "runtime.session_dir"),
         default_value: default,
         merge_strategy: if matches!(
@@ -91,6 +93,12 @@ fn definition(
                 | "ui"
                 | "runtime.compaction.model_thresholds"
                 | "runtime.compaction.agent_thresholds"
+                | "subagents"
+                | "subagents.models"
+                | "subagents.toggle"
+                | "subagents.roles"
+                | "subagents.personas"
+                | "features"
                 | "keybinds"
         ) {
             SettingMergeStrategy::DeepMergeMap
@@ -116,6 +124,11 @@ static REGISTRY: LazyLock<Vec<SettingDefinition>> = LazyLock::new(|| {
         "permission.bash", "permission.edit", "permission.question", "permission.task", "permission.webfetch", "permission.websearch",
         "permission.codesearch", "permission.lsp", "permission.read", "permission.external_directory", "permission.doom_loop", "permission.shell_allowlist",
         "provider.apiKey", "hashline_edit" => "true", "worktree.relative_base" => ".agent-harness/worktrees", "worktree.branch_prefix" => "harness/wt-",
+        "subagents", "subagents.enabled" => "true", "subagents.max_depth" => "1", "subagents.max_concurrent" => "32",
+        "subagents.sampling_limit", "subagents.limit_behavior" => "queue", "subagents.models" => "{}",
+        "subagents.toggle" => "{}", "subagents.roles" => "{}", "subagents.personas" => "{}",
+        "features", "features.active_agent_messages" => "false", "features.subagent_model_inheritance" => "false",
+        "features.subagent_worktree_snapshot" => "false",
     ).to_vec();
     entries.extend(entries!("harness.", Runtime;
         "runtime.always_approve" => "false", "runtime.compaction.enabled" => "true", "runtime.compaction.reserve_tokens" => "16384",

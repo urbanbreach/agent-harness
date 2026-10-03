@@ -146,7 +146,7 @@ fn release_notes_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> 
 }
 
 fn help_model(app: &AppState, root: Rect, composer: Option<Rect>) -> Option<ModalSurfaceModel> {
-    let layout = crate::ui::ui_secondary_events_tab::help_modal_rects(root, composer)?;
+    let layout = crate::ui::ui_secondary_events_tab::help_modal_rects_for_app(app, root, composer)?;
     let mut regions = modal_chrome_regions(layout.popup);
     let (visual_offset, max_scroll) = if app.help_detail().is_some() {
         (

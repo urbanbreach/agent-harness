@@ -30,6 +30,7 @@ struct NotificationGate {
     child_started: tokio::sync::Notify,
     collect_reports: usize,
     wakeups: AtomicUsize,
+    collected: tokio::sync::Mutex<Vec<String>>,
 }
 #[async_trait::async_trait]
 impl harness_providers::Provider for NotificationGate {
@@ -40,10 +41,33 @@ impl harness_providers::Provider for NotificationGate {
         let Some(last) = request.messages.last() else {
             return Box::pin(tokio_stream::iter([Stream::error("missing prompt")]));
         };
+        for message in request.messages.iter().filter(|message| {
+            message.role == harness_providers::MessageRole::Tool
+                && message.name.as_deref() == Some("spawn_subagent")
+        }) {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&message.content) else {
+                return Box::pin(tokio_stream::iter([Stream::error("invalid spawn result")]));
+            };
+            let id = value["data"]["subagent_id"].as_str().or_else(|| {
+                value["text"]
+                    .as_str()?
+                    .lines()
+                    .find_map(|line| line.strip_prefix("subagent_id: "))
+            });
+            let Some(id) = id else {
+                return Box::pin(tokio_stream::iter([Stream::error(
+                    "spawn result omitted its subagent identity",
+                )]));
+            };
+            let mut collected = self.collected.lock().await;
+            if !collected.iter().any(|known| known == id) {
+                collected.push(id.into());
+            }
+        }
         if last.content == "launch" {
             let calls = (0..self.collect_reports.max(1)).map(|index| Stream::ToolCallComplete {
-                tool_call_id: format!("launch-child-{index}"), function_name: "task".into(),
-                arguments_json: json!({"subagent_type":"child","prompt":if index == 0 {"child work"} else {"child failure"},"run_in_background":true,"load_skills":[]}).to_string(),
+                tool_call_id: format!("launch-child-{index}"), function_name: "spawn_subagent".into(),
+                arguments_json: json!({"prompt":if index == 0 {"child work"} else {"child failure"},"description":"Child report"}).to_string(),
             }).chain(std::iter::once(Stream::Done { usage: None })).collect::<Vec<_>>();
             return Box::pin(tokio_stream::iter(calls));
         }
@@ -58,19 +82,22 @@ impl harness_providers::Provider for NotificationGate {
             "child report"
         } else if last.role == harness_providers::MessageRole::Tool {
             if self.collect_reports > 0 {
-                let block = last.name.as_deref() == Some("background_output");
+                let block = last.name.as_deref() == Some("get_command_or_subagent_output");
                 if block {
-                    let output: serde_json::Value = serde_json::from_str(&last.content)
-                        .map_err(|e| e.to_string())
-                        .unwrap_or_else(|e| json!({"error":e}));
+                    let Ok(output) = serde_json::from_str::<serde_json::Value>(&last.content)
+                    else {
+                        return Box::pin(tokio_stream::iter([Stream::error(
+                            "invalid output result",
+                        )]));
+                    };
                     let data = &output["data"];
-                    let complete = if let Some(tasks) = data["tasks"].as_array() {
+                    let complete = if let Some(tasks) = data["MultiResult"]["results"].as_array() {
                         tasks.len() == self.collect_reports
                             && tasks.iter().all(|task| {
                                 matches!(task["status"].as_str(), Some("completed" | "failed"))
                             })
                     } else {
-                        data["status"] == "completed"
+                        data["Result"]["status"] == "completed"
                     };
                     if complete {
                         return Box::pin(tokio_stream::iter([
@@ -82,8 +109,8 @@ impl harness_providers::Provider for NotificationGate {
                 return Box::pin(tokio_stream::iter([
                     Stream::ToolCallComplete {
                         tool_call_id: format!("collect-{block}"),
-                        function_name: "background_output".into(),
-                        arguments_json: json!({"all":true,"wait_mode":"all","block":block})
+                        function_name: "get_command_or_subagent_output".into(),
+                        arguments_json: json!({"task_ids":self.collected.lock().await.clone(),"timeout_ms":if block {30_000} else {0}})
                             .to_string(),
                     },
                     Stream::Done { usage: None },
@@ -96,10 +123,9 @@ impl harness_providers::Provider for NotificationGate {
             "parent finished"
         } else if last.content == "check history" {
             assert!(
-                request
-                    .messages
-                    .iter()
-                    .all(|message| !message.content.starts_with("Background child ")),
+                request.messages.iter().all(|message| message.role
+                    != harness_providers::MessageRole::User
+                    || !message.content.contains("child report")),
                 "consumed notifications must not reappear in provider history"
             );
             "history checked"
@@ -131,6 +157,7 @@ async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notific
         child_started: tokio::sync::Notify::new(),
         collect_reports: 0,
         wakeups: AtomicUsize::new(0),
+        collected: tokio::sync::Mutex::new(Vec::new()),
     });
     let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
     config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
@@ -141,7 +168,11 @@ async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notific
     config.command_buffer = 1;
     config.provider_model_concurrency = 2;
     let mut parent = AgentProfile::fallback("default");
-    parent.toolset = vec!["task".into(), "background_output".into()];
+    parent.toolset = vec![
+        "spawn_subagent".into(),
+        "get_command_or_subagent_output".into(),
+        "kill_command_or_subagent".into(),
+    ];
     config.agent_profiles.insert("default".into(), parent);
     config
         .agent_profiles
@@ -158,6 +189,11 @@ async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notific
         .spawn_agent_idle(EventActor::new(ActorKind::User, None), "default", None)
         .await?;
     let mut events = coordinator.subscribe_new_events().await?;
+    let parent_started = provider.parent_started.notified();
+    let child_started = provider.child_started.notified();
+    tokio::pin!(parent_started, child_started);
+    parent_started.as_mut().enable();
+    child_started.as_mut().enable();
     coordinator
         .request_agent_turn(
             EventActor::new(ActorKind::User, None),
@@ -166,22 +202,25 @@ async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notific
         )
         .await?;
     tokio::time::timeout(std::time::Duration::from_secs(2), async {
-        tokio::join!(
-            provider.parent_started.notified(),
-            provider.child_started.notified()
-        )
+        tokio::join!(parent_started, child_started)
     })
     .await?;
+    let child_ids: Vec<_> = coordinator
+        .subagent_history()
+        .await?
+        .records
+        .into_keys()
+        .collect();
     let running = coordinator
         .execute_agent_tool_call(
             EventActor::new(ActorKind::Worker, Some(parent.clone())),
             None,
-            "background_output",
-            json!({"all":true}),
+            "get_command_or_subagent_output",
+            json!({"task_ids":child_ids}),
         )
         .await?;
     assert_eq!(
-        running.structured_json.ok_or("missing poll result")?["status"],
+        running.structured_json.ok_or("missing poll result")?["Result"]["status"],
         "running"
     );
     assert!(
@@ -215,8 +254,8 @@ async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notific
             .execute_agent_tool_call(
                 EventActor::new(ActorKind::Worker, Some(parent.clone())),
                 None,
-                "background_output",
-                json!({"all":true,"full_session":true,"since_message_id":"missing"}),
+                "get_command_or_subagent_output",
+                json!({"task_ids":[false]}),
             )
             .await
             .is_err(),
@@ -255,6 +294,7 @@ async fn polled_child_reports_suppress_parent_wakeups_in_live_and_resumed_histor
             child_started: tokio::sync::Notify::new(),
             collect_reports: count,
             wakeups: AtomicUsize::new(0),
+            collected: tokio::sync::Mutex::new(Vec::new()),
         });
         let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
         config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
@@ -264,7 +304,11 @@ async fn polled_child_reports_suppress_parent_wakeups_in_live_and_resumed_histor
         config.permission_policy = PermissionPolicy::allow_all();
         config.provider_model_concurrency = 3;
         let mut parent = AgentProfile::fallback("default");
-        parent.toolset = vec!["task".into(), "background_output".into()];
+        parent.toolset = vec![
+            "spawn_subagent".into(),
+            "get_command_or_subagent_output".into(),
+            "kill_command_or_subagent".into(),
+        ];
         config.agent_profiles.insert("default".into(), parent);
         config
             .agent_profiles
@@ -293,21 +337,27 @@ async fn polled_child_reports_suppress_parent_wakeups_in_live_and_resumed_histor
             &mut events,
             |event| {
                 matches!(event, EventV1::ToolCallRequested(e)
-            if e.tool_id == "background_output" && e.args_summary.contains("\"block\":true"))
+            if e.tool_id == "get_command_or_subagent_output" && e.args_summary.contains("\"timeout_ms\":30000"))
             },
             "parent did not wait for children",
         )
         .await?;
         provider.child.add_permits(count);
-        wait_for(
+        let summarized = wait_for(
             &mut events,
             |event| {
                 matches!(event, EventV1::TaskCompleted(e)
-            if e.task_id.as_str() == request && e.result_summary == "reports summarized")
+            if e.task_id.as_str() == request)
             },
             "parent did not summarize reports",
         )
         .await?;
+        assert!(
+            matches!(summarized.payload, EventV1::TaskCompleted(ref event)
+                if event.result_summary == "reports summarized"),
+            "parent completed without the child reports: {:?}",
+            summarized.payload
+        );
         for resumed in [false, true] {
             let active = if resumed {
                 let restored = spawn_coordinator(
@@ -349,3 +399,6 @@ async fn polled_child_reports_suppress_parent_wakeups_in_live_and_resumed_histor
     }
     Ok(())
 }
+
+#[path = "notifications/authority.rs"]
+mod authority;

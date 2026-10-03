@@ -3,7 +3,7 @@ use std::time::Duration;
 use ratatui::{
     buffer::{Buffer, CellWidth},
     layout::{Alignment, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     Frame,
 };
@@ -34,6 +34,7 @@ pub(super) fn render_transcript_surface(
     local_scroll: usize,
     animation_phase: usize,
     theme: &Theme,
+    child_view: bool,
 ) {
     let buffer = frame.buffer_mut();
     let area = area.intersection(buffer.area);
@@ -42,7 +43,11 @@ pub(super) fn render_transcript_surface(
     }
     buffer.set_style(
         area,
-        Style::default().bg(surface.surface).fg(theme.text.primary),
+        Style::default().bg(surface.surface).fg(if child_view {
+            Color::Reset
+        } else {
+            theme.text.primary
+        }),
     );
     let spinner = glyph_routed_streaming_spinner_frame(theme, animation_phase, true);
     let group = surface.tool_rail_motion.is_some()
@@ -70,7 +75,19 @@ pub(super) fn render_transcript_surface(
         .enumerate()
     {
         let row = local_scroll.saturating_add(y);
-        let tool = tool_marker(line, surface, row, group, spinner, theme).map(|index| {
+        let timestamp = surface
+            .interaction_rows
+            .as_ref()
+            .and_then(|rows| rows.get(row))
+            .and_then(Option::as_ref)
+            .is_some_and(|row| {
+                matches!(
+                    row.target,
+                    super::ui_transcript_interaction::TranscriptMouseTarget::UserTimestamp { .. }
+                )
+            });
+        let line = child_line_style(line, child_view, timestamp, theme);
+        let tool = tool_marker(&line, surface, row, group, spinner, theme).map(|index| {
             (
                 index,
                 tool_rail_motion_color(
@@ -88,7 +105,7 @@ pub(super) fn render_transcript_surface(
         )
         .then(|| {
             marker_index(
-                line,
+                &line,
                 spinner,
                 &[
                     theme.live_shell.glyphs.pending_permission,
@@ -102,7 +119,7 @@ pub(super) fn render_transcript_surface(
         .map(|index| (index, pending_diamond_color(theme, animation_phase)));
         paint_line(
             buffer,
-            line,
+            &line,
             Rect::new(
                 area.x,
                 area.y + u16::try_from(y).unwrap_or(0),
@@ -131,6 +148,47 @@ pub(super) fn render_transcript_surface(
             );
         }
     }
+}
+
+fn child_line_style<'a>(
+    line: &'a Line<'static>,
+    child_view: bool,
+    timestamp: bool,
+    theme: &Theme,
+) -> std::borrow::Cow<'a, Line<'static>> {
+    if !child_view {
+        return std::borrow::Cow::Borrowed(line);
+    }
+    let mut line = line.clone();
+    if line.spans.iter().all(|span| span.content.trim().is_empty()) {
+        for span in &mut line.spans {
+            span.style = span.style.fg(Color::Reset);
+        }
+        return std::borrow::Cow::Owned(line);
+    }
+    for span in &mut line.spans {
+        if span.content.trim() == "•" && span.style.fg == Some(theme.markdown.list_item) {
+            span.style = span.style.remove_modifier(Modifier::BOLD);
+        }
+    }
+    if timestamp {
+        if let Some(clock) = line.spans.last_mut() {
+            clock.style = clock.style.fg(theme.text.secondary);
+        }
+    }
+    if let Some(first) = line.spans.first_mut() {
+        if let Some(content) = first.content.strip_prefix(TRANSCRIPT_ENTRY_CONTENT_PREFIX) {
+            first.content = content.to_owned().into();
+            line.spans.insert(
+                0,
+                Span::styled(
+                    TRANSCRIPT_ENTRY_CONTENT_PREFIX,
+                    Style::default().fg(Color::Reset),
+                ),
+            );
+        }
+    }
+    std::borrow::Cow::Owned(line)
 }
 
 fn paint_content<'a>(span: &'a Span<'_>, spinner: &'a str) -> &'a str {

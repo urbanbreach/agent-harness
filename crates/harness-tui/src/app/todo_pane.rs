@@ -4,8 +4,7 @@ use crate::ui::{TranscriptTodoItem, TranscriptTodoStatus};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 mod pointer;
-mod query;
-pub(crate) use query::{TodoQuery, TodoQueryMode};
+use super::pane_query::{PaneQuery, PaneQueryMode};
 
 #[derive(Debug, Default)]
 pub(crate) struct TodoPaneState {
@@ -17,7 +16,7 @@ pub(crate) struct TodoPaneState {
     // Original item index, preserved when completed items are hidden.
     pub(crate) selected: Option<usize>,
     pub(crate) scroll: usize,
-    pub(crate) query: TodoQuery,
+    pub(crate) query: PaneQuery,
     pub(crate) hovered: bool,
     pub(crate) close_hovered: bool,
     close_pressed: Option<ratatui::layout::Rect>,
@@ -269,8 +268,8 @@ impl AppState {
                 self.todo_pane.hide_done = !self.todo_pane.hide_done;
                 self.todo_pane.reveal_selection(height);
             }
-            KeyCode::Char('/') => self.todo_pane.query.open(TodoQueryMode::Search),
-            KeyCode::Char('f') => self.todo_pane.query.open(TodoQueryMode::Filter),
+            KeyCode::Char('/') => self.todo_pane.query.open(PaneQueryMode::Search),
+            KeyCode::Char('f') => self.todo_pane.query.open(PaneQueryMode::Filter),
             KeyCode::Char('n' | 'N') => {
                 self.todo_pane
                     .find_match(key.code == KeyCode::Char('N'), true, height)

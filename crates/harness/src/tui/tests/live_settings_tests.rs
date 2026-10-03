@@ -1,6 +1,23 @@
 use super::*;
 use harness::UnwrapOrAbort;
 
+fn isolated_config_context(
+    current_dir: std::path::PathBuf,
+) -> harness_core::config::ConfigLoadContext {
+    [
+        "HOME",
+        "XDG_CONFIG_HOME",
+        "HARNESS_CONFIG",
+        "HARNESS_TUI_CONFIG",
+        "HARNESS_CONFIG_CONTENT",
+    ]
+    .into_iter()
+    .fold(
+        harness_core::config::ConfigLoadContext::from_env().with_current_dir(current_dir),
+        |context, name| context.apply_env_var(name, None),
+    )
+}
+
 #[test]
 fn no_config_tui_without_credentials_enters_connect_state() {
     let temp = tempfile::tempdir().unwrap_or_abort();
@@ -10,8 +27,7 @@ fn no_config_tui_without_credentials_enters_connect_state() {
         None,
         None,
         temp.path().to_path_buf(),
-        &harness_core::config::ConfigLoadContext::from_env()
-            .with_current_dir(temp.path().to_path_buf()),
+        &isolated_config_context(temp.path().to_path_buf()),
         LiveSettingsDeps {
             credential_store: None,
             env_lookup: &|_| None,
@@ -44,8 +60,7 @@ fn no_config_tui_with_stored_codex_launches_connected_catalog() {
         None,
         None,
         temp.path().to_path_buf(),
-        &harness_core::config::ConfigLoadContext::from_env()
-            .with_current_dir(temp.path().to_path_buf()),
+        &isolated_config_context(temp.path().to_path_buf()),
         LiveSettingsDeps {
             credential_store: Some(&store),
             env_lookup: &|_| None,
@@ -81,8 +96,7 @@ fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
         None,
         None,
         temp.path().to_path_buf(),
-        &harness_core::config::ConfigLoadContext::from_env()
-            .with_current_dir(temp.path().to_path_buf()),
+        &isolated_config_context(temp.path().to_path_buf()),
         LiveSettingsDeps {
             credential_store: Some(&store),
             env_lookup: &|_| None,
@@ -124,8 +138,7 @@ fn no_config_tui_ignores_legacy_builtin_model_selection() {
         None,
         None,
         temp.path().to_path_buf(),
-        &harness_core::config::ConfigLoadContext::from_env()
-            .with_current_dir(temp.path().to_path_buf()),
+        &isolated_config_context(temp.path().to_path_buf()),
         LiveSettingsDeps {
             credential_store: Some(&store),
             env_lookup: &|_| None,
@@ -135,7 +148,7 @@ fn no_config_tui_ignores_legacy_builtin_model_selection() {
     .unwrap_or_abort();
 
     assert_eq!(settings.launch_metadata.provider(), "openai-codex");
-    assert_eq!(settings.launch_metadata.model(), Some("gpt-5.4-mini"));
+    assert_eq!(settings.launch_metadata.model(), Some("gpt-6-astra"));
 }
 
 #[test]
@@ -155,14 +168,14 @@ fn project_config_tui_ignores_legacy_model_selection() {
                 apiKeyEnv: ["OPENAI_API_KEY"],
               },
               models: {
-                "gpt-5.4-mini": { name: "GPT 5.4 Mini" },
+                "gpt-6-astra": { name: "GPT 6 Astra" },
                 "gpt-5.5": { name: "GPT 5.5" },
               },
             },
           },
-          model: "openai-codex/gpt-5.4-mini",
+          model: "openai-codex/gpt-6-astra",
           agent: {
-            default: { model: "openai-codex/gpt-5.4-mini" },
+            default: { model: "openai-codex/gpt-6-astra" },
           },
           permission: "ask",
         }"#,
@@ -179,8 +192,7 @@ fn project_config_tui_ignores_legacy_model_selection() {
         Some(config_path),
         None,
         temp.path().to_path_buf(),
-        &harness_core::config::ConfigLoadContext::from_env()
-            .with_current_dir(temp.path().to_path_buf()),
+        &isolated_config_context(temp.path().to_path_buf()),
         LiveSettingsDeps {
             credential_store: None,
             env_lookup: &|name| (name == "OPENAI_API_KEY").then(|| "test-token".to_string()),
@@ -188,9 +200,10 @@ fn project_config_tui_ignores_legacy_model_selection() {
         },
     );
 
+    assert!(result.is_ok(), "{:?}", result.as_ref().err());
     let settings = result.unwrap_or_abort();
     assert_eq!(settings.launch_metadata.provider(), "openai-codex");
-    assert_eq!(settings.launch_metadata.model(), Some("gpt-5.4-mini"));
+    assert_eq!(settings.launch_metadata.model(), Some("gpt-6-astra"));
 }
 
 #[test]
@@ -265,8 +278,7 @@ fn mock_mode_ignores_discovered_cwd_config() {
         None,
         None,
         temp.path().to_path_buf(),
-        &harness_core::config::ConfigLoadContext::from_env()
-            .with_current_dir(temp.path().to_path_buf()),
+        &isolated_config_context(temp.path().to_path_buf()),
     );
 
     let settings = result.unwrap_or_abort();
@@ -350,8 +362,7 @@ fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
         Some(config_path.clone()),
         None,
         temp.path().to_path_buf(),
-        &harness_core::config::ConfigLoadContext::from_env()
-            .with_current_dir(temp.path().to_path_buf()),
+        &isolated_config_context(temp.path().to_path_buf()),
     );
 
     let settings = result.unwrap_or_abort();
@@ -580,8 +591,7 @@ fn continue_mode_uses_session_workspace_root_not_process_cwd() {
         None,
         None,
         process_cwd.path().to_path_buf(),
-        &harness_core::config::ConfigLoadContext::from_env()
-            .with_current_dir(process_cwd.path().to_path_buf()),
+        &isolated_config_context(process_cwd.path().to_path_buf()),
     )
     .unwrap_or_abort();
 

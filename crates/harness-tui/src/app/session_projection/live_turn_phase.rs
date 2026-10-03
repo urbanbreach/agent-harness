@@ -14,6 +14,7 @@ pub(crate) enum LiveTurnPhase {
     ToolRunning(String),
 }
 
+#[derive(Clone)]
 pub(super) struct ProviderPhase {
     request_id: String,
     phase: LiveTurnPhase,
@@ -44,7 +45,16 @@ impl SessionProjection {
         if let Some(tool) = running.filter(|tool| {
             matches!(
                 tool.effective_tool_id(),
-                "question" | "user.question" | "task" | "agent.spawn" | "background_output"
+                "question"
+                    | "user.question"
+                    | "spawn_subagent"
+                    | "task"
+                    | "agent.spawn"
+                    | "background_output"
+                    | "get_command_or_subagent_output"
+                    | "get_task_output"
+                    | "wait_commands_or_subagents"
+                    | "wait_tasks"
             )
         }) {
             return (

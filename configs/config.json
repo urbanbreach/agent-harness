@@ -4350,6 +4350,67 @@
       },
       "type": "object"
     },
+    "SubagentFeaturesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "active_agent_messages": { "default": null, "type": ["boolean", "null"] },
+        "subagent_model_inheritance": { "default": null, "type": ["boolean", "null"] },
+        "subagent_worktree_snapshot": { "default": null, "type": ["boolean", "null"] }
+      },
+      "type": "object"
+    },
+    "SubagentPersona": {
+      "additionalProperties": false,
+      "properties": {
+        "default_isolation": { "default": null, "type": ["string", "null"] },
+        "description": { "default": null, "type": ["string", "null"] },
+        "inputs": { "default": [], "items": { "$ref": "#/$defs/SubagentPersonaIoField" }, "type": "array" },
+        "instructions": { "default": null, "type": ["string", "null"] },
+        "instructions_file": { "default": null, "type": ["string", "null"] },
+        "model": { "default": null, "type": ["string", "null"] },
+        "outputs": { "default": [], "items": { "$ref": "#/$defs/SubagentPersonaIoField" }, "type": "array" },
+        "reasoning_effort": { "default": null, "type": ["string", "null"] }
+      },
+      "type": "object"
+    },
+    "SubagentPersonaIoField": {
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string" },
+        "io_type": { "default": "file", "type": "string" },
+        "name": { "type": "string" },
+        "required": { "default": false, "type": "boolean" }
+      },
+      "required": ["name", "description"],
+      "type": "object"
+    },
+    "SubagentRole": {
+      "additionalProperties": false,
+      "properties": {
+        "default_capability_mode": { "default": null, "type": ["string", "null"] },
+        "default_isolation": { "default": null, "type": ["string", "null"] },
+        "description": { "default": "", "type": "string" },
+        "model": { "default": null, "type": ["string", "null"] },
+        "prompt_file": { "default": null, "type": ["string", "null"] },
+        "reasoning_effort": { "default": null, "type": ["string", "null"] }
+      },
+      "type": "object"
+    },
+    "SubagentsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "default": true, "type": "boolean" },
+        "limit_behavior": { "default": null, "type": ["string", "null"] },
+        "max_concurrent": { "default": null, "format": "int64", "type": ["integer", "null"] },
+        "max_depth": { "default": null, "format": "int64", "type": ["integer", "null"] },
+        "models": { "additionalProperties": { "type": "string" }, "default": {}, "type": "object" },
+        "personas": { "additionalProperties": { "$ref": "#/$defs/SubagentPersona" }, "default": {}, "type": "object" },
+        "roles": { "additionalProperties": { "$ref": "#/$defs/SubagentRole" }, "default": {}, "type": "object" },
+        "sampling_limit": { "default": null, "format": "int64", "type": ["integer", "null"] },
+        "toggle": { "additionalProperties": { "type": "boolean" }, "default": {}, "type": "object" }
+      },
+      "type": "object"
+    },
     "ToolFailureMode": {
       "enum": [
         "fail_turn",
@@ -4538,6 +4599,14 @@
         "type": "string"
       },
       "type": "array"
+    },
+    "features": {
+      "$ref": "#/$defs/SubagentFeaturesConfig",
+      "default": {
+        "active_agent_messages": null,
+        "subagent_model_inheritance": null,
+        "subagent_worktree_snapshot": null
+      }
     },
     "formatter": {
       "anyOf": [
@@ -5182,6 +5251,20 @@
         "string",
         "null"
       ]
+    },
+    "subagents": {
+      "$ref": "#/$defs/SubagentsConfig",
+      "default": {
+        "enabled": true,
+        "limit_behavior": null,
+        "max_concurrent": null,
+        "max_depth": null,
+        "models": {},
+        "personas": {},
+        "roles": {},
+        "sampling_limit": null,
+        "toggle": {}
+      }
     },
     "ui": {
       "$ref": "#/$defs/UiConfig",

@@ -7,9 +7,11 @@ use serde::{Deserialize, Serialize};
 
 mod history;
 mod lifecycle;
+mod schema;
 mod state;
 mod wire;
 pub use history::*;
+pub use schema::spawn_subagent_schema;
 pub(crate) use state::read_finalized_payload;
 pub use state::*;
 

@@ -72,9 +72,9 @@ use super::ui_transcript_layout::{
 use super::ui_transcript_page_flip::{transcript_scroll_position, TranscriptScrollPosition};
 use super::ui_transcript_scrollbar::transcript_more_below_hit_rect;
 use super::ui_transcript_scrollbar::{
-    current_transcript_scroll_top, render_transcript_more_below_affordance,
-    render_transcript_scrollbar, transcript_more_below_rect, transcript_scrollbar_geometry,
-    transcript_scrollbar_needed, transcript_viewport_layout, TranscriptScrollbarHit,
+    app_transcript_viewport_layout, current_transcript_scroll_top,
+    render_transcript_more_below_affordance, render_transcript_scrollbar,
+    transcript_more_below_rect, transcript_scrollbar_geometry, TranscriptScrollbarHit,
     TranscriptScrollbarRenderSpec,
 };
 use super::ui_transcript_selection::{
@@ -194,9 +194,9 @@ pub(crate) fn transcript_navigation_entries(
         app.theme(),
         context.inner_area.width,
         context.base_surface,
-        |layout| transcript_scrollbar_needed(layout.total_height, context.inner_area),
+        |layout| layout.scrollbar_needed(context.inner_area),
     );
-    let viewport = transcript_viewport_layout(context.inner_area, scrollbar).content;
+    let viewport = app_transcript_viewport_layout(app, context.inner_area, scrollbar).content;
     with_measured_transcript_layout_for_width_on_surface(
         app,
         app.theme(),
@@ -252,9 +252,9 @@ pub(crate) fn transcript_entry_scroll_top(
         app.theme(),
         context.inner_area.width,
         context.base_surface,
-        |layout| transcript_scrollbar_needed(layout.total_height, context.inner_area),
+        |layout| layout.scrollbar_needed(context.inner_area),
     );
-    let viewport = transcript_viewport_layout(context.inner_area, scrollbar).content;
+    let viewport = app_transcript_viewport_layout(app, context.inner_area, scrollbar).content;
     Some(with_measured_transcript_layout_for_width_on_surface(
         app,
         app.theme(),
@@ -461,9 +461,9 @@ fn render_measured_transcript_pane(
         theme,
         inner_area.width,
         empty_surface,
-        |layout| transcript_scrollbar_needed(layout.total_height, inner_area),
+        |layout| layout.scrollbar_needed(inner_area),
     );
-    let viewport = transcript_viewport_layout(inner_area, show_scrollbar);
+    let viewport = app_transcript_viewport_layout(app, inner_area, show_scrollbar);
     let render_width = if show_scrollbar {
         viewport.content.width
     } else {
@@ -552,6 +552,7 @@ fn render_measured_transcript_pane(
                 transcript_scroll,
                 app.transcript_animation_phase(),
                 theme,
+                app.current_subagent_session_present(),
             );
             if let Some(seq) = app.rewind_dim_from_seq() {
                 dim_rewind_transcript(frame, layout, surface_area, transcript_scroll, seq, theme);
@@ -564,6 +565,7 @@ fn render_measured_transcript_pane(
                     transcript_scroll,
                     app.transcript_view.selected_entry,
                     theme,
+                    app.current_subagent_session_present(),
                 );
             }
             render_transcript_selection(
@@ -739,9 +741,9 @@ fn build_transcript_selection_snapshot(
         app.theme(),
         context.inner_area.width,
         context.base_surface,
-        |layout| transcript_scrollbar_needed(layout.total_height, context.inner_area),
+        |layout| layout.scrollbar_needed(context.inner_area),
     );
-    let viewport = transcript_viewport_layout(context.inner_area, show_scrollbar);
+    let viewport = app_transcript_viewport_layout(app, context.inner_area, show_scrollbar);
     let render_width = usize::from(if show_scrollbar {
         viewport.content.width
     } else {
@@ -807,9 +809,9 @@ fn with_transcript_selection_snapshot<R>(
         &theme,
         context.inner_area.width,
         context.base_surface,
-        |layout| transcript_scrollbar_needed(layout.total_height, context.inner_area),
+        |layout| layout.scrollbar_needed(context.inner_area),
     );
-    let render_width = transcript_viewport_layout(context.inner_area, show_scrollbar)
+    let render_width = app_transcript_viewport_layout(app, context.inner_area, show_scrollbar)
         .content
         .width;
 
@@ -1020,7 +1022,7 @@ pub(crate) fn transcript_scrollbar_hit(
         return None;
     }
 
-    let viewport = transcript_viewport_layout(context.inner_area, true);
+    let viewport = app_transcript_viewport_layout(app, context.inner_area, true);
     let scroll_top = app.transcript_page_flip_scroll_top().unwrap_or_else(|| {
         current_transcript_scroll_top(
             app.transcript_following(),
@@ -1052,9 +1054,9 @@ pub(crate) fn transcript_return_to_live_hit(
         &theme,
         full_width,
         context.base_surface,
-        |layout| transcript_scrollbar_needed(layout.total_height, context.inner_area),
+        |layout| layout.scrollbar_needed(context.inner_area),
     );
-    let viewport = transcript_viewport_layout(context.inner_area, show_scrollbar).content;
+    let viewport = app_transcript_viewport_layout(app, context.inner_area, show_scrollbar).content;
 
     with_measured_transcript_layout_for_width_on_surface(
         app,
@@ -1111,9 +1113,9 @@ pub(crate) fn transcript_diff_hunk_rows(app: &AppState, area: Rect) -> Vec<usize
         &theme,
         full_width,
         context.base_surface,
-        |layout| transcript_scrollbar_needed(layout.total_height, context.inner_area),
+        |layout| layout.scrollbar_needed(context.inner_area),
     );
-    let render_width = transcript_viewport_layout(context.inner_area, show_scrollbar)
+    let render_width = app_transcript_viewport_layout(app, context.inner_area, show_scrollbar)
         .content
         .width;
 
@@ -1159,9 +1161,9 @@ pub(crate) fn transcript_mouse_target(
         &theme,
         full_width,
         context.base_surface,
-        |layout| transcript_scrollbar_needed(layout.total_height, context.inner_area),
+        |layout| layout.scrollbar_needed(context.inner_area),
     );
-    let viewport_layout = transcript_viewport_layout(context.inner_area, show_scrollbar);
+    let viewport_layout = app_transcript_viewport_layout(app, context.inner_area, show_scrollbar);
     let render_width = viewport_layout.content.width;
     let viewport = viewport_layout.content;
 

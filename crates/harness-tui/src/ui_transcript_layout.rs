@@ -44,6 +44,7 @@ impl MeasuredTranscriptSection {
 pub(super) struct MeasuredTranscriptLayout {
     pub(super) sections: Vec<Arc<MeasuredTranscriptSection>>,
     pub(super) total_height: usize,
+    pub(super) child_view: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -169,6 +170,10 @@ pub(super) fn transcript_layout_has_visible_running_tool(
 }
 
 impl MeasuredTranscriptLayout {
+    pub(super) fn scrollbar_needed(&self, area: Rect) -> bool {
+        super::ui_transcript_scrollbar::transcript_scrollbar_needed(self.total_height, area)
+    }
+
     pub(super) fn visible_sections(
         &self,
         scroll_top: usize,
@@ -535,6 +540,7 @@ pub(super) fn measure_transcript_layout<Section>(
     MeasuredTranscriptLayout {
         sections: measured_sections,
         total_height: top_row,
+        child_view: false,
     }
 }
 
@@ -563,7 +569,12 @@ pub(super) fn render_selected_transcript_entry(
     scroll_top: usize,
     selected: Option<TranscriptVisualEntryId>,
     theme: &Theme,
+    child_view: bool,
 ) {
+    if child_view {
+        render_child_selection(frame, layout, area, scroll_top, selected, theme);
+        return;
+    }
     let Some(selected) = selected else {
         return;
     };
@@ -719,6 +730,73 @@ pub(super) fn render_selected_transcript_entry(
     }
 }
 
+fn render_child_selection(
+    frame: &mut Frame,
+    layout: &MeasuredTranscriptLayout,
+    area: Rect,
+    scroll_top: usize,
+    selected: Option<TranscriptVisualEntryId>,
+    theme: &Theme,
+) {
+    let Some(selected) = selected else {
+        return;
+    };
+    let Some((section_index, surface_index)) =
+        layout
+            .sections
+            .iter()
+            .enumerate()
+            .find_map(|(section, data)| {
+                data.surfaces
+                    .iter()
+                    .position(|surface| surface.metadata.id == selected)
+                    .map(|surface| (section, surface))
+            })
+    else {
+        return;
+    };
+    let Some(placement) = transcript_visual_entry_viewport_placement(
+        layout,
+        area,
+        scroll_top,
+        section_index,
+        surface_index,
+    ) else {
+        return;
+    };
+    let rect = placement.rect;
+    let left = rect.x.saturating_sub(1);
+    let right = area.right();
+    let top = rect.y.saturating_sub(1).max(area.y);
+    let bottom = rect.bottom().min(area.bottom().saturating_sub(1));
+    let style = Style::default().fg(crate::theme::quantize_color(
+        Color::Rgb(60, 60, 65),
+        theme.color_level(),
+    ));
+    for y in rect.y..rect.bottom().min(area.bottom()) {
+        paint_compact_selection(
+            frame,
+            Rect::new(area.x, y, area.width, 1),
+            theme.markdown.code_background,
+        );
+        for x in [left, right] {
+            if let Some(cell) = frame.buffer_mut().cell_mut((x, y)) {
+                cell.set_symbol("│").set_style(style);
+            }
+        }
+    }
+    for (x, y, glyph) in [
+        (left, top, "┌"),
+        (right, top, "┐"),
+        (left, bottom, "└"),
+        (right, bottom, "┘"),
+    ] {
+        if let Some(cell) = frame.buffer_mut().cell_mut((x, y)) {
+            cell.set_symbol(glyph).set_style(style);
+        }
+    }
+}
+
 fn render_selected_context_header(
     frame: &mut Frame,
     layout: &MeasuredTranscriptLayout,
@@ -774,6 +852,7 @@ pub(super) fn render_transcript_layout_surfaces(
     scroll_top: usize,
     animation_phase: usize,
     theme: &Theme,
+    child_view: bool,
 ) {
     let viewport_height = usize::from(area.height);
     if viewport_height == 0 || area.width == 0 {
@@ -799,6 +878,7 @@ pub(super) fn render_transcript_layout_surfaces(
                 placement.local_scroll,
                 animation_phase,
                 theme,
+                child_view,
             );
             if surface.selected_rail
                 && surface.tool_rail_motion.is_none()
@@ -914,7 +994,7 @@ fn sticky_user_surface<'a>(
         return None;
     }
     let viewport_bottom = scroll_top.saturating_add(viewport_height);
-    if viewport_bottom >= layout.total_height {
+    if !layout.child_view && viewport_bottom >= layout.total_height {
         return None;
     }
     // Only the section containing the viewport's top can own a sticky prompt.
@@ -1206,6 +1286,7 @@ mod pin_tests {
                 ],
             })],
             total_height: total_content_rows,
+            child_view: false,
         }
     }
 
@@ -1267,6 +1348,7 @@ mod pin_tests {
                 surfaces: vec![body, inserted, footer],
             })],
             total_height: 3,
+            child_view: false,
         };
 
         // assert
@@ -1352,6 +1434,7 @@ mod pin_tests {
                 ],
             })],
             total_height: content_height,
+            child_view: false,
         }
     }
 

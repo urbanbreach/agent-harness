@@ -1,10 +1,11 @@
 use harness_core::{
-    config::{registered_skills_config, PermissionMode, SkillsConfig},
+    config::{registered_skills_config, PermissionMode, SkillCatalogDiscovery, SkillsConfig},
     redact::{DefaultRedactor, Redactor},
     tool::ToolError,
 };
 pub(crate) mod load;
-use serde::{Deserialize, Serialize};
+pub use harness_core::config::{SkillCatalog, SkillCatalogEntry, SkillCatalogStatus};
+use serde::Deserialize;
 use std::{
     collections::BTreeSet,
     fs,
@@ -12,46 +13,20 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SkillCatalog {
-    pub entries: Vec<SkillCatalogEntry>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SkillCatalogEntry {
-    pub stable_id: String,
-    pub name: String,
-    pub description: String,
-    pub source_scope: String,
-    pub root_path: PathBuf,
-    pub location: PathBuf,
-    pub loadable: bool,
-    pub permission_mode: String,
-    pub status: SkillCatalogStatus,
-    pub reason: Option<String>,
-    pub argument_hint: Option<String>,
-    pub allowed_tools: Vec<String>,
-    pub deferred_mcp: Option<String>,
-    pub deferred_resources: Option<String>,
-    pub body_loaded: bool,
-    pub body_digest: Option<String>,
-}
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum SkillCatalogStatus {
-    Loadable,
-    Denied,
-    Disabled,
-    Malformed,
-    Shadowed,
-}
-impl SkillCatalogStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Loadable => "loadable",
-            Self::Denied => "denied",
-            Self::Disabled => "disabled",
-            Self::Malformed => "malformed",
-            Self::Shadowed => "shadowed",
+pub struct NativeSkillCatalogDiscovery;
+
+impl SkillCatalogDiscovery for NativeSkillCatalogDiscovery {
+    fn discover(
+        &self,
+        cwd: &Path,
+        config: &SkillsConfig,
+        project_trusted: Option<bool>,
+    ) -> Result<SkillCatalog, ToolError> {
+        let mut config = config.clone();
+        if project_trusted == Some(false) {
+            config.project_roots.clear();
         }
+        discover_skill_catalog_with_config(cwd, &config)
     }
 }
 #[derive(Deserialize)]

@@ -98,6 +98,7 @@ pub struct ToolContext {
     pub tool_call_id: ToolCallId,
     pub current_model_ref: Option<String>,
     pub current_model_settings: Option<AgentModelSettings>,
+    pub skill_startup: Option<Arc<crate::config::SkillStartupSnapshot>>,
     pub coordinator: CoordinatorHandle,
     pub cancellation: CancellationToken,
     pub tool_state: ToolRunState,
@@ -108,6 +109,8 @@ pub struct ToolContext {
 }
 #[derive(Debug, thiserror::Error)]
 pub enum ToolError {
+    #[error("{code}: {message}")]
+    Custom { code: String, message: String },
     #[error("tool argument error: {0}")]
     InvalidArguments(String),
     #[error("tool execution failed: {0}")]
@@ -171,6 +174,9 @@ impl ToolRegistry {
     }
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
         self.tools.insert(tool.id().into(), tool);
+    }
+    pub fn remove(&mut self, id: &str) {
+        let _ = self.tools.remove(id);
     }
     pub fn get(&self, id: &str) -> Option<Arc<dyn Tool>> {
         self.tools.get(id).cloned().or_else(|| {

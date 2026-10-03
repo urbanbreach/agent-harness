@@ -2,6 +2,25 @@ use super::*;
 use crate::transcript_selection::{CellPoint, NavigationKey, Viewport};
 
 impl AppState {
+    fn quote_viewer_to_prompt(&mut self, quote: &str) {
+        if self.current_subagent_session_present() {
+            self.navigate_to_parent_session();
+        }
+        self.focus = Focus::Prompt;
+        let prefix = self
+            .composer
+            .prompt_buffer
+            .chars()
+            .take(self.composer.prompt_cursor)
+            .last();
+        let separator = if prefix.is_some_and(|c| c != '\n') {
+            "\n"
+        } else {
+            ""
+        };
+        self.handle_paste(&format!("{separator}{quote}\n\n"));
+    }
+
     pub(crate) fn resize_transcript_viewer(&mut self, area: Rect) {
         let theme = *self.theme();
         let layout = crate::transcript_block_viewer::viewer_layout(area);
@@ -89,6 +108,9 @@ impl AppState {
         }
         match key.code {
             KeyCode::Enter => {
+                if viewer.quote_text().is_empty() {
+                    return true;
+                }
                 let quote = viewer
                     .quote_text()
                     .lines()
@@ -96,8 +118,7 @@ impl AppState {
                     .collect::<Vec<_>>()
                     .join("\n");
                 self.close_transcript_viewer();
-                self.focus = Focus::Prompt;
-                self.handle_paste(&format!("{quote}\n"));
+                self.quote_viewer_to_prompt(&quote);
             }
             KeyCode::Char('f') if key.modifiers.is_empty() => {
                 viewer.set_filter_editing(true);

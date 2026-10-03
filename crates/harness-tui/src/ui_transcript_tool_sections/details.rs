@@ -46,7 +46,10 @@ pub(super) fn finish(
             );
         }
     }
-    if !matches!(id, "user.question" | "question" | "agent.spawn" | "task") {
+    if !matches!(
+        id,
+        "user.question" | "question" | "spawn_subagent" | "agent.spawn" | "task"
+    ) {
         push_failed_tool_error_block(blocks, tool);
     }
     push_truncated_output_artifact_block(blocks, tool);
