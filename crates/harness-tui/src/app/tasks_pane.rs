@@ -10,6 +10,7 @@ use super::pane_query::{PaneQuery, PaneQueryMode};
 pub(crate) struct TasksPaneState {
     pub visible: bool,
     pub focused: bool,
+    pub fullscreen: bool,
     pub show_done: bool,
     pub selected: usize,
     pub scroll: usize,
@@ -105,7 +106,7 @@ impl AppState {
         rows
     }
 
-    fn task_pane_all_rows(&self) -> Vec<TaskPaneRow> {
+    pub(crate) fn task_pane_all_rows(&self) -> Vec<TaskPaneRow> {
         let mut items = Vec::new();
         for child in self.subagents.rows.values() {
             let Some(task) = self.native_subagent_task(&child.parent_tool) else {
@@ -304,15 +305,19 @@ impl AppState {
     }
 
     fn activate_task_pane_row(&mut self, kill: bool) {
+        if self.task_pane_rows().is_empty() {
+            return;
+        }
+        // Native Tasks actions index the unfiltered entries, including headers.
         let Some(row) = self
-            .task_pane_rows()
+            .task_pane_all_rows()
             .into_iter()
             .nth(self.tasks_pane.selected)
         else {
             return;
         };
         if row.header {
-            if !self.tasks_pane.collapsed.remove(row.group) {
+            if !kill && !self.tasks_pane.collapsed.remove(row.group) {
                 self.tasks_pane.collapsed.insert(row.group);
             }
         } else if kill && !self.replay_mode && !row.state.is_terminal() {

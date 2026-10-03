@@ -195,6 +195,21 @@ fn assert_task_query_editing(app: &mut AppState) {
     app.handle_key(key(KeyCode::Enter));
     assert!(!app.tasks_pane.query.editing);
     assert!(app.tasks_pane.query.active);
+    app.handle_key(key(KeyCode::Char('x')));
+    assert!(!app.tasks_pane.collapsed.contains("Subagents"));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.tasks_pane.collapsed.contains("Subagents"));
+    assert!(!app.current_subagent_session_present());
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('f'),
+        KeyModifiers::CONTROL,
+    ));
+    assert!(app.tasks_pane.collapsed.contains("Subagents"));
+    assert!(app.tasks_pane.fullscreen);
+    app.handle_key(key(KeyCode::Esc));
+    assert!(!app.tasks_pane.fullscreen);
+    assert!(app.tasks_pane.query.active);
+    app.tasks_pane.collapsed.clear();
     app.handle_key(key(KeyCode::Char('f')));
     assert_eq!(
         app.tasks_pane.query.editor.text(),

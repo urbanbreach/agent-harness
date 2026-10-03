@@ -69,14 +69,10 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, area: Rect, theme: &Them
         super::ui_pane_query::render(frame, &app.tasks_pane.query, bar, theme);
     }
     let area = layout.rows;
-    if rows.is_empty() {
+    if app.task_pane_all_rows().is_empty() {
         frame.render_widget(
             Paragraph::new(if app.tasks_pane.show_done {
                 "No tasks or agents."
-            } else if app.tasks_pane.query.mode == crate::app::pane_query::PaneQueryMode::Filter
-                && app.tasks_pane.query.active
-            {
-                "No matches."
             } else {
                 "No running tasks. Press h to show all."
             })
@@ -128,17 +124,30 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, area: Rect, theme: &Them
             continue;
         }
         let running = !row.state.is_terminal();
-        let (icon, color) = if running {
-            let frames = ["⋅", ":", "⸬", "⁙"];
-            (
-                frames[(app.transcript_animation_phase() / 4) % frames.len()],
-                theme.text.accent,
-            )
-        } else if row.state == OrchestrationTaskState::Completed {
-            ("✓", theme.status.success)
-        } else {
-            ("✗", theme.status.error)
-        };
+        let (_, color) = task_icon(app, row, theme);
+        let title_width = area.width.saturating_sub(2);
+        let spans = title_spans(row, running, color, base, theme, usize::from(title_width));
+        let spans = highlight_title(spans, &app.tasks_pane.query);
+        frame.render_widget(
+            Paragraph::new(Line::from(spans)),
+            Rect::new(area.x + 2, y, title_width, 1),
+        );
+    }
+    // Native overlays retain the unfiltered row positions during filtering.
+    for (index, row) in app
+        .task_pane_all_rows()
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(usize::from(area.height))
+    {
+        if row.header {
+            continue;
+        }
+        let y = area.y + u16::try_from(index - offset).unwrap_or(0);
+        let base = Style::default();
+        let running = !row.state.is_terminal();
+        let (icon, color) = task_icon(app, row, theme);
         let right = format!(
             "{}{}{} [↗]{}",
             collapse_inline_whitespace(&row.model),
@@ -154,13 +163,6 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, area: Rect, theme: &Them
         let right_width = u16::try_from(right.width() + badge.width())
             .unwrap_or(u16::MAX)
             .min(area.width.saturating_sub(2));
-        let title_width = area.width.saturating_sub(2);
-        let spans = title_spans(row, running, color, base, theme, usize::from(title_width));
-        let spans = highlight_title(spans, &app.tasks_pane.query);
-        frame.render_widget(
-            Paragraph::new(Line::from(spans)),
-            Rect::new(area.x + 2, y, title_width, 1),
-        );
         clear_overlay(frame, area, y, right_width.saturating_add(1));
         frame.render_widget(
             Paragraph::new(icon).style(base.fg(color)),
@@ -176,6 +178,24 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, area: Rect, theme: &Them
             ])),
             Rect::new(area.right().saturating_sub(right_width), y, right_width, 1),
         );
+    }
+}
+
+fn task_icon<'a>(
+    app: &AppState,
+    row: &crate::app::tasks_pane::TaskPaneRow,
+    theme: &'a Theme,
+) -> (&'a str, ratatui::style::Color) {
+    if !row.state.is_terminal() {
+        let frames = ["⋅", ":", "⸬", "⁙"];
+        (
+            frames[(app.transcript_animation_phase() / 4) % frames.len()],
+            theme.text.accent,
+        )
+    } else if row.state == OrchestrationTaskState::Completed {
+        ("✓", theme.status.success)
+    } else {
+        ("✗", theme.status.error)
     }
 }
 

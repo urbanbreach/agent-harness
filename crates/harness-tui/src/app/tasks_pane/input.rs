@@ -108,6 +108,14 @@ impl AppState {
             return true;
         }
         match key.code {
+            KeyCode::Char('f') if key.modifiers == KeyModifiers::CONTROL => {
+                if self.task_pane_rows().is_empty() {
+                    self.tasks_pane.fullscreen = !self.tasks_pane.fullscreen;
+                } else {
+                    self.activate_task_pane_row(false);
+                }
+            }
+            KeyCode::Esc if self.tasks_pane.fullscreen => self.tasks_pane.fullscreen = false,
             KeyCode::Esc if self.tasks_pane.query.active => {
                 self.tasks_pane.query = PaneQuery::default();
             }
@@ -150,9 +158,13 @@ impl AppState {
             }
             KeyCode::Char('y') => self.copy_task_row(),
             KeyCode::Enter => self.activate_task_pane_row(false),
-            KeyCode::Char('x') | KeyCode::Delete => self.activate_task_pane_row(true),
+            KeyCode::Char('x') => self.activate_task_pane_row(true),
             KeyCode::Left | KeyCode::Right => {
-                if let Some(row) = self.task_pane_rows().get(self.tasks_pane.selected) {
+                if let Some(row) = self
+                    .task_pane_all_rows()
+                    .get(self.tasks_pane.selected)
+                    .filter(|row| row.header)
+                {
                     if key.code == KeyCode::Left {
                         self.tasks_pane.collapsed.insert(row.group);
                     } else {
