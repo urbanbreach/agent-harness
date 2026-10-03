@@ -86,3 +86,10 @@ Enter. Within the read-only child view, `q` or Esc returns to the parent, Ctrl+C
 requests child cancellation, and Ctrl+E toggles reasoning visibility. Vim mode
 adds transcript navigation and link selection; Enter opens the selected link or
 entry. Search and other overlays own their input until dismissed.
+
+The child block viewer follows live output until upward navigation detaches it.
+Enter quotes the selected logical line or selection into the parent draft.
+Raw/Markdown toggles reproduce the pinned Grok renderer's source-map behavior:
+it numbers the unfrozen tail from zero after a mode change. A later toggle can
+therefore select an earlier line, including a blank line near the start. This
+cursor jump is retained for parity.
