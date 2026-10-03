@@ -31,11 +31,12 @@ use provider::NotificationGate;
 async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notification(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use harness_core::event::EventV1;
-    for (continue_parent, spawn_reports, poll_available) in [
-        (false, 1, true),
-        (true, 1, true),
-        (false, 2, true),
-        (false, 1, false),
+    for (continue_parent, spawn_reports, poll_available, reuse_before_delivery) in [
+        (false, 1, true, false),
+        (true, 1, true, false),
+        (false, 2, true, false),
+        (false, 1, false, false),
+        (false, 1, true, true),
     ] {
         let temp = tempfile::tempdir()?;
         let provider = Arc::new(NotificationGate {
@@ -69,6 +70,10 @@ async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notific
             parent
                 .toolset
                 .retain(|tool| tool != "get_command_or_subagent_output");
+        }
+        if reuse_before_delivery {
+            provider::configure_reactivation(&mut config);
+            parent.toolset.push("send_subagent_message".into());
         }
         config.agent_profiles.insert("default".into(), parent);
         config
@@ -167,14 +172,30 @@ async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notific
         );
         assert!(
             coordinator
-                .compact_agent_context(parent, None, "manual")
+                .compact_agent_context(parent.clone(), None, "manual")
                 .await
                 .is_err(),
             "manual compaction must respect the same queue capacity"
         );
+        if reuse_before_delivery {
+            let child = child_ids.first().ok_or("child identity missing")?;
+            let result = coordinator
+                .execute_agent_tool_call(
+                    EventActor::new(ActorKind::Worker, Some(parent.clone())),
+                    None,
+                    "send_subagent_message",
+                    json!({"subagent_id":child,"text":"continue child"}),
+                )
+                .await?;
+            assert!(!result.is_error(), "{}", result.display_text);
+            wait_for(&mut events, |event| matches!(event,
+                EventV1::NativeSubagentReceipt(receipt)
+                if receipt.child_id == *child && receipt.kind == "terminal_published" && receipt.generation >= 2),
+                "reused child did not finish").await?;
+        }
         provider.parent.add_permits(1);
         for (index, followup) in followups.iter().enumerate() {
-            let expected = if continue_parent || index > 0 {
+            let expected = if continue_parent || index > 0 || reuse_before_delivery {
                 ""
             } else {
                 "notification delivered"
@@ -188,6 +209,17 @@ async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notific
                 "notification was not consumed",
             )
             .await?;
+        }
+        if reuse_before_delivery {
+            assert_eq!(provider.wakeups.load(Ordering::SeqCst), 0);
+            assert!(harness_core::store::read_events(&run.events_path)?
+                .iter()
+                .all(
+                    |event| !matches!(&event.payload, EventV1::UserMessageSubmitted(message)
+                if followups.contains(&message.request_id.to_string()))
+                ));
+            coordinator.stop_run().await?;
+            continue;
         }
         assert_eq!(provider.wakeups.load(Ordering::SeqCst), 1);
         let reminders = provider.reminders.lock().await;

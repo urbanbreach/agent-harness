@@ -47,7 +47,9 @@ impl harness_providers::Provider for NotificationGate {
             }).chain(std::iter::once(Stream::Done { usage: None })).collect::<Vec<_>>();
             return Box::pin(tokio_stream::iter(calls));
         }
-        let answer = if matches!(last.content.as_str(), "child work" | "child failure") {
+        let answer = if last.content.starts_with("<agent_message sender=") {
+            "reactivated child answer"
+        } else if matches!(last.content.as_str(), "child work" | "child failure") {
             self.child_started.notify_one();
             if let Ok(permit) = self.child.acquire().await {
                 permit.forget();
@@ -57,7 +59,13 @@ impl harness_providers::Provider for NotificationGate {
             }
             return Box::pin(tokio_stream::iter([
                 Stream::TextDelta(self.report.clone()),
-                Stream::Done { usage: None },
+                Stream::DoneWithMetadata {
+                    usage: None,
+                    metadata: Some(harness_providers::ProviderStreamFinishedMetadata {
+                        settled_reasoning: Some(Vec::new()),
+                        ..Default::default()
+                    }),
+                },
             ]));
         } else if last.role == harness_providers::MessageRole::Tool
             && !last.content.contains("<system-reminder>")
@@ -167,4 +175,38 @@ impl harness_providers::Provider for NotificationGate {
             Stream::Done { usage: None },
         ]))
     }
+}
+
+pub(super) fn configure_reactivation(config: &mut CoordinatorConfig) {
+    use harness_core::config::{ModelLimitProvenance, ResolvedModelLimits, ResolvedModelTarget};
+    config.subagents.messaging_enabled = true;
+    let mut registry = harness_tools::coordinator_registry(ShellAllowlist::default());
+    harness_tools::register_subagent_tools(
+        &mut registry,
+        &config.subagents,
+        &Default::default(),
+        config.subagent_model_catalog.as_ref(),
+    );
+    config.tool_registry = Arc::new(registry);
+    config.agent_model_targets.insert(
+        "default".into(),
+        ResolvedModelTarget {
+            model_ref: "mock:default".into(),
+            provider: "mock".into(),
+            model: "default".into(),
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
+            thinking: None,
+            limits: ResolvedModelLimits::from_values(
+                Some(32_768),
+                Some(30_000),
+                Some(2_000),
+                ModelLimitProvenance::explicit("notification fixture"),
+            ),
+            resolution: Default::default(),
+            catalog_entry: None,
+        },
+    );
 }
