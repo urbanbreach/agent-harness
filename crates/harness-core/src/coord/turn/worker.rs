@@ -220,17 +220,22 @@ impl Worker {
             let output = outputs
                 .remove(&index)
                 .ok_or_else(|| CoordinatorError::Invalid("tool output missing".into()))?;
-            let (text, attachments) = match output {
+            let (text, attachments, dispatch_error) = match output {
                 Ok(output) => {
                     failed |= output.is_error();
                     (
                         crate::tool::provider_text(output.display_text, output.structured_json),
                         output.attachments,
+                        None,
                     )
                 }
                 Err(error) => {
                     failed = true;
-                    (format!("Tool error: {error}"), Vec::new())
+                    (
+                        format!("Tool error: {error}"),
+                        Vec::new(),
+                        Some(error.to_string()),
+                    )
                 }
             };
             let raw_id = format!("{request}-tool-{index}");
@@ -253,7 +258,14 @@ impl Worker {
                     Some(_) => Err(CoordinatorError::PermissionDenied(
                         "raw tool result owner mismatch".into(),
                     )),
-                    None => Ok(None),
+                    None => Ok(
+                        dispatch_error.map(|error| crate::subagent::FinalizedToolResult {
+                            tool_call_id: raw_id,
+                            provider_tool_call_id: None,
+                            output: None,
+                            error: Some(error),
+                        }),
+                    ),
                 })
                 .await?;
             if raw.is_none() {

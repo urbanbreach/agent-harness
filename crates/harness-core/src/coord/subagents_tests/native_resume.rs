@@ -13,6 +13,16 @@ async fn native_resume_retains_committed_raw_state_and_rejects_summary_only_sour
                 function_name: "large".into(),
                 arguments_json: arguments.into(),
             },
+            Stream::ToolCallComplete {
+                tool_call_id: "unknown-call".into(),
+                function_name: "missing-tool".into(),
+                arguments_json: "{}".into(),
+            },
+            Stream::ToolCallComplete {
+                tool_call_id: "denied-call".into(),
+                function_name: "kill_command_or_subagent".into(),
+                arguments_json: "{}".into(),
+            },
             settled_metadata("first"),
         ],
         vec![
@@ -71,6 +81,24 @@ async fn native_resume_retains_committed_raw_state_and_rejects_summary_only_sour
     let FinalizedStateResult::Available { state: original } = source else {
         return Err(format!("source unavailable: {source:?}").into());
     };
+    for (call_id, error) in [
+        ("unknown-call", "unknown tool: missing-tool"),
+        (
+            "denied-call",
+            "permission denied: tool kill_command_or_subagent is not enabled for this agent",
+        ),
+    ] {
+        let item = original
+            .conversation_items
+            .iter()
+            .find(|item| item.message.tool_call_id.as_deref() == Some(call_id))
+            .ok_or("rejected tool message missing")?;
+        let raw = item.raw_tool_result.as_ref().ok_or("raw error missing")?;
+        assert_eq!(raw.provider_tool_call_id.as_deref(), Some(call_id));
+        assert_eq!(raw.output, None);
+        assert_eq!(raw.error.as_deref(), Some(error));
+        assert_eq!(item.message.content, format!("Tool error: {error}"));
+    }
     let resumed = coordinator
         .execute_tool(
             actor.clone(),
