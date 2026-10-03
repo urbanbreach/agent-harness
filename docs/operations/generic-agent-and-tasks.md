@@ -90,6 +90,12 @@ before they are delivered. A background completion reaches the parent once,
 through either its wake prompt or a buffered reminder. Polling a finished child
 consumes its pending completion notification.
 
+An idle parent's wake combines its buffered child reports into one reminder.
+During an active turn, reports appear in the next completed tool result. These
+reminders use the polling output format and escape embedded reminder tags. When
+the parent has an output polling tool, each report is limited to 16,000 UTF-8
+bytes with a pointer to the full result; otherwise the report is included in full.
+
 ## History and inspection
 
 Children have their own session journals and private artifacts. Finalized
