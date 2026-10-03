@@ -768,17 +768,27 @@ fn render_child_selection(
     let left = rect.x.saturating_sub(1);
     let right = area.right();
     let top = rect.y.saturating_sub(1).max(area.y);
-    let bottom = rect.bottom().min(area.bottom().saturating_sub(1));
+    let surface = &layout.sections[section_index].surfaces[surface_index];
+    let clipped_top = placement.local_scroll > 0;
+    let clipped_bottom = placement.local_scroll + usize::from(rect.height) < surface.height;
+    let bottom = if clipped_bottom {
+        rect.bottom().saturating_sub(1)
+    } else {
+        rect.bottom()
+    };
+    let top = if clipped_top { rect.y } else { top };
     let style = Style::default().fg(crate::theme::quantize_color(
         Color::Rgb(60, 60, 65),
         theme.color_level(),
     ));
     for y in rect.y..rect.bottom().min(area.bottom()) {
-        paint_compact_selection(
-            frame,
-            Rect::new(area.x, y, area.width, 1),
-            theme.markdown.code_background,
-        );
+        if surface.kind != TranscriptRenderSurfaceKind::AssistantBody {
+            paint_compact_selection(
+                frame,
+                Rect::new(area.x, y, area.width, 1),
+                theme.markdown.code_background,
+            );
+        }
         for x in [left, right] {
             if let Some(cell) = frame.buffer_mut().cell_mut((x, y)) {
                 cell.set_symbol("│").set_style(style);
@@ -786,10 +796,10 @@ fn render_child_selection(
         }
     }
     for (x, y, glyph) in [
-        (left, top, "┌"),
-        (right, top, "┐"),
-        (left, bottom, "└"),
-        (right, bottom, "┘"),
+        (left, top, if clipped_top { "┆" } else { "┌" }),
+        (right, top, if clipped_top { "┆" } else { "┐" }),
+        (left, bottom, if clipped_bottom { "┆" } else { "└" }),
+        (right, bottom, if clipped_bottom { "┆" } else { "┘" }),
     ] {
         if let Some(cell) = frame.buffer_mut().cell_mut((x, y)) {
             cell.set_symbol(glyph).set_style(style);

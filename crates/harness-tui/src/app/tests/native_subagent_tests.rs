@@ -257,6 +257,7 @@ fn assert_native_inspection(app: &mut AppState, intents: &Arc<Mutex<Vec<UiIntent
     assert!(child.contains("Child-only prompt"));
     app.set_frame_area(Rect::new(0, 0, 120, 40));
     assert_child_link_navigation(app);
+    assert_child_search(app);
     app.handle_key(key_with_modifiers(
         KeyCode::Char('x'),
         KeyModifiers::CONTROL,
@@ -272,8 +273,8 @@ fn assert_native_inspection(app: &mut AppState, intents: &Arc<Mutex<Vec<UiIntent
         KeyCode::Char('c'),
         KeyModifiers::CONTROL,
     ));
-    assert!(
-        matches!(intents.lock().unwrap_or_abort().as_slice(), [UiIntent::CancelSubagent { session_id }] if session_id == "child")
+    assert_eq!(
+        intents.lock().unwrap_or_abort().iter().filter(|intent| matches!(intent, UiIntent::CancelSubagent { session_id } if session_id == "child")).count(), 2
     );
 }
 
@@ -440,4 +441,39 @@ fn assert_native_completion(app: &mut AppState, mut finished: SubagentTransition
     assert!(app.task_pane_rows().is_empty());
     app.tasks_pane.show_done = true;
     assert_eq!(app.task_pane_rows().len(), 2);
+}
+
+fn assert_child_search(app: &mut AppState) {
+    app.composer.vim_mode = true;
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Backspace));
+    assert!(app.transcript_view.search.editing);
+    app.handle_paste("example\\.org");
+    assert_eq!(app.transcript_view.search_match_count, 2);
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.transcript_view.search_match, 1);
+    app.handle_key(key(KeyCode::Enter));
+    assert!(!app.transcript_view.search.editing);
+    app.handle_paste("ignored after acceptance");
+    assert_eq!(app.transcript_view.search.editor.text(), "example\\.org");
+    app.handle_key(key(KeyCode::Char('n')));
+    assert_eq!(app.transcript_view.search_match, 0);
+    app.handle_key(key(KeyCode::Esc));
+    assert_eq!(app.current_session_id(), Some("child"));
+    assert!(!app.transcript_view.search.has_bar());
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_paste("[");
+    assert_eq!(app.transcript_view.search_match_count, 0);
+    assert!(render_text(app, 120, 40).contains("bad pattern"));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    ));
+    assert_eq!(app.transcript_view.search.editor.text(), "[");
+    app.handle_key(key(KeyCode::Esc));
+    assert_eq!(app.current_session_id(), Some("child"));
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(!app.transcript_view.search.has_bar());
+    app.composer.vim_mode = false;
 }

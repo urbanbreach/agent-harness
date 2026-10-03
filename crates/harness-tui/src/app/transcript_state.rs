@@ -360,6 +360,7 @@ impl AppState {
         self.transcript_view.selected_entry.hash(hasher);
         self.replay_mode.hash(hasher);
         self.current_subagent_session_present().hash(hasher);
+        self.inspected_child_cancel_started().is_some().hash(hasher);
         if self.focus == super::Focus::Details && !self.todo_pane_focused() {
             self.transcript_view.selected_activity_index.hash(hasher);
         }

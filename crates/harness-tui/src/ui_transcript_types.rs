@@ -350,18 +350,23 @@ impl TranscriptToolGroupSummary {
             .iter_mut()
             .find(|bucket| bucket.verb == verb)
         {
-            bucket.active_count += usize::from(matches!(
-                tool_call.header.presentation.status,
-                ToolCallPresentationStatus::Queued | ToolCallPresentationStatus::Running
-            ));
+            bucket.active_count += usize::from(
+                !tool_call.cancellation_requested
+                    && matches!(
+                        tool_call.header.presentation.status,
+                        ToolCallPresentationStatus::Queued | ToolCallPresentationStatus::Running
+                    ),
+            );
             bucket.queued_count += usize::from(
-                tool_call.header.presentation.status == ToolCallPresentationStatus::Queued,
+                !tool_call.cancellation_requested
+                    && tool_call.header.presentation.status == ToolCallPresentationStatus::Queued,
             );
             bucket
                 .sources
                 .extend(tool_call.group.sources.iter().cloned());
         }
         match tool_call.header.presentation.status {
+            _ if tool_call.cancellation_requested => {}
             ToolCallPresentationStatus::Queued => self.queued_count += 1,
             ToolCallPresentationStatus::Running => self.running_count += 1,
             ToolCallPresentationStatus::Waiting => return false,
@@ -576,6 +581,7 @@ pub(super) struct TranscriptToolCallSection {
     pub(super) animation_phase: usize,
     pub(super) expanded: bool,
     pub(super) rail_motion: ToolRailMotion,
+    pub(super) cancellation_requested: bool,
     pub(super) group: TranscriptToolGroupMember,
 }
 
@@ -745,6 +751,7 @@ mod tool_group_tests {
             animation_phase: 0,
             expanded,
             rail_motion: ToolRailMotion::Settled,
+            cancellation_requested: false,
         }))
     }
 

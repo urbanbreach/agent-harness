@@ -80,6 +80,8 @@ mod ui_tool_titles_harness;
 mod ui_tool_visibility;
 #[path = "ui_tool_wrapping.rs"]
 mod ui_tool_wrapping;
+#[path = "ui_transcript_search.rs"]
+mod ui_transcript_search;
 pub(crate) use ui_transcript::PreparedTranscript;
 
 #[path = "ui_transcript_viewport.rs"]
