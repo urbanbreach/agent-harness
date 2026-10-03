@@ -1,6 +1,13 @@
 use super::pane_query::{PaneQuery, PaneQueryMode};
 use super::*;
 
+#[derive(Clone, Debug)]
+pub(super) struct TranscriptSearchHit {
+    id: ui::TranscriptVisualEntryId,
+    target: Option<TranscriptMouseTarget>,
+    line: usize,
+}
+
 impl AppState {
     pub(crate) fn handle_transcript_search_key(&mut self, key: KeyEvent) -> bool {
         let child = self.current_subagent_session_present();
@@ -63,6 +70,7 @@ impl AppState {
         self.transcript_view.search.open(PaneQueryMode::Search);
         self.transcript_view.search_match = 0;
         self.transcript_view.search_match_count = 0;
+        self.transcript_view.search_hits.clear();
     }
 
     pub(crate) fn find_transcript_match(&mut self, forward: Option<bool>) {
@@ -80,57 +88,80 @@ impl AppState {
             return;
         };
         let area = self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24));
-        let entries = ui::transcript_navigation_entries(self, area);
-        let mut matches = Vec::new();
-        for entry in &entries {
-            let content = self.selected_entry_content(entry);
-            let text = if native {
-                self.child_search_text(entry, content.content())
-            } else if regex.is_match(&entry.text) {
-                std::borrow::Cow::Borrowed(entry.text.as_ref())
-            } else {
-                std::borrow::Cow::Borrowed(content.content())
-            };
-            for found in regex
-                .find_iter(&text)
-                .filter(|found| !found.is_empty())
-                .take(if native { usize::MAX } else { 1 })
-            {
-                let line = text[..found.start()]
-                    .bytes()
-                    .filter(|byte| *byte == b'\n')
-                    .count();
-                matches.push((entry, line));
-            }
+        if !native || forward.is_none() {
+            self.transcript_view.search_hits = self.collect_transcript_search_hits(area, &regex);
         }
-        self.transcript_view.search_match_count = matches.len();
-        if matches.is_empty() {
+        let count = self.transcript_view.search_hits.len();
+        self.transcript_view.search_match_count = count;
+        if count == 0 {
             return;
         }
         let previous = self
             .transcript_view
             .search_match
-            .min(matches.len().saturating_sub(1));
+            .min(count.saturating_sub(1));
         let index = match forward {
             None => 0,
-            Some(true) => (previous + 1) % matches.len(),
-            Some(false) => (previous + matches.len() - 1) % matches.len(),
+            Some(true) => (previous + 1) % count,
+            Some(false) => (previous + count - 1) % count,
         };
         self.transcript_view.search_match = index;
-        let (entry, line) = matches[index];
-        self.reveal_transcript_search_entry(entry, &regex);
+        let hit = self.transcript_view.search_hits[index].clone();
+        self.reveal_transcript_search_hit(area, &regex, hit);
+    }
+
+    fn reveal_transcript_search_hit(
+        &mut self,
+        area: Rect,
+        regex: &regex::Regex,
+        hit: TranscriptSearchHit,
+    ) {
+        let native = self.current_subagent_session_present();
+        let entries = ui::transcript_navigation_entries(self, area);
+        let Some(entry) = entries.iter().find(|entry| hit.matches(entry)) else {
+            return;
+        };
+        if let Some(TranscriptMouseTarget::Tool { tool_call_id }) =
+            hit.target.as_ref().filter(|_| native)
+        {
+            if self
+                .tool_call_entry(tool_call_id)
+                .is_some_and(ui::tool_call_has_transcript_disclosure)
+            {
+                if let Some(TranscriptMouseTarget::ToolGroup { tool_call_ids }) = &entry.target {
+                    self.set_tool_group_outputs_expanded(tool_call_ids, true);
+                }
+                self.set_tool_output_expanded(tool_call_id, true);
+            }
+        } else {
+            self.reveal_transcript_search_entry(entry, regex);
+        }
         let revealed = ui::transcript_navigation_entries(self, area);
         let selected = revealed
             .iter()
-            .find(|candidate| match (&entry.target, &candidate.target) {
-                (
-                    Some(TranscriptMouseTarget::ToolGroup { tool_call_ids }),
-                    Some(
-                        TranscriptMouseTarget::Tool { tool_call_id }
-                        | TranscriptMouseTarget::PatchFile { tool_call_id, .. },
-                    ),
-                ) => tool_call_ids.contains(tool_call_id) && regex.is_match(&candidate.text),
-                _ => false,
+            .find(|candidate| {
+                native
+                    && hit.matches(candidate)
+                    && !matches!(
+                        candidate.target,
+                        Some(TranscriptMouseTarget::ToolGroup { .. })
+                    )
+            })
+            .or_else(|| {
+                revealed
+                    .iter()
+                    .find(|candidate| match (&entry.target, &candidate.target) {
+                        (
+                            Some(TranscriptMouseTarget::ToolGroup { tool_call_ids }),
+                            Some(
+                                TranscriptMouseTarget::Tool { tool_call_id }
+                                | TranscriptMouseTarget::PatchFile { tool_call_id, .. },
+                            ),
+                        ) => {
+                            tool_call_ids.contains(tool_call_id) && regex.is_match(&candidate.text)
+                        }
+                        _ => false,
+                    })
             })
             .or_else(|| revealed.iter().find(|candidate| candidate.id == entry.id))
             .unwrap_or(entry);
@@ -138,9 +169,9 @@ impl AppState {
         let line = if native {
             selected
                 .logical_line_rows
-                .get(line)
+                .get(hit.line)
                 .copied()
-                .unwrap_or(line)
+                .unwrap_or(hit.line)
         } else {
             selected
                 .text
@@ -148,9 +179,89 @@ impl AppState {
                 .position(|text| regex.is_match(text))
                 .unwrap_or(0)
         };
-        if let Some(top) = ui::transcript_entry_scroll_top(self, area, selected.top + line) {
-            self.set_transcript_scroll_from_top_with_max(top, selected.max_scroll);
+        let top = if native {
+            ui::transcript_search_scroll_top(self, area, selected.top).map(|top| top + line)
+        } else {
+            ui::transcript_entry_scroll_top(self, area, selected.top + line)
+        };
+        if let Some(top) = top {
+            if native {
+                self.cancel_transcript_page_flip();
+                let viewport = self
+                    .transcript_view
+                    .viewport
+                    .preserve_detachment(selected.max_scroll)
+                    .with_detached_top(top);
+                self.transcript_view.set_measured_viewport(viewport);
+            } else {
+                self.set_transcript_scroll_from_top_with_max(top, selected.max_scroll);
+            }
         }
+    }
+
+    fn collect_transcript_search_hits(
+        &self,
+        area: Rect,
+        regex: &regex::Regex,
+    ) -> Vec<TranscriptSearchHit> {
+        let native = self.current_subagent_session_present();
+        let mut hits = Vec::new();
+        let mut tools = BTreeSet::new();
+        for entry in ui::transcript_navigation_entries(self, area) {
+            if native && self.collect_tool_search_hits(&entry, regex, &mut tools, &mut hits) {
+                continue;
+            }
+            let content = self.selected_entry_content(&entry);
+            let text = if native {
+                self.child_search_text(&entry, content.content())
+            } else if regex.is_match(&entry.text) {
+                std::borrow::Cow::Borrowed(entry.text.as_ref())
+            } else {
+                std::borrow::Cow::Borrowed(content.content())
+            };
+            append_search_hits(
+                &mut hits,
+                &entry,
+                entry.target.clone(),
+                &text,
+                regex,
+                if native { usize::MAX } else { 1 },
+            );
+        }
+        hits
+    }
+
+    fn collect_tool_search_hits(
+        &self,
+        entry: &ui::TranscriptNavigationEntry,
+        regex: &regex::Regex,
+        seen: &mut BTreeSet<String>,
+        hits: &mut Vec<TranscriptSearchHit>,
+    ) -> bool {
+        let ids = match &entry.target {
+            Some(TranscriptMouseTarget::ToolGroup { tool_call_ids }) => tool_call_ids.as_slice(),
+            Some(
+                TranscriptMouseTarget::Tool { tool_call_id }
+                | TranscriptMouseTarget::PatchFile { tool_call_id, .. },
+            ) => std::slice::from_ref(tool_call_id),
+            _ => return false,
+        };
+        for id in ids {
+            let Some(tool) = self.tool_call_entry(id).filter(|_| seen.insert(id.clone())) else {
+                continue;
+            };
+            append_search_hits(
+                hits,
+                entry,
+                Some(TranscriptMouseTarget::Tool {
+                    tool_call_id: id.clone(),
+                }),
+                &ui::recorded_tool_search_text(tool),
+                regex,
+                usize::MAX,
+            );
+        }
+        true
     }
 
     fn child_search_text<'a>(
@@ -197,5 +308,49 @@ impl AppState {
             }
             _ => {}
         }
+    }
+}
+
+impl TranscriptSearchHit {
+    fn matches(&self, entry: &ui::TranscriptNavigationEntry) -> bool {
+        let Some(TranscriptMouseTarget::Tool { tool_call_id: id }) = &self.target else {
+            return entry.id == self.id;
+        };
+        match &entry.target {
+            Some(
+                TranscriptMouseTarget::Tool { tool_call_id }
+                | TranscriptMouseTarget::PatchFile { tool_call_id, .. },
+            ) => tool_call_id == id,
+            Some(TranscriptMouseTarget::ToolGroup { tool_call_ids }) => tool_call_ids.contains(id),
+            _ => false,
+        }
+    }
+}
+
+fn append_search_hits(
+    hits: &mut Vec<TranscriptSearchHit>,
+    entry: &ui::TranscriptNavigationEntry,
+    target: Option<TranscriptMouseTarget>,
+    text: &str,
+    regex: &regex::Regex,
+    limit: usize,
+) {
+    let mut line = 0;
+    let mut counted = 0;
+    for found in regex
+        .find_iter(text)
+        .filter(|found| !found.is_empty())
+        .take(limit)
+    {
+        line += text[counted..found.start()]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count();
+        counted = found.start();
+        hits.push(TranscriptSearchHit {
+            id: entry.id,
+            target: target.clone(),
+            line,
+        });
     }
 }

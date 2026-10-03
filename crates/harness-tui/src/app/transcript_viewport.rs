@@ -45,6 +45,19 @@ impl TranscriptViewport {
         }
     }
 
+    pub(crate) fn preserve_detachment(self, max_scroll: usize) -> Self {
+        let measured = Self::following(max_scroll);
+        self.top
+            .map_or(measured, |top| measured.with_detached_top(top))
+    }
+
+    pub(crate) fn with_detached_top(self, top: usize) -> Self {
+        Self {
+            top: Some(top.min(self.max_scroll)),
+            ..self
+        }
+    }
+
     pub(crate) fn scroll_up(self, amount: usize) -> Self {
         if amount == 0 {
             self
