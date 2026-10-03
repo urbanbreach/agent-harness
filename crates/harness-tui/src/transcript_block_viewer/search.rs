@@ -59,6 +59,20 @@ impl SearchState {
         self.navigation()
     }
 
+    pub(super) fn set_wrapped_query(
+        &mut self,
+        text: &str,
+        joiners: &[String],
+        query: &str,
+    ) -> SearchNavigation {
+        self.query = query.to_owned();
+        self.matches =
+            matcher(query).map_or_else(Vec::new, |regex| wrapped_matches(text, joiners, &regex));
+        self.current = (!self.matches.is_empty()).then_some(0);
+        self.wrapped = false;
+        self.navigation()
+    }
+
     pub fn navigate(&mut self, direction: SearchDirection) -> SearchNavigation {
         self.wrapped = false;
         let Some(current) = self.current else {
@@ -128,28 +142,87 @@ impl SearchState {
     }
 }
 
-fn find_matches(text: &str, query: &str) -> Vec<SearchMatch> {
+fn matcher(query: &str) -> Option<regex::Regex> {
     if query.is_empty() {
-        return Vec::new();
+        return None;
     }
-    let boundaries = grapheme_boundaries(text);
-    let Ok(matcher) = regex::RegexBuilder::new(query)
+    regex::RegexBuilder::new(query)
         .case_insensitive(!query.chars().any(char::is_uppercase))
         .build()
-    else {
-        return Vec::new();
-    };
+        .ok()
+}
+
+fn find_matches(text: &str, query: &str) -> Vec<SearchMatch> {
+    matcher(query).map_or_else(Vec::new, |regex| regex_matches(text, &regex))
+}
+
+fn regex_matches(text: &str, matcher: &regex::Regex) -> Vec<SearchMatch> {
+    let boundaries = grapheme_boundaries(text);
     matcher
         .find_iter(text)
         .filter_map(|found| {
             let start = found.start();
             let end = found.end();
-            (boundaries.binary_search(&start).is_ok() && boundaries.binary_search(&end).is_ok())
-                .then_some(SearchMatch {
-                    byte_range: start..end,
-                })
+            (start < end
+                && boundaries.binary_search(&start).is_ok()
+                && boundaries.binary_search(&end).is_ok())
+            .then_some(SearchMatch {
+                byte_range: start..end,
+            })
         })
         .collect()
+}
+
+/// Match each original line, then translate source bytes back to painted rows.
+/// Soft-wrap joiners can contain omitted spaces or be empty for a split long word.
+fn wrapped_matches(text: &str, joiners: &[String], matcher: &regex::Regex) -> Vec<SearchMatch> {
+    let mut matches = Vec::new();
+    let mut source = String::new();
+    let mut rows = Vec::new();
+    let mut display_offset = 0;
+    for (index, line) in text.split('\n').enumerate() {
+        rows.push((source.len(), display_offset, line.len()));
+        source.push_str(line);
+        display_offset += line.len() + 1;
+        let joiner = joiners.get(index).map_or("\n", String::as_str);
+        if joiner == "\n" {
+            append_wrapped_matches(&mut matches, &source, &rows, matcher);
+            source.clear();
+            rows.clear();
+        } else {
+            source.push_str(joiner);
+        }
+    }
+    if !rows.is_empty() {
+        append_wrapped_matches(&mut matches, &source, &rows, matcher);
+    }
+    matches
+}
+
+fn append_wrapped_matches(
+    matches: &mut Vec<SearchMatch>,
+    source: &str,
+    rows: &[(usize, usize, usize)],
+    matcher: &regex::Regex,
+) {
+    let display_byte = |byte| {
+        let index = rows
+            .partition_point(|(source, _, _)| *source <= byte)
+            .saturating_sub(1);
+        let (source_start, display_start, length) = rows[index];
+        display_start + (byte - source_start).min(length)
+    };
+    matches.extend(
+        regex_matches(source, matcher)
+            .into_iter()
+            .filter_map(|found| {
+                let start = display_byte(found.byte_range.start);
+                let end = display_byte(found.byte_range.end - 1) + 1;
+                (start < end).then_some(SearchMatch {
+                    byte_range: start..end,
+                })
+            }),
+    );
 }
 
 fn grapheme_boundaries(text: &str) -> Vec<usize> {
