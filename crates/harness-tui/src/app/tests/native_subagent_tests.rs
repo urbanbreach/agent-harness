@@ -139,6 +139,8 @@ fn native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row() {
         }),
     ));
     app.composer.prompt_buffer = "parent draft".into();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.composer.selection_anchor = Some(0);
     app.transcript_view.show_transcript_thinking = false;
     assert_native_inspection(&mut app, &intents);
     app.ingest_runtime_event(RuntimeEvent::Live(Box::new(

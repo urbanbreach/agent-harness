@@ -131,13 +131,15 @@ fn assert_raw_roundtrip(app: &mut AppState) {
 
 fn assert_quote_to_parent(app: &mut AppState) {
     app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key_with_modifiers(KeyCode::Enter, KeyModifiers::ALT));
+    assert!(app.transcript_viewer().is_some());
     app.handle_key(key(KeyCode::Enter));
     assert_eq!(app.current_session_id(), Some("parent"));
     assert_eq!(app.focus, Focus::Prompt);
     assert!(!app.tasks_pane.focused);
     assert_eq!(
         app.composer.prompt_buffer,
-        "> Second paragraph for filter selection.\n\nparent draft"
+        "> Second paragraph for filter selection.\n\n"
     );
     app.handle_key(key_with_modifiers(
         KeyCode::Char('z'),
