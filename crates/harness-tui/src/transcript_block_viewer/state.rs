@@ -14,6 +14,7 @@ use super::{
 };
 
 mod display;
+mod markdown_mode;
 
 const DEFAULT_HEIGHT: usize = 24;
 
@@ -26,6 +27,7 @@ pub struct ViewerState {
     theme: crate::theme::Theme,
     return_snapshot: ViewerReturnSnapshot,
     mode: ViewerMode,
+    markdown_tail_rebased: bool,
     width: usize,
     height: usize,
     pub(super) wrapped: TextLayout,
@@ -64,6 +66,7 @@ impl ViewerState {
             theme: crate::theme::Theme::default(),
             return_snapshot,
             mode: ViewerMode::Wrapped,
+            markdown_tail_rebased: false,
             width: 80,
             height: DEFAULT_HEIGHT,
             wrapped: TextLayout::new(String::new(), 1).map_err(ViewerError::Selection)?,
@@ -119,6 +122,9 @@ impl ViewerState {
     }
 
     pub fn toggle_mode(&mut self) -> Result<(), ViewerError> {
+        if self.child && self.content.markdown {
+            return self.toggle_child_markdown_mode();
+        }
         let mode = match self.mode {
             ViewerMode::Wrapped => ViewerMode::Raw,
             ViewerMode::Raw => ViewerMode::Wrapped,

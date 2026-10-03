@@ -27,6 +27,7 @@ pub(super) fn assert_child_viewer(app: &mut AppState) {
             .following
     );
     app.handle_key(key(KeyCode::Char('F')));
+    assert_raw_roundtrip(app);
     app.handle_key(key(KeyCode::Char('/')));
     app.handle_paste("histoy");
     app.handle_key(key(KeyCode::Left));
@@ -90,6 +91,21 @@ pub(super) fn assert_child_viewer(app: &mut AppState) {
     assert_quote_to_parent(app);
     app.composer.vim_mode = false;
     app.set_frame_area(Rect::new(0, 0, 120, 40));
+}
+
+fn assert_raw_roundtrip(app: &mut AppState) {
+    app.handle_key(key(KeyCode::Char('F')));
+    app.handle_key(key(KeyCode::Char('r')));
+    assert_eq!(
+        app.transcript_viewer().unwrap_or_abort().quote_text(),
+        "Second paragraph for filter selection."
+    );
+    app.handle_key(key(KeyCode::Char('r')));
+    // The reference rebases the unfrozen tail's source map after a raw toggle.
+    // Its next toggle therefore selects the earlier blank line.
+    assert_eq!(app.transcript_viewer().unwrap_or_abort().quote_text(), "");
+    app.handle_key(key(KeyCode::Esc));
+    app.handle_key(key(KeyCode::Enter));
 }
 
 fn assert_quote_to_parent(app: &mut AppState) {
