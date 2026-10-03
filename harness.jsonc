@@ -101,6 +101,19 @@
             },
           },
         },
+        "gpt-6.1-sol": {
+          "name": "GPT 6.1 Sol",
+          "metadata": { "supportsToolCalls": true, "supportsReasoningSummaries": true },
+          "limit": { "context": 1050000, "input": 288384, "output": 128000 },
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
+            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } },
+            "max": { "name": "Max", "metadata": { "reasoningEffort": "max" } },
+          },
+        },
         "gpt-6-sol": {
           "name": "GPT 6 Sol",
           "metadata": { "supportsToolCalls": true, "supportsReasoningSummaries": true },

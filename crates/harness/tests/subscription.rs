@@ -10,10 +10,11 @@ use std::{
 #[test]
 fn subscription_prompts_use_their_wire_contract_and_redact_credentials(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    for (profile, model, mode) in [
-        ("openai-codex", "gpt-6-astra", "auto"),
-        ("github-copilot", "gpt-6-astra", "chat_completions"),
-        ("copilot-claude", "claude-sonnet-4.6", "auto"),
+    for (profile, model, mode, reasoning_effort) in [
+        ("openai-codex", "gpt-6-astra", "auto", "low"),
+        ("openai-codex", "gpt-6.1-sol", "auto", "medium"),
+        ("github-copilot", "gpt-6-astra", "chat_completions", ""),
+        ("copilot-claude", "claude-sonnet-4.6", "auto", ""),
     ] {
         let root = tempfile::tempdir()?;
         let listener = TcpListener::bind("127.0.0.1:0")?;
@@ -70,6 +71,9 @@ fn subscription_prompts_use_their_wire_contract_and_redact_credentials(
             String::from_utf8_lossy(&stderr)
         );
         assert_eq!(String::from_utf8(stdout)?.trim(), "Done. [REDACTED]");
+        if profile == "openai-codex" {
+            assert_eq!(body["reasoning"]["effort"], reasoning_effort);
+        }
         check_wire(profile, &headers, &body);
         let session = std::fs::read_dir(root.path().join(".agent-harness/sessions"))?
             .next()
@@ -112,7 +116,6 @@ fn check_codex(headers: &str, body: &Value) {
     assert!(headers.contains("session-id:"));
     assert_eq!(body["instructions"], "Follow the fixture.");
     assert_eq!(body["store"], false);
-    assert_eq!(body["reasoning"]["effort"], "low");
     assert_eq!(body["reasoning"]["summary"], "auto");
     assert_eq!(body["text"]["verbosity"], "low");
     assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));

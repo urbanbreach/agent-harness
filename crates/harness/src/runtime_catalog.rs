@@ -267,8 +267,8 @@ mod tests {
             .keys()
             .all(|model| harness_providers::codex_model_allowed(model)));
         let selected =
-            resolve_model_selection(&result.config, "openai-codex:gpt-6-astra", Some("high"))?;
-        assert_eq!(selected.primary.reasoning_effort.as_deref(), Some("high"));
+            resolve_model_selection(&result.config, "openai-codex:gpt-6.1-sol", Some("max"))?;
+        assert_eq!(selected.primary.reasoning_effort.as_deref(), Some("max"));
         assert_eq!(selected.primary.reasoning_summary.as_deref(), Some("auto"));
         assert!(selected.primary.resolution.capabilities.supports_vision);
         assert!(selected
