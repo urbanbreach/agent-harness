@@ -36,6 +36,21 @@ pub(super) fn paint_status(
             body.width + if surface.child { 0 } else { 2 },
             1,
         );
+        if surface.child {
+            let row = Rect::new(
+                layout.popup.x + 1,
+                y + 1,
+                layout.popup.width.saturating_sub(2),
+                1,
+            );
+            Clear.render(row, buffer);
+            buffer.set_style(
+                row,
+                Style::default()
+                    .fg(viewer_secondary(theme))
+                    .bg(theme.surface.shell),
+            );
+        }
         Clear.render(status_area, buffer);
         let secondary = viewer_secondary(theme);
         let status = if surface.editing {
@@ -75,7 +90,11 @@ pub(super) fn paint_status(
             })
             .style(
                 Style::default()
-                    .fg(theme.text.primary)
+                    .fg(if surface.visual_mode && !surface.search_active {
+                        secondary
+                    } else {
+                        theme.text.primary
+                    })
                     .bg(theme.surface.shell),
             )
             .render(status_area, buffer);

@@ -42,6 +42,7 @@ pub struct ViewerState {
     pub(super) following: bool,
     pub(super) running: bool,
     pub(super) at_end: bool,
+    pub(super) scroll_screen_y: Option<usize>,
     layout: TranscriptLayout,
     scroll_top: f64,
     transition: Option<ScrollTransition>,
@@ -79,6 +80,7 @@ impl ViewerState {
             following: false,
             running: false,
             at_end: false,
+            scroll_screen_y: None,
             layout: viewer_layout(block_id, 1, DEFAULT_HEIGHT)?,
             scroll_top: 0.0,
             transition: None,
@@ -227,8 +229,29 @@ impl ViewerState {
         start..end
     }
     pub(crate) fn quote_text(&self) -> String {
-        self.copy_selection_text()
-            .unwrap_or_else(|_| self.wrapped.row_text(self.cursor.row).to_owned())
+        if let Ok(text) = self.copy_selection_text() {
+            return text;
+        }
+        if !self.child {
+            return self.wrapped.row_text(self.cursor.row).to_owned();
+        }
+        let row = if self.following {
+            (self.body_start..self.wrapped.row_count())
+                .rev()
+                .find(|row| !self.wrapped.row_text(*row).is_empty())
+                .unwrap_or(self.cursor.row)
+        } else {
+            self.cursor.row
+        };
+        let rows = self.logical_rows(row);
+        let mut text = String::new();
+        for row in rows.clone() {
+            if row > rows.start {
+                text.push_str(&self.row_joiners[row - 1]);
+            }
+            text.push_str(self.wrapped.row_text(row));
+        }
+        text
     }
     pub(crate) fn command_text(&self) -> Option<String> {
         match &self.content.preamble {

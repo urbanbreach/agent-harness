@@ -49,6 +49,8 @@ impl AppState {
             self.navigate_to_parent_session();
         }
         self.focus = Focus::Prompt;
+        self.tasks_pane.focused = false;
+        self.todo_pane.focused = false;
         let prefix = self
             .composer
             .prompt_buffer
@@ -65,11 +67,13 @@ impl AppState {
 
     pub(crate) fn resize_transcript_viewer(&mut self, area: Rect) {
         let theme = *self.theme();
+        let child = self.current_subagent_session_present();
         let layout =
             crate::transcript_block_viewer::viewer_layout(self.transcript_viewer_area(area));
         if let Some(viewer) = self.transcript_viewer.as_mut() {
             let _ = viewer.set_theme(theme);
-            let body = layout.content_body(viewer.input_active() || viewer.visual_mode());
+            let body =
+                layout.content_body(!child && (viewer.input_active() || viewer.visual_mode()));
             let _ = viewer.resize(
                 usize::from(body.width.max(1)),
                 usize::from(body.height.max(1)),
@@ -130,7 +134,13 @@ impl AppState {
                 let quote = viewer
                     .quote_text()
                     .lines()
-                    .map(|line| format!("> {line}"))
+                    .map(|line| {
+                        if line.is_empty() {
+                            ">".to_owned()
+                        } else {
+                            format!("> {line}")
+                        }
+                    })
                     .collect::<Vec<_>>()
                     .join("\n");
                 self.close_transcript_viewer();

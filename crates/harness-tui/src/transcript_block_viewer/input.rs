@@ -4,6 +4,9 @@ use crate::transcript_selection::{CellPoint, NavigationKey};
 
 impl ViewerState {
     pub(crate) fn scroll_keeping_cursor(&mut self, delta: f64) -> Result<(), ViewerError> {
+        if self.child {
+            return self.scroll_child_cursor(delta);
+        }
         let previous = self.scroll_top();
         self.scroll_by(delta)?;
         self.cursor.row = self
@@ -15,7 +18,44 @@ impl ViewerState {
         Ok(())
     }
 
+    fn scroll_child_cursor(&mut self, delta: f64) -> Result<(), ViewerError> {
+        if self.following && delta > 0.0 {
+            return Ok(());
+        }
+        self.exit_follow();
+        if delta < 0.0 {
+            self.at_end = false;
+        }
+        let previous = self.scroll_top();
+        let screen_y = *self
+            .scroll_screen_y
+            .get_or_insert(self.cursor.row.saturating_sub(previous));
+        self.scroll_by(delta)?;
+        let target =
+            f64::from(u32::try_from(previous.saturating_add(screen_y)).unwrap_or(u32::MAX)) + delta;
+        let row = super::render::scroll_offset(target.max(0.0))
+            .min(self.wrapped.row_count().saturating_sub(1));
+        self.cursor = CellPoint::new(self.logical_rows(row).start, 0);
+        if self.running
+            && !self.visual_mode
+            && delta > 0.0
+            && self.scroll_top()
+                >= self
+                    .wrapped
+                    .row_count()
+                    .saturating_sub(self.viewport_height())
+        {
+            if self.at_end {
+                self.toggle_follow();
+            } else {
+                self.at_end = true;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn select_edge(&mut self, last: bool) {
+        self.scroll_screen_y = None;
         self.cursor = CellPoint::new(
             if last {
                 self.wrapped.row_count().saturating_sub(1)
@@ -94,7 +134,11 @@ impl ViewerState {
         if self.following {
             self.following = false;
             self.at_end = false;
-            self.cursor = CellPoint::new(self.wrapped.row_count().saturating_sub(1), 0);
+            self.cursor = CellPoint::new(
+                self.logical_rows(self.wrapped.row_count().saturating_sub(1))
+                    .start,
+                0,
+            );
         }
     }
 
@@ -111,6 +155,7 @@ impl ViewerState {
     }
 
     pub(crate) fn navigate_line(&mut self, forward: bool) {
+        self.scroll_screen_y = None;
         if self.following && forward {
             return;
         }

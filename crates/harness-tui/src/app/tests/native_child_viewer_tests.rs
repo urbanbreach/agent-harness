@@ -16,6 +16,17 @@ pub(super) fn assert_child_viewer(app: &mut AppState) {
             .render_surface(area)
             .following
     );
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('k'),
+        KeyModifiers::CONTROL,
+    ));
+    assert!(
+        !app.transcript_viewer()
+            .unwrap_or_abort()
+            .render_surface(area)
+            .following
+    );
+    app.handle_key(key(KeyCode::Char('F')));
     app.handle_key(key(KeyCode::Char('/')));
     app.handle_paste("histoy");
     app.handle_key(key(KeyCode::Left));
@@ -76,8 +87,29 @@ pub(super) fn assert_child_viewer(app: &mut AppState) {
     ));
     assert!(app.transcript_viewer().is_none());
     assert_eq!(app.current_session_id(), Some("child"));
+    assert_quote_to_parent(app);
     app.composer.vim_mode = false;
     app.set_frame_area(Rect::new(0, 0, 120, 40));
+}
+
+fn assert_quote_to_parent(app: &mut AppState) {
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(app.current_session_id(), Some("parent"));
+    assert_eq!(app.focus, Focus::Prompt);
+    assert!(!app.tasks_pane.focused);
+    assert_eq!(
+        app.composer.prompt_buffer,
+        "> Second paragraph for filter selection.\n\nparent draft"
+    );
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('z'),
+        KeyModifiers::CONTROL,
+    ));
+    assert_eq!(app.composer.prompt_buffer, "parent draft");
+    app.execute_action(Action::ToggleTasks);
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(app.current_session_id(), Some("child"));
 }
 
 fn assert_filter_selection(app: &mut AppState) {

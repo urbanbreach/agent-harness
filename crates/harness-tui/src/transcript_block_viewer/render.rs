@@ -18,7 +18,8 @@ pub fn render_surface(state: &ViewerState, _area: Rect) -> ViewerRenderSurface {
 }
 
 pub(crate) fn render_viewer(buffer: &mut Buffer, area: Rect, state: &ViewerState, theme: &Theme) {
-    let body = super::viewer_layout(area).content_body(state.input_active() || state.visual_mode);
+    let body = super::viewer_layout(area)
+        .content_body(!state.child && (state.input_active() || state.visual_mode));
     let first = state.scroll_top();
     let count = state.wrapped.row_count();
     let rows = first..first.saturating_add(usize::from(body.height)).min(count);
@@ -156,7 +157,7 @@ fn styled_row(state: &ViewerState, row: usize) -> Option<ratatui::text::Line<'st
     let mut line = state.styled_lines.get(row)?.clone();
     if state.child && state.content().markdown {
         for span in &mut line.spans {
-            if span.style.fg == Some(state.theme().text.primary) {
+            if span.style.fg.is_none() || span.style.fg == Some(state.theme().text.primary) {
                 span.style.fg = Some(viewer_secondary(state.theme()));
             }
         }
@@ -226,7 +227,8 @@ fn paint(
             Style::default().fg(theme.terminal_colors.muted)
         })
         .render(layout.close, buffer);
-    let body = layout.content_body(surface.search_active || surface.visual_mode);
+    let body =
+        layout.content_body(!surface.child && (surface.search_active || surface.visual_mode));
     for (offset, line) in surface
         .lines
         .iter()
