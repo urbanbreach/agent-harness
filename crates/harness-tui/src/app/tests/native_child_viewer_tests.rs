@@ -24,6 +24,32 @@ pub(super) fn assert_child_viewer(app: &mut AppState) {
     assert_eq!(viewer.search().query(), "history");
     assert_eq!(viewer.input.editor.cursor().insertion_index(), 6);
     assert_eq!(viewer.search().matches().len(), 1);
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('a'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('k'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_paste("child lifecycles, permissions, navigation, and durable history");
+    assert_eq!(
+        app.transcript_viewer()
+            .unwrap_or_abort()
+            .search()
+            .matches()
+            .len(),
+        1
+    );
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('a'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('k'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_paste("history");
     app.handle_key(key(KeyCode::Enter));
     app.handle_paste("ignored");
     assert_eq!(

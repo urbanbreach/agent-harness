@@ -163,11 +163,12 @@ impl ViewerState {
             }) {
                 self.search.select(
                     index,
-                    if forward {
-                        *target < row
-                    } else {
-                        *target > row
-                    },
+                    !include_current
+                        && if forward {
+                            *target <= row
+                        } else {
+                            *target >= row
+                        },
                 );
             }
             self.exit_follow();

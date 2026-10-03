@@ -129,9 +129,18 @@ impl ViewerState {
     }
 
     pub fn set_search_query(&mut self, query: &str) -> SearchNavigation {
-        let navigation = self.search.set_query(self.wrapped.text(), query);
+        let navigation = self.update_search(query);
         self.reveal_search_match();
         navigation
+    }
+
+    fn update_search(&mut self, query: &str) -> SearchNavigation {
+        if self.child {
+            self.search
+                .set_wrapped_query(self.wrapped.text(), &self.row_joiners, query)
+        } else {
+            self.search.set_query(self.wrapped.text(), query)
+        }
     }
 
     pub fn search_forward(&mut self) -> SearchNavigation {
@@ -470,7 +479,7 @@ impl ViewerState {
         };
         if !self.search.query().is_empty() {
             let query = self.search.query().to_owned();
-            let _ = self.search.set_query(self.wrapped.text(), &query);
+            let _ = self.update_search(&query);
         }
         Ok(())
     }
