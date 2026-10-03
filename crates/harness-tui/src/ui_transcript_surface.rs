@@ -166,6 +166,7 @@ fn child_line_style<'a>(
         }
         return std::borrow::Cow::Owned(line);
     }
+    trim_child_line_end(&mut line);
     for span in &mut line.spans {
         if span.content.trim() == "•" && span.style.fg == Some(theme.markdown.list_item) {
             span.style = span.style.remove_modifier(Modifier::BOLD);
@@ -189,6 +190,21 @@ fn child_line_style<'a>(
         }
     }
     std::borrow::Cow::Owned(line)
+}
+
+fn trim_child_line_end(line: &mut Line<'static>) {
+    while let Some(span) = line.spans.last_mut() {
+        if span.style.bg.is_some() {
+            break;
+        }
+        let trimmed = span.content.trim_end_matches(' ');
+        if trimmed.is_empty() {
+            line.spans.pop();
+        } else {
+            span.content = trimmed.to_owned().into();
+            break;
+        }
+    }
 }
 
 fn paint_content<'a>(span: &'a Span<'_>, spinner: &'a str) -> &'a str {

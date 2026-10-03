@@ -120,8 +120,11 @@ fn render_child_scrollbar(
         let in_thumb = y >= scrollbar.thumb.y && y < scrollbar.thumb.bottom();
         if let Some(cell) = frame.buffer_mut().cell_mut((scrollbar.track.x, y)) {
             let color = if in_thumb { thumb } else { track };
-            cell.set_symbol(if in_thumb { "█" } else { " " })
-                .set_style(Style::default().fg(color).bg(color));
+            cell.set_symbol(if in_thumb { "█" } else { " " }).set_style(
+                Style::default()
+                    .fg(if in_thumb { thumb } else { Color::Reset })
+                    .bg(color),
+            );
         }
     }
 }
