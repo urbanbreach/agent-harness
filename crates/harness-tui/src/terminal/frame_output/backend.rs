@@ -8,6 +8,7 @@ use ratatui::layout::{Position, Size};
 use super::capture::FrameOutputWriter;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FrameHyperlink {
+    pub(crate) continues_previous: bool,
     pub(crate) row: u16,
     pub(crate) start_column: u16,
     pub(crate) end_column: u16,

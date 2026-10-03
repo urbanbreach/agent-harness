@@ -871,6 +871,7 @@ pub(super) fn transcript_hyperlinks(
                 continue;
             };
             links.push(crate::terminal::FrameHyperlink {
+                continues_previous: link.continues_previous,
                 row: viewport
                     .y
                     .saturating_add(u16::try_from(local_row).unwrap_or(u16::MAX)),

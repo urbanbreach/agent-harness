@@ -83,7 +83,9 @@ impl PreparedTranscript {
                     .flatten()
             },
             |section, theme, width, surface| {
-                build_transcript_render_surfaces(section, theme, width, surface)
+                let mut theme = *theme;
+                theme.markdown_link_destinations = section.child_view;
+                build_transcript_render_surfaces(section, &theme, width, surface)
             },
         );
         layout.child_view = app.current_subagent_session_present();

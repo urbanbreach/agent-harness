@@ -1,149 +1,88 @@
 # Agents and tasks
 
-Harness uses one generic parent agent for interactive turns. It can delegate
-bounded work to `explore`, `general`, or `librarian`. There is no primary-role
-picker, category router, or separate planning agent.
+Harness uses one interactive parent named `default`. Children resolve their
+definitions through the configured CLI, project, user, plugin, and bundled
+sources. The default child type is `general-purpose`. Title generation and
+context compaction are internal operations, not selectable agents.
 
-Title generation and context compaction are internal coordinator operations.
-Their prompts receive no tools and do not appear in the agent catalog.
+See [subagent configuration](../configuration/config.md#generic-agent-and-subagents)
+for definition discovery, model selection, inheritance, and concurrency settings.
 
-## Generic execution configuration
+## Starting work
 
-The top-level `model` selects the parent's model. `agent.default` can override
-its prompt, variant, sampling, tools, permissions, iteration budget, and tool
-failure behavior. Named subagent entries configure their own prompts and tools.
+`spawn_subagent` requires `prompt` and `description`. It accepts an optional
+`subagent_type` and defaults to `background: true`. A background call returns a
+`subagent_id`. With `background: false`, the caller waits for completion; reaching
+the foreground timeout leaves the child running in the background.
 
-Events identify the parent as `default` and children by their selected subagent
-ID. Configuration changes do not rewrite historical profile strings.
+Include the relevant files, constraints, expected output, and required checks in
+the prompt. `isolation: "worktree"` creates an isolated working tree. Alternatively,
+`cwd` selects an existing directory; it cannot be combined with worktree isolation.
 
-## Permission and toolset boundaries
+`resume_from` creates a distinct child from a completed child's finalized
+conversation. Ownership, retained-state availability, and context limits are
+checked before admission. This differs from waking the same child through a
+message. A wake retains that child's identity and prepared definition. Missing
+or incompatible retained state returns an error rather than reconstructing a
+conversation by repeating tools or provider calls.
 
-The coordinator checks each agent's own toolset and permissions. A parent's
-`task` permission controls whether it can start or continue a child. Its other
-role restrictions do not transfer to that child. For example, a parent denied
-native editing can delegate implementation to `general` if shared policy allows
-it.
+## Permissions and skills
 
-For child actions, the coordinator combines shared project policy with the
-child's role policy. Deny wins, then ask, then allow. An existing grant can
-satisfy an ask but cannot override a deny. Calls inside `batch` follow the same
-checks. Primary-agent permission precedence is unchanged.
+The caller needs `spawn_subagent` in its toolset and the shared `task` permission
+for the requested definition. Each child uses its resolved tools and policy
+under the shared project policy. Skills cannot grant tools or override these
+checks. Permission policy is not an operating-system sandbox; see the
+[permission guide](../permissions/permissions.md).
 
-```mermaid
-flowchart TD
-    Parent[Parent requests a task] --> Gate{Parent has task access?}
-    Gate -->|No| Block[Reject the task]
-    Gate -->|Yes| Child[Prepare the selected child]
-    Child --> Action[Child requests a tool]
-    Action --> Tools{Tool in the child's toolset?}
-    Tools -->|No| Reject[Reject the call]
-    Tools -->|Yes| Policy[Combine shared and child policy]
-    Policy -->|Deny| Reject
-    Policy -->|Ask| Approval[Wait for approval]
-    Policy -->|Allow| Execute[Coordinator executes the tool]
-    Approval -->|Approved| Execute
-    Approval -->|Denied| Reject
-```
+Definitions list startup preloads in `skills`. With `inherit_skills: true`, the
+child receives its actual spawner's startup catalog. Otherwise, discovery uses
+the child's effective working directory and default roots; `discover_skills:
+false` suppresses that discovery. Catalog inspection does not load skill bodies.
 
-| Role | Default tools |
+**Accepted parity exception:** Grok explicitly preloads definition-listed skills
+even when ordinary skill calls are disabled or denied. Harness keeps shared
+skill permissions for both startup preloads and ordinary calls. Missing, denied,
+disabled, malformed, or unsafe preloads fail preparation before the child runs.
+
+A same-identity wake keeps the original catalog and preload cache. Finalized
+private state retains the body-free catalog and preload names. A live wake after
+restart reloads preloads through the normal permission gates. Replay never
+rediscovers or loads skill files. Older state without a retained catalog requires
+a fresh child.
+
+## Output, waiting, cancellation, and messages
+
+| Tool | Behavior |
 | --- | --- |
-| `explore` | `read`, `glob`, `grep`, `list`, `ast_grep_search`, `webfetch`, `websearch`, `session_list`, `session_read`, `session_search`, `session_info`, `batch`, `bash`, `lsp`, `skill` |
-| `librarian` | Explore's tools plus `codesearch` |
-| `general` | Librarian's native tools except `skill`, plus `edit`, `write`, `apply_patch` |
-| `default` | Parent tools, including task delegation and skill loading |
+| `get_command_or_subagent_output` | Read `task_ids`, optionally waiting up to `timeout_ms`. Returns status, output, timing, and truncation metadata for owned children or background commands. |
+| `wait_commands_or_subagents` | Wait for `task_ids` with `mode: "wait_any"` or `"wait_all"` and optional `timeout_ms`. A timeout leaves work running. |
+| `kill_command_or_subagent` | Cancel the selected `task_id` through the coordinator and its cleanup path. |
+| `send_subagent_message` | Send `text` to an authorized `subagent_id` using `delivery: "steer"`, `"queue"`, or `"interject"`; omission selects steering. Admission and quota failures return structured outcomes. |
 
-Research roles deny native editing, questions, delegation, and todo mutation.
-They can use bash, LSP queries, and skills. Their prompts require research, but
-bash and MCP can still mutate files. An edit deny therefore does not confine the
-filesystem. `lsp.rename` remains unavailable to research roles.
+Read, wait, and kill tools remain available for background commands when spawning
+is disabled. Hidden aliases support old tool names, but new callers use the
+public names above. The former `task(load_skills = [...])` interface and
+`background_output` history options are superseded.
 
-MCP discovery adds concrete configured tools to `default`, `explore`, and
-`librarian`, even with customized native tool lists. General requires exact MCP
-IDs in its tool list. Stdio MCP uses the `bash` capability; HTTP MCP uses network
-policy. Both shared and role policy apply. Discovery does not add generic MCP
-gateway tools.
+The coordinator owns scheduling, permission checks, message admission, child
+ownership, cancellation, lifecycle transitions, and event appends. UI actions
+submit intents to that owner. Waiting does not hold an execution slot needed by
+the work being awaited. Completion notifications and messages are committed
+before they are delivered.
 
-Skills provide instructions and cannot grant tools. The `skill` tool uses read
-permission and the per-skill load policy. General receives skills through the
-parent's `load_skills` argument. Task results report the child's prepared toolset;
-individual arguments can still trigger an ask or deny.
+## History and inspection
 
-Resume prepares children from current configuration, using the same checks as a
-new spawn. It does not restore old policy snapshots. See the
-[permission guide](../permissions/permissions.md) for the limits of these checks.
+Children have their own session journals and private artifacts. Finalized
+conversation state preserves the completed context needed for resume, including
+settled assistant content. Live provider fragments and raw wire payloads remain
+transient. Support exports omit provider reasoning and redact sensitive values.
 
-## Structured delegation body
+Replay and inspection read committed history without running tools, hooks, skill
+discovery, or provider requests. Missing child history is reported as unavailable.
+Opening and closing a child view preserves the parent's conversation and draft.
 
-New `task` calls require `subagent_type`, `prompt`, `run_in_background`, and
-`load_skills`. Continuations identify the child with `task_id` or `session_id`.
-For work that needs context, include these details in the prompt:
-
-| Detail | What to tell the child |
-| --- | --- |
-| Context | Relevant files, modules, constraints, and prior work |
-| Goal | The decision or artifact to produce |
-| Downstream use | How the parent will use the result |
-| Request | The work and expected output format |
-| Required tools | Tools to use or avoid |
-| Required checks | Tests or other evidence the task needs |
-| Scope limits | Files, actions, and capabilities outside the task |
-
-Duplicate `load_skills` names load once, at their first occurrence. Missing,
-denied, disabled, malformed, or unsafe symlinked skills fail the call before the
-child starts. The skill catalog reports `body_loaded: false` until activation.
-
-Synchronous `task` calls and `background_output` return the full redacted child
-report. The separate `child_summary` preview and completion notifications are
-capped. Both modes use the same request-scoped lifecycle; continuing a child
-session creates a new request. Blocking output checks accept waits up to five
-minutes (larger values are clamped), and wait expiry leaves children running.
-
-## Enforcement boundary
-
-The coordinator owns event appends, scheduling, child ownership, cancellation,
-permissions, and tool execution. Prompt text and TUI labels cannot grant access
-or bypass those checks.
-
-## Background history
-
-`background_output` accepts `full_session`, `message_limit` (0–200),
-`since_message_id`, `from_end`, and `include_tool_results` for one owned child.
-`since_message_id` must identify that child's message; the result starts after it.
-`from_end` returns the newest events and messages first. Each result includes
-counts and truncation flags. Event summaries share the session-inspection redactor
-and omit tool arguments and reasoning.
-
-History queries inspect at most a 64 MiB parent journal. A returned page holds at
-most 1,000 event summaries and 2 MiB of serialized events; message and tool-result
-subsets keep the combined history below 4 MiB. Large tool results use the normal
-private artifact path. `include_thinking` returns an explicit unavailable result:
-reasoning is not retained. `thinking_max_chars` is accepted for compatibility.
-
-Blocking reads report `timed_out` and accept either `timeout_ms` or `timeout`.
-Multiple selectors require `wait_mode: "any"` or `"all"`; history options require
-a single child. A wait timeout leaves the child running. Inspection after resume
-reads committed history and does not call the provider again.
-
-Background work initiated by an agent reserves one slot in the parent's prompt
-queue until its completion notification is queued. New prompts and manual
-compactions respect those reservations. A background launch or demotion is
-rejected when no slot remains. This keeps the queue bounded without dropping
-notifications from accepted children.
-
-Outstanding tool requests, including permission waits and orchestration tools,
-are capped at `command_buffer + tool_concurrency`. Further calls return a queue
-error before being scheduled. Cancellation releases that capacity after cleanup;
-the execution semaphore separately bounds active I/O.
-
-The child concurrency limit counts active work. Completed children do not consume
-execution capacity; their small ownership records remain available for inspection
-and continuation. Completed conversation buffers are released, and immutable
-profiles are shared between children. Continuing a child reloads its history.
-
-Each child also has an `events.jsonl` and private artifacts in its own session
-directory. The coordinator publishes committed child events there for TUI history,
-inspection, and standalone continuation. It keeps the child's writer locked until
-the parent run closes. Parent and sibling conversation text is excluded.
-Compaction positions are translated to the child's event sequence. Resume fills
-missing records from the parent journal without repeating tools, hooks, or provider
-calls; an incomplete final write is preserved separately before repair.
+The Tasks pane combines child work and background commands. Open a child with
+Enter. Within the read-only child view, `q` or Esc returns to the parent, Ctrl+C
+requests child cancellation, and Ctrl+E toggles reasoning visibility. Vim mode
+adds transcript navigation and link selection; Enter opens the selected link or
+entry. Search and other overlays own their input until dismissed.

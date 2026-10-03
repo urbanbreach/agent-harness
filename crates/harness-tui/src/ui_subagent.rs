@@ -69,13 +69,42 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, plan: &FrameLayoutPlan, 
         Style::default().fg(ratatui::style::Color::Reset),
     );
     render_title(frame, app, area, &header, theme);
+    let cwd = crate::text::collapse_inline_whitespace(&header.cwd);
+    let cwd_width = u16::try_from(cwd.width())
+        .unwrap_or(u16::MAX)
+        .min(plan.header.width);
     frame.render_widget(
-        Paragraph::new(crate::text::collapse_inline_whitespace(&header.cwd))
-            .style(Style::default().fg(theme.markdown.text)),
-        plan.header,
+        Paragraph::new(cwd).style(Style::default().fg(theme.markdown.text)),
+        Rect {
+            width: cwd_width,
+            ..plan.header
+        },
     );
+    render_link_preview(frame, app, plan.header, theme);
     if let Some(transcript) = plan.transcript {
         super::render_transcript_pane(frame, app, transcript, theme);
+    }
+    if let Some(index) = app.transcript_view.highlighted_link {
+        for (_, link) in app
+            .transcript_view
+            .hyperlinks
+            .iter()
+            .skip(index)
+            .enumerate()
+            .take_while(|(offset, link)| *offset == 0 || link.continues_previous)
+        {
+            frame.buffer_mut().set_style(
+                Rect::new(
+                    link.start_column,
+                    link.row,
+                    link.end_column.saturating_sub(link.start_column),
+                    1,
+                ),
+                Style::default()
+                    .fg(theme.markdown.link)
+                    .add_modifier(Modifier::UNDERLINED | Modifier::BOLD),
+            );
+        }
     }
     if let Some(status) = plan.status.filter(|_| {
         matches!(
@@ -85,9 +114,11 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, plan: &FrameLayoutPlan, 
     }) {
         render_status(frame, app, status, &header, theme);
     }
-    let shortcuts = [
-        ("q/Esc", "back"),
-        ("Enter", "expand"),
+    let mut shortcuts = vec![("q/Esc", "back"), ("Enter", "expand")];
+    if app.composer.vim_mode {
+        shortcuts.extend([("j/k", "nav"), ("Shift+l/h", "turn")]);
+    }
+    shortcuts.extend([
         (
             "Ctrl+e",
             if app.transcript_view.show_transcript_thinking {
@@ -97,15 +128,16 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, plan: &FrameLayoutPlan, 
             },
         ),
         ("Ctrl+c", "cancel"),
-        (
-            if app.shortcuts_ctrl_dot {
-                "Ctrl+."
-            } else {
-                "Ctrl+x"
-            },
-            "shortcuts",
-        ),
-    ];
+    ]);
+    shortcuts.truncate(5);
+    shortcuts.push((
+        if app.shortcuts_ctrl_dot {
+            "Ctrl+."
+        } else {
+            "Ctrl+x"
+        },
+        "shortcuts",
+    ));
     let mut spans = Vec::new();
     for (index, (key, label)) in shortcuts.into_iter().enumerate() {
         if index > 0 {
@@ -139,6 +171,30 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, plan: &FrameLayoutPlan, 
         ));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), plan.footer);
+}
+
+fn render_link_preview(frame: &mut Frame, app: &AppState, header: Rect, theme: &Theme) {
+    let Some(link) = app
+        .transcript_view
+        .highlighted_link
+        .and_then(|index| app.transcript_view.hyperlinks.get(index))
+    else {
+        return;
+    };
+    let available = header.width.saturating_sub(24);
+    if available < 12 {
+        return;
+    }
+    let text = super::ui_chrome::truncate_plain_text(&link.destination, usize::from(available));
+    let width = u16::try_from(text.width()).unwrap_or(available);
+    frame.render_widget(
+        Paragraph::new(text).style(
+            Style::default()
+                .fg(theme.markdown.link)
+                .bg(theme.surface.canvas),
+        ),
+        Rect::new(header.right().saturating_sub(width), header.y, width, 1),
+    );
 }
 
 fn render_status(

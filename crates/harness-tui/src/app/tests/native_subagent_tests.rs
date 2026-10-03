@@ -120,6 +120,21 @@ fn native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row() {
     assert!(root.contains("▾ Subagents 1"), "{root}");
     assert!(root.contains("Running 1 subagent"), "{root}");
     assert!(!root.contains("Child-only prompt"));
+    app.ingest_event(envelope_with_actor(
+        8,
+        "req_child",
+        EventActor::new(ActorKind::Worker, Some("child".into())),
+        EventV1::AssistantMessageFinished(harness_core::event::AssistantMessageFinishedEvent {
+            request_id: "req_child".into(),
+            tool_call_count: 0,
+            parts: vec![harness_core::session::AssistantPart::Text {
+                text: "Read [guide covering child lifecycles, permissions, navigation, and durable history](https://example.org/guide) and [API](https://example.org/api)."
+                    .into(),
+            }],
+            provenance: None,
+            assistant_message: None,
+        }),
+    ));
     app.composer.prompt_buffer = "parent draft".into();
     app.transcript_view.show_transcript_thinking = false;
     assert_native_inspection(&mut app, &intents);
@@ -176,10 +191,58 @@ fn assert_task_query_editing(app: &mut AppState) {
         "child-model",
         "reopen retains the query"
     );
+    assert_task_query_shortcuts(app);
     app.handle_key(key(KeyCode::Esc));
     assert!(app.tasks_pane.focused);
     assert!(!app.tasks_pane.query.active);
     app.handle_key(key(KeyCode::Home));
+}
+
+fn assert_task_query_shortcuts(app: &mut AppState) {
+    app.handle_key(key(KeyCode::End));
+    for (code, expected) in [('b', "child-model"), ('k', "child-mode"), ('u', "")] {
+        app.handle_key(key_with_modifiers(
+            KeyCode::Char(code),
+            KeyModifiers::CONTROL,
+        ));
+        assert_eq!(app.tasks_pane.query.editor.text(), expected);
+    }
+    app.handle_paste("review\u{2003}src/lib.rs");
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('w'),
+        KeyModifiers::CONTROL,
+    ));
+    assert_eq!(app.tasks_pane.query.editor.text(), "review\u{2003}");
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('a'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('f'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(KeyCode::Delete));
+    assert_eq!(app.tasks_pane.query.editor.text(), "rview\u{2003}");
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_paste("foo_bar.rs");
+    app.handle_key(key(KeyCode::Home));
+    for expected in [7, 8] {
+        app.handle_key(key_with_modifiers(KeyCode::Char('f'), KeyModifiers::ALT));
+        assert_eq!(
+            app.tasks_pane.query.editor.cursor().insertion_index(),
+            expected
+        );
+    }
+    app.handle_key(key_with_modifiers(KeyCode::Delete, KeyModifiers::CONTROL));
+    assert_eq!(app.tasks_pane.query.editor.text(), "foo_bar.");
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('w'),
+        KeyModifiers::CONTROL,
+    ));
+    assert!(app.tasks_pane.query.editor.text().is_empty());
 }
 
 fn assert_native_inspection(app: &mut AppState, intents: &Arc<Mutex<Vec<UiIntent>>>) {
@@ -192,6 +255,8 @@ fn assert_native_inspection(app: &mut AppState, intents: &Arc<Mutex<Vec<UiIntent
     assert!(child.contains("Reviewer"), "{child}");
     assert!(child.contains("forked"));
     assert!(child.contains("Child-only prompt"));
+    app.set_frame_area(Rect::new(0, 0, 120, 40));
+    assert_child_link_navigation(app);
     app.handle_key(key_with_modifiers(
         KeyCode::Char('x'),
         KeyModifiers::CONTROL,
@@ -210,6 +275,55 @@ fn assert_native_inspection(app: &mut AppState, intents: &Arc<Mutex<Vec<UiIntent
     assert!(
         matches!(intents.lock().unwrap_or_abort().as_slice(), [UiIntent::CancelSubagent { session_id }] if session_id == "child")
     );
+}
+
+fn assert_child_link_navigation(app: &mut AppState) {
+    app.set_frame_area(Rect::new(0, 0, 40, 40));
+    app.handle_key(key(KeyCode::Char('o')));
+    assert!(app.transcript_view.highlighted_link.is_none());
+    app.composer.vim_mode = true;
+    app.handle_key(key(KeyCode::Char('o')));
+    assert_eq!(app.transcript_view.highlighted_link, Some(0));
+    assert!(app
+        .transcript_view
+        .hyperlinks
+        .iter()
+        .any(|link| link.continues_previous));
+    app.handle_key(key(KeyCode::Char('o')));
+    let selected = app.transcript_view.highlighted_link.unwrap_or_abort();
+    assert_eq!(
+        app.transcript_view.hyperlinks[selected].destination, "https://example.org/guide",
+        "the printed URL is a distinct target after the whole wrapped label"
+    );
+    app.handle_key(key(KeyCode::Char('o')));
+    let selected = app.transcript_view.highlighted_link.unwrap_or_abort();
+    assert_eq!(
+        app.transcript_view.hyperlinks[selected].destination,
+        "https://example.org/api"
+    );
+    app.handle_key(key(KeyCode::Char('O')));
+    app.handle_key(key(KeyCode::Char('O')));
+    app.set_frame_area(Rect::new(0, 0, 40, 40));
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(
+        app.take_link_to_open().as_deref(),
+        Some("https://example.org/guide")
+    );
+    assert!(
+        app.transcript_viewer.is_none(),
+        "Enter opens the highlighted link"
+    );
+    app.handle_key(key(KeyCode::Char('O')));
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(
+        app.take_link_to_open().as_deref(),
+        Some("https://example.org/api")
+    );
+    app.handle_key(key(KeyCode::Char('j')));
+    assert!(app.transcript_view.highlighted_link.is_none());
+    assert_eq!(app.current_session_id(), Some("child"));
+    app.composer.vim_mode = false;
+    app.set_frame_area(Rect::new(0, 0, 120, 40));
 }
 
 #[test]
