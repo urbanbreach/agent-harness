@@ -97,6 +97,42 @@ fn markdown_selection_copy_retains_safe_destination_metadata() {
 
     // Then: visible text and the safe destination survive together.
     assert_eq!(copied, "Read docs\n\nLinks:\nhttps://example.com/docs");
+    let mut theme = Theme::default();
+    theme.markdown_native = true;
+    theme.markdown_link_destinations = true;
+    let mut rows = selection_rows_for_markdownish_text_block(
+        "Read [docs](https://example.com/docs \"Guide\") and https://example.com/plain",
+        Color::White,
+        "",
+        &theme,
+        23,
+    );
+    for (index, row) in rows.iter_mut().enumerate() {
+        row.line_index = index;
+    }
+    let count = rows.len();
+    let selection = TranscriptSelection {
+        anchor: TranscriptSelectionCell { row: 0, column: 0 },
+        focus: TranscriptSelectionCell {
+            row: count - 1,
+            column: 22,
+        },
+    };
+    let snapshot = TranscriptSelectionSnapshot {
+        viewport: Rect::new(0, 0, 23, u16::try_from(count).unwrap()),
+        visible_rows: (0..count).map(Some).collect(),
+        rows,
+        total_rows: count,
+        row_width: 23,
+        resolved_selection: Some(selection),
+    };
+    let copied = snapshot
+        .selection_text(selection)
+        .expect("native wrapped link");
+    assert_eq!(
+        copied,
+        "Read docs (https://example.com/docs \"Guide\") and https://example.com/plain"
+    );
 }
 
 #[test]

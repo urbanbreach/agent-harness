@@ -30,12 +30,13 @@ pub(super) fn append_raw_markdown(
             ]));
             continue;
         }
-        super::ui_transcript_surface::append_prefixed_wrapped_spans_line(
+        super::ui_markdown::append_markdown_spans_line(
             lines,
             prefix,
             Style::default().fg(theme.markdown.text),
             line.spans,
             width,
+            theme,
         );
     }
 }

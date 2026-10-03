@@ -326,6 +326,7 @@ impl ViewerState {
 
     pub(crate) fn set_theme(&mut self, mut theme: crate::theme::Theme) -> Result<(), ViewerError> {
         theme.markdown_native = self.child;
+        theme.markdown_link_destinations = self.child;
         if theme == self.theme {
             return Ok(());
         }

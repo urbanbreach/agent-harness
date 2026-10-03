@@ -167,11 +167,6 @@ fn child_line_style<'a>(
         return std::borrow::Cow::Owned(line);
     }
     trim_child_line_end(&mut line);
-    for span in &mut line.spans {
-        if span.content.trim() == "•" && span.style.fg == Some(theme.markdown.list_item) {
-            span.style = span.style.remove_modifier(Modifier::BOLD);
-        }
-    }
     if timestamp {
         if let Some(clock) = line.spans.last_mut() {
             clock.style = clock.style.fg(theme.text.secondary);

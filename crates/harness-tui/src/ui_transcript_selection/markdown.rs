@@ -237,6 +237,7 @@ fn selection_rows_for_markdownish_line(
             ),
             width,
             display_width(prefix),
+            theme.markdown_native,
         );
     }
 
@@ -266,6 +267,7 @@ fn selection_rows_for_markdownish_line(
             ),
             width,
             display_width(&quote_prefix),
+            theme.markdown_native,
         );
     }
 
@@ -277,6 +279,7 @@ fn selection_rows_for_markdownish_line(
             parse_inline_markdown(text, text_style, color, theme),
             width,
             display_width(prefix),
+            theme.markdown_native,
         );
     }
 
@@ -286,6 +289,7 @@ fn selection_rows_for_markdownish_line(
         parse_inline_markdown(trimmed, base_style, color, theme),
         width,
         display_width(prefix),
+        theme.markdown_native,
     )
 }
 
@@ -295,9 +299,16 @@ fn selection_rows_for_prefixed_wrapped_inline(
     parsed: ParsedInlineMarkdown,
     width: u16,
     copy_offset: usize,
+    native: bool,
 ) -> Vec<SelectionRow> {
     let prefix_width = display_width(prefix);
     let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
+    let source = parsed
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+    let mut consumed = 0;
     let source_links = parsed
         .links
         .into_iter()
@@ -308,10 +319,18 @@ fn selection_rows_for_prefixed_wrapped_inline(
             destination: link.destination,
         })
         .collect::<Vec<_>>();
-    wrap_surface_spans_with_links(parsed.spans, &source_links, content_width)
+    wrap_surface_spans_with_links(parsed.spans, &source_links, content_width, native)
         .into_iter()
         .enumerate()
         .map(|(index, row)| {
+            let text = row
+                .spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>();
+            let start = consumed + source[consumed..].find(&text).unwrap_or_default();
+            let joiner = source[consumed..start].to_owned();
+            consumed = start + text.len();
             let mut spans = vec![Span::styled(prefix.to_string(), prefix_style)];
             spans.extend(row.spans);
             let mut selected = selection_rows_for_rendered_line(&Line::from(spans), width)
@@ -319,6 +338,9 @@ fn selection_rows_for_prefixed_wrapped_inline(
                 .next()
                 .unwrap_or_else(blank_selection_row);
             selected.continues_previous = index > 0;
+            if native {
+                selected.copy_joiner = Some(joiner);
+            }
             selected.exclude_prefix(copy_offset);
             if selected.has_content() {
                 selected.links = row

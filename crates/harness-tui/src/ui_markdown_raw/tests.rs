@@ -55,7 +55,14 @@ fn child_markdown_modes_keep_semantic_styles_and_full_code_rows(
             })
             .ok_or("code row missing")?;
         for row in code_row..code_row + 3 {
-            assert_eq!(buffer[(90, row)].bg, theme.markdown.code_background);
+            assert_eq!(
+                buffer[(90, row)].bg,
+                if row == code_row + 1 {
+                    theme.surface.shell
+                } else {
+                    theme.markdown.code_background
+                }
+            );
         }
         viewer.toggle_mode()?;
     }

@@ -116,7 +116,13 @@ pub(super) fn parse_inline_markdown(
     let options = Options::ENABLE_STRIKETHROUGH | Options::ENABLE_MATH;
     let mut parsed = ParsedInlineMarkdown::default();
     let mut style = base_style.fg(base_color);
+    let strike_color = if theme.markdown_native {
+        theme.markdown.text
+    } else {
+        theme.text.secondary
+    };
     let mut destination = None;
+    let mut link_title = None;
     let mut ancestors = Vec::new();
 
     for (event, range) in Parser::new_ext(&source, options).into_offset_iter() {
@@ -131,7 +137,7 @@ pub(super) fn parse_inline_markdown(
         }
         match event {
             Event::Start(tag) => {
-                ancestors.push((style, destination.clone()));
+                ancestors.push((style, destination.clone(), link_title.clone()));
                 match tag {
                     Tag::Strong => {
                         style = style.add_modifier(Modifier::BOLD);
@@ -148,11 +154,17 @@ pub(super) fn parse_inline_markdown(
                     Tag::Strikethrough => {
                         style = style.add_modifier(Modifier::CROSSED_OUT);
                         if destination.is_none() {
-                            style = style.fg(theme.text.secondary);
+                            style = style.fg(strike_color);
                         }
                     }
-                    Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. } => {
+                    Tag::Link {
+                        dest_url, title, ..
+                    }
+                    | Tag::Image {
+                        dest_url, title, ..
+                    } => {
                         destination = Some(dest_url);
+                        link_title = Some(title);
                         style = style
                             .fg(theme.markdown.link_text)
                             .add_modifier(Modifier::UNDERLINED);
@@ -161,13 +173,14 @@ pub(super) fn parse_inline_markdown(
                 }
             }
             Event::End(tag) => {
+                let title = link_title.clone();
                 let suffix = (theme.markdown_link_destinations
                     && matches!(tag, TagEnd::Link | TagEnd::Image)
                     && source[range.clone()].contains("]("))
                 .then(|| destination.clone())
                 .flatten();
                 if let Some(parent) = ancestors.pop() {
-                    (style, destination) = parent;
+                    (style, destination, link_title) = parent;
                 }
                 if let Some(url) =
                     suffix.filter(|url| crate::transcript_selection::safe_external_url(url))
@@ -175,6 +188,10 @@ pub(super) fn parse_inline_markdown(
                     let suffix_style = Style::default().fg(theme.text.secondary);
                     parsed.push(" (", suffix_style, None);
                     parsed.push(&url, suffix_style, Some(&url));
+                    if let Some(title) = title.filter(|title| !title.is_empty()) {
+                        parsed.push(" ", Style::default(), None);
+                        parsed.push(&format!("\"{title}\""), suffix_style, None);
+                    }
                     parsed.push(")", suffix_style, None);
                 }
             }
@@ -184,7 +201,7 @@ pub(super) fn parse_inline_markdown(
                 } else {
                     &value
                 };
-                if destination.is_some() {
+                if destination.is_some() || theme.markdown_native {
                     parsed.push(value, style, destination.as_deref());
                 } else {
                     parsed.push_text(value, style, theme);
@@ -629,7 +646,7 @@ pub(super) fn markdown_list_prefix<'a>(
     theme: &Theme,
 ) -> Option<(String, &'a str, Style, Style)> {
     for marker in ["- [x] ", "* [x] ", "+ [x] "] {
-        if let Some(text) = line.strip_prefix(marker) {
+        if let Some(text) = line.strip_prefix(marker).filter(|_| !theme.markdown_native) {
             return Some((
                 "☑ ".to_string(),
                 text,
@@ -642,7 +659,7 @@ pub(super) fn markdown_list_prefix<'a>(
     }
 
     for marker in ["- [ ] ", "* [ ] ", "+ [ ] "] {
-        if let Some(text) = line.strip_prefix(marker) {
+        if let Some(text) = line.strip_prefix(marker).filter(|_| !theme.markdown_native) {
             return Some((
                 "☐ ".to_string(),
                 text,
@@ -676,9 +693,13 @@ pub(super) fn markdown_list_prefix<'a>(
             return Some((
                 format!("{}{}", &line[..digits], ". "),
                 text,
-                Style::default()
-                    .fg(theme.markdown.list_enum)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.markdown.list_enum).add_modifier(
+                    if theme.markdown_native {
+                        Modifier::empty()
+                    } else {
+                        Modifier::BOLD
+                    },
+                ),
                 Style::default().fg(theme.markdown.text),
             ));
         }
@@ -800,7 +821,7 @@ fn append_markdownish_line(
 ) {
     if line.is_empty() {
         if !last_line_is_visually_blank(lines) {
-            append_prefixed_wrapped_spans_line(lines, prefix, base_style, Vec::new(), width);
+            append_markdown_spans_line(lines, prefix, base_style, Vec::new(), width, theme);
         }
         return;
     }
@@ -817,7 +838,7 @@ fn append_markdownish_line(
         if !lines.is_empty() && !last_line_is_visually_blank(lines) {
             lines.push(Line::default());
         }
-        append_prefixed_wrapped_spans_line(
+        append_markdown_spans_line(
             lines,
             &format!("{prefix}{indent}"),
             base_style,
@@ -830,12 +851,13 @@ fn append_markdownish_line(
                 theme,
             ),
             width,
+            theme,
         );
         return;
     }
 
     if markdown_rule(trimmed) {
-        append_prefixed_wrapped_spans_line(
+        append_markdown_spans_line(
             lines,
             prefix,
             base_style,
@@ -844,35 +866,62 @@ fn append_markdownish_line(
                 Style::default().fg(theme.markdown.rule),
             )],
             width,
+            theme,
         );
         return;
     }
 
     if let Some((depth, text)) = markdown_quote_prefix(trimmed) {
-        append_prefixed_wrapped_spans_line(
+        let start = lines.len();
+        append_markdown_spans_line(
             lines,
             &format!("{prefix}{indent}{}", "│ ".repeat(depth)),
             Style::default().fg(theme.markdown.block_quote),
             parse_inline_markdown_spans(
                 text,
-                Style::default().fg(theme.markdown.block_quote),
-                theme.markdown.block_quote,
+                Style::default().fg(if theme.markdown_native {
+                    color
+                } else {
+                    theme.markdown.block_quote
+                }),
+                if theme.markdown_native {
+                    color
+                } else {
+                    theme.markdown.block_quote
+                },
                 theme,
             ),
             width,
+            theme,
         );
+        if theme.markdown_native {
+            for line in &mut lines[start..] {
+                let mut spans = vec![Span::raw(format!("{prefix}{indent}"))];
+                for _ in 0..depth {
+                    spans.push(Span::styled(
+                        "│",
+                        Style::default()
+                            .fg(theme.markdown.muted)
+                            .add_modifier(Modifier::DIM),
+                    ));
+                    spans.push(Span::raw(" "));
+                }
+                line.spans.splice(..1, spans);
+            }
+        }
         return;
     }
 
     if let Some((list_prefix, text, list_style, text_style)) = markdown_list_prefix(trimmed, theme)
     {
         let start = lines.len();
-        append_prefixed_wrapped_spans_line(
+        append_markdown_spans_line(
             lines,
             &format!("{prefix}{indent}{list_prefix}"),
             list_style,
-            parse_inline_markdown_spans(text, text_style, color, theme),
+            list_item_spans(text, text_style, color, theme),
             width,
+            theme,
         );
         let continuation = format!(
             "{prefix}{indent}{}",
@@ -886,13 +935,54 @@ fn append_markdownish_line(
         return;
     }
 
-    append_prefixed_wrapped_spans_line(
+    append_markdown_spans_line(
         lines,
         prefix,
         base_style,
         parse_inline_markdown_spans(trimmed, base_style, color, theme),
         width,
+        theme,
     );
+}
+
+pub(super) fn append_markdown_spans_line(
+    lines: &mut Vec<Line<'static>>,
+    prefix: &str,
+    style: Style,
+    spans: Vec<Span<'static>>,
+    width: u16,
+    theme: &Theme,
+) {
+    if !theme.markdown_native {
+        append_prefixed_wrapped_spans_line(lines, prefix, style, spans, width);
+        return;
+    }
+    let body_width = usize::from(width)
+        .saturating_sub(display_width(prefix))
+        .max(1);
+    for row in super::ui_tool_wrapping::words(spans, body_width) {
+        let mut spans = vec![Span::styled(prefix.to_owned(), style)];
+        spans.extend(row);
+        lines.push(Line::from(spans));
+    }
+}
+
+fn list_item_spans(text: &str, style: Style, color: Color, theme: &Theme) -> Vec<Span<'static>> {
+    if theme.markdown_native && (text.starts_with("[x] ") || text.starts_with("[ ] ")) {
+        let checked = text.starts_with("[x]");
+        let marker = if checked {
+            Style::default().fg(theme.markdown.task_checked)
+        } else {
+            Style::default()
+                .fg(theme.markdown.text)
+                .add_modifier(Modifier::DIM)
+        };
+        let mut spans = vec![Span::styled(text[..3].to_owned(), marker), Span::raw(" ")];
+        spans.extend(parse_inline_markdown_spans(&text[4..], style, color, theme));
+        spans
+    } else {
+        parse_inline_markdown_spans(text, style, color, theme)
+    }
 }
 
 pub(super) fn raw_url_length(text: &str) -> Option<usize> {

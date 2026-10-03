@@ -1,6 +1,9 @@
 use super::*;
 
 pub(super) fn code_background(line: &ratatui::text::Line<'_>, theme: &Theme) -> Option<Color> {
+    if line.width() == 0 {
+        return None;
+    }
     line.style.bg.or_else(|| {
         line.spans.iter().find_map(|span| {
             span.style
