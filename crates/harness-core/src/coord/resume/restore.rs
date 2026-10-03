@@ -80,6 +80,8 @@ impl Runtime {
                         tool_state: self.tool_state.fresh_owner(),
                         generation: 0,
                         prompt_turns: 0,
+                        tool_calls: 0,
+                        pending_model_tools: BTreeMap::new(),
                         attempt: None,
                         attempt_started_ms: 0,
                         notification_seq: 0,
@@ -97,7 +99,7 @@ impl Runtime {
                 .as_ref()
                 .and_then(|id| agents.get_mut(id))
             {
-                agent.observe_prompt_start(event);
+                agent.observe_activity(event);
             }
             let EventV1::ProviderRequestStarted(e) = &event.payload else {
                 continue;

@@ -286,6 +286,7 @@ impl Runtime {
         let state = &self.agents[agent];
         let generation = state.generation;
         let turns = state.prompt_turns;
+        let native_tool_calls = state.tool_calls;
         let reference = if retain_snapshot {
             Some(self.prepare_finalized_state(agent, attempt, messages)?)
         } else {
@@ -310,17 +311,21 @@ impl Runtime {
                     ))
                 })
                 .filter(|_| request_count > 0);
-            let tool_calls = u32::try_from(
-                messages
-                    .entries
-                    .iter()
-                    .filter(|e| {
-                        e.turn.as_deref() == Some(attempt)
-                            && e.message.role == harness_providers::MessageRole::Tool
-                    })
-                    .count(),
-            )
-            .unwrap_or(u32::MAX);
+            let tool_calls = if self.native_subagents.contains_key(agent) {
+                native_tool_calls
+            } else {
+                u32::try_from(
+                    messages
+                        .entries
+                        .iter()
+                        .filter(|e| {
+                            e.turn.as_deref() == Some(attempt)
+                                && e.message.role == harness_providers::MessageRole::Tool
+                        })
+                        .count(),
+                )
+                .unwrap_or(u32::MAX)
+            };
             let tokens_used = if self.native_subagents.contains_key(agent) {
                 if !success && tool_calls == 0 {
                     Some(0)

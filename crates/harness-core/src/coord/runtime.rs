@@ -1,3 +1,4 @@
+mod activity;
 use super::context::Context;
 use super::{handle::system, *};
 use std::collections::VecDeque;
@@ -64,6 +65,8 @@ pub(super) struct Agent {
     pub tool_state: crate::tool::ToolRunState,
     pub generation: u64,
     pub prompt_turns: u32,
+    pub tool_calls: u32,
+    pub pending_model_tools: BTreeMap<String, bool>,
     pub attempt: Option<String>,
     pub attempt_started_ms: u64,
     pub notification_seq: u64,
@@ -73,16 +76,6 @@ pub(super) struct Agent {
     pub skill_preloads: Option<Vec<(String, String)>>,
 }
 
-impl Agent {
-    pub(super) fn observe_prompt_start(&mut self, event: &EventEnvelopeV1) {
-        if matches!(&event.payload, EventV1::TaskScheduled(task)
-            if task.state == TaskScheduleState::Started
-                && self.attempt.as_deref() == Some(task.task_id.as_str()))
-        {
-            self.prompt_turns = self.prompt_turns.saturating_add(1);
-        }
-    }
-}
 pub(super) struct Job {
     pub join_id: Option<Id>,
     pub actor: EventActor,
@@ -334,7 +327,7 @@ impl Runtime {
                 .as_ref()
                 .and_then(|id| self.agents.get_mut(id))
             {
-                agent.observe_prompt_start(event);
+                agent.observe_activity(event);
             }
         });
         match appended {

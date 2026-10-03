@@ -164,6 +164,8 @@ impl Runtime {
                 tool_state,
                 generation: 0,
                 prompt_turns: 0,
+                tool_calls: 0,
+                pending_model_tools: BTreeMap::new(),
                 attempt: None,
                 attempt_started_ms: 0,
                 notification_seq: 0,

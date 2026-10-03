@@ -34,6 +34,11 @@ conversation estimate when no usage has arrived. It is separate from cumulative
 billable usage; an estimated context count does not make missing billing data
 complete.
 
+Prompt turns and executed model tool calls accumulate for the child's identity,
+including message wakes and restart. A distinct child created with `resume_from`
+starts its own counters. Calls rejected before execution and startup skill
+preloads do not increase the model tool-call count.
+
 Children receive the subagent base instructions followed by their definition's
 prompt body. Tool placeholders use the child's available tools, and the workspace
 path reflects its prepared directory or worktree. A same-identity wake keeps the
