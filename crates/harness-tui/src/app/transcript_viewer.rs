@@ -72,8 +72,11 @@ impl AppState {
             crate::transcript_block_viewer::viewer_layout(self.transcript_viewer_area(area));
         if let Some(viewer) = self.transcript_viewer.as_mut() {
             let _ = viewer.set_theme(theme);
-            let body =
-                layout.content_body(!child && (viewer.input_active() || viewer.visual_mode()));
+            let body = if child {
+                layout.child_content_body(viewer.input_active())
+            } else {
+                layout.content_body(viewer.input_active() || viewer.visual_mode())
+            };
             let _ = viewer.resize(
                 usize::from(body.width.max(1)),
                 usize::from(body.height.max(1)),
@@ -82,6 +85,13 @@ impl AppState {
     }
 
     pub(crate) fn handle_transcript_viewer_key(&mut self, key: KeyEvent) -> bool {
+        if self.current_subagent_session_present()
+            && key.code == KeyCode::Char('f')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && self.transcript_viewer.is_some()
+        {
+            return self.close_transcript_viewer();
+        }
         let Some(viewer) = self.transcript_viewer.as_mut() else {
             return false;
         };
@@ -225,6 +235,11 @@ impl AppState {
     }
 
     pub(crate) fn handle_transcript_viewer_mouse(&mut self, mouse: MouseEvent, area: Rect) -> bool {
+        let scroll_step = if self.current_subagent_session_present() {
+            1.0
+        } else {
+            3.0
+        };
         let layout =
             crate::transcript_block_viewer::viewer_layout(self.transcript_viewer_area(area));
         let position = (mouse.column, mouse.row).into();
@@ -244,10 +259,10 @@ impl AppState {
         match mouse.kind {
             MouseEventKind::Moved => viewer.set_close_hovered(layout.close.contains(position)),
             MouseEventKind::ScrollUp => {
-                let _ = viewer.scroll_by(-3.0);
+                let _ = viewer.scroll_wheel(-scroll_step);
             }
             MouseEventKind::ScrollDown => {
-                let _ = viewer.scroll_by(3.0);
+                let _ = viewer.scroll_wheel(scroll_step);
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 if !body.contains(position) {

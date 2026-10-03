@@ -47,7 +47,11 @@ pub(super) fn paint_status(
             buffer.set_style(
                 row,
                 Style::default()
-                    .fg(viewer_secondary(theme))
+                    .fg(if surface.visual_mode && !surface.search_active {
+                        viewer_secondary(theme)
+                    } else {
+                        theme.text.primary
+                    })
                     .bg(theme.surface.shell),
             );
         }

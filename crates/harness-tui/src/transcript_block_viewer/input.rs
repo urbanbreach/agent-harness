@@ -5,7 +5,7 @@ use crate::transcript_selection::{CellPoint, NavigationKey};
 impl ViewerState {
     pub(crate) fn scroll_keeping_cursor(&mut self, delta: f64) -> Result<(), ViewerError> {
         if self.child {
-            return self.scroll_child_cursor(delta);
+            return self.scroll_child_cursor(delta, true);
         }
         let previous = self.scroll_top();
         self.scroll_by(delta)?;
@@ -18,7 +18,19 @@ impl ViewerState {
         Ok(())
     }
 
-    fn scroll_child_cursor(&mut self, delta: f64) -> Result<(), ViewerError> {
+    pub(crate) fn scroll_wheel(&mut self, delta: f64) -> Result<(), ViewerError> {
+        if !self.child {
+            return self.scroll_by(delta);
+        }
+        if !self.following && self.wrapped.row_count() <= self.viewport_height() {
+            return Ok(());
+        }
+        self.visual_mode = false;
+        self.selection = None;
+        self.scroll_child_cursor(delta, false)
+    }
+
+    fn scroll_child_cursor(&mut self, delta: f64, move_past_edge: bool) -> Result<(), ViewerError> {
         if self.following && delta > 0.0 {
             return Ok(());
         }
@@ -31,11 +43,17 @@ impl ViewerState {
             .scroll_screen_y
             .get_or_insert(self.cursor.row.saturating_sub(previous));
         self.scroll_by(delta)?;
-        let target =
-            f64::from(u32::try_from(previous.saturating_add(screen_y)).unwrap_or(u32::MAX)) + delta;
+        let offset = if move_past_edge {
+            f64::from(u32::try_from(previous).unwrap_or(u32::MAX)) + delta
+        } else {
+            f64::from(u32::try_from(self.scroll_top()).unwrap_or(u32::MAX))
+        };
+        let target = offset + f64::from(u32::try_from(screen_y).unwrap_or(u32::MAX));
         let row = super::render::scroll_offset(target.max(0.0))
             .min(self.wrapped.row_count().saturating_sub(1));
-        self.cursor = CellPoint::new(self.logical_rows(row).start, 0);
+        if move_past_edge || previous != self.scroll_top() {
+            self.cursor = CellPoint::new(self.logical_rows(row).start, 0);
+        }
         if self.running
             && !self.visual_mode
             && delta > 0.0
@@ -56,6 +74,7 @@ impl ViewerState {
 
     pub(crate) fn select_edge(&mut self, last: bool) {
         self.scroll_screen_y = None;
+        self.at_end = false;
         self.cursor = CellPoint::new(
             if last {
                 self.wrapped.row_count().saturating_sub(1)
@@ -111,9 +130,11 @@ impl ViewerState {
             }
         } else if self.search().query() != text {
             let row = self.logical_rows(self.cursor.row).start;
-            let _ = self.set_search_query(&text);
             if self.child {
+                let _ = self.update_search(&text);
                 self.find_matching_line(row, true, true);
+            } else {
+                let _ = self.set_search_query(&text);
             }
         }
     }
@@ -219,7 +240,9 @@ impl ViewerState {
             }
             self.exit_follow();
             self.cursor = CellPoint::new(*target, 0);
-            self.reveal_cursor();
+            if !include_current || *target != row {
+                self.reveal_cursor();
+            }
         }
     }
 }

@@ -18,8 +18,12 @@ pub fn render_surface(state: &ViewerState, _area: Rect) -> ViewerRenderSurface {
 }
 
 pub(crate) fn render_viewer(buffer: &mut Buffer, area: Rect, state: &ViewerState, theme: &Theme) {
-    let body = super::viewer_layout(area)
-        .content_body(!state.child && (state.input_active() || state.visual_mode));
+    let layout = super::viewer_layout(area);
+    let body = if state.child {
+        layout.child_content_body(state.input_active())
+    } else {
+        layout.content_body(state.input_active() || state.visual_mode)
+    };
     let first = state.scroll_top();
     let count = state.wrapped.row_count();
     let rows = first..first.saturating_add(usize::from(body.height)).min(count);
@@ -124,6 +128,7 @@ fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface 
         lines,
         scroll_top: state.scroll_top(),
         body_start: state.body_start,
+        unfiltered_line_count: state.unfiltered_line_count,
         cursor_rows: if state.following {
             0..0
         } else {
@@ -227,8 +232,14 @@ fn paint(
             Style::default().fg(theme.terminal_colors.muted)
         })
         .render(layout.close, buffer);
-    let body =
-        layout.content_body(!surface.child && (surface.search_active || surface.visual_mode));
+    let body = if surface.child {
+        layout.child_content_body(surface.search_active)
+    } else {
+        layout.content_body(surface.search_active || surface.visual_mode)
+    };
+    let widen_filter = surface.filtering
+        && row_count <= usize::from(body.height)
+        && (!surface.child || surface.unfiltered_line_count > usize::from(layout.body.height));
     for (offset, line) in surface
         .lines
         .iter()
@@ -240,12 +251,7 @@ fn paint(
         let row = Rect::new(
             body.x,
             body.y + u16::try_from(offset).unwrap_or(u16::MAX),
-            body.width
-                + if !surface.child && surface.filtering && row_count <= usize::from(body.height) {
-                    2
-                } else {
-                    0
-                },
+            body.width + if widen_filter { 2 } else { 0 },
             1,
         );
         let background = if surface.visual_mode && line.selected {
@@ -272,7 +278,11 @@ fn paint(
         place_indicator(buffer, body, body.bottom() - 1, "▶", theme);
         buffer[(body.right() - 1, body.bottom() - 1)].set_fg(theme.status.warning);
     }
-    super::render_input::paint_status(buffer, &layout, body, surface, theme);
+    let status_body = Rect {
+        width: body.width + u16::from(surface.child && widen_filter) * 2,
+        ..body
+    };
+    super::render_input::paint_status(buffer, &layout, status_body, surface, theme);
     render_shortcuts(buffer, layout.shortcuts, surface, theme);
 }
 
