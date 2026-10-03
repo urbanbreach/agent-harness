@@ -149,6 +149,25 @@ pub(super) fn project(
     if startup {
         dock = surfaces::inset_dock(dock, area, true);
     } else if let Some(body) = plan.transcript {
+        let task_height = app
+            .task_pane_height(terminal_height)
+            .min(body.height.saturating_sub(5));
+        let body = if task_height > 0 {
+            plan.tasks = Some(Rect::new(
+                body.x.saturating_add(5),
+                body.y.saturating_add(3),
+                body.width.saturating_sub(9),
+                task_height,
+            ));
+            Rect::new(
+                body.x,
+                body.y.saturating_add(task_height + 1),
+                body.width,
+                body.height.saturating_sub(task_height + 1),
+            )
+        } else {
+            body
+        };
         let (body, todo) = todo_pane(app, body, terminal_height);
         plan.todo = todo;
         let (transcript, terminal) = terminal_panel(app, body, gap);

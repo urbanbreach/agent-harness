@@ -88,6 +88,7 @@ fn cached_transcript_paint_preserves_motion_and_terminal_cells() {
                             0,
                             phase,
                             &theme,
+                            false,
                         )
                     })
                     .expect("paint");
@@ -150,6 +151,7 @@ fn cached_transcript_paint_preserves_motion_and_terminal_cells() {
                             0,
                             0,
                             &theme,
+                            false,
                         )
                     })
                     .expect("paint");

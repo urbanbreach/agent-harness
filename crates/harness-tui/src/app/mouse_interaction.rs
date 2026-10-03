@@ -452,11 +452,9 @@ impl AppState {
         true
     }
 
-    fn activate_subagent_footer_target(&mut self, target: SubagentFooterTarget) {
+    fn activate_subagent_frame_target(&mut self, target: SubagentFrameTarget) {
         match target {
-            SubagentFooterTarget::Parent => self.navigate_to_parent_session(),
-            SubagentFooterTarget::Previous => self.navigate_to_child_sibling(true),
-            SubagentFooterTarget::Next => self.navigate_to_child_sibling(false),
+            SubagentFrameTarget::Close => self.navigate_to_parent_session(),
         }
     }
 
@@ -559,10 +557,10 @@ impl AppState {
             self.transcript_view.return_to_live_hovered = false;
             self.transcript_view.transcript_selection_dragging = false;
             self.transcript_view.viewer_pointer_anchor = None;
-            self.hovered_subagent_footer_target = None;
+            self.hovered_subagent_frame_target = None;
             self.hovered_live_turn_stop = false;
             self.hovered_live_turn_background = false;
-            self.pending_subagent_footer_target = None;
+            self.pending_subagent_frame_target = None;
             self.secondary_surfaces.selection_dragging = false;
             self.secondary_surfaces.pending_click = None;
             self.modal_interaction.invalidate();
@@ -667,7 +665,7 @@ impl AppState {
             || self.transcript_view.transcript_scrollbar_drag.is_some()
             || self.transcript_view.hovered_transcript_target.is_some()
             || self.transcript_view.return_to_live_hovered
-            || self.hovered_subagent_footer_target.is_some()
+            || self.hovered_subagent_frame_target.is_some()
             || self.hovered_live_turn_stop
             || self.hovered_live_turn_background
             || self.transcript_view.transcript_selection.is_some()
@@ -675,10 +673,10 @@ impl AppState {
         self.transcript_view.transcript_scrollbar_drag = None;
         self.transcript_view.hovered_transcript_target = None;
         self.transcript_view.return_to_live_hovered = false;
-        self.hovered_subagent_footer_target = None;
+        self.hovered_subagent_frame_target = None;
         self.hovered_live_turn_stop = false;
         self.hovered_live_turn_background = false;
-        self.pending_subagent_footer_target = None;
+        self.pending_subagent_frame_target = None;
         self.composer.pointer_selection = None;
         self.clear_transcript_selection();
         self.clear_operator_sidebar_selection();
@@ -1065,6 +1063,26 @@ impl AppState {
             .collect()
     }
 
+    /// Dispatch one pointer sample using the same geometry as the current frame.
+    /// The terminal runtime coalesces wheel samples before dispatching them.
+    pub fn handle_pointer_event(&mut self, mouse: MouseEvent, area: Rect) -> bool {
+        let hovered = matches!(
+            mouse.kind,
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+        )
+        .then(|| crate::ui::hovered_wheel_target(self, area, mouse.column, mouse.row))
+        .flatten();
+        let (section, scrollbar) = if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+            (
+                crate::ui::operator_sidebar_section_hit_target(self, area, mouse.column, mouse.row),
+                crate::ui::transcript_scrollbar_hit(self, area, mouse.column, mouse.row),
+            )
+        } else {
+            (None, None)
+        };
+        self.handle_mouse(mouse, area, hovered, section, scrollbar)
+    }
+
     pub(crate) fn handle_mouse(
         &mut self,
         mouse: MouseEvent,
@@ -1087,6 +1105,9 @@ impl AppState {
             return handled || cleared;
         }
         if self.handle_transcript_viewer_mouse(mouse, frame_area) {
+            return true;
+        }
+        if self.handle_child_status_mouse(mouse, frame_area) {
             return true;
         }
         if self.handle_connect_dialog_mouse(mouse, frame_area) {
@@ -1130,7 +1151,10 @@ impl AppState {
             return true;
         }
 
-        if self.handle_todo_pane_mouse(mouse, frame_area) {
+        if self.handle_tasks_pane_mouse(mouse, frame_area)
+            || (!self.current_subagent_session_present()
+                && self.handle_todo_pane_mouse(mouse, frame_area))
+        {
             return true;
         }
 
@@ -1228,21 +1252,21 @@ impl AppState {
             .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
         let return_to_live_hovered =
             ui::transcript_return_to_live_hit(self, frame_area, mouse.column, mouse.row);
-        let hovered_subagent_footer_target =
-            ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
-        let hovered_transcript_target = if hovered_subagent_footer_target.is_none() {
+        let hovered_subagent_frame_target =
+            ui::subagent_frame_target_at(self, frame_area, mouse.column, mouse.row);
+        let hovered_transcript_target = if hovered_subagent_frame_target.is_none() {
             ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
         } else {
             None
         };
         let changed = welcome_hover_changed
             || self.transcript_view.hovered_transcript_target != hovered_transcript_target
-            || self.hovered_subagent_footer_target != hovered_subagent_footer_target
+            || self.hovered_subagent_frame_target != hovered_subagent_frame_target
             || self.hovered_live_turn_stop != hovered_live_turn_stop
             || self.hovered_live_turn_background != hovered_live_turn_background
             || self.transcript_view.return_to_live_hovered != return_to_live_hovered;
         self.transcript_view.hovered_transcript_target = hovered_transcript_target;
-        self.hovered_subagent_footer_target = hovered_subagent_footer_target;
+        self.hovered_subagent_frame_target = hovered_subagent_frame_target;
         self.hovered_live_turn_stop = hovered_live_turn_stop;
         self.hovered_live_turn_background = hovered_live_turn_background;
         self.transcript_view.return_to_live_hovered = return_to_live_hovered;
@@ -1321,13 +1345,15 @@ impl AppState {
             self.clear_operator_sidebar_selection();
             return true;
         }
-        self.hovered_subagent_footer_target =
-            ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
-        self.pending_subagent_footer_target = self.hovered_subagent_footer_target;
-        if self.hovered_subagent_footer_target.is_some() {
+        self.hovered_subagent_frame_target =
+            ui::subagent_frame_target_at(self, frame_area, mouse.column, mouse.row);
+        self.pending_subagent_frame_target = self.hovered_subagent_frame_target;
+        if self.hovered_subagent_frame_target.is_some() {
             self.transcript_view.transcript_scrollbar_drag = None;
             self.clear_transcript_selection();
             self.clear_operator_sidebar_selection();
+            self.pending_subagent_frame_target = None;
+            self.navigate_to_parent_session();
             return true;
         }
         if let Some(scrollbar) = transcript_scrollbar_hit
@@ -1422,13 +1448,13 @@ impl AppState {
 
     fn handle_surface_mouse_drag(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
         let hover_changed = self.transcript_view.hovered_transcript_target.is_some()
-            || self.hovered_subagent_footer_target.is_some()
+            || self.hovered_subagent_frame_target.is_some()
             || self.hovered_live_turn_stop
             || self.hovered_live_turn_background
             || self.transcript_view.return_to_live_hovered;
         self.transcript_view.hovered_transcript_target = None;
         self.transcript_view.return_to_live_hovered = false;
-        self.hovered_subagent_footer_target = None;
+        self.hovered_subagent_frame_target = None;
         self.hovered_live_turn_stop = false;
         self.hovered_live_turn_background = false;
         if self.transcript_view.transcript_scrollbar_drag.is_some() {
@@ -1455,11 +1481,11 @@ impl AppState {
             }
             true
         } else {
-            if let Some(pending) = self.pending_subagent_footer_target {
+            if let Some(pending) = self.pending_subagent_frame_target {
                 let current =
-                    ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
+                    ui::subagent_frame_target_at(self, frame_area, mouse.column, mouse.row);
                 if current != Some(pending) {
-                    self.pending_subagent_footer_target = None;
+                    self.pending_subagent_frame_target = None;
                 }
             }
             hover_changed
@@ -1467,13 +1493,12 @@ impl AppState {
     }
 
     fn handle_surface_mouse_up(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
-        let footer_target =
-            ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
-        let pending_footer_target = self.pending_subagent_footer_target.take();
+        let footer_target = ui::subagent_frame_target_at(self, frame_area, mouse.column, mouse.row);
+        let pending_footer_target = self.pending_subagent_frame_target.take();
         if let Some(target) = footer_target.filter(|target| pending_footer_target == Some(*target))
         {
-            self.hovered_subagent_footer_target = Some(target);
-            self.activate_subagent_footer_target(target);
+            self.hovered_subagent_frame_target = Some(target);
+            self.activate_subagent_frame_target(target);
             self.clear_transcript_selection();
             self.clear_operator_sidebar_selection();
             self.transcript_view.transcript_scrollbar_drag = None;

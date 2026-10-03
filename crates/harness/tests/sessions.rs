@@ -11,6 +11,11 @@ fn invoke(root: &Path, args: &[&str]) -> (i32, Vec<u8>, Vec<u8>) {
         &mut CliIo::new(&mut input, &mut output, &mut errors),
         CliDeps::real()
             .with_current_dir(root.into())
+            .without_env("HOME")
+            .without_env("XDG_CONFIG_HOME")
+            .without_env("HARNESS_CONFIG")
+            .without_env("HARNESS_TUI_CONFIG")
+            .without_env("HARNESS_CONFIG_CONTENT")
             .with_env("HARNESS_DATA_HOME", root.join("data").to_string_lossy())
             .with_env(
                 "HARNESS_EXPORT_FIXTURE_TOKEN",
@@ -144,7 +149,13 @@ fn check_configured_location(root: &Path) -> Result<(), Box<dyn std::error::Erro
                 .into_iter()
                 .chain(args),
             &mut CliIo::new(&mut input, &mut output, &mut errors),
-            CliDeps::real().with_current_dir(root.into()),
+            CliDeps::real()
+                .with_current_dir(root.into())
+                .without_env("HOME")
+                .without_env("XDG_CONFIG_HOME")
+                .without_env("HARNESS_CONFIG")
+                .without_env("HARNESS_TUI_CONFIG")
+                .without_env("HARNESS_CONFIG_CONTENT"),
         );
         assert_eq!(result.code, 0, "{}", String::from_utf8_lossy(&errors));
         assert!(String::from_utf8(output)?.contains(expected));

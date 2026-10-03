@@ -34,6 +34,12 @@ slow-timeout = { period = "30s", terminate-after = 10 }
 [test-groups.process-global-state]
 max-threads = 1
 
+# These fixed multi-frame captures complete within the existing deadline alone.
+# Reserve the runner budget rather than extending their deadline under load.
+[[profile.default.overrides]]
+filter = 'package(harness-tui) & (test(native_tool_viewer_capture_uses_the_enter_handler) | test(recorded_terminal_journeys_match_reference_cells_and_intents))'
+threads-required = "num-test-threads"
+
 # The recorded happy path is a three-scenario PTY composite. It can hit a
 # transient harness/TUI stall; give it enough outer time so the internal
 # 20s marker timeout can print the stuck phase and screen before nextest

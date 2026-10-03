@@ -24,6 +24,7 @@ pub(super) fn generic_tool_id(tool_id: &str) -> bool {
                 | "bash"
                 | "edit.hashline_apply"
                 | "edit.hashline_scan"
+                | "spawn_subagent"
                 | "agent.spawn"
                 | "task"
                 | "background_output"

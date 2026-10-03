@@ -26,7 +26,13 @@ fn scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace(
                 "--print-run-dir",
             ],
             &mut CliIo::new(&mut input, &mut output, &mut error),
-            CliDeps::real().with_current_dir(root.path().into()),
+            CliDeps::real()
+                .with_current_dir(root.path().into())
+                .without_env("HOME")
+                .without_env("XDG_CONFIG_HOME")
+                .without_env("HARNESS_CONFIG")
+                .without_env("HARNESS_TUI_CONFIG")
+                .without_env("HARNESS_CONFIG_CONTENT"),
         );
         assert_eq!(
             result.code == 0,

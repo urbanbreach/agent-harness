@@ -1,0 +1,1014 @@
+{
+  "binding": {
+    "contract": "Harness current settings registry 2026-10-03; not Grok parity",
+    "editor_kinds": [
+      [
+        "model",
+        "None"
+      ],
+      [
+        "small_model",
+        "None"
+      ],
+      [
+        "agent",
+        "None"
+      ],
+      [
+        "provider",
+        "None"
+      ],
+      [
+        "skills",
+        "None"
+      ],
+      [
+        "mcp",
+        "None"
+      ],
+      [
+        "formatter",
+        "None"
+      ],
+      [
+        "instructions",
+        "None"
+      ],
+      [
+        "model_profile",
+        "None"
+      ],
+      [
+        "lsp",
+        "None"
+      ],
+      [
+        "disabled_providers",
+        "None"
+      ],
+      [
+        "enabled_providers",
+        "None"
+      ],
+      [
+        "shell",
+        "None"
+      ],
+      [
+        "logging",
+        "None"
+      ],
+      [
+        "ui",
+        "None"
+      ],
+      [
+        "permission.bash",
+        "Some(Choice([\"ask\", \"allow\", \"deny\"]))"
+      ],
+      [
+        "permission.edit",
+        "None"
+      ],
+      [
+        "permission.question",
+        "None"
+      ],
+      [
+        "permission.task",
+        "None"
+      ],
+      [
+        "permission.webfetch",
+        "None"
+      ],
+      [
+        "permission.websearch",
+        "None"
+      ],
+      [
+        "permission.codesearch",
+        "None"
+      ],
+      [
+        "permission.lsp",
+        "None"
+      ],
+      [
+        "permission.read",
+        "None"
+      ],
+      [
+        "permission.external_directory",
+        "None"
+      ],
+      [
+        "permission.doom_loop",
+        "None"
+      ],
+      [
+        "permission.shell_allowlist",
+        "None"
+      ],
+      [
+        "provider.apiKey",
+        "None"
+      ],
+      [
+        "hashline_edit",
+        "None"
+      ],
+      [
+        "worktree.relative_base",
+        "None"
+      ],
+      [
+        "worktree.branch_prefix",
+        "None"
+      ],
+      [
+        "subagents",
+        "None"
+      ],
+      [
+        "subagents.enabled",
+        "Some(Boolean)"
+      ],
+      [
+        "subagents.max_depth",
+        "Some(Integer)"
+      ],
+      [
+        "subagents.max_concurrent",
+        "Some(Integer)"
+      ],
+      [
+        "subagents.sampling_limit",
+        "Some(Integer)"
+      ],
+      [
+        "subagents.limit_behavior",
+        "Some(Choice([\"queue\", \"fail\"]))"
+      ],
+      [
+        "subagents.models",
+        "None"
+      ],
+      [
+        "subagents.toggle",
+        "None"
+      ],
+      [
+        "subagents.roles",
+        "None"
+      ],
+      [
+        "subagents.personas",
+        "None"
+      ],
+      [
+        "features",
+        "None"
+      ],
+      [
+        "features.active_agent_messages",
+        "Some(Boolean)"
+      ],
+      [
+        "features.subagent_model_inheritance",
+        "Some(Boolean)"
+      ],
+      [
+        "features.subagent_worktree_snapshot",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.always_approve",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.enabled",
+        "None"
+      ],
+      [
+        "runtime.compaction.reserve_tokens",
+        "Some(Integer)"
+      ],
+      [
+        "runtime.compaction.keep_recent_tokens",
+        "Some(Integer)"
+      ],
+      [
+        "runtime.compaction.threshold_percent",
+        "None"
+      ],
+      [
+        "runtime.compaction.threshold_tokens",
+        "None"
+      ],
+      [
+        "runtime.compaction.model_thresholds",
+        "None"
+      ],
+      [
+        "runtime.compaction.agent_thresholds",
+        "None"
+      ],
+      [
+        "runtime.compaction.fallback_input_tokens",
+        "Some(Integer)"
+      ],
+      [
+        "runtime.compaction.auto_retry_overflow",
+        "None"
+      ],
+      [
+        "runtime.compaction.structured_summary_contract",
+        "None"
+      ],
+      [
+        "runtime.compaction.estimated_token_triggers",
+        "None"
+      ],
+      [
+        "runtime.deterministic.enabled",
+        "None"
+      ],
+      [
+        "runtime.session_dir",
+        "Some(String)"
+      ],
+      [
+        "confirm_before_rewind",
+        "None"
+      ],
+      [
+        "keybinds",
+        "None"
+      ],
+      [
+        "$schema",
+        "None"
+      ]
+    ],
+    "frame_ids": [
+      "dialog-settings-40x24-reduced-0ms",
+      "selected-settings-40x24-reduced-0ms",
+      "dialog-settings-80x24-reduced-0ms",
+      "selected-settings-80x24-reduced-0ms",
+      "dialog-settings-120x40-reduced-0ms",
+      "selected-settings-120x40-reduced-0ms",
+      "dialog-settings-160x50-reduced-0ms",
+      "selected-settings-160x50-reduced-0ms"
+    ],
+    "original_base": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+    "original_fixture_sha256": "5913f3430a0572b649f1758a4d29648a90dc6a7194d5951ba9898254dd0e2751",
+    "registry": [
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.model",
+        "sensitivity": "public",
+        "setting_id": "model",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.small_model",
+        "sensitivity": "public",
+        "setting_id": "small_model",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.agent",
+        "sensitivity": "public",
+        "setting_id": "agent",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.provider",
+        "sensitivity": "public",
+        "setting_id": "provider",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.skills",
+        "sensitivity": "public",
+        "setting_id": "skills",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.mcp",
+        "sensitivity": "public",
+        "setting_id": "mcp",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.formatter",
+        "sensitivity": "public",
+        "setting_id": "formatter",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.instructions",
+        "sensitivity": "public",
+        "setting_id": "instructions",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.model_profile",
+        "sensitivity": "public",
+        "setting_id": "model_profile",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.lsp",
+        "sensitivity": "public",
+        "setting_id": "lsp",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.disabled_providers",
+        "sensitivity": "public",
+        "setting_id": "disabled_providers",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.enabled_providers",
+        "sensitivity": "public",
+        "setting_id": "enabled_providers",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.shell",
+        "sensitivity": "public",
+        "setting_id": "shell",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.logging",
+        "sensitivity": "public",
+        "setting_id": "logging",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.ui",
+        "sensitivity": "public",
+        "setting_id": "ui",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "bash",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.bash",
+        "sensitivity": "public",
+        "setting_id": "permission.bash",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "edit",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.edit",
+        "sensitivity": "public",
+        "setting_id": "permission.edit",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "question",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.question",
+        "sensitivity": "public",
+        "setting_id": "permission.question",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "task",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.task",
+        "sensitivity": "public",
+        "setting_id": "permission.task",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "webfetch",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.webfetch",
+        "sensitivity": "public",
+        "setting_id": "permission.webfetch",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "websearch",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.websearch",
+        "sensitivity": "public",
+        "setting_id": "permission.websearch",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "codesearch",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.codesearch",
+        "sensitivity": "public",
+        "setting_id": "permission.codesearch",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "lsp",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.lsp",
+        "sensitivity": "public",
+        "setting_id": "permission.lsp",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "read",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.read",
+        "sensitivity": "public",
+        "setting_id": "permission.read",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "external_directory",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.external_directory",
+        "sensitivity": "public",
+        "setting_id": "permission.external_directory",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "doom_loop",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.doom_loop",
+        "sensitivity": "public",
+        "setting_id": "permission.doom_loop",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "shell_allowlist",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.shell_allowlist",
+        "sensitivity": "public",
+        "setting_id": "permission.shell_allowlist",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "read_only",
+        "restart_required": false,
+        "schema_id": "harness.runtime.provider.apiKey",
+        "sensitivity": "secret",
+        "setting_id": "provider.apiKey",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.hashline_edit",
+        "sensitivity": "public",
+        "setting_id": "hashline_edit",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "worktree",
+        "default_value": ".agent-harness/worktrees",
+        "merge_strategy": "replace",
+        "mutability": "read_only",
+        "restart_required": true,
+        "schema_id": "harness.runtime.worktree.relative_base",
+        "sensitivity": "public",
+        "setting_id": "worktree.relative_base",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "worktree",
+        "default_value": "harness/wt-",
+        "merge_strategy": "replace",
+        "mutability": "read_only",
+        "restart_required": true,
+        "schema_id": "harness.runtime.worktree.branch_prefix",
+        "sensitivity": "public",
+        "setting_id": "worktree.branch_prefix",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.subagents",
+        "sensitivity": "public",
+        "setting_id": "subagents",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.subagents.enabled",
+        "sensitivity": "public",
+        "setting_id": "subagents.enabled",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "1",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.subagents.max_depth",
+        "sensitivity": "public",
+        "setting_id": "subagents.max_depth",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "32",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.subagents.max_concurrent",
+        "sensitivity": "public",
+        "setting_id": "subagents.max_concurrent",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.subagents.sampling_limit",
+        "sensitivity": "public",
+        "setting_id": "subagents.sampling_limit",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "queue",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.subagents.limit_behavior",
+        "sensitivity": "public",
+        "setting_id": "subagents.limit_behavior",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "{}",
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.subagents.models",
+        "sensitivity": "public",
+        "setting_id": "subagents.models",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "{}",
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.subagents.toggle",
+        "sensitivity": "public",
+        "setting_id": "subagents.toggle",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "{}",
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.subagents.roles",
+        "sensitivity": "public",
+        "setting_id": "subagents.roles",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "{}",
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.subagents.personas",
+        "sensitivity": "public",
+        "setting_id": "subagents.personas",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.features",
+        "sensitivity": "public",
+        "setting_id": "features",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "false",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.features.active_agent_messages",
+        "sensitivity": "public",
+        "setting_id": "features.active_agent_messages",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "false",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.features.subagent_model_inheritance",
+        "sensitivity": "public",
+        "setting_id": "features.subagent_model_inheritance",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "false",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.features.subagent_worktree_snapshot",
+        "sensitivity": "public",
+        "setting_id": "features.subagent_worktree_snapshot",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "false",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.always_approve",
+        "sensitivity": "public",
+        "setting_id": "runtime.always_approve",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.enabled",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.enabled",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "16384",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.reserve_tokens",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.reserve_tokens",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "20000",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.keep_recent_tokens",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.keep_recent_tokens",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.threshold_percent",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.threshold_percent",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.threshold_tokens",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.threshold_tokens",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "{}",
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.model_thresholds",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.model_thresholds",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "{}",
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.agent_thresholds",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.agent_thresholds",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "32768",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.fallback_input_tokens",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.fallback_input_tokens",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.auto_retry_overflow",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.auto_retry_overflow",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.structured_summary_contract",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.structured_summary_contract",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.estimated_token_triggers",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.estimated_token_triggers",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "false",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.deterministic.enabled",
+        "sensitivity": "public",
+        "setting_id": "runtime.deterministic.enabled",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": ".agent-harness/sessions",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.session_dir",
+        "sensitivity": "public",
+        "setting_id": "runtime.session_dir",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.tui.confirm_before_rewind",
+        "sensitivity": "public",
+        "setting_id": "confirm_before_rewind",
+        "surface": "tui"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "{}",
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.tui.keybinds",
+        "sensitivity": "public",
+        "setting_id": "keybinds",
+        "surface": "tui"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "read_only",
+        "restart_required": false,
+        "schema_id": "harness.tui.$schema",
+        "sensitivity": "public",
+        "setting_id": "$schema",
+        "surface": "tui"
+      }
+    ]
+  },
+  "fixture_sha256": "21e7fd4e600103f3339a8605eb7dc75212cd55bef7edcd8cf8bc1aecc12c5731"
+}

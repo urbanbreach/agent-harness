@@ -8,15 +8,25 @@ use crate::{
     perm::{PermissionDecision, PermissionPolicy},
     redact::Redactor,
     store::{EventStore, EventStoreError},
-    tool::{ToolRegistry, ToolResult},
+    tool::{ToolError, ToolRegistry, ToolResult},
 };
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use serde_json::Value;
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::{CancellationToken, DropGuard};
 mod child_journals;
 mod children;
+mod commands;
 mod compaction;
-pub use children::ChildTaskRequest;
+pub use public_subagents::{
+    NativeMessageReceipt, NativeSubagentReceipt, NativeSubagentRegistration,
+    NativeWorkspaceReceipt, SendSubagentMessageResult, SpawnSubagentResult,
+    WaitCommandsOrSubagentsResult,
+};
 #[cfg(test)]
 mod children_tests;
 mod edit_paths;
@@ -51,6 +61,8 @@ mod output;
 mod output_tests;
 mod permissions;
 mod prompt;
+mod public_subagent_hooks;
+mod public_subagents;
 #[cfg(test)]
 mod question_tests;
 mod questions;
@@ -67,6 +79,7 @@ mod tests;
 mod tools;
 mod turn;
 mod workspace;
+pub use commands::{CommandExit, CommandSnapshot, CommandSubscription, PreparedCommand};
 #[cfg(test)]
 mod workspace_tests;
 use runtime::Runtime;
@@ -99,6 +112,12 @@ pub struct CoordinatorConfig {
     pub hook_runtime_config: crate::config::HookRuntimeConfig,
     pub provider: Arc<dyn harness_providers::Provider>,
     pub agent_profiles: BTreeMap<String, AgentProfile>,
+    pub subagents: crate::config::SubagentRuntimeConfig,
+    pub subagent_definitions: Option<crate::config::SubagentDefinitionSnapshot>,
+    pub subagent_discovery: Option<crate::config::SubagentDiscoveryContext>,
+    pub skills: crate::config::SkillsConfig,
+    pub skill_catalog_discovery: Option<Arc<dyn crate::config::SkillCatalogDiscovery>>,
+    pub subagent_model_catalog: Option<crate::config::SubagentModelCatalog>,
     pub agent_prompt_sources: BTreeMap<String, Arc<crate::model_resolution::PromptSource>>,
     pub agent_model_targets: BTreeMap<String, ResolvedModelTarget>,
     pub agent_model_fallbacks: BTreeMap<String, Vec<ResolvedModelTarget>>,
@@ -127,6 +146,12 @@ impl CoordinatorConfig {
             hook_runtime_config: Default::default(),
             provider: Arc::new(harness_providers::mock::MockProvider::default()),
             agent_profiles: BTreeMap::from([("default".into(), AgentProfile::fallback("default"))]),
+            subagents: Default::default(),
+            subagent_definitions: None,
+            subagent_discovery: None,
+            skills: Default::default(),
+            skill_catalog_discovery: None,
+            subagent_model_catalog: None,
             agent_prompt_sources: BTreeMap::new(),
             agent_model_targets: BTreeMap::new(),
             agent_model_fallbacks: BTreeMap::new(),
@@ -161,6 +186,8 @@ pub struct AgentRuntimeInfo {
 }
 #[derive(Debug, thiserror::Error)]
 pub enum CoordinatorError {
+    #[error("{code}: {message}")]
+    Native { code: String, message: String },
     #[error("coordinator is closed")]
     Closed,
     #[error("run has not started")]
@@ -200,6 +227,36 @@ pub enum CoordinatorError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+}
+
+impl From<ToolError> for CoordinatorError {
+    fn from(error: ToolError) -> Self {
+        match error {
+            ToolError::Custom { code, message } => Self::Native { code, message },
+            ToolError::InvalidArguments(message) => Self::Native {
+                code: "invalid_arguments".into(),
+                message,
+            },
+            ToolError::Cancelled => Self::Cancelled("tool cancelled".into()),
+            ToolError::Io(error) => Self::Io(error),
+            error => Self::Invalid(error.to_string()),
+        }
+    }
+}
+
+impl From<CoordinatorError> for ToolError {
+    fn from(error: CoordinatorError) -> Self {
+        match error {
+            CoordinatorError::Native { code, message } => Self::Custom { code, message },
+            CoordinatorError::PermissionDenied(message) => Self::Custom {
+                code: "permission_denied".into(),
+                message,
+            },
+            CoordinatorError::Cancelled(_) => Self::Cancelled,
+            CoordinatorError::Io(error) => Self::Io(error),
+            error => Self::Execution(error.to_string()),
+        }
+    }
 }
 
 pub fn spawn_coordinator(

@@ -80,6 +80,13 @@ pub(crate) fn build(
     config.validate().map_err(|e| e.to_string())?;
     let mut result = CoordinatorConfig::new(config.runtime.session_dir.clone());
     result.model_catalog = harness_core::config::configured_model_catalog(config).into();
+    result.subagents = config.subagents.resolve_with_lookup(
+        None,
+        &config.features,
+        &Default::default(),
+        &Default::default(),
+        &|name| deps.env_var_value(name),
+    );
     let mut rules = permission_rules(&config.permissions.defaults, &config.permissions.rules)?;
     if let Some(action) = config.permissions.fallback {
         rules.insert(
@@ -106,6 +113,8 @@ pub(crate) fn build(
         .map_err(|e| e.to_string())?
         .with_ask_timeout_ms(config.runtime.permissions.ask_timeout_ms);
     result.always_approve_on_start = config.runtime.always_approve;
+    result.skills = config.skills.clone();
+    result.skill_catalog_discovery = Some(Arc::new(harness_tools::NativeSkillCatalogDiscovery));
     result.tool_concurrency = config.runtime.background_tasks.default_concurrency;
     result.provider_model_concurrency = config.runtime.background_tasks.model_concurrency;
     result.compaction = config.runtime.compaction.clone();
@@ -119,6 +128,12 @@ pub(crate) fn build(
     let mut registry = harness_tools::coordinator_registry_with_skills(
         config.permissions.shell_allowlist.clone(),
         config.skills.clone(),
+    );
+    harness_tools::register_subagent_tools(
+        &mut registry,
+        &result.subagents,
+        &harness_core::config::SubagentDefinitionSnapshot::default(),
+        result.subagent_model_catalog.as_ref(),
     );
     harness_tools::register_remote_search_tools(
         &mut registry,

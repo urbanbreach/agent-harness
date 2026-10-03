@@ -9,14 +9,6 @@ use crate::layout::{ControlDockLayout, FrameLayoutPlan, SessionFooterMode, Sessi
 use crate::text::has_trimmed_content;
 use crate::theme::{ChromeMode, DividerIntensity};
 
-#[path = "ui_subagent_footer.rs"]
-mod ui_subagent_footer;
-#[path = "ui_subagent_footer_navigation.rs"]
-mod ui_subagent_footer_navigation;
-use self::ui_subagent_footer::render_subagent_footer;
-pub(crate) use self::ui_subagent_footer_navigation::{
-    subagent_footer_target_at, SubagentFooterTarget,
-};
 #[path = "ui_permission_dock.rs"]
 mod ui_permission_dock;
 pub(super) use self::ui_permission_dock::question_prompt_accent;
@@ -163,12 +155,6 @@ pub(super) fn render_footer(
     if area.height == 0 || text_area.height == 0 {
         return;
     }
-    if app.review_surface().is_none() && app.current_subagent_session_present() {
-        if let Some(info) = app.current_subagent_session_info() {
-            render_subagent_footer(frame, app, area, text_area, theme, &info);
-        }
-        return;
-    }
     if app.replay_mode && app.review_surface().is_none() {
         frame.render_widget(
             Block::default().style(Style::default().bg(theme.surface.shell)),
@@ -182,6 +168,11 @@ pub(super) fn render_footer(
             Block::default().style(Style::default().bg(theme.surface.canvas)),
             area,
         );
+        return;
+    }
+
+    if app.tasks_pane.visible && app.tasks_pane.focused {
+        super::ui_tasks_pane::render_footer(frame, app, text_area, theme);
         return;
     }
 

@@ -140,7 +140,7 @@ pub(super) fn transcript_target_is_hovered(
 }
 
 pub(super) fn transcript_surface_focused(app: &AppState) -> bool {
-    !app.replay_mode
+    (!app.replay_mode || app.current_subagent_session_present())
         && app.active_tab == Tab::Run
         && app.focus == Focus::Details
         && !app.todo_pane_focused()

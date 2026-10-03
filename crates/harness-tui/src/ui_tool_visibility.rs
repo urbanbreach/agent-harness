@@ -54,7 +54,7 @@ pub(super) fn tool_call_has_transcript_disclosure(tool_call: &ToolCallEntry) -> 
                     ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed
                 ) && (tool_call_has_preview_content(tool_call) || has_trimmed_content(output))
             }
-            "agent.spawn" | "task" => false,
+            "spawn_subagent" | "agent.spawn" | "task" => false,
             _ => has_trimmed_content(output),
         }
 }

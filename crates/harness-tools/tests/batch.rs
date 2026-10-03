@@ -1,7 +1,7 @@
 use harness_core::{
     agent::AgentProfile,
     clock::FakeClock,
-    config::ShellAllowlist,
+    config::{ResolvedModelLimits, ResolvedModelTarget, ShellAllowlist},
     coord::{spawn_coordinator, CoordinatorConfig},
     event::{ActorKind, EventActor, EventV1},
     perm::{PermissionAction, PermissionPolicy, PermissionRule},
@@ -98,11 +98,34 @@ async fn batches_share_capacity_preserve_order_permissions_and_cancellation(
         },
     ])?;
     let mut profile = AgentProfile::fallback("default");
-    profile.toolset = vec!["batch".into(), "probe".into(), "task".into()];
+    profile.model_ref = "mock:batch".into();
+    profile.toolset = vec!["batch".into(), "probe".into(), "spawn_subagent".into()];
     config.agent_profiles.insert("default".into(), profile);
-    let mut child = AgentProfile::fallback("child");
-    child.toolset = vec!["batch".into(), "probe".into()];
-    config.agent_profiles.insert("child".into(), child);
+    config.agent_model_targets.insert(
+        "default".into(),
+        ResolvedModelTarget {
+            model_ref: "mock:batch".into(),
+            provider: "mock".into(),
+            model: "batch".into(),
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
+            thinking: None,
+            limits: ResolvedModelLimits::default(),
+            resolution: harness_core::model_resolution::resolve_model(
+                harness_core::model_resolution::ModelResolutionInput {
+                    provider: "mock",
+                    model: "batch",
+                    metadata_family: None,
+                    input_modalities: &[],
+                    supports_tool_calls: Some(true),
+                    supports_reasoning_summaries: Some(true),
+                },
+            ),
+            catalog_entry: None,
+        },
+    );
     let handle = spawn_coordinator(
         config,
         Arc::new(FakeClock::new()),
@@ -197,9 +220,17 @@ async fn batches_share_capacity_preserve_order_permissions_and_cancellation(
         .await
         .is_err());
     probe.release[0].add_permits(1);
-    let child = handle.execute_agent_tool_call(actor, None, "task", json!({"subagent_type":"child","prompt":"Run a batch.","run_in_background":false,"load_skills":[]})).await?;
-    assert_eq!(child.display_text, "child batch done");
-    let child = child.structured_json.ok_or("missing child result")?["session_id"]
+    let child = handle
+        .execute_agent_tool_call(
+            actor,
+            None,
+            "spawn_subagent",
+            json!({"prompt":"Run a batch.","description":"Run nested batch","background":false}),
+        )
+        .await?;
+    let child = child.structured_json.ok_or("missing child result")?;
+    assert_eq!(child["output"], "child batch done");
+    let child = child["subagent_id"]
         .as_str()
         .ok_or("missing child id")?
         .to_owned();
@@ -227,7 +258,8 @@ async fn batches_share_capacity_preserve_order_permissions_and_cancellation(
             _ => None,
         })
         .ok_or("nested child lineage missing")?;
-    assert_eq!(nested.child_model_id.as_deref(), Some("default"));
+    assert_eq!(nested.child_provider_id.as_deref(), Some("mock"));
+    assert_eq!(nested.child_model_id.as_deref(), Some("batch"));
     assert_eq!(nested.child_session_id.as_deref(), Some(child.as_str()));
     Ok(())
 }

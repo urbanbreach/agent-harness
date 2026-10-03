@@ -98,7 +98,7 @@ impl LiveTurnWatchers {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TransientAssistantState {
     text_start: usize,
     reasoning_start: usize,
@@ -107,7 +107,7 @@ struct TransientAssistantState {
     text_first_seq: Option<u64>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ReasoningTiming {
     first_seq: u64,
     started_mono_ms: u64,
@@ -116,6 +116,7 @@ struct ReasoningTiming {
 
 #[derive(Default)]
 pub struct SessionProjection {
+    pub(crate) subagents: super::subagents::SubagentPresentation,
     live_compactions: BTreeMap<String, LiveCompaction>,
     // Incomplete child slices and rejected histories retain their inspection buffer.
     pub(crate) inspection_events: Option<Vec<EventEnvelopeV1>>,
@@ -149,7 +150,43 @@ pub struct SessionProjection {
 }
 
 impl SessionProjection {
+    pub(super) fn copy_child_live_presentation(&mut self, source: &Self, child: &str) {
+        for activity in &source.activities {
+            if source
+                .child_request_agents
+                .get(&activity.request_id)
+                .is_none_or(|owner| owner != child)
+            {
+                continue;
+            }
+            if let Some(target) = self
+                .activities
+                .iter_mut()
+                .find(|target| target.request_id == activity.request_id)
+            {
+                *target = activity.clone();
+            }
+            if let Some(transient) = source.transient_assistants.get(&activity.request_id) {
+                self.transient_assistants
+                    .insert(activity.request_id.clone(), transient.clone());
+            }
+            if let Some(phase) = source.provider_phases.get(&activity.request_id) {
+                self.provider_phases
+                    .insert(activity.request_id.clone(), phase.clone());
+            }
+            for (seq, timing) in source
+                .reasoning_timings
+                .range(activity.first_seq..=activity.last_seq)
+            {
+                self.reasoning_timings.insert(*seq, timing.clone());
+            }
+        }
+        self.subagents.observed_at = source.subagents.observed_at;
+        self.transcript_delta = ProjectionDelta::FullRebuild;
+    }
+
     pub(crate) fn reset(&mut self) {
+        self.subagents = super::subagents::SubagentPresentation::default();
         self.live_compactions.clear();
         self.inspection_events = None;
         self.canonical_projection = None;
@@ -828,9 +865,23 @@ impl SessionProjection {
     }
 
     fn note_agent_ownership(&mut self, event: &EventEnvelopeV1) {
+        self.subagents.apply(event);
         // Snapshot restoration needs the same ownership as live ingestion, even
         // when canonical history supplies the activity presentation.
         let request_id = match &event.payload {
+            EventV1::NativeSubagentRegistered(data) => {
+                self.child_agent_ids.insert(data.child_id.clone());
+                self.agent_profiles
+                    .insert(data.child_id.clone(), data.subagent_type.clone());
+                return;
+            }
+            EventV1::SubagentTransition(data) => {
+                if let Some(attempt) = &data.attempt_id {
+                    self.child_request_agents
+                        .insert(attempt.clone(), data.child_id.0.clone());
+                }
+                return;
+            }
             EventV1::AgentSpawned(data) => {
                 self.agent_profiles
                     .insert(data.agent_id.clone(), data.profile.clone());
@@ -1245,6 +1296,7 @@ impl SessionProjection {
 
     pub(crate) fn live_turn_watchers(&self) -> LiveTurnWatchers {
         let mut watchers = LiveTurnWatchers::default();
+        let native = &self.subagents.rows;
         let child_request_by_parent_tool = self
             .orchestration_tasks
             .values()
@@ -1263,6 +1315,17 @@ impl SessionProjection {
             .filter(|row| !row.state.is_terminal())
         {
             let queue_key = row.queue_key.as_deref().unwrap_or_default();
+            if native
+                .values()
+                .any(|child| child.parent_tool == row.task_id)
+                || (queue_key != "command"
+                    && row
+                        .owner_agent_id
+                        .as_deref()
+                        .is_some_and(|owner| native.contains_key(owner)))
+            {
+                continue;
+            }
             if Self::task_row_is_turn_level(row) {
                 if row.owner_kind == ActorKind::Worker && row.parent_tool_call_id.is_some() {
                     let request_id = row
@@ -1278,7 +1341,7 @@ impl SessionProjection {
             }
 
             match queue_key.strip_prefix("tool:") {
-                Some("task" | "agent.spawn") => {
+                Some("spawn_subagent" | "task" | "agent.spawn") => {
                     let request_id = row
                         .parent_tool_call_id
                         .as_deref()
@@ -1298,7 +1361,14 @@ impl SessionProjection {
                 }
             }
         }
-        watchers.subagents = subagent_identities.len();
+        watchers.subagents = subagent_identities.len()
+            + native
+                .values()
+                .filter(|row| {
+                    self.native_subagent_task(&row.parent_tool)
+                        .is_some_and(|task| !task.state.is_terminal())
+                })
+                .count();
         watchers
     }
 
@@ -1376,6 +1446,9 @@ impl SessionProjection {
         &self,
         tool_call: &ToolCallEntry,
     ) -> Option<OrchestrationTaskRow> {
+        if let Some(row) = self.native_subagent_task(&tool_call.tool_call_id) {
+            return Some(row);
+        }
         let child_request_id = tool_call
             .lineage
             .as_ref()

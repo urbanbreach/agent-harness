@@ -15,6 +15,8 @@ use ratatui::{
 };
 use serde_json::{json, Value};
 
+#[path = "support/current_settings_contract.rs"]
+mod current_settings;
 #[path = "support/rewrite_journey.rs"]
 mod journey;
 #[path = "support/rewrite_plan_geometry.rs"]
@@ -72,23 +74,27 @@ impl Recorder {
             "{name}-{}x{}-reduced-0ms",
             self.area.width, self.area.height
         );
+        current_settings::check_render(name, self.area, journey, &buffer, cursor)?;
         self.frames.push(json!({
             "id": id, "cursor": cursor.map(|p| (p.x, p.y)), "cells": cells(&buffer),
             "inputs": std::mem::take(&mut journey.inputs),
             "intents": *journey.intents.lock().unwrap_or_else(|e| e.into_inner()),
         }));
         if let Some(output) = &self.output {
-            let mut bytes = Vec::new();
+            let path = output.join(format!("{id}.ansi"));
             {
                 let mut ansi = Terminal::with_options(
-                    CrosstermBackend::new(&mut bytes),
+                    CrosstermBackend::new(std::io::BufWriter::new(fs::File::create(&path)?)),
                     TerminalOptions {
                         viewport: Viewport::Fixed(self.area),
                     },
                 )?;
                 ansi.draw(|frame| render_app(frame, &journey.app))?;
+                if name.ends_with("-settings") {
+                    // Capture the live cursor state before Terminal::drop restores it.
+                    fs::copy(&path, output.join(format!("{id}.settled.ansi")))?;
+                }
             }
-            fs::write(output.join(format!("{id}.ansi")), bytes)?;
         }
         Ok(())
     }
@@ -358,6 +364,20 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
     r.disk_sessions(std::path::Path::new("."))?;
     if let Some(output) = &r.output {
         fs::write(output.join("cells.json"), serde_json::to_vec(&r.frames)?)?;
+        let executable = std::env::current_exe()?;
+        fs::write(
+            output.join("producer.json"),
+            serde_json::to_vec_pretty(&json!({
+                "binding": current_settings::binding()?,
+                "executable": executable,
+                "executable_sha256": current_settings::sha256(&fs::read(&executable)?),
+                "entrypoint": "harness_tui::ui::render_app",
+                "frame_count": r.frames.len(),
+                "temporary_workspace": workspace.path(),
+                "test_workspace_override": std::env::var_os("NEXTEST").is_some()
+                    || std::env::var_os("HARNESS_TUI_TEST_WORKSPACE").is_some(),
+            }))?,
+        )?;
     }
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(GOLDEN);
     if std::env::var_os("HARNESS_TUI_RECORD_REFERENCE").is_some() {
@@ -375,6 +395,14 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
                 + "\n",
         )?;
     } else {
+        let current = if original {
+            None
+        } else {
+            Some(current_settings::Contract::load()?)
+        };
+        if let Some(current) = &current {
+            current.controls()?;
+        }
         let expected = fs::read_to_string(path)?;
         let expected = expected
             .lines()
@@ -386,8 +414,12 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
             "reference matrix is incomplete"
         );
         for (expected, actual) in expected.iter().zip(&r.frames) {
+            let expected = current
+                .as_ref()
+                .map_or(expected, |current| current.expected(expected));
             let mut expected = expected.clone();
             expected["cells"] = cells_with_documented_gap_correction(&expected)?;
+            current_settings::compare(&expected, actual)?;
             for field in ["id", "cursor", "cells", "inputs", "intents"] {
                 assert!(
                     expected[field] == actual[field],

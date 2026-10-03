@@ -74,6 +74,31 @@ pub(crate) fn keyboard_sidebar_subagent_selection_opens_child_session() {
         app.replay_mode,
         "keyboard opens inline child sessions read-only"
     );
+    for (width, height) in [(80, 24), (120, 40), (160, 50)] {
+        let rendered = render_text(&app, width, height);
+        let lines = rendered.lines().collect::<Vec<_>>();
+        assert!(
+            lines[1].starts_with("  ┌"),
+            "missing child frame at {width}x{height}"
+        );
+        assert!(lines[2].contains("[✗]"), "missing close control");
+        assert!(lines[3].starts_with("  ├"), "missing title separator");
+        assert!(
+            !rendered.contains("Parent "),
+            "obsolete parent/sibling footer"
+        );
+    }
+    app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    assert!(
+        !app.palette_visible,
+        "child inspection must not open the root palette"
+    );
+    app.handle_key(key(KeyCode::Char('q')));
+    assert_eq!(app.current_session_id(), Some("parent_run"));
+    assert!(
+        !app.should_quit,
+        "closing a child must leave its parent running"
+    );
 }
 
 pub(crate) fn live_subagent_hitbox_uses_rendered_transcript_area() {

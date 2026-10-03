@@ -162,6 +162,9 @@ fn apply_update(
     update: LiveUpdate,
 ) -> bool {
     match update {
+        LiveUpdate::CommandOutput(snapshot) => {
+            app.apply_command_output(*snapshot);
+        }
         LiveUpdate::RewindPoints { generation, result } => {
             app.apply_rewind_points(generation, result)
         }

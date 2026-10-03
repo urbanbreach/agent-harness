@@ -155,6 +155,8 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::BackgroundForegroundSubagents)
         | Some(UiIntent::DemoteForegroundChildTask { .. })
         | Some(UiIntent::InterruptSession { .. })
+        | Some(UiIntent::CancelSubagent { .. })
+        | Some(UiIntent::InspectCommand { .. })
         | Some(UiIntent::ForkSession { .. })
         | Some(UiIntent::CloneSession { .. })
         | Some(UiIntent::SwitchModel { .. })
@@ -223,6 +225,8 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         | UiIntent::BackgroundForegroundSubagents
         | UiIntent::DemoteForegroundChildTask { .. }
         | UiIntent::InterruptSession { .. }
+        | UiIntent::CancelSubagent { .. }
+        | UiIntent::InspectCommand { .. }
         | UiIntent::ForkSession { .. }
         | UiIntent::CloneSession { .. }
         | UiIntent::SwitchModel { .. }
@@ -249,6 +253,8 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
             | UiIntent::BackgroundForegroundSubagents
             | UiIntent::DemoteForegroundChildTask { .. }
             | UiIntent::InterruptSession { .. }
+            | UiIntent::CancelSubagent { .. }
+            | UiIntent::InspectCommand { .. }
             | UiIntent::ForkSession { .. }
             | UiIntent::CloneSession { .. }
             | UiIntent::SwitchModel { .. }

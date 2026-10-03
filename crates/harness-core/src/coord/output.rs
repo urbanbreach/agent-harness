@@ -85,6 +85,7 @@ impl Runtime {
         id: &str,
         actor: &EventActor,
         mut output: ToolResult,
+        retain_structured: bool,
     ) -> Result<ToolResult, CoordinatorError> {
         output.display_text = self.redactor.redact_text(&output.display_text);
         if let Some(json) = &mut output.structured_json {
@@ -113,12 +114,29 @@ impl Runtime {
                 ));
             }
             let artifact = self.write_artifact(actor, Some(id), "json", &full)?;
-            if json_large {
+            if json_large && !retain_structured {
                 output.structured_json = Some(
                     json!({"is_error":output.is_error(), "truncated":true, "artifact":artifact.path}),
                 );
             }
+            let footer = if retain_structured && end < output.display_text.len() {
+                output
+                    .display_text
+                    .rsplit_once('\n')
+                    .map(|(_, line)| line)
+                    .filter(|line| line.len() <= 1024)
+                    .map(str::to_owned)
+            } else {
+                None
+            };
+            let end = output.display_text.floor_char_boundary(
+                end.saturating_sub(footer.as_ref().map_or(0, |line| line.len() + 1)),
+            );
             output.display_text.truncate(end);
+            if let Some(footer) = footer {
+                output.display_text.push('\n');
+                output.display_text.push_str(&footer);
+            }
             output.display_text.push_str(&format!(
                 "\n[Output shortened. Retained output: {}]",
                 artifact.path

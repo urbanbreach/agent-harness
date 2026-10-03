@@ -176,7 +176,7 @@ async fn prompt_options_select_model_tools_and_policy_before_execution(
     let config = root.path().join("config.json");
     fs::write(&config, serde_json::json!({
         "provider":{"local":{"type":"openai_compatible", "models":{"base":{}, "chosen":{"variants":{"focused":{"metadata":{"reasoning_effort":"high"}}}}}}},
-        "model":"local/base", "agent":{"custom":{"tools":["write","read","list","task","webfetch","websearch"],"system_prompt":"Original instructions","permission":{"read":"deny"}}},
+        "model":"local/base", "agent":{"custom":{"tools":["write","read","list","task","spawn_subagent","webfetch","websearch"],"system_prompt":"Original instructions","permission":{"read":"deny"}}},
         "permission":{"edit":{"protected.txt":"deny"}}
     }).to_string())?;
     let provider = Arc::new(MockProvider::script([
@@ -221,7 +221,7 @@ async fn prompt_options_select_model_tools_and_policy_before_execution(
             "--max-turns",
             "2",
             "--tools",
-            "write,read,list,task,webfetch,websearch",
+            "write,read,list,task,spawn_subagent,webfetch,websearch",
             "--disallowed-tools",
             "read",
             "--no-subagents",
@@ -266,6 +266,71 @@ async fn prompt_options_select_model_tools_and_policy_before_execution(
                 .collect::<Vec<_>>(),
             ["write"]
         );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn prompt_resolves_subagent_enablement_and_messaging_before_provider_dispatch(
+) -> Result<(), Box<dyn std::error::Error>> {
+    for (enabled, messaging) in [(false, true), (true, false)] {
+        let root = tempfile::tempdir()?;
+        let config = root.path().join("config.json");
+        fs::write(
+            &config,
+            serde_json::json!({
+                "subagents": {"enabled": enabled},
+                "features": {"active_agent_messages": messaging},
+                "agent": {"custom": {"tools": [
+                    "spawn_subagent", "send_subagent_message",
+                    "get_command_or_subagent_output"
+                ]}}
+            })
+            .to_string(),
+        )?;
+        let provider = Arc::new(MockProvider::script([vec![ProviderStreamEvent::Done {
+            usage: None,
+        }]]));
+        let (mut input, mut stdout, mut stderr) = (Cursor::new(Vec::new()), Vec::new(), Vec::new());
+        let result = run(
+            [
+                "harness",
+                "--config",
+                config.to_str().ok_or("config path")?,
+                "prompt",
+                "--mock",
+                "--profile",
+                "custom",
+                "--text",
+                "Inspect configured tools",
+            ],
+            &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
+            CliDeps::real()
+                .with_current_dir(root.path().into())
+                .without_env("GROK_SUBAGENTS")
+                .without_env("GROK_ACTIVE_AGENT_MESSAGES")
+                .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),
+        );
+        assert_eq!(result.code, 0, "{}", String::from_utf8_lossy(&stderr));
+        let request = provider
+            .captured_requests()
+            .await
+            .pop()
+            .ok_or("provider request")?;
+        let tools = request.tools.ok_or("missing tool definitions")?;
+        assert_eq!(
+            tools.iter().any(|tool| tool.tool_id == "spawn_subagent"),
+            enabled
+        );
+        assert_eq!(
+            tools
+                .iter()
+                .any(|tool| tool.tool_id == "send_subagent_message"),
+            messaging
+        );
+        assert!(tools
+            .iter()
+            .any(|tool| tool.tool_id == "get_command_or_subagent_output"));
     }
     Ok(())
 }

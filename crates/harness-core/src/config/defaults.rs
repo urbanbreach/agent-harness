@@ -9,7 +9,8 @@ macro_rules! defaults {
 defaults! {
     HarnessConfig {
         schema: None, providers: BTreeMap::new(), disabled_providers: Vec::new(), enabled_providers: Vec::new(), model_profiles: BTreeMap::new(),
-        agents: BTreeMap::new(), permissions: PermissionsConfig::default(), runtime: RuntimeConfig::default(), integrations: IntegrationsConfig::default(),
+        agents: BTreeMap::new(), subagents: SubagentsConfig::default(), features: SubagentFeaturesConfig::default(),
+        permissions: PermissionsConfig::default(), runtime: RuntimeConfig::default(), integrations: IntegrationsConfig::default(),
         hooks: HooksConfig::default(), skills: SkillsConfig::default(), lsp: LspConfig::default(), background_task: BackgroundTaskSettings::default(),
         paths: PathsConfig::default(), deterministic: DeterministicConfig::default(), ui: UiConfig::default(), logging: LoggingConfig::default(),
         hashline_edit: true, formatter: FormatterConfig::default(), instruction_files: Vec::new(), small_model: None

@@ -10,16 +10,18 @@ use crate::text::non_empty_trimmed;
 
 impl AppState {
     pub(in crate::app) fn route_live_fragment_while_viewing_child(
-        &self,
+        &mut self,
         event: &LiveEventEnvelope,
     ) -> bool {
         if !self.replay_mode {
             return false;
         }
-        let Some(current_session_id) = self.current_session_id() else {
+        let Some(current_session_id) = self.current_session_id().map(str::to_owned) else {
             return false;
         };
-        let Some(parent_snapshot) = self.session_navigation_stack.first() else {
+        let Some((parent_snapshot, child_snapshots)) =
+            self.session_navigation_stack.split_first_mut()
+        else {
             return false;
         };
         if parent_snapshot.replay_mode {
@@ -27,11 +29,28 @@ impl AppState {
         }
 
         let visible = event_agent_id(&event.actor, event.stream_key.as_deref())
-            == Some(current_session_id)
+            == Some(current_session_id.as_str())
             || event.correlation_id.as_deref().is_some_and(|request_id| {
-                child_request_ids_for_session(&parent_snapshot.events, current_session_id)
+                child_request_ids_for_session(&parent_snapshot.events, &current_session_id)
                     .contains(request_id)
             });
+        if let Some(view) = &mut parent_snapshot.view {
+            view.projection.ingest_live_event(event);
+        }
+        for snapshot in child_snapshots {
+            let Some(id) = session_id_from_path(&snapshot.session_path) else {
+                continue;
+            };
+            if event_agent_id(&event.actor, event.stream_key.as_deref()) == Some(id.as_str())
+                || event.correlation_id.as_deref().is_some_and(|request| {
+                    child_request_ids_for_session(&parent_snapshot.events, &id).contains(request)
+                })
+            {
+                if let Some(view) = &mut snapshot.view {
+                    view.projection.ingest_live_event(event);
+                }
+            }
+        }
         !visible
     }
 
@@ -39,6 +58,7 @@ impl AppState {
         &mut self,
         event: &EventEnvelopeV1,
     ) -> bool {
+        let observed_at = self.now();
         if !self.replay_mode {
             return false;
         }
@@ -75,6 +95,10 @@ impl AppState {
                     )
                 });
             parent_snapshot.events.push(event.clone());
+            if let Some(view) = &mut parent_snapshot.view {
+                view.projection.ingest_event(event.clone(), false);
+                view.projection.subagents.observed_at = Some(observed_at);
+            }
             if !belongs_to_child {
                 push_child_session_id(&mut parent_snapshot.child_session_ids, child_session_id);
             }
@@ -93,6 +117,10 @@ impl AppState {
                 .any(|existing| existing.seq == event.seq)
             {
                 snapshot.events.push(event.clone());
+                if let Some(view) = &mut snapshot.view {
+                    view.projection.ingest_inline_event(event.clone(), false);
+                    view.projection.subagents.observed_at = Some(observed_at);
+                }
                 push_child_session_id(
                     &mut snapshot.child_session_ids,
                     child_session_id_from_event(event).filter(|id| id != &session_id),
@@ -109,6 +137,13 @@ pub(super) fn event_belongs_to_child_session(
     child_request_ids: &BTreeSet<String>,
     child_session_id: &str,
 ) -> bool {
+    if matches!(&event.payload,
+        EventV1::NativeSubagentRegistered(data) if data.child_id == child_session_id)
+        || matches!(&event.payload,
+            EventV1::SubagentTransition(data) if data.child_id.0 == child_session_id)
+    {
+        return true;
+    }
     if event_agent_id(&event.actor, event.stream_key.as_deref()) == Some(child_session_id) {
         return true;
     }
@@ -216,6 +251,7 @@ fn lineage_child_request_id(
 
 fn child_session_id_from_event(event: &EventEnvelopeV1) -> Option<String> {
     match &event.payload {
+        EventV1::NativeSubagentRegistered(data) => Some(data.child_id.clone()),
         EventV1::ToolCallRequested(data) => data
             .metadata
             .as_ref()

@@ -6,16 +6,35 @@ use harness_core::{
     event::{ActorKind, EventActor},
     perm::PermissionPolicy,
     redact::DefaultRedactor,
+    subagent::{FinalizedStateResult, FinalizedStateUnavailable},
 };
-use harness_providers::{mock::MockProvider, ProviderStreamEvent as Stream};
+use harness_providers::{
+    mock::MockProvider, CompletionUsage, ProviderStreamEvent as Stream,
+    ProviderStreamFinishedMetadata,
+};
 use serde_json::json;
 use std::sync::Arc;
 
 #[path = "background_output/notifications.rs"]
 mod notifications;
 
+fn done(reasoning: Vec<String>) -> Stream {
+    Stream::DoneWithMetadata {
+        usage: Some(CompletionUsage {
+            prompt_tokens: 12,
+            completion_tokens: 3,
+            total_tokens: 15,
+        }),
+        metadata: Some(ProviderStreamFinishedMetadata {
+            settled_reasoning: Some(reasoning),
+            usage_complete: Some(true),
+            ..Default::default()
+        }),
+    }
+}
+
 #[tokio::test]
-async fn background_history_is_owned_paginated_and_redacted_without_retaining_reasoning(
+async fn native_output_preserves_owned_redacted_child_history_and_reload_never_reruns_tools(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     std::fs::write(
@@ -24,7 +43,7 @@ async fn background_history_is_owned_paginated_and_redacted_without_retaining_re
     )?;
     let provider = Arc::new(MockProvider::script([
         vec![
-            Stream::ReasoningDelta("private reasoning".into()),
+            Stream::ReasoningDelta("synthetic settled reasoning marker".into()),
             Stream::ToolCallComplete {
                 tool_call_id: "read-note".into(),
                 function_name: "read".into(),
@@ -36,132 +55,127 @@ async fn background_history_is_owned_paginated_and_redacted_without_retaining_re
                 arguments_json: json!({"filePath":"child.txt","content":"created by the child\n"})
                     .to_string(),
             },
-            Stream::Done { usage: None },
+            done(vec!["synthetic settled reasoning marker".into()]),
         ],
         vec![
-            Stream::TextDelta("first report".into()),
-            Stream::Done { usage: None },
-        ],
-        vec![
-            Stream::TextDelta("continued report".into()),
-            Stream::Done { usage: None },
-        ],
-        vec![
-            Stream::TextDelta("fork report".into()),
-            Stream::Done { usage: None },
+            Stream::TextDelta("report credential-for-history-redaction".into()),
+            done(Vec::new()),
         ],
     ]));
+    let registry = harness_tools::coordinator_registry(ShellAllowlist::default());
     let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
     config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
-    config.tool_registry = Arc::new(harness_tools::coordinator_registry(
-        ShellAllowlist::default(),
-    ));
+    config.tool_registry = Arc::new(registry);
     config.permission_policy = PermissionPolicy::allow_all();
     config
         .secret_values
         .push("credential-for-history-redaction".into());
     let mut parent = AgentProfile::fallback("default");
-    parent.toolset = vec!["task".into(), "background_output".into()];
+    parent.toolset = config.tool_registry.tool_ids();
     config.agent_profiles.insert("default".into(), parent);
-    let mut child = AgentProfile::fallback("child");
-    child.toolset = vec!["read".into(), "write".into()];
-    config.agent_profiles.insert("child".into(), child);
     let coordinator = spawn_coordinator(
         config.clone(),
         Arc::new(FakeClock::new()),
         Arc::new(DefaultRedactor::default()),
     );
     let run = coordinator
-        .start_run("background history", temp.path())
+        .start_run("native child history", temp.path())
         .await?;
     let parent = coordinator
         .spawn_agent_idle(EventActor::new(ActorKind::User, None), "default", None)
         .await?;
     let actor = EventActor::new(ActorKind::Worker, Some(parent));
-    let output = coordinator.execute_agent_tool_call(actor.clone(), None, "task", json!({"subagent_type":"child","prompt":"Read the note", "run_in_background":false,"load_skills":[]})).await?;
-    let child = output.structured_json.ok_or("missing child")?["session_id"]
+    let output = coordinator
+        .execute_agent_tool_call(
+            actor.clone(),
+            None,
+            "spawn_subagent",
+            json!({"prompt":"Read the note.","description":"Read child note","background":false}),
+        )
+        .await?;
+    let child = output.structured_json.ok_or("missing child output")?["subagent_id"]
         .as_str()
         .ok_or("missing child id")?
         .to_owned();
-    coordinator.execute_agent_tool_call(actor.clone(), None, "task", json!({"session_id":child,"prompt":"Continue", "run_in_background":false,"load_skills":[]})).await?;
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("child.txt"))?,
+        "created by the child\n"
+    );
     let child_dir = config.session_dir.join(&child);
     let child_events = harness_core::store::read_events(&child_dir.join("events.jsonl"))?;
-    assert!(child_events.iter().all(|e| e.run_id.as_str() == child));
+    assert!(child_events
+        .iter()
+        .all(|event| event.run_id.as_str() == child));
     assert!(
         harness_core::store::Journal::open_existing(&config.session_dir, &child, false).is_err(),
-        "the parent owns its child's writer until shutdown"
+        "the parent retains the only child projection writer"
     );
-    for artifact in child_events.iter().filter_map(|e| match &e.payload {
-        harness_core::event::EventV1::ArtifactWritten(e) => Some(e),
-        _ => None,
-    }) {
+    for artifact in child_events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            harness_core::event::EventV1::ArtifactWritten(artifact) => Some(artifact),
+            _ => None,
+        })
+    {
         let bytes = std::fs::read(child_dir.join(&artifact.path))?;
         assert_eq!(blake3::hash(&bytes).to_hex().as_str(), artifact.digest);
     }
     assert!(child_events
         .iter()
-        .any(|e| matches!(e.payload, harness_core::event::EventV1::EditApplied(_))));
-    let output = coordinator.execute_agent_tool_call(actor.clone(), None, "background_output", json!({"session_id":child,"full_session":true,"include_tool_results":true,"include_thinking":true,"thinking_max_chars":1,"timeout":0})).await?;
-    let value = output.structured_json.ok_or("missing history")?;
-    assert_eq!(value["full_session"]["message_count"], 5);
-    assert_eq!(
-        value["full_session"]["tool_results"]
-            .as_array()
-            .ok_or("missing tool results")?
-            .len(),
-        2
-    );
-    assert!(value["full_session"]["tool_results"]
-        .as_array()
-        .ok_or("missing tool output")?
-        .iter()
-        .any(|v| v["text"]
-            .as_str()
-            .is_some_and(|s| s.contains("child tool output"))));
-    assert_eq!(value["thinking"]["unavailable"], true);
-    assert!(!value.to_string().contains("private reasoning"));
-    assert!(!value
+        .any(|event| matches!(event.payload, harness_core::event::EventV1::EditApplied(_))));
+    let output = coordinator
+        .execute_agent_tool_call(
+            actor.clone(),
+            None,
+            "get_command_or_subagent_output",
+            // Native unknown keys are ignored, not retained legacy history options.
+            json!({"task_id":child,"timeout_ms":0,"full_session":true,"include_thinking":true}),
+        )
+        .await?;
+    let data = output.structured_json.ok_or("missing native output")?;
+    assert_eq!(data["Result"]["status"], "completed");
+    assert_eq!(data["Result"]["exit_code"], 0);
+    assert!(data["Result"]["output"]
+        .as_str()
+        .ok_or("output text")?
+        .contains("report"));
+    assert!(data.get("full_session").is_none());
+    assert!(data.get("thinking").is_none());
+    assert!(!data
         .to_string()
         .contains("credential-for-history-redaction"));
-    assert!(!value.to_string().contains("arguments_json"));
-    let cursor = value["full_session"]["messages"][2]["event_id"]
-        .as_str()
-        .ok_or("missing cursor")?;
-    let output = coordinator.execute_agent_tool_call(actor.clone(), None, "background_output", json!({"session_id":child,"full_session":true,"since_message_id":cursor,"message_limit":1,"from_end":true})).await?;
-    let page = output.structured_json.ok_or("missing page")?;
-    assert_eq!(page["full_session"]["message_count"], 1);
-    assert_eq!(
-        page["full_session"]["messages"][0]["text"],
-        "continued report"
-    );
-    assert_eq!(page["full_session"]["message_truncated"], true);
-    for args in [
-        json!({"session_id":child,"full_session":true,"since_message_id":"unknown"}),
-        json!({"request_ids":[child,"other"],"full_session":true,"wait_mode":"all"}),
-    ] {
-        assert!(coordinator
-            .execute_agent_tool_call(actor.clone(), None, "background_output", args)
-            .await
-            .is_err());
-    }
+    assert!(!data
+        .to_string()
+        .contains("synthetic settled reasoning marker"));
+    assert!(matches!(
+        coordinator.raw_finalized_state(child.clone()).await?,
+        FinalizedStateResult::Unavailable {
+            reason: FinalizedStateUnavailable::PolicyModified
+        }
+    ));
     let other = coordinator
         .spawn_agent_idle(EventActor::new(ActorKind::User, None), "default", None)
         .await?;
-    assert!(coordinator
+    let foreign = coordinator
         .execute_agent_tool_call(
             EventActor::new(ActorKind::Worker, Some(other)),
             None,
-            "background_output",
-            json!({"session_id":child,"full_session":true})
+            "get_command_or_subagent_output",
+            json!({"task_ids":[child]}),
         )
-        .await
-        .is_err());
+        .await?;
+    assert!(
+        foreign.is_error(),
+        "an unrelated parent must not obtain child output"
+    );
+    assert!(!foreign.display_text.contains("report"));
     coordinator.stop_run().await?;
-    let child_events = harness_core::store::read_events(&child_dir.join("events.jsonl"))?;
+    let root_prefix = std::fs::read(&run.events_path)?;
+    let child_prefix = std::fs::read(child_dir.join("events.jsonl"))?;
     let metadata = harness_core::proj::read_run_metadata(&child_dir)?
-        .map(|m| harness_core::proj::SessionCatalogMetadata::from(&m));
+        .map(|metadata| harness_core::proj::SessionCatalogMetadata::from(&metadata));
     let catalog = harness_core::proj::project_session_catalog_entry(
-        &child_events,
+        &harness_core::store::read_events(&child_dir.join("events.jsonl"))?,
         &child,
         metadata.as_ref(),
         None,
@@ -171,55 +185,6 @@ async fn background_history_is_owned_paginated_and_redacted_without_retaining_re
         catalog.parent_session_id.as_deref(),
         Some(run.run_id.as_str())
     );
-    assert!(catalog.is_resumable);
-    assert_eq!(catalog.profile_preset.as_deref(), Some("child"));
-    let prefix = std::fs::read(child_dir.join("events.jsonl"))?;
-    let root_prefix = std::fs::read(&run.events_path)?;
-    let root_events = harness_core::store::read_events(&run.events_path)?;
-    let stable = harness_core::session_lineage::latest_clone_stable_prefix(&root_events)?;
-    let fork = harness_core::session_lineage::materialize_child_session(
-        harness_core::session_lineage::ChildSessionMaterializationRequest {
-            source_run_dir: &run.run_dir, events: &root_events, stable_prefix: &stable,
-            source_kind: harness_core::session_lineage::ChildSessionMaterializationSourceKind::DiskRunDirectory,
-        },
-    )?;
-    let fork_events = harness_core::store::read_events(&fork.child_run_dir.join("events.jsonl"))?;
-    let fork_child = fork_events
-        .iter()
-        .find_map(|e| match &e.payload {
-            harness_core::event::EventV1::AgentSpawned(e) if e.parent_agent_id.is_some() => {
-                Some(e.agent_id.clone())
-            }
-            _ => None,
-        })
-        .ok_or("fork lost child")?;
-    assert_ne!(fork_child, child, "a branch must own its child sessions");
-    let branch = spawn_coordinator(
-        config.clone(),
-        Arc::new(FakeClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    branch.resume_run(fork.child_run_id, "parent fork").await?;
-    let output = branch.execute_agent_tool_call(actor.clone(), None, "task", json!({"session_id":fork_child,"prompt":"branch only", "run_in_background":false,"load_skills":[]})).await?;
-    assert_eq!(output.display_text, "fork report");
-    branch.stop_run().await?;
-    assert_eq!(std::fs::read(&run.events_path)?, root_prefix);
-    assert_eq!(std::fs::read(child_dir.join("events.jsonl"))?, prefix);
-    let standalone = spawn_coordinator(
-        config.clone(),
-        Arc::new(FakeClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    standalone
-        .resume_run(child.clone(), "standalone child")
-        .await?;
-    assert!(coordinator
-        .resume_run(run.run_id.to_string(), "conflicting parent")
-        .await
-        .is_err());
-    assert_eq!(std::fs::read(&run.events_path)?, root_prefix);
-    standalone.stop_run().await?;
-    assert!(std::fs::read(child_dir.join("events.jsonl"))?.starts_with(&prefix));
     for missing in [false, true] {
         if missing {
             std::fs::remove_dir_all(&child_dir)?;
@@ -230,41 +195,39 @@ async fn background_history_is_owned_paginated_and_redacted_without_retaining_re
                 .open(child_dir.join("events.jsonl"))?
                 .write_all(b"{\"")?;
         }
-        let resumed = spawn_coordinator(
+        let restored = spawn_coordinator(
             config.clone(),
             Arc::new(FakeClock::new()),
             Arc::new(DefaultRedactor::default()),
         );
-        resumed
-            .resume_run(run.run_id.to_string(), "resumed")
+        restored
+            .resume_run(run.run_id.to_string(), "restore owned history")
             .await?;
-        let output = resumed
+        let output = restored
             .execute_agent_tool_call(
                 actor.clone(),
                 None,
-                "background_output",
-                json!({"session_id":child,"full_session":true,"message_limit":200}),
+                "get_command_or_subagent_output",
+                json!({"task_ids":[child],"timeout_ms":0}),
             )
             .await?;
         assert_eq!(
-            output.structured_json.ok_or("missing resumed history")?["full_session"]
-                ["message_count"],
-            5
+            output.structured_json.ok_or("restored output")?["Result"]["status"],
+            "completed"
         );
-        assert_eq!(provider.call_count(), 4);
-        resumed.stop_run().await?;
-        let recovered = harness_core::store::read_events(&child_dir.join("events.jsonl"))?;
-        harness_core::proj::project_resume_plan(&recovered, &child)?;
         assert_eq!(
-            recovered
-                .iter()
-                .filter(|e| matches!(
-                    e.payload,
-                    harness_core::event::EventV1::UserMessageSubmitted(_)
-                ))
-                .count(),
-            2
+            provider.call_count(),
+            2,
+            "inspection/reload must not replay tools"
         );
+        restored.stop_run().await?;
+        let recovered = std::fs::read(child_dir.join("events.jsonl"))?;
+        assert!(recovered.starts_with(&child_prefix));
+        assert!(std::fs::read(&run.events_path)?.starts_with(&root_prefix));
+        harness_core::proj::project_resume_plan(
+            &harness_core::store::read_events(&child_dir.join("events.jsonl"))?,
+            &child,
+        )?;
     }
     Ok(())
 }

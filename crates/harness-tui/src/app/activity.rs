@@ -217,11 +217,23 @@ fn tool_boolean_arg(tool: &ToolCallEntry, key: &str) -> bool {
 }
 
 pub(in crate::app) fn tool_call_is_parked_wait(tool: &ToolCallEntry) -> bool {
-    tool.effective_tool_id() == "background_output" && tool_boolean_arg(tool, "block")
+    match tool.effective_tool_id() {
+        "background_output" => tool_boolean_arg(tool, "block"),
+        "wait_commands_or_subagents" | "wait_tasks" => true,
+        "get_command_or_subagent_output" | "get_task_output" => serde_json::from_str::<
+            harness_core::subagent::GetCommandOrSubagentOutputInput,
+        >(&tool.args_summary)
+        .is_ok_and(|input| input.timeout_ms.is_some_and(|timeout| timeout > 0)),
+        _ => false,
+    }
 }
 
 pub(in crate::app) fn tool_call_is_foreground_child_wait(tool: &ToolCallEntry) -> bool {
     match tool.effective_tool_id() {
+        "spawn_subagent" => {
+            serde_json::from_str::<harness_core::subagent::SpawnSubagentInput>(&tool.args_summary)
+                .is_ok_and(|input| !input.background)
+        }
         "task" => !tool_boolean_arg(tool, "run_in_background"),
         "agent.spawn" => {
             !tool_boolean_arg(tool, "background") && !tool_boolean_arg(tool, "run_in_background")

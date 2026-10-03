@@ -59,6 +59,102 @@ async fn send_rewind_points(
     let _ = updates.send(LiveUpdate::RewindPoints { generation, result });
 }
 
+async fn stream_command_output(
+    coordinator: CoordinatorHandle,
+    actor: EventActor,
+    updates: LiveUpdateSender,
+    id: String,
+) {
+    let mut subscription = match coordinator.subscribe_command(actor, id).await {
+        Ok(Some(subscription)) => subscription,
+        result => {
+            let message = match result {
+                Err(error) => format!("Command output unavailable: {error}"),
+                _ => "Command output is no longer available.".into(),
+            };
+            let _ = updates.send(LiveUpdate::OperatorNotice {
+                message,
+                level: OperatorNoticeLevel::Error,
+            });
+            return;
+        }
+    };
+    let mut snapshot = subscription.snapshot;
+    let mut cadence = tokio::time::interval(std::time::Duration::from_millis(33));
+    loop {
+        let terminal = snapshot.is_terminal();
+        if updates
+            .send(LiveUpdate::CommandOutput(Box::new(snapshot)))
+            .is_err()
+            || terminal
+        {
+            return;
+        }
+        if subscription.updates.changed().await.is_err() {
+            return;
+        }
+        cadence.tick().await;
+        snapshot = subscription.updates.borrow_and_update().clone();
+    }
+}
+
+async fn change_command_view(
+    views: &mut tokio::task::JoinSet<()>,
+    coordinator: &CoordinatorHandle,
+    actor: &EventActor,
+    updates: &LiveUpdateSender,
+    task_id: Option<String>,
+) {
+    views.shutdown().await;
+    if let Some(id) = task_id {
+        views.spawn(stream_command_output(
+            coordinator.clone(),
+            actor.clone(),
+            updates.clone(),
+            id,
+        ));
+    }
+}
+
+async fn request_selected_turn(
+    coordinator: &CoordinatorHandle,
+    user_actor: &EventActor,
+    agent_id: String,
+    text: String,
+    selected_tags: harness_core::file_tag::SelectedPromptTags,
+    attachment_metadata: Vec<harness_core::attachment_transport::AttachmentMetadata>,
+    launch_metadata: &harness_tui::app::LaunchMetadata,
+) -> Result<String, String> {
+    let result = match launch_metadata_model_target(launch_metadata) {
+        Some(target) => {
+            coordinator
+                .request_agent_turn_with_model_target_and_selected_tags_and_attachments(
+                    user_actor.clone(),
+                    agent_id,
+                    text,
+                    selected_tags,
+                    attachment_metadata,
+                    target,
+                )
+                .await
+        }
+        None => {
+            coordinator
+                .request_agent_turn_with_model_and_selected_tags_and_attachments(
+                    user_actor.clone(),
+                    agent_id,
+                    text,
+                    selected_tags,
+                    attachment_metadata,
+                    launch_metadata_model_ref(launch_metadata),
+                    Some(launch_metadata_model_settings(launch_metadata)),
+                )
+                .await
+        }
+    };
+    result.map_err(|error| error.to_string())
+}
+
 pub(super) async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
     mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
@@ -67,8 +163,19 @@ pub(super) async fn handle_ui_intents(
     live_update_tx: LiveUpdateSender,
     auth_backend: TuiAuthBackendContext,
 ) -> Result<(), String> {
+    let mut command_views = tokio::task::JoinSet::new();
     while let Some(intent) = intent_rx.recv().await {
         match intent {
+            UiIntent::InspectCommand { task_id } => {
+                change_command_view(
+                    &mut command_views,
+                    &coordinator,
+                    &user_actor,
+                    &live_update_tx,
+                    task_id,
+                )
+                .await;
+            }
             UiIntent::LoadRewindPoints {
                 generation,
                 cancel_task_ids,
@@ -125,44 +232,29 @@ pub(super) async fn handle_ui_intents(
                     .ok()
                     .and_then(|target| target.agent_id.clone());
 
-                if let Some(agent_id) = agent_id {
-                    let attachment_metadata = prompt_attachment_metadata(&attachments)?;
-                    let selected_tags = harness_core::file_tag::SelectedPromptTags {
-                        files: selected_file_tags,
-                        agents: selected_agent_tags,
-                        resources: selected_resource_tags,
-                    };
-                    let request = match launch_metadata_model_target(&launch_metadata) {
-                        Some(target) => coordinator
-                            .request_agent_turn_with_model_target_and_selected_tags_and_attachments(
-                                user_actor.clone(),
-                                agent_id,
-                                text,
-                                selected_tags,
-                                attachment_metadata,
-                                target,
-                            )
-                            .await,
-                        None => {
-                            coordinator
-                                .request_agent_turn_with_model_and_selected_tags_and_attachments(
-                                    user_actor.clone(),
-                                    agent_id,
-                                    text,
-                                    selected_tags,
-                                    attachment_metadata,
-                                    launch_metadata_model_ref(&launch_metadata),
-                                    Some(launch_metadata_model_settings(&launch_metadata)),
-                                )
-                                .await
-                        }
-                    };
-                    let request_id = request.map_err(|err| err.to_string())?;
-                    let mut target = target_state
-                        .lock()
-                        .map_err(|_| "live agent target lock poisoned".to_string())?;
-                    target.last_request_id = Some(request_id);
-                }
+                let Some(agent_id) = agent_id else {
+                    continue;
+                };
+                let attachment_metadata = prompt_attachment_metadata(&attachments)?;
+                let selected_tags = harness_core::file_tag::SelectedPromptTags {
+                    files: selected_file_tags,
+                    agents: selected_agent_tags,
+                    resources: selected_resource_tags,
+                };
+                let request_id = request_selected_turn(
+                    &coordinator,
+                    &user_actor,
+                    agent_id,
+                    text,
+                    selected_tags,
+                    attachment_metadata,
+                    &launch_metadata,
+                )
+                .await?;
+                let mut target = target_state
+                    .lock()
+                    .map_err(|_| "live agent target lock poisoned".to_string())?;
+                target.last_request_id = Some(request_id);
             }
             UiIntent::CompactSession {
                 custom_instructions,
@@ -208,6 +300,9 @@ pub(super) async fn handle_ui_intents(
             }
             UiIntent::InterruptSession { task_ids, reason } => {
                 interrupt_tasks(&coordinator, &live_update_tx, task_ids, reason).await;
+            }
+            UiIntent::CancelSubagent { session_id } => {
+                cancel_child(&coordinator, &user_actor, &live_update_tx, session_id).await;
             }
             UiIntent::ForkSession {
                 source_run_dir,
@@ -276,6 +371,29 @@ pub(super) async fn handle_ui_intents(
         }
     }
     Ok(())
+}
+
+async fn cancel_child(
+    coordinator: &CoordinatorHandle,
+    actor: &EventActor,
+    updates: &LiveUpdateSender,
+    session_id: String,
+) {
+    if let Err(error) = coordinator
+        .request_subagent_cancel(
+            actor.clone(),
+            harness_core::subagent::SubagentCommandRequest::ChildSessionCancel {
+                session_id,
+                descendants: Vec::new(),
+            },
+        )
+        .await
+    {
+        let _ = updates.send(LiveUpdate::OperatorNotice {
+            message: format!("Subagent cancellation failed: {error}"),
+            level: OperatorNoticeLevel::Error,
+        });
+    }
 }
 
 async fn update_session_title_notice(

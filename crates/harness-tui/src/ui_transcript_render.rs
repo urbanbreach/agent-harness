@@ -461,6 +461,7 @@ fn pack_wall_clock_on_line(
     clock: &str,
     content_width: u16,
     theme: &Theme,
+    child_view: bool,
 ) {
     let used = line
         .spans
@@ -473,11 +474,12 @@ fn pack_wall_clock_on_line(
         return;
     }
     let pad = target.saturating_sub(used).saturating_sub(clock_width);
-    if pad > 0 {
-        line.spans.push(Span::raw(" ".repeat(pad)));
+    let clock_gutter = if child_view { 2.min(pad) } else { 0 };
+    if pad > clock_gutter {
+        line.spans.push(Span::raw(" ".repeat(pad - clock_gutter)));
     }
     line.spans.push(Span::styled(
-        clock.to_string(),
+        format!("{}{clock}", " ".repeat(clock_gutter)),
         Style::default().fg(theme.text.secondary),
     ));
 }
@@ -552,6 +554,7 @@ fn build_assistant_part_render_surface(
             let content = resolve_assistant_body_content(
                 body,
                 turn.footer_timestamp.as_deref(),
+                turn.child_view,
                 theme,
                 content_width,
             );
@@ -690,6 +693,7 @@ struct AssistantBodyContent {
 fn resolve_assistant_body_content(
     body: &TranscriptBodyBlock,
     wall_clock: Option<&str>,
+    child_view: bool,
     theme: &Theme,
     content_width: u16,
 ) -> AssistantBodyContent {
@@ -752,7 +756,7 @@ fn resolve_assistant_body_content(
         lines.pop();
     }
     if let (Some(clock), Some(line)) = (wall_clock, lines.first_mut()) {
-        pack_wall_clock_on_line(line, clock, content_width, theme);
+        pack_wall_clock_on_line(line, clock, content_width, theme, child_view);
     }
     if let Some(rows) = &mut selection_rows {
         rows.truncate(lines.len());
@@ -1495,6 +1499,7 @@ mod tests {
         };
 
         super::super::TranscriptTurnSection {
+            child_view: false,
             activity_first_seq: 1,
             request_id: "request-ui10".to_string(),
             user_message: None,
@@ -1526,6 +1531,7 @@ mod tests {
 
     fn selected_user_turn() -> super::super::TranscriptTurnSection {
         super::super::TranscriptTurnSection {
+            child_view: false,
             activity_first_seq: 1,
             request_id: "request-selected-user".to_string(),
             user_message: Some(super::super::TranscriptUserMessageSection {
@@ -1996,6 +2002,7 @@ mod tests {
         let succeeded = command("command-ok", "echo ok", ToolCallDisplayStatus::Succeeded);
         let failed = command("command-failed", "echo fail", ToolCallDisplayStatus::Failed);
         let turn = super::super::TranscriptTurnSection {
+            child_view: false,
             activity_first_seq: 0,
             request_id: "request-command-colors".to_string(),
             user_message: None,
@@ -2126,6 +2133,7 @@ mod tests {
             }],
         );
         let turn = super::super::TranscriptTurnSection {
+            child_view: false,
             activity_first_seq: 0,
             request_id: "request-transparent-tools".to_string(),
             user_message: None,

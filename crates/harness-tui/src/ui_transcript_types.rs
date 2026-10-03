@@ -132,7 +132,7 @@ impl TranscriptToolVerb {
             "skill" | "skill.load" => Some(Self::Skill),
             "web.fetch" | "webfetch" => Some(Self::WebFetch),
             "search.web" | "websearch" => Some(Self::WebSearch),
-            "agent.spawn" | "task" => Some(Self::Subagent),
+            "spawn_subagent" | "agent.spawn" | "task" => Some(Self::Subagent),
             _ => Self::from_mcp_context_id(tool_id),
         }
     }
@@ -485,6 +485,7 @@ pub(super) struct TranscriptAssistantPartSourceId(pub(super) u64);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptTurnSection {
+    pub(super) child_view: bool,
     pub(super) activity_first_seq: u64,
     pub(super) request_id: String,
     pub(super) user_message: Option<TranscriptUserMessageSection>,

@@ -56,6 +56,7 @@ pub(super) fn task_tool_child_session_id_from_output(
     tool_json_string_ref(
         output_json,
         &[
+            "subagent_id",
             "child_session_id",
             "session_id",
             "task_id",

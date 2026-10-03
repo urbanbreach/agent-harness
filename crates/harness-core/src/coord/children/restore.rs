@@ -3,6 +3,16 @@ use super::*;
 impl Runtime {
     pub fn restore_children(&mut self, events: &[EventEnvelopeV1]) {
         self.children.clear();
+        let native: std::collections::BTreeSet<_> = events
+            .iter()
+            .filter_map(|event| {
+                if let EventV1::NativeSubagentRegistered(registration) = &event.payload {
+                    Some(registration.child_id.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
         for event in crate::conversation_rewind::active_events(events).iter() {
             match &event.payload {
                 EventV1::AgentSpawned(AgentSpawnedEvent {
@@ -10,6 +20,9 @@ impl Runtime {
                     parent_agent_id: Some(parent),
                     ..
                 }) => {
+                    if native.contains(agent_id.as_str()) {
+                        continue;
+                    }
                     let parent_session = if self.children.contains_key(parent) {
                         parent.clone()
                     } else {
@@ -26,7 +39,6 @@ impl Runtime {
                             request: String::new(),
                             background: false,
                             complete: true,
-                            reply: None,
                         },
                     );
                 }

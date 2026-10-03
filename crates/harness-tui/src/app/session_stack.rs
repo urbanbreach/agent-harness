@@ -38,7 +38,6 @@ pub(super) struct SessionLineage {
     parent_task: Option<ChildTaskInfo>,
 }
 
-#[derive(Debug, Clone)]
 pub(super) struct SessionNavigationSnapshot {
     pub(super) session_path: PathBuf,
     pub(super) lineage: SessionLineage,
@@ -46,6 +45,16 @@ pub(super) struct SessionNavigationSnapshot {
     pub(super) launch_metadata: LaunchMetadata,
     pub(super) child_session_ids: Vec<String>,
     pub(super) replay_mode: bool,
+    pub(super) view: Option<SessionViewSnapshot>,
+}
+
+pub(super) struct SessionViewSnapshot {
+    pub(super) projection: super::SessionProjection,
+    transcript: super::transcript_view::TranscriptViewState,
+    outline: Option<super::TranscriptOutline>,
+    tasks: super::tasks_pane::TasksPaneState,
+    todo: super::todo_pane::TodoPaneState,
+    focus: Focus,
 }
 
 impl AppState {
@@ -201,7 +210,20 @@ impl AppState {
     }
 
     pub(super) fn child_session_ids(&self) -> Vec<String> {
-        let mut child_session_ids = Vec::new();
+        let mut child_session_ids: Vec<_> = self
+            .projection
+            .subagents
+            .rows
+            .values()
+            .filter(|row| {
+                if self.current_subagent_session_present() {
+                    Some(row.spawner.as_str()) == self.current_session_id()
+                } else {
+                    !self.projection.subagents.rows.contains_key(&row.spawner)
+                }
+            })
+            .map(|row| row.id.clone())
+            .collect();
         let delegated_child_request_ids = self.delegated_child_request_ids();
         let owned_child_request_ids =
             self.delegated_child_request_ids_for_parent_view(self.current_session_id());
@@ -267,8 +289,13 @@ impl AppState {
     }
 
     pub(super) fn tool_call_is_task_spawn(tool_call: &ToolCallEntry) -> bool {
-        matches!(tool_call.effective_tool_id(), "agent.spawn" | "task")
-            || matches!(tool_call.tool_id.as_str(), "agent.spawn" | "task")
+        matches!(
+            tool_call.effective_tool_id(),
+            "spawn_subagent" | "agent.spawn" | "task"
+        ) || matches!(
+            tool_call.tool_id.as_str(),
+            "spawn_subagent" | "agent.spawn" | "task"
+        )
     }
 
     pub(super) fn current_parent_session_id(&self) -> Option<String> {
@@ -278,7 +305,7 @@ impl AppState {
             .or_else(|| first_lineage_parent_session_id(self.events()).map(str::to_string))
     }
 
-    fn current_session_snapshot(&self) -> Option<SessionNavigationSnapshot> {
+    fn current_session_snapshot(&mut self) -> Option<SessionNavigationSnapshot> {
         Some(SessionNavigationSnapshot {
             session_path: self.session_path.clone()?,
             lineage: self.session_lineage.clone(),
@@ -290,6 +317,14 @@ impl AppState {
             },
             child_session_ids: self.child_session_ids(),
             replay_mode: self.replay_mode,
+            view: Some(SessionViewSnapshot {
+                projection: std::mem::take(&mut self.projection),
+                transcript: std::mem::take(&mut self.transcript_view),
+                outline: self.transcript_outline.take(),
+                tasks: std::mem::take(&mut self.tasks_pane),
+                todo: std::mem::take(&mut self.todo_pane),
+                focus: self.focus,
+            }),
         })
     }
 
@@ -299,15 +334,29 @@ impl AppState {
         self.session_lineage = snapshot.lineage;
         self.set_launch_metadata(snapshot.launch_metadata);
         self.runtime_context_metadata = Some(self.launch_metadata.clone());
-        self.replace_events(snapshot.events);
+        let restored_focus = if let Some(view) = snapshot.view {
+            self.projection = view.projection;
+            self.transcript_view = view.transcript;
+            self.transcript_outline = view.outline;
+            self.tasks_pane = view.tasks;
+            self.todo_pane = view.todo;
+            self.refresh_todo_items();
+            self.sync_tasks_pane(true);
+            self.invalidate_transcript_after_durable_event();
+            self.sync_transcript_state(false);
+            Some(view.focus)
+        } else {
+            self.replace_events(snapshot.events);
+            None
+        };
         self.active_review_surface = None;
         self.review_surface_focus_return = None;
         self.active_tab = Tab::Run;
-        self.focus = if self.replay_mode {
+        self.focus = restored_focus.unwrap_or(if self.replay_mode {
             Focus::Details
         } else {
             Focus::Prompt
-        };
+        });
         self.normalize_focus_for_active_surface();
     }
 
@@ -338,6 +387,9 @@ impl AppState {
     }
 
     fn open_replay_session(&mut self, session_id: String, push_current: bool) {
+        if self.current_session_id() == Some(session_id.as_str()) {
+            return;
+        }
         let Some(session_path) = self.session_path_for_id(&session_id) else {
             self.set_status_banner(Some(
                 "session navigation unavailable: missing session path".to_string(),
@@ -361,18 +413,12 @@ impl AppState {
 
         if push_current {
             if let Some(current_snapshot) = self.current_session_snapshot() {
-                let already_pushed = self
-                    .session_navigation_stack
-                    .last()
-                    .map(|existing| existing.session_path.as_path())
-                    == Some(current_snapshot.session_path.as_path());
-                if !already_pushed {
-                    self.session_navigation_stack.push(current_snapshot);
-                }
+                self.session_navigation_stack.push(current_snapshot);
             }
         }
 
         self.restore_session_snapshot(snapshot);
+        self.restore_child_live_presentation();
     }
 
     fn open_inline_child_session(
@@ -393,6 +439,33 @@ impl AppState {
         }
 
         self.restore_session_snapshot(snapshot);
+        self.restore_child_live_presentation();
+    }
+
+    fn restore_child_live_presentation(&mut self) {
+        let Some(id) = self.current_session_id().map(str::to_owned) else {
+            return;
+        };
+        if let Some(parent) = self
+            .session_navigation_stack
+            .last()
+            .and_then(|snapshot| snapshot.view.as_ref())
+        {
+            self.projection
+                .copy_child_live_presentation(&parent.projection, &id);
+            self.projection.subagents.observed_at = parent.projection.subagents.observed_at;
+            self.sync_transcript_state(false);
+        }
+        if let Some(view) = self.child_transcript_views.remove(&id) {
+            self.transcript_view = view;
+        } else {
+            let area = self
+                .last_frame_area
+                .unwrap_or(ratatui::layout::Rect::new(0, 0, 120, 40));
+            if let Some(entry) = crate::ui::transcript_navigation_entries(self, area).last() {
+                self.select_transcript_entry(entry);
+            }
+        }
     }
 
     fn inline_child_session_snapshot(
@@ -437,6 +510,7 @@ impl AppState {
             events,
             child_session_ids: Vec::new(),
             replay_mode: true,
+            view: None,
         })
     }
 
@@ -488,9 +562,9 @@ impl AppState {
         };
 
         if self.replay_mode {
-            if let Some(parent_snapshot) = self.session_navigation_stack.last().cloned() {
+            if let Some(parent_snapshot) = self.session_navigation_stack.pop() {
                 self.restore_session_snapshot(parent_snapshot);
-                self.open_replay_session(target_session_id, false);
+                self.open_replay_session(target_session_id, true);
                 return;
             }
 
@@ -512,6 +586,23 @@ impl AppState {
     }
 
     pub(super) fn navigate_to_parent_session(&mut self) {
+        self.active_review_surface = None;
+        if let Some(id) = self
+            .current_session_id()
+            .filter(|_| !self.session_navigation_stack.is_empty())
+            .map(str::to_owned)
+        {
+            if self
+                .subagents
+                .history
+                .records
+                .get(&id)
+                .is_some_and(|record| !record.lifecycle.is_finished())
+            {
+                self.child_transcript_views
+                    .insert(id, std::mem::take(&mut self.transcript_view));
+            }
+        }
         if self.replay_mode {
             if let Some(parent_snapshot) = self.session_navigation_stack.pop() {
                 self.restore_session_snapshot(parent_snapshot);
@@ -662,6 +753,7 @@ fn session_navigation_snapshot_from_path(
         child_session_ids: replay.child_session_ids(),
         lineage: replay.session_lineage,
         replay_mode: true,
+        view: None,
     })
 }
 
@@ -994,9 +1086,10 @@ mod tests {
             app.current_parent_session_id().as_deref(),
             Some("replacement")
         );
-        app.restore_session_snapshot(snapshot.clone());
+        app.restore_session_snapshot(snapshot);
         assert_eq!(app.current_parent_session_id().as_deref(), Some("parent"));
         assert!(!app.current_subagent_session_present());
+        let snapshot = app.current_session_snapshot().unwrap_or_abort();
         app.execute_slash_command("new", None);
         assert!(app.current_parent_session_id().is_none());
         app.restore_session_snapshot(snapshot);

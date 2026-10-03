@@ -204,7 +204,7 @@ fn tool_error_aliases(tool_id: &str) -> &'static [&'static str] {
         "fs.ls" | "list" => &["list"],
         "fs.glob" | "glob" => &["glob"],
         "fs.grep" | "grep" => &["grep"],
-        "agent.spawn" | "task" => &["task"],
+        "spawn_subagent" | "agent.spawn" | "task" => &["task"],
         "web.fetch" | "webfetch" => &["webfetch"],
         "search.web" | "websearch" => &["websearch"],
         "search.code" | "codesearch" => &["codesearch"],

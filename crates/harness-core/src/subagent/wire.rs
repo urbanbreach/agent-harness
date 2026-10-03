@@ -218,6 +218,7 @@ pub struct GetCommandOrSubagentOutputInput {
     )]
     pub task_ids: Vec<String>,
     #[serde(default)]
+    #[schemars(range(max = 3_600_000))]
     pub timeout_ms: Option<u64>,
 }
 

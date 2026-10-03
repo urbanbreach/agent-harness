@@ -64,6 +64,10 @@ pub struct RawFinalizedState {
     pub model_settings: AgentModelSettings,
     pub execution_context: ResolvedSubagentContext,
     pub read_state: BTreeMap<PathBuf, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill_startup: Option<crate::config::SkillStartupSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skill_preload_names: Vec<String>,
     pub source_reference: Option<Box<FinalizedAgentStateReferenceV1>>,
     pub fidelity: FinalizedStateFidelity,
     pub availability: FinalizedStateAvailability,

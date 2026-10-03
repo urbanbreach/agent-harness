@@ -24,11 +24,9 @@ pub(super) fn focus_shortcuts_follow_visible_shell_and_preserve_replay() {
                 (11, Terminal),
                 (9, Details),
                 (12, Prompt),
+                (10, Prompt),
                 (10, List),
-                (12, Details),
-                (11, Prompt),
-                (10, List),
-                (11, Prompt),
+                (10, Prompt),
             ],
         ),
         (
@@ -52,11 +50,7 @@ pub(super) fn focus_shortcuts_follow_visible_shell_and_preserve_replay() {
         for &(function_key, expected) in steps {
             app.handle_key(key(KeyCode::F(function_key)));
             assert_eq!(app.focus, expected, "F{function_key}");
-            assert_eq!(
-                app.details_drawer_open(),
-                !app.startup_shell_visible() && !app.replay_mode && expected == List,
-                "drawer after F{function_key}"
-            );
+            assert!(!app.details_drawer_open(), "drawer after F{function_key}");
         }
         if app.replay_mode {
             // Default Tab variants stay on the transcript even with a terminal panel.
@@ -155,7 +149,7 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
     );
     assert!(parent_app.replay_mode);
     parent_app.focus = Focus::Details;
-    parent_app.handle_key(key(KeyCode::Up));
+    parent_app.handle_key(key(KeyCode::Esc));
     assert_eq!(
         parent_app.session_path.as_deref(),
         Some(parent_dir.as_path())
@@ -190,19 +184,7 @@ pub(super) fn child_session_navigation_keybinds_follow_default_contract() {
     reverse_app.handle_key(key(KeyCode::Left));
     assert!(reverse_app.composer.prompt_buffer.is_empty());
 
-    assert_eq!(
-        intents.lock().unwrap_or_abort().as_slice(),
-        &[
-            UiIntent::ReplaySession {
-                run_id: "parent".into(),
-                run_dir: parent_dir.clone(),
-            },
-            UiIntent::ReplaySession {
-                run_id: "child_a".into(),
-                run_dir: child_a_dir,
-            },
-        ]
-    );
+    assert!(intents.lock().unwrap_or_abort().is_empty());
 }
 
 pub(super) fn replay_child_navigation_does_not_emit_live_intents() {
@@ -260,14 +242,17 @@ pub(super) fn replay_child_navigation_does_not_emit_live_intents() {
     assert!(app.composer.prompt_buffer.is_empty());
 
     app.handle_key(key(KeyCode::Right));
+    assert_eq!(app.session_path.as_deref(), Some(child_a_dir.as_path()));
+    app.handle_key(key(KeyCode::Esc));
+    app.navigate_to_child_session_id("child_b".into());
     assert_eq!(app.session_path.as_deref(), Some(child_b_dir.as_path()));
     assert_eq!(app.active_profile(), "worker-b");
 
     app.handle_key(key(KeyCode::Left));
-    assert_eq!(app.session_path.as_deref(), Some(child_a_dir.as_path()));
-    assert_eq!(app.active_profile(), "worker-a");
+    assert_eq!(app.session_path.as_deref(), Some(child_b_dir.as_path()));
+    assert_eq!(app.active_profile(), "worker-b");
 
-    app.handle_key(key(KeyCode::Up));
+    app.handle_key(key(KeyCode::Esc));
     assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
     assert_eq!(app.active_profile(), "planner");
     assert!(intents.lock().unwrap_or_abort().is_empty());
@@ -328,7 +313,7 @@ pub(super) fn replay_handoff_parent_navigation_replays_non_resumable_parent_sess
     app.enable_replay_navigation_handoff(Arc::clone(&sink));
     app.apply_keybindings(default_navigation_keybindings());
 
-    app.handle_key(key(KeyCode::Up));
+    app.handle_key(key(KeyCode::Esc));
 
     assert!(app.should_quit);
     assert_eq!(app.session_path.as_deref(), Some(child_dir.as_path()));
@@ -417,7 +402,7 @@ pub(super) fn task_child_navigation_opens_inline_subagent_view_without_child_run
         .last()
         .is_some_and(|snapshot| snapshot.session_path == parent_dir && snapshot.replay_mode));
 
-    app.handle_key(key(KeyCode::Up));
+    app.handle_key(key(KeyCode::Esc));
 
     assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
     assert!(app.replay_mode);
@@ -621,7 +606,7 @@ pub(super) fn live_parent_events_update_parent_snapshot_while_inline_child_is_se
     assert!(child_render.contains("child-only transcript and live child update"));
     assert!(!child_render.contains("parent response after child opened"));
 
-    app.handle_key(key(KeyCode::Up));
+    app.handle_key(key(KeyCode::Esc));
 
     assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
     assert!(!app.replay_mode);

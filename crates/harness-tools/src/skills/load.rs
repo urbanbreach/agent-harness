@@ -36,7 +36,10 @@ impl Tool for SkillTool {
                 "skill arguments exceed 16 KiB".into(),
             ));
         }
-        let text = load(&ctx.workspace_root, &self.0, &[args.name])?;
+        let text = match &ctx.skill_startup {
+            Some(snapshot) => load_catalog(&snapshot.catalog, &[args.name])?,
+            None => load(&ctx.workspace_root, &self.0, &[args.name])?,
+        };
         let expansion = text
             .matches("$ARGUMENTS")
             .count()
@@ -63,6 +66,14 @@ pub(crate) fn load(
     config: &SkillsConfig,
     names: &[String],
 ) -> Result<String, ToolError> {
+    if names.is_empty() {
+        return Ok(String::new());
+    }
+    let catalog = discover_skill_catalog_with_config(workspace, config)?;
+    load_catalog(&catalog, names)
+}
+
+fn load_catalog(catalog: &SkillCatalog, names: &[String]) -> Result<String, ToolError> {
     if names.len() > 32 || names.iter().any(|name| name.is_empty() || name.len() > 160) {
         return Err(ToolError::InvalidArguments(
             "load at most 32 named skills".into(),
@@ -71,7 +82,6 @@ pub(crate) fn load(
     if names.is_empty() {
         return Ok(String::new());
     }
-    let catalog = discover_skill_catalog_with_config(workspace, config)?;
     let mut loaded = BTreeSet::new();
     let mut result = String::new();
     for name in names {

@@ -245,12 +245,22 @@ fn tui_cli_mock_flag_starts_demo_mode() {
     );
 }
 #[test]
-fn tui_mock_mode_still_boots_through_launcher() {
+fn tui_mock_mode_still_boots_through_launcher() -> Result<(), Box<dyn std::error::Error>> {
     let _guard = startup_draft_test_lock()
         .lock()
         .unwrap_or_abort();
     let temp = tempdir().unwrap_or_abort();
-    let output = run_harness_in(temp.path(), ["tui", "--mock", "--exit-on-finish"]);
+    let profile = temp.path().join("launcher.log");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_harness"))
+        .current_dir(temp.path())
+        .args(["tui", "--mock", "--exit-on-finish"])
+        .env_remove("HARNESS_CONFIG")
+        .env_remove("HARNESS_TUI_CONFIG")
+        .env("HOME", temp.path())
+        .env("XDG_CONFIG_HOME", temp.path().join("config"))
+        .env("HARNESS_TUI_PROFILE_LOG", &profile)
+        .stdin(std::process::Stdio::null())
+        .output()?;
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -258,11 +268,15 @@ fn tui_mock_mode_still_boots_through_launcher() {
         "expected --mock to bypass config guidance, got:\n{stderr}"
     );
     assert!(
-        output.status.success() || stderr.contains("failed to enable terminal raw mode"),
-        "expected --mock to reach the interactive TUI boundary, got stdout:\n{}\nstderr:\n{}",
+        matches!(output.status.code(), Some(0 | 1)),
+        "unexpected launcher process termination, got stdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         stderr,
     );
+    assert!(std::fs::read_to_string(profile)?
+        .lines()
+        .any(|line| line.split_whitespace().nth(1) == Some("startup_launcher.begin")));
+    Ok(())
 }
 #[test]
 fn tui_cli_accepts_mock_continue_before_session_lookup() {

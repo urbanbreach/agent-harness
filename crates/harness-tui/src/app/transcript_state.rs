@@ -87,7 +87,7 @@ impl AppState {
         self.transcript_view.tool_motion.sync_terminal_ids(
             terminal_tool_ids,
             now,
-            animate_tool_transitions && !self.replay_mode && !self.reduced_motion,
+            animate_tool_transitions && self.presentation_is_live() && !self.reduced_motion,
         );
         self.transcript_view
             .tool_motion
@@ -255,6 +255,9 @@ impl AppState {
     }
 
     pub(crate) fn close_transcript_viewer(&mut self) -> bool {
+        if self.inspected_command.take().is_some() {
+            self.emit_ui_intent(UiIntent::InspectCommand { task_id: None });
+        }
         let Some(viewer) = self.transcript_viewer.take() else {
             return false;
         };
@@ -356,6 +359,7 @@ impl AppState {
         self.todo_pane_focused().hash(hasher);
         self.transcript_view.selected_entry.hash(hasher);
         self.replay_mode.hash(hasher);
+        self.current_subagent_session_present().hash(hasher);
         if self.focus == super::Focus::Details && !self.todo_pane_focused() {
             self.transcript_view.selected_activity_index.hash(hasher);
         }
@@ -407,7 +411,7 @@ impl AppState {
     }
 
     pub(crate) fn tool_finish_elapsed(&self, tool_call_id: &str) -> Option<Duration> {
-        if self.replay_mode || self.reduced_motion {
+        if !self.presentation_is_live() || self.reduced_motion {
             return None;
         }
         self.transcript_view

@@ -241,6 +241,7 @@ fn build_turn_section(
         build_assistant_parts(app, activity, ordered_tool_calls);
 
     TranscriptTurnSection {
+        child_view: app.current_subagent_session_present(),
         activity_first_seq: activity.first_seq,
         request_id: activity.request_id.clone(),
         user_message,
@@ -251,7 +252,7 @@ fn build_turn_section(
             .filter(|_| timestamps_visible)
             .map(crate::time_format::wall_clock_12h),
         animation_phase: app.transcript_animation_phase(),
-        motion_enabled: app.transcript_motion_enabled() && !app.replay_mode,
+        motion_enabled: app.transcript_motion_enabled() && app.presentation_is_live(),
         reasoning_expanded: app.reasoning_expanded(&activity.request_id),
         header: TranscriptTurnHeader {
             status: activity.status,

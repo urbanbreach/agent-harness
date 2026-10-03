@@ -8,6 +8,7 @@ use crate::theme_tokens::DESIGN_TOKENS;
 mod overlays;
 mod permission;
 mod session;
+pub(crate) mod subagent;
 mod surfaces;
 
 #[cfg(test)]
@@ -150,6 +151,7 @@ pub struct FrameLayoutPlan {
     pub live_anchor: Option<Rect>,
     pub transcript: Option<Rect>,
     pub todo: Option<Rect>,
+    pub tasks: Option<Rect>,
     pub(crate) model_prompt_notice: Option<Rect>,
     pub terminal_panel: Option<Rect>,
     pub operator_sidebar: Option<Rect>,
@@ -226,6 +228,7 @@ impl FrameLayoutPlan {
             live_anchor: None,
             transcript: None,
             todo: None,
+            tasks: None,
             model_prompt_notice: None,
             terminal_panel: None,
             operator_sidebar: None,
@@ -242,6 +245,9 @@ impl FrameLayoutPlan {
             session_contract,
         };
         session::project(app, &mut plan, layout, child_footer);
+        if child {
+            subagent::project(&mut plan);
+        }
         match app.overlay_stack().top() {
             Some(
                 OverlayKind::CommandPalette

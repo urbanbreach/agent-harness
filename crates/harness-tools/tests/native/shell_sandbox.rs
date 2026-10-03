@@ -210,3 +210,103 @@ time.sleep(60)
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn background_shell_kill_and_root_shutdown_reap_owned_process_groups(
+) -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var("HARNESS_BINARY_SIGNOFF").as_deref() != Ok("1") {
+        return Err("set HARNESS_BINARY_SIGNOFF=1 for real process checks".into());
+    }
+    for cleanup in ["kill", "stop", "owner_drop"] {
+        let root = tempfile::tempdir()?;
+        let listener = tokio::net::UnixListener::bind(root.path().join("ready.sock"))?;
+        let mut config = CoordinatorConfig::new(root.path().join("sessions"));
+        config.tool_registry = Arc::new(harness_tools::coordinator_registry(
+            ShellAllowlist::default(),
+        ));
+        config.permission_policy = PermissionPolicy::allow_all();
+        let handle = spawn_coordinator(
+            config,
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        handle
+            .start_run("background group cleanup", root.path())
+            .await?;
+        let actor = EventActor::new(ActorKind::User, None);
+        let script = r#"import signal, socket, subprocess, sys
+child = subprocess.Popen([sys.executable, "-c", "import signal; signal.pause()"])
+def stop(*unused):
+    child.wait()
+    sys.exit(0)
+signal.signal(signal.SIGTERM, stop)
+sock = socket.socket(socket.AF_UNIX)
+sock.connect("ready.sock")
+sock.sendall(str(child.pid).encode())
+sock.shutdown(socket.SHUT_WR)
+sock.recv(1)
+"#;
+        let output = handle
+            .execute_agent_tool_call(
+                actor.clone(),
+                None,
+                "bash",
+                json!({"command":format!("python3 -c {}", shell_words::quote(script)), "is_background":"yes", "block_until_ms":"0"}),
+            )
+            .await?;
+        let id = output.structured_json.ok_or("missing handle")?["task_id"]
+            .as_str()
+            .ok_or("missing task ID")?
+            .to_owned();
+        let mut subscription = handle
+            .subscribe_command(actor.clone(), id.clone())
+            .await?
+            .ok_or("missing command")?;
+        let pid = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            let (mut socket, _) = listener.accept().await?;
+            let mut pid = String::new();
+            socket.read_to_string(&mut pid).await?;
+            Ok::<_, std::io::Error>((pid, socket))
+        })
+        .await??;
+        let _socket = pid.1;
+        let pid = rustix::process::Pid::from_raw(pid.0.parse()?).ok_or("invalid descendant PID")?;
+        assert!(rustix::process::test_kill_process(pid).is_ok());
+        if cleanup == "kill" {
+            assert_eq!(
+                handle
+                    .kill_command(actor.clone(), id.clone())
+                    .await?
+                    .ok_or("missing kill")?
+                    .outcome,
+                "killed"
+            );
+            let terminal = tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                subscription
+                    .updates
+                    .wait_for(harness_core::coord::CommandSnapshot::is_terminal),
+            )
+            .await??
+            .clone();
+            assert_eq!(terminal.result.status, "cancelled");
+        }
+        if cleanup == "owner_drop" {
+            drop(handle);
+            tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                subscription
+                    .updates
+                    .wait_for(harness_core::coord::CommandSnapshot::is_terminal),
+            )
+            .await??;
+        } else {
+            tokio::time::timeout(std::time::Duration::from_secs(3), handle.stop_run()).await??;
+        }
+        assert_eq!(
+            rustix::process::test_kill_process(pid),
+            Err(rustix::io::Errno::SRCH)
+        );
+    }
+    Ok(())
+}

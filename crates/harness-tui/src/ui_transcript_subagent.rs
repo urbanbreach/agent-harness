@@ -14,7 +14,11 @@ pub(super) fn refresh_status(
         return;
     }
     use ToolCallPresentationStatus as Status;
-    let projection = app.subagent_request_projection(tool);
+    let projection = app
+        .native_subagent_task(&tool.tool_call_id)
+        .is_none()
+        .then(|| app.subagent_request_projection(tool))
+        .flatten();
     let (status, verb) = if let Some(projection) = projection.as_ref() {
         match projection.status.as_str() {
             "completed" => (Status::Succeeded, "completed"),
@@ -62,8 +66,41 @@ pub(super) fn refresh_status(
         task.filter(|_| status == Status::Running)
             .and_then(|row| row.current_child_tool_title.as_deref()),
     );
+    if let Some(row) = app
+        .subagents
+        .rows
+        .values()
+        .find(|row| row.parent_tool == tool.tool_call_id)
+    {
+        let terminal = task.is_some_and(|task| task.state.is_terminal());
+        let title = if terminal && !row.background {
+            format!(
+                "Subagent {verb} in {}: “{}”",
+                crate::app::subagents::duration_label(
+                    task.and_then(|task| task.timing_elapsed_ms).unwrap_or(0)
+                ),
+                collapse_inline_whitespace(&row.description)
+            )
+        } else {
+            let activity = task
+                .filter(|task| !task.state.is_terminal())
+                .and_then(|task| task.current_child_tool_title.as_deref())
+                .map_or_else(String::new, |activity| format!(" · {activity}"));
+            format!(
+                "Subagent {}: “{}”{activity}{}",
+                if row.background { "started" } else { "running" },
+                collapse_inline_whitespace(&row.description),
+                row.meta
+            )
+        };
+        section.header.title = title;
+        section.header.subtitle = None;
+        if terminal && row.background {
+            section.header.presentation.status = Status::Succeeded;
+        }
+    }
     section.rail_motion = match status {
-        Status::Running if app.transcript_motion_enabled() && !app.replay_mode => {
+        Status::Running if app.transcript_motion_enabled() && app.presentation_is_live() => {
             ToolRailMotion::Running {
                 elapsed: std::time::Duration::from_millis(
                     u64::try_from(app.transcript_animation_phase())
@@ -96,6 +133,73 @@ pub(super) fn notification_sections(
             .or_default()
             .push(notification_section(app, event, data));
     }
+    for row in app.subagents.rows.values().filter(|row| row.background) {
+        let Some(record) = app
+            .subagents
+            .history
+            .records
+            .get(&row.id)
+            .filter(|record| record.lifecycle.is_finished())
+        else {
+            continue;
+        };
+        let Some(outcome) = record.outcome else {
+            continue;
+        };
+        let Some(event) = app.events().find(|event| matches!(&event.payload, EventV1::SubagentTransition(data) if data.child_id.0 == row.id && data.generation == record.generation && data.transition == harness_core::subagent::SubagentTransitionKind::Finished && (data.attempt_id.is_none() || data.attempt_id.as_deref() == record.lifecycle.current_attempt_id()))) else { continue };
+        let delegated = app.delegated_child_request_ids_for_parent_view(app.current_session_id());
+        let current_request = app
+            .activities
+            .iter()
+            .rev()
+            .find(|activity| {
+                activity.first_seq <= event.seq && !delegated.contains(activity.request_id.as_str())
+            })
+            .map(|activity| activity.request_id.as_str());
+        let Some(request) = current_request
+            .or(row.parent_request.as_deref())
+            .or_else(|| {
+                app.activities
+                    .iter()
+                    .find(|activity| {
+                        activity
+                            .tool_calls
+                            .iter()
+                            .any(|tool| tool.tool_call_id == row.parent_tool)
+                    })
+                    .map(|activity| activity.request_id.as_str())
+            })
+        else {
+            continue;
+        };
+        use harness_core::subagent::SubagentTerminalOutcome as Outcome;
+        let (verb, status) = match outcome {
+            Outcome::Completed | Outcome::StationarityEnded => {
+                ("completed", ToolCallPresentationStatus::Succeeded)
+            }
+            Outcome::Cancelled | Outcome::RemovedFromQueue => {
+                ("cancelled", ToolCallPresentationStatus::Cancelled)
+            }
+            _ => ("failed", ToolCallPresentationStatus::Failed),
+        };
+        let duration = record.accounting.map(|accounting| accounting.duration_ms);
+        sections.entry(request).or_default().push(terminal_section(
+            app,
+            TerminalRow {
+                id: format!("background-notification:{}:{}", row.id, record.generation),
+                child: row.id.clone(),
+                seq: event.seq,
+                title: format!(
+                    "Subagent {verb} in {}: “{}”",
+                    crate::app::subagents::duration_label(duration.unwrap_or(0)),
+                    collapse_inline_whitespace(&row.description)
+                ),
+                subtitle: None,
+                status,
+                duration,
+            },
+        ));
+    }
     sections
 }
 
@@ -109,12 +213,12 @@ fn notification_section(
         .iter()
         .flat_map(|activity| &activity.tool_calls)
         .find(|tool| {
-            matches!(tool.effective_tool_id(), "agent.spawn" | "task")
-                && app
-                    .subagent_request_projection(tool)
-                    .is_some_and(|projection| {
-                        projection.request_id.as_str() == data.child_request_id
-                    })
+            matches!(
+                tool.effective_tool_id(),
+                "spawn_subagent" | "agent.spawn" | "task"
+            ) && app
+                .subagent_request_projection(tool)
+                .is_some_and(|projection| projection.request_id.as_str() == data.child_request_id)
         });
     let duration = launch.and_then(|tool| event.mono_ms.checked_sub(tool.first_mono_ms));
     let verb = match data.status {
@@ -138,21 +242,60 @@ fn notification_section(
             ToolCallPresentationStatus::Failed
         }
     };
+    terminal_section(
+        app,
+        TerminalRow {
+            id: tool_call_id,
+            child: data.child_session_id.to_string(),
+            seq: event.seq,
+            title,
+            subtitle: Some(format!(
+                "{}{elapsed}",
+                launch
+                    .map(|tool| agent_spawn_subtitle(tool, app))
+                    .unwrap_or_default()
+            )),
+            status,
+            duration,
+        },
+    )
+}
+
+struct TerminalRow {
+    id: String,
+    child: String,
+    seq: u64,
+    title: String,
+    subtitle: Option<String>,
+    status: ToolCallPresentationStatus,
+    duration: Option<u64>,
+}
+
+fn terminal_section(app: &AppState, row: TerminalRow) -> TranscriptOrderedToolCallSection {
+    let TerminalRow {
+        id: tool_call_id,
+        child,
+        seq,
+        title,
+        subtitle,
+        status,
+        duration,
+    } = row;
     let mut group = TranscriptToolGroupMember {
         expanded: app.tool_group_expanded(&tool_call_id),
         ..TranscriptToolGroupMember::default()
     };
-    group.sources.insert(data.child_session_id.to_string());
+    group.sources.insert(child.clone());
     let selected = super::ui_transcript_tool_sections::tool_header_selected(app, &tool_call_id);
     TranscriptOrderedToolCallSection {
         tool_call_id: tool_call_id.clone(),
-        first_seq: event.seq,
+        first_seq: seq,
         section: TranscriptToolCallSection {
             group,
             hook_executions: Vec::new(),
             tool_call_id: tool_call_id.clone(),
             coalesced_tool_call_ids: vec![tool_call_id],
-            child_session_id: Some(data.child_session_id.to_string()),
+            child_session_id: Some(child),
             subagent_background: true,
             output_truncated: false,
             replay_read_only: app.replay_mode,
@@ -161,12 +304,7 @@ fn notification_section(
                 selected,
                 tool_id: "background.notification".into(),
                 title,
-                subtitle: Some(format!(
-                    "{}{elapsed}",
-                    launch
-                        .map(|tool| agent_spawn_subtitle(tool, app))
-                        .unwrap_or_default()
-                )),
+                subtitle,
                 path_metadata: None,
                 icon: None,
                 presentation: ToolCallPresentation {

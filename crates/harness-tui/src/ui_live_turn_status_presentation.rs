@@ -112,12 +112,16 @@ impl LiveTurnStatus {
                     Style::default().fg(theme.live_turn_activity_color()),
                     None,
                 ),
-                "task" | "agent.spawn" => (
+                "spawn_subagent" | "task" | "agent.spawn" => (
                     "Waiting on subagent…".to_string(),
                     Style::default().fg(theme.live_turn_activity_color()),
                     Some(tool.last_mono_ms.saturating_sub(tool.first_mono_ms)),
                 ),
-                "background_output" => (
+                "background_output"
+                | "get_command_or_subagent_output"
+                | "get_task_output"
+                | "wait_commands_or_subagents"
+                | "wait_tasks" => (
                     "Waiting on task output…".to_string(),
                     Style::default().fg(theme.live_turn_activity_color()),
                     Some(tool.last_mono_ms.saturating_sub(tool.first_mono_ms)),

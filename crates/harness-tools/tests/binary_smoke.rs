@@ -14,6 +14,7 @@ include!("native/formatters.rs");
 include!("native/ast_grep.rs");
 include!("native/lsp_rename.rs");
 include!("native/shell_sandbox.rs");
+include!("native/command_stream.rs");
 
 #[tokio::test]
 async fn mcp_stdio_reuses_its_process_and_reaps_descendants_on_stop(

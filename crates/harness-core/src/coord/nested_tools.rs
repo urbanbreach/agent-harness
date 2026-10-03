@@ -97,24 +97,29 @@ impl Runtime {
         if !matches!(job.kind, JobKind::Tool { .. }) {
             return None;
         }
-        let child = job
-            .actor
-            .agent_id
-            .as_ref()
-            .and_then(|id| self.children.get(id).map(|child| (id, child)));
+        let child = job.actor.agent_id.as_ref().and_then(|id| {
+            self.native_lineage(id)
+                .map(|(_, _, _, request)| (id, request))
+                .or_else(|| {
+                    self.children
+                        .get(id)
+                        .map(|child| (id, child.request.clone()))
+                })
+        });
         let model = child
-            .and_then(|(id, _)| self.agents.get(id))
+            .as_ref()
+            .and_then(|(id, _)| self.agents.get(*id))
             .map(|agent| crate::agent::AgentModelRef::parse(&agent.info.model_ref));
         Some(TaskLineageMetadata {
             parent_tool_call_id: Some(parent.into()),
             parent_task_id: job.parent.clone(),
             parent_request_id: job.parent.clone(),
-            parent_session_id: Some(child.map_or_else(
+            parent_session_id: Some(child.as_ref().map_or_else(
                 || self.info.as_ref().map(|info| info.run_id.to_string()),
-                |(id, _)| Some(id.clone()),
+                |(id, _)| Some((*id).clone()),
             )?),
-            child_session_id: child.map(|(id, _)| id.clone()),
-            child_request_id: child.map(|(_, child)| child.request.clone()),
+            child_session_id: child.as_ref().map(|(id, _)| (*id).clone()),
+            child_request_id: child.map(|(_, request)| request),
             child_provider_id: model.as_ref().map(|m| m.provider_id.clone()),
             child_model_id: model.map(|m| m.model_id),
         })

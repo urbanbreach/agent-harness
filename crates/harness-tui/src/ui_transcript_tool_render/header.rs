@@ -7,6 +7,29 @@ pub(super) fn build_tool_header_spans(
     marker_style: Style,
     width: usize,
 ) -> Vec<Span<'static>> {
+    if header.visual_style == TranscriptToolCallVisualStyle::TaskInline
+        && header.title.starts_with("Subagent ")
+        && header.subtitle.is_none()
+    {
+        let title =
+            collapse_inline_whitespace(&crate::ui::ui_tool_output::safe_tool_text(&header.title));
+        let style = if header.selected {
+            title_style.fg(theme.text.primary)
+        } else {
+            title_style
+        };
+        return subagent_header_spans(header, &title, theme, style, marker_style, width);
+    }
+    ordinary_tool_header_spans(header, theme, title_style, marker_style, width)
+}
+
+fn ordinary_tool_header_spans(
+    header: &TranscriptToolCallHeader,
+    theme: &Theme,
+    title_style: Style,
+    marker_style: Style,
+    width: usize,
+) -> Vec<Span<'static>> {
     use crate::ui::ui_tool_output::safe_tool_text;
     let search = matches!(
         header.tool_id.as_str(),
@@ -134,6 +157,42 @@ pub(super) fn build_tool_header_spans(
     // EntryRenderer paints a single header row. A long unbreakable tool name
     // or fixed subtitle must not wrap and push following diamonds down.
     crate::ui::ui_tool_wrapping::clip(spans, width)
+}
+
+fn subagent_header_spans(
+    header: &TranscriptToolCallHeader,
+    title: &str,
+    theme: &Theme,
+    label_style: Style,
+    marker_style: Style,
+    width: usize,
+) -> Vec<Span<'static>> {
+    let detail = title.strip_prefix("Subagent ").unwrap_or(title);
+    let detail = if let Some((prefix, quoted)) = detail.split_once('“') {
+        if let Some((description, suffix)) = quoted.rsplit_once('”') {
+            let available =
+                width.saturating_sub(13 + display_width(prefix) + display_width(suffix));
+            format!(
+                "{prefix}“{}”{suffix}",
+                truncate_plain_text(description, available)
+            )
+        } else {
+            detail.to_owned()
+        }
+    } else {
+        detail.to_owned()
+    };
+    vec![
+        Span::styled(
+            format!(
+                "{} ",
+                completed_tool_marker(header.presentation.status, theme)
+            ),
+            marker_style,
+        ),
+        Span::styled("Subagent ", label_style.add_modifier(Modifier::BOLD)),
+        Span::styled(detail, Style::default().fg(theme.text.secondary)),
+    ]
 }
 
 fn append_tool_subtitle_spans(
@@ -298,7 +357,10 @@ pub(super) fn tool_call_marker_style(
             ToolCallPresentationStatus::Succeeded
                 if tool_call
                     .tool_call_id
-                    .starts_with("background-notification:") =>
+                    .starts_with("background-notification:")
+                    || (tool_call.header.visual_style
+                        == TranscriptToolCallVisualStyle::TaskInline
+                        && tool_call.header.title.starts_with("Subagent completed")) =>
             {
                 theme.status.success
             }

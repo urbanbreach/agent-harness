@@ -23,6 +23,7 @@ pub(super) fn take_replay_metadata() -> Option<LaunchMetadata> {
 }
 
 pub enum LiveUpdate {
+    CommandOutput(Box<harness_core::coord::CommandSnapshot>),
     RewindPoints {
         generation: u64,
         result: Result<Vec<harness_core::conversation_rewind::RewindPoint>, String>,

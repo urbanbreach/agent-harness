@@ -332,6 +332,9 @@ impl AppState {
     }
 
     pub fn handle_paste(&mut self, text: &str) {
+        if self.current_subagent_session_present() {
+            return;
+        }
         self.composer.pointer_selection = None;
         match self.overlay_stack().top() {
             Some(OverlayKind::SettingsEditor) => {
@@ -365,7 +368,7 @@ impl AppState {
             self.handle_permission_feedback_paste(text);
             return;
         }
-        if self.handle_todo_pane_paste(text) {
+        if self.handle_tasks_pane_paste(text) || self.handle_todo_pane_paste(text) {
             return;
         }
         if self.composer_disabled() {

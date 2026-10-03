@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use anyhow::Result;
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
 use crate::{
@@ -154,15 +154,7 @@ impl Runtime {
             }
             return sample.lines != 0;
         }
-        let (section, scrollbar) = if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
-            (
-                ui::operator_sidebar_section_hit_target(&self.app, area, mouse.column, mouse.row),
-                ui::transcript_scrollbar_hit(&self.app, area, mouse.column, mouse.row),
-            )
-        } else {
-            (None, None)
-        };
-        self.app.handle_mouse(mouse, area, None, section, scrollbar)
+        self.app.handle_pointer_event(mouse, area)
     }
 
     pub(super) fn apply_wheel(&mut self) -> Result<bool> {

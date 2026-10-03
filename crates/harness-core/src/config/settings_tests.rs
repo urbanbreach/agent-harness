@@ -42,7 +42,7 @@ fn settings_writes_validate_before_commit_and_keep_raw_references(
         (true, false, false)
     );
     let config = load_config_from_file(&path)?;
-    for rules in [
+    [
         &config.permissions.rules.read,
         &config.agents["default"]
             .permissions
@@ -50,7 +50,9 @@ fn settings_writes_validate_before_commit_and_keep_raw_references(
             .ok_or("agent permissions missing")?
             .rules
             .shell,
-    ] {
+    ]
+    .into_iter()
+    .for_each(|rules| {
         assert_eq!(
             rules.iter().map(|rule| rule.mode).collect::<Vec<_>>(),
             [
@@ -59,21 +61,24 @@ fn settings_writes_validate_before_commit_and_keep_raw_references(
                 PermissionMode::Ask
             ]
         );
-    }
-    for (id, input) in [
+    });
+    [
         ("runtime.compaction.fallback_input_tokens", "-1"),
         ("permission.bash", "sometimes"),
         ("runtime.session_dir", ""),
         ("provider.apiKey", "secret"),
         ("unknown.setting", "true"),
         ("confirm_before_rewind", "false"),
-    ] {
+    ]
+    .into_iter()
+    .try_for_each(|(id, input)| -> Result<(), Box<dyn std::error::Error>> {
         assert!(
             write_project_setting_value(&path, id, input).is_err(),
             "{id}"
         );
         assert_eq!(std::fs::read_to_string(&path)?, body, "{id}");
-    }
+        Ok(())
+    })?;
     assert_eq!(
         reset_project_setting_to_default(&path, "runtime.compaction.fallback_input_tokens")?,
         "32768"
@@ -89,6 +94,22 @@ fn settings_writes_validate_before_commit_and_keep_raw_references(
             .fallback_input_tokens,
         32768
     );
+    [
+        ("subagents.enabled", "false", "true"),
+        ("subagents.max_depth", "2", "1"),
+        ("subagents.max_concurrent", "8", "32"),
+        ("subagents.sampling_limit", "2", "32"),
+        ("subagents.limit_behavior", "fail", "queue"),
+        ("features.subagent_model_inheritance", "true", "false"),
+    ]
+    .into_iter()
+    .try_for_each(
+        |(id, input, expected_reset)| -> Result<(), Box<dyn std::error::Error>> {
+            assert_eq!(write_project_setting_value(&path, id, input)?, input);
+            assert_eq!(reset_project_setting_to_default(&path, id)?, expected_reset);
+            Ok(())
+        },
+    )?;
     let tui = temp.path().join("tui.jsonc");
     std::fs::write(&tui, "{keybinds:{copy_selection:'ctrl+y'}}")?;
     write_rewind_confirmation(&tui, false)?;

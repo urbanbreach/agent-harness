@@ -132,8 +132,13 @@ pub(super) fn build_transcript_tool_call_section(
         child_session_id: task_tool_child_session_id(tool)
             .or_else(|| task_row.and_then(|task| task.child_session_id.as_deref()))
             .map(str::to_owned),
-        subagent_background: matches!(id, "agent.spawn" | "task")
-            && agent_spawn_is_background(tool),
+        subagent_background: matches!(id, "spawn_subagent" | "agent.spawn" | "task")
+            && app
+                .subagents
+                .rows
+                .values()
+                .find(|row| row.parent_tool == tool.tool_call_id)
+                .map_or_else(|| agent_spawn_is_background(tool), |row| row.background),
         output_truncated: tool.truncated_output.is_some(),
         replay_read_only: app.replay_mode,
         hovered_target: app.hovered_transcript_target().cloned(),
@@ -179,7 +184,7 @@ fn tool_rail_motion(
     app: &AppState,
     has_details: bool,
 ) -> ToolRailMotion {
-    if app.replay_mode || !app.transcript_motion_enabled() {
+    if !app.presentation_is_live() || !app.transcript_motion_enabled() {
         return ToolRailMotion::Settled;
     }
     if tool.has_execution_motion() {

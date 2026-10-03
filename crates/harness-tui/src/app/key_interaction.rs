@@ -1,4 +1,5 @@
 // allow: SIZE_OK — indivisible key dispatch state machine (TUI key event routing)
+use super::child_inspection::child_inspection_action;
 use super::*;
 use crate::UnwrapOrAbort;
 
@@ -20,12 +21,7 @@ impl AppState {
     pub fn handle_key(&mut self, key: KeyEvent) {
         self.composer.pointer_selection = None;
         self.modal_interaction.invalidate();
-        if self.handle_pending_quit_confirmation(&key) {
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.handle_top_overlay_key(key) {
+        if self.handle_priority_key(key) {
             return;
         }
 
@@ -34,11 +30,11 @@ impl AppState {
             return;
         }
 
-        if self.handle_todo_pane_key(key) {
+        if self.handle_focused_pane_key(key) || self.handle_transcript_search_key(key) {
             return;
         }
 
-        if self.handle_transcript_search_key(key) {
+        if self.handle_child_inspection_key(key) {
             return;
         }
 
@@ -194,6 +190,14 @@ impl AppState {
         self.maybe_auto_exit();
     }
 
+    fn handle_priority_key(&mut self, key: KeyEvent) -> bool {
+        if self.handle_pending_quit_confirmation(&key) {
+            self.maybe_auto_exit();
+            return true;
+        }
+        self.handle_child_quit_key(key) || self.handle_top_overlay_key(key)
+    }
+
     fn mapped_key_action(&self, key: &KeyEvent) -> Option<Action> {
         if self.focus != Focus::Prompt
             || !self.composer.multiline_mode
@@ -301,7 +305,7 @@ impl AppState {
         true
     }
 
-    fn handle_active_selection_key(&mut self, key: KeyEvent) -> bool {
+    pub(super) fn handle_active_selection_key(&mut self, key: KeyEvent) -> bool {
         if !clipboard::copy_on_select_disabled()
             || (self.transcript_view.transcript_selection.is_none()
                 && self.secondary_surfaces.selection.is_none())
@@ -504,7 +508,7 @@ impl AppState {
         self.normalize_focus_for_active_surface();
     }
 
-    fn execute_action_from_key(&mut self, action: Action, key: KeyEvent) {
+    pub(super) fn execute_action_from_key(&mut self, action: Action, key: KeyEvent) {
         if action == Action::Quit {
             self.arm_quit_confirmation(key);
         } else {
@@ -570,6 +574,9 @@ impl AppState {
     }
 
     pub(in crate::app) fn execute_action(&mut self, action: Action) {
+        if self.current_subagent_session_present() && !child_inspection_action(action) {
+            return;
+        }
         if action != Action::Quit {
             self.clear_quit_confirmation();
         }
@@ -921,12 +928,7 @@ impl AppState {
                 self.scroll_page_down(1);
             }
             Action::ToggleTasks => {
-                self.live_details_drawer_open = !self.live_details_drawer_open;
-                self.focus = if self.live_details_drawer_open {
-                    Focus::List
-                } else {
-                    Focus::Prompt
-                };
+                self.toggle_tasks_pane();
             }
             Action::ToggleTodos => self.toggle_todo_pane(),
             Action::TogglePromptFocus => {
@@ -1415,7 +1417,7 @@ impl AppState {
         }
     }
 
-    fn handle_transcript_navigation_key(&mut self, key: KeyEvent) -> bool {
+    pub(super) fn handle_transcript_navigation_key(&mut self, key: KeyEvent) -> bool {
         if self.terminal_panel_surface_active() && key.modifiers == KeyModifiers::NONE {
             return match key.code {
                 KeyCode::PageUp => {

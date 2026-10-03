@@ -1,7 +1,6 @@
 use super::ui_tool_question_todo::TranscriptTodoStatus;
 use super::*;
-use crate::app::todo_pane::TodoQueryMode;
-use crate::composer_atoms::AtomKind;
+use crate::app::pane_query::PaneQueryMode;
 use unicode_segmentation::UnicodeSegmentation as _;
 use unicode_width::UnicodeWidthStr as _;
 
@@ -84,9 +83,9 @@ pub(super) fn render_todo_pane(frame: &mut Frame, app: &AppState, area: Rect, th
             );
         }
         if state.query.has_bar() && content.height > 1 {
-            render_query(
+            super::ui_pane_query::render(
                 frame,
-                app,
+                &app.todo_pane.query,
                 Rect::new(
                     content.x,
                     content.bottom().saturating_sub(1),
@@ -125,7 +124,7 @@ fn render_item(
     ];
     let style = item.status.content_style(theme);
     let query = &app.todo_pane.query;
-    let highlight = query.editing || query.mode == TodoQueryMode::Search;
+    let highlight = query.editing || query.mode == PaneQueryMode::Search;
     let mut offset = 0;
     if let Some(regex) = query.regex.as_ref().filter(|_| highlight) {
         for matched in regex.find_iter(&text) {
@@ -272,67 +271,4 @@ fn draw_cell(frame: &mut Frame, x: u16, y: u16, symbol: &str, color: Color) {
             .set_fg(color)
             .set_style(Style::default().remove_modifier(Modifier::all()));
     }
-}
-
-fn render_query(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    let query = &app.todo_pane.query;
-    let mode = if query.mode == TodoQueryMode::Filter {
-        "filter"
-    } else {
-        "search"
-    };
-    let text = query.editor.text();
-    let base = Style::default()
-        .fg(theme.terminal_colors.prompt_accent)
-        .bg(theme.surface.shell);
-    if !query.editing {
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                format!("[{mode}: {text}]  "),
-                base.add_modifier(Modifier::DIM),
-            )))
-            .alignment(Alignment::Right),
-            area,
-        );
-        return;
-    }
-    let base = base.fg(theme.text.primary);
-    let label = format!("{mode}: ");
-    let budget = usize::from(area.width)
-        .saturating_sub(label.width())
-        .saturating_sub(1);
-    let cursor = query
-        .editor
-        .buffer()
-        .atoms()
-        .iter()
-        .take(query.editor.cursor().insertion_index())
-        .filter_map(|atom| match &atom.kind {
-            AtomKind::Text(text) => Some(text.as_str().len()),
-            _ => None,
-        })
-        .sum::<usize>();
-    let mut start = cursor;
-    let mut remaining = budget;
-    for (index, grapheme) in text[..cursor].grapheme_indices(true).rev() {
-        if grapheme.width() > remaining {
-            break;
-        }
-        start = index;
-        remaining = remaining.saturating_sub(grapheme.width());
-    }
-    let before = text[start..cursor].to_string();
-    let after = super::truncate_plain_text(&text[cursor..], remaining.saturating_add(1));
-    let cursor_glyph = after.graphemes(true).next().unwrap_or(" ").to_string();
-    let suffix = after.get(cursor_glyph.len()..).unwrap_or("").to_string();
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(label, base.fg(theme.status.warning)),
-            Span::styled(before, base),
-            Span::styled(cursor_glyph, base.add_modifier(Modifier::REVERSED)),
-            Span::styled(suffix, base),
-        ]))
-        .style(base),
-        area,
-    );
 }

@@ -17,6 +17,7 @@ pub(crate) fn task_child_session_id_from_output(
     trimmed_json_string_field(
         output_json,
         &[
+            "subagent_id",
             "child_session_id",
             "session_id",
             "task_id",

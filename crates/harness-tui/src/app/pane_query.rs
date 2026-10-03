@@ -2,22 +2,22 @@ use crate::composer_editing::{ComposerEditor, DeleteKind, EditingError};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) enum TodoQueryMode {
+pub(crate) enum PaneQueryMode {
     #[default]
     Search,
     Filter,
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct TodoQuery {
+#[derive(Debug, Default, Clone)]
+pub(crate) struct PaneQuery {
     pub(crate) editing: bool,
-    pub(crate) mode: TodoQueryMode,
+    pub(crate) mode: PaneQueryMode,
     pub(crate) editor: ComposerEditor,
     pub(crate) regex: Option<regex::Regex>,
     pub(crate) active: bool,
 }
 
-impl TodoQuery {
+impl PaneQuery {
     pub(crate) fn has_bar(&self) -> bool {
         self.editing || self.active
     }
@@ -29,10 +29,10 @@ impl TodoQuery {
     }
 
     pub(crate) fn permits(&self, text: &str) -> bool {
-        self.mode != TodoQueryMode::Filter || !self.active || self.matches(text)
+        self.mode != PaneQueryMode::Filter || !self.active || self.matches(text)
     }
 
-    pub(super) fn open(&mut self, mode: TodoQueryMode) {
+    pub(in crate::app) fn open(&mut self, mode: PaneQueryMode) {
         if !self.active || self.mode != mode {
             *self = Self::default();
         }
@@ -55,13 +55,13 @@ impl TodoQuery {
             .flatten();
     }
 
-    pub(super) fn close_unaccepted(&mut self) {
+    pub(in crate::app) fn close_unaccepted(&mut self) {
         if self.editing {
             *self = Self::default();
         }
     }
 
-    pub(super) fn paste(&mut self, text: &str) -> Result<(), EditingError> {
+    pub(in crate::app) fn paste(&mut self, text: &str) -> Result<(), EditingError> {
         if self.editing {
             let text: String = text.chars().filter(|c| !c.is_control()).collect();
             self.editor.paste(&text)?;
@@ -70,7 +70,7 @@ impl TodoQuery {
         Ok(())
     }
 
-    pub(super) fn handle_key(&mut self, key: KeyEvent) -> Result<(), EditingError> {
+    pub(in crate::app) fn handle_key(&mut self, key: KeyEvent) -> Result<(), EditingError> {
         match (key.code, key.modifiers) {
             (KeyCode::Enter, _) => self.editing = false,
             (KeyCode::Esc, _) => *self = Self::default(),

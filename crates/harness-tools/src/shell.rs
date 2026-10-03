@@ -1,3 +1,4 @@
+mod background;
 mod launch;
 use harness_core::{
     config::{ShellAllowlist, ShellAllowlistMode},
@@ -45,6 +46,10 @@ struct Args {
     workdir: Option<PathBuf>,
     #[serde(default, alias = "timeout_ms")]
     timeout: Option<u64>,
+    #[serde(default, alias = "is_background", deserialize_with = "background_flag")]
+    run_in_background: bool,
+    #[serde(default, deserialize_with = "block_budget")]
+    block_until_ms: Option<u64>,
 }
 struct Invocation {
     source: String,
@@ -57,13 +62,42 @@ enum Step {
 fn args(value: Value) -> Result<Args, ToolError> {
     serde_json::from_value(value).map_err(|e| ToolError::InvalidArguments(e.to_string()))
 }
+fn background_flag<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<bool, D::Error> {
+    let value = Value::deserialize(decoder)?;
+    let flag = match &value {
+        Value::Bool(flag) => Some(*flag),
+        Value::Null => Some(false),
+        Value::Number(number) => match number.as_i64() {
+            Some(0) => Some(false),
+            Some(1) => Some(true),
+            _ => None,
+        },
+        Value::String(text) => match text.trim().to_ascii_lowercase().as_str() {
+            "true" | "yes" | "1" => Some(true),
+            "false" | "no" | "0" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    };
+    flag.ok_or_else(|| serde::de::Error::custom(format!("expected a boolean, got {value}")))
+}
+fn block_budget<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Option<u64>, D::Error> {
+    let value = Value::deserialize(decoder)?;
+    match &value {
+        Value::Null => Some(None),
+        Value::Number(number) => number.as_u64().map(Some),
+        Value::String(text) => text.trim().parse().ok().map(Some),
+        _ => None,
+    }
+    .ok_or_else(|| serde::de::Error::custom(format!("expected unsigned milliseconds, got {value}")))
+}
 #[async_trait::async_trait]
 impl Tool for BashTool {
     fn id(&self) -> &str {
         "bash"
     }
     fn description(&self) -> &str {
-        "Run build, test, and version-control commands with a timeout. Pipes and command lists are supported; expansion, background execution, and shell definitions are rejected."
+        "Run validated build, test, and version-control commands. Set block_until_ms to 0 or run_in_background to true for a background command; retrieve its output with get_command_or_subagent_output. Pipes and command lists are supported; expansion and shell definitions are rejected."
     }
     fn parameters_json_schema(&self) -> Value {
         schemars::schema_for!(Args).to_value()
@@ -185,6 +219,19 @@ impl Tool for BashTool {
             .args(["--noprofile", "--norc", "-c", &args.command])
             .current_dir(cwd);
         launch::environment(&mut command, scratch.as_ref().map(tempfile::TempDir::path));
+        if args.run_in_background || args.block_until_ms.is_some() {
+            return background::run(
+                context,
+                command,
+                scratch,
+                args.command,
+                args.description,
+                args.timeout,
+                args.block_until_ms.unwrap_or(0),
+                policy.as_str(),
+            )
+            .await;
+        }
         let output = crate::process::run(
             command,
             Duration::from_millis(timeout),

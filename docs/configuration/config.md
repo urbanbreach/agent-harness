@@ -103,6 +103,97 @@ back to `apiKeyEnv` and inline `apiKey`. Stored credentials live outside
 `credentials/{authProvider}.json`, are atomically replaced, and use restrictive
 file permissions: POSIX `0600`, and on Windows a protected owner-only DACL.
 
+## Public subagents
+
+`subagents` configures the public `spawn_subagent` feature independently of the
+generic `agent` profiles. `subagents.enabled` defaults to true, including when
+the table only tunes limits. CLI enablement overrides `GROK_SUBAGENTS`
+(`true`/`1` or `false`/`0`), which overrides local configuration. Remote settings
+cannot disable this feature.
+
+Depth, ordinary child concurrency, sampling concurrency and queue policy resolve
+environment, config, remote, then defaults. The defaults are depth 1, concurrency
+32, sampling equal to resolved concurrency (capped at 512), and `queue`.
+Use `GROK_SUBAGENTS_MAX_DEPTH`, `GROK_MAX_CONCURRENT_SUBAGENTS`,
+`GROK_SUBAGENT_SAMPLING_LIMIT`, and `GROK_SUBAGENT_LIMIT_BEHAVIOR` to override them.
+Invalid environment integers fall through, nonpositive environment counts fall
+through, configured counts clamp to at least 1, and depth clamps to 1..u32::MAX.
+Queue policy accepts case-insensitive `queue` or `fail`; invalid tiers fall through.
+
+```jsonc
+{
+  "subagents": {
+    "max_depth": 2,
+    "max_concurrent": 16,
+    "sampling_limit": 4,
+    "models": { "explore": "local:fast" },
+    "toggle": { "plan": false },
+    "roles": {
+      "explore": { "default_capability_mode": "read-only", "reasoning_effort": "low" }
+    },
+    "personas": {
+      "reviewer": { "instructions": "Review the assigned changes.", "model": "local:review" }
+    }
+  },
+  "features": {
+    "active_agent_messages": false,
+    "subagent_model_inheritance": false,
+    "subagent_worktree_snapshot": false
+  }
+}
+```
+
+The three features default off. Managed requirements override environment,
+effective layered config, remote settings, then defaults. Their environment
+names are `GROK_ACTIVE_AGENT_MESSAGES`, `GROK_SUBAGENT_MODEL_INHERITANCE`, and
+`GROK_SUBAGENT_WORKTREE_SNAPSHOT`. Model inheritance hides public model selection
+only for a complete, nonempty picker catalog whose explicit families are all
+exactly `xai` after whitespace trimming. Empty, provisional, unknown, third-party
+and mixed catalogs keep selection available. This policy is latched by the
+constructing actor; later config changes do not reclassify a running parent.
+
+Definitions resolve nearest project, builtin, user/compatibility, bundled,
+enabled plugin, then session CLI fallback. Only project definitions shadow
+builtins. Qualified plugin names use `plugin:name`; bare plugin names must be
+unambiguous. Agent Markdown files use YAML frontmatter. Project discovery walks
+from the current parent directory to the worktree root. Native `.agent-harness`
+and `.harness` directories also accept the `.grok` and `.claude` agent-directory
+compatibility layouts. User roots, bundled roots and plugin directories are
+explicit discovery inputs.
+
+Inline roles/personas override trusted project `.toml` files, then user files,
+then bundled files. Untrusted project role/persona files are skipped. A role
+alone never creates a callable type. Relative prompt paths use the preset
+file's source directory, or the current parent directory for inline presets.
+Persona errors abort resolution; a missing role prompt emits a warning and
+continues. Type-specific roles win over persona-named roles.
+
+Runtime model/effort overrides win over role then persona defaults. Valid model
+overrides precede per-type model pins, definition model and current parent model;
+unknown internal pins warn and fall through. Fresh public models require a
+catalog validator; resume ignores that argument and the actor pins the source
+model. Capability modes intersect runtime, role and definition ceilings.
+Definition worktree isolation promotes resolved `none`, including explicit
+`none`. Definition `maxTurns` overrides the parent maximum. Definitions control
+MCP inheritance (`all`, `none`, `{"named":[...]}`, `{"except":[...]}`), skill
+inheritance and explicit skill preloads. Builtin `explore` and `plan` declare no
+shell tools and do not inherit parent skills. Every child loses ask-user,
+feedback and workflow tools; parent operator allow/deny restrictions still apply.
+
+For runtime integration, `HarnessConfig.subagents.resolve_with_lookup` returns
+`SubagentRuntimeConfig` using explicit CLI, feature, remote, managed requirement
+and environment lookup inputs. `discover_subagent_definitions` captures read-only
+definitions, presets and prompt-file outcomes under explicit cwd/trust/root/plugin
+inputs. `resolve_subagent_definition` is pure: its
+`SubagentDefinitionContext` supplies the current parent model/effort/maxTurns,
+allowlist, catalog, latched selection, tool inventory, operator restrictions,
+permission ceiling, injected child depth, MCP and skill snapshots. It returns
+the resolved definition, prompts, model, tools and inheritance metadata.
+The coordinator owns authorization, catalog readiness, source-model resume
+pinning, worktree creation, scheduling and dispatch. Optional type schemas list
+at most 64 names (128 bytes each), with normalized 200-byte descriptions; this
+presentation bound does not reject otherwise valid types.
+
 ## Model prompts
 
 `harness_core::model_resolution` selects a prompt family. It prefers catalog
@@ -613,7 +704,7 @@ patterns. `allow` loads immediately, `ask` requests operator confirmation before
 activation, and `deny` keeps the skill catalog-visible but unloadable. `disabled`
 uses the same name/pattern matching and also accepts stable ids such as
 `skill:project:rust-best-practices`; disabled skills are catalog-visible but
-cannot be activated through either `skill` or `task(load_skills = [...])`.
+cannot be activated through `skill` or subagent definition preloads.
 `urls` is accepted as inert/deferred metadata only; V1 discovery never fetches
 remote skills.
 
@@ -644,9 +735,19 @@ without hiding other valid skills in the same catalog.
 Catalog-time metadata includes stable id, name, description, source scope, root
 path, file location, loadability, permission mode, status, optional V1 metadata,
 `body_loaded: false`, and no full `SKILL.md` body. Full bodies are loaded only
-when the `skill` tool activates a loadable skill or `task(load_skills = [...])`
-resolves loadable skills before child spawn. Missing, denied, disabled,
-malformed, and symlink-unsafe skills fail before activation or child spawn.
+when the `skill` tool activates a loadable skill, including startup preloads
+listed in a subagent definition's `skills` field. Startup loads use the child's
+skill catalog and the same coordinator tool availability, trust, permission,
+and cancellation checks as an ordinary skill call. Missing, denied, disabled,
+malformed, or symlink-unsafe preloads are skipped without exposing their bodies.
+An `ask` decision waits for operator approval before the child samples.
+Successful preload bodies are request-only system instructions, cached for the
+child's lifetime and omitted from the ordinary available-skills listing.
+
+This is an intentional Grok parity exception, chosen by the operator: explicit
+preloads do not bypass shared skill permissions or a disabled skill tool.
+Grok loads explicitly named skills even when ordinary skill calls are disabled
+or denied. Harness retains its shared permission checks during startup.
 
 `allowed_tools` and related skill metadata are descriptive/restrictive contract
 metadata only. They never grant runtime tools, override the generic toolset, or
@@ -660,30 +761,40 @@ without printing key values, the generic prompt and tool ids, permissions, skill
 roots and permission posture, session-directory readiness, and configured MCP
 server state. Use `--json` for machine-readable output.
 
-### Generic agent and child tasks
+### Generic agent and subagents
 
-Harness materializes one interactive profile named `default` with the generic coding prompt. Named `explore`, `general`, and `librarian` subagents keep
-bounded prompts and toolsets. There is no alternate primary role, planning role,
-or category router.
+Harness materializes one interactive profile named `default`. Child definitions
+resolve through the configured CLI, project, user, plugin, and bundled sources.
+The coordinator owns their scheduling, permission checks, cancellation, and
+append-only lifecycle history.
 
-The `task` tool requires `subagent_type`, `run_in_background`, and `load_skills`
-for every new child; pass
-`load_skills: []` when no skill context is needed. Listed skills are resolved in
-request order before the child is spawned; duplicate names are loaded once at the
-first occurrence. Missing, denied, disabled, malformed, or symlink-unsafe skills
-fail the call before child spawn. Loaded skill content is injected into the child
-prompt before optional command context and before the original task body, while
-task output reports compact loaded-skill metadata without the full bodies.
-`task(run_in_background: true)` returns a child `request_id`; use the
-`background_output` tool with that `request_id` to inspect completion status or
-the terminal result. Retrieval is event-replay based and does not advance the
-child task. To stop an authorized non-terminal child request, call
-`background_cancel` with the same `request_id` and an optional `reason`; the
-coordinator records cancellation through the normal task lifecycle.
-`background_output(cancel: true)` remains supported as compatibility.
-Task and background-output results include child runtime metadata such as model
-ref, toolset, lineage, and exact follow-up actions for status checks, waiting,
-cancellation, or continuation.
+`spawn_subagent` requires `prompt` and `description`. It defaults to the
+`general-purpose` definition and `background: true`. A background call returns a
+`subagent_id`; `background: false` waits for completion or the configured
+foreground timeout, after which the child continues in the background.
+`isolation: "worktree"` creates an isolated worktree. `cwd` selects an existing
+working directory and cannot be combined with worktree isolation. `resume_from`
+continues a completed child's finalized conversation, subject to ownership,
+state availability, and context-window checks.
+
+`get_command_or_subagent_output` reads results for `task_ids` and optionally waits
+up to `timeout_ms`. `wait_commands_or_subagents` waits for any or all selected
+children and background commands. `kill_command_or_subagent` cancels the selected
+child or command through the coordinator. `send_subagent_message` routes messages
+between authorized agents and can wake a completed recipient when requested.
+Hidden tool aliases support older tool callers, but new requests should use the
+public names above. The removed `task(load_skills = [...])` interface is replaced
+by the definition's `skills` list.
+
+With `inherit_skills: true`, a child receives its actual spawner's startup
+catalog. With inheritance disabled, discovery uses the child's effective working
+directory and default discovery roots while keeping shared skill permissions.
+`discover_skills: false` suppresses that local discovery. Same-identity wake keeps
+the original catalog and preload cache. Finalized private state retains the
+body-free catalog and preload names. A live wake after restart recovers that
+catalog and loads preloads through the ordinary permission gates again. Replay
+does not rediscover or load skill files. Older records without a catalog require
+a fresh child.
 
 `agent.<name>.system_prompt` replaces that shipped prompt. `tools` accepts either
 a list of tool ids or a map of `{ tool_id: enabled }`; disabled map entries are

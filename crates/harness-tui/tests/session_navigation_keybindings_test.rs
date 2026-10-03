@@ -237,7 +237,7 @@ fn child_session_navigation_keybinds_follow_default_contract() {
     );
     assert!(parent_app.replay_mode);
     parent_app.focus = harness_tui::app::Focus::Details;
-    parent_app.handle_key(key(KeyCode::Up));
+    parent_app.handle_key(key(KeyCode::Esc));
     assert_eq!(
         parent_app.session_path.as_deref(),
         Some(parent_dir.as_path())
@@ -280,19 +280,7 @@ fn child_session_navigation_keybinds_follow_default_contract() {
     child_b_app.focus = harness_tui::app::Focus::Details;
     child_b_app.handle_key(key(KeyCode::Left));
 
-    assert_eq!(
-        intents.lock().unwrap_or_abort().as_slice(),
-        &[
-            UiIntent::ReplaySession {
-                run_id: "parent".into(),
-                run_dir: parent_dir.clone(),
-            },
-            UiIntent::ReplaySession {
-                run_id: "child_a".into(),
-                run_dir: child_a_dir,
-            },
-        ]
-    );
+    assert!(intents.lock().unwrap_or_abort().is_empty());
 }
 
 #[test]
@@ -318,14 +306,14 @@ fn replay_child_navigation_does_not_emit_live_intents() {
     assert!(app.replay_mode);
 
     app.handle_key(key(KeyCode::Right));
-    assert_eq!(app.active_profile(), "worker-b");
-    assert_eq!(app.current_model_label(), "model-child-b");
+    assert_eq!(app.active_profile(), "worker-a");
+    assert_eq!(app.current_model_label(), "model-child-a");
 
     app.handle_key(key(KeyCode::Left));
     assert_eq!(app.active_profile(), "worker-a");
     assert_eq!(app.current_model_label(), "model-child-a");
 
-    app.handle_key(key(KeyCode::Up));
+    app.handle_key(key(KeyCode::Esc));
     assert_eq!(app.active_profile(), "planner");
     assert_eq!(app.current_model_label(), "model-parent");
     assert!(app.replay_mode);

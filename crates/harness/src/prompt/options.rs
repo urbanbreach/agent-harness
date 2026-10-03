@@ -102,6 +102,9 @@ impl Options {
                 return Err(format!("unknown tool: {tool}"));
             }
         }
+        if self.no_subagents {
+            config.subagents.enabled = false;
+        }
         for profile in config.agent_profiles.values_mut() {
             if let Some(turns) = self.max_turns {
                 profile.max_iters = Some(turns as usize);
@@ -109,7 +112,7 @@ impl Options {
             profile.toolset.retain(|tool| {
                 (self.tools.is_empty() || self.tools.contains(tool))
                     && !self.disallowed_tools.contains(tool)
-                    && !(self.no_subagents && tool == "task")
+                    && !(self.no_subagents && matches!(tool.as_str(), "task" | "spawn_subagent"))
                     && !(self.no_memory && tool == "memory")
                     && !(self.disable_web_search
                         && matches!(tool.as_str(), "websearch" | "webfetch" | "codesearch"))

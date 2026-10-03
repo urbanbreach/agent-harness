@@ -53,6 +53,13 @@ pub(super) fn child_task_info_from_events(
     current_session_id: &str,
 ) -> Option<ChildTaskInfo> {
     events.iter().rev().find_map(|event| {
+        if let EventV1::NativeSubagentRegistered(data) = &event.payload {
+            return (data.child_id == current_session_id).then(|| ChildTaskInfo {
+                label: Some(data.subagent_type.clone()),
+                description: Some(data.description.clone()),
+                request_id: None,
+            });
+        }
         let EventV1::ToolCallRequested(tool_call) = &event.payload else {
             return None;
         };

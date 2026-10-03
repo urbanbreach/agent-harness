@@ -1,12 +1,13 @@
 use harness_providers::{CompletionMessage, MessageRole};
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Context {
     pub entries: Vec<Entry>,
     pub usage: Vec<crate::subagent::FinalizedProviderUsage>,
     pub unavailable: Option<crate::subagent::FinalizedStateUnavailable>,
     pub model_request: Option<Box<harness_providers::CompletionRequest>>,
 }
+#[derive(Clone)]
 pub(super) struct Entry {
     pub message: CompletionMessage,
     pub seq: u64,

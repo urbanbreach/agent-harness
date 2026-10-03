@@ -95,7 +95,7 @@ use crate::theme_tokens::ViewportId;
 use crate::transcript_identity::{TranscriptFocus, TranscriptScreenMode, TurnId};
 use crate::ui::{
     OperatorSidebarKeyboardTarget, OperatorSidebarKeyboardTargetKind, OperatorSidebarSelection,
-    OperatorSidebarSelectionCell, SubagentFooterTarget, TranscriptMouseTarget,
+    OperatorSidebarSelectionCell, SubagentFrameTarget, TranscriptMouseTarget,
     TranscriptScrollbarHit, TranscriptSelection, TranscriptSelectionCell, WheelTarget,
 };
 use crate::view_model;
@@ -105,6 +105,7 @@ use crate::{clipboard, ui};
 mod activity;
 pub mod auth_dialog;
 mod auth_display;
+mod child_inspection;
 mod child_session;
 mod composer;
 mod composer_editing;
@@ -142,7 +143,9 @@ mod question_prompt;
 mod recorded_artifacts;
 mod secondary_surfaces;
 pub(crate) mod session_history;
+pub(crate) mod subagents;
 pub(crate) use session_history::format_relative_age;
+pub(crate) mod pane_query;
 mod rewind;
 mod session_live_routing;
 pub(crate) mod session_navigation;
@@ -152,6 +155,7 @@ mod session_slash;
 mod session_stack;
 mod settings_editor;
 mod slash_completion;
+pub(crate) mod tasks_pane;
 pub mod terminal_diagnostics;
 mod terminal_panel;
 #[cfg(test)]
@@ -347,6 +351,8 @@ pub struct AppState {
     mouse_wheel_lines_per_tick: u16,
     pub(crate) terminal_panel: TerminalPanelState,
     pub(crate) todo_pane: todo_pane::TodoPaneState,
+    pub(crate) tasks_pane: tasks_pane::TasksPaneState,
+    inspected_command: Option<String>,
     last_frame_area: Option<Rect>,
     pub(crate) secondary_surfaces: SecondarySurfaceState,
     pub(crate) modal_interaction: ModalInteractionState,
@@ -370,8 +376,8 @@ pub struct AppState {
     pub palette_log: Vec<palette_controller::PaletteLogEntry>,
     palette_focus_return: Option<Focus>,
     pub(crate) subagent_actions_session_id: Option<String>,
-    pub(crate) hovered_subagent_footer_target: Option<SubagentFooterTarget>,
-    pub(crate) pending_subagent_footer_target: Option<SubagentFooterTarget>,
+    pub(crate) hovered_subagent_frame_target: Option<SubagentFrameTarget>,
+    pub(crate) pending_subagent_frame_target: Option<SubagentFrameTarget>,
     pub(crate) hovered_live_turn_stop: bool,
     pub(crate) hovered_live_turn_background: bool,
     error_details_visible: bool,
@@ -556,6 +562,7 @@ pub struct AppState {
     theme_preview: ThemePreview,
     auto_theme_resolver: AutoResolver,
     theme_color_level: ColorLevel,
+    pub(crate) shortcuts_ctrl_dot: bool,
     welcome: WelcomeState,
     pub(crate) help_browser: HelpBrowserState,
     pub model_options: Vec<ModelOption>,
@@ -612,6 +619,7 @@ pub struct AppState {
     launch_metadata: LaunchMetadata,
     runtime_context_metadata: Option<LaunchMetadata>,
     session_navigation_stack: Vec<SessionNavigationSnapshot>,
+    child_transcript_views: BTreeMap<String, TranscriptViewState>,
     dismissed_permissions: BTreeSet<String>,
     suppressed_permissions: BTreeSet<String>,
     submitted_permission_id: Option<String>,
@@ -665,6 +673,8 @@ impl Default for AppState {
             mouse_wheel_lines_per_tick: 3,
             terminal_panel: TerminalPanelState::default(),
             todo_pane: todo_pane::TodoPaneState::default(),
+            tasks_pane: tasks_pane::TasksPaneState::default(),
+            inspected_command: None,
             last_frame_area: None,
             secondary_surfaces: SecondarySurfaceState::default(),
             help_browser: HelpBrowserState::default(),
@@ -689,8 +699,8 @@ impl Default for AppState {
             palette_log: Vec::new(),
             palette_focus_return: None,
             subagent_actions_session_id: None,
-            hovered_subagent_footer_target: None,
-            pending_subagent_footer_target: None,
+            hovered_subagent_frame_target: None,
+            pending_subagent_frame_target: None,
             hovered_live_turn_stop: false,
             hovered_live_turn_background: false,
             error_details_visible: false,
@@ -860,10 +870,12 @@ impl Default for AppState {
             theme_preview: ThemePreview::new(initial_theme_family),
             auto_theme_resolver,
             theme_color_level: ColorLevel::TrueColor,
+            shortcuts_ctrl_dot: false,
             welcome: WelcomeState::new(4, false),
             launch_metadata: LaunchMetadata::default(),
             runtime_context_metadata: None,
             session_navigation_stack: Vec::new(),
+            child_transcript_views: BTreeMap::new(),
             dismissed_permissions: BTreeSet::new(),
             suppressed_permissions: BTreeSet::new(),
             submitted_permission_id: None,
@@ -1810,6 +1822,7 @@ impl AppState {
                 .cache_event_details(event.clone(), historical)
         };
         self.invalidate_transcript_after_durable_event();
+        self.sync_tasks_pane(historical);
         if historical && update_canonical {
             self.projection.run_terminal_seen = run_terminal_seen_before_historical_ingest;
         }

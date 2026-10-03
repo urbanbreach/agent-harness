@@ -5,6 +5,7 @@ mod tags;
 
 #[derive(Default)]
 pub(super) struct Prompt {
+    pub native_subagent: bool,
     pub reserved_id: Option<String>,
     pub child_completion: Option<String>,
     pub text: String,
@@ -21,7 +22,7 @@ impl From<String> for Prompt {
 }
 impl Prompt {
     pub fn validate(&self, redactor: &dyn Redactor) -> Result<(), CoordinatorError> {
-        if (self.text.trim().is_empty() && self.attachments.is_empty())
+        if (!self.native_subagent && self.text.trim().is_empty() && self.attachments.is_empty())
             || self.text.len() > 1024 * 1024
         {
             return Err(CoordinatorError::Invalid(
@@ -81,6 +82,7 @@ impl CoordinatorHandle {
         let (agent, prompt) = (
             agent.into(),
             Prompt {
+                native_subagent: false,
                 reserved_id: None,
                 child_completion: None,
                 text: text.into(),
@@ -103,6 +105,7 @@ impl CoordinatorHandle {
         let (agent, prompt) = (
             agent.into(),
             Prompt {
+                native_subagent: false,
                 reserved_id: None,
                 child_completion: None,
                 text: text.into(),
