@@ -145,8 +145,7 @@ impl ViewerState {
             self.following = running;
             let _ = self.rebuild_display();
         } else if self.running && !running {
-            self.exit_follow();
-            self.select_edge(true);
+            self.pin_to_tail();
         }
         self.running = running;
     }
