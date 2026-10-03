@@ -71,7 +71,7 @@ impl Runtime {
         // Actor dependency edges, not an irreversible parent-token link, own
         // cancellation so surviving child commands can be reparented.
         let cancellation = CancellationToken::new();
-        let id = command_id()?;
+        let id = uuid::Uuid::now_v7().to_string();
         crate::store::create_private_dir(&self.info()?.artifacts_dir)?;
         let path = self.info()?.artifacts_dir.join(format!("command-{id}.log"));
         let output = OpenOptions::new()

@@ -145,13 +145,7 @@ impl Runtime {
             persona_hint: None,
         });
         let body = if let Some(completed) = &completed {
-            let mut body = format!("{}\n\n<subagent_meta>id={agent}, tool_calls={}, turns={}, duration_ms={duration}</subagent_meta>",
-                completed.output, completed.tool_calls, completed.turns);
-            if let Some(path) = &completed.worktree_path {
-                body.push_str(&format!("\n<worktree_path>{path}</worktree_path>"));
-            }
-            body.push_str(&format!("\n\n<subagent_result>\nsubagent_id: {agent}\nTo continue this subagent's conversation, use resume_from=\"{agent}\".\n</subagent_result>"));
-            body
+            completed_body(completed)
         } else {
             error
                 .clone()
