@@ -55,7 +55,12 @@ impl AppState {
             .composer
             .prompt_buffer
             .chars()
-            .take(self.composer.prompt_cursor)
+            .take(
+                self.composer
+                    .selection_anchor
+                    .unwrap_or(self.composer.prompt_cursor)
+                    .min(self.composer.prompt_cursor),
+            )
             .last();
         let separator = if prefix.is_some_and(|c| c != '\n') {
             "\n"
@@ -137,12 +142,16 @@ impl AppState {
             }
         }
         match key.code {
-            KeyCode::Enter => {
-                if viewer.quote_text().is_empty() {
+            KeyCode::Enter
+                if key.modifiers.is_empty()
+                    && key.kind == crossterm::event::KeyEventKind::Press =>
+            {
+                let text = viewer.quote_text();
+                let text = text.trim_end_matches('\n');
+                if text.is_empty() {
                     return true;
                 }
-                let quote = viewer
-                    .quote_text()
+                let quote = text
                     .lines()
                     .map(|line| {
                         if line.is_empty() {
