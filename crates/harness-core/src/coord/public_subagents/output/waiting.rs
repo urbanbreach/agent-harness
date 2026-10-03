@@ -95,7 +95,7 @@ pub(super) async fn wait_subscriptions(
             None => std::future::pending::<()>().await,
         }
     };
-    let waited = timeout.min(milliseconds("GROK_MAX_WAIT_BLOCK_MS", 3_600_000));
+    let waited = timeout.min(milliseconds("HARNESS_MAX_WAIT_BLOCK_MS", 3_600_000));
     let elapsed = WaitHint::Elapsed {
         requested: timeout,
         waited,

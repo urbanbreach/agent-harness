@@ -146,12 +146,12 @@ impl SubagentsConfig {
         lookup: &dyn Fn(&str) -> Option<String>,
     ) -> SubagentRuntimeConfig {
         let mut warnings = Vec::new();
-        let depth = lookup("GROK_SUBAGENTS_MAX_DEPTH")
+        let depth = lookup("HARNESS_SUBAGENTS_MAX_DEPTH")
             .and_then(|value| {
                 let parsed = value.trim().parse::<i64>().ok();
                 if parsed.is_none() {
                     warnings.push(
-                        "invalid GROK_SUBAGENTS_MAX_DEPTH; ignoring environment value".into(),
+                        "invalid HARNESS_SUBAGENTS_MAX_DEPTH; ignoring environment value".into(),
                     );
                 }
                 parsed
@@ -164,16 +164,16 @@ impl SubagentsConfig {
         }
         let depth = depth.clamp(1, i64::from(u32::MAX));
         let max_concurrent = positive_count(
-            "GROK_MAX_CONCURRENT_SUBAGENTS",
-            lookup("GROK_MAX_CONCURRENT_SUBAGENTS"),
+            "HARNESS_MAX_CONCURRENT_SUBAGENTS",
+            lookup("HARNESS_MAX_CONCURRENT_SUBAGENTS"),
             self.max_concurrent,
             remote.max_concurrent,
             32,
             &mut warnings,
         );
         let sampling_limit = positive_count(
-            "GROK_SUBAGENT_SAMPLING_LIMIT",
-            lookup("GROK_SUBAGENT_SAMPLING_LIMIT"),
+            "HARNESS_SUBAGENT_SAMPLING_LIMIT",
+            lookup("HARNESS_SUBAGENT_SAMPLING_LIMIT"),
             self.sampling_limit,
             remote.sampling_limit,
             max_concurrent,
@@ -184,7 +184,7 @@ impl SubagentsConfig {
         }
         let sampling_limit = sampling_limit.min(512);
         let limit_behavior = [
-            lookup("GROK_SUBAGENT_LIMIT_BEHAVIOR"),
+            lookup("HARNESS_SUBAGENT_LIMIT_BEHAVIOR"),
             self.limit_behavior.clone(),
             remote.limit_behavior.clone(),
         ]
@@ -213,26 +213,26 @@ impl SubagentsConfig {
             };
         SubagentRuntimeConfig {
             enabled: cli_enabled
-                .or_else(|| lookup("GROK_SUBAGENTS").as_deref().and_then(bool_env))
+                .or_else(|| lookup("HARNESS_SUBAGENTS").as_deref().and_then(bool_env))
                 .unwrap_or(self.enabled),
             max_depth: u32::try_from(depth).unwrap_or(u32::MAX),
             max_concurrent,
             sampling_limit,
             limit_behavior,
             messaging_enabled: feature(
-                "GROK_ACTIVE_AGENT_MESSAGES",
+                "HARNESS_ACTIVE_AGENT_MESSAGES",
                 requirements.active_agent_messages,
                 features.active_agent_messages,
                 remote.active_agent_messages,
             ),
             model_inheritance: feature(
-                "GROK_SUBAGENT_MODEL_INHERITANCE",
+                "HARNESS_SUBAGENT_MODEL_INHERITANCE",
                 requirements.subagent_model_inheritance,
                 features.subagent_model_inheritance,
                 remote.subagent_model_inheritance,
             ),
             worktree_snapshot: feature(
-                "GROK_SUBAGENT_WORKTREE_SNAPSHOT",
+                "HARNESS_SUBAGENT_WORKTREE_SNAPSHOT",
                 requirements.subagent_worktree_snapshot,
                 features.subagent_worktree_snapshot,
                 remote.subagent_worktree_snapshot,

@@ -418,7 +418,7 @@ pub(super) async fn snapshot(
     ])
     .await?;
     // A named source ref is required before a worktree may be removed.
-    let reference = format!("refs/grok/subagents/{id}");
+    let reference = format!("refs/harness/subagents/{id}");
     git(source, &["update-ref", &reference, &commit], None).await?;
     let preserved = run(vec!["rev-parse".into(), format!("{reference}^{{tree}}")]).await?;
     if preserved != tree {

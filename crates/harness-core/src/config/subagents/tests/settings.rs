@@ -13,10 +13,10 @@ fn subagent_settings_preserve_local_enablement_and_independent_limits(
         ..SubagentRemoteConfig::default()
     };
     let lookup = |name: &str| match name {
-        "GROK_SUBAGENTS_MAX_DEPTH" => Some("3".into()),
-        "GROK_MAX_CONCURRENT_SUBAGENTS" => Some("0".into()),
-        "GROK_SUBAGENT_SAMPLING_LIMIT" => Some("2".into()),
-        "GROK_SUBAGENT_MODEL_INHERITANCE" => Some("false".into()),
+        "HARNESS_SUBAGENTS_MAX_DEPTH" => Some("3".into()),
+        "HARNESS_MAX_CONCURRENT_SUBAGENTS" => Some("0".into()),
+        "HARNESS_SUBAGENT_SAMPLING_LIMIT" => Some("2".into()),
+        "HARNESS_SUBAGENT_MODEL_INHERITANCE" => Some("false".into()),
         _ => None,
     };
     let settings = config.subagents.resolve_with_lookup(

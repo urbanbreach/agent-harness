@@ -307,8 +307,8 @@ async fn prompt_resolves_subagent_enablement_and_messaging_before_provider_dispa
             &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
             CliDeps::real()
                 .with_current_dir(root.path().into())
-                .without_env("GROK_SUBAGENTS")
-                .without_env("GROK_ACTIVE_AGENT_MESSAGES")
+                .without_env("HARNESS_SUBAGENTS")
+                .without_env("HARNESS_ACTIVE_AGENT_MESSAGES")
                 .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),
         );
         assert_eq!(result.code, 0, "{}", String::from_utf8_lossy(&stderr));
