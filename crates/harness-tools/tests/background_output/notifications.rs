@@ -29,6 +29,7 @@ struct NotificationGate {
     parent_started: tokio::sync::Notify,
     child_started: tokio::sync::Notify,
     collect_reports: usize,
+    continue_parent: bool,
     wakeups: AtomicUsize,
     collected: tokio::sync::Mutex<Vec<String>>,
 }
@@ -116,6 +117,17 @@ impl harness_providers::Provider for NotificationGate {
             if let Ok(permit) = self.parent.acquire().await {
                 permit.forget();
             }
+            if self.continue_parent {
+                return Box::pin(tokio_stream::iter([
+                    Stream::ToolCallComplete {
+                        tool_call_id: "unrelated-poll".into(),
+                        function_name: "get_command_or_subagent_output".into(),
+                        arguments_json: json!({"task_ids":["missing-child"],"timeout_ms":0})
+                            .to_string(),
+                    },
+                    Stream::Done { usage: None },
+                ]));
+            }
             "parent finished"
         } else if last.content == "check history" {
             assert!(
@@ -127,6 +139,18 @@ impl harness_providers::Provider for NotificationGate {
             "history checked"
         } else {
             self.wakeups.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(
+                request
+                    .messages
+                    .iter()
+                    .filter(|message| {
+                        message.role == harness_providers::MessageRole::User
+                            && message.content.contains("child report")
+                    })
+                    .count(),
+                1,
+                "wake prompts and buffered reminders must deliver a completion once"
+            );
             assert!(
                 last.content.contains("child report"),
                 "notification must include the child result"
@@ -144,134 +168,143 @@ impl harness_providers::Provider for NotificationGate {
 async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notification(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use harness_core::event::EventV1;
-    use tokio_stream::StreamExt;
-    let temp = tempfile::tempdir()?;
-    let provider = Arc::new(NotificationGate {
-        parent: tokio::sync::Semaphore::new(0),
-        child: tokio::sync::Semaphore::new(0),
-        parent_started: tokio::sync::Notify::new(),
-        child_started: tokio::sync::Notify::new(),
-        collect_reports: 0,
-        wakeups: AtomicUsize::new(0),
-        collected: tokio::sync::Mutex::new(Vec::new()),
-    });
-    let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
-    config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
-    config.tool_registry = Arc::new(harness_tools::coordinator_registry(
-        ShellAllowlist::default(),
-    ));
-    config.permission_policy = PermissionPolicy::allow_all();
-    config.command_buffer = 1;
-    config.provider_model_concurrency = 2;
-    let mut parent = AgentProfile::fallback("default");
-    parent.toolset = vec![
-        "spawn_subagent".into(),
-        "get_command_or_subagent_output".into(),
-        "kill_command_or_subagent".into(),
-    ];
-    config.agent_profiles.insert("default".into(), parent);
-    config
-        .agent_profiles
-        .insert("child".into(), AgentProfile::fallback("child"));
-    let coordinator = spawn_coordinator(
-        config,
-        Arc::new(FakeClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    coordinator
-        .start_run("notification capacity", temp.path())
-        .await?;
-    let parent = coordinator
-        .spawn_agent_idle(EventActor::new(ActorKind::User, None), "default", None)
-        .await?;
-    let mut events = coordinator.subscribe_new_events().await?;
-    let parent_started = provider.parent_started.notified();
-    let child_started = provider.child_started.notified();
-    tokio::pin!(parent_started, child_started);
-    parent_started.as_mut().enable();
-    child_started.as_mut().enable();
-    coordinator
-        .request_agent_turn(
-            EventActor::new(ActorKind::User, None),
-            parent.clone(),
-            "launch",
-        )
-        .await?;
-    tokio::time::timeout(std::time::Duration::from_secs(2), async {
-        tokio::join!(parent_started, child_started)
-    })
-    .await?;
-    let child_ids: Vec<_> = coordinator
-        .subagent_history()
-        .await?
-        .records
-        .into_keys()
-        .collect();
-    let running = coordinator
-        .execute_agent_tool_call(
-            EventActor::new(ActorKind::Worker, Some(parent.clone())),
-            None,
-            "get_command_or_subagent_output",
-            json!({"task_ids":child_ids}),
-        )
-        .await?;
-    assert_eq!(
-        running.structured_json.ok_or("missing poll result")?["Result"]["status"],
-        "running"
-    );
-    assert!(
+    for continue_parent in [false, true] {
+        let temp = tempfile::tempdir()?;
+        let provider = Arc::new(NotificationGate {
+            parent: tokio::sync::Semaphore::new(0),
+            child: tokio::sync::Semaphore::new(0),
+            parent_started: tokio::sync::Notify::new(),
+            child_started: tokio::sync::Notify::new(),
+            collect_reports: 0,
+            continue_parent,
+            wakeups: AtomicUsize::new(0),
+            collected: tokio::sync::Mutex::new(Vec::new()),
+        });
+        let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
+        config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
+        config.tool_registry = Arc::new(harness_tools::coordinator_registry(
+            ShellAllowlist::default(),
+        ));
+        config.permission_policy = PermissionPolicy::allow_all();
+        config.command_buffer = 1;
+        config.provider_model_concurrency = 2;
+        let mut parent = AgentProfile::fallback("default");
+        parent.toolset = vec![
+            "spawn_subagent".into(),
+            "get_command_or_subagent_output".into(),
+            "kill_command_or_subagent".into(),
+        ];
+        config.agent_profiles.insert("default".into(), parent);
+        config
+            .agent_profiles
+            .insert("child".into(), AgentProfile::fallback("child"));
+        let coordinator = spawn_coordinator(
+            config,
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        coordinator
+            .start_run("notification capacity", temp.path())
+            .await?;
+        let parent = coordinator
+            .spawn_agent_idle(EventActor::new(ActorKind::User, None), "default", None)
+            .await?;
+        let mut events = coordinator.subscribe_new_events().await?;
+        let parent_started = provider.parent_started.notified();
+        let child_started = provider.child_started.notified();
+        tokio::pin!(parent_started, child_started);
+        parent_started.as_mut().enable();
+        child_started.as_mut().enable();
         coordinator
             .request_agent_turn(
                 EventActor::new(ActorKind::User, None),
                 parent.clone(),
-                "manual queued work"
+                "launch",
             )
-            .await
-            .is_err(),
-        "the accepted child must retain a notification slot"
-    );
-    provider.child.add_permits(1);
-    let notification = tokio::time::timeout(std::time::Duration::from_secs(2), async {
-        while let Some(event) = events.next().await {
-            if let EventV1::BackgroundTaskNotification(e) = event?.payload {
-                return Ok::<_, harness_core::store::EventStoreError>(e);
-            }
-        }
-        Err(harness_core::store::EventStoreError::Invalid(
-            "missing notification",
-        ))
-    })
-    .await??;
-    let followup = notification
-        .delivered_turn_request_id
-        .ok_or("lost notification")?;
-    assert!(
-        coordinator
+            .await?;
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            tokio::join!(parent_started, child_started)
+        })
+        .await?;
+        let child_ids: Vec<_> = coordinator
+            .subagent_history()
+            .await?
+            .records
+            .into_keys()
+            .collect();
+        let running = coordinator
             .execute_agent_tool_call(
                 EventActor::new(ActorKind::Worker, Some(parent.clone())),
                 None,
                 "get_command_or_subagent_output",
-                json!({"task_ids":[false]}),
+                json!({"task_ids":child_ids}),
             )
-            .await
-            .is_err(),
-        "a failed history read must not consume the queued notification"
-    );
-    assert!(
-        coordinator
-            .compact_agent_context(parent, None, "manual")
-            .await
-            .is_err(),
-        "manual compaction must respect the same queue capacity"
-    );
-    provider.parent.add_permits(1);
-    tokio::time::timeout(std::time::Duration::from_secs(2), async {
-        while let Some(event) = events.next().await {
-            if matches!(event?.payload, EventV1::TaskCompleted(e) if e.task_id.as_str() == followup && e.result_summary == "notification delivered") { return Ok::<_, harness_core::store::EventStoreError>(()); }
-        }
-        Err(harness_core::store::EventStoreError::Invalid("notification was not consumed"))
-    }).await??;
-    coordinator.stop_run().await?;
+            .await?;
+        assert_eq!(
+            running.structured_json.ok_or("missing poll result")?["Result"]["status"],
+            "running"
+        );
+        assert!(
+            coordinator
+                .request_agent_turn(
+                    EventActor::new(ActorKind::User, None),
+                    parent.clone(),
+                    "manual queued work"
+                )
+                .await
+                .is_err(),
+            "the accepted child must retain a notification slot"
+        );
+        provider.child.add_permits(1);
+        let notification = wait_for(
+            &mut events,
+            |event| matches!(event, EventV1::BackgroundTaskNotification(_)),
+            "missing notification",
+        )
+        .await?;
+        let EventV1::BackgroundTaskNotification(notification) = notification.payload else {
+            return Err("unexpected notification event".into());
+        };
+        let followup = notification
+            .delivered_turn_request_id
+            .ok_or("lost notification")?;
+        assert!(
+            coordinator
+                .execute_agent_tool_call(
+                    EventActor::new(ActorKind::Worker, Some(parent.clone())),
+                    None,
+                    "get_command_or_subagent_output",
+                    json!({"task_ids":[false]}),
+                )
+                .await
+                .is_err(),
+            "a failed history read must not consume the queued notification"
+        );
+        assert!(
+            coordinator
+                .compact_agent_context(parent, None, "manual")
+                .await
+                .is_err(),
+            "manual compaction must respect the same queue capacity"
+        );
+        provider.parent.add_permits(1);
+        let expected = if continue_parent {
+            ""
+        } else {
+            "notification delivered"
+        };
+        wait_for(
+            &mut events,
+            |event| {
+                matches!(event, EventV1::TaskCompleted(e)
+                if e.task_id.as_str() == followup && e.result_summary == expected)
+            },
+            "notification was not consumed",
+        )
+        .await?;
+        assert_eq!(provider.wakeups.load(Ordering::SeqCst), 1);
+        coordinator.stop_run().await?;
+    }
     Ok(())
 }
 
@@ -289,6 +322,7 @@ async fn polled_child_reports_suppress_parent_wakeups_in_live_and_resumed_histor
             parent_started: tokio::sync::Notify::new(),
             child_started: tokio::sync::Notify::new(),
             collect_reports: count,
+            continue_parent: false,
             wakeups: AtomicUsize::new(0),
             collected: tokio::sync::Mutex::new(Vec::new()),
         });

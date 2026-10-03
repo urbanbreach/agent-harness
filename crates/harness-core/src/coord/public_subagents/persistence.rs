@@ -2,6 +2,7 @@ use super::*;
 
 mod completion;
 mod disposal;
+mod reminders;
 mod restore;
 
 #[derive(Serialize)]
@@ -214,47 +215,6 @@ impl Runtime {
             }
         }
         Ok(())
-    }
-
-    pub(super) fn drain_native_completion_reminders(
-        &mut self,
-        parent: &str,
-        request: &str,
-    ) -> Result<Vec<(u64, String)>, CoordinatorError> {
-        let mut buffered: Vec<_> = self
-            .native_subagents
-            .iter()
-            .filter(|(_, child)| child.buffered_for.as_deref() == Some(parent))
-            .map(|(id, child)| (child.completion_age, id.clone()))
-            .collect();
-        buffered.sort();
-        let mut messages = Vec::new();
-        for (_, id) in buffered {
-            let child = &self.native_subagents[&id];
-            let snapshot = child.updates.borrow();
-            let text = format!(
-                "<subagent_completion>\nsubagent_id: {id}\nstatus: {}\n{}\n</subagent_completion>",
-                snapshot.result.status, snapshot.result.output
-            );
-            drop(snapshot);
-            let event = self.emit(
-                EventActor::new(ActorKind::Worker, Some(parent.into())),
-                Some(request.into()),
-                EventV1::NativeSubagentReceipt(Box::new(NativeSubagentReceipt {
-                    payload_version: 1,
-                    child_id: id.clone(),
-                    attempt_id: self.agents[&id].attempt.clone(),
-                    generation: self.agents[&id].generation,
-                    kind: "completion_reminder_delivered".into(),
-                    waiter_id: Some(request.into()),
-                })),
-            )?;
-            if let Some(child) = self.native_subagents.get_mut(&id) {
-                child.buffered_for = None;
-            }
-            messages.push((event.seq, text));
-        }
-        Ok(messages)
     }
 
     fn route_native_survivors(&mut self, parent: &str) -> Result<(), CoordinatorError> {
