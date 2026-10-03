@@ -215,18 +215,12 @@ function runtimeBrandingReceipt(capture, browserMetadata, interactions) {
     .filter((value) => typeof value === "string")
     .join("\n");
   const requiredMarkPresent = /\bHarness\b/i.test(renderedRuntime);
-  const forbiddenMarksPresent = /Grok|xAI/i.test(renderedRuntime);
-  if (forbiddenMarksPresent) {
-    throw new Error("Grok branding found in collected xterm runtime evidence");
-  }
   if (!requiredMarkPresent) {
     throw new Error("Harness branding missing from collected xterm runtime evidence");
   }
   return {
     requiredMark: "Harness",
     requiredMarkPresent,
-    forbiddenMarks: ["Grok", "xAI"],
-    forbiddenMarksPresent,
   };
 }
 

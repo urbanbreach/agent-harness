@@ -24,7 +24,7 @@
     {"name": "permission-long-collapsed", "ids": ["GAP-18"], "permission_keys": ["Down"], "action": "Collapse a long description to four rows plus the expansion hint", "permission_description": ["Check terminal output", "printf ready", "Inspect stdout", "Inspect stderr", "Verify exit code", "Preserve the composer draft", "Keep the input cursor visible", "Record the decision"]},
     {"name": "permission-feedback-expanded", "ids": ["GAP-18"], "permission_keys": ["Down", "Down", "Down", "feedback", "Ctrl-f"], "action": "Expand the description while feedback retains input ownership", "permission_description": ["Check terminal output", "printf ready", "Inspect stdout", "Inspect stderr", "Verify exit code", "Preserve the composer draft", "Keep the input cursor visible", "Record the decision"]},
     {"name": "todos-all", "ids": ["GAP-17"], "action": "Native TodoPane update and Harness todo.write ingestion across four statuses"},
-    {"name": "todos-filtered", "ids": ["GAP-17"], "action": "h hides done in Grok; Harness same key through AppState"},
+    {"name": "todos-filtered", "ids": ["GAP-17"], "action": "h hides done in Reference; Harness same key through AppState"},
     {"name": "todos-selected", "ids": ["GAP-17"], "todo_keys": ["Down", "Down"], "action": "Select the in-progress item"},
     {"name": "todos-search", "ids": ["GAP-17"], "todo_keys": ["/", "text:reg.*"], "action": "Incremental smart-case regex search"},
     {"name": "todos-search-accepted", "ids": ["GAP-17"], "todo_keys": ["/", "text:reg.*", "Enter"], "action": "Accepted search preserves highlights and query bar"},
