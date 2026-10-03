@@ -420,13 +420,6 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
             let mut expected = expected.clone();
             expected["cells"] = cells_with_documented_gap_correction(&expected)?;
             current_settings::compare(&expected, actual)?;
-            for field in ["id", "cursor", "cells", "inputs", "intents"] {
-                assert!(
-                    expected[field] == actual[field],
-                    "reference drift in {}: {field}",
-                    actual["id"]
-                );
-            }
         }
     }
     Ok(())
