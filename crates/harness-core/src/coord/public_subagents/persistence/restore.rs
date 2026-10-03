@@ -189,6 +189,7 @@ impl Runtime {
                 creation_checkpoint: None,
                 ownership: None,
                 cleanup_pending: false,
+                progress: None,
             };
             let mut snapshot = child.updates.borrow().clone();
             for event in events.iter().filter(|event| {

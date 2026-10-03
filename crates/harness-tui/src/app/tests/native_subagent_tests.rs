@@ -1,6 +1,9 @@
 use super::*;
 use harness_core::{coord::NativeSubagentRegistration, subagent::*};
 
+#[path = "native_progress_tests.rs"]
+mod progress;
+
 #[path = "native_child_viewer_tests.rs"]
 mod viewer;
 
@@ -143,6 +146,7 @@ fn native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row() {
     app.composer.selection_anchor = Some(0);
     app.transcript_view.show_transcript_thinking = false;
     assert_native_inspection(&mut app, &intents);
+    progress::while_child_open(&mut app);
     app.ingest_runtime_event(RuntimeEvent::Live(Box::new(
         harness_core::event::LiveEventEnvelope {
             event_id: "parent-live".into(),
@@ -165,6 +169,7 @@ fn native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row() {
     assert_eq!(app.composer.prompt_buffer, "parent draft");
     assert!(!app.transcript_view.show_transcript_thinking);
     assert!(render_text(&app, 120, 40).contains("Parent kept streaming"));
+    progress::assert_count(&app, 7);
     app.handle_key(key(KeyCode::Enter));
     assert_eq!(app.current_session_id(), Some("child"));
     assert!(
@@ -172,7 +177,7 @@ fn native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row() {
         "running child inspection state survives close and reopen"
     );
     app.handle_key(key(KeyCode::Esc));
-    assert_native_completion(&mut app, started);
+    progress::assert_native_completion(&mut app, started);
 }
 
 fn assert_task_query_editing(app: &mut AppState) {
@@ -415,38 +420,6 @@ fn command_task_viewer_subscribes_updates_and_discards_late_output_after_close()
     ));
     snapshot.result.task_id = "command".into();
     assert!(!app.apply_command_output(snapshot));
-}
-
-fn assert_native_completion(app: &mut AppState, mut finished: SubagentTransitionV1) {
-    finished.transition = SubagentTransitionKind::Finished;
-    finished.outcome = Some(SubagentTerminalOutcome::Completed);
-    finished.accounting = Some(SubagentTerminalAccounting {
-        tool_calls: 0,
-        turns: 1,
-        duration_ms: 1234,
-        tokens_used: None,
-        output_tokens_used: None,
-        total_tokens_used: None,
-        output_usage_incomplete: true,
-    });
-    for seq in [9, 10] {
-        app.ingest_event(envelope(
-            seq,
-            "req_child",
-            EventV1::SubagentTransition(Box::new(finished.clone())),
-        ));
-    }
-    app.set_tool_group_outputs_expanded(&["spawn".into()], true);
-    let root = render_text(&app, 120, 40);
-    assert_eq!(
-        root.matches("Subagent completed in 1.2s").count(),
-        1,
-        "{root}"
-    );
-    assert_eq!(root.matches("Subagent started:").count(), 1, "{root}");
-    assert!(app.task_pane_rows().is_empty());
-    app.tasks_pane.show_done = true;
-    assert_eq!(app.task_pane_rows().len(), 2);
 }
 
 fn assert_child_search(app: &mut AppState) {

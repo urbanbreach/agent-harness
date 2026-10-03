@@ -187,6 +187,7 @@ pub(super) struct NativeSubagent {
     creation_checkpoint: Option<WorkspaceCreationCheckpoint>,
     ownership: Option<workspace::WorkspaceOwnership>,
     cleanup_pending: bool,
+    progress: Option<progress::Publisher>,
 }
 
 impl NativeSubagent {

@@ -43,9 +43,29 @@ pub(crate) struct SubagentPresentation {
     pub rows: BTreeMap<String, SubagentRow>,
     pub last_mono_ms: u64,
     pub observed_at: Option<std::time::Instant>,
+    pub progress: BTreeMap<String, harness_core::event::SubagentProgressEvent>,
 }
 
 impl SubagentPresentation {
+    pub(super) fn apply_progress(
+        &mut self,
+        progress: &harness_core::event::SubagentProgressEvent,
+        mono_ms: u64,
+    ) {
+        let Some(record) = self.history.records.get(&progress.child_id) else {
+            return;
+        };
+        if record.outcome.is_some()
+            || record.generation != progress.generation
+            || record.lifecycle.current_attempt_id() != Some(progress.attempt_id.as_str())
+        {
+            return;
+        }
+        self.last_mono_ms = self.last_mono_ms.max(mono_ms);
+        self.progress
+            .insert(progress.child_id.clone(), progress.clone());
+    }
+
     pub(super) fn apply(&mut self, event: &EventEnvelopeV1) {
         self.last_mono_ms = self.last_mono_ms.max(event.mono_ms);
         let accepted = match &event.payload {
@@ -56,6 +76,9 @@ impl SubagentPresentation {
             }
         };
         match &event.payload {
+            EventV1::SubagentTransition(data) if accepted && data.outcome.is_some() => {
+                self.progress.remove(&data.child_id.0);
+            }
             EventV1::NativeSubagentRegistered(data) if data.payload_version == 1 => {
                 if self
                     .rows
@@ -125,6 +148,7 @@ impl SubagentPresentation {
             EventV1::SubagentTransition(data)
                 if accepted && data.transition == SubagentTransitionKind::Spawned =>
             {
+                self.progress.remove(&data.child_id.0);
                 if let Some(row) = self.rows.get_mut(&data.child_id.0) {
                     if self.history.records.get(&row.id).is_some_and(|record| {
                         record.generation == data.generation
@@ -195,7 +219,14 @@ impl super::SessionProjection {
             result_summary: None,
             child_tool_call_count: record
                 .and_then(|record| record.accounting)
-                .map_or(0, |accounting| accounting.tool_calls as usize),
+                .map(|accounting| accounting.tool_calls as usize)
+                .or_else(|| {
+                    self.subagents
+                        .progress
+                        .get(&row.id)
+                        .map(|progress| progress.tool_call_count as usize)
+                })
+                .unwrap_or(0),
             current_child_tool_title: self
                 .activities
                 .iter()

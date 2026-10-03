@@ -254,6 +254,7 @@ impl Runtime {
         child.request = Some(request.into());
         if !continuing {
             child.outbound = 0;
+            child.progress = Some(super::super::progress::Publisher::new());
         }
         child.sender_generation = self.agents[agent].generation;
         child.terminal_published = false;

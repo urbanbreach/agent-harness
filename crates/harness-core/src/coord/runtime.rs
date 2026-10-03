@@ -222,6 +222,7 @@ impl Runtime {
                 break;
             }
             let deadline = self.pending.values().filter_map(|p| p.deadline).min();
+            let progress_deadline = self.native_progress_deadline();
             tokio::select! {
                 () = shutdown.cancelled(), if !closing => {
                     closing = true;
@@ -247,6 +248,10 @@ impl Runtime {
                     if let Some(deadline) = deadline { tokio::time::sleep_until(deadline).await; }
                     else { std::future::pending::<()>().await; }
                 } => self.expire_permissions(),
+                () = async {
+                    if let Some(deadline) = progress_deadline { tokio::time::sleep_until(deadline).await; }
+                    else { std::future::pending::<()>().await; }
+                } => self.publish_native_progress(),
             }
             self.finish_stop().await;
             self.finish_rewind();

@@ -276,6 +276,7 @@ impl Runtime {
                 creation_checkpoint: checkpoint,
                 ownership: None,
                 cleanup_pending: false,
+                progress: None,
             },
         );
         self.native_subagent_queue.push_back(id.clone());
