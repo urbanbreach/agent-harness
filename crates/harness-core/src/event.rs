@@ -1,11 +1,13 @@
 use serde::{Deserialize, Serialize};
 mod compaction;
 mod provider;
+mod subagent_progress;
 mod task;
 mod tool;
 mod workspace;
 pub use compaction::*;
 pub use provider::*;
+pub use subagent_progress::*;
 pub use task::*;
 pub use tool::*;
 pub use workspace::*;
@@ -47,6 +49,7 @@ pub struct LiveEventEnvelope {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event_type", content = "data", rename_all = "snake_case")]
 pub enum LiveEventV1 {
+    SubagentProgress(SubagentProgressEvent),
     RuntimeWarning {
         message: String,
     },

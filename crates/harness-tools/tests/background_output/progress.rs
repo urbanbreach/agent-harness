@@ -1,6 +1,7 @@
 use super::*;
 use harness_core::config::{ModelLimitProvenance, ResolvedModelLimits, ResolvedModelTarget};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use tokio_stream::StreamExt;
 
 struct ProgressProvider {
     calls: AtomicUsize,
@@ -144,6 +145,7 @@ async fn running_child_reports_current_progress_without_double_counting_model_ou
             .spawn_agent_idle(EventActor::new(ActorKind::User, None), "default", None)
             .await?;
         let actor = EventActor::new(ActorKind::Worker, Some(parent));
+        let mut live = coordinator.event_store().await?.subscribe_runtime(1)?;
         let started = coordinator
             .execute_agent_tool_call(
                 actor.clone(),
@@ -183,6 +185,20 @@ async fn running_child_reports_current_progress_without_double_counting_model_ou
             "{text}"
         );
         let context = 9000 + provider.new_tool_tokens.load(Ordering::SeqCst);
+        let published = tokio::time::timeout(
+            std::time::Duration::from_secs(4),
+            next_progress(&mut live, child),
+        )
+        .await??;
+        assert_eq!(published.tool_call_count, 1);
+        assert_eq!(published.turn_count, 1);
+        assert_eq!(published.tools_used, ["write"]);
+        assert_eq!(published.duration_ms, 2500);
+        assert_eq!(published.tokens_used, Some(context));
+        assert_eq!(
+            published.context_window_tokens,
+            known_window.then_some(10_000)
+        );
         assert!(
             context < 10_000,
             "the tool results fit the remaining context"
@@ -282,4 +298,24 @@ async fn running_child_reports_current_progress_without_double_counting_model_ou
         coordinator.stop_run().await?;
     }
     Ok(())
+}
+
+async fn next_progress(
+    live: &mut harness_core::store::RuntimeEventStream,
+    child: &str,
+) -> Result<harness_core::event::SubagentProgressEvent, harness_core::store::EventStoreError> {
+    while let Some(event) = live.next().await {
+        let harness_core::event::RuntimeEvent::Live(event) = event? else {
+            continue;
+        };
+        let harness_core::event::LiveEventV1::SubagentProgress(progress) = event.payload else {
+            continue;
+        };
+        if progress.child_id == child {
+            return Ok(progress);
+        }
+    }
+    Err(harness_core::store::EventStoreError::Invalid(
+        "child progress stream closed",
+    ))
 }

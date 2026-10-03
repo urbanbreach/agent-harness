@@ -45,6 +45,11 @@ requests. The live context estimate adds new conversation items to the last
 reported total and excludes model output already covered by that total. Unknown
 context capacity remains unknown.
 
+The coordinator publishes live child progress every two seconds when counters
+change, with an eight-second heartbeat while unchanged. The Tasks pane keeps
+updating while a child is open; stale attempts and updates after completion are
+ignored. These progress updates are transient and are not appended to history.
+
 Children receive the subagent base instructions followed by their definition's
 prompt body. Tool placeholders use the child's available tools, and the workspace
 path reflects its prepared directory or worktree. A same-identity wake keeps the

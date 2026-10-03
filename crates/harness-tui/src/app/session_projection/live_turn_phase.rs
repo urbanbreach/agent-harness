@@ -175,7 +175,9 @@ impl SessionProjection {
     ) {
         let activity = &self.activities[index];
         let (request_id, delta, phase) = match &event.payload {
-            LiveEventV1::CompactionProgress { .. } | LiveEventV1::RuntimeWarning { .. } => return,
+            LiveEventV1::CompactionProgress { .. }
+            | LiveEventV1::RuntimeWarning { .. }
+            | LiveEventV1::SubagentProgress(_) => return,
             LiveEventV1::ProviderReasoningDelta { request_id, delta } => {
                 (request_id, delta, LiveTurnPhase::Thinking)
             }

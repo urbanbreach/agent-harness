@@ -1758,6 +1758,13 @@ impl AppState {
         if self.route_live_fragment_while_viewing_child(event) {
             return;
         }
+        if matches!(event.payload, LiveEventV1::SubagentProgress(_)) {
+            self.projection.ingest_live_event(event);
+            if self.status_dashboard_is_active() {
+                self.refresh_status_dashboard();
+            }
+            return;
+        }
         self.starting_session_seed = false;
         let previous_phase = self.current_live_turn_phase();
         self.note_live_fragment_timing(event);
@@ -1970,9 +1977,9 @@ impl AppState {
             .correlation_id
             .as_deref()
             .unwrap_or(match &event.payload {
-                LiveEventV1::CompactionProgress { .. } | LiveEventV1::RuntimeWarning { .. } => {
-                    return
-                }
+                LiveEventV1::CompactionProgress { .. }
+                | LiveEventV1::RuntimeWarning { .. }
+                | LiveEventV1::SubagentProgress(_) => return,
                 LiveEventV1::ProviderTextDelta { request_id, .. }
                 | LiveEventV1::ProviderReasoningDelta { request_id, .. }
                 | LiveEventV1::ProviderToolInputDelta { request_id, .. } => request_id.as_str(),

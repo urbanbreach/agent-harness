@@ -151,6 +151,10 @@ pub struct SessionProjection {
 
 impl SessionProjection {
     pub(super) fn copy_child_live_presentation(&mut self, source: &Self, child: &str) {
+        if let Some(progress) = source.subagents.progress.get(child) {
+            self.subagents
+                .apply_progress(progress, source.subagents.last_mono_ms);
+        }
         for activity in &source.activities {
             if source
                 .child_request_agents
@@ -286,6 +290,10 @@ impl SessionProjection {
 
     pub(crate) fn ingest_live_event(&mut self, event: &LiveEventEnvelope) {
         let (provider_request_id, tool_input) = match &event.payload {
+            LiveEventV1::SubagentProgress(progress) => {
+                self.subagents.apply_progress(progress, event.mono_ms);
+                return;
+            }
             LiveEventV1::RuntimeWarning { .. } => return,
             LiveEventV1::CompactionProgress {
                 agent_id,
@@ -364,7 +372,9 @@ impl SessionProjection {
         let activity = &mut self.activities[activity_index];
         activity.status = ActivityStatus::Streaming;
         match &event.payload {
-            LiveEventV1::CompactionProgress { .. } | LiveEventV1::RuntimeWarning { .. } => return,
+            LiveEventV1::CompactionProgress { .. }
+            | LiveEventV1::RuntimeWarning { .. }
+            | LiveEventV1::SubagentProgress(_) => return,
             LiveEventV1::ProviderTextDelta { delta, .. } => {
                 if !delta.is_empty() {
                     if let Some(state) = self.transient_assistants.get_mut(provider_request_id) {
