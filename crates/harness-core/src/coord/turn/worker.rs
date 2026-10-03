@@ -73,9 +73,10 @@ impl Worker {
                         runtime.native_completion_wake_text(&parent, &completion, &request, text)
                     })
                     .await?;
-                let Some(wake_text) = wake_text else {
+                let Some((seq, wake_text)) = wake_text else {
                     return Ok(String::new());
                 };
+                self.turn.seq = seq;
                 text = wake_text;
             }
             let parent = self.actor.agent_id.clone().unwrap_or_default();

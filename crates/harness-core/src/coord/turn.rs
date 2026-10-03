@@ -96,14 +96,21 @@ impl Runtime {
         }
         actor.agent_id = Some(agent_id.into());
         let _ = self.persist_attachments(&actor, None, &prompt.attachments)?;
-        let submitted = self.emit(
-            actor.clone(),
-            Some(id.clone()),
-            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-                request_id: id.clone().into(),
-                text: prompt.text.clone(),
-            }),
-        )?;
+        // Completion wakes resolve their digest when admitted to the worker.
+        // A queued wake may be consumed by a tool result before it starts.
+        let submitted_seq = if prompt.child_completion.is_some() {
+            0
+        } else {
+            self.emit(
+                actor.clone(),
+                Some(id.clone()),
+                EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                    request_id: id.clone().into(),
+                    text: prompt.text.clone(),
+                }),
+            )?
+            .seq
+        };
         if !prompt.attachments.is_empty() {
             self.emit(
                 actor.clone(),
@@ -131,7 +138,7 @@ impl Runtime {
                 model,
                 settings,
                 target,
-                seq: submitted.seq,
+                seq: submitted_seq,
                 manual: None,
                 inherited_selection,
                 user_initiated,

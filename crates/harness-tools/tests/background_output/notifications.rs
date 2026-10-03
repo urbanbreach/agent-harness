@@ -79,7 +79,7 @@ async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notific
             Arc::new(FakeClock::new()),
             Arc::new(DefaultRedactor::default()),
         );
-        coordinator
+        let run = coordinator
             .start_run("notification capacity", temp.path())
             .await?;
         let parent = coordinator
@@ -192,6 +192,29 @@ async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notific
         assert_eq!(provider.wakeups.load(Ordering::SeqCst), 1);
         let reminders = provider.reminders.lock().await;
         let reminder = reminders.first().ok_or("model reminder absent")?;
+        let recorded = harness_core::store::read_events(&run.events_path)?
+            .into_iter()
+            .filter_map(|event| match event.payload {
+                EventV1::UserMessageSubmitted(message)
+                    if followups.contains(&message.request_id.to_string()) =>
+                {
+                    Some(message.text)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if continue_parent {
+            assert!(
+                recorded.is_empty(),
+                "a consumed wake must not add a transcript prompt"
+            );
+        } else {
+            assert_eq!(
+                recorded.as_slice(),
+                std::slice::from_ref(reminder),
+                "history must record the digest sent to the model"
+            );
+        }
         assert!(reminder.contains("<\\/system-reminder>"));
         assert!(reminder.contains("<\\system_reminder name="));
         assert_eq!(reminder.contains("[output truncated:"), poll_available);
