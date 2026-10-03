@@ -60,6 +60,7 @@ pub(super) fn assert_child_viewer(app: &mut AppState) {
     assert!(app.transcript_viewer().is_none());
     assert_eq!(app.current_session_id(), Some("child"));
     app.handle_key(key(KeyCode::Enter));
+    assert_filter_selection(app);
     let layout = crate::transcript_block_viewer::viewer_layout(
         crate::layout::FrameLayoutPlan::for_app(app, area).shell,
     );
@@ -77,4 +78,30 @@ pub(super) fn assert_child_viewer(app: &mut AppState) {
     assert_eq!(app.current_session_id(), Some("child"));
     app.composer.vim_mode = false;
     app.set_frame_area(Rect::new(0, 0, 120, 40));
+}
+
+fn assert_filter_selection(app: &mut AppState) {
+    app.handle_key(key(KeyCode::Char('f')));
+    app.handle_paste("Second|^Read");
+    app.handle_key(key(KeyCode::Enter));
+    let viewer = app.transcript_viewer().unwrap_or_abort();
+    assert!(viewer
+        .render_surface(Rect::new(0, 0, 80, 24))
+        .lines
+        .iter()
+        .any(|line| line.text.contains("Read")));
+    assert_eq!(
+        viewer.quote_text(),
+        "Second paragraph for filter selection."
+    );
+    app.handle_key(key(KeyCode::Char('f')));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(KeyCode::Esc));
+    assert_eq!(
+        app.transcript_viewer().unwrap_or_abort().quote_text(),
+        "Second paragraph for filter selection."
+    );
 }

@@ -29,7 +29,16 @@ pub(crate) fn render_viewer(buffer: &mut Buffer, area: Rect, state: &ViewerState
 fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface {
     let mut filter_search = super::SearchState::new();
     if state.filter_editing() {
-        let _ = filter_search.set_query(state.wrapped.text(), &regex::escape(&state.filter_query));
+        if state.child {
+            let _ = filter_search.set_wrapped_query(
+                state.wrapped.text(),
+                &state.row_joiners,
+                &state.filter_query,
+            );
+        } else {
+            let _ =
+                filter_search.set_query(state.wrapped.text(), &regex::escape(&state.filter_query));
+        }
     }
     let highlights = if state.filter_editing() {
         &filter_search
@@ -230,7 +239,7 @@ fn paint(
             body.x,
             body.y + u16::try_from(offset).unwrap_or(u16::MAX),
             body.width
-                + if surface.filtering && row_count <= usize::from(body.height) {
+                + if !surface.child && surface.filtering && row_count <= usize::from(body.height) {
                     2
                 } else {
                     0
