@@ -1,0 +1,31 @@
+{
+  "status": "pass",
+  "scope": "Whole-terminal scrollbar and yank journey; no exceptions or image normalization",
+  "results": [
+    {
+      "size": "120x40",
+      "checkpoint": "viewer-open",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "scrollbar-middle",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "scrollbar-top",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "scrollbar-bottom",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "yank",
+      "differentPixels": 0
+    }
+  ]
+}

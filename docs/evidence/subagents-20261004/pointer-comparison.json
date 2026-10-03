@@ -1,0 +1,139 @@
+{
+  "status": "pass",
+  "scope": "Whole-terminal PNG comparison, with only the user-approved shared clipboard backup-notice exception. No scaling or color normalization.",
+  "results": [
+    {
+      "size": "80x24",
+      "checkpoint": "viewer-open",
+      "differentPixels": 0,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": []
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "mouse-press",
+      "differentPixels": 0,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": []
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "mouse-drag",
+      "differentPixels": 0,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": []
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "mouse-release",
+      "differentPixels": 2891,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": [
+        [
+          27,
+          17,
+          47,
+          1
+        ]
+      ]
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "clear-selection",
+      "differentPixels": 2891,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": [
+        [
+          27,
+          17,
+          47,
+          1
+        ]
+      ]
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "viewer-open",
+      "differentPixels": 0,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": []
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "mouse-press",
+      "differentPixels": 0,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": []
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "mouse-drag",
+      "differentPixels": 0,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": []
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "mouse-release",
+      "differentPixels": 2906,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": [
+        [
+          66,
+          32,
+          47,
+          1
+        ]
+      ]
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "clear-selection",
+      "differentPixels": 2906,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": [
+        [
+          66,
+          32,
+          47,
+          1
+        ]
+      ]
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "viewer-open",
+      "differentPixels": 0,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": []
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "mouse-press",
+      "differentPixels": 0,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": []
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "mouse-drag",
+      "differentPixels": 0,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": []
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "mouse-release",
+      "differentPixels": 0,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": []
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "clear-selection",
+      "differentPixels": 0,
+      "unexceptedPixels": 0,
+      "clipboardNoticeRectangles": []
+    }
+  ]
+}
