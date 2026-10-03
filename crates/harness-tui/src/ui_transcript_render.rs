@@ -782,6 +782,24 @@ fn resolve_assistant_body_content(
     {
         lines.pop();
     }
+    if child_view {
+        for line in &mut lines {
+            if line
+                .spans
+                .iter()
+                .any(|span| span.style.bg == Some(theme.markdown.code_background))
+            {
+                let padding = usize::from(
+                    content_width.saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH),
+                )
+                .saturating_sub(line.width());
+                line.spans.push(Span::styled(
+                    " ".repeat(padding),
+                    Style::default().bg(theme.markdown.code_background),
+                ));
+            }
+        }
+    }
     if let (Some(clock), Some(line)) = (wall_clock, lines.first_mut()) {
         pack_wall_clock_on_line(line, clock, content_width, theme, child_view);
     }

@@ -9,6 +9,10 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::theme::Theme;
 
+#[path = "render_line.rs"]
+mod line;
+use line::{code_background, render_line};
+
 use super::state::ViewerState;
 use super::{RenderedLine, ViewerMode, ViewerRenderSurface};
 use crate::transcript_selection::CellPoint;
@@ -162,7 +166,7 @@ fn styled_row(state: &ViewerState, row: usize) -> Option<ratatui::text::Line<'st
     let mut line = state.styled_lines.get(row)?.clone();
     if state.child && state.content().markdown {
         for span in &mut line.spans {
-            if span.style.fg.is_none() || span.style.fg == Some(state.theme().text.primary) {
+            if span.style.fg == Some(state.theme().text.primary) {
                 span.style.fg = Some(viewer_secondary(state.theme()));
             }
         }
@@ -261,7 +265,10 @@ fn paint(
         } else if surface.output_panel && index >= surface.body_start {
             theme.markdown.code_background
         } else {
-            theme.surface.shell
+            line.styled
+                .as_ref()
+                .and_then(|line| code_background(line, theme))
+                .unwrap_or(theme.surface.shell)
         };
         buffer.set_style(row, Style::default().bg(background));
         Paragraph::new(render_line(line, surface.visual_mode, theme)).render(row, buffer);
@@ -400,55 +407,6 @@ fn render_shortcuts(buffer: &mut Buffer, area: Rect, surface: &ViewerRenderSurfa
         buffer.set_string(x, area.y, label, label_style);
         x += label_width;
     }
-}
-
-fn render_line<'a>(
-    line: &'a RenderedLine,
-    visual_mode: bool,
-    theme: &Theme,
-) -> ratatui::text::Line<'a> {
-    let mut column = 0;
-    let mut source_styles = line
-        .styled
-        .iter()
-        .flat_map(|line| &line.spans)
-        .scan(0, |end, span| {
-            *end += span.width();
-            Some((*end, span.style))
-        })
-        .peekable();
-    let spans = line
-        .text
-        .graphemes(true)
-        .map(|grapheme| {
-            let start = column;
-            column += grapheme.width();
-            while source_styles.peek().is_some_and(|(end, _)| *end <= start) {
-                let _ = source_styles.next();
-            }
-            let mut style = source_styles.peek().map_or_else(
-                || Style::default().fg(theme.terminal_colors.primary),
-                |(_, style)| *style,
-            );
-            if line
-                .match_ranges
-                .iter()
-                .any(|range| range.start < column && range.end > start)
-            {
-                style = style.add_modifier(Modifier::REVERSED);
-            }
-            if !visual_mode
-                && line
-                    .selection_range
-                    .as_ref()
-                    .is_some_and(|range| range.start < column && range.end > start)
-            {
-                style = style.bg(theme.text.accent).fg(theme.surface.canvas);
-            }
-            ratatui::text::Span::styled(grapheme, style)
-        })
-        .collect::<Vec<_>>();
-    ratatui::text::Line::from(spans)
 }
 
 fn visual_background(theme: &Theme) -> Color {

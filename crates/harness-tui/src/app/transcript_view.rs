@@ -127,6 +127,11 @@ pub(crate) struct TranscriptViewState {
         crate::ui::TranscriptVisualEntryId,
         crate::transcript_block_viewer::ViewerMode,
     )>,
+    pub(crate) markdown_layout_heights: Vec<(
+        crate::ui::TranscriptVisualEntryId,
+        usize,
+        Option<std::sync::Arc<str>>,
+    )>,
     pub(crate) viewer_resume: Option<(
         crate::ui::TranscriptVisualEntryId,
         crate::transcript_block_viewer::ViewerResume,
@@ -193,6 +198,7 @@ impl Default for TranscriptViewState {
             selected_activity_index: 0,
             selected_entry: None,
             markdown_modes: Vec::new(),
+            markdown_layout_heights: Vec::new(),
             viewer_resume: None,
             search: super::pane_query::PaneQuery::default(),
             search_match: 0,

@@ -143,7 +143,7 @@ impl ViewerState {
         if !self.child {
             self.child = true;
             self.following = running;
-            let _ = self.rebuild_display();
+            let _ = self.set_theme(*self.theme());
         } else if self.running && !running {
             self.pin_to_tail();
         }

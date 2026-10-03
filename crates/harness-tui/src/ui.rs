@@ -815,7 +815,7 @@ pub(crate) fn viewer_wrap_lines(
             .into_iter()
             .enumerate()
         {
-            let wrapped = Line::from(spans);
+            let wrapped = Line::from(spans).style(line.style);
             let value = wrapped.to_string();
             let start = cursor
                 + text

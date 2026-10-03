@@ -85,7 +85,25 @@ impl PreparedTranscript {
             |section, theme, width, surface| {
                 let mut theme = *theme;
                 theme.markdown_link_destinations = section.child_view;
-                build_transcript_render_surfaces(section, &theme, width, surface)
+                theme.markdown_native = section.child_view;
+                let mut surfaces =
+                    build_transcript_render_surfaces(section, &theme, width, surface);
+                for entry in &mut surfaces {
+                    let Some((_, height, _)) =
+                        app.transcript_view.markdown_layout_heights.iter().find(
+                            |(id, _, source)| {
+                                *id == entry.metadata.id && *source == entry.source_text
+                            },
+                        )
+                    else {
+                        continue;
+                    };
+                    entry.lines.resize(*height, ratatui::text::Line::default());
+                    if let Some(rows) = &mut entry.selection_rows {
+                        rows.truncate(*height);
+                    }
+                }
+                surfaces
             },
         );
         layout.child_view = app.current_subagent_session_present();

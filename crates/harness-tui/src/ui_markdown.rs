@@ -212,6 +212,11 @@ pub(super) fn parse_inline_markdown(
                 }
             }
             Event::SoftBreak | Event::HardBreak => {
+                let style = if theme.markdown_native {
+                    Style::default().fg(Color::Reset)
+                } else {
+                    style
+                };
                 parsed.push(" ", style, destination.as_deref());
             }
             Event::Html(value) | Event::InlineHtml(value) => {
@@ -334,6 +339,10 @@ fn normalize_math_delimiters(text: &str) -> Cow<'_, str> {
 /// Paint and selection share this projection; original transcript data remains
 /// unchanged for source views and source-oriented copy.
 pub(super) fn markdown_display_source(text: &str) -> String {
+    markdown_display_source_with_break(text, " ")
+}
+
+fn markdown_display_source_with_break(text: &str, soft_break: &str) -> String {
     let source = normalize_math_delimiters(text);
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_TASKLISTS
@@ -353,7 +362,7 @@ pub(super) fn markdown_display_source(text: &str) -> String {
                     Some(b' ' | b'\t' | b'>' | b'|')
                 ) {
                     joined_line_starts.push(range.end);
-                    replacements.push((range, " ".to_string()));
+                    replacements.push((range, soft_break.to_owned()));
                 }
             }
             Event::HardBreak => replacements.push((range, "\n".to_string())),
@@ -648,9 +657,13 @@ pub(super) fn markdown_list_prefix<'a>(
             return Some((
                 "• ".to_string(),
                 text,
-                Style::default()
-                    .fg(theme.markdown.list_item)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.markdown.list_item).add_modifier(
+                    if theme.markdown_native {
+                        Modifier::empty()
+                    } else {
+                        Modifier::BOLD
+                    },
+                ),
                 Style::default().fg(theme.markdown.text),
             ));
         }
@@ -748,8 +761,11 @@ pub(super) fn append_markdownish_text_block(
     width: u16,
 ) {
     let base_style = Style::default().fg(color);
-    let display_source = markdown_display_source(text);
-    let rows = display_source.lines().collect::<Vec<_>>();
+    // Keep joined soft breaks visible to the inline parser so their default
+    // foreground is preserved. Hard breaks still delimit display rows.
+    let display_source =
+        markdown_display_source_with_break(text, if theme.markdown_native { "\r" } else { " " });
+    let rows = display_source.split_terminator('\n').collect::<Vec<_>>();
     let mut index = 0;
     while let Some(line) = rows.get(index).copied() {
         if let Some((table_lines, consumed, _links)) =
