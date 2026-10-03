@@ -35,7 +35,8 @@ impl Runtime {
             child.registration.spawner == parent && child.request.as_deref() == Some(completion)
         });
         let Some((id, child)) = child else {
-            return Ok(Some(fallback));
+            // Reusing a child replaces its request before this queued wake runs.
+            return Ok(None);
         };
         if child.consumed {
             return Ok(None);
