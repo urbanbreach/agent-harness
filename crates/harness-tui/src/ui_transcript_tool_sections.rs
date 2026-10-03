@@ -79,6 +79,14 @@ pub(super) fn build_tool_call_section(
             ));
     // These reference blocks have no animated accent; only commands and task
     // lifecycle rows signal execution with a wave.
+    section.cancellation_requested = app.inspected_child_cancel_started().is_some()
+        && matches!(
+            section.header.presentation.status,
+            ToolCallPresentationStatus::Queued | ToolCallPresentationStatus::Running
+        );
+    if section.cancellation_requested {
+        section.rail_motion = ToolRailMotion::Settled;
+    }
     if matches!(section.rail_motion, ToolRailMotion::Running { .. })
         && matches!(
             tool_family(&section),
@@ -169,6 +177,7 @@ pub(super) fn build_transcript_tool_call_section(
         animation_phase: app.transcript_animation_phase(),
         expanded,
         rail_motion: ToolRailMotion::Settled,
+        cancellation_requested: false,
     };
     let generic = content::populate(&mut row, tool, app, visible, stacked_diffs, session_path);
     details::finish(&mut row, tool, app, generic && visible, visible);

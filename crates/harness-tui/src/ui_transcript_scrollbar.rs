@@ -58,7 +58,7 @@ pub(super) fn render_transcript_scrollbar(
     };
 
     if scrollbar.lane.x > spec.viewport.content.right() {
-        render_child_scrollbar(frame, theme, scrollbar);
+        render_child_scrollbar(frame, theme, scrollbar, spec.following);
         return;
     }
 
@@ -101,9 +101,21 @@ pub(super) fn render_transcript_scrollbar(
     }
 }
 
-fn render_child_scrollbar(frame: &mut Frame, theme: &Theme, scrollbar: TranscriptScrollbarHit) {
+fn render_child_scrollbar(
+    frame: &mut Frame,
+    theme: &Theme,
+    scrollbar: TranscriptScrollbarHit,
+    following: bool,
+) {
     let track = crate::theme::quantize_color(Color::Rgb(17, 17, 17), theme.color_level());
-    let thumb = crate::theme::quantize_color(Color::Rgb(25, 25, 25), theme.color_level());
+    let thumb = crate::theme::quantize_color(
+        if following {
+            Color::Rgb(25, 25, 25)
+        } else {
+            Color::Rgb(36, 36, 36)
+        },
+        theme.color_level(),
+    );
     for y in scrollbar.track.y..scrollbar.track.bottom() {
         let in_thumb = y >= scrollbar.thumb.y && y < scrollbar.thumb.bottom();
         if let Some(cell) = frame.buffer_mut().cell_mut((scrollbar.track.x, y)) {
@@ -199,6 +211,20 @@ pub(super) fn transcript_scrollbar_geometry(
             .saturating_mul(track_height.saturating_sub(thumb_height))
             .div_ceil(max_scroll)
             .min(track_height.saturating_sub(thumb_height))
+    };
+    let (thumb_top, thumb_height) = if lane.x > viewport.content.right() {
+        // Native child scrollbars quantize eighth-cell geometry to filled cells.
+        let track_subcells = track_height.saturating_mul(8);
+        let length = (track_subcells.saturating_mul(viewport_height) / total_height.max(1))
+            .clamp(8, track_subcells.max(8));
+        let start = track_subcells
+            .saturating_sub(length)
+            .saturating_mul(scroll_top.min(max_scroll))
+            .checked_div(max_scroll)
+            .unwrap_or(0);
+        (start / 8, (start + length).div_ceil(8) - start / 8)
+    } else {
+        (thumb_top, thumb_height)
     };
     let thumb_y = track
         .y

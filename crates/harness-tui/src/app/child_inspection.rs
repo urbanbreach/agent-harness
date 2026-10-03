@@ -49,15 +49,50 @@ impl AppState {
     }
 
     pub(super) fn cancel_inspected_child(&mut self) {
+        if !self.subagent_header().is_some_and(|header| {
+            matches!(
+                header.status,
+                ActivityStatus::Queued | ActivityStatus::Streaming
+            )
+        }) {
+            return;
+        }
         if self
             .session_navigation_stack
             .first()
             .is_some_and(|parent| !parent.replay_mode)
         {
             if let Some(session_id) = self.current_session_id().map(str::to_owned) {
-                self.emit_ui_intent(UiIntent::CancelSubagent { session_id });
+                self.request_child_cancel(session_id);
             }
         }
+    }
+
+    pub(super) fn request_child_cancel(&mut self, session_id: String) {
+        let generation = self
+            .projection
+            .subagents
+            .history
+            .records
+            .get(&session_id)
+            .map_or(0, |record| record.generation);
+        if self
+            .pending_child_cancels
+            .get(&session_id)
+            .is_none_or(|(pending, _)| *pending != generation)
+        {
+            self.pending_child_cancels
+                .insert(session_id.clone(), (generation, self.now()));
+            self.bump_transcript_render_epoch();
+        }
+        self.emit_ui_intent(UiIntent::CancelSubagent { session_id });
+    }
+
+    pub(crate) fn inspected_child_cancel_started(&self) -> Option<Instant> {
+        let id = self.current_session_id()?;
+        let (generation, started) = self.pending_child_cancels.get(id)?;
+        let record = self.projection.subagents.history.records.get(id)?;
+        (record.generation == *generation && record.outcome.is_none()).then_some(*started)
     }
 
     pub(super) fn handle_child_inspection_key(&mut self, key: KeyEvent) -> bool {

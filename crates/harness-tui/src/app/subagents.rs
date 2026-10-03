@@ -149,6 +149,7 @@ pub(crate) struct SubagentHeader {
     pub badge: &'static str,
     pub activity: String,
     pub phase_elapsed_ms: u64,
+    pub cancelling: bool,
 }
 
 impl super::SessionProjection {
@@ -308,6 +309,7 @@ impl AppState {
                 })
             })
             .unwrap_or_default();
+        let cancelled_at = self.inspected_child_cancel_started();
         Some(SubagentHeader {
             label: row.map_or(info.label, |row| row.label.clone()),
             description: row.map_or(info.title, |row| row.description.clone()),
@@ -323,14 +325,27 @@ impl AppState {
             cwd,
             status,
             elapsed_ms: row.map_or(0, |row| self.subagent_elapsed_ms(row)),
-            activity: self.activities.back().map_or_else(
-                || "Waiting".into(),
-                |activity| self.child_activity(activity),
+            cancelling: cancelled_at.is_some(),
+            activity: if cancelled_at.is_some() {
+                "Waiting".into()
+            } else {
+                self.activities.back().map_or_else(
+                    || "Waiting".into(),
+                    |activity| self.child_activity(activity),
+                )
+            },
+            phase_elapsed_ms: cancelled_at.map_or_else(
+                || {
+                    self.activities.back().map_or(0, |activity| {
+                        self.subagent_presentation_ms()
+                            .saturating_sub(self.live_turn_phase(activity).1)
+                    })
+                },
+                |started| {
+                    u64::try_from(self.now().saturating_duration_since(started).as_millis())
+                        .unwrap_or(u64::MAX)
+                },
             ),
-            phase_elapsed_ms: self.activities.back().map_or(0, |activity| {
-                self.subagent_presentation_ms()
-                    .saturating_sub(self.live_turn_phase(activity).1)
-            }),
             badge: row.map_or("", SubagentRow::context_badge),
         })
     }

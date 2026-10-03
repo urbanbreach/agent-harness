@@ -89,6 +89,18 @@ impl PaneQuery {
                     self.delete_backward(key)?;
                 }
             }
+            _ => return self.edit_key(key),
+        }
+        self.update();
+        Ok(())
+    }
+
+    /// Shared single-line editing, without list-pane close/clear shortcuts.
+    pub(in crate::app) fn edit_key(&mut self, key: KeyEvent) -> Result<(), EditingError> {
+        match (key.code, key.modifiers) {
+            (KeyCode::Backspace, _) | (KeyCode::Char('w' | 'h'), KeyModifiers::CONTROL) => {
+                self.delete_backward(key)?;
+            }
             (KeyCode::Delete, modifiers)
                 if modifiers.intersects(
                     KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,

@@ -1533,11 +1533,11 @@ impl AppState {
                 self.begin_transcript_search();
                 true
             }
-            KeyCode::Char('n') if !self.transcript_view.search_query.is_empty() => {
+            KeyCode::Char('n') if self.transcript_view.search.active => {
                 self.find_transcript_match(Some(true));
                 true
             }
-            KeyCode::Char('N') if !self.transcript_view.search_query.is_empty() => {
+            KeyCode::Char('N') if self.transcript_view.search.active => {
                 self.find_transcript_match(Some(false));
                 true
             }

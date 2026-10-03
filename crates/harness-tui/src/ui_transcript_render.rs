@@ -1496,6 +1496,7 @@ mod tests {
             animation_phase: 0,
             expanded: true,
             rail_motion: super::super::ToolRailMotion::Settled,
+            cancellation_requested: false,
         };
 
         super::super::TranscriptTurnSection {
@@ -1997,6 +1998,7 @@ mod tests {
                 animation_phase: 0,
                 expanded: false,
                 rail_motion: super::super::ToolRailMotion::Settled,
+                cancellation_requested: false,
             }
         };
         let succeeded = command("command-ok", "echo ok", ToolCallDisplayStatus::Succeeded);
@@ -2111,6 +2113,7 @@ mod tests {
                 animation_phase: 0,
                 expanded: true,
                 rail_motion: super::super::ToolRailMotion::Settled,
+                cancellation_requested: false,
             }
         }
 

@@ -123,8 +123,7 @@ pub(crate) struct TranscriptViewState {
     pub(crate) measured_anchor: Option<TranscriptContentAnchor>,
     pub(crate) selected_activity_index: usize,
     pub(crate) selected_entry: Option<crate::ui::TranscriptVisualEntryId>,
-    pub(crate) search_query: String,
-    pub(crate) search_editing: bool,
+    pub(crate) search: super::pane_query::PaneQuery,
     pub(crate) search_match: usize,
     pub(crate) search_match_count: usize,
     pub(crate) response_position: Option<crate::transcript_timeline::ResponsePosition>,
@@ -140,8 +139,7 @@ impl TranscriptViewState {
         self.highlighted_link = None;
         self.link_to_open = None;
         self.last_tool_click = None;
-        self.search_query.clear();
-        self.search_editing = false;
+        self.search = super::pane_query::PaneQuery::default();
         self.search_match = 0;
         self.search_match_count = 0;
         self.response_position = None;
@@ -184,8 +182,7 @@ impl Default for TranscriptViewState {
             measured_anchor: None,
             selected_activity_index: 0,
             selected_entry: None,
-            search_query: String::new(),
-            search_editing: false,
+            search: super::pane_query::PaneQuery::default(),
             search_match: 0,
             search_match_count: 0,
             response_position: None,

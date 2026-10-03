@@ -59,8 +59,9 @@ fn deep_tool_search_keeps_the_match_above_the_search_footer() {
     app.set_frame_area(Rect::new(0, 0, 80, 24));
     let _ = render_text(&app, 80, 24);
     app.focus = Focus::Details;
-    app.transcript_view.search_query = "DEEP_030".into();
-    app.find_transcript_match(None);
+    app.begin_transcript_search();
+    app.handle_paste("DEEP_030");
+    app.handle_key(key(KeyCode::Enter));
     let screen = render_text(&app, 80, 24);
     assert_eq!(screen.matches("DEEP_030").count(), 2, "{screen}");
     assert!(screen
@@ -126,8 +127,9 @@ fn filtered_viewer_quotes_the_visible_line_without_selection() {
 fn transcript_search_opens_the_matching_member_of_a_collapsed_group() {
     let (mut app, ids) = command_group_app(14);
     let _ = render_text(&app, 80, 24);
-    app.transcript_view.search_query = "command-00".into();
-    app.find_transcript_match(None);
+    app.begin_transcript_search();
+    app.handle_paste("command-00");
+    app.handle_key(key(KeyCode::Enter));
     assert!(app.tool_output_expanded(app.tool_call_entry(&ids[0]).unwrap_or_abort()));
     assert!(!app.tool_output_expanded(app.tool_call_entry(&ids[1]).unwrap_or_abort()));
     assert!(
@@ -135,8 +137,9 @@ fn transcript_search_opens_the_matching_member_of_a_collapsed_group() {
     );
     assert!(render_text(&app, 80, 24).contains("command-00"));
     app.focus = Focus::Details;
-    app.transcript_view.search_query = "command-".into();
-    app.find_transcript_match(None);
+    app.begin_transcript_search();
+    app.handle_paste("command-");
+    app.handle_key(key(KeyCode::Enter));
     app.handle_key(key(KeyCode::Char('n')));
     assert_eq!(app.transcript_view.search_match, 1);
     app.handle_key(key_with_modifiers(KeyCode::Char('N'), KeyModifiers::SHIFT));

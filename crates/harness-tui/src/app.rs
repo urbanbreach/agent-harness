@@ -170,6 +170,7 @@ mod tool_output;
 mod transcript_entry;
 mod transcript_export;
 mod transcript_outline;
+mod transcript_search;
 mod transcript_state;
 mod transcript_view;
 mod transcript_viewer;
@@ -376,6 +377,7 @@ pub struct AppState {
     pub palette_selected: usize,
     pub palette_log: Vec<palette_controller::PaletteLogEntry>,
     palette_focus_return: Option<Focus>,
+    pub(crate) pending_child_cancels: BTreeMap<String, (u64, Instant)>,
     pub(crate) subagent_actions_session_id: Option<String>,
     pub(crate) hovered_subagent_frame_target: Option<SubagentFrameTarget>,
     pub(crate) pending_subagent_frame_target: Option<SubagentFrameTarget>,
@@ -699,6 +701,7 @@ impl Default for AppState {
             palette_selected: 0,
             palette_log: Vec::new(),
             palette_focus_return: None,
+            pending_child_cancels: BTreeMap::new(),
             subagent_actions_session_id: None,
             hovered_subagent_frame_target: None,
             pending_subagent_frame_target: None,

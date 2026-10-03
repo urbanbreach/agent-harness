@@ -227,6 +227,14 @@ impl AppState {
     }
 
     pub(super) fn sync_tasks_pane(&mut self, historical: bool) {
+        self.pending_child_cancels.retain(|id, (generation, _)| {
+            self.projection
+                .subagents
+                .history
+                .records
+                .get(id)
+                .is_some_and(|record| record.generation == *generation && record.outcome.is_none())
+        });
         if !historical {
             self.projection.subagents.observed_at = Some(self.now());
         }
@@ -308,14 +316,14 @@ impl AppState {
                 self.tasks_pane.collapsed.insert(row.group);
             }
         } else if kill && !self.replay_mode && !row.state.is_terminal() {
-            self.emit_ui_intent(if row.child {
-                UiIntent::CancelSubagent { session_id: row.id }
+            if row.child {
+                self.request_child_cancel(row.id);
             } else {
-                UiIntent::InterruptSession {
+                self.emit_ui_intent(UiIntent::InterruptSession {
                     task_ids: vec![row.id],
                     reason: InterruptReason::User,
-                }
-            });
+                });
+            }
         } else if !kill && row.child {
             self.navigate_to_child_session_id(row.id);
         } else if !kill {

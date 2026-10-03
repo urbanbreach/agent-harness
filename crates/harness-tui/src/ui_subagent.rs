@@ -114,21 +114,7 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, plan: &FrameLayoutPlan, 
     }) {
         render_status(frame, app, status, &header, theme);
     }
-    let mut shortcuts = vec![("q/Esc", "back"), ("Enter", "expand")];
-    if app.composer.vim_mode {
-        shortcuts.extend([("j/k", "nav"), ("Shift+l/h", "turn")]);
-    }
-    shortcuts.extend([
-        (
-            "Ctrl+e",
-            if app.transcript_view.show_transcript_thinking {
-                "collapse thinking"
-            } else {
-                "expand thinking"
-            },
-        ),
-        ("Ctrl+c", "cancel"),
-    ]);
+    let mut shortcuts = child_shortcuts(app);
     shortcuts.truncate(5);
     shortcuts.push((
         if app.shortcuts_ctrl_dot {
@@ -140,6 +126,10 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, plan: &FrameLayoutPlan, 
     ));
     let mut spans = Vec::new();
     for (index, (key, label)) in shortcuts.into_iter().enumerate() {
+        let used: usize = spans.iter().map(Span::width).sum();
+        if used + usize::from(index > 0) * 5 + key.width() + 1 > usize::from(plan.footer.width) {
+            break;
+        }
         if index > 0 {
             spans.push(Span::styled(
                 "  │  ",
@@ -170,7 +160,10 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, plan: &FrameLayoutPlan, 
             Style::default().fg(theme.text.secondary),
         ));
     }
-    frame.render_widget(Paragraph::new(Line::from(spans)), plan.footer);
+    frame.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::default().fg(theme.text.secondary)),
+        plan.footer,
+    );
 }
 
 fn render_link_preview(frame: &mut Frame, app: &AppState, header: Rect, theme: &Theme) {
@@ -210,11 +203,23 @@ fn render_status(
     let text = Line::from(vec![
         Span::styled(
             format!("{icon} "),
-            Style::default().fg(theme.status.success),
+            Style::default().fg(if header.cancelling {
+                theme.status.error
+            } else {
+                theme.status.success
+            }),
         ),
         Span::styled(
-            tool_title.map_or_else(|| header.activity.clone(), |_| "Run".into()) + " ",
-            Style::default().fg(theme.text.secondary),
+            if header.cancelling {
+                "Cancelling…".into()
+            } else {
+                tool_title.map_or_else(|| header.activity.clone(), |_| "Run".into()) + " "
+            },
+            Style::default().fg(if header.cancelling {
+                theme.status.error
+            } else {
+                theme.text.secondary
+            }),
         ),
         Span::styled(
             tool_title.unwrap_or_default().to_owned(),
@@ -342,4 +347,44 @@ fn render_title(
         Paragraph::new("[✗]").style(close_style),
         Rect::new(close_x, area.y + 1, 3, 1),
     );
+}
+
+fn child_shortcuts(app: &AppState) -> Vec<(&'static str, &'static str)> {
+    if app.transcript_view.search.has_bar() {
+        let primary = if !app.composer.vim_mode {
+            ("↓/↑", "next/prev")
+        } else if app.transcript_view.search.editing {
+            ("Enter", "go")
+        } else {
+            ("n/Shift+n", "next/prev")
+        };
+        let mut shortcuts = vec![primary, ("Esc", "cancel")];
+        if app.inspected_child_cancel_started().is_none() {
+            shortcuts.push(("Ctrl+c", "cancel"));
+        }
+        return shortcuts;
+    }
+    let message = app
+        .selected_transcript_entry()
+        .is_some_and(|entry| entry.kind == super::TranscriptRenderSurfaceKind::AssistantBody);
+    let mut shortcuts = vec![("q/Esc", "back")];
+    if message && app.composer.vim_mode {
+        shortcuts.push(("y", "copy"));
+    }
+    shortcuts.push(("Enter", if message { "open" } else { "expand" }));
+    if app.composer.vim_mode {
+        shortcuts.extend([("j/k", "nav"), ("Shift+l/h", "turn")]);
+    }
+    shortcuts.extend([(
+        "Ctrl+e",
+        if app.transcript_view.show_transcript_thinking {
+            "collapse thinking"
+        } else {
+            "expand thinking"
+        },
+    )]);
+    if app.inspected_child_cancel_started().is_none() {
+        shortcuts.push(("Ctrl+c", "cancel"));
+    }
+    shortcuts
 }

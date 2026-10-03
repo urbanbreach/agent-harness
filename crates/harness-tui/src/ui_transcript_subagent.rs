@@ -322,6 +322,7 @@ fn terminal_section(app: &AppState, row: TerminalRow) -> TranscriptOrderedToolCa
             animation_phase: app.transcript_animation_phase(),
             expanded: false,
             rail_motion: ToolRailMotion::Settled,
+            cancellation_requested: false,
         },
     }
 }
