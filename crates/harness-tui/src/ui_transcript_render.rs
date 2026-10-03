@@ -705,10 +705,16 @@ fn resolve_assistant_body_content(
     // clock on the first content row. A tool or a new paragraph must not add a
     // timestamp-only row above text that is already on screen.
     let body_width = wall_clock.map_or(content_width, |clock| {
+        let reserved = if child_view {
+            USER_TIMESTAMP_RESERVED_WIDTH
+        } else {
+            u16::try_from(display_width(clock))
+                .unwrap_or(u16::MAX)
+                .saturating_add(2)
+        };
         content_width
             .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
-            .saturating_sub(u16::try_from(display_width(clock)).unwrap_or(u16::MAX))
-            .saturating_sub(2)
+            .saturating_sub(reserved)
     });
     let mut lines = Vec::new();
     let mut selection_rows = if streaming

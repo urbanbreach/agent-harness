@@ -84,13 +84,15 @@ impl AppState {
         let mut matches = Vec::new();
         for entry in &entries {
             let content = self.selected_entry_content(entry);
-            let text = if regex.is_match(&entry.text) {
-                entry.text.as_ref()
+            let text = if native {
+                self.child_search_text(entry, content.content())
+            } else if regex.is_match(&entry.text) {
+                std::borrow::Cow::Borrowed(entry.text.as_ref())
             } else {
-                content.content()
+                std::borrow::Cow::Borrowed(content.content())
             };
             for found in regex
-                .find_iter(text)
+                .find_iter(&text)
                 .filter(|found| !found.is_empty())
                 .take(if native { usize::MAX } else { 1 })
             {
@@ -133,15 +135,36 @@ impl AppState {
             .or_else(|| revealed.iter().find(|candidate| candidate.id == entry.id))
             .unwrap_or(entry);
         self.select_transcript_entry(selected);
-        let line = selected
-            .text
-            .lines()
-            .enumerate()
-            .filter(|(_, text)| regex.is_match(text))
-            .min_by_key(|(index, _)| index.abs_diff(line))
-            .map_or(0, |(index, _)| index);
+        let line = if native {
+            selected
+                .logical_line_rows
+                .get(line)
+                .copied()
+                .unwrap_or(line)
+        } else {
+            selected
+                .text
+                .lines()
+                .position(|text| regex.is_match(text))
+                .unwrap_or(0)
+        };
         if let Some(top) = ui::transcript_entry_scroll_top(self, area, selected.top + line) {
             self.set_transcript_scroll_from_top_with_max(top, selected.max_scroll);
+        }
+    }
+
+    fn child_search_text<'a>(
+        &self,
+        entry: &'a ui::TranscriptNavigationEntry,
+        content: &'a str,
+    ) -> std::borrow::Cow<'a, str> {
+        use crate::ui::TranscriptRenderSurfaceKind as Kind;
+        match entry.kind {
+            Kind::AssistantBody | Kind::AssistantReasoning => {
+                std::borrow::Cow::Owned(ui::transcript_search_markdown_text(content, self.theme()))
+            }
+            Kind::AssistantFooter => std::borrow::Cow::Borrowed(""),
+            _ => std::borrow::Cow::Borrowed(entry.source_text.as_deref().unwrap_or(content)),
         }
     }
 

@@ -1012,6 +1012,16 @@ pub(crate) fn viewer_markdown_lines(text: &str, width: u16, theme: &Theme) -> Ve
     lines
 }
 
+pub(crate) fn transcript_search_markdown_text(text: &str, theme: &Theme) -> String {
+    let mut theme = *theme;
+    theme.markdown_link_destinations = true;
+    viewer_markdown_lines(text, u16::MAX, &theme)
+        .iter()
+        .map(Line::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub(crate) fn viewer_read_lines(
     text: &str,
     path: &str,

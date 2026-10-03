@@ -179,6 +179,7 @@ pub(crate) struct TranscriptNavigationEntry {
     pub(crate) max_scroll: usize,
     pub(crate) text: Arc<str>,
     pub(crate) source_text: Option<Arc<str>>,
+    pub(crate) logical_line_rows: Arc<[usize]>,
 }
 
 pub(crate) fn transcript_navigation_entries(
@@ -233,6 +234,14 @@ pub(crate) fn transcript_navigation_entries(
                                     .saturating_sub(usize::from(viewport.height)),
                                 text: Arc::clone(&surface.rendered_text),
                                 source_text: surface.source_text.clone(),
+                                logical_line_rows: surface
+                                    .selection_rows
+                                    .iter()
+                                    .enumerate()
+                                    .filter_map(|(index, row)| {
+                                        (!row.continues_previous).then_some(index)
+                                    })
+                                    .collect(),
                             }
                         })
                 })

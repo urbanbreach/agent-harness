@@ -475,5 +475,18 @@ fn assert_child_search(app: &mut AppState) {
     app.handle_key(key(KeyCode::Char('/')));
     app.handle_key(key(KeyCode::Enter));
     assert!(!app.transcript_view.search.has_bar());
+    for (query, count) in [
+        (
+            "Read guide covering child lifecycles, permissions, navigation, and durable history",
+            1,
+        ),
+        (r"\[guide", 0),
+        ("^", 0),
+    ] {
+        app.handle_key(key(KeyCode::Char('/')));
+        app.handle_paste(query);
+        assert_eq!(app.transcript_view.search_match_count, count, "{query}");
+        app.handle_key(key(KeyCode::Esc));
+    }
     app.composer.vim_mode = false;
 }
