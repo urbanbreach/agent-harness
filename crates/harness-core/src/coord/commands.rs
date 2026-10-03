@@ -18,7 +18,7 @@ use std::{
     fs::{File, OpenOptions},
     io::Write,
     process::Stdio,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
@@ -168,7 +168,7 @@ impl CommandRun {
     }
 
     fn append(&mut self, stream: usize, text: &str) -> Result<(), std::io::Error> {
-        let keep = prefix_boundary(text, FILE_LIMIT.saturating_sub(self.file_bytes));
+        let keep = text.floor_char_boundary(FILE_LIMIT.saturating_sub(self.file_bytes));
         let output = self
             .output
             .as_mut()
@@ -177,7 +177,7 @@ impl CommandRun {
         self.file_bytes += keep;
         self.snapshot.result.truncated |= keep < text.len();
         let preview = &mut self.snapshot.result.output;
-        let keep = prefix_boundary(text, PREVIEW_LIMIT.saturating_sub(preview.len()));
+        let keep = text.floor_char_boundary(PREVIEW_LIMIT.saturating_sub(preview.len()));
         preview.push_str(&text[..keep]);
         self.snapshot.result.truncated |= keep < text.len();
         let captured = if stream == 0 {
@@ -185,7 +185,7 @@ impl CommandRun {
         } else {
             &mut self.snapshot.stderr
         };
-        let keep = prefix_boundary(text, PREVIEW_LIMIT.saturating_sub(captured.len()));
+        let keep = text.floor_char_boundary(PREVIEW_LIMIT.saturating_sub(captured.len()));
         captured.push_str(&text[..keep]);
         if self.snapshot.result.truncated {
             self.snapshot.result.truncation_hint =
@@ -193,37 +193,6 @@ impl CommandRun {
         }
         Ok(())
     }
-}
-
-fn prefix_boundary(text: &str, limit: usize) -> usize {
-    let mut keep = text.len().min(limit);
-    while !text.is_char_boundary(keep) {
-        keep -= 1;
-    }
-    keep
-}
-
-fn command_id() -> Result<String, CoordinatorError> {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| CoordinatorError::Invalid(error.to_string()))?
-        .as_millis();
-    let millis = u64::try_from(millis)
-        .map_err(|_| CoordinatorError::Invalid("command UUID timestamp overflow".into()))?;
-    let mut bytes = [0; 16];
-    getrandom::fill(&mut bytes).map_err(|error| CoordinatorError::Invalid(error.to_string()))?;
-    bytes[..6].copy_from_slice(&millis.to_be_bytes()[2..]);
-    bytes[6] = (bytes[6] & 0x0f) | 0x70;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex = hex::encode(bytes);
-    Ok(format!(
-        "{}-{}-{}-{}-{}",
-        &hex[..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..]
-    ))
 }
 
 #[cfg(unix)]

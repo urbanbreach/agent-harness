@@ -7,22 +7,19 @@ use harness_core::subagent::{
 use serde_json::json;
 
 #[test]
-fn native_wire_contracts_preserve_omission_aliases_and_tagged_outcomes() {
-    let schema_result = serde_json::to_value(schemars::schema_for!(SpawnSubagentInput));
-    assert!(schema_result.is_ok());
-    let Ok(schema) = schema_result else {
-        return;
-    };
+fn native_wire_contracts_preserve_omission_aliases_and_tagged_outcomes() -> serde_json::Result<()> {
+    let schema = serde_json::to_value(schemars::schema_for!(SpawnSubagentInput))?;
     assert_eq!(schema["required"], json!(["prompt", "description"]));
     assert_eq!(schema["properties"]["background"]["default"], true);
 
-    spawn_wire_contract();
-    output_wire_contract();
-    message_wire_contract();
-    ancestry_and_command_contract();
+    spawn_wire_contract()?;
+    output_wire_contract()?;
+    message_wire_contract()?;
+    ancestry_and_command_contract()?;
+    Ok(())
 }
 
-fn spawn_wire_contract() {
+fn spawn_wire_contract() -> serde_json::Result<()> {
     let cases = [
         (None, true),
         (Some(json!(null)), false),
@@ -34,11 +31,7 @@ fn spawn_wire_contract() {
         if let Some(background) = background {
             input["background"] = background;
         }
-        let parsed_result = serde_json::from_value::<SpawnSubagentInput>(input);
-        assert!(parsed_result.is_ok());
-        let Ok(parsed) = parsed_result else {
-            continue;
-        };
+        let parsed = serde_json::from_value::<SpawnSubagentInput>(input)?;
         assert_eq!(parsed.background, expected_background);
         assert_eq!(parsed.subagent_type, "general-purpose");
         assert!(!parsed.subagent_type_specified);
@@ -51,7 +44,7 @@ fn spawn_wire_contract() {
     }));
     assert!(invalid_background.is_err());
 
-    let explicit_result = serde_json::from_value::<SpawnSubagentInput>(json!({
+    let explicit = serde_json::from_value::<SpawnSubagentInput>(json!({
         "prompt": "p",
         "description": "d",
         "subagent_type": "general-purpose",
@@ -59,41 +52,27 @@ fn spawn_wire_contract() {
         "persona": "ignored",
         "workspace": "wire-only",
         "task_id": "injected"
-    }));
-    assert!(explicit_result.is_ok());
-    let Ok(explicit) = explicit_result else {
-        return;
-    };
+    }))?;
     assert!(explicit.subagent_type_specified);
     assert_eq!(explicit.workspace.as_deref(), Some("wire-only"));
-    let serialized_result = serde_json::to_value(explicit);
-    assert!(serialized_result.is_ok());
-    let Ok(serialized) = serialized_result else {
-        return;
-    };
+    let serialized = serde_json::to_value(explicit)?;
     assert_eq!(serialized["subagent_type"], "general-purpose");
     assert_eq!(serialized["task_id"], "injected");
     assert!(serialized.get("capability_mode").is_none());
     assert!(serialized.get("persona").is_none());
 
-    let sentinel_result = serde_json::from_value::<SpawnSubagentInput>(json!({
+    let sentinel = serde_json::from_value::<SpawnSubagentInput>(json!({
         "prompt": "p",
         "description": "d",
         "subagent_type": " Undefined "
-    }));
-    assert!(sentinel_result.is_ok());
-    let Ok(sentinel) = sentinel_result else {
-        return;
-    };
+    }))?;
     assert!(!sentinel.subagent_type_specified);
-    let sentinel_serialized = serde_json::to_value(sentinel);
-    assert!(sentinel_serialized.is_ok());
-    if let Ok(value) = sentinel_serialized {
-        assert!(value.get("subagent_type").is_none());
-    }
+    let value = serde_json::to_value(sentinel)?;
+    assert!(value.get("subagent_type").is_none());
+    Ok(())
 }
 
-fn output_wire_contract() {
+fn output_wire_contract() -> serde_json::Result<()> {
     let ids_cases = [
         (json!({"task_id": "one"}), vec!["one"]),
         (json!({"task_ids": 17}), vec!["17"]),
@@ -101,13 +80,9 @@ fn output_wire_contract() {
         (json!({"task_ids": null}), vec![]),
     ];
     for (fields, expected) in ids_cases {
-        let parsed_result = serde_json::from_value::<
+        let parsed = serde_json::from_value::<
             harness_core::subagent::GetCommandOrSubagentOutputInput,
-        >(fields);
-        assert!(parsed_result.is_ok());
-        let Ok(parsed) = parsed_result else {
-            continue;
-        };
+        >(fields)?;
         assert_eq!(parsed.task_ids, expected);
     }
     assert!(
@@ -124,29 +99,22 @@ fn output_wire_contract() {
         }))
         .is_ok()
     );
+    Ok(())
 }
 
-fn message_wire_contract() {
-    let message_result = serde_json::from_value::<SendSubagentMessageInput>(json!({
+fn message_wire_contract() -> serde_json::Result<()> {
+    let message = serde_json::from_value::<SendSubagentMessageInput>(json!({
         "subagent_id": "child",
         "text": "hello",
         "queue": true
-    }));
-    assert!(message_result.is_ok());
-    let Ok(message) = message_result else {
-        return;
-    };
+    }))?;
     assert_eq!(message.delivery(), SendSubagentMessageDelivery::Queue);
-    let precedence_result = serde_json::from_value::<SendSubagentMessageInput>(json!({
+    let precedence = serde_json::from_value::<SendSubagentMessageInput>(json!({
         "subagent_id": "child",
         "text": "hello",
         "queue": true,
         "delivery": "interject"
-    }));
-    assert!(precedence_result.is_ok());
-    let Ok(precedence) = precedence_result else {
-        return;
-    };
+    }))?;
     assert_eq!(
         precedence.delivery(),
         SendSubagentMessageDelivery::Interject
@@ -166,23 +134,18 @@ fn message_wire_contract() {
     for outcome in message_outcomes {
         assert!(serde_json::from_value::<SendSubagentMessageOutput>(outcome).is_ok());
     }
-    let output_result = serde_json::to_value(SendSubagentMessageOutput::Accepted {
+    let output = serde_json::to_value(SendSubagentMessageOutput::Accepted {
         message_id: "m1".to_owned(),
-    });
-    assert!(output_result.is_ok());
-    if let Ok(output) = output_result {
-        assert_eq!(output, json!({"outcome": "accepted", "message_id": "m1"}));
-    }
+    })?;
+    assert_eq!(output, json!({"outcome": "accepted", "message_id": "m1"}));
+    Ok(())
 }
 
-fn ancestry_and_command_contract() {
+fn ancestry_and_command_contract() -> serde_json::Result<()> {
     let ancestry = SubagentAncestry::new(None, Some(SubagentId("origin".to_owned())));
-    let ancestry_result = serde_json::to_value(ancestry);
-    assert!(ancestry_result.is_ok());
-    if let Ok(value) = ancestry_result {
-        assert!(value["spawner"].is_null());
-        assert_eq!(value["origin"], "origin");
-    }
+    let value = serde_json::to_value(ancestry)?;
+    assert!(value["spawner"].is_null());
+    assert_eq!(value["origin"], "origin");
     let fidelity = serde_json::to_value(FinalizedStateFidelity::Redacted);
     assert_eq!(fidelity.ok(), Some(json!("redacted")));
 
@@ -221,12 +184,10 @@ fn ancestry_and_command_contract() {
         (SubagentCommandRequest::RootShutdown, "root_shutdown"),
     ];
     for (command, expected) in commands {
-        let serialized = serde_json::to_value(command);
-        assert!(serialized.is_ok());
-        if let Ok(value) = serialized {
-            assert_eq!(value["command"], expected);
-        }
+        let value = serde_json::to_value(command)?;
+        assert_eq!(value["command"], expected);
     }
+    Ok(())
 }
 
 #[test]
