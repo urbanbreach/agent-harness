@@ -1,5 +1,7 @@
+mod input;
 mod layout;
 mod render;
+mod render_input;
 mod search;
 mod state;
 
@@ -46,6 +48,9 @@ pub struct ViewerRenderSurface {
     pub close_hovered: bool,
     pub search_active: bool,
     pub editing: bool,
+    pub input_cursor: usize,
+    pub following: bool,
+    pub child: bool,
     pub filtering: bool,
     pub visual_mode: bool,
     pub wrap_enabled: bool,
@@ -231,7 +236,7 @@ impl state::ViewerState {
     }
 
     pub fn move_cursor(&mut self, key: NavigationKey, shift: bool) -> CellPoint {
-        let next = if self.content().preamble.is_some()
+        let next = if (self.content().preamble.is_some() || (self.child && self.content().markdown))
             && matches!(key, NavigationKey::Up | NavigationKey::Down)
         {
             let rows = self.logical_rows(self.cursor.row);

@@ -1,3 +1,4 @@
+use crate::app::pane_query::PaneQuery;
 use crate::transcript_identity::BlockId;
 use crate::transcript_scroll::{
     EasingKind, LogicalAnchor, MotionPreference, ScrollError, ScrollFrame, ScrollTransition,
@@ -30,11 +31,14 @@ pub struct ViewerState {
     pub(super) body_start: usize,
     pub(super) close_hovered: bool,
     pub(super) filter_query: String,
-    pub(super) filter_editing: bool,
+    pub(crate) input: PaneQuery,
     pub(super) visual_mode: bool,
     pub(super) wrap_enabled: bool,
-    search: SearchState,
-    search_editing: bool,
+    pub(super) search: SearchState,
+    pub(super) child: bool,
+    pub(super) following: bool,
+    pub(super) running: bool,
+    pub(super) at_end: bool,
     layout: TranscriptLayout,
     scroll_top: f64,
     transition: Option<ScrollTransition>,
@@ -63,11 +67,14 @@ impl ViewerState {
             body_start: 0,
             close_hovered: false,
             filter_query: String::new(),
-            filter_editing: false,
+            input: PaneQuery::default(),
             visual_mode: false,
             wrap_enabled: true,
             search: SearchState::new(),
-            search_editing: false,
+            child: false,
+            following: false,
+            running: false,
+            at_end: false,
             layout: viewer_layout(block_id, 1, DEFAULT_HEIGHT)?,
             scroll_top: 0.0,
             transition: None,
@@ -75,6 +82,10 @@ impl ViewerState {
         };
         state.rebuild_display()?;
         Ok(state)
+    }
+
+    pub(super) fn theme(&self) -> &crate::theme::Theme {
+        &self.theme
     }
 
     pub fn block_id(&self) -> BlockId {
@@ -124,45 +135,29 @@ impl ViewerState {
     }
 
     pub fn search_forward(&mut self) -> SearchNavigation {
+        if self.child {
+            self.find_matching_line(self.logical_rows(self.cursor.row).start, true, false);
+            return self.search.navigation();
+        }
         let navigation = self.search.navigate(SearchDirection::Forward);
         self.reveal_search_match();
         navigation
     }
 
     pub fn search_backward(&mut self) -> SearchNavigation {
+        if self.child {
+            self.find_matching_line(self.logical_rows(self.cursor.row).start, false, false);
+            return self.search.navigation();
+        }
         let navigation = self.search.navigate(SearchDirection::Backward);
         self.reveal_search_match();
         navigation
-    }
-
-    pub fn search_editing(&self) -> bool {
-        self.search_editing
-    }
-
-    pub fn set_search_editing(&mut self, editing: bool) {
-        self.search_editing = editing;
     }
 
     pub fn viewport_height(&self) -> usize {
         self.height
     }
 
-    pub(crate) fn input_active(&self) -> bool {
-        self.search_editing
-            || !self.search.query().is_empty()
-            || self.filter_editing
-            || !self.filter_query.is_empty()
-    }
-
-    pub(crate) fn filter_editing(&self) -> bool {
-        self.filter_editing
-    }
-    pub(crate) fn filter_query(&self) -> &str {
-        &self.filter_query
-    }
-    pub(crate) fn set_filter_editing(&mut self, editing: bool) {
-        self.filter_editing = editing;
-    }
     pub(crate) fn set_filter_query(&mut self, query: String) -> Result<(), ViewerError> {
         self.filter_query = query;
         self.scroll_top = 0.0;
@@ -175,6 +170,7 @@ impl ViewerState {
         self.rebuild_display()
     }
     pub(crate) fn toggle_visual(&mut self) {
+        self.exit_follow();
         self.visual_mode = !self.visual_mode;
         if self.visual_mode {
             let rows = self.logical_rows(self.cursor.row);
@@ -285,37 +281,16 @@ impl ViewerState {
         } else {
             self.layout = viewer_layout(self.block_id, self.wrapped.row_count(), height)?;
         }
-        self.scroll_top = anchor.resolve(&self.layout).map_err(ViewerError::Scroll)?;
+        self.scroll_top = if self.following {
+            self.layout.max_scroll()
+        } else {
+            anchor.resolve(&self.layout).map_err(ViewerError::Scroll)?
+        };
         self.transition = None;
-        if keep_cursor_visible {
+        if keep_cursor_visible && !self.following {
             self.reveal_cursor();
         }
         Ok(())
-    }
-
-    pub(crate) fn scroll_keeping_cursor(&mut self, delta: f64) -> Result<(), ViewerError> {
-        let previous = self.scroll_top();
-        self.scroll_by(delta)?;
-        self.cursor.row = self
-            .cursor
-            .row
-            .saturating_add(self.scroll_top())
-            .saturating_sub(previous)
-            .min(self.wrapped.row_count().saturating_sub(1));
-        Ok(())
-    }
-
-    pub(crate) fn select_edge(&mut self, last: bool) {
-        self.cursor = CellPoint::new(
-            if last {
-                self.wrapped.row_count().saturating_sub(1)
-            } else {
-                0
-            },
-            0,
-        );
-        self.selection = None;
-        self.reveal_cursor();
     }
 
     pub fn scroll_by(&mut self, delta: f64) -> Result<(), ViewerError> {
@@ -409,7 +384,11 @@ impl ViewerState {
         } else if self.mode == ViewerMode::Wrapped && self.content.markdown {
             crate::ui::viewer_markdown_lines(
                 self.content.content(),
-                u16::try_from(self.width).unwrap_or(u16::MAX),
+                if self.child {
+                    u16::MAX
+                } else {
+                    u16::try_from(self.width).unwrap_or(u16::MAX)
+                },
                 &self.theme,
             )
         } else {
@@ -419,6 +398,14 @@ impl ViewerState {
                 .map(|line| ratatui::text::Line::from(line.to_owned()))
                 .collect()
         };
+        if self.child && self.content.markdown {
+            while body
+                .last()
+                .is_some_and(|line| line.width() == 0 && line.style.bg.is_none())
+            {
+                body.pop();
+            }
+        }
         let mut lines = self
             .content
             .preamble
@@ -476,7 +463,11 @@ impl ViewerState {
             .cursor
             .row
             .min(self.wrapped.row_count().saturating_sub(1));
-        self.scroll_top = self.scroll_top.min(self.layout.max_scroll());
+        self.scroll_top = if self.following {
+            self.layout.max_scroll()
+        } else {
+            self.scroll_top.min(self.layout.max_scroll())
+        };
         if !self.search.query().is_empty() {
             let query = self.search.query().to_owned();
             let _ = self.search.set_query(self.wrapped.text(), &query);

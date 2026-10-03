@@ -250,7 +250,12 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
             render_review_surface(frame, app, theme, &plan, surface);
         }
         if let Some(viewer) = app.transcript_viewer() {
-            crate::transcript_block_viewer::render_viewer(frame.buffer_mut(), area, viewer, theme);
+            crate::transcript_block_viewer::render_viewer(
+                frame.buffer_mut(),
+                plan.shell,
+                viewer,
+                theme,
+            );
         }
         render_overlays(frame, app, theme, &plan);
         render_toast(frame, app, area, theme);
@@ -1071,3 +1076,5 @@ pub(crate) fn viewer_read_lines(
     })
     .collect()
 }
+
+pub(crate) use ui_pane_query::editing_line as query_editing_line;

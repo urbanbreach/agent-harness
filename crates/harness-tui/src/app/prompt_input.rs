@@ -365,7 +365,8 @@ impl AppState {
             self.handle_permission_feedback_paste(text);
             return;
         }
-        if self.handle_tasks_pane_paste(text)
+        if self.handle_transcript_viewer_paste(text)
+            || self.handle_tasks_pane_paste(text)
             || self.handle_todo_pane_paste(text)
             || self.handle_transcript_search_paste(text)
         {

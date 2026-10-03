@@ -89,6 +89,11 @@ impl SearchState {
         self.navigation()
     }
 
+    pub(super) fn select(&mut self, index: usize, wrapped: bool) {
+        self.current = self.matches.get(index).map(|_| index);
+        self.wrapped = wrapped;
+    }
+
     pub fn query(&self) -> &str {
         &self.query
     }
@@ -109,7 +114,7 @@ impl SearchState {
         !self.query.is_empty() && self.matches.is_empty()
     }
 
-    fn navigation(&self) -> SearchNavigation {
+    pub(super) fn navigation(&self) -> SearchNavigation {
         if self.matches.is_empty() {
             SearchNavigation::empty()
         } else {
