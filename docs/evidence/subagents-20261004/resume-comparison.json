@@ -1,0 +1,61 @@
+{
+  "status": "pass",
+  "scope": "Actual completed-source resume identity, inherited non-system messages, model, terminal result, executed tool calls and turns.",
+  "reference": {
+    "child_id": "0199a002-0000-7000-8000-000000000003",
+    "resume_from": "0199a002-0000-7000-8000-000000000002",
+    "distinct_identity": true,
+    "model": "test-model",
+    "inherited_messages": [
+      {
+        "role": "user",
+        "content": "reference scenario two source context marker"
+      },
+      {
+        "role": "assistant",
+        "content": "source child retained this transcript"
+      },
+      {
+        "role": "user",
+        "content": "reference scenario two resumed context marker"
+      }
+    ],
+    "status": "completed",
+    "output": "resumed child completed",
+    "tool_calls": 0,
+    "turns": 1
+  },
+  "candidate": {
+    "child_id": "0199a002-0000-7000-8000-000000000003",
+    "resume_from": "0199a002-0000-7000-8000-000000000002",
+    "distinct_identity": true,
+    "model": "test-model",
+    "inherited_messages": [
+      {
+        "role": "user",
+        "content": "reference scenario two source context marker"
+      },
+      {
+        "role": "assistant",
+        "content": "source child retained this transcript"
+      },
+      {
+        "role": "user",
+        "content": "reference scenario two resumed context marker"
+      }
+    ],
+    "status": "completed",
+    "output": "resumed child completed",
+    "tool_calls": 0,
+    "turns": 1
+  },
+  "bounds": [
+    "Reference uses its production ACP and HTTP mock; candidate uses the production coordinator and normalized Provider seam.",
+    "Shared model-limit validation is outside this comparison. Reference reports context fallback 256000 and no output cap; candidate explicitly declares context 256000 and output 4096. The cap is a fixture choice, not an observed Grok value. Both completions are well below it.",
+    "This is not whole-request, system-prompt, token-estimate, timing, or durable-schema byte equality."
+  ],
+  "source_sha256": {
+    "runtime-final-reference/scenario-2-resume-source.json": "4b122cf393848f3f97c65d56e83bd6d8f6693f0522c327c7adaa0308ee8f634d",
+    "runtime-final-candidate-resume-declared/observations.json": "229858917c277ee392d0235706cc76f41ea0ff5b4e1fbf9de33452bc668b02d1"
+  }
+}

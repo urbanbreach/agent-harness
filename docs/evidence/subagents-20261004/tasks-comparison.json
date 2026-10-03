@@ -1,0 +1,331 @@
+{
+  "scope": "reference-frozen task allocation; listed query checkpoints; no masking or image normalization",
+  "full_matrix_pass": false,
+  "status": "bounded-capture-pass",
+  "results": [
+    {
+      "size": "80x24",
+      "checkpoint": "tasks",
+      "referenceSurface": [
+        0,
+        2,
+        80,
+        5
+      ],
+      "freezeSha256": "d2f749ccd75103f581530825bd5485ced8152209b6be48f8779ae8fed115a3a8",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "filter",
+      "referenceSurface": [
+        0,
+        2,
+        80,
+        6
+      ],
+      "freezeSha256": "53c99538e1f140268547f7f64a6a1c1eea8f9debb5cf760b0f3adbfab3aba3c5",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "query",
+      "referenceSurface": [
+        0,
+        2,
+        80,
+        6
+      ],
+      "freezeSha256": "76edf1eb00f26fd47f546d061c5676297c34982ea6ff3b436fdbb064b279f071",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "accept",
+      "referenceSurface": [
+        0,
+        2,
+        80,
+        6
+      ],
+      "freezeSha256": "2f77024747b9b3a201fab646517c11c02861b3fa28fb2bc11dcba12b76c510cd",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "kill-header",
+      "referenceSurface": [
+        0,
+        2,
+        80,
+        6
+      ],
+      "freezeSha256": "ee4abfa302ef74bb33f670771840d09793279f4744e79219746f69acb028587f",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "open-filtered",
+      "referenceSurface": [
+        0,
+        2,
+        80,
+        4
+      ],
+      "freezeSha256": "0400f23f296b97fdda4389c10eb8ef8a019e0f2e56f809da3334147a9d552774",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "reopen-group",
+      "referenceSurface": [
+        0,
+        2,
+        80,
+        4
+      ],
+      "freezeSha256": "9079ea1f56efe1f5ffee055ff57ef3879f591f6a5ca2d5ec0e01fc0a07146c83",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "clear",
+      "referenceSurface": [
+        0,
+        2,
+        80,
+        4
+      ],
+      "freezeSha256": "30e7a860332528832946fa174cd53dc777c96bc58f06296da48e62782aa4f5f8",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "child-select",
+      "referenceSurface": [
+        0,
+        2,
+        80,
+        4
+      ],
+      "freezeSha256": "58263b0e50e9fa3b5f85329f16e71dce74eeac894e811f893dd38e752ff05a8b",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "tasks",
+      "referenceSurface": [
+        0,
+        2,
+        120,
+        5
+      ],
+      "freezeSha256": "dfe160a33ccade699f4476f107b13ee703048cef5f247e785f7773b3bc7aa121",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "filter",
+      "referenceSurface": [
+        0,
+        2,
+        120,
+        6
+      ],
+      "freezeSha256": "ada76c5476346e7b465d54100b56466c91b84e2dfdf56d51a08e6e94498d62f1",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "query",
+      "referenceSurface": [
+        0,
+        2,
+        120,
+        6
+      ],
+      "freezeSha256": "0f7ae682a65521fb7b9011371cee59a3597b7a8d37ddb39558ecfae997f4301f",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "accept",
+      "referenceSurface": [
+        0,
+        2,
+        120,
+        6
+      ],
+      "freezeSha256": "dfbdcbfd5dc1f28a3f1e2f789a8a89f488b031dc32a711f7dd102e73613aa636",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "kill-header",
+      "referenceSurface": [
+        0,
+        2,
+        120,
+        6
+      ],
+      "freezeSha256": "7b17eb5a2b26a2418244a83376426f0986bda36080c7ab3763e8aae61872812f",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "open-filtered",
+      "referenceSurface": [
+        0,
+        2,
+        120,
+        4
+      ],
+      "freezeSha256": "d443767b9ccf0516e95dd5583ce585e07d826a0a17d627747a78d876b4ce5176",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "reopen-group",
+      "referenceSurface": [
+        0,
+        2,
+        120,
+        4
+      ],
+      "freezeSha256": "dc23e6366bb2f2dfdc74b8b8b7e5e82e0dd1bdbead5dc19c6a9e9e2358b48945",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "clear",
+      "referenceSurface": [
+        0,
+        2,
+        120,
+        4
+      ],
+      "freezeSha256": "b358480683e32e57b897ba34c8862edc953416f7270e85830055ac7df26160e7",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "child-select",
+      "referenceSurface": [
+        0,
+        2,
+        120,
+        4
+      ],
+      "freezeSha256": "03323c9347d3e28d83cdaa7089995c1a7de96afc0c335a5552e9c2bc21e78c01",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "tasks",
+      "referenceSurface": [
+        0,
+        2,
+        160,
+        5
+      ],
+      "freezeSha256": "a2db0a596b83316017410689d513e48f15438b297fd5a79ebefc3105dafde7fd",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "filter",
+      "referenceSurface": [
+        0,
+        2,
+        160,
+        6
+      ],
+      "freezeSha256": "92d7cc208388e0e099abe77be73e13db791616b0f75b1dea00c3c0fb0db58421",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "query",
+      "referenceSurface": [
+        0,
+        2,
+        160,
+        6
+      ],
+      "freezeSha256": "f16383acb339c41f1ce105e8a7a64cc36813e402f9375de1cd26ab9568d762ed",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "accept",
+      "referenceSurface": [
+        0,
+        2,
+        160,
+        6
+      ],
+      "freezeSha256": "697c65ee071a81768bbb8edcbf89b40be2f73f562f549a203aeb70e8d7b26197",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "kill-header",
+      "referenceSurface": [
+        0,
+        2,
+        160,
+        6
+      ],
+      "freezeSha256": "fc8f647dc367d043c79033d381b4bba5c0cd5ffa0719c3cee5532c96d7ecd33a",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "open-filtered",
+      "referenceSurface": [
+        0,
+        2,
+        160,
+        4
+      ],
+      "freezeSha256": "4f809399d64854d1cd5289254310c15d79e9a09b97a1f2cd7174fa47a3759f8e",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "reopen-group",
+      "referenceSurface": [
+        0,
+        2,
+        160,
+        4
+      ],
+      "freezeSha256": "027525209bf8ab97d5d477be2d4e911564f77f42169513fdb54b75c8216f554d",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "clear",
+      "referenceSurface": [
+        0,
+        2,
+        160,
+        4
+      ],
+      "freezeSha256": "630ae04b1e6c8c8049462b8e25a067f68f3851c6bec50300da031c6d34722f5b",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "child-select",
+      "referenceSurface": [
+        0,
+        2,
+        160,
+        4
+      ],
+      "freezeSha256": "082e78eda255eaf2e9813135f6578a528a390b27d6467f6a5dc33e99cab51fab",
+      "differentPixels": 0
+    }
+  ]
+}

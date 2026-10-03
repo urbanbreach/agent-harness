@@ -1,0 +1,217 @@
+{
+  "scope": "listed child-view checkpoints; whole-terminal PNGs; no masks or image normalization",
+  "full_matrix_pass": false,
+  "status": "bounded-capture-pass",
+  "results": [
+    {
+      "size": "80x24",
+      "checkpoint": "task-open",
+      "reference": "local-evidence/final-rich/80x24/reference/task-open.png",
+      "candidate": "local-evidence/final-rich/80x24/candidate/task-open.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "select-body",
+      "reference": "local-evidence/final-rich/80x24/reference/select-body.png",
+      "candidate": "local-evidence/final-rich/80x24/candidate/select-body.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "entry-raw",
+      "reference": "local-evidence/final-rich/80x24/reference/entry-raw.png",
+      "candidate": "local-evidence/final-rich/80x24/candidate/entry-raw.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "raw-viewer-open",
+      "reference": "local-evidence/final-rich/80x24/reference/raw-viewer-open.png",
+      "candidate": "local-evidence/final-rich/80x24/candidate/raw-viewer-open.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "raw-viewer-close",
+      "reference": "local-evidence/final-rich/80x24/reference/raw-viewer-close.png",
+      "candidate": "local-evidence/final-rich/80x24/candidate/raw-viewer-close.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "raw-viewer-reopen",
+      "reference": "local-evidence/final-rich/80x24/reference/raw-viewer-reopen.png",
+      "candidate": "local-evidence/final-rich/80x24/candidate/raw-viewer-reopen.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "viewer-rendered",
+      "reference": "local-evidence/final-rich/80x24/reference/viewer-rendered.png",
+      "candidate": "local-evidence/final-rich/80x24/candidate/viewer-rendered.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "rendered-viewer-close",
+      "reference": "local-evidence/final-rich/80x24/reference/rendered-viewer-close.png",
+      "candidate": "local-evidence/final-rich/80x24/candidate/rendered-viewer-close.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "rendered-viewer-reopen",
+      "reference": "local-evidence/final-rich/80x24/reference/rendered-viewer-reopen.png",
+      "candidate": "local-evidence/final-rich/80x24/candidate/rendered-viewer-reopen.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "80x24",
+      "checkpoint": "uppercase-r",
+      "reference": "local-evidence/final-rich/80x24/reference/uppercase-r.png",
+      "candidate": "local-evidence/final-rich/80x24/candidate/uppercase-r.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "task-open",
+      "reference": "local-evidence/final-rich/120x40/reference/task-open.png",
+      "candidate": "local-evidence/final-rich/120x40/candidate/task-open.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "select-body",
+      "reference": "local-evidence/final-rich/120x40/reference/select-body.png",
+      "candidate": "local-evidence/final-rich/120x40/candidate/select-body.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "entry-raw",
+      "reference": "local-evidence/final-rich/120x40/reference/entry-raw.png",
+      "candidate": "local-evidence/final-rich/120x40/candidate/entry-raw.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "raw-viewer-open",
+      "reference": "local-evidence/final-rich/120x40/reference/raw-viewer-open.png",
+      "candidate": "local-evidence/final-rich/120x40/candidate/raw-viewer-open.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "raw-viewer-close",
+      "reference": "local-evidence/final-rich/120x40/reference/raw-viewer-close.png",
+      "candidate": "local-evidence/final-rich/120x40/candidate/raw-viewer-close.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "raw-viewer-reopen",
+      "reference": "local-evidence/final-rich/120x40/reference/raw-viewer-reopen.png",
+      "candidate": "local-evidence/final-rich/120x40/candidate/raw-viewer-reopen.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "viewer-rendered",
+      "reference": "local-evidence/final-rich/120x40/reference/viewer-rendered.png",
+      "candidate": "local-evidence/final-rich/120x40/candidate/viewer-rendered.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "rendered-viewer-close",
+      "reference": "local-evidence/final-rich/120x40/reference/rendered-viewer-close.png",
+      "candidate": "local-evidence/final-rich/120x40/candidate/rendered-viewer-close.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "rendered-viewer-reopen",
+      "reference": "local-evidence/final-rich/120x40/reference/rendered-viewer-reopen.png",
+      "candidate": "local-evidence/final-rich/120x40/candidate/rendered-viewer-reopen.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "120x40",
+      "checkpoint": "uppercase-r",
+      "reference": "local-evidence/final-rich/120x40/reference/uppercase-r.png",
+      "candidate": "local-evidence/final-rich/120x40/candidate/uppercase-r.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "task-open",
+      "reference": "local-evidence/final-rich/160x50/reference/task-open.png",
+      "candidate": "local-evidence/final-rich/160x50/candidate/task-open.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "select-body",
+      "reference": "local-evidence/final-rich/160x50/reference/select-body.png",
+      "candidate": "local-evidence/final-rich/160x50/candidate/select-body.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "entry-raw",
+      "reference": "local-evidence/final-rich/160x50/reference/entry-raw.png",
+      "candidate": "local-evidence/final-rich/160x50/candidate/entry-raw.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "raw-viewer-open",
+      "reference": "local-evidence/final-rich/160x50/reference/raw-viewer-open.png",
+      "candidate": "local-evidence/final-rich/160x50/candidate/raw-viewer-open.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "raw-viewer-close",
+      "reference": "local-evidence/final-rich/160x50/reference/raw-viewer-close.png",
+      "candidate": "local-evidence/final-rich/160x50/candidate/raw-viewer-close.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "raw-viewer-reopen",
+      "reference": "local-evidence/final-rich/160x50/reference/raw-viewer-reopen.png",
+      "candidate": "local-evidence/final-rich/160x50/candidate/raw-viewer-reopen.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "viewer-rendered",
+      "reference": "local-evidence/final-rich/160x50/reference/viewer-rendered.png",
+      "candidate": "local-evidence/final-rich/160x50/candidate/viewer-rendered.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "rendered-viewer-close",
+      "reference": "local-evidence/final-rich/160x50/reference/rendered-viewer-close.png",
+      "candidate": "local-evidence/final-rich/160x50/candidate/rendered-viewer-close.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "rendered-viewer-reopen",
+      "reference": "local-evidence/final-rich/160x50/reference/rendered-viewer-reopen.png",
+      "candidate": "local-evidence/final-rich/160x50/candidate/rendered-viewer-reopen.png",
+      "differentPixels": 0
+    },
+    {
+      "size": "160x50",
+      "checkpoint": "uppercase-r",
+      "reference": "local-evidence/final-rich/160x50/reference/uppercase-r.png",
+      "candidate": "local-evidence/final-rich/160x50/candidate/uppercase-r.png",
+      "differentPixels": 0
+    }
+  ]
+}
