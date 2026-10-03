@@ -122,6 +122,9 @@ fn append_table_row(
     theme: &Theme,
     links: &mut Vec<TableLinkRun>,
 ) {
+    let mut theme = *theme;
+    // Table cells use their own link rendering and keep only the label.
+    theme.markdown_link_destinations = false;
     let wrapped = column_widths
         .iter()
         .copied()
@@ -129,11 +132,12 @@ fn append_table_row(
         .map(|(index, width)| {
             let cell = row.get(index).map_or("", String::as_str);
             let parsed =
-                parse_inline_markdown(cell, style, style.fg.unwrap_or(Color::Reset), theme);
+                parse_inline_markdown(cell, style, style.fg.unwrap_or(Color::Reset), &theme);
             let source_links = parsed
                 .links
                 .into_iter()
                 .map(|link| SurfaceLinkRun {
+                    continues_previous: false,
                     start_cell: link.start_cell,
                     end_cell: link.end_cell,
                     destination: link.destination,

@@ -185,6 +185,7 @@ fn selection_rows_for_rendered_table_lines(
                             .iter()
                             .filter(|link| link.row == line_index)
                             .map(|link| TranscriptSelectionLink {
+                                continues_previous: false,
                                 start_cell: link.start_cell,
                                 end_cell: link.end_cell,
                                 destination: link.destination.clone(),
@@ -301,6 +302,7 @@ fn selection_rows_for_prefixed_wrapped_inline(
         .links
         .into_iter()
         .map(|link| SurfaceLinkRun {
+            continues_previous: false,
             start_cell: link.start_cell,
             end_cell: link.end_cell,
             destination: link.destination,
@@ -323,6 +325,7 @@ fn selection_rows_for_prefixed_wrapped_inline(
                     .links
                     .into_iter()
                     .map(|link| TranscriptSelectionLink {
+                        continues_previous: link.continues_previous,
                         start_cell: prefix_width.saturating_add(link.start_cell),
                         end_cell: prefix_width.saturating_add(link.end_cell),
                         destination: link.destination,

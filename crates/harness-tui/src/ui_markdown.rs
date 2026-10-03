@@ -160,9 +160,22 @@ pub(super) fn parse_inline_markdown(
                     _ => {}
                 }
             }
-            Event::End(_) => {
+            Event::End(tag) => {
+                let suffix = (theme.markdown_link_destinations
+                    && matches!(tag, TagEnd::Link | TagEnd::Image)
+                    && source[range.clone()].contains("]("))
+                .then(|| destination.clone())
+                .flatten();
                 if let Some(parent) = ancestors.pop() {
                     (style, destination) = parent;
+                }
+                if let Some(url) =
+                    suffix.filter(|url| crate::transcript_selection::safe_external_url(url))
+                {
+                    let suffix_style = Style::default().fg(theme.text.secondary);
+                    parsed.push(" (", suffix_style, None);
+                    parsed.push(&url, suffix_style, Some(&url));
+                    parsed.push(")", suffix_style, None);
                 }
             }
             Event::Text(value) => {

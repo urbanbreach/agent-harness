@@ -101,6 +101,7 @@ pub(super) struct TranscriptSelectionSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptSelectionLink {
+    pub(super) continues_previous: bool,
     pub(super) start_cell: usize,
     pub(super) end_cell: usize,
     pub(super) destination: String,

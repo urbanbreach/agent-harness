@@ -86,11 +86,12 @@ symlink when resolving the path for use. Refactoring tools approve newly discove
 targets before editing them. Broad searches omit files needing another read
 approval. These checks do not provide race-free filesystem confinement.
 
-The parent needs the task tool and permission to start or continue a child.
+The caller needs the `spawn_subagent` tool and `task` permission to start a child
+or resume completed child context.
 Each child uses its own role policy and tools under the shared project policy.
 A parent's role restrictions are not copied into the child. Nested batch calls
 use the same coordinator checks. Skills provide instructions, not authority.
-See [task roles](../operations/generic-agent-and-tasks.md).
+See [agents and tasks](../operations/generic-agent-and-tasks.md).
 
 Approving bash permits host commands within the configured shell parser and
 allowlist. Network tools can transmit data to their configured services. Optional

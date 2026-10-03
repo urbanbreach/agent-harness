@@ -43,6 +43,7 @@ fn backend_balances_osc8_around_linked_cells_and_never_links_padding() {
         &receiver,
         &cells,
         vec![FrameHyperlink {
+            continues_previous: false,
             row: 0,
             start_column: 0,
             end_column: 3,
@@ -77,6 +78,7 @@ fn backend_repaints_same_label_when_url_changes_or_link_is_removed() {
     let mut backend = FrameOutputBackend::new(writer);
     let cell = Cell::new("x");
     let first = [FrameHyperlink {
+        continues_previous: false,
         row: 0,
         start_column: 0,
         end_column: 1,
@@ -105,6 +107,7 @@ fn backend_repaints_same_label_when_url_changes_or_link_is_removed() {
         &receiver,
         &[],
         vec![FrameHyperlink {
+            continues_previous: false,
             row: 0,
             start_column: 0,
             end_column: 1,
@@ -130,6 +133,7 @@ fn backend_full_clear_does_not_repaint_old_link_cells_after_resize() {
             &receiver,
             &[(54, 25, Cell::new("n"))],
             vec![FrameHyperlink {
+                continues_previous: false,
                 row: 25,
                 start_column: 54,
                 end_column: 55,
@@ -146,6 +150,7 @@ fn backend_full_clear_does_not_repaint_old_link_cells_after_resize() {
             backend.clear().expect("clear backend");
         }
         backend.set_hyperlinks(vec![FrameHyperlink {
+            continues_previous: false,
             row: 25,
             start_column: 12,
             end_column: 13,
@@ -177,6 +182,7 @@ fn backend_full_clear_does_not_repaint_old_link_cells_after_resize() {
             &receiver,
             &[],
             vec![FrameHyperlink {
+                continues_previous: false,
                 row: 25,
                 start_column: 12,
                 end_column: 13,
@@ -203,6 +209,7 @@ fn backend_rejects_control_characters_inside_http_destination_at_final_admission
         &receiver,
         &[(0, 0, Cell::new("x"))],
         vec![FrameHyperlink {
+            continues_previous: false,
             row: 0,
             start_column: 0,
             end_column: 1,
@@ -228,6 +235,7 @@ fn backend_rejects_unsafe_link_metadata_at_final_admission() {
         &receiver,
         &[(0, 0, Cell::new("x"))],
         vec![FrameHyperlink {
+            continues_previous: false,
             row: 0,
             start_column: 0,
             end_column: 1,

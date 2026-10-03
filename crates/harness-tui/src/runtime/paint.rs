@@ -41,7 +41,7 @@ impl Runtime {
             }
             self.terminal
                 .backend_mut()
-                .set_hyperlinks(std::mem::take(&mut self.app.transcript_view.hyperlinks));
+                .set_hyperlinks(self.app.transcript_view.hyperlinks.clone());
             self.terminal
                 .draw(|frame| ui::render_app(frame, &self.app))?;
             self.experience.post_flush(self.terminal.backend_mut());

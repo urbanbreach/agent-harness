@@ -90,7 +90,15 @@ impl AppState {
             self.transcript_view.show_transcript_thinking =
                 !self.transcript_view.show_transcript_thinking;
             self.bump_transcript_render_epoch();
+        } else if !self.composer.vim_mode
+            && !key
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+            && matches!(key.code, KeyCode::Char(c) if c.is_ascii_alphabetic() || c == '/')
+        {
+            // The read-only composer consumes typing when Vim navigation is disabled.
         } else if !self.handle_active_selection_key(key)
+            && !self.handle_child_link_key(key)
             && !self.handle_child_content_key(key)
             && !self.handle_transcript_navigation_key(key)
         {

@@ -7,6 +7,7 @@ use super::super::ui_chrome::display_width;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::ui) struct SurfaceLinkRun {
+    pub(in crate::ui) continues_previous: bool,
     pub(in crate::ui) start_cell: usize,
     pub(in crate::ui) end_cell: usize,
     pub(in crate::ui) destination: String,
@@ -64,6 +65,7 @@ pub(in crate::ui) fn wrap_surface_spans_with_links(
                         previous.end_cell = output_end;
                     } else {
                         projected.push(SurfaceLinkRun {
+                            continues_previous: link.start_cell < start,
                             start_cell: output_cell,
                             end_cell: output_end,
                             destination: link.destination.clone(),

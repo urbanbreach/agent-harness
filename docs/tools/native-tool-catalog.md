@@ -23,8 +23,10 @@ release that capacity. Cancellation waits for tool cleanup before shutdown.
 | `github.issue`, `github.pull_request` | Tool ID, matched against `owner/repo:operation` | Read and update issues or pull requests. See [GitHub tools](github.md). |
 | `question` | `question` | Request an operator answer through the coordinator. |
 | `skill` | `skill` | Load configured local skill instructions. Tool hints do not grant permissions. |
-| `task` | `task` | Start or continue a child agent with its own profile and permissions. |
-| `background_output`, `background_cancel` | `task` | Inspect or cancel owned child requests. |
+| `spawn_subagent` | `task` | Start a child from a resolved definition, optionally resuming a completed conversation. |
+| `get_command_or_subagent_output`, `wait_commands_or_subagents` | `task` | Read output or wait for owned children and background commands. |
+| `kill_command_or_subagent` | `task` | Cancel an owned child or background command. |
+| `send_subagent_message` | `task` | Steer, queue a message for, or interject into an authorized agent. |
 | `batch` | `batch`, plus each nested call | Run up to 25 independent calls and return results in input order. |
 | `todoread` | `task` | Read the current run's journaled todo list. |
 | `todowrite` | `task` and `todowrite` | Replace the validated todo list. |
@@ -44,7 +46,8 @@ file moves through `lsp.rename`.
 Tool results pass through the coordinator's redactor before storage and delivery.
 Display text is capped at 50 KiB or 2,000 lines. Larger output goes into a redacted
 artifact, with an 8 MiB retained-output limit. Structured tool fields reach the provider together with display text and survive
-resume. Raw provider fragments and reasoning are not durable history.
+resume. Raw provider fragments remain transient. Settled assistant content is
+retained for conversation continuity; support exports omit provider reasoning.
 
 Image results reach the provider through the same attachment path as prompt
 images. The journal stores metadata and digests; private blobs hold the bytes.
@@ -83,12 +86,14 @@ journal and retain only todo versions needed to resolve rewinds.
 
 ## Delegation and MCP
 
-New `task` calls require `subagent_type`, `prompt`, `run_in_background`, and
-`load_skills`. Use the returned `session_id` to continue an owned child. A
-continuation cannot change its profile. Background completions can wake the
-parent with a follow-up turn. Child sessions have independent journals, artifacts
-and catalog entries. `background_output` can return bounded child history; see
-[task history and ownership](../operations/generic-agent-and-tasks.md).
+`spawn_subagent` requires `prompt` and `description`, defaults to the
+`general-purpose` definition, and runs in the background unless `background` is
+false. Use the returned `subagent_id` with the output, wait, kill, and message
+tools. `resume_from` creates a new child from completed context; messaging can
+wake the existing identity. Child sessions have independent journals, artifacts,
+and catalog entries. See [agents and tasks](../operations/generic-agent-and-tasks.md)
+for ownership, retained context, startup skills, and the shared permission
+exception to Grok's explicit skill preload behavior.
 
 [MCP tools](mcp.md) describes lazy connection, discovery, shared permissions,
 response limits, and shutdown behavior.

@@ -34,11 +34,12 @@ pub(super) fn resolve_viewport(
 
 /// Commit geometry before input or paint. Rendering only reads this state.
 pub(crate) fn prepare_transcript(app: &mut AppState, area: Rect) {
-    app.transcript_view.hyperlinks.clear();
     if app.status_dashboard_is_active()
         || app.startup_shell_visible()
         || super::ui_lifecycle::live_empty_state_visible(app)
     {
+        app.transcript_view.hyperlinks.clear();
+        app.transcript_view.highlighted_link = None;
         return;
     }
     let Some(area) = resolved_transcript_area(app, area) else {
@@ -98,6 +99,9 @@ pub(crate) fn prepare_transcript(app: &mut AppState, area: Rect) {
     if app.transcript_view.transcript_selection_anchors.is_none() {
         app.transcript_view.transcript_selection_anchors =
             capture_selection_anchors(app, app.last_frame_area().unwrap_or(area));
+    }
+    if app.transcript_view.hyperlinks != links {
+        app.transcript_view.highlighted_link = None;
     }
     app.transcript_view.hyperlinks = links;
     app.transcript_view.viewport = viewport;

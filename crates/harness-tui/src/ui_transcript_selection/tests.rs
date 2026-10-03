@@ -104,6 +104,7 @@ fn destination_export_includes_only_half_open_runs_intersecting_selection() {
     // Given: one safe link occupying display cells [3, 7).
     let mut row = selection_rows_for_rendered_line(&Line::from("aa link zz"), 10).remove(0);
     row.links.push(TranscriptSelectionLink {
+        continues_previous: false,
         start_cell: 3,
         end_cell: 7,
         destination: "https://example.com/link".into(),

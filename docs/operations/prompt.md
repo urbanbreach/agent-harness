@@ -68,7 +68,7 @@ Existing session directories are not replaced.
 | `--max-turns N` | Limit provider iterations, including iterations after tool calls |
 | `--tools read,write` | Restrict each profile to these existing tool IDs |
 | `--disallowed-tools bash` | Remove the listed tools |
-| `--no-subagents` | Remove the task delegation tool |
+| `--no-subagents` | Disable child spawning; command output, wait, and cancellation tools remain available |
 | `--disable-web-search` | Remove web search, code search, and web fetching |
 | `--no-memory` | Remove the memory tool from profile toolsets |
 | `--system-prompt-override TEXT` | Replace composed system instructions |

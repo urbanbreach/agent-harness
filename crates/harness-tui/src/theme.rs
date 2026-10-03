@@ -935,6 +935,8 @@ pub struct ThemeTokenFamilies {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
+    /// Child transcripts print destinations beside inline link labels.
+    pub(crate) markdown_link_destinations: bool,
     color_level: ColorLevel,
     pub surface: SurfaceColors,
     pub border: BorderColors,
@@ -1425,6 +1427,7 @@ impl Theme {
             },
             terminal_colors: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
+            markdown_link_destinations: false,
             color_level: ColorLevel::TrueColor,
         }
     }
@@ -1532,6 +1535,7 @@ impl Theme {
                 diff_hunk_header: rgb(118, 118, 118),
             },
             live_shell: Self::HARNESS_DARK_SHELL,
+            markdown_link_destinations: false,
             color_level: ColorLevel::TrueColor,
         }
     }
@@ -1618,6 +1622,7 @@ impl Theme {
             },
             terminal_colors: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
+            markdown_link_destinations: false,
             color_level: ColorLevel::TrueColor,
         }
     }
@@ -1824,6 +1829,7 @@ impl Theme {
                 diff_hunk_header: q(self.terminal_colors.diff_hunk_header),
             },
             live_shell: self.live_shell,
+            markdown_link_destinations: self.markdown_link_destinations,
             color_level: level,
         }
     }
@@ -1957,6 +1963,7 @@ impl Theme {
                 diff_hunk_header: blue,
             },
             live_shell: self.live_shell,
+            markdown_link_destinations: self.markdown_link_destinations,
             color_level: self.color_level,
         }
     }
@@ -2090,6 +2097,7 @@ impl Theme {
                 diff_hunk_header: Color::Blue,
             },
             live_shell: Self::HARNESS_DARK_SHELL,
+            markdown_link_destinations: false,
             color_level: ColorLevel::Basic,
         }
     }

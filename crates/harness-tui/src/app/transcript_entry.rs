@@ -229,6 +229,7 @@ impl AppState {
     }
 
     pub(crate) fn select_transcript_entry(&mut self, entry: &TranscriptNavigationEntry) {
+        self.transcript_view.highlighted_link = None;
         self.transcript_view.selected_entry = Some(entry.id);
         if let Some(index) = self
             .activities

@@ -118,6 +118,8 @@ pub(crate) struct TranscriptViewState {
     pub(crate) last_transcript_viewport_height: usize,
     pub(crate) viewport: TranscriptViewport,
     pub(crate) hyperlinks: Vec<crate::terminal::FrameHyperlink>,
+    pub(crate) highlighted_link: Option<usize>,
+    pub(crate) link_to_open: Option<String>,
     pub(crate) measured_anchor: Option<TranscriptContentAnchor>,
     pub(crate) selected_activity_index: usize,
     pub(crate) selected_entry: Option<crate::ui::TranscriptVisualEntryId>,
@@ -135,6 +137,8 @@ pub(crate) struct TranscriptViewState {
 impl TranscriptViewState {
     pub(super) fn reset_entry_navigation(&mut self) {
         self.selected_entry = None;
+        self.highlighted_link = None;
+        self.link_to_open = None;
         self.last_tool_click = None;
         self.search_query.clear();
         self.search_editing = false;
@@ -175,6 +179,8 @@ impl Default for TranscriptViewState {
             last_transcript_viewport_height: 0,
             viewport: TranscriptViewport::following(0),
             hyperlinks: Vec::new(),
+            highlighted_link: None,
+            link_to_open: None,
             measured_anchor: None,
             selected_activity_index: 0,
             selected_entry: None,
