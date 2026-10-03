@@ -28,7 +28,11 @@ conversation by repeating tools or provider calls.
 
 Retained conversations preserve tool errors and missing provider usage exactly.
 Missing usage keeps accounting marked incomplete; it does not prevent resuming
-an otherwise complete conversation.
+an otherwise complete conversation. The native terminal `tokens_used` counter
+tracks the last provider context total, starting from the child's initial
+conversation estimate when no usage has arrived. It is separate from cumulative
+billable usage; an estimated context count does not make missing billing data
+complete.
 
 Children receive the subagent base instructions followed by their definition's
 prompt body. Tool placeholders use the child's available tools, and the workspace

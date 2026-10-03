@@ -4,6 +4,7 @@ use harness_providers::{CompletionMessage, MessageRole};
 pub(super) struct Context {
     pub entries: Vec<Entry>,
     pub usage: Vec<crate::subagent::FinalizedProviderUsage>,
+    pub native_context_usage: Option<crate::subagent::SubagentContextUsage>,
     pub unavailable: Option<crate::subagent::FinalizedStateUnavailable>,
     pub model_request: Option<Box<harness_providers::CompletionRequest>>,
 }
@@ -77,6 +78,38 @@ pub(super) fn tokens(entries: &[Entry]) -> u32 {
             u32::try_from(bytes.div_ceil(4))
                 .unwrap_or(u32::MAX)
                 .saturating_add(8),
+        )
+    })
+}
+
+/// The native child counter excludes request framing and tool schemas.
+/// Unrepresentable attachment projections remain unknown.
+pub(super) fn native_tokens(entries: &[Entry]) -> Option<u64> {
+    entries.iter().try_fold(0u64, |total, entry| {
+        if entry
+            .attachments
+            .iter()
+            .any(|a| !a.mime.starts_with("image/"))
+        {
+            return None;
+        }
+        let bytes = entry
+            .message
+            .assistant_tool_calls
+            .iter()
+            .flatten()
+            .fold(entry.message.content.len(), |bytes, call| {
+                bytes.saturating_add(call.arguments_json.len())
+            });
+        let reasoning = entry
+            .settled_reasoning
+            .iter()
+            .fold(0u64, |n, text| n.saturating_add(text.len() as u64 / 4));
+        Some(
+            total
+                .saturating_add(bytes as u64 / 4)
+                .saturating_add(reasoning)
+                .saturating_add((entry.attachments.len() as u64).saturating_mul(765)),
         )
     })
 }

@@ -51,6 +51,7 @@ impl Runtime {
                 .collect(),
             model_request: messages.model_request.clone(),
             usage: messages.usage.clone(),
+            native_context_usage: messages.native_context_usage,
             source_model: agent.info.model_ref.clone(),
             model_target: agent.target.clone(),
             model_settings: agent.settings.clone(),

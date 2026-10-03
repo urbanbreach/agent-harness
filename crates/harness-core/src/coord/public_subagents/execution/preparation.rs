@@ -121,6 +121,15 @@ impl Runtime {
                 self.native_model_window(&child.registration.model),
             );
         }
+        if child.registration.source.as_deref() != Some(agent) {
+            context.native_context_usage =
+                super::super::super::context::native_tokens(&context.entries).map(|total_tokens| {
+                    crate::subagent::SubagentContextUsage {
+                        total_tokens,
+                        estimate_at_last_response: Some(total_tokens),
+                    }
+                });
+        }
         let fork_reads = child.fork_read_state.clone();
         let actor = EventActor::new(ActorKind::Worker, Some(agent.into()));
         let owner = agent.to_owned();

@@ -21,6 +21,7 @@ pub(in crate::coord) fn restored_context(
         });
     }
     context.usage = state.usage.clone();
+    context.native_context_usage = state.native_context_usage;
     context.model_request = state.model_request.clone();
     context.unavailable = state.unavailable;
     super::prompt::restore_content(&mut context, run_dir, &std::collections::HashMap::new())?;

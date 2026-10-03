@@ -1,6 +1,7 @@
 use super::{context::Context, turn::Worker, *};
 use crate::config::HookLifecycleEvent as Hook;
 use harness_providers::{CompletionMessage, MessageRole};
+use num_traits::ToPrimitive;
 use serde_json::json;
 pub(super) mod plan;
 mod summary;
@@ -302,6 +303,30 @@ impl Worker {
                 raw_tool_result: None,
             }],
         );
+        if let Some(previous) = context.native_context_usage {
+            context.native_context_usage =
+                super::context::native_tokens(&context.entries).map(|estimate| {
+                    let scaled = previous
+                        .estimate_at_last_response
+                        .filter(|old| *old > 0)
+                        .filter(|_| previous.total_tokens > 0)
+                        .and_then(|old| {
+                            let scaled = (estimate.to_f64()?
+                                * (previous.total_tokens.to_f64()? / old.to_f64()?))
+                            .round();
+                            Some(scaled.to_u64().unwrap_or(u64::MAX))
+                        })
+                        .unwrap_or(estimate);
+                    crate::subagent::SubagentContextUsage {
+                        total_tokens: if previous.total_tokens > 0 {
+                            scaled.min(previous.total_tokens)
+                        } else {
+                            scaled
+                        },
+                        estimate_at_last_response: Some(estimate),
+                    }
+                });
+        }
         Ok(ManualCompactionOutcome::Compacted {
             tokens_before,
             tokens_after: applied.1,
