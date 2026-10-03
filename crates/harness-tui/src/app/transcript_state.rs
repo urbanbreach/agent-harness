@@ -122,14 +122,7 @@ impl AppState {
                 outline.update(&self.projection.activities, viewport, from);
             }
         }
-        if self.transcript_viewer().is_some() {
-            if let Some(entry) = self.selected_transcript_entry() {
-                let content = self.selected_entry_content(&entry);
-                if let Some(viewer) = self.transcript_viewer.as_mut() {
-                    let _ = viewer.update_content(content);
-                }
-            }
-        }
+        self.refresh_transcript_viewer();
     }
 
     pub fn transcript_following(&self) -> bool {
@@ -242,13 +235,16 @@ impl AppState {
             FocusFollowState::new(focus, focus == TranscriptFocus::Transcript),
             anchor,
         );
-        let Ok(viewer) = ViewerState::open(
+        let Ok(mut viewer) = ViewerState::open(
             replay_turn(index, activity, 0).block_id(0),
             content,
             snapshot,
         ) else {
             return false;
         };
+        if self.current_subagent_session_present() {
+            viewer.set_child_running(self.child_viewer_entry_running(&entry));
+        }
         self.transcript_viewer = Some(viewer);
         self.resize_transcript_viewer(self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24)));
         true

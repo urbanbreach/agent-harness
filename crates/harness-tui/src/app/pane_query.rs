@@ -33,7 +33,7 @@ impl PaneQuery {
         self.mode != PaneQueryMode::Filter || !self.active || self.matches(text)
     }
 
-    pub(in crate::app) fn open(&mut self, mode: PaneQueryMode) {
+    pub(crate) fn open(&mut self, mode: PaneQueryMode) {
         if !self.active || self.mode != mode {
             *self = Self::default();
         }
@@ -62,7 +62,7 @@ impl PaneQuery {
         }
     }
 
-    pub(in crate::app) fn paste(&mut self, text: &str) -> Result<(), EditingError> {
+    pub(crate) fn paste(&mut self, text: &str) -> Result<(), EditingError> {
         if self.editing {
             let text: String = text.chars().filter(|c| !c.is_control()).collect();
             self.editor.paste(&text)?;
@@ -71,7 +71,7 @@ impl PaneQuery {
         Ok(())
     }
 
-    pub(in crate::app) fn handle_key(&mut self, key: KeyEvent) -> Result<(), EditingError> {
+    pub(crate) fn handle_key(&mut self, key: KeyEvent) -> Result<(), EditingError> {
         match (key.code, key.modifiers) {
             (KeyCode::Enter, _) => self.editing = false,
             (KeyCode::Esc, _) => *self = Self::default(),

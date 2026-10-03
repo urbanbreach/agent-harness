@@ -1,6 +1,9 @@
 use super::*;
 use harness_core::{coord::NativeSubagentRegistration, subagent::*};
 
+#[path = "native_child_viewer_tests.rs"]
+mod viewer;
+
 fn transition(kind: SubagentTransitionKind) -> SubagentTransitionV1 {
     SubagentTransitionV1 {
         payload_version: 1,
@@ -258,6 +261,7 @@ fn assert_native_inspection(app: &mut AppState, intents: &Arc<Mutex<Vec<UiIntent
     app.set_frame_area(Rect::new(0, 0, 120, 40));
     assert_child_link_navigation(app);
     assert_child_search(app);
+    viewer::assert_child_viewer(app);
     app.handle_key(key_with_modifiers(
         KeyCode::Char('x'),
         KeyModifiers::CONTROL,

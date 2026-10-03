@@ -132,12 +132,22 @@ impl AppState {
         self.cancel_transcript_page_flip();
         let viewport = self.transcript_view.measured_viewport();
         let height = self.transcript_view.last_transcript_viewport_height.max(1);
-        let top = if entry.top < viewport.top() {
+        let entry_top = if self.current_subagent_session_present() {
+            ui::transcript_entry_scroll_top(
+                self,
+                self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24)),
+                entry.top,
+            )
+            .unwrap_or(entry.top)
+        } else {
             entry.top
+        };
+        let top = if entry_top < viewport.top() {
+            entry_top
         } else if entry.top + entry.height > viewport.top() + height {
             (entry.top + entry.height)
                 .saturating_sub(height)
-                .min(entry.top)
+                .min(entry_top)
         } else {
             viewport.top()
         };
@@ -198,6 +208,26 @@ impl AppState {
             _ => return false,
         }
         true
+    }
+
+    pub(crate) fn child_viewer_entry_running(&self, entry: &TranscriptNavigationEntry) -> bool {
+        match &entry.target {
+            Some(TranscriptMouseTarget::Tool { tool_call_id }) => self
+                .tool_call_entry(tool_call_id)
+                .is_some_and(|tool| tool.status == ToolCallDisplayStatus::Running),
+            _ if entry.kind == crate::ui::TranscriptRenderSurfaceKind::AssistantBody => self
+                .current_session_id()
+                .and_then(|id| self.projection.subagents.history.records.get(id))
+                .is_some_and(|child| {
+                    child.outcome.is_none()
+                        && self.activities.iter().any(|activity| {
+                            activity.first_seq == entry.activity_first_seq
+                                && child.lifecycle.current_attempt_id()
+                                    == Some(activity.request_id.as_str())
+                        })
+                }),
+            _ => false,
+        }
     }
 
     pub(crate) fn selected_entry_content(

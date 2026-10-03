@@ -191,10 +191,10 @@ impl AppState {
             }
             KeyCode::Char('H') => self.execute_action(Action::PreviousMessage),
             KeyCode::Char('L') => self.execute_action(Action::NextMessage),
-            KeyCode::Char('j') => {
+            KeyCode::Char('j') | KeyCode::Down if key.modifiers.is_empty() => {
                 self.move_transcript_entry(true);
             }
-            KeyCode::Char('k') => {
+            KeyCode::Char('k') | KeyCode::Up if key.modifiers.is_empty() => {
                 self.move_transcript_entry(false);
             }
             _ => return false,

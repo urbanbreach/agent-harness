@@ -28,10 +28,10 @@ pub(crate) fn render_viewer(buffer: &mut Buffer, area: Rect, state: &ViewerState
 
 fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface {
     let mut filter_search = super::SearchState::new();
-    if state.filter_editing {
+    if state.filter_editing() {
         let _ = filter_search.set_query(state.wrapped.text(), &regex::escape(&state.filter_query));
     }
-    let highlights = if state.filter_editing {
+    let highlights = if state.filter_editing() {
         &filter_search
     } else {
         state.search()
@@ -64,7 +64,7 @@ fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface 
             let selection_range = selection.and_then(|(start, end)| cells_in_row(start, end, row));
             RenderedLine {
                 text: state.wrapped.row_text(row).to_owned(),
-                styled: state.styled_lines.get(row).cloned(),
+                styled: styled_row(state, row),
                 selected: selection_range.is_some(),
                 current_match: current
                     .is_some_and(|(start, end)| (start.row..=end.row).contains(&row)),
@@ -74,8 +74,8 @@ fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface 
         })
         .collect();
     let query = state.search().query();
-    let filtering = state.filter_editing || !state.filter_query.is_empty();
-    let editing = state.search_editing() || state.filter_editing;
+    let filtering = state.filter_editing() || !state.filter_query.is_empty();
+    let editing = state.search_editing() || state.filter_editing();
     let label = if filtering { "filter" } else { "search" };
     let query = if filtering {
         &state.filter_query
@@ -114,7 +114,11 @@ fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface 
         lines,
         scroll_top: state.scroll_top(),
         body_start: state.body_start,
-        cursor_rows: state.logical_rows(state.cursor.row),
+        cursor_rows: if state.following {
+            0..0
+        } else {
+            state.logical_rows(state.cursor.row)
+        },
         output_panel: matches!(
             state.content().preamble,
             Some(super::ViewerPreamble::Command { .. })
@@ -127,10 +131,28 @@ fn project_rows(state: &ViewerState, rows: Range<usize>) -> ViewerRenderSurface 
         close_hovered: state.close_hovered,
         search_active: state.input_active(),
         editing,
+        input_cursor: query
+            .grapheme_indices(true)
+            .nth(state.input.editor.cursor().insertion_index())
+            .map_or(query.len(), |(byte, _)| byte),
+        following: state.following,
+        child: state.child,
         filtering,
         visual_mode: state.visual_mode,
         wrap_enabled: state.wrap_enabled,
     }
+}
+
+fn styled_row(state: &ViewerState, row: usize) -> Option<ratatui::text::Line<'static>> {
+    let mut line = state.styled_lines.get(row)?.clone();
+    if state.child && state.content().markdown {
+        for span in &mut line.spans {
+            if span.style.fg == Some(state.theme().text.primary) {
+                span.style.fg = Some(viewer_secondary(state.theme()));
+            }
+        }
+    }
+    Some(line)
 }
 
 fn cells_in_row(start: CellPoint, end: CellPoint, row: usize) -> Option<Range<usize>> {
@@ -168,7 +190,9 @@ fn paint(
         for x in layout.overlay.x..layout.overlay.right() {
             let cell = &mut buffer[(x, y)];
             cell.fg = dim(cell.fg, theme.surface.shell);
-            cell.bg = dim(cell.bg, theme.surface.shell);
+            if !surface.child {
+                cell.bg = dim(cell.bg, theme.surface.shell);
+            }
         }
     }
     Clear.render(layout.popup, buffer);
@@ -233,65 +257,11 @@ fn paint(
         }
     }
     render_scrollbar(buffer, body, surface.scroll_top, row_count, theme);
-    if surface.search_active || surface.visual_mode {
-        let y = layout.body.bottom().saturating_sub(2);
-        let divider = Rect::new(
-            layout.popup.x + 1,
-            y,
-            layout.popup.width.saturating_sub(2),
-            1,
-        );
-        Clear.render(divider, buffer);
-        buffer.set_style(divider, Style::default().bg(theme.surface.shell));
-        buffer.set_string(
-            layout.popup.x + 1,
-            y,
-            "─".repeat(usize::from(layout.popup.width.saturating_sub(2))),
-            Style::default().fg(theme.terminal_colors.muted),
-        );
-        let status_area = Rect::new(body.x, y + 1, body.width + 2, 1);
-        Clear.render(status_area, buffer);
-        let secondary = viewer_secondary(theme);
-        let status = if surface.editing {
-            let prefix = if surface.filtering {
-                "filter: "
-            } else {
-                "search: "
-            };
-            let value = surface.status.strip_prefix(prefix).unwrap_or_default();
-            ratatui::text::Line::from(vec![
-                ratatui::text::Span::styled(prefix, Style::default().fg(theme.status.warning)),
-                ratatui::text::Span::styled(
-                    value.to_owned(),
-                    Style::default().fg(theme.text.primary),
-                ),
-                ratatui::text::Span::styled(
-                    " ",
-                    Style::default()
-                        .fg(theme.text.primary)
-                        .add_modifier(Modifier::REVERSED),
-                ),
-            ])
-        } else {
-            let style = Style::default().fg(secondary);
-            ratatui::text::Line::styled(
-                surface.status.clone(),
-                if surface.search_active {
-                    style.add_modifier(Modifier::DIM)
-                } else {
-                    style
-                },
-            )
-        };
-        Paragraph::new(status)
-            .alignment(if surface.search_active && !surface.editing {
-                ratatui::layout::Alignment::Right
-            } else {
-                ratatui::layout::Alignment::Left
-            })
-            .style(Style::default().bg(theme.surface.shell))
-            .render(status_area, buffer);
+    if surface.following && !body.is_empty() {
+        place_indicator(buffer, body, body.bottom() - 1, "▶", theme);
+        buffer[(body.right() - 1, body.bottom() - 1)].set_fg(theme.status.warning);
     }
+    super::render_input::paint_status(buffer, &layout, body, surface, theme);
     render_shortcuts(buffer, layout.shortcuts, surface, theme);
 }
 
@@ -468,7 +438,7 @@ fn visual_background(theme: &Theme) -> Color {
     }
 }
 
-fn viewer_secondary(theme: &Theme) -> Color {
+pub(super) fn viewer_secondary(theme: &Theme) -> Color {
     if theme.surface.shell == Color::Rgb(20, 20, 20) {
         Color::Rgb(200, 200, 200)
     } else {
