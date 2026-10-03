@@ -7,7 +7,7 @@ fn trusted_preset_and_agent_discovery_keeps_source_precedence(
     let project = temp.path().join("project");
     let user = temp.path().join("user");
     let bundled = temp.path().join("bundled");
-    for root in [&project.join(".grok"), &user, &bundled] {
+    for root in [&project.join(".agent-harness"), &user, &bundled] {
         for folder in ["agents", "roles", "personas"] {
             std::fs::create_dir_all(root.join(folder))?;
         }
@@ -25,10 +25,13 @@ fn trusted_preset_and_agent_discovery_keeps_source_precedence(
         "---\nname: explore\ndescription: User\n---\nUser body",
     )?;
     std::fs::write(
-        project.join(".grok/roles/ignored.json"),
+        project.join(".agent-harness/roles/ignored.json"),
         "{\"model\":\"ignored\"}",
     )?;
-    std::fs::write(project.join(".grok/personas/broken.toml"), "invalid = [")?;
+    std::fs::write(
+        project.join(".agent-harness/personas/broken.toml"),
+        "invalid = [",
+    )?;
     let mut settings = SubagentRuntimeConfig::default();
     let mut discovery = SubagentDiscoveryContext {
         cwd: project.clone(),
@@ -49,11 +52,11 @@ fn trusted_preset_and_agent_discovery_keeps_source_precedence(
     );
     assert_eq!(
         snapshot.roles["research"].source_dir.as_deref(),
-        Some(project.join(".grok/roles").as_path())
+        Some(project.join(".agent-harness/roles").as_path())
     );
     assert!(!snapshot.roles.contains_key("ignored"));
     assert!(!snapshot.warnings.is_empty());
-    std::fs::write(project.join(".grok/agents/explore.md"), "---\nname: explore\ndescription: Project\nmaxTurns: 5\nmcpInheritance:\n  named: [A]\n---\nProject body")?;
+    std::fs::write(project.join(".agent-harness/agents/explore.md"), "---\nname: explore\ndescription: Project\nmaxTurns: 5\nmcpInheritance:\n  named: [A]\n---\nProject body")?;
     settings.roles.insert(
         "research".into(),
         SubagentRole {

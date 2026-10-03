@@ -107,15 +107,15 @@ file permissions: POSIX `0600`, and on Windows a protected owner-only DACL.
 
 `subagents` configures the public `spawn_subagent` feature independently of the
 generic `agent` profiles. `subagents.enabled` defaults to true, including when
-the table only tunes limits. CLI enablement overrides `GROK_SUBAGENTS`
+the table only tunes limits. CLI enablement overrides `HARNESS_SUBAGENTS`
 (`true`/`1` or `false`/`0`), which overrides local configuration. Remote settings
 cannot disable this feature.
 
 Depth, ordinary child concurrency, sampling concurrency and queue policy resolve
 environment, config, remote, then defaults. The defaults are depth 1, concurrency
 32, sampling equal to resolved concurrency (capped at 512), and `queue`.
-Use `GROK_SUBAGENTS_MAX_DEPTH`, `GROK_MAX_CONCURRENT_SUBAGENTS`,
-`GROK_SUBAGENT_SAMPLING_LIMIT`, and `GROK_SUBAGENT_LIMIT_BEHAVIOR` to override them.
+Use `HARNESS_SUBAGENTS_MAX_DEPTH`, `HARNESS_MAX_CONCURRENT_SUBAGENTS`,
+`HARNESS_SUBAGENT_SAMPLING_LIMIT`, and `HARNESS_SUBAGENT_LIMIT_BEHAVIOR` to override them.
 Invalid environment integers fall through, nonpositive environment counts fall
 through, configured counts clamp to at least 1, and depth clamps to 1..u32::MAX.
 Queue policy accepts case-insensitive `queue` or `fail`; invalid tiers fall through.
@@ -145,8 +145,8 @@ Queue policy accepts case-insensitive `queue` or `fail`; invalid tiers fall thro
 
 The three features default off. Managed requirements override environment,
 effective layered config, remote settings, then defaults. Their environment
-names are `GROK_ACTIVE_AGENT_MESSAGES`, `GROK_SUBAGENT_MODEL_INHERITANCE`, and
-`GROK_SUBAGENT_WORKTREE_SNAPSHOT`. Model inheritance hides public model selection
+names are `HARNESS_ACTIVE_AGENT_MESSAGES`, `HARNESS_SUBAGENT_MODEL_INHERITANCE`, and
+`HARNESS_SUBAGENT_WORKTREE_SNAPSHOT`. Model inheritance hides public model selection
 only for a complete, nonempty picker catalog whose explicit families are all
 exactly `xai` after whitespace trimming. Empty, provisional, unknown, third-party
 and mixed catalogs keep selection available. This policy is latched by the
@@ -156,9 +156,9 @@ Definitions resolve nearest project, builtin, user/compatibility, bundled,
 enabled plugin, then session CLI fallback. Only project definitions shadow
 builtins. Qualified plugin names use `plugin:name`; bare plugin names must be
 unambiguous. Agent Markdown files use YAML frontmatter. Project discovery walks
-from the current parent directory to the worktree root. Native `.agent-harness`
-and `.harness` directories also accept the `.grok` and `.claude` agent-directory
-compatibility layouts. User roots, bundled roots and plugin directories are
+from the current parent directory to the worktree root. It checks
+`.agent-harness/agents`, `.harness/agents`, and the compatibility layout
+`.claude/agents`. User roots, bundled roots and plugin directories are
 explicit discovery inputs.
 
 Inline roles/personas override trusted project `.toml` files, then user files,
@@ -744,10 +744,9 @@ An `ask` decision waits for operator approval before the child samples.
 Successful preload bodies are request-only system instructions, cached for the
 child's lifetime and omitted from the ordinary available-skills listing.
 
-This is an intentional Grok parity exception, chosen by the operator: explicit
+The operator chose to retain shared permission checks: explicit
 preloads do not bypass shared skill permissions or a disabled skill tool.
-Grok loads explicitly named skills even when ordinary skill calls are disabled
-or denied. Harness retains its shared permission checks during startup.
+These checks apply during startup as well as ordinary skill calls.
 
 `allowed_tools` and related skill metadata are descriptive/restrictive contract
 metadata only. They never grant runtime tools, override the generic toolset, or

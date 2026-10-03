@@ -358,7 +358,8 @@ impl CoordinatorHandle {
         let continue_parent_work = subscription.continue_parent_work;
         let notified_on_completion = subscription.notified_on_completion;
         let cancellation = subscription.cancellation.clone();
-        let budget = Duration::from_millis(milliseconds("GROK_SUBAGENT_AWAIT_BUDGET_MS", 600_000));
+        let budget =
+            Duration::from_millis(milliseconds("HARNESS_SUBAGENT_AWAIT_BUDGET_MS", 600_000));
         let terminal = async {
             loop {
                 let snapshot = subscription.updates.borrow_and_update().clone();

@@ -133,7 +133,7 @@ async fn native_cancel_after_actual_worktree_creation_cleans_only_owned_material
         .any(|line| line == format!("worktree {}", owned.display())));
     assert!(git(
         &root,
-        &["for-each-ref", &format!("refs/grok/subagents/{id}")]
+        &["for-each-ref", &format!("refs/harness/subagents/{id}")]
     )
     .await?
     .is_empty());

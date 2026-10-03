@@ -140,7 +140,7 @@ pub fn discover_subagent_definitions(
         .into_iter()
         .rev()
     {
-        for prefix in [".agent-harness", ".harness", ".grok", ".claude"] {
+        for prefix in [".agent-harness", ".harness", ".claude"] {
             load_agents(
                 &root.join(prefix).join("agents"),
                 SubagentDefinitionSource::Project,
@@ -154,7 +154,7 @@ pub fn discover_subagent_definitions(
         }
     }
     if context.project_trusted {
-        for prefix in [".agent-harness", ".harness", ".grok"] {
+        for prefix in [".agent-harness", ".harness"] {
             load_presets(&context.cwd.join(prefix), &mut snapshot);
         }
     }
@@ -175,7 +175,7 @@ pub fn discover_subagent_definitions(
         user_roots.push(root.clone());
     }
     if let Some(home) = &context.home {
-        for prefix in [".agent-harness", ".grok", ".claude"] {
+        for prefix in [".agent-harness", ".claude"] {
             let root = home.join(prefix);
             if !user_roots.contains(&root) {
                 user_roots.push(root);
