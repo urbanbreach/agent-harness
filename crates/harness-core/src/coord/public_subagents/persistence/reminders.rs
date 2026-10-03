@@ -7,6 +7,29 @@ impl Runtime {
         completion: &str,
         request: &str,
         fallback: String,
+    ) -> Result<Option<(u64, String)>, CoordinatorError> {
+        let Some(text) =
+            self.resolve_native_completion_wake(parent, completion, request, fallback)?
+        else {
+            return Ok(None);
+        };
+        let event = self.emit(
+            EventActor::new(ActorKind::Worker, Some(parent.into())),
+            Some(request.into()),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request.into(),
+                text: text.clone(),
+            }),
+        )?;
+        Ok(Some((event.seq, text)))
+    }
+
+    fn resolve_native_completion_wake(
+        &mut self,
+        parent: &str,
+        completion: &str,
+        request: &str,
+        fallback: String,
     ) -> Result<Option<String>, CoordinatorError> {
         let child = self.native_subagents.iter().find(|(_, child)| {
             child.registration.spawner == parent && child.request.as_deref() == Some(completion)
