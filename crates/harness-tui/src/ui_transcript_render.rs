@@ -513,6 +513,7 @@ fn build_assistant_part_render_surface(
                 &reasoning.text,
                 ReasoningBlockContext {
                     theme,
+                    raw: turn.raw_parts.contains(&part_index),
                     width: transcript_surface_content_width(width, false),
                     surface: base_surface,
                     duration_ms,
@@ -555,6 +556,7 @@ fn build_assistant_part_render_surface(
                 body,
                 turn.footer_timestamp.as_deref(),
                 turn.child_view,
+                turn.raw_parts.contains(&part_index),
                 theme,
                 content_width,
             );
@@ -694,6 +696,7 @@ fn resolve_assistant_body_content(
     body: &TranscriptBodyBlock,
     wall_clock: Option<&str>,
     child_view: bool,
+    raw: bool,
     theme: &Theme,
     content_width: u16,
 ) -> AssistantBodyContent {
@@ -736,7 +739,25 @@ fn resolve_assistant_body_content(
             streaming,
         )
     };
-    if streaming {
+    if raw {
+        super::super::ui_markdown_raw::append_raw_markdown(
+            &mut lines,
+            text,
+            TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+            theme,
+            body_width,
+        );
+        selection_rows = Some(
+            lines
+                .iter()
+                .flat_map(|line| {
+                    super::super::ui_transcript_selection::selection_rows_for_rendered_line(
+                        line, body_width,
+                    )
+                })
+                .collect(),
+        );
+    } else if streaming {
         append_streaming_rich_text_block(
             &mut lines,
             text,
@@ -817,6 +838,7 @@ fn build_footer_only_render_surface(
 }
 
 struct ReasoningBlockContext<'a> {
+    raw: bool,
     theme: &'a Theme,
     width: u16,
     surface: Color,
@@ -839,6 +861,7 @@ fn append_reasoning_block(
     context: ReasoningBlockContext<'_>,
 ) -> ReasoningBlockLayout {
     let ReasoningBlockContext {
+        raw,
         theme,
         width,
         surface,
@@ -924,6 +947,7 @@ fn append_reasoning_block(
     let mut body_selection = super::ui_reasoning_markdown_body::append_reasoning_body_lines(
         &mut body_lines,
         &body,
+        raw,
         theme,
         surface,
         content_prefix,
@@ -1506,6 +1530,7 @@ mod tests {
         };
 
         super::super::TranscriptTurnSection {
+            raw_parts: Vec::new(),
             child_view: false,
             activity_first_seq: 1,
             request_id: "request-ui10".to_string(),
@@ -1538,6 +1563,7 @@ mod tests {
 
     fn selected_user_turn() -> super::super::TranscriptTurnSection {
         super::super::TranscriptTurnSection {
+            raw_parts: Vec::new(),
             child_view: false,
             activity_first_seq: 1,
             request_id: "request-selected-user".to_string(),
@@ -2010,6 +2036,7 @@ mod tests {
         let succeeded = command("command-ok", "echo ok", ToolCallDisplayStatus::Succeeded);
         let failed = command("command-failed", "echo fail", ToolCallDisplayStatus::Failed);
         let turn = super::super::TranscriptTurnSection {
+            raw_parts: Vec::new(),
             child_view: false,
             activity_first_seq: 0,
             request_id: "request-command-colors".to_string(),
@@ -2142,6 +2169,7 @@ mod tests {
             }],
         );
         let turn = super::super::TranscriptTurnSection {
+            raw_parts: Vec::new(),
             child_view: false,
             activity_first_seq: 0,
             request_id: "request-transparent-tools".to_string(),

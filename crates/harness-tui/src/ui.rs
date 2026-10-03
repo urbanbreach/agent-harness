@@ -35,6 +35,8 @@ mod ui_live_turn_status;
 mod ui_lsp;
 #[path = "ui_markdown.rs"]
 mod ui_markdown;
+#[path = "ui_markdown_raw.rs"]
+mod ui_markdown_raw;
 #[path = "ui_markdown_table.rs"]
 mod ui_markdown_table;
 #[path = "ui_overlays.rs"]
@@ -1033,6 +1035,10 @@ pub(crate) fn viewer_markdown_lines(text: &str, width: u16, theme: &Theme) -> Ve
     let mut lines = Vec::new();
     ui_markdown::append_rich_text_block(&mut lines, text, theme.text.primary, "", theme, width);
     lines
+}
+
+pub(crate) fn viewer_raw_markdown_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
+    ui_markdown_raw::raw_markdown_lines(text, theme)
 }
 
 pub(crate) fn transcript_search_markdown_text(text: &str, theme: &Theme) -> String {

@@ -240,7 +240,8 @@ fn build_turn_section(
     let (assistant_parts, assistant_part_source_ids) =
         build_assistant_parts(app, activity, ordered_tool_calls);
 
-    TranscriptTurnSection {
+    let mut turn = TranscriptTurnSection {
+        raw_parts: Vec::new(),
         child_view: app.current_subagent_session_present(),
         activity_first_seq: activity.first_seq,
         request_id: activity.request_id.clone(),
@@ -306,7 +307,19 @@ fn build_turn_section(
         },
         assistant_parts,
         assistant_part_source_ids,
+    };
+    if turn.child_view {
+        turn.raw_parts = (0..turn.assistant_parts.len())
+            .filter(|index| {
+                super::ui_transcript_entry::markdown_part_id(&turn, *index).is_some_and(|id| {
+                    app.transcript_view
+                        .markdown_modes
+                        .contains(&(id, crate::transcript_block_viewer::ViewerMode::Raw))
+                })
+            })
+            .collect();
     }
+    turn
 }
 
 fn is_structured_diff_block(block: &TranscriptToolCallDetailBlock) -> bool {

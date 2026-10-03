@@ -22,6 +22,44 @@ pub(crate) enum TranscriptVisualEntryId {
     },
 }
 
+pub(super) fn markdown_part_id(
+    turn: &TranscriptTurnSection,
+    index: usize,
+) -> Option<TranscriptVisualEntryId> {
+    let (role, source) = match &turn.assistant_parts[index] {
+        TranscriptAssistantPart::Body(
+            TranscriptBodyBlock::RichText(text) | TranscriptBodyBlock::StreamingRichText(text),
+        ) => ("body", text.as_str()),
+        TranscriptAssistantPart::Reasoning(reasoning) => ("reasoning", reasoning.text.as_str()),
+        _ => return None,
+    };
+    Some(TranscriptVisualEntryId::Part {
+        activity_first_seq: turn.activity_first_seq,
+        semantic_key: part_source_key(turn, index, role, Some(source)),
+    })
+}
+
+fn part_source_key(
+    turn: &TranscriptTurnSection,
+    index: usize,
+    role: &str,
+    source: Option<&str>,
+) -> u64 {
+    let source_seq = (turn.assistant_part_source_ids.len() == turn.assistant_parts.len())
+        .then(|| turn.assistant_part_source_ids[index].0);
+    let id = source_seq.map_or_else(
+        || {
+            format!(
+                "{}:{role}:fixture:{:016x}",
+                turn.request_id,
+                semantic_key([source.unwrap_or("")])
+            )
+        },
+        |seq| format!("{}:{role}:event:{seq}", turn.request_id),
+    );
+    semantic_key([id.as_str()])
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum TranscriptVisualEntryDisplayMode {
     Flow,
@@ -119,19 +157,7 @@ impl ResolvedTranscriptVisualEntryDraft {
         let key = if let TranscriptAssistantPart::ToolCall(tool) = part {
             semantic_key([tool.tool_call_id.as_str()])
         } else {
-            let source_seq = (turn.assistant_part_source_ids.len() == turn.assistant_parts.len())
-                .then(|| turn.assistant_part_source_ids[index].0);
-            let id = source_seq.map_or_else(
-                || {
-                    format!(
-                        "{}:{role}:fixture:{:016x}",
-                        turn.request_id,
-                        semantic_key([source.unwrap_or("")])
-                    )
-                },
-                |seq| format!("{}:{role}:event:{seq}", turn.request_id),
-            );
-            semantic_key([id.as_str()])
+            part_source_key(turn, index, role, source)
         };
         let mut entry = Self::new(
             TranscriptVisualEntryId::Part {

@@ -91,6 +91,17 @@ impl AppState {
 
     pub(crate) fn handle_transcript_viewer_key(&mut self, key: KeyEvent) -> bool {
         if self.current_subagent_session_present()
+            && key.code == KeyCode::Char('r')
+            && key.modifiers.is_empty()
+            && self
+                .transcript_viewer
+                .as_ref()
+                .is_some_and(|viewer| !viewer.search_editing() && !viewer.filter_editing())
+        {
+            self.toggle_child_markdown();
+            return true;
+        }
+        if self.current_subagent_session_present()
             && key.code == KeyCode::Char('f')
             && key.modifiers.contains(KeyModifiers::CONTROL)
             && self.transcript_viewer.is_some()
@@ -197,7 +208,7 @@ impl AppState {
                     let _ = viewer.set_filter_query(String::new());
                 }
             }
-            KeyCode::Char('r' | 'R') => {
+            KeyCode::Char('r' | 'R') if !viewer.is_child() => {
                 let _ = viewer.toggle_mode();
             }
             KeyCode::Char('n' | 'N') => {

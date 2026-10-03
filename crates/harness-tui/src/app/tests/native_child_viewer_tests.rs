@@ -109,8 +109,31 @@ pub(super) fn assert_child_viewer(app: &mut AppState) {
     assert!(app.transcript_viewer().is_none());
     assert_eq!(app.current_session_id(), Some("child"));
     assert_quote_to_parent(app);
+    assert_entry_raw_mode(app);
     app.composer.vim_mode = false;
     app.set_frame_area(Rect::new(0, 0, 120, 40));
+}
+
+fn assert_entry_raw_mode(app: &mut AppState) {
+    use crate::transcript_block_viewer::ViewerMode;
+
+    let entry = app.transcript_view.selected_entry;
+    app.handle_key(key(KeyCode::Char('r')));
+    assert!(app.transcript_viewer().is_none());
+    assert_eq!(app.transcript_view.selected_entry, entry);
+    for _ in 0..2 {
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.transcript_viewer_mode(), Some(ViewerMode::Raw));
+        app.handle_key(key(KeyCode::Char('R')));
+        assert_eq!(app.transcript_viewer_mode(), Some(ViewerMode::Raw));
+        app.handle_key(key(KeyCode::Esc));
+    }
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Char('r')));
+    app.handle_key(key(KeyCode::Esc));
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(app.transcript_viewer_mode(), Some(ViewerMode::Wrapped));
+    app.handle_key(key(KeyCode::Esc));
 }
 
 fn assert_raw_roundtrip(app: &mut AppState) {
