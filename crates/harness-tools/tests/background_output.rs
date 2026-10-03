@@ -17,6 +17,8 @@ use std::sync::Arc;
 
 #[path = "background_output/notifications.rs"]
 mod notifications;
+#[path = "background_output/progress.rs"]
+mod progress;
 
 fn done(reasoning: Vec<String>) -> Stream {
     Stream::DoneWithMetadata {

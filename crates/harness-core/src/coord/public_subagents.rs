@@ -14,6 +14,7 @@ mod execution;
 mod messages;
 mod output;
 mod persistence;
+mod progress;
 mod workspace;
 pub use workspace::NativeWorkspaceReceipt;
 
