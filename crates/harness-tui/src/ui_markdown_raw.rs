@@ -4,16 +4,15 @@ use ratatui::{
 };
 
 use crate::theme::Theme;
+#[path = "ui_markdown_raw/highlight.rs"]
+mod highlight;
+
+#[cfg(test)]
+#[path = "ui_markdown_raw/tests.rs"]
+mod tests;
 
 pub(super) fn raw_markdown_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
-    text.split('\n')
-        .map(|line| {
-            Line::from(Span::styled(
-                line.to_owned(),
-                Style::default().fg(theme.markdown.text),
-            ))
-        })
-        .collect()
+    highlight::render(text, theme)
 }
 
 pub(super) fn append_raw_markdown(
@@ -25,7 +24,10 @@ pub(super) fn append_raw_markdown(
 ) {
     for line in raw_markdown_lines(text, theme) {
         if line.width() == 0 {
-            lines.push(Line::from(prefix.to_owned()));
+            lines.push(Line::from(vec![
+                Span::raw(prefix.to_owned()),
+                Span::styled("", line.style),
+            ]));
             continue;
         }
         super::ui_transcript_surface::append_prefixed_wrapped_spans_line(

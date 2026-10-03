@@ -550,6 +550,7 @@ impl AppState {
             .last_frame_area
             .is_some_and(|previous| previous != area)
         {
+            self.transcript_view.markdown_layout_heights.clear();
             self.slash_hovered = None;
             self.slash_pointer_down = None;
             self.transcript_view.transcript_scrollbar_drag = None;

@@ -937,6 +937,7 @@ pub struct ThemeTokenFamilies {
 pub struct Theme {
     /// Child transcripts print destinations beside inline link labels.
     pub(crate) markdown_link_destinations: bool,
+    pub(crate) markdown_native: bool,
     color_level: ColorLevel,
     pub surface: SurfaceColors,
     pub border: BorderColors,
@@ -1428,6 +1429,7 @@ impl Theme {
             terminal_colors: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
             markdown_link_destinations: false,
+            markdown_native: false,
             color_level: ColorLevel::TrueColor,
         }
     }
@@ -1536,6 +1538,7 @@ impl Theme {
             },
             live_shell: Self::HARNESS_DARK_SHELL,
             markdown_link_destinations: false,
+            markdown_native: false,
             color_level: ColorLevel::TrueColor,
         }
     }
@@ -1623,6 +1626,7 @@ impl Theme {
             terminal_colors: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
             markdown_link_destinations: false,
+            markdown_native: false,
             color_level: ColorLevel::TrueColor,
         }
     }
@@ -1830,6 +1834,7 @@ impl Theme {
             },
             live_shell: self.live_shell,
             markdown_link_destinations: self.markdown_link_destinations,
+            markdown_native: self.markdown_native,
             color_level: level,
         }
     }
@@ -1964,6 +1969,7 @@ impl Theme {
             },
             live_shell: self.live_shell,
             markdown_link_destinations: self.markdown_link_destinations,
+            markdown_native: self.markdown_native,
             color_level: self.color_level,
         }
     }
@@ -2098,6 +2104,7 @@ impl Theme {
             },
             live_shell: Self::HARNESS_DARK_SHELL,
             markdown_link_destinations: false,
+            markdown_native: false,
             color_level: ColorLevel::Basic,
         }
     }

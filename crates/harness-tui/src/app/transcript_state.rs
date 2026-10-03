@@ -380,6 +380,7 @@ impl AppState {
         self.todo_pane_focused().hash(hasher);
         self.transcript_view.selected_entry.hash(hasher);
         self.transcript_view.markdown_modes.hash(hasher);
+        self.transcript_view.markdown_layout_heights.hash(hasher);
         self.replay_mode.hash(hasher);
         self.current_subagent_session_present().hash(hasher);
         self.inspected_child_cancel_started().is_some().hash(hasher);
