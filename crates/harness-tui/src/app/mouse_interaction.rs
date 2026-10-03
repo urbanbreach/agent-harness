@@ -452,12 +452,6 @@ impl AppState {
         true
     }
 
-    fn activate_subagent_frame_target(&mut self, target: SubagentFrameTarget) {
-        match target {
-            SubagentFrameTarget::Close => self.navigate_to_parent_session(),
-        }
-    }
-
     pub(in crate::app) fn operator_sidebar_keyboard_active(&self) -> bool {
         self.active_review_surface.is_none()
             && self.focus == Focus::List
@@ -561,7 +555,6 @@ impl AppState {
             self.hovered_subagent_frame_target = None;
             self.hovered_live_turn_stop = false;
             self.hovered_live_turn_background = false;
-            self.pending_subagent_frame_target = None;
             self.secondary_surfaces.selection_dragging = false;
             self.secondary_surfaces.pending_click = None;
             self.modal_interaction.invalidate();
@@ -677,7 +670,6 @@ impl AppState {
         self.hovered_subagent_frame_target = None;
         self.hovered_live_turn_stop = false;
         self.hovered_live_turn_background = false;
-        self.pending_subagent_frame_target = None;
         self.composer.pointer_selection = None;
         self.clear_transcript_selection();
         self.clear_operator_sidebar_selection();
@@ -1348,12 +1340,10 @@ impl AppState {
         }
         self.hovered_subagent_frame_target =
             ui::subagent_frame_target_at(self, frame_area, mouse.column, mouse.row);
-        self.pending_subagent_frame_target = self.hovered_subagent_frame_target;
         if self.hovered_subagent_frame_target.is_some() {
             self.transcript_view.transcript_scrollbar_drag = None;
             self.clear_transcript_selection();
             self.clear_operator_sidebar_selection();
-            self.pending_subagent_frame_target = None;
             self.navigate_to_parent_session();
             return true;
         }
@@ -1482,30 +1472,11 @@ impl AppState {
             }
             true
         } else {
-            if let Some(pending) = self.pending_subagent_frame_target {
-                let current =
-                    ui::subagent_frame_target_at(self, frame_area, mouse.column, mouse.row);
-                if current != Some(pending) {
-                    self.pending_subagent_frame_target = None;
-                }
-            }
             hover_changed
         }
     }
 
     fn handle_surface_mouse_up(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
-        let footer_target = ui::subagent_frame_target_at(self, frame_area, mouse.column, mouse.row);
-        let pending_footer_target = self.pending_subagent_frame_target.take();
-        if let Some(target) = footer_target.filter(|target| pending_footer_target == Some(*target))
-        {
-            self.hovered_subagent_frame_target = Some(target);
-            self.activate_subagent_frame_target(target);
-            self.clear_transcript_selection();
-            self.clear_operator_sidebar_selection();
-            self.transcript_view.transcript_scrollbar_drag = None;
-            self.transcript_view.transcript_click_activated_on_down = false;
-            return true;
-        }
         let operator_sidebar_was_dragging = self.secondary_surfaces.selection_dragging;
         let transcript_selection_was_dragging = self.transcript_view.transcript_selection_dragging;
         if self.secondary_surfaces.selection_dragging {
