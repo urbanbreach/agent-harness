@@ -45,15 +45,10 @@ impl harness_providers::Provider for NotificationGate {
             message.role == harness_providers::MessageRole::Tool
                 && message.name.as_deref() == Some("spawn_subagent")
         }) {
-            let Ok(value) = serde_json::from_str::<serde_json::Value>(&message.content) else {
-                return Box::pin(tokio_stream::iter([Stream::error("invalid spawn result")]));
-            };
-            let id = value["data"]["subagent_id"].as_str().or_else(|| {
-                value["text"]
-                    .as_str()?
-                    .lines()
-                    .find_map(|line| line.strip_prefix("subagent_id: "))
-            });
+            let id = message
+                .content
+                .lines()
+                .find_map(|line| line.strip_prefix("subagent_id: "));
             let Some(id) = id else {
                 return Box::pin(tokio_stream::iter([Stream::error(
                     "spawn result omitted its subagent identity",
@@ -84,21 +79,22 @@ impl harness_providers::Provider for NotificationGate {
             if self.collect_reports > 0 {
                 let block = last.name.as_deref() == Some("get_command_or_subagent_output");
                 if block {
-                    let Ok(output) = serde_json::from_str::<serde_json::Value>(&last.content)
-                    else {
-                        return Box::pin(tokio_stream::iter([Stream::error(
-                            "invalid output result",
-                        )]));
-                    };
-                    let data = &output["data"];
-                    let complete = if let Some(tasks) = data["MultiResult"]["results"].as_array() {
-                        tasks.len() == self.collect_reports
-                            && tasks.iter().all(|task| {
-                                matches!(task["status"].as_str(), Some("completed" | "failed"))
+                    let statuses: Vec<_> = last
+                        .content
+                        .lines()
+                        .filter_map(|line| {
+                            line.strip_prefix("Status: ").or_else(|| {
+                                line.strip_prefix("--- Task ")?
+                                    .rsplit_once(" [")?
+                                    .1
+                                    .strip_suffix("] ---")
                             })
-                    } else {
-                        data["Result"]["status"] == "completed"
-                    };
+                        })
+                        .collect();
+                    let complete = statuses.len() == self.collect_reports
+                        && statuses
+                            .iter()
+                            .all(|status| matches!(*status, "completed" | "failed"));
                     if complete {
                         return Box::pin(tokio_stream::iter([
                             Stream::TextDelta("reports summarized".into()),

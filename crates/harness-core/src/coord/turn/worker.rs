@@ -222,7 +222,11 @@ impl Worker {
                 Ok(output) => {
                     failed |= output.is_error();
                     (
-                        crate::tool::provider_text(output.display_text, output.structured_json),
+                        crate::tool::provider_text(
+                            &call.function_name,
+                            output.display_text,
+                            output.structured_json,
+                        ),
                         output.attachments,
                         None,
                     )
