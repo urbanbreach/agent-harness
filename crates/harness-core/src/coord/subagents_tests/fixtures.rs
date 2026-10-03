@@ -92,3 +92,18 @@ pub(super) async fn wait_cancelled(
     .await??;
     Ok(())
 }
+
+pub(super) async fn assert_prompt_turns(
+    coordinator: &CoordinatorHandle,
+    agent: &str,
+    turns: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    assert_eq!(
+        coordinator.subagent_history().await?.records[agent]
+            .accounting
+            .as_ref()
+            .map(|accounting| accounting.turns),
+        Some(turns)
+    );
+    Ok(())
+}

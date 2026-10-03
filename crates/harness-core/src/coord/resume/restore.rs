@@ -79,6 +79,7 @@ impl Runtime {
                         cwd: PathBuf::from(&root),
                         tool_state: self.tool_state.fresh_owner(),
                         generation: 0,
+                        prompt_turns: 0,
                         attempt: None,
                         attempt_started_ms: 0,
                         notification_seq: 0,
@@ -90,6 +91,14 @@ impl Runtime {
                 );
             }
             self.restore_owned_event(&mut agents, event, events, primary, run_dir)?;
+            if let Some(agent) = event
+                .actor
+                .agent_id
+                .as_ref()
+                .and_then(|id| agents.get_mut(id))
+            {
+                agent.observe_prompt_start(event);
+            }
             let EventV1::ProviderRequestStarted(e) = &event.payload else {
                 continue;
             };

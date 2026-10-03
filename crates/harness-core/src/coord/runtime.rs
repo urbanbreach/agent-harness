@@ -63,6 +63,7 @@ pub(super) struct Agent {
     pub cwd: PathBuf,
     pub tool_state: crate::tool::ToolRunState,
     pub generation: u64,
+    pub prompt_turns: u32,
     pub attempt: Option<String>,
     pub attempt_started_ms: u64,
     pub notification_seq: u64,
@@ -70,6 +71,17 @@ pub(super) struct Agent {
     pub source_reference: Option<Box<crate::subagent::FinalizedAgentStateReferenceV1>>,
     pub skill_startup: Option<Arc<crate::config::SkillStartupSnapshot>>,
     pub skill_preloads: Option<Vec<(String, String)>>,
+}
+
+impl Agent {
+    pub(super) fn observe_prompt_start(&mut self, event: &EventEnvelopeV1) {
+        if matches!(&event.payload, EventV1::TaskScheduled(task)
+            if task.state == TaskScheduleState::Started
+                && self.attempt.as_deref() == Some(task.task_id.as_str()))
+        {
+            self.prompt_turns = self.prompt_turns.saturating_add(1);
+        }
+    }
 }
 pub(super) struct Job {
     pub join_id: Option<Id>,
@@ -315,6 +327,14 @@ impl Runtime {
         let appended = store.append_applied(event, &mut |event| {
             if let Some(apply) = apply.take() {
                 apply(self, event);
+            }
+            if let Some(agent) = event
+                .actor
+                .agent_id
+                .as_ref()
+                .and_then(|id| self.agents.get_mut(id))
+            {
+                agent.observe_prompt_start(event);
             }
         });
         match appended {

@@ -163,6 +163,7 @@ impl Runtime {
                 cwd,
                 tool_state,
                 generation: 0,
+                prompt_turns: 0,
                 attempt: None,
                 attempt_started_ms: 0,
                 notification_seq: 0,

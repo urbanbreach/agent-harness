@@ -66,6 +66,10 @@ async fn actual_finalized_state_survives_presentation_bounding_copy_and_readonly
             Stream::TextDelta("reloaded answer".into()),
             settled_metadata("reload"),
         ],
+        vec![
+            Stream::TextDelta("reloaded child answer".into()),
+            settled_metadata("child reload"),
+        ],
     ]));
     let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
     config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
@@ -110,6 +114,7 @@ async fn actual_finalized_state_survives_presentation_bounding_copy_and_readonly
         )
         .await?;
     wait_terminal(&mut events, &attempt).await?;
+    assert_prompt_turns(&coordinator, &source, 1).await?;
     let FinalizedStateResult::Available {
         state: source_state,
     } = coordinator.raw_finalized_state(source.clone()).await?
@@ -134,6 +139,7 @@ async fn actual_finalized_state_survives_presentation_bounding_copy_and_readonly
         .request_agent_turn(system_actor(), target.clone(), "new prompt")
         .await?;
     wait_terminal(&mut events, &resumed).await?;
+    assert_prompt_turns(&coordinator, &target, 1).await?;
     let requests = provider.captured_requests().await;
     let inherited = requests.last().ok_or("resumed request missing")?;
     assert_eq!(inherited.messages[0].content, "current child definition");
@@ -233,6 +239,7 @@ async fn actual_finalized_state_survives_presentation_bounding_copy_and_readonly
         .request_agent_turn(system_actor(), source.clone(), "wake prompt")
         .await?;
     wait_terminal(&mut events, &wake).await?;
+    assert_prompt_turns(&coordinator, &source, 4).await?;
     let FinalizedStateResult::Available { state: awake } =
         coordinator.raw_finalized_state(source.clone()).await?
     else {
@@ -333,8 +340,14 @@ async fn actual_finalized_state_survives_presentation_bounding_copy_and_readonly
         expected_root.as_slice(),
         "reusable state must not rewind the root's current conversation"
     );
+    let mut events = restarted.subscribe_new_events().await?;
+    let child_turn = restarted
+        .request_agent_turn(system_actor(), source.clone(), "reload child suffix")
+        .await?;
+    wait_terminal(&mut events, &child_turn).await?;
+    assert_prompt_turns(&restarted, &source, 5).await?;
     restarted.stop_run().await?;
-    let calls = calls + 1;
+    let calls = calls + 2;
     // Direct continuation of an initialized child projection validates its original owner.
     let projected = spawn_coordinator(
         config.clone(),
