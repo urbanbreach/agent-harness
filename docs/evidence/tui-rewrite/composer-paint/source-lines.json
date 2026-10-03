@@ -19,7 +19,7 @@
   },
   "src_total": 165647,
   "extended_test": {
-    "path": "crates/harness-tui/src/app/tests/grok_parity_surfaces_test.rs",
+    "path": "crates/harness-tui/src/app/tests/reference_parity_surfaces_test.rs",
     "before": 795,
     "candidate": 827
   }

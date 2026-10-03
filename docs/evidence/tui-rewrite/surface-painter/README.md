@@ -124,8 +124,8 @@ The existing exact-clock fixtures can be captured with:
 ```sh
 HARNESS_PARITY_RENDER_ARTIFACT_DIR=/tmp/painter-frames \
   cargo nextest run --profile ci -p harness-tui --all-features \
-  --test grok_parity_render_test \
-  -E 'test(chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text) | test(all_tool_families_keep_grok_columns_through_streaming_and_disclosure)'
+  --test reference_parity_render_test \
+  -E 'test(chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text) | test(all_tool_families_keep_reference_columns_through_streaming_and_disclosure)'
 node scripts/qa/render-recorded-frames.mjs \
   /tmp/painter-selected-frames .omo/evidence/painter-selected
 ```

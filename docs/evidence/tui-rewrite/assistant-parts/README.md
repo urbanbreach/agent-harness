@@ -123,7 +123,7 @@ HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run --profile ci -p harness-tui --all-fe
 cargo nextest list --release -p harness-tui --all-features --test rewrite_performance_test --list-type binaries-only --message-format json
 cargo metadata --locked --format-version 1
 HARNESS_TUI_REFERENCE_FRAMES=/tmp/parts-main HARNESS_TUI_PLAN_FRAMES=/tmp/parts-plans HARNESS_TUI_WRAP_FRAMES=/tmp/parts-wrap cargo nextest run --profile ci -p harness-tui --all-features --test rewrite_reference_test
-HARNESS_PARITY_RENDER_ARTIFACT_DIR=/tmp/parts-motion cargo nextest run --profile ci -p harness-tui --all-features --test grok_parity_render_test -E 'test(chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text) | test(all_tool_families_keep_grok_columns_through_streaming_and_disclosure)'
+HARNESS_PARITY_RENDER_ARTIFACT_DIR=/tmp/parts-motion cargo nextest run --profile ci -p harness-tui --all-features --test reference_parity_render_test -E 'test(chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text) | test(all_tool_families_keep_reference_columns_through_streaming_and_disclosure)'
 node scripts/qa/render-recorded-frames.mjs SELECTED_FRAME_DIR .omo/evidence/parts-selected
 ```
 

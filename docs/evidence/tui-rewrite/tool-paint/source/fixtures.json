@@ -11,7 +11,7 @@
     "sha256": "85b9a1a837c15a8cdd8b44ed76735a625276af26ab3819bcdb739f43ae03eac2",
     "unchanged_from_before": true
   },
-  "crates/harness-tui/tests/grok_parity_render_test.rs": {
+  "crates/harness-tui/tests/reference_parity_render_test.rs": {
     "sha256": "df82a6a04f148164f3c50b9f92c300578f94e36e00a7fe407aa2cc60f6eed098",
     "unchanged_from_before": true
   },

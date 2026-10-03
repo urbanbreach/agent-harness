@@ -549,7 +549,7 @@
     "crates/harness-tui/src/app/tests/tool_group_folding_parity_tests.rs": 298,
     "crates/harness-tui/src/app/tests/modal_hit_map_parity_tests.rs": 131,
     "crates/harness-tui/src/app/tests/permission_modal_tests_part5_test.rs": 257,
-    "crates/harness-tui/src/app/tests/grok_parity_surfaces_test.rs": 795,
+    "crates/harness-tui/src/app/tests/reference_parity_surfaces_test.rs": 795,
     "crates/harness-tui/src/app/tests/tool_disclosure_tests.rs": 573,
     "crates/harness-tui/src/app/tests/tool_runtime_capture_tests.rs": 474,
     "crates/harness-tui/src/app/tests/live_compaction_tests.rs": 140,

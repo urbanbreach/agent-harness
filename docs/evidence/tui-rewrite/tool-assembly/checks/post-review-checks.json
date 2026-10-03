@@ -28,9 +28,9 @@
       "--test",
       "rewrite_reference_test",
       "--test",
-      "grok_parity_render_test",
+      "reference_parity_render_test",
       "-E",
-      "binary(rewrite_reference_test) | test(chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text) | test(all_tool_families_keep_grok_columns_through_streaming_and_disclosure)"
+      "binary(rewrite_reference_test) | test(chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text) | test(all_tool_families_keep_reference_columns_through_streaming_and_disclosure)"
     ],
     "exit_code": 0
   },

@@ -1,16 +1,19 @@
-# Grok Build alignment and task argument follow-up
+# Alignment and task argument follow-up
+
+Reference names and paths in this historical report are redacted; see the
+[archive note](evidence/README.md).
 
 The screenshot's displaced task diamonds came from a five-space task prefix
 beside the three-space prefix used by other tool headers. Expanding todos also
 introduced a separate nested shell. Both now use the same entry origin as chat,
 reasoning, tool placeholders, and completed tools. Long headers stay on one row.
 
-The source of truth is Grok Build revision
-`d5a0335a47221e8c9519936cb693e9b6450227ec` in `inspirations/grok-build`:
+The source of truth is the reference application revision
+`d5a0335a47221e8c9519936cb693e9b6450227ec` in `inspirations/reference-source`:
 
-- `crates/codegen/xai-grok-pager-render/src/appearance/config.rs`: two outer
+- `crates/codegen/reference-render/src/appearance/config.rs`: two outer
   horizontal cells and two inner padding cells.
-- `crates/codegen/xai-grok-pager/src/scrollback/layout.rs`: one accent cell.
+- `crates/codegen/reference-pager/src/scrollback/layout.rs`: one accent cell.
 - `scrollback/block.rs` and `scrollback/wrappers/entry_renderer.rs`: shared bullet
   and header origin across lifecycle, animation, selection, and disclosure.
 - `scrollback/blocks/tool/{read,edit,execute,search,list_dir,web_search,other}.rs`:
@@ -73,15 +76,13 @@ header-only capture.
 env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor \
   HARNESS_PARITY_RENDER_ARTIFACT_DIR=/tmp/harness-alignment-frames \
   cargo nextest run --profile ci -p harness-tui --all-features \
-  --test grok_parity_render_test -E 'test(all_tool_families)'
+  --test reference_parity_render_test -E 'test(all_tool_families)'
 ```
 
-Copy `scripts/qa/fixtures/grok-alignment-capture.rs` to the upstream pager's
-`examples/harness_alignment_capture.rs`. Run that example to produce reference
-ANSI frames using its production `EntryRenderer` and tool block implementations.
-Replay both frame directories with `scripts/qa/render-recorded-frames.mjs`,
-passing `--reference-grok` for the reference. Compare the resulting directories
-with `scripts/qa/compare-tool-alignment.mjs`.
+The external reference producer has been retired. Existing ANSI recordings can
+still be replayed with `scripts/qa/render-recorded-frames.mjs`, using
+`--reference --source-root PATH` after the input and evidence directories.
+Compare recordings with `scripts/qa/compare-tool-alignment.mjs`.
 
 The geometry comparison covers marker positions and relative header spacing in
 481 paired frames, plus representative expanded body anchors. It excludes shell

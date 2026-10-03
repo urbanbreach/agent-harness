@@ -93,7 +93,7 @@ tools. `resume_from` creates a new child from completed context; messaging can
 wake the existing identity. Child sessions have independent journals, artifacts,
 and catalog entries. See [agents and tasks](../operations/generic-agent-and-tasks.md)
 for ownership, retained context, startup skills, and the shared permission
-exception to Grok's explicit skill preload behavior.
+exception to Reference's explicit skill preload behavior.
 
 [MCP tools](mcp.md) describes lazy connection, discovery, shared permissions,
 response limits, and shutdown behavior.

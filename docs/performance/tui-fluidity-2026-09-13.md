@@ -106,20 +106,20 @@ never changes.
 
 ## Source comparison
 
-Grok Build was inspected at commit
+The reference application was inspected at commit
 `75810042ca2762aa0b0fa17864f3f68823ccbea5`:
 
-- Its [display refresh setup](https://github.com/xai-org/grok-build/blob/75810042ca2762aa0b0fa17864f3f68823ccbea5/crates/codegen/xai-grok-pager/src/app/display_refresh_startup.rs)
+- Its display refresh setup
   provides an adjustable draw interval and optional display probing.
-- Its [presentation loop](https://github.com/xai-org/grok-build/blob/75810042ca2762aa0b0fa17864f3f68823ccbea5/crates/codegen/xai-grok-pager/src/app/event_loop.rs)
+- Its presentation loop
   coalesces presentation requests and limits concurrent output.
-- Its [scrollback renderer](https://github.com/xai-org/grok-build/blob/75810042ca2762aa0b0fa17864f3f68823ccbea5/crates/codegen/xai-grok-pager/src/scrollback/render.rs)
+- Its scrollback renderer
   restricts work to the visible window.
 
 Harness already had a bounded writer, pacing controls, Unicode support, and
 incremental highlighting. The implementation reuses those facilities. No new
 dependency, rendering framework, display probe, or source-code copy was needed.
-Grok Build itself was not benchmarked; these are Harness before/after results.
+The reference application itself was not benchmarked; these are Harness before/after results.
 
 ## Changes
 

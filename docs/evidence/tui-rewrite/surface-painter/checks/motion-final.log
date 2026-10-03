@@ -2,7 +2,7 @@
 ────────────
  Nextest run ID b14fbdd6-e91c-4927-b347-0ab0bbb97722 with nextest profile: ci
     Starting 2 tests across 1 binary (1 test skipped)
-        SLOW [>  2.000s] (───) harness-tui::grok_parity_render_test grok_alignment::all_tool_families_keep_grok_columns_through_streaming_and_disclosure
+        SLOW [>  2.000s] (───) harness-tui::reference_parity_render_test reference_alignment::all_tool_families_keep_reference_columns_through_streaming_and_disclosure
 ────────────
      Summary [   2.825s] 2 tests run: 2 passed (1 slow), 1 skipped
-        SLOW [   2.825s] (2/2) harness-tui::grok_parity_render_test grok_alignment::all_tool_families_keep_grok_columns_through_streaming_and_disclosure
+        SLOW [   2.825s] (2/2) harness-tui::reference_parity_render_test reference_alignment::all_tool_families_keep_reference_columns_through_streaming_and_disclosure

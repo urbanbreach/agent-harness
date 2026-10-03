@@ -1,11 +1,14 @@
 # Native subagent rewrite and verification
 
-Completed on 4 October 2026 against Grok Build pager 1.0.45, source
+Reference names and paths in this historical report are redacted; see the
+[archive note](evidence/README.md).
+
+Completed on 4 October 2026 against the reference application pager 1.0.45, source
 `2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8`. The final implementation commit is
-`efea90e4` on `codex/complete-grok-subagents`.
+`efea90e4`.
 
 The completion criteria are the original request: replace the old subagent
-implementation and match Grok's subagent logic, behavior, and views. OMO's
+implementation and match Reference's subagent logic, behavior, and views. OMO's
 505-scenario process and its approval machinery are not acceptance requirements.
 
 ## Implementation
@@ -32,7 +35,7 @@ Two user-approved exceptions remain:
 
 - Definition-listed startup skills obey Harness's shared skill permissions.
 - Copy uses Harness's shared clipboard integration. It does not persist every
-  copied selection to a backup file or display Grok's backup-path notice. The
+  copied selection to a backup file or display Reference's backup-path notice. The
   existing disable-copy-on-select setting and clipboard error handling apply.
 
 See [the operator contract](operations/generic-agent-and-tasks.md) for tool and
@@ -68,11 +71,11 @@ responses. Images are compared without scaling or color normalization.
 | Viewer scrollbar and `y` | 5 whole-terminal images exactly equal at 120×40 | [Measurements](evidence/subagents-20261004/scrollbar-comparison.json) |
 | Completed-source resume | New identity, source link, inherited messages, model, output, status, turns and executed tool calls equal | [Field comparison](evidence/subagents-20261004/resume-comparison.json) |
 
-The resume comparison runs Grok through its production ACP/HTTP path and Harness
+The resume comparison runs Reference through its production ACP/HTTP path and Harness
 through its production coordinator and normalized provider boundary. It checks
 observed messages and durable results. Harness requires declared model limits;
 its fixture specifies the observed 256,000-token reference context fallback and
-an independently chosen 4,096-token output limit. Grok's mock catalog has no
+an independently chosen 4,096-token output limit. Reference's mock catalog has no
 output cap. This comparison does not claim equivalent unknown-limit handling,
 whole-request bytes, system-prompt bytes, token estimates, wall-clock durations,
 or durable schemas. Unknown model limits still fail conservatively in Harness,
@@ -89,7 +92,7 @@ and executable hashes. Captures use `476f09c6`; the subsequent `efea90e4` change
 only preserves shared clipboard opt-out/error handling and passes the full test
 and lint runs. It does not change rendering. Representative pairs are committed with this report:
 
-| State | Grok | Harness |
+| State | Reference | Harness |
 | --- | --- | --- |
 | Rendered rich text | [Reference](evidence/subagents-20261004/rich-rendered-reference.png) | [Candidate](evidence/subagents-20261004/rich-rendered-candidate.png) |
 | Raw rich text | [Reference](evidence/subagents-20261004/rich-raw-reference.png) | [Candidate](evidence/subagents-20261004/rich-raw-candidate.png) |

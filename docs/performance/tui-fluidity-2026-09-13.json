@@ -2,7 +2,7 @@
   "schema_version": "harness-tui-fluidity-measurements-v1",
   "date": "2026-09-13",
   "base_commit": "fd541a07eba60ef6556c095cd79c05c00fc808f6",
-  "grok_source_commit": "75810042ca2762aa0b0fa17864f3f68823ccbea5",
+  "reference_source_commit": "75810042ca2762aa0b0fa17864f3f68823ccbea5",
   "environment": {
     "cpu": "Intel Core i7-12800H; 14 cores / 20 logical CPUs",
     "memory_gib": 62,

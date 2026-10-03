@@ -84,9 +84,9 @@
       "harness-tui",
       "--all-features",
       "--test",
-      "grok_parity_render_test",
+      "reference_parity_render_test",
       "-E",
-      "test(chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text) | test(all_tool_families_keep_grok_columns_through_streaming_and_disclosure)"
+      "test(chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text) | test(all_tool_families_keep_reference_columns_through_streaming_and_disclosure)"
     ],
     "exit_code": 0
   },

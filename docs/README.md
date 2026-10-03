@@ -45,7 +45,7 @@ the guides above for current commands and configuration.
   [target design](architecture/engine-target.md), and [migration](architecture/engine-migration.md).
 - Terminal changes: [UI polish](ui-polish-2026-09-15.md),
   [settings](ui-settings-polish-2026-09-15.md),
-  [implementation record](grok-build-parity-implementation.md),
+  [implementation record](presentation-parity-implementation.md),
   [chat rendering](chat-tool-render-parity.md), and [alignment](chat-alignment-tool-arguments.md).
 - Measurements: [backend rewrite](performance/backend-rewrite-2026-09-26.md),
   [TUI fluidity](performance/tui-fluidity-2026-09-13.md) and

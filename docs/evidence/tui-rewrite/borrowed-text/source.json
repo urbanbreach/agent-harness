@@ -402,7 +402,7 @@
       "sha256": "861e1be95663bbfc0bee8bbfad1f8915d0235c2c86299d74263faeed8915c0de"
     },
     {
-      "path": "crates/harness-tui/src/app/tests/grok_parity_surfaces_test.rs",
+      "path": "crates/harness-tui/src/app/tests/reference_parity_surfaces_test.rs",
       "bytes": 29551,
       "sha256": "60d95834c581795b6a19f2dc77408f0998944d503ae1be3dccbb775837145999"
     },

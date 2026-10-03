@@ -8,9 +8,9 @@
         SLOW [>  2.000s] (─────────) harness-tui app::tests::mouse_click_toggles_apply_patch_file_disclosure
         SLOW [>  2.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
         SLOW [>  4.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
-        SLOW [>  2.000s] (─────────) harness-tui::grok_parity_render_test chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text
-        SLOW [>  2.000s] (─────────) harness-tui::grok_parity_render_test welcome_geometry_and_animation_use_immediate_controls_and_exact_clock
-        SLOW [>  2.000s] (─────────) harness-tui::grok_parity_render_test grok_alignment::all_tool_families_keep_grok_columns_through_streaming_and_disclosure
+        SLOW [>  2.000s] (─────────) harness-tui::reference_parity_render_test chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text
+        SLOW [>  2.000s] (─────────) harness-tui::reference_parity_render_test welcome_geometry_and_animation_use_immediate_controls_and_exact_clock
+        SLOW [>  2.000s] (─────────) harness-tui::reference_parity_render_test reference_alignment::all_tool_families_keep_reference_columns_through_streaming_and_disclosure
         SLOW [>  2.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
         SLOW [>  6.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
         SLOW [>  2.000s] (─────────) harness-tui::tool_body_capture_test production_tool_body_captures
@@ -18,7 +18,7 @@
         SLOW [>  2.000s] (─────────) harness-tui::transcript_block_viewer_test viewer_scroll_is_independent_and_survives_resize_with_anchor_identity
         SLOW [>  2.000s] (─────────) harness-tui::transcript_incremental_performance_test token_update_touches_one_activity_and_block_after_ten_thousand_settle
         SLOW [>  2.000s] (─────────) harness-tui::transcript_incremental_performance_test tool_update_touches_one_activity_and_block_after_ten_thousand_settle
-        SLOW [>  4.000s] (─────────) harness-tui::grok_parity_render_test grok_alignment::all_tool_families_keep_grok_columns_through_streaming_and_disclosure
+        SLOW [>  4.000s] (─────────) harness-tui::reference_parity_render_test reference_alignment::all_tool_families_keep_reference_columns_through_streaming_and_disclosure
         SLOW [>  4.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
         SLOW [>  8.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
         SLOW [>  4.000s] (─────────) harness-tui::tool_body_capture_test production_tool_body_captures
@@ -39,10 +39,10 @@
         SLOW [   2.543s] ( 777/1802) harness-tui app::tests::diff_hunk_navigation_advances_and_retreats_between_hunks
         SLOW [   2.668s] ( 819/1802) harness-tui app::tests::context_group_disclosure_preserves_detached_anchor
         SLOW [   2.521s] ( 887/1802) harness-tui app::tests::mouse_click_toggles_apply_patch_file_disclosure
-        SLOW [   2.995s] (1793/1802) harness-tui::grok_parity_render_test welcome_geometry_and_animation_use_immediate_controls_and_exact_clock
+        SLOW [   2.995s] (1793/1802) harness-tui::reference_parity_render_test welcome_geometry_and_animation_use_immediate_controls_and_exact_clock
         SLOW [   2.898s] (1794/1802) harness-tui::tool_order_capture_test production_ordering_capture
-        SLOW [   3.911s] (1795/1802) harness-tui::grok_parity_render_test chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text
-        SLOW [   4.391s] (1796/1802) harness-tui::grok_parity_render_test grok_alignment::all_tool_families_keep_grok_columns_through_streaming_and_disclosure
+        SLOW [   3.911s] (1795/1802) harness-tui::reference_parity_render_test chat_and_tool_bullets_animate_without_recoloring_labels_or_reflowing_text
+        SLOW [   4.391s] (1796/1802) harness-tui::reference_parity_render_test reference_alignment::all_tool_families_keep_reference_columns_through_streaming_and_disclosure
         SLOW [   4.288s] (1797/1802) harness-tui::transcript_incremental_performance_test tool_update_touches_one_activity_and_block_after_ten_thousand_settle
         SLOW [   4.623s] (1798/1802) harness-tui::transcript_incremental_performance_test token_update_touches_one_activity_and_block_after_ten_thousand_settle
         SLOW [   6.351s] (1799/1802) harness-tui::transcript_block_viewer_test viewer_scroll_is_independent_and_survives_resize_with_anchor_identity

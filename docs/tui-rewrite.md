@@ -59,13 +59,13 @@ isolated evidence directories for the final comparison. Unpack `*.tar.gz` with
 ## Behavior inventory
 
 The inventory comes from `app`, `keybindings`, the terminal runtime, the existing
-integration tests, and the Grok Build reference in `inspirations/grok-build`.
-Grok's additional features do not imply that Harness implements them.
+integration tests, and the recorded reference fixtures.
+Reference's additional features do not imply that Harness implements them.
 
 | Area | Behavior to preserve | Existing evidence |
 | --- | --- | --- |
 | Shell | Home, empty/live session, replay, completed session; model/context chrome; narrow layouts | `deterministic_render_test`, `shell_topology_contract_test`, `startup_polish_test` |
-| Motion | Startup reveal, shimmer, live reasoning/tool pulse, completion rail, reduced motion | `grok_parity_render_test`, `motion_demand_app_state_test`, P1-03/P1-04 PTY fixtures |
+| Motion | Startup reveal, shimmer, live reasoning/tool pulse, completion rail, reduced motion | `reference_parity_render_test`, `motion_demand_app_state_test`, P1-03/P1-04 PTY fixtures |
 | Composer | Grapheme editing, selection, undo/redo, multiline, paste preview, history, stash, file and agent mentions | Composer tests, `production_composer_reachability_test`, P0-04 PTY fixtures |
 | Submission | Send, queue, interject, cancel-and-replace, queued-entry navigation, shell command mode | Prompt queue tests, live turn tests, CLI intent tests |
 | Commands | Palette and slash search, aliases, key remapping, leader chords, simple/Vim modes | `keybindings`, `help_browser_test`, slash completion fixtures |
@@ -73,7 +73,7 @@ Grok's additional features do not imply that Harness implements them.
 | Session tools | Resume/replay, rename/delete/pin, tree, fork/clone, import/export, rewind, worktree picker/new worktree | Session navigation, lineage, foreign import, CLI replay tests |
 | Permissions | Decision, rejection feedback, approval confirmation, parked focus, draft preservation, coordinator acknowledgement | Permission snapshots, interaction captures, PTY happy path |
 | Questions | Single/multiple selection, freeform answer, multiple questions, fullscreen, focus, dismiss/copy | `question_focus_visual_test`, tool interaction captures |
-| Transcript | Markdown, open/closed code fences, syntax, tables, diffs, Mermaid, reasoning, timestamps, folds, tool grouping | Tool body/order captures, streaming settle tests, Grok alignment tests |
+| Transcript | Markdown, open/closed code fences, syntax, tables, diffs, Mermaid, reasoning, timestamps, folds, tool grouping | Tool body/order captures, streaming settle tests, Reference alignment tests |
 | Navigation | Follow/detach, stable anchors, turn/block/hunk navigation, search/viewer, selection/copy, mouse drag, scrollbar | Transcript tests, runtime input tests, P0-01/P0-02/P0-03 PTY fixtures |
 | Tasks | Child status/actions, foreground/background, cancellation, notifications, todo pane | Background status tests, tool order and interaction captures |
 | Terminal | Capabilities, input decoding, focus, paste, mouse, titles/notifications, clipboard, output pressure, teardown | Terminal and runtime tests, PTY and xterm captures |
