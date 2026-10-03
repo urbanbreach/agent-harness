@@ -134,8 +134,6 @@ impl Worker {
             if response.settled_reasoning.is_none() {
                 messages.unavailable =
                     Some(crate::subagent::FinalizedStateUnavailable::UnsupportedReasoning);
-            } else if !response.usage_complete {
-                messages.unavailable = Some(crate::subagent::FinalizedStateUnavailable::Incomplete);
             }
             messages
                 .usage

@@ -231,7 +231,7 @@ pub(crate) fn read_finalized_payload(
         || state.unavailable != reference.unavailable
         || (state.availability == FinalizedStateAvailability::Available
             && state.usage.iter().any(|entry| {
-                !entry.usage_complete || entry.usage.is_none() || entry.settled_reasoning.is_none()
+                (entry.usage_complete && entry.usage.is_none()) || entry.settled_reasoning.is_none()
             }))
         || state
             .conversation_items
