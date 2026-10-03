@@ -17,7 +17,7 @@ pub(super) fn resolve_viewport(
     height: u16,
 ) -> (TranscriptViewport, Option<TranscriptContentAnchor>) {
     let max = layout.total_height.saturating_sub(usize::from(height));
-    let viewport = app.transcript_view.viewport.record_max_scroll(max);
+    let viewport = record_extent(app, app.transcript_view.viewport, max);
     if viewport.is_following() {
         return (viewport, None);
     }
@@ -29,7 +29,15 @@ pub(super) fn resolve_viewport(
     } else {
         layout.capture_content_anchor(top)
     };
-    (TranscriptViewport::detached(top, max), anchor)
+    (viewport.with_detached_top(top), anchor)
+}
+
+fn record_extent(app: &AppState, viewport: TranscriptViewport, max: usize) -> TranscriptViewport {
+    if app.current_subagent_session_present() {
+        viewport.preserve_detachment(max)
+    } else {
+        viewport.record_max_scroll(max)
+    }
 }
 
 /// Commit geometry before input or paint. Rendering only reads this state.
@@ -87,7 +95,7 @@ pub(crate) fn prepare_transcript(app: &mut AppState, area: Rect) {
                     position.top,
                 );
                 (
-                    viewport.record_max_scroll(position.max_scroll),
+                    record_extent(app, viewport, position.max_scroll),
                     anchor,
                     position,
                     height,

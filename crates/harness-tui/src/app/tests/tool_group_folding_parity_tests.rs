@@ -147,6 +147,51 @@ fn transcript_search_opens_the_matching_member_of_a_collapsed_group() {
     assert!(app.composer.prompt_buffer.is_empty());
 }
 
+#[test]
+fn child_search_keeps_occurrences_and_tool_targets_stable_when_groups_open() {
+    let (fixture, ids) = command_group_app(14);
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let mut app = AppState::new_live(Some(temp.path().join("child")), false, None);
+    for mut event in fixture.events().cloned() {
+        if let EventV1::ToolCallRequested(request) = &mut event.payload {
+            request.metadata = Some(harness_core::event::ToolCallMetadata {
+                lineage: Some(harness_core::event::TaskLineageMetadata {
+                    parent_session_id: Some("parent".into()),
+                    child_session_id: Some("child".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+        }
+        app.ingest_event(event);
+    }
+    app.set_frame_area(Rect::new(0, 0, 80, 24));
+    app.begin_transcript_search();
+    app.handle_paste("command-");
+    assert_eq!(app.transcript_view.search_match_count, 28);
+    assert!(!app.tool_output_expanded(app.tool_call_entry(&ids[1]).unwrap_or_abort()));
+    for index in [0, 0, 1, 1, 2] {
+        assert_eq!(app.transcript_view.search_match_count, 28);
+        assert!(matches!(
+            app.selected_transcript_entry().and_then(|entry| entry.target),
+            Some(TranscriptMouseTarget::Tool { tool_call_id }) if tool_call_id == ids[index]
+        ));
+        app.handle_key(key(KeyCode::Down));
+    }
+    app.handle_key(key(KeyCode::Esc));
+    app.begin_transcript_search();
+    app.handle_paste("command-");
+    assert_eq!(app.transcript_view.search_match_count, 28);
+    app.handle_key(key(KeyCode::Esc));
+    app.set_frame_area(Rect::new(0, 0, 160, 80));
+    assert!(
+        !app.transcript_following(),
+        "closing search and resizing must preserve the search position"
+    );
+    app.handle_key(key(KeyCode::End));
+    assert!(app.transcript_following());
+}
+
 fn command_group_app(command_count: usize) -> (AppState, Vec<String>) {
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(provider_started(

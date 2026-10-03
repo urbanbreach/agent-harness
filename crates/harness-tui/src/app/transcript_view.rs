@@ -126,6 +126,7 @@ pub(crate) struct TranscriptViewState {
     pub(crate) search: super::pane_query::PaneQuery,
     pub(crate) search_match: usize,
     pub(crate) search_match_count: usize,
+    pub(super) search_hits: Vec<super::transcript_search::TranscriptSearchHit>,
     pub(crate) response_position: Option<crate::transcript_timeline::ResponsePosition>,
     pub(crate) viewer_pointer_anchor: Option<crate::transcript_selection::CellPoint>,
     pub(crate) page_flip: PageFlipState,
@@ -142,6 +143,7 @@ impl TranscriptViewState {
         self.search = super::pane_query::PaneQuery::default();
         self.search_match = 0;
         self.search_match_count = 0;
+        self.search_hits.clear();
         self.response_position = None;
         self.viewer_pointer_anchor = None;
     }
@@ -185,6 +187,7 @@ impl Default for TranscriptViewState {
             search: super::pane_query::PaneQuery::default(),
             search_match: 0,
             search_match_count: 0,
+            search_hits: Vec::new(),
             response_position: None,
             viewer_pointer_anchor: None,
             page_flip: PageFlipState::Idle,

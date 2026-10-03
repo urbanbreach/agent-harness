@@ -255,6 +255,23 @@ pub(crate) fn transcript_entry_scroll_top(
     area: Rect,
     entry_top: usize,
 ) -> Option<usize> {
+    transcript_entry_scroll_position(app, area, entry_top, false)
+}
+
+pub(crate) fn transcript_search_scroll_top(
+    app: &AppState,
+    area: Rect,
+    entry_top: usize,
+) -> Option<usize> {
+    transcript_entry_scroll_position(app, area, entry_top, true)
+}
+
+fn transcript_entry_scroll_position(
+    app: &AppState,
+    area: Rect,
+    entry_top: usize,
+    center: bool,
+) -> Option<usize> {
     let context = transcript_pane_context(app, resolved_transcript_area(app, area)?, app.theme());
     let scrollbar = with_measured_transcript_layout_for_width_on_surface(
         app,
@@ -270,10 +287,15 @@ pub(crate) fn transcript_entry_scroll_top(
         viewport.width,
         context.base_surface,
         |layout| {
-            let mut top = entry_top;
+            let margin = if center {
+                usize::from(viewport.height) / 2
+            } else {
+                0
+            };
+            let mut top = entry_top.saturating_sub(margin);
             for _ in 0..3 {
                 let rows = transcript_viewport_rows(layout, usize::from(viewport.height), top);
-                top = entry_top.saturating_sub(rows.sticky_height);
+                top = entry_top.saturating_sub(margin + rows.sticky_height);
             }
             top
         },

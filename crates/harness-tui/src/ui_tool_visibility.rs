@@ -20,7 +20,7 @@ pub(super) fn tool_hidden_from_transcript(tool_call: &ToolCallEntry) -> bool {
             && tool_call.args_digest.is_empty())
 }
 
-pub(super) fn tool_call_has_transcript_disclosure(tool_call: &ToolCallEntry) -> bool {
+pub(crate) fn tool_call_has_transcript_disclosure(tool_call: &ToolCallEntry) -> bool {
     if tool_output_is_viewer_only(tool_call) {
         return false;
     }

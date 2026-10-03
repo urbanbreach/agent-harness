@@ -160,7 +160,6 @@ use ui_terminal::render_terminal_panel;
 pub(crate) use ui_terminal::{terminal_panel_inner, terminal_panel_max_scroll};
 use ui_transcript::render_transcript_pane;
 pub(crate) use ui_transcript::transcript_diff_hunk_rows;
-pub(crate) use ui_transcript::transcript_entry_scroll_top;
 pub(crate) use ui_transcript::transcript_mouse_target;
 pub(crate) use ui_transcript::transcript_return_to_live_hit;
 pub(crate) use ui_transcript::transcript_scrollbar_hit;
@@ -168,6 +167,7 @@ pub(crate) use ui_transcript::transcript_scrollbar_hit;
 pub(crate) use ui_transcript::transcript_selection_debug_snapshot;
 pub(crate) use ui_transcript::transcript_timeline_turn_at;
 pub(crate) use ui_transcript::TranscriptRenderSurfaceKind;
+pub(crate) use ui_transcript::{transcript_entry_scroll_top, transcript_search_scroll_top};
 pub(crate) use ui_transcript::{
     transcript_navigation_entries, TranscriptNavigationEntry, TranscriptVisualEntryId,
 };
@@ -746,7 +746,9 @@ mod ui_terminal_output;
 #[path = "ui_recorded_tool_output.rs"]
 mod ui_recorded_tool_output;
 
-pub(crate) use ui_tool_visibility::tool_output_is_viewer_only;
+pub(crate) use ui_tool_visibility::{
+    tool_call_has_transcript_disclosure, tool_output_is_viewer_only,
+};
 
 pub(crate) fn recorded_tool_viewer_content(
     tool: &crate::app::ToolCallEntry,
@@ -965,6 +967,20 @@ pub(crate) fn recorded_tool_viewer_text(tool: &crate::app::ToolCallEntry) -> Str
         }
     }
     ui_tool_output::safe_tool_text(&text)
+}
+
+pub(crate) fn recorded_tool_search_text(tool: &crate::app::ToolCallEntry) -> String {
+    let path = ui_tool_paths::tool_path_display(tool).unwrap_or_default();
+    let output = if tool.output_summary.is_some() || tool.output_json.is_some() {
+        recorded_tool_viewer_text(tool)
+    } else {
+        String::new()
+    };
+    [path, output]
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn recorded_tool_viewer_body(tool: &crate::app::ToolCallEntry) -> String {
