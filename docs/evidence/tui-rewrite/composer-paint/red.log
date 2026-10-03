@@ -17,22 +17,22 @@ warning: `crossterm` (lib) generated 1 warning (run `cargo fix --lib -p crosster
 ────────────
  Nextest run ID 09bbe251-8379-47b7-81b4-6430e912209c with nextest profile: ci
     Starting 8 tests across 78 binaries (1634 tests and 1 binary skipped, including 1 binary via profile.default.default-filter)
-        FAIL [   0.008s] (6/8) harness-tui app::tests::grok_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells
+        FAIL [   0.008s] (6/8) harness-tui app::tests::reference_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells
   stdout ───
 
     running 1 test
-    test app::tests::grok_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells ... FAILED
+    test app::tests::reference_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells ... FAILED
 
     failures:
 
     failures:
-        app::tests::grok_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells
+        app::tests::reference_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells
 
     test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1213 filtered out; finished in 0.00s
 
   stderr ───
 
-    thread 'app::tests::grok_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells' (3665587) panicked at crates/harness-tui/src/app/tests/grok_parity_surfaces_test.rs:23:5:
+    thread 'app::tests::reference_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells' (3665587) panicked at crates/harness-tui/src/app/tests/reference_parity_surfaces_test.rs:23:5:
     assertion `left == right` failed
       left: Reset
      right: Rgb(224, 175, 104)
@@ -40,22 +40,22 @@ warning: `crossterm` (lib) generated 1 warning (run `cargo fix --lib -p crosster
 
 ────────────
      Summary [   0.013s] 8 tests run: 7 passed, 1 failed, 1634 skipped
-        FAIL [   0.008s] (6/8) harness-tui app::tests::grok_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells
+        FAIL [   0.008s] (6/8) harness-tui app::tests::reference_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells
   stdout ───
 
     running 1 test
-    test app::tests::grok_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells ... FAILED
+    test app::tests::reference_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells ... FAILED
 
     failures:
 
     failures:
-        app::tests::grok_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells
+        app::tests::reference_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells
 
     test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1213 filtered out; finished in 0.00s
 
   stderr ───
 
-    thread 'app::tests::grok_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells' (3665587) panicked at crates/harness-tui/src/app/tests/grok_parity_surfaces_test.rs:23:5:
+    thread 'app::tests::reference_parity_surfaces::composer_selection_and_mentions_follow_visible_wrapped_cells' (3665587) panicked at crates/harness-tui/src/app/tests/reference_parity_surfaces_test.rs:23:5:
     assertion `left == right` failed
       left: Reset
      right: Rgb(224, 175, 104)

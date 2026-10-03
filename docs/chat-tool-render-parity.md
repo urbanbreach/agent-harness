@@ -1,12 +1,15 @@
-# Chat and tool parity with Grok Build
+# Chat and tool parity with the reference application
 
-Compared Harness directly with `inspirations/grok-build`, including its production
+Reference names and paths in this historical report are redacted; see the
+[archive note](evidence/README.md).
+
+Compared Harness directly with `inspirations/reference-source`, including its production
 scrollback renderer, grouping state machine, tool blocks, Markdown renderer, and
 syntax themes. Verification completed on 11 September 2026 (Europe/Helsinki;
 artifact directories use the UTC date 20260910).
 
 Reference upstream `SOURCE_REV`: `d5a0335a47221e8c9519936cb693e9b6450227ec`.
-This follow-up builds on [the earlier implementation](grok-build-parity-implementation.md).
+This follow-up builds on [the earlier implementation](presentation-parity-implementation.md).
 The subsequent [alignment and task-argument follow-up](chat-alignment-tool-arguments.md)
 fixes the task/todo offsets and extends the lifecycle evidence to all tool families.
 
@@ -26,7 +29,7 @@ local and ignored by Git; the fixtures and comparison scripts are source files.
 | Tool lifecycle | Running, completed, and failed commands default to collapsed output. Failures do not force disclosure. Command descriptions omit redundant Run/Running prefixes, and error output uses the reference's red foreground and transparent background. |
 | Commands | Reference marker colors, groupable collapsed-marker dimming, command/output alignment, muted dollar sign, syntax colors, running wave, and expanded output rail. Titles remain stationary. |
 | Reasoning | Shared streaming Markdown and syntax highlighting, dimmed foreground, preserved code background, matching spacing, and source-aware selection. The separate incomplete reasoning parser was removed. |
-| Themes and diffs | GrokNight/GrokDay neutral roles and exact TextMate palettes, including code, prompt, path, diff, and highlight colors. Terminal-native syntax uses adaptive ANSI/default foregrounds. Upstream assets and adapted mapping carry Apache-2.0 attribution. |
+| Themes and diffs | HarnessNight/HarnessDay neutral roles and exact TextMate palettes, including code, prompt, path, diff, and highlight colors. Terminal-native syntax uses adaptive ANSI/default foregrounds. Upstream assets and adapted mapping carry Apache-2.0 attribution. |
 | Streaming code | A bounded append-aware syntax cache preserves parser state across complete lines, reparses the unfinished tail, and invalidates on edits/theme/language changes. An existing behavioral fixture verifies 30 appended lines require 30 parser rows and still match a fresh parse. |
 | Terminal output | Emoji modifiers, flags, variation selectors, and ZWJ sequences retain grapheme boundaries. Carriage-return overwrite and erasing half of a wide cell leave valid terminal cells. |
 | Spacing and paths | Matching Markdown/code separators and end-of-response spacing; paths appear once in pending, failed, and completed file headers, with the reference path colors and no permanent trailing arrow. |
@@ -43,18 +46,18 @@ its approval history from being reset.
 
 ## Reference and implementation map
 
-Reference paths below are under `inspirations/grok-build/crates/codegen/`:
+Reference paths below are under `inspirations/reference-source/crates/codegen/`:
 
-- `xai-grok-pager/src/scrollback/state/{verb_group,groups,selection,layout}`:
+- `reference-pager/src/scrollback/state/{verb_group,groups,selection,layout}`:
   grouping, disclosure, source counts, and selected-entry behavior.
-- `xai-grok-pager/src/scrollback/wrappers/entry_renderer.rs` and `scrollback_pane`:
+- `reference-pager/src/scrollback/wrappers/entry_renderer.rs` and `scrollback_pane`:
   marker/accent post-pass, groupable dimming, clipping, and animation.
-- `xai-grok-pager/src/scrollback/blocks/thinking.rs` and
+- `reference-pager/src/scrollback/blocks/thinking.rs` and
   `blocks/tool/{execute,read,edit,web_search}.rs`: tool and reasoning presentation.
-- `xai-grok-pager/src/app/acp_handler/permissions.rs`: edit approval titles,
+- `reference-pager/src/app/acp_handler/permissions.rs`: edit approval titles,
   human descriptions, and omission of native edit arguments.
-- `xai-grok-pager-render/src/{theme,syntax,appearance}` and
-  `xai-grok-markdown/src/{syntax,open_code_highlighter}`: theme roles, syntax,
+- `reference-render/src/{theme,syntax,appearance}` and
+  `xai-reference-markdown/src/{syntax,open_code_highlighter}`: theme roles, syntax,
   streaming state, and animation timing.
 
 Harness shares one grouping scan in `crates/harness-tui/src/ui_transcript_groups.rs`
@@ -82,11 +85,11 @@ content share `crates/harness-tui/src/layout/permission.rs`.
   and resize; two chat turns, search, block viewer and raw mode; and the formerly
   failing pre-response queued-edit scenario. Every journey binds a freshly built
   binary to a clean verification checkout and records cleanup.
-- Offline dogfood (`artifacts/qa-evidence/20260910-grok-chat-parity-settlement/README.md`)
+- Offline dogfood (`artifacts/qa-evidence/20260910-reference-chat-parity-settlement/README.md`)
   passed through the real binary with isolated sessions and inspectable durable
   events. Its receipt confirms the user's Harness configuration was untouched.
 
-`grok_parity_render_test.rs` constructs Harness state through events and public
+`reference_parity_render_test.rs` constructs Harness state through events and public
 input handling. The reference driver calls actual `EntryRenderer` and
 `ScrollbackState`/`ScrollbackPane` entrypoints, including the production
 `groupable` post-pass. The reference production source is unchanged.
@@ -107,25 +110,15 @@ From the repository root (with Node dependencies installed in `scripts/qa`):
 env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor \
   HARNESS_PARITY_RENDER_ARTIFACT_DIR=/tmp/harness-chat-frames \
   cargo nextest run --profile ci -p harness-tui --all-features \
-  --test grok_parity_render_test -E 'test(chat_and_tool)'
+  --test reference_parity_render_test -E 'test(chat_and_tool)'
 node scripts/qa/render-recorded-frames.mjs \
   /tmp/harness-chat-frames .omo/evidence/chat-check/harness
 ```
 
-Copy `scripts/qa/fixtures/grok-chat-capture.rs` to the reference pager crate's
-`examples/harness_chat_capture.rs`, then run:
-
-```bash
-env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor \
-  cargo run --manifest-path inspirations/grok-build/Cargo.toml \
-  -p xai-grok-pager --example harness_chat_capture -- /tmp/grok-chat-frames
-node scripts/qa/render-recorded-frames.mjs \
-  /tmp/grok-chat-frames .omo/evidence/chat-check/reference --reference-grok
-node scripts/qa/compare-chat-frames.mjs \
-  .omo/evidence/chat-check/harness .omo/evidence/chat-check/reference \
-  .omo/evidence/chat-check/cell-comparison.json
-bash scripts/harness-qa-dogfood.sh --slug grok-chat-parity
-```
+The external reference producer has been retired. Existing ANSI recordings can
+still be replayed with `render-recorded-frames.mjs --reference --source-root PATH`
+and compared with `compare-chat-frames.mjs`. Pass input and evidence directories
+before these options, as in the Harness command above.
 
 The color environment is required: inherited `NO_COLOR` suppresses RGB SGR even
 when Ratatui's in-memory cells are colored. The comparison fails if RGB is absent.

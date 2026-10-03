@@ -10,7 +10,7 @@ Consequently, eight complete frames use a separate current contract:
 `dialog-settings` and `selected-settings` at 40x24, 80x24, 120x40 and 160x50.
 They come from `tui-current-settings-registry-20261003.cells.jsonl`, with a
 matching `.identity.json`. The remaining 535 frames retain the original oracle.
-This is Harness regression evidence, not Grok parity.
+This is Harness regression evidence, Harness regression coverage.
 
 The identity pins the whole fixture, ordered registry definitions, editor kinds,
 and explicit frame inventory. A changed registry or corrupted fixture fails

@@ -1,4 +1,7 @@
-# Settings and modal polish against Grok Build
+# Settings and modal polish against the reference application
+
+Reference names and paths in this historical report are redacted; see the
+[archive note](evidence/README.md).
 
 This update makes settings choices visible, adds text-editing feedback, and keeps
 paste inside the active modal. It uses the editors and layout from the
@@ -17,14 +20,14 @@ settings and modal input ownership.
 | Empty search could act on a hidden row | No matches means no editable selection. |
 | Compact layouts and Unicode | Readable setting names, grapheme-safe deletion/viewports, and a shared zero-height scrollbar guard. |
 
-The official [Grok Build source](https://github.com/xai-org/grok-build) was
+The reference source was
 reviewed at commit `37949780c144e37df692e3d669051a21fec24f20`
 (upstream `SOURCE_REV` `c4ea71cfdbcdb21e32e41bc25a0043d7d4836714`). The gallery's
-recorded Grok settings image uses the earlier production renderer with
+recorded Reference settings image uses the earlier production renderer with
 `SOURCE_REV` `eb4a894da8fb7bcd8d8f398a9d909a7868a4fcf1`; its provenance is included.
 This is an interaction comparison, not a claim of whole-application pixel identity.
 Service-dependent differences remain in the existing
-[authority mapping](grok-build-parity-implementation.md#authority-mapping-and-comparison-limits).
+[authority mapping](presentation-parity-implementation.md#authority-mapping-and-comparison-limits).
 
 ## Verification
 

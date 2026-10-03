@@ -51,7 +51,7 @@
   },
   "bounds": [
     "Reference uses its production ACP and HTTP mock; candidate uses the production coordinator and normalized Provider seam.",
-    "Shared model-limit validation is outside this comparison. Reference reports context fallback 256000 and no output cap; candidate explicitly declares context 256000 and output 4096. The cap is a fixture choice, not an observed Grok value. Both completions are well below it.",
+    "Shared model-limit validation is outside this comparison. Reference reports context fallback 256000 and no output cap; candidate explicitly declares context 256000 and output 4096. The cap is a fixture choice, not an observed Reference value. Both completions are well below it.",
     "This is not whole-request, system-prompt, token-estimate, timing, or durable-schema byte equality."
   ],
   "source_sha256": {

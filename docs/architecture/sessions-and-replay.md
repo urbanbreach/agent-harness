@@ -70,7 +70,7 @@ workspace files. See [session commands](../operations/sessions.md) for snapshot,
 branch, recovery and export options.
 
 `/rewind` (alias `/undo`, or double Esc on an empty idle prompt within 800 ms)
-opens the Grok-style conversation rewind picker. It lists newest prompts first,
+opens the Reference-style conversation rewind picker. It lists newest prompts first,
 dims the conversation from the selected prompt, and asks for confirmation by
 default. A running turn must be cancelled first. Rewind removes the selected
 prompt and later conversation from the active projection and provider context,

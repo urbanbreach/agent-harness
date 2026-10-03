@@ -32,11 +32,11 @@
       "sha256": "a3e48bb45948409ca6d4e4c9a695f7ba8900920a1d17613cb22b889815473b74"
     },
     {
-      "path": "crates/harness-tui/tests/grok_parity_render_test.rs",
+      "path": "crates/harness-tui/tests/reference_parity_render_test.rs",
       "sha256": "df82a6a04f148164f3c50b9f92c300578f94e36e00a7fe407aa2cc60f6eed098"
     },
     {
-      "path": "crates/harness-tui/tests/support/grok_alignment_recorded.rs",
+      "path": "crates/harness-tui/tests/support/reference_alignment_recorded.rs",
       "sha256": "c0a17bc55b7af57f112101bb2e01fcbb45b3fceccc79f84c3db02b2afe8d60fb"
     }
   ]

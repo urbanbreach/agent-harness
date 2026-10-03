@@ -6,7 +6,7 @@ the conversation. Use Harness's name, theme roles, and event-derived state.
 
 The [README recording](docs/assets/harness-demo.gif) shows the current TUI. The
 [UI implementation records](docs/README.md#design-and-audit-records) document
-comparisons with Grok Build and the revisions used.
+comparisons with the reference application and the revisions used.
 
 ## Color
 

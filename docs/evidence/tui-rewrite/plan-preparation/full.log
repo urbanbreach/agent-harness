@@ -10,7 +10,7 @@
         SLOW [>  8.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
         SLOW [> 10.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
         SLOW [> 12.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
-        SLOW [>  2.000s] (─────────) harness-tui::grok_parity_render_test grok_alignment::all_tool_families_keep_grok_columns_through_streaming_and_disclosure
+        SLOW [>  2.000s] (─────────) harness-tui::reference_parity_render_test reference_alignment::all_tool_families_keep_reference_columns_through_streaming_and_disclosure
         SLOW [>  2.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
         SLOW [>  4.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
         SLOW [>  6.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
@@ -24,6 +24,6 @@
      Summary [ 100.165s] 1681 tests run: 1681 passed (5 slow), 7 skipped
         SLOW [   2.118s] ( 116/1681) harness-tui app::tests::completed_stream_more_below_affordance_is_actionable
         SLOW [  12.824s] ( 500/1681) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
-        SLOW [   2.586s] (1386/1681) harness-tui::grok_parity_render_test grok_alignment::all_tool_families_keep_grok_columns_through_streaming_and_disclosure
+        SLOW [   2.586s] (1386/1681) harness-tui::reference_parity_render_test reference_alignment::all_tool_families_keep_reference_columns_through_streaming_and_disclosure
         SLOW [  12.809s] (1517/1681) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
         SLOW [   6.113s] (1614/1681) harness-tui::tool_body_capture_test production_tool_body_captures

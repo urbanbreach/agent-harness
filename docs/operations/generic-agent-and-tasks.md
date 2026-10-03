@@ -68,13 +68,13 @@ child receives its actual spawner's startup catalog. Otherwise, discovery uses
 the child's effective working directory and default roots; `discover_skills:
 false` suppresses that discovery. Catalog inspection does not load skill bodies.
 
-**Accepted parity exception:** Grok explicitly preloads definition-listed skills
+**Accepted parity exception:** Reference explicitly preloads definition-listed skills
 even when ordinary skill calls are disabled or denied. Harness keeps shared
 skill permissions for both startup preloads and ordinary calls. Missing, denied,
 disabled, malformed, or unsafe preloads fail preparation before the child runs.
 
 **Accepted clipboard exception:** Child-viewer selection and copy use Harness's
-shared clipboard integration. Unlike Grok, Harness does not write every copied
+shared clipboard integration. Unlike Reference, Harness does not write every copied
 selection to a persistent backup file or display that backup path in a toast.
 Mouse release copies a nonempty selection and keeps it highlighted; Escape
 clears it before closing the viewer. `y` copies the current logical line or visual
@@ -136,7 +136,7 @@ Enter quotes the selected logical line or selection into the parent draft.
 With Vim navigation enabled, `r` toggles the selected Markdown entry in place.
 That entry retains its mode when its block viewer closes and reopens; the viewer
 also accepts `r` directly.
-Raw/Markdown toggles reproduce the pinned Grok renderer's source-map behavior:
+Raw/Markdown toggles reproduce the pinned Reference renderer's source-map behavior:
 it numbers the unfrozen tail from zero after a mode change. A later toggle can
 therefore select an earlier line, including a blank line near the start. This
 cursor jump is retained for parity.

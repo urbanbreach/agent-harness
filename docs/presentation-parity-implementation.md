@@ -1,4 +1,7 @@
-# Grok Build presentation parity implementation
+# Presentation parity implementation
+
+Reference names and paths in this historical report are redacted; see the
+[archive note](evidence/README.md).
 
 Implemented the research's A through G presentation and interaction changes with Harness
 branding, coordinator authority, and recorded-data replay intact. Verification
@@ -10,13 +13,13 @@ results below. It includes a new 504-frame xterm matrix, exact chat-cell
 comparisons, and real edit/search/viewer terminal journeys.
 
 Scope: local research synthesis (`20260906-192230/SYNTHESIS.md`), compared against
-`inspirations/grok-build` at `bc7f02eddd3d84085849dc19ed216f11c23b0571`
+`inspirations/reference-source` at `bc7f02eddd3d84085849dc19ed216f11c23b0571`
 (upstream `SOURCE_REV`: `d5a0335a47221e8c9519936cb693e9b6450227ec`).
 Harness implementation baseline: `60282c31862bb34e4565b7574d1ef7dbebf1f126`.
 
-Open the comparison gallery (`.omo/evidence/grok-parity-final/index.html`)
+Open the comparison gallery (`.omo/evidence/reference-parity-final/index.html`)
 for actual xterm.js screenshots and selectable animation samples. The
-evidence index (`.omo/evidence/grok-parity-final/README.md`) links the raw
+evidence index (`.omo/evidence/reference-parity-final/README.md`) links the raw
 frames, source receipts, interaction journals, cleanup receipts, and check logs.
 Evidence is local and ignored by Git; the implementation and capture drivers
 remain reviewable in the working tree.
@@ -106,12 +109,12 @@ reference captures and the release resize benchmark passed.
 | Native composer PTY owner | Passed, including actual Ctrl+Enter input |
 | xterm.js browser journeys | 14 passed: startup ×4, resize ×4, modal interaction ×3, composer, slash happy and slash edge |
 | Release 10,000-entry resize benchmark | 100 measured resizes after 10 warmups; p95 1.279 ms, below 33 ms; detached anchor preserved |
-| Grok reference render crate tests | 1,143 passed; 1 ignored |
+| Reference reference render crate tests | 1,143 passed; 1 ignored |
 
 The selected emulator bundle contains 496 PNG/ANSI pairs, all checked against
 SHA-256 receipts: 320 Harness welcome frames, 44 final Harness surface frames,
-42 native-runtime samples replayed through xterm.js, 40 Grok welcome frames and
-50 Grok Markdown/streaming/tool/dashboard/settings frames. Welcome fixtures cover
+42 native-runtime samples replayed through xterm.js, 40 Reference welcome frames and
+50 Reference Markdown/streaming/tool/dashboard/settings frames. Welcome fixtures cover
 80×24, 120×40, 160×50, 89×32, 90×32, 90×24, 120×32 and 200×60; four capability/theme
 profiles; normal/reduced motion; and 0/100/300/1300/4000 ms. Additional production
 Settings captures cover 20×8, 47×9 and 48×10. Tool/Markdown comparisons include
@@ -121,7 +124,7 @@ Native color-cell analysis confirms that the Unicode H changes at 120×40 and
 160×50 while text and controls remain stationary. The measured 80×24 layout has
 no H; monochrome ASCII is static. All six native reduced-motion variants have
 identical first and settled cells. See
-motion verification (`.omo/evidence/grok-parity-final/native-motion/motion-verification.json`).
+motion verification (`.omo/evidence/reference-parity-final/native-motion/motion-verification.json`).
 Exact injected-clock frames and real elapsed-time native/reference frames are
 separate evidence sets; actual timings are retained in their manifests.
 
@@ -130,15 +133,15 @@ separate evidence sets; actual timings are retained in their manifests.
 | Reference operation | Harness implementation / retained boundary |
 | --- | --- |
 | Identity and styling | Harness name, H artwork, palette, version/provider facts and terminology remain. Geometry and semantic roles follow the reference; brand RGB and artwork do not. |
-| Permissions and questions | Existing coordinator-owned `UiIntent::ResolvePermission` and question handlers. Compact dashboard review, always-allow confirmation and acknowledgement are preserved. Grok pattern editing is not exposed without a corresponding coordinator-approved scope contract. |
+| Permissions and questions | Existing coordinator-owned `UiIntent::ResolvePermission` and question handlers. Compact dashboard review, always-allow confirmation and acknowledgement are preserved. Reference pattern editing is not exposed without a corresponding coordinator-approved scope contract. |
 | Inactive session input | Existing `ContinueSession` / `ReplaySession` eligibility opens the selected session before replying; the current coordinator is not presented as owner of every recorded run. |
-| Memory | Actual durable key/value data, selected value preview/copy in live mode; replay does not read current workspace memory. Grok file-memory deletion is not mapped to unrelated key/value operations. |
+| Memory | Actual durable key/value data, selected value preview/copy in live mode; replay does not read current workspace memory. Reference file-memory deletion is not mapped to unrelated key/value operations. |
 | Plans | Existing validated workspace plan preview/copy/delete. There is no provider-plan approval/comment intent, so no fabricated approval control. |
 | Extensions and usage | Actual MCP configuration, manifest inventory, existing MCP toggle, recorded usage and context accounting. Commercial credits, billing and marketplace installation remain explicitly unavailable. |
 | Lifecycle and safety | Explicit reopen, coordinator cancellation/queue ownership, safe controls/paths/links, secret handling, reduced motion and first-event resize anti-starvation remain. No ACP transport or automatic restoration is imported. |
 
 The paired captures establish rendering and interaction evidence, not a claim
-that every pixel or backend capability is identical. Grok's comparison drivers
+that every pixel or backend capability is identical. Reference's comparison drivers
 call its production renderers: its tool samples exercise standalone content
 rendering, and its dashboard sample exercises the roster without an ACP session,
 child graph, permission request or live reply. Harness's pending-input scenarios
@@ -153,8 +156,8 @@ journeys `10237e2e`; intervening dashboard/performance checks also retain their
 own receipts. Later source changes do not alter the welcome renderer tested at
 those earlier revisions. The final full workspace suite covers the current
 implementation. Reference-tree dirtiness consists of the local capture examples;
-Grok production source was not edited. Reviewable copies of both examples are
-in `scripts/qa/fixtures/`.
+Reference production source was not edited. The external capture examples have
+since been retired; Harness fixtures and recorded comparisons remain available.
 
 ## Findings fixed during verification
 
@@ -194,10 +197,10 @@ profile, then replay the ANSI files through the bundled xterm.js driver:
 ```bash
 env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor \
 HARNESS_TUI_TEST_WORKSPACE=1 HARNESS_PARITY_RENDER_ARTIFACT_DIR=/tmp/harness-frames \
-cargo nextest run --profile ci -p harness-tui --test grok_parity_render_test
+cargo nextest run --profile ci -p harness-tui --test reference_parity_render_test
 env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor \
 HARNESS_TUI_TEST_WORKSPACE=1 HARNESS_PARITY_RENDER_ARTIFACT_DIR=/tmp/harness-frames \
-cargo nextest run --profile ci -p harness-tui --lib -E 'test(grok_parity_surfaces)'
+cargo nextest run --profile ci -p harness-tui --lib -E 'test(reference_parity_surfaces)'
 node scripts/qa/render-recorded-frames.mjs /tmp/harness-frames .omo/evidence/parity-render
 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_P1_03_ARTIFACT_DIR=/tmp/harness-native \
 cargo nextest run --profile ci -p harness-tui --test p1_03_pty_recorded \
@@ -210,11 +213,6 @@ node scripts/qa/web-terminal-visual-qa.mjs --scenario slash-completion-edge \
 Use a clean checkout for browser QA's fail-closed source/executable provenance.
 Its Node dependencies come from `scripts/qa/package-lock.json`; captures used
 xterm.js 6.0.0 and `/usr/bin/chromium`. For a shared build directory set
-`CARGO_TARGET_DIR` explicitly. The reference drivers in `scripts/qa/fixtures/` call public renderer entrypoints
-and record fixture limitations in their output metadata. Copy them to the
-reference pager's `examples/` directory as `harness_parity_capture.rs` and
-`harness_surface_capture.rs`, respectively, then use `cargo run` with
-`--manifest-path inspirations/grok-build/Cargo.toml -p xai-grok-pager` and
-`--example harness_parity_capture` or `--example harness_surface_capture`,
-passing the output directory after `--`. Unset `NO_COLOR` and set the terminal
-color variables as in the Harness commands.
+`CARGO_TARGET_DIR` explicitly. External reference capture drivers have been retired. Existing ANSI recordings
+can still use `render-recorded-frames.mjs INPUT_DIR EVIDENCE_DIR --reference
+--source-root PATH`, with their original source checkout supplied explicitly.
