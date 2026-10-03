@@ -1,6 +1,8 @@
 use super::*;
 
 mod authorization;
+mod waiting;
+use waiting::{aggregate, wait_subscriptions, WaitHint};
 
 enum Subscription {
     Command(Box<super::super::commands::CommandSubscription>),
@@ -8,8 +10,8 @@ enum Subscription {
     Missing(String),
 }
 impl Subscription {
-    fn result(&self) -> GetCommandOrSubagentOutputResult {
-        match self {
+    fn result(&self, hint: WaitHint) -> GetCommandOrSubagentOutputResult {
+        let result = match self {
             Self::Command(command) => command.updates.borrow().result.clone(),
             Self::Subagent(child) => child.borrow().result.clone(),
             Self::Missing(id) => GetCommandOrSubagentOutputResult {
@@ -18,7 +20,8 @@ impl Subscription {
                 output: format!("Task {id} not found."),
                 ..Default::default()
             },
-        }
+        };
+        hint.apply(result, matches!(self, Self::Subagent(_)))
     }
     fn pending(&self) -> bool {
         match self {
@@ -163,7 +166,7 @@ impl CoordinatorHandle {
             wait_subscriptions(&subscriptions, false, timeout, cancellation, interject).await;
         self.complete_native_wait(actor.clone(), &ids, &tool_call_id, wait.is_ok())
             .await?;
-        wait?;
+        let hint = wait?;
         // Watch observations must be refreshed after wait-any too; an admission
         // transition can replace the attempt before the query reply is built.
         let (latest, _, _) = self
@@ -198,13 +201,14 @@ impl CoordinatorHandle {
                     ))
                 }
                 subscription => Ok(GetCommandOrSubagentOutputValue::Result(
-                    subscription.result(),
+                    subscription.result(hint),
                 )),
             };
         }
         Ok(GetCommandOrSubagentOutputValue::MultiResult(aggregate(
             if timeout > 0 { "wait_all" } else { "poll" },
             &latest,
+            hint,
         )))
     }
 
@@ -242,13 +246,14 @@ impl CoordinatorHandle {
         let wait = wait_subscriptions(&subscriptions, any, timeout, cancellation, interject).await;
         self.complete_native_wait(actor.clone(), &input.task_ids, &tool_call_id, wait.is_ok())
             .await?;
-        wait?;
+        let hint = wait?;
         let (latest, _, _) = self
             .native_query_subscriptions(actor, tool_call_id, &input.task_ids, false)
             .await?;
         Ok(aggregate(
             if any { "wait_any" } else { "wait_all" },
             &latest,
+            hint,
         ))
     }
 
@@ -329,76 +334,5 @@ impl CoordinatorHandle {
             ))
         })
         .await
-    }
-}
-
-async fn wait_subscriptions(
-    subscriptions: &[Subscription],
-    any: bool,
-    timeout: u64,
-    cancellation: CancellationToken,
-    interject: Option<watch::Receiver<u64>>,
-) -> Result<(), CoordinatorError> {
-    if timeout == 0 {
-        return Ok(());
-    }
-    if any
-        && subscriptions.iter().any(|subscription| {
-            !subscription.pending() && !matches!(subscription, Subscription::Missing(_))
-        })
-    {
-        return Ok(());
-    }
-    let mut waits = tokio::task::JoinSet::new();
-    for subscription in subscriptions
-        .iter()
-        .filter(|subscription| subscription.pending())
-    {
-        let subscription = subscription.cloned();
-        waits.spawn(subscription.wait_terminal());
-    }
-    if waits.is_empty() {
-        return Ok(());
-    }
-    let pending = async {
-        while let Some(result) = waits.join_next().await {
-            result.map_err(|_| CoordinatorError::Closed)??;
-            if any {
-                return Ok(());
-            }
-        }
-        Ok::<(), CoordinatorError>(())
-    };
-    let interrupted = async {
-        match interject {
-            Some(mut interject) => {
-                let _ = interject.changed().await;
-            }
-            None => std::future::pending::<()>().await,
-        }
-    };
-    let timeout = timeout.min(milliseconds("GROK_MAX_WAIT_BLOCK_MS", 3_600_000));
-    tokio::select! {
-        biased;
-        () = cancellation.cancelled() => Err(CoordinatorError::Cancelled("wait cancelled".into())),
-        () = interrupted => Err(CoordinatorError::Cancelled("wait interrupted by a subagent interject".into())),
-        result = tokio::time::timeout(Duration::from_millis(timeout), pending) => {
-            match result { Ok(result) => result, Err(_) => Ok(()) }
-        }
-    }
-}
-
-fn aggregate(mode: &str, subscriptions: &[Subscription]) -> GetCommandOrSubagentOutputResults {
-    let results: Vec<_> = subscriptions.iter().map(Subscription::result).collect();
-    let completed = subscriptions
-        .iter()
-        .filter(|subscription| {
-            !subscription.pending() && !matches!(subscription, Subscription::Missing(_))
-        })
-        .count();
-    GetCommandOrSubagentOutputResults {
-        mode: mode.into(),
-        summary: format!("{completed}/{} tasks completed ({mode})", results.len()),
-        results,
     }
 }
