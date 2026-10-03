@@ -12,7 +12,10 @@ use crate::theme::{MarkdownColors, Theme};
 // rendered mode. Soft breaks collapse in both modes in the reference viewer.
 pub(super) fn render(text: &str, theme: &Theme) -> Vec<Line<'static>> {
     let base = Style::default().fg(theme.markdown.text);
-    let mut paint = Paint(BTreeMap::from([(0, base), (text.len(), base)]));
+    let mut paint = Paint(BTreeMap::from([
+        (0, Style::default()),
+        (text.len(), Style::default()),
+    ]));
     let mut source = text.to_owned();
     let mut stack = Vec::new();
     let options = Options::ENABLE_TABLES
@@ -67,7 +70,7 @@ pub(super) fn render(text: &str, theme: &Theme) -> Vec<Line<'static>> {
                     Style::default().fg(theme.markdown.task_checked)
                 } else {
                     Style::default()
-                        .fg(theme.markdown.task_unchecked)
+                        .fg(theme.markdown.text)
                         .add_modifier(Modifier::DIM)
                 };
                 paint.set(range, style);
@@ -185,8 +188,18 @@ impl Paint {
             Tag::Table(_) | Tag::TableHead | Tag::TableRow => {
                 self.set(range, Style::default().fg(theme.markdown.heading_h2))
             }
+            Tag::TableCell => self.set(range, Style::default()),
             Tag::Link { title, .. } | Tag::Image { title, .. } => {
                 self.set(range.clone(), muted);
+                for (offset, ch) in text[range.clone()]
+                    .char_indices()
+                    .filter(|(_, ch)| ch.is_whitespace())
+                {
+                    self.set(
+                        range.start + offset..range.start + offset + ch.len_utf8(),
+                        Style::default(),
+                    );
+                }
                 if !title.is_empty() {
                     if let Some(offset) = text[range.clone()].rfind(title.as_ref()) {
                         self.set(

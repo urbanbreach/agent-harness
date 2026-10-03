@@ -57,7 +57,13 @@ pub(super) fn try_render_markdown_table_block(
         return None;
     }
     let column_widths = bounded_column_widths(&header, &body, column_count, available);
-    let border_style = Style::default().fg(theme.border.subtle);
+    let border_style = if theme.markdown_native {
+        Style::default()
+            .fg(theme.markdown.muted)
+            .add_modifier(Modifier::DIM)
+    } else {
+        Style::default().fg(theme.border.subtle)
+    };
     let mut rendered = Vec::new();
     let mut links = Vec::new();
     rendered.push(border_line(
@@ -74,7 +80,11 @@ pub(super) fn try_render_markdown_table_block(
         &column_widths,
         prefix,
         Style::default()
-            .fg(theme.markdown.heading_h1)
+            .fg(if theme.markdown_native {
+                theme.markdown.text
+            } else {
+                theme.markdown.heading_h1
+            })
             .add_modifier(Modifier::BOLD),
         border_style,
         theme,
@@ -108,6 +118,15 @@ pub(super) fn try_render_markdown_table_block(
         '┘',
         border_style,
     ));
+    if theme.markdown_native && width != u16::MAX {
+        for index in [0, 2, rendered.len() - 1] {
+            let line = &mut rendered[index];
+            line.spans.push(Span::styled(
+                " ".repeat(usize::from(width).saturating_sub(line.width())),
+                border_style.bg(theme.surface.shell),
+            ));
+        }
+    }
 
     Some((rendered, body.len() + 2, links))
 }
@@ -123,6 +142,11 @@ fn append_table_row(
     links: &mut Vec<TableLinkRun>,
 ) {
     let mut theme = *theme;
+    let padding = if theme.markdown_native {
+        Style::default()
+    } else {
+        style
+    };
     // Table cells use their own link rendering and keep only the label.
     theme.markdown_link_destinations = false;
     let wrapped = column_widths
@@ -143,7 +167,12 @@ fn append_table_row(
                     destination: link.destination,
                 })
                 .collect::<Vec<_>>();
-            let rows = wrap_surface_spans_with_links(parsed.spans, &source_links, width);
+            let rows = wrap_surface_spans_with_links(
+                parsed.spans,
+                &source_links,
+                width,
+                theme.markdown_native,
+            );
             if rows.is_empty() {
                 vec![WrappedSurfaceRow {
                     spans: Vec::new(),
@@ -162,7 +191,7 @@ fn append_table_row(
             Span::styled("│", border_style),
         ];
         for (column_index, column_width) in column_widths.iter().copied().enumerate() {
-            spans.push(Span::styled(" ", style));
+            spans.push(Span::styled(" ", padding));
             let cell_start = spans.iter().map(Span::width).sum::<usize>();
             let cell = wrapped[column_index].get(line_index);
             let cell_spans = cell.map(|row| row.spans.clone()).unwrap_or_default();
@@ -178,7 +207,7 @@ fn append_table_row(
             spans.extend(cell_spans);
             spans.push(Span::styled(
                 " ".repeat(column_width.saturating_sub(used).saturating_add(1)),
-                style,
+                padding,
             ));
             spans.push(Span::styled("│", border_style));
         }

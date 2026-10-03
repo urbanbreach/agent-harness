@@ -23,8 +23,13 @@ pub(in crate::ui) fn wrap_surface_spans_with_links(
     spans: Vec<Span<'static>>,
     links: &[SurfaceLinkRun],
     width: usize,
+    native: bool,
 ) -> Vec<WrappedSurfaceRow> {
-    let rows = wrap(&spans, width, false);
+    let rows = if native {
+        super::super::ui_tool_wrapping::words(spans.clone(), width)
+    } else {
+        wrap(&spans, width, false)
+    };
     if links.is_empty() {
         return rows
             .into_iter()
