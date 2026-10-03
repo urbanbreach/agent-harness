@@ -33,7 +33,7 @@ fn ingest(app: &mut AppState, next_seq: &mut u64, payload: EventV1) {
 }
 
 #[test]
-fn all_tool_families_keep_grok_columns_through_streaming_and_disclosure() {
+fn all_tool_families_keep_reference_columns_through_streaming_and_disclosure() {
     let cases = [
         (
             "task",
@@ -292,7 +292,7 @@ fn capture(app: &AppState, width: u16, height: u16, tool: &str, state: &str) {
         },
         "missing marker: {tool} {state}\n{rendered}"
     );
-    let expected = 5; // Grok LayoutConfig: outer left 2 + accent 1 + block left 2.
+    let expected = 5; // Reference LayoutConfig: outer left 2 + accent 1 + block left 2.
     assert!(
         tool == "todowrite" || marker_columns.iter().all(|&col| col == expected),
         "misaligned markers: {tool} {state}: {marker_columns:?}\n{rendered}"

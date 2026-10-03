@@ -44,7 +44,7 @@ impl PaneQuery {
     fn update(&mut self) {
         let text = self.editor.text();
         self.active = !text.is_empty();
-        // Match Grok's smart-case regular expressions. Invalid patterns match nothing.
+        // Match Reference's smart-case regular expressions. Invalid patterns match nothing.
         self.regex = self
             .active
             .then(|| {

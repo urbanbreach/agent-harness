@@ -13,7 +13,7 @@ pub(super) enum TranscriptToolCallDisclosureState {
 
 pub(super) fn tool_hidden_from_transcript(tool_call: &ToolCallEntry) -> bool {
     tool_id_matches(tool_call, &["todo.read", "todoread", "todo.write", "todowrite"])
-        // Streaming argument bytes have no canonical tool identity yet. Grok
+        // Streaming argument bytes have no canonical tool identity yet. Reference
         // keeps them in turn status until the actual ToolCall arrives.
         || (tool_call.tool_id == "tool"
             && tool_call.canonical_tool_id.is_none()

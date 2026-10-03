@@ -16,7 +16,7 @@ fn detached_transcript_return_brightens_when_hovered() -> Result<(), std::conver
         render_transcript_more_below_affordance(frame, content, 0, 10, &theme, Color::Black, true);
     })?;
 
-    // Then: Grok's muted-to-bright hover treatment uses Harness primary text.
+    // Then: Reference's muted-to-bright hover treatment uses Harness primary text.
     let center_x = content.x + content.width / 2;
     let bottom_y = content.bottom().saturating_sub(1);
     assert_eq!(

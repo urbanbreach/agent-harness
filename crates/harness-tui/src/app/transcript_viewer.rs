@@ -148,7 +148,7 @@ impl AppState {
             let delta = match key.code {
                 KeyCode::Char('j') => Some(1.0),
                 KeyCode::Char('k') => Some(-1.0),
-                // Grok's outer command registry reserves Ctrl-D; the viewer
+                // Reference's outer command registry reserves Ctrl-D; the viewer
                 // consumes it without moving its cursor or closing the modal.
                 KeyCode::Char('d') => return true,
                 KeyCode::Char('u') => Some(-(page / 2.0).floor()),

@@ -4,11 +4,10 @@ use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 
 #[test]
-fn rewind_panels_match_grok_reference_cells() {
-    let reference: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tests/fixtures/grok-rewind-reference.json"
-    ))
-    .unwrap_or_abort();
+fn rewind_panels_match_reference_cells() {
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/fixtures/rewind-reference.json"))
+            .unwrap_or_abort();
     for case in reference["cases"].as_array().unwrap_or_abort() {
         let selected =
             usize::try_from(case["selected"].as_u64().unwrap_or_abort()).unwrap_or_abort();
@@ -94,7 +93,7 @@ fn rewind_panels_match_grok_reference_cells() {
         assert_eq!(
             digest,
             case["digest"].as_str().unwrap_or_abort(),
-            "Grok reference mismatch: {case}\n{buffer:?}"
+            "Reference mismatch: {case}\n{buffer:?}"
         );
     }
 }

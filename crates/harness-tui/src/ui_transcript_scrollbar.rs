@@ -528,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn more_below_hit_area_matches_grok_pointer_geometry() {
+    fn more_below_hit_area_matches_reference_pointer_geometry() {
         // arrange
         // Given: detached content with more transcript rows below the viewport.
         let content = Rect::new(4, 2, 19, 12);
@@ -538,7 +538,7 @@ mod tests {
         let hit = transcript_more_below_hit_rect(content, 3, 8);
 
         // act
-        // Then: one cell is painted inside Grok's centered three-cell pointer target.
+        // Then: one cell is painted inside Reference's centered three-cell pointer target.
         // assert
         assert_eq!(paint, Some(Rect::new(13, 13, 1, 1)));
         assert_eq!(hit, Some(Rect::new(12, 13, 3, 1)));
@@ -546,14 +546,14 @@ mod tests {
     }
 
     #[test]
-    fn more_below_even_width_uses_groks_right_center_cell() {
+    fn more_below_even_width_uses_references_right_center_cell() {
         // arrange — Given an even-width detached viewport with content below.
         let content = Rect::new(4, 2, 20, 12);
 
         // act — When resolving the painted affordance cell.
         let paint = transcript_more_below_rect(content, 3, 8);
 
-        // assert — Then Grok's width/2 calculation selects the right center cell.
+        // assert — Then Reference's width/2 calculation selects the right center cell.
         assert_eq!(paint, Some(Rect::new(14, 13, 1, 1)));
     }
 }

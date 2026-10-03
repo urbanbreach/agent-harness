@@ -13,7 +13,7 @@ use super::super::ui_transcript::TranscriptVisualEntryDraft;
 use super::{wrap_preformatted_spans, wrap_surface_spans};
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
-// Grok Build HorizontalLayout::ACCENT (1) + LayoutConfig::block_pad_left (2).
+// the reference application HorizontalLayout::ACCENT (1) + LayoutConfig::block_pad_left (2).
 pub(in crate::ui) const TRANSCRIPT_ENTRY_CONTENT_PREFIX: &str = "   ";
 pub(in crate::ui) const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
 pub(in crate::ui) const TRANSCRIPT_RAIL_GLYPH: &str = " ";

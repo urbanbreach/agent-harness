@@ -649,7 +649,7 @@ pub(super) fn active_stream_more_below_click_returns_to_live() {
     assert_eq!(
         targets.len(),
         3,
-        "active affordance must expose Grok's three-cell pointer target"
+        "active affordance must expose Reference's three-cell pointer target"
     );
 
     // When: the user clicks the active more-below affordance.
@@ -707,7 +707,7 @@ pub(super) fn completed_stream_more_below_affordance_is_actionable() {
         .filter(|(column, row)| ui::transcript_return_to_live_hit(&app, area, *column, *row))
         .collect::<Vec<_>>();
 
-    // Then: the completion-state glyph remains visible with Grok's three-cell pointer target.
+    // Then: the completion-state glyph remains visible with Reference's three-cell pointer target.
     assert!(
         rendered.contains('▼'),
         "completed detached history keeps its return indicator"

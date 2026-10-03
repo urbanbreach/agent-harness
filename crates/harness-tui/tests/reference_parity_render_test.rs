@@ -27,8 +27,8 @@ const SIZES: [(u16, u16); 8] = [
 ];
 const TIMES: [u64; 5] = [0, 100, 300, 1300, 4000];
 
-#[path = "support/grok_alignment_recorded.rs"]
-mod grok_alignment;
+#[path = "support/reference_alignment_recorded.rs"]
+mod reference_alignment;
 
 #[test]
 fn welcome_geometry_and_animation_use_immediate_controls_and_exact_clock() {

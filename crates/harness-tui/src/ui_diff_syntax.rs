@@ -44,7 +44,7 @@ pub(super) fn wrap_styled_chunks(
         }
     }
 
-    // Match Grok's whitespace-inclusive word wrapping before projecting styles:
+    // Match Reference's whitespace-inclusive word wrapping before projecting styles:
     // syntax/intraline span boundaries must never become wrapping boundaries.
     let mut ranges = Vec::new();
     let mut start = 0;

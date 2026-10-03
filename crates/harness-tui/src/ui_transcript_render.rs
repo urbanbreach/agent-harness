@@ -704,7 +704,7 @@ fn resolve_assistant_body_content(
         TranscriptBodyBlock::RichText(text) => (text.as_str(), false),
         TranscriptBodyBlock::StreamingRichText(text) => (text.as_str(), true),
     };
-    // Grok reserves a timestamp gutter for every message row and overlays the
+    // Reference reserves a timestamp gutter for every message row and overlays the
     // clock on the first content row. A tool or a new paragraph must not add a
     // timestamp-only row above text that is already on screen.
     let body_width = wall_clock.map_or(content_width, |clock| {
@@ -960,7 +960,7 @@ fn append_reasoning_block(
     }
 
     let mut body_lines = Vec::new();
-    // Grok wraps before taking the preview tail and reserves the block's
+    // Reference wraps before taking the preview tail and reserves the block's
     // right padding. Counting wider rows would retain different old headers.
     let mut body_selection = super::ui_reasoning_markdown_body::append_reasoning_body_lines(
         &mut body_lines,

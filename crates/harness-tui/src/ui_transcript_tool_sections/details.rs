@@ -80,7 +80,7 @@ fn prepare_failed_tool_details(
         return;
     }
 
-    // Commands and edits separate errors from their headers. Edits use Grok's
+    // Commands and edits separate errors from their headers. Edits use Reference's
     // muted decoration; command failures retain the error foreground.
     if tool_call.status == ToolCallDisplayStatus::Failed
         && matches!(

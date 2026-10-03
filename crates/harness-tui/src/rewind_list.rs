@@ -1,4 +1,4 @@
-//! Grok rewind list geometry shared by rendering, hit testing, and panel height.
+//! Reference rewind list geometry shared by rendering, hit testing, and panel height.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;

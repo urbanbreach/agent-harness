@@ -684,7 +684,7 @@ impl AppState {
                 self.select_transcript_entry(&entry);
             }
         } else if select_member {
-            // Grok's expanded context header selects member zero. That member
+            // Reference's expanded context header selects member zero. That member
             // can be a Thought, whose next fold key must reveal its own body.
             let entries = ui::transcript_navigation_entries(self, area);
             if let Some([_, member]) = entries.windows(2).find(|pair| {

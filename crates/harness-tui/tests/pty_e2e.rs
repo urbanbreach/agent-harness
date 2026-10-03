@@ -39,8 +39,8 @@ fn pty_status_dialog_opens_without_sidebar_copy() {
 }
 
 #[test]
-fn pty_waiting_for_response_matches_grok_layout_and_timer_motion() {
-    pty_e2e_impl::pty_waiting_for_response_matches_grok_layout_and_timer_motion();
+fn pty_waiting_for_response_matches_reference_layout_and_timer_motion() {
+    pty_e2e_impl::pty_waiting_for_response_matches_reference_layout_and_timer_motion();
 }
 
 #[test]
