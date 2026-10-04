@@ -112,7 +112,7 @@ pub(crate) fn build(
     result.permission_policy = PermissionPolicy::from_rules(rules)
         .map_err(|e| e.to_string())?
         .with_ask_timeout_ms(config.runtime.permissions.ask_timeout_ms);
-    result.always_approve_on_start = config.runtime.always_approve;
+    result.yolo_on_start = config.runtime.yolo;
     result.skills = config.skills.clone();
     result.skill_catalog_discovery = Some(Arc::new(harness_tools::NativeSkillCatalogDiscovery));
     result.tool_concurrency = config.runtime.background_tasks.default_concurrency;

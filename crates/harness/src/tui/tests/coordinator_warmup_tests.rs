@@ -54,6 +54,7 @@ fn live_coordinator_config_warmup_reuses_interactive_config() {
         workspace_root: PathBuf::from("/tmp/warmed-workspace"),
         shell_allowlist: ShellAllowlist::default(),
         deterministic: false,
+        yolo: true,
         seed: 0,
         config_digest: "digest".to_string(),
         launch_metadata: interactive_launch_metadata(None, &agent_profiles, "default")
@@ -81,5 +82,6 @@ fn live_coordinator_config_warmup_reuses_interactive_config() {
         assert_eq!(second.session_dir, session_dir);
         assert!(first.agent_profiles.contains_key("default"));
         assert!(second.tool_registry.get("read").is_some());
+        assert!(first.yolo_on_start && second.yolo_on_start);
     });
 }

@@ -32,7 +32,7 @@ if 'stale' in text:
 p.write_text(text.upper())
 "#;
     let mut config = CoordinatorConfig::new(directory.path().join("sessions"));
-    config.always_approve_on_start = true;
+    config.yolo_on_start = true;
     config.tool_registry = Arc::new(harness_tools::coordinator_registry(
         ShellAllowlist::default(),
     ));

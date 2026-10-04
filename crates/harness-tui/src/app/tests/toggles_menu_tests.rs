@@ -23,7 +23,7 @@ pub(super) fn toggles_slash_command_opens_command_styled_menu() {
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::TogglesMenu));
     let rendered = render_debug(&app, 100, 40);
     assert!(rendered.contains("Built-in dynamic"));
-    assert!(rendered.contains("Always approve mode"));
+    assert!(rendered.contains("YOLO mode"));
     // Then: primary profiles are absent while preserved subagents remain available.
     assert!(!rendered.contains("build"), "{rendered}");
     assert!(!rendered.contains("plan"), "{rendered}");
@@ -71,16 +71,16 @@ pub(super) fn yolo_toggle_changes_coordinator_mode_after_confirmation() {
     app.handle_key(key(KeyCode::Enter));
 
     assert!(app.toggles_yolo_confirmation_visible());
-    assert!(render_debug(&app, 100, 28).contains("Confirm always-approve mode"));
+    assert!(render_debug(&app, 100, 28).contains("Confirm YOLO mode"));
 
     app.handle_key(key(KeyCode::Enter));
     assert!(!app.toggles_yolo_confirmation_visible());
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
-        &[UiIntent::SetAlwaysApproveMode { enabled: true }]
+        &[UiIntent::SetYoloMode { enabled: true }]
     );
-    assert!(!app.always_approve_mode());
-    app.set_always_approve_mode(true);
+    assert!(!app.yolo_mode());
+    app.set_yolo_mode(true);
     let rows = app.toggle_menu_rows();
     assert!(rows
         .iter()
@@ -91,9 +91,9 @@ pub(super) fn yolo_toggle_changes_coordinator_mode_after_confirmation() {
     app.handle_key(key(KeyCode::Enter));
     assert_eq!(
         intents.lock().unwrap_or_abort().last(),
-        Some(&UiIntent::SetAlwaysApproveMode { enabled: false })
+        Some(&UiIntent::SetYoloMode { enabled: false })
     );
-    app.set_always_approve_mode(false);
+    app.set_yolo_mode(false);
     assert!(app
         .toggle_menu_rows()
         .iter()
@@ -196,11 +196,11 @@ fn approval_shortcuts_toggle_live_mode_and_preserve_overlay_ownership() {
     );
     let shortcut = key_with_modifiers(KeyCode::Char('o'), KeyModifiers::CONTROL);
     app.handle_key(shortcut);
-    assert!(!app.always_approve_mode());
-    app.set_always_approve_mode(true);
-    super::super::palette_controller::dispatch_palette_command(&mut app, "model.always_approve");
+    assert!(!app.yolo_mode());
+    app.set_yolo_mode(true);
+    super::super::palette_controller::dispatch_palette_command(&mut app, "model.yolo");
     assert!(!app.toggles_menu_visible);
-    app.set_always_approve_mode(false);
+    app.set_yolo_mode(false);
     for c in "/yolo".chars() {
         app.handle_key(key(KeyCode::Char(c)));
     }
@@ -208,9 +208,9 @@ fn approval_shortcuts_toggle_live_mode_and_preserve_overlay_ownership() {
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
         &[
-            UiIntent::SetAlwaysApproveMode { enabled: true },
-            UiIntent::SetAlwaysApproveMode { enabled: false },
-            UiIntent::SetAlwaysApproveMode { enabled: true },
+            UiIntent::SetYoloMode { enabled: true },
+            UiIntent::SetYoloMode { enabled: false },
+            UiIntent::SetYoloMode { enabled: true },
         ]
     );
     intents.lock().unwrap_or_abort().clear();
@@ -219,7 +219,7 @@ fn approval_shortcuts_toggle_live_mode_and_preserve_overlay_ownership() {
     assert!(intents.lock().unwrap_or_abort().is_empty());
     app.handle_key(key(KeyCode::Esc));
     app.replay_mode = true;
-    app.request_always_approve_mode_change(true);
-    super::super::palette_controller::dispatch_palette_command(&mut app, "model.always_approve");
+    app.request_yolo_mode_change(true);
+    super::super::palette_controller::dispatch_palette_command(&mut app, "model.yolo");
     assert!(intents.lock().unwrap_or_abort().is_empty());
 }

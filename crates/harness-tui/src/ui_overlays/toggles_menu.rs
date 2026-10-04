@@ -252,7 +252,7 @@ pub(super) fn render_yolo_warning_popup(frame: &mut Frame, theme: &Theme, overla
     let surface = ui_chrome::command_palette_surface(theme);
     let text = Text::from(vec![
         Line::from(Span::styled(
-            "Confirm always-approve mode",
+            "Confirm YOLO mode",
             Style::default()
                 .fg(theme.status.warning)
                 .bg(surface)

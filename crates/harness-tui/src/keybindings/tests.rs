@@ -320,18 +320,12 @@ fn keymap_uses_ctrl_y_and_ctrl_n_for_permission_decisions() {
 }
 
 #[test]
-fn keymap_uses_ctrl_o_for_always_approve_permission() {
+fn keymap_uses_ctrl_o_for_yolo_mode() {
     let keymap = KeyMap::with_defaults();
 
-    let always = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
-    assert_eq!(
-        keymap.get_action(&always),
-        Some(Action::AlwaysApprovePermission)
-    );
-    assert_eq!(
-        keymap.get_binding_str(Action::AlwaysApprovePermission),
-        "Ctrl+o"
-    );
+    let yolo = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
+    assert_eq!(keymap.get_action(&yolo), Some(Action::ToggleYoloMode));
+    assert_eq!(keymap.get_binding_str(Action::ToggleYoloMode), "Ctrl+o");
 }
 
 #[test]

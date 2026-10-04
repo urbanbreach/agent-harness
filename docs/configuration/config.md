@@ -445,27 +445,41 @@ Output is `harness-settings-registry-v1`:
 Library entry points: `settings_registry()`, `setting_definition()`,
 `settings_registry_json()`, `is_metadata_only_setting()`.
 
-### Always approve on startup
+### YOLO on startup
 
-Set `runtime.always_approve` in your runtime config to start new and resumed runs
+Start an interactive session in YOLO mode with `--yolo`:
+
+```bash
+harness --yolo
+cargo run -p harness -- --yolo
+harness tui --yolo
+```
+
+The TUI keeps `YOLO` visible in the composer while enabled.
+The mode is saved in that session's journal and restored when
+you resume it. Starting a different session without the flag uses its configured
+default. The flag does not edit your project or global configuration.
+
+Set `runtime.yolo` in your runtime config to start new and resumed runs
 with ordinary tool permissions automatically approved. It defaults to `false`.
 
 ```json
 {
   "runtime": {
-    "always_approve": true
+    "yolo": true
   }
 }
 ```
 
-In the TUI, open `/settings` and select Always approve on startup on the
+In the TUI, open `/settings` and select YOLO on startup on the
 Runtime tab. Enter toggles the saved preference in the bound runtime config;
 reset restores `false`. Restart the harness to apply the saved preference.
 
-Use Ctrl+O, `/always-approve` (alias `/yolo`), or Always Approve Mode in the
+Use Ctrl+O, `/yolo`, or YOLO mode in the
 command palette to toggle the current session. `/toggles` also exposes the active
-mode. These session toggles do not change the saved startup preference. The
-composer shows `always-approve` when the coordinator confirms it is enabled.
+mode. These session toggles are remembered on resume and do not change the saved
+startup preference. Passing `--yolo` again or setting `runtime.yolo`
+to `true` enables the mode even if it was previously turned off in that session.
 Questions, sensitive requests, and explicit permission denials keep their existing
 checks. Replay does not enable or change approval mode.
 
@@ -557,7 +571,7 @@ bindings, and `<leader>` expands to the configured leader key, for example
 | `backspace` | `Backspace` | Delete before the prompt cursor. |
 | `delete` | `Del` | Delete after the prompt cursor. |
 | `allow_permission` | `Ctrl+y` | Allow a pending permission request. |
-| `always_approve_permission` | `Ctrl+o` | Toggle always-approve for this session; opens confirmation when a permission prompt is active. |
+| `yolo_mode` | `Ctrl+o` | Toggle YOLO for this session; opens confirmation when a permission prompt is active. |
 | `deny_permission` | `Ctrl+n` | Deny a pending permission request. |
 | `dismiss_modal` | `Esc` | Dismiss or reject the active modal. |
 | `variant_cycle` | `Ctrl+t` | Cycle the active model variant/reasoning preset. |

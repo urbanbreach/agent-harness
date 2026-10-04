@@ -1,4 +1,4 @@
-pub(super) fn permission_modal_allow_always_requests_coordinator_mode_change() {
+pub(super) fn permission_modal_enable_yolo_requests_coordinator_mode_change() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
@@ -10,45 +10,45 @@ pub(super) fn permission_modal_allow_always_requests_coordinator_mode_change() {
     let mut app = AppState::new_live(None, false, Some(intent_sink));
     app.ingest_event(envelope(
         1,
-        "req_modal_allow_always_1",
+        "req_modal_enable_yolo_1",
         EventV1::PermissionRequested(PermissionRequestedEvent {
-            permission_id: "perm_modal_allow_always_1".to_string(),
+            permission_id: "perm_modal_enable_yolo_1".to_string(),
             kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_modal_allow_always_1".into()),
+            tool_call_id: Some("tc_modal_enable_yolo_1".into()),
             summary: "permission summary".to_string(),
-            request_digest: "digest-modal-allow-always".to_string(),
+            request_digest: "digest-modal-enable-yolo".to_string(),
             timeout_ms: 30_000,
             default_decision: harness_core::event::PermissionDecision::Deny,
         }),
     ));
 
     assert_eq!(
-        app.permission_modal_selection("perm_modal_allow_always_1"),
-        PermissionModalSelection::AllowAlways
+        app.permission_modal_selection("perm_modal_enable_yolo_1"),
+        PermissionModalSelection::EnableYolo
     );
 
     app.handle_key(key(KeyCode::Enter));
     assert_eq!(
-        app.permission_modal_stage("perm_modal_allow_always_1"),
-        PermissionModalStage::AlwaysConfirm
+        app.permission_modal_stage("perm_modal_enable_yolo_1"),
+        PermissionModalStage::YoloConfirm
     );
 
     app.handle_key(key(KeyCode::Enter));
 
     assert!(
-        !app.always_approve_mode(),
+        !app.yolo_mode(),
         "the UI must wait for the coordinator acknowledgement"
     );
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
-        &[UiIntent::SetAlwaysApproveMode { enabled: true }]
+        &[UiIntent::SetYoloMode { enabled: true }]
     );
 
-    app.set_always_approve_mode(true);
-    assert!(app.always_approve_mode());
+    app.set_yolo_mode(true);
+    assert!(app.yolo_mode());
 }
 
-pub(super) fn always_approve_mode_does_not_late_resolve_projected_permissions() {
+pub(super) fn yolo_mode_does_not_late_resolve_projected_permissions() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
@@ -58,17 +58,17 @@ pub(super) fn always_approve_mode_does_not_late_resolve_projected_permissions() 
     };
 
     let mut app = AppState::new_live(None, false, Some(intent_sink));
-    app.set_always_approve_mode(true);
+    app.set_yolo_mode(true);
 
     app.ingest_event(envelope(
         1,
-        "req_always_mode_2",
+        "req_yolo_mode_2",
         EventV1::PermissionRequested(PermissionRequestedEvent {
-            permission_id: "perm_always_mode_2".to_string(),
+            permission_id: "perm_yolo_mode_2".to_string(),
             kind: "bash".to_string(),
-            tool_call_id: Some("tc_always_mode_2".into()),
+            tool_call_id: Some("tc_yolo_mode_2".into()),
             summary: "second permission".to_string(),
-            request_digest: "digest-always-mode-2".to_string(),
+            request_digest: "digest-yolo-mode-2".to_string(),
             timeout_ms: 30_000,
             default_decision: harness_core::event::PermissionDecision::Deny,
         }),
@@ -80,7 +80,7 @@ pub(super) fn always_approve_mode_does_not_late_resolve_projected_permissions() 
     );
 }
 
-pub(super) fn pending_always_approve_enable_suppresses_only_ordinary_permission_ui() {
+pub(super) fn pending_yolo_enable_suppresses_only_ordinary_permission_ui() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
@@ -89,7 +89,7 @@ pub(super) fn pending_always_approve_enable_suppresses_only_ordinary_permission_
         })
     };
     let mut app = AppState::new_live(None, false, Some(intent_sink));
-    app.request_always_approve_mode_change(true);
+    app.request_yolo_mode_change(true);
 
     app.ingest_event(envelope(
         1,
@@ -107,7 +107,7 @@ pub(super) fn pending_always_approve_enable_suppresses_only_ordinary_permission_
 
     assert!(app.active_permission_view().is_none());
     assert!(app.transcript_pending_permissions().is_empty());
-    assert!(!app.always_approve_mode());
+    assert!(!app.yolo_mode());
 
     app.ingest_event(envelope(
         2,
@@ -129,9 +129,9 @@ pub(super) fn pending_always_approve_enable_suppresses_only_ordinary_permission_
     );
 }
 
-pub(super) fn failed_always_approve_enable_restores_suppressed_permission_ui() {
+pub(super) fn failed_yolo_enable_restores_suppressed_permission_ui() {
     let mut app = AppState::new_live(None, false, None);
-    app.request_always_approve_mode_change(true);
+    app.request_yolo_mode_change(true);
     app.ingest_event(envelope(
         1,
         "req_failed_enable_shell",
@@ -147,7 +147,7 @@ pub(super) fn failed_always_approve_enable_restores_suppressed_permission_ui() {
     ));
     assert!(app.active_permission_view().is_none());
 
-    app.reject_always_approve_mode_change();
+    app.reject_yolo_mode_change();
 
     assert_eq!(
         app.active_permission_view()
@@ -156,39 +156,60 @@ pub(super) fn failed_always_approve_enable_restores_suppressed_permission_ui() {
     );
 }
 
-pub(super) fn always_approve_mode_appends_composer_badge_suffix() {
+pub(super) fn yolo_mode_appends_composer_badge_suffix() {
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(crate::app::LaunchMetadata::new(
         "build",
         "test-provider",
         Some("model-tx".to_string()),
     ));
-    app.set_always_approve_mode(true);
-    assert!(app.always_approve_mode());
+    let (tx, rx) = crate::live_update_channel();
+    tx.send(crate::LiveUpdate::YoloModeChanged { enabled: true })
+        .unwrap_or_abort();
+    crate::runtime_live_updates::drain_live_updates(&mut app, &rx);
+    assert!(app.yolo_mode());
     assert!(app.active_permission_view().is_none());
+    assert!(app.toast().is_none());
 
-    let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap_or_abort();
+    let mut resumed = AppState::new_live(None, false, None);
+    resumed.ingest_historical_event(envelope(
+        1,
+        "approval-mode",
+        EventV1::YoloModeChanged { enabled: true },
+    ));
+    for app in [&app, &resumed] {
+        for width in [40, 80, 120] {
+            let mut terminal = Terminal::new(TestBackend::new(width, 30)).unwrap_or_abort();
+            terminal.draw(|frame| render_app(frame, app)).unwrap_or_abort();
+            let debug = format!("{:?}", terminal.backend().buffer());
+            assert!(debug.contains("YOLO"), "{debug}");
+        }
+    }
+
+    resumed.ingest_event(envelope(
+        2,
+        "approval-mode-off",
+        EventV1::YoloModeChanged { enabled: false },
+    ));
+    let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap_or_abort();
     terminal
-        .draw(|frame| render_app(frame, &app))
+        .draw(|frame| render_app(frame, &resumed))
         .unwrap_or_abort();
     let debug = format!("{:?}", terminal.backend().buffer());
-    assert!(
-        debug.contains("always-approve"),
-        "composer badge must show · always-approve when mode is engaged\n{debug}"
-    );
+    assert!(!debug.contains("YOLO"), "{debug}");
 }
 
-pub(super) fn permission_modal_ctrl_o_opens_always_approve_confirm() {
+pub(super) fn permission_modal_ctrl_o_opens_yolo_confirm() {
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(envelope(
         1,
-        "req_modal_ctrl_o_always_1",
+        "req_modal_ctrl_o_yolo_1",
         EventV1::PermissionRequested(PermissionRequestedEvent {
-            permission_id: "perm_modal_ctrl_o_always_1".to_string(),
+            permission_id: "perm_modal_ctrl_o_yolo_1".to_string(),
             kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_modal_ctrl_o_always_1".into()),
+            tool_call_id: Some("tc_modal_ctrl_o_yolo_1".into()),
             summary: "permission summary".to_string(),
-            request_digest: "digest-modal-ctrl-o-always".to_string(),
+            request_digest: "digest-modal-ctrl-o-yolo".to_string(),
             timeout_ms: 30_000,
             default_decision: harness_core::event::PermissionDecision::Deny,
         }),
@@ -197,7 +218,7 @@ pub(super) fn permission_modal_ctrl_o_opens_always_approve_confirm() {
     app.handle_key(key(KeyCode::Right));
     app.handle_key(key(KeyCode::Right));
     assert_eq!(
-        app.permission_modal_selection("perm_modal_ctrl_o_always_1"),
+        app.permission_modal_selection("perm_modal_ctrl_o_yolo_1"),
         PermissionModalSelection::AllowOnce
     );
 
@@ -206,8 +227,8 @@ pub(super) fn permission_modal_ctrl_o_opens_always_approve_confirm() {
         KeyModifiers::CONTROL,
     ));
     assert_eq!(
-        app.permission_modal_stage("perm_modal_ctrl_o_always_1"),
-        PermissionModalStage::AlwaysConfirm
+        app.permission_modal_stage("perm_modal_ctrl_o_yolo_1"),
+        PermissionModalStage::YoloConfirm
     );
 }
 
@@ -235,7 +256,7 @@ pub(super) fn permission_modal_allow_session_requests_session_grant() {
         }),
     ));
 
-    // Default selection is AllowAlways; cycle once to AllowSession (freeze option 2).
+    // Default selection is EnableYolo; cycle once to AllowSession (freeze option 2).
     app.handle_key(key(KeyCode::Right));
     assert_eq!(
         app.permission_modal_selection("perm_modal_allow_session_1"),
@@ -391,7 +412,7 @@ fn permission_mouse_hit_regions_match_the_rendered_option_rows() {
         regions,
         vec![
             (
-                PermissionPointerTarget::Decision(PermissionModalSelection::AllowAlways),
+                PermissionPointerTarget::Decision(PermissionModalSelection::EnableYolo),
                 Rect::new(5, 32, 111, 1),
             ),
             (
@@ -700,7 +721,7 @@ fn permission_mouse_click_selects_before_emitting_only_a_resolution_intent() {
 }
 
 #[test]
-fn permission_always_mouse_requires_confirmation_before_emitting_intent() {
+fn permission_yolo_mouse_requires_confirmation_before_emitting_intent() {
     // arrange
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink_intents = Arc::clone(&intents);
@@ -710,27 +731,27 @@ fn permission_always_mouse_requires_confirmation_before_emitting_intent() {
     let mut app = AppState::new_live(None, false, Some(sink));
     app.ingest_event(edit_permission_event(
         1,
-        "permission_mouse_always",
-        "tool_call_mouse_always",
+        "permission_mouse_yolo",
+        "tool_call_mouse_yolo",
     ));
-    let always_area = app
+    let yolo_area = app
         .permission_prompt_hit_regions_for_test(frame_area)
         .into_iter()
         .find_map(|(target, area)| {
-            (target == PermissionPointerTarget::Decision(PermissionModalSelection::AllowAlways))
+            (target == PermissionPointerTarget::Decision(PermissionModalSelection::EnableYolo))
                 .then_some(area)
         })
         .unwrap_or_abort();
 
     app.handle_mouse(
-        mouse_event(MouseEventKind::Down(MouseButton::Left), always_area),
+        mouse_event(MouseEventKind::Down(MouseButton::Left), yolo_area),
         frame_area,
         None,
         None,
         None,
     );
     app.handle_mouse(
-        mouse_event(MouseEventKind::Up(MouseButton::Left), always_area),
+        mouse_event(MouseEventKind::Up(MouseButton::Left), yolo_area),
         frame_area,
         None,
         None,
@@ -738,8 +759,8 @@ fn permission_always_mouse_requires_confirmation_before_emitting_intent() {
     );
 
     assert_eq!(
-        app.permission_modal_stage("permission_mouse_always"),
-        PermissionModalStage::AlwaysConfirm
+        app.permission_modal_stage("permission_mouse_yolo"),
+        PermissionModalStage::YoloConfirm
     );
     assert!(intents.lock().unwrap_or_abort().is_empty());
     let confirm_area = app
@@ -769,9 +790,9 @@ fn permission_always_mouse_requires_confirmation_before_emitting_intent() {
     );
 
     // assert
-    assert!(!app.always_approve_mode());
+    assert!(!app.yolo_mode());
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
-        &[UiIntent::SetAlwaysApproveMode { enabled: true }]
+        &[UiIntent::SetYoloMode { enabled: true }]
     );
 }

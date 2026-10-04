@@ -29,7 +29,7 @@ pub(crate) struct PromptCommand {
     #[arg(long)]
     pub(crate) profile: Option<String>,
     #[command(flatten)]
-    options: options::Options,
+    pub(crate) options: options::Options,
     #[arg(long)]
     text: Option<String>,
     #[arg(long)]

@@ -135,6 +135,7 @@ pub(super) fn refreshed_launch_metadata_after_auth(
             continue_session: None,
             scenario: None,
             mock: false,
+            yolo: false,
             deterministic: false,
             session_dir: None,
             exit_on_finish: false,

@@ -4,7 +4,7 @@ use harness_core::{
 };
 
 #[derive(clap::Args)]
-pub(super) struct Options {
+pub(crate) struct Options {
     #[arg(long, short = 'm')]
     model: Option<String>,
     #[arg(long)]
@@ -34,10 +34,11 @@ pub(super) struct Options {
     /// Permission preset. This does not provide operating-system confinement.
     #[arg(long, value_parser = ["readonly", "read-only", "workspace", "danger", "full"])]
     sandbox: Option<String>,
-    #[arg(long, value_parser = ["default", "bypassPermissions", "yolo", "acceptEdits", "dontAsk"])]
+    #[arg(long, value_parser = ["default", "yolo", "acceptEdits", "dontAsk"])]
     permission_mode: Option<String>,
-    #[arg(long, alias = "always-approve")]
-    dangerously_skip_permissions: bool,
+    /// Enable YOLO mode for this session and remember it on resume.
+    #[arg(long)]
+    pub(crate) yolo: bool,
     #[arg(long, value_delimiter = ',')]
     allow: Vec<String>,
     #[arg(long, value_delimiter = ',')]
@@ -57,19 +58,14 @@ impl Options {
             Some("default") => Some((Ask, Ask, Ask)),
             Some("acceptEdits") => Some((Allow, Ask, Ask)),
             Some("dontAsk") => Some((Deny, Deny, Deny)),
-            Some("bypassPermissions" | "yolo") => Some((Allow, Allow, Allow)),
+            Some("yolo") => Some((Allow, Allow, Allow)),
             _ => modes,
         };
-        if self.dangerously_skip_permissions {
+        if self.yolo {
             modes = Some((Allow, Allow, Allow));
         }
-        if self.dangerously_skip_permissions
-            || matches!(
-                self.permission_mode.as_deref(),
-                Some("bypassPermissions" | "yolo")
-            )
-        {
-            config.runtime.always_approve = true;
+        if self.yolo || self.permission_mode.as_deref() == Some("yolo") {
+            config.runtime.yolo = true;
         }
         if let Some((edit, shell, network)) = modes {
             defaults.edit = edit;

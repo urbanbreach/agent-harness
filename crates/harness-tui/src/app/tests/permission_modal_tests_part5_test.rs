@@ -45,7 +45,7 @@ fn permission_modal_number_shortcuts_use_guarded_decisions() {
 }
 
 #[test]
-fn permission_modal_number_one_requires_always_confirmation() {
+fn permission_modal_number_one_requires_yolo_confirmation() {
     // Given an unsubmitted permission and an unrelated selected row.
     let (mut app, intents) = permission_feedback_fixture();
     app.handle_key(key(KeyCode::Right));
@@ -56,10 +56,10 @@ fn permission_modal_number_one_requires_always_confirmation() {
     // Then it opens confirmation without granting permission or changing mode.
     assert_eq!(
         app.permission_modal_stage("perm_feedback"),
-        PermissionModalStage::AlwaysConfirm
+        PermissionModalStage::YoloConfirm
     );
     assert!(intents.lock().unwrap_or_abort().is_empty());
-    assert!(!app.always_approve_mode());
+    assert!(!app.yolo_mode());
     app.handle_key(key(KeyCode::Esc));
     assert_eq!(
         app.permission_modal_stage("perm_feedback"),
@@ -108,7 +108,7 @@ fn permission_modal_vertical_navigation_preserves_modifier_gates() {
         }
         assert_eq!(
             app.permission_modal_selection("perm_feedback"),
-            PermissionModalSelection::AllowAlways
+            PermissionModalSelection::EnableYolo
         );
         assert_eq!(
             app.permission_modal_stage("perm_feedback"),

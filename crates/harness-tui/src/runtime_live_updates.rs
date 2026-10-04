@@ -193,11 +193,11 @@ fn apply_update(
             app.ingest_runtime_event(*event);
             experience.sync_activity(app);
         }
-        LiveUpdate::AlwaysApproveModeChanged { enabled } => {
-            app.set_always_approve_mode(enabled);
+        LiveUpdate::YoloModeChanged { enabled } => {
+            app.set_yolo_mode(enabled);
         }
-        LiveUpdate::AlwaysApproveModeChangeFailed => {
-            app.reject_always_approve_mode_change();
+        LiveUpdate::YoloModeChangeFailed => {
+            app.reject_yolo_mode_change();
         }
         LiveUpdate::Status(status) => {
             if app.status_banner.as_deref() == Some(status.as_str()) {

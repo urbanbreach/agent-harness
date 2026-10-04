@@ -64,6 +64,9 @@ impl Runtime {
                 workspace_root: root.to_string_lossy().into(),
             }),
         )?;
+        if self.config.yolo_on_start {
+            self.set_yolo_mode(true)?;
+        }
         self.start_hooks()?;
         self.metadata = Some(self.new_metadata()?);
         self.write_metadata()?;

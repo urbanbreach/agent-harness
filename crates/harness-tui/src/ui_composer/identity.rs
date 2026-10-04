@@ -24,8 +24,8 @@ pub(crate) fn composer_model_badge(
     identity.extend(extra_identity.iter().cloned());
 
     let mut status = Vec::new();
-    if app.always_approve_mode() {
-        status.push("always-approve".to_string());
+    if app.yolo_mode() {
+        status.push("YOLO".to_string());
     }
     if app.shell_mode() {
         status.push("shell".to_string());

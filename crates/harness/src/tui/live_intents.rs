@@ -197,8 +197,8 @@ pub(super) async fn handle_ui_intents(
                     .map_err(|error| error.to_string());
                 let _ = live_update_tx.send(LiveUpdate::RewindComplete { generation, result });
             }
-            UiIntent::SetAlwaysApproveMode { enabled } => {
-                set_always_approve_mode(&coordinator, &live_update_tx, enabled).await?;
+            UiIntent::SetYoloMode { enabled } => {
+                set_yolo_mode(&coordinator, &live_update_tx, enabled).await?;
             }
             UiIntent::ResolvePermission {
                 permission_id,
@@ -437,21 +437,21 @@ async fn shell_command_notice(
     }
 }
 
-async fn set_always_approve_mode(
+async fn set_yolo_mode(
     coordinator: &CoordinatorHandle,
     live_update_tx: &LiveUpdateSender,
     enabled: bool,
 ) -> Result<(), String> {
-    match coordinator.set_always_approve_mode(enabled).await {
+    match coordinator.set_yolo_mode(enabled).await {
         Ok(()) => live_update_tx
-            .send(LiveUpdate::AlwaysApproveModeChanged { enabled })
+            .send(LiveUpdate::YoloModeChanged { enabled })
             .map_err(|err| err.to_string())?,
         Err(error) => {
             live_update_tx
-                .send(LiveUpdate::AlwaysApproveModeChangeFailed)
+                .send(LiveUpdate::YoloModeChangeFailed)
                 .map_err(|err| err.to_string())?;
             let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                message: format!("Failed to change always-approve mode: {error}"),
+                message: format!("Failed to change YOLO mode: {error}"),
                 level: OperatorNoticeLevel::Error,
             });
         }

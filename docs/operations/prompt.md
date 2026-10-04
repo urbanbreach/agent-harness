@@ -89,12 +89,12 @@ permission rules in the configuration or select a prompt permission mode.
 | `--permission-mode default` | Ask before edits, shell commands, and network operations |
 | `--permission-mode acceptEdits` | Allow edits; ask before shell and network operations |
 | `--permission-mode dontAsk` | Deny edits, shell commands, and network operations |
-| `--dangerously-skip-permissions` | Allow those operations and approve pending policy asks |
+| `--yolo` | Allow those operations and approve pending policy asks |
 | `--allow edit,read` | Allow these permission kinds by default |
 | `--deny bash` | Deny these permission kinds by default |
 
-`--always-approve` aliases `--dangerously-skip-permissions`.
-`bypassPermissions` and `yolo` are permission-mode aliases for the same behavior.
+`--permission-mode yolo` selects YOLO mode too. The session remembers the mode
+when resumed.
 Explicit deny rules still apply. Allow and deny options change defaults and do
 not erase selectors in the configuration. Deny options take precedence over allow
 options for the same kind.

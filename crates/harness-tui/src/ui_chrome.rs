@@ -924,8 +924,7 @@ fn permission_shell_hints(
     height: u16,
 ) -> Vec<(&'static str, &'static str)> {
     use crate::app::permissions::PermissionModalStage;
-    if app.permission_modal_stage(&permission.permission_id) == PermissionModalStage::AlwaysConfirm
-    {
+    if app.permission_modal_stage(&permission.permission_id) == PermissionModalStage::YoloConfirm {
         return vec![("Enter", ":confirm"), ("Esc", ":back")];
     }
     let editing = app
@@ -951,7 +950,7 @@ fn permission_shell_hints(
         hints.push(("Esc", ":back"));
     } else {
         hints.extend([
-            ("Ctrl+o", ":always-approve"),
+            ("Ctrl+o", ":yolo"),
             ("Ctrl+c", ":cancel"),
             ("Esc", ":scrollback"),
         ]);

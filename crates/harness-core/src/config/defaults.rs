@@ -22,7 +22,7 @@ defaults! {
     PromptRuntimeConfig { wait_timeout_ms: 30_000 }
     PathsConfig { session_dir: ".agent-harness/sessions".into() }
     RuntimeConfig {
-        always_approve: false, background_tasks: BackgroundTaskSettings::default(), session_dir: PathsConfig::default().session_dir,
+        yolo: false, background_tasks: BackgroundTaskSettings::default(), session_dir: PathsConfig::default().session_dir,
         permissions: RuntimePermissionsConfig::default(), prompt: PromptRuntimeConfig::default(), deterministic: DeterministicConfig::default(),
         compaction: CompactionSettings::default(), provider_retry: ProviderRetryRuntimeConfig::default()
     }

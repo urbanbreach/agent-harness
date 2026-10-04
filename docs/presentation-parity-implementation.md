@@ -133,7 +133,7 @@ separate evidence sets; actual timings are retained in their manifests.
 | Reference operation | Harness implementation / retained boundary |
 | --- | --- |
 | Identity and styling | Harness name, H artwork, palette, version/provider facts and terminology remain. Geometry and semantic roles follow the reference; brand RGB and artwork do not. |
-| Permissions and questions | Existing coordinator-owned `UiIntent::ResolvePermission` and question handlers. Compact dashboard review, always-allow confirmation and acknowledgement are preserved. Reference pattern editing is not exposed without a corresponding coordinator-approved scope contract. |
+| Permissions and questions | Existing coordinator-owned `UiIntent::ResolvePermission` and question handlers. Compact dashboard review, YOLO confirmation and acknowledgement are preserved. Reference pattern editing is not exposed without a corresponding coordinator-approved scope contract. |
 | Inactive session input | Existing `ContinueSession` / `ReplaySession` eligibility opens the selected session before replying; the current coordinator is not presented as owner of every recorded run. |
 | Memory | Actual durable key/value data, selected value preview/copy in live mode; replay does not read current workspace memory. Reference file-memory deletion is not mapped to unrelated key/value operations. |
 | Plans | Existing validated workspace plan preview/copy/delete. There is no provider-plan approval/comment intent, so no fabricated approval control. |

@@ -183,7 +183,7 @@
         "Some(Boolean)"
       ],
       [
-        "runtime.always_approve",
+        "runtime.yolo",
         "Some(Boolean)"
       ],
       [
@@ -262,7 +262,7 @@
       "selected-settings-160x50-reduced-0ms"
     ],
     "original_base": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
-    "original_fixture_sha256": "5913f3430a0572b649f1758a4d29648a90dc6a7194d5951ba9898254dd0e2751",
+    "original_fixture_sha256": "ae9cf00461889a0a8b254242f33e484ad1ebca401c4768f9cd33f801f38c16cf",
     "registry": [
       {
         "capability_dependency": null,
@@ -811,9 +811,9 @@
         "merge_strategy": "replace",
         "mutability": "editable",
         "restart_required": true,
-        "schema_id": "harness.runtime.always_approve",
+        "schema_id": "harness.runtime.yolo",
         "sensitivity": "public",
-        "setting_id": "runtime.always_approve",
+        "setting_id": "runtime.yolo",
         "surface": "runtime"
       },
       {

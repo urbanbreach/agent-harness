@@ -217,7 +217,7 @@ fn permission_modal_preserves_draft_without_pty() {
     insta::assert_snapshot!(rendered.as_str());
 
     assert!(rendered.contains("Allow Edit to demo.txt?"));
-    assert!(rendered.contains("always-approve"));
+    assert!(rendered.contains("yolo"));
     assert!(rendered.contains("No, reject"));
     assert!(rendered.contains("Yes"));
     assert!(

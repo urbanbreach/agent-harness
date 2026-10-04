@@ -81,7 +81,7 @@ fn definition(
         restart_required: metadata
             || id.starts_with("subagents.")
             || id.starts_with("features.")
-            || matches!(id, "runtime.always_approve" | "runtime.session_dir"),
+            || matches!(id, "runtime.yolo" | "runtime.session_dir"),
         default_value: default,
         merge_strategy: if matches!(
             id,
@@ -131,7 +131,7 @@ static REGISTRY: LazyLock<Vec<SettingDefinition>> = LazyLock::new(|| {
         "features.subagent_worktree_snapshot" => "false",
     ).to_vec();
     entries.extend(entries!("harness.", Runtime;
-        "runtime.always_approve" => "false", "runtime.compaction.enabled" => "true", "runtime.compaction.reserve_tokens" => "16384",
+        "runtime.yolo" => "false", "runtime.compaction.enabled" => "true", "runtime.compaction.reserve_tokens" => "16384",
         "runtime.compaction.keep_recent_tokens" => "20000", "runtime.compaction.threshold_percent", "runtime.compaction.threshold_tokens",
         "runtime.compaction.model_thresholds" => "{}", "runtime.compaction.agent_thresholds" => "{}", "runtime.compaction.fallback_input_tokens" => "32768",
         "runtime.compaction.auto_retry_overflow" => "true", "runtime.compaction.structured_summary_contract" => "true", "runtime.compaction.estimated_token_triggers" => "true",

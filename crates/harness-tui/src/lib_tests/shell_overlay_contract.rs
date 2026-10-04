@@ -461,7 +461,7 @@ pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {
     let rendered = render_live_lines(&app, 100, 24);
     let buffer = render_live_cells(&app, 100, 24);
     let theme = Theme::default();
-    let selected_marker = "1 (●) Yes, enable always-approve mode";
+    let selected_marker = "1 (●) Yes, enable YOLO mode";
     let (row, fgs, bgs) = row_text_and_palette(&buffer, 100, selected_marker).unwrap_or_abort();
     let start_byte = row.find(selected_marker).unwrap_or_abort();
     let start = row[..start_byte].chars().count();
@@ -473,10 +473,10 @@ pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {
     );
     assert!(!app.palette_visible);
     assert!(rendered.contains("Allow Edit"));
-    assert!(rendered.contains("always-approve"));
+    assert!(rendered.contains("yolo"));
     assert!(rendered.contains("No, reject"));
     assert!(
-        rendered.contains("Ctrl+o:always-approve")
+        rendered.contains("Ctrl+o:yolo")
             || rendered.contains("Ctrl+c:cancel")
             || rendered.contains("enter:confirm")
             || rendered.contains("Ctrl+n:deny")

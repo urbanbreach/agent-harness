@@ -2,7 +2,7 @@
 //!
 //! Writable when a project runtime config path is bound:
 //! - `hashline_edit`
-//! - `runtime.always_approve`
+//! - `runtime.yolo`
 //! - `runtime.compaction.enabled`
 //! - `runtime.compaction.auto_retry_overflow`
 //! - `runtime.compaction.structured_summary_contract`
@@ -50,8 +50,8 @@ pub(crate) fn human_label(id: &str) -> String {
     if id == "confirm_before_rewind" {
         return "Confirm before rewind".into();
     }
-    if id == "runtime.always_approve" {
-        return "Always approve on startup".to_string();
+    if id == "runtime.yolo" {
+        return "YOLO on startup".to_string();
     }
     let label = id
         .strip_prefix("runtime.")

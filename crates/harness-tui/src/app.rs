@@ -578,8 +578,8 @@ pub struct AppState {
     pub toggles_menu_visible: bool,
     pub toggles_selected: usize,
     toggles_yolo_confirm_visible: bool,
-    always_approve_mode: bool,
-    always_approve_mode_change_pending: Option<bool>,
+    yolo_mode: bool,
+    yolo_mode_change_pending: Option<bool>,
     session_mode: SessionMode,
     runtime_toggles: toggles::RuntimeTogglesState,
     pub lineage_browser: LineageBrowserState,
@@ -827,8 +827,8 @@ impl Default for AppState {
             toggles_menu_visible: false,
             toggles_selected: 0,
             toggles_yolo_confirm_visible: false,
-            always_approve_mode: false,
-            always_approve_mode_change_pending: None,
+            yolo_mode: false,
+            yolo_mode_change_pending: None,
             session_mode: SessionMode::Normal,
             runtime_toggles: toggles::RuntimeTogglesState::default(),
             lineage_browser: LineageBrowserState::default(),
@@ -1699,7 +1699,7 @@ impl AppState {
         self.submitted_permission_id = None;
         self.permission_prompt.permission_id = None;
         self.permission_prompt.stage = PermissionModalStage::Decision;
-        self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
+        self.permission_prompt.selection = PermissionModalSelection::EnableYolo;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
         self.permission_prompt.focus_return = None;
         self.question_prompt = QuestionPromptState::default();
@@ -1898,6 +1898,9 @@ impl AppState {
     fn prepare_event_surfaces(&mut self, event: &EventEnvelopeV1, historical: bool) {
         let suppress_permission = !historical && self.should_suppress_permission_event(event);
         match &event.payload {
+            EventV1::YoloModeChanged { enabled } => {
+                self.set_yolo_mode(*enabled);
+            }
             EventV1::PermissionRequested(data) => {
                 if suppress_permission {
                     self.suppressed_permissions
@@ -3620,39 +3623,35 @@ impl AppState {
         }
     }
 
-    pub fn always_approve_mode(&self) -> bool {
-        self.always_approve_mode
+    pub fn yolo_mode(&self) -> bool {
+        self.yolo_mode
     }
 
-    pub(crate) fn set_always_approve_mode(&mut self, enabled: bool) {
-        self.always_approve_mode_change_pending = None;
-        self.always_approve_mode = enabled;
+    pub(crate) fn set_yolo_mode(&mut self, enabled: bool) {
+        self.yolo_mode_change_pending = None;
+        self.yolo_mode = enabled;
         self.session_mode = if enabled {
-            SessionMode::AlwaysApprove
+            SessionMode::Yolo
         } else {
             SessionMode::Normal
         };
     }
 
-    pub(in crate::app) fn request_always_approve_mode_toggle(&mut self) {
-        self.request_always_approve_mode_change(
-            !self
-                .always_approve_mode_change_pending
-                .unwrap_or(self.always_approve_mode),
-        );
+    pub(in crate::app) fn request_yolo_mode_toggle(&mut self) {
+        self.request_yolo_mode_change(!self.yolo_mode_change_pending.unwrap_or(self.yolo_mode));
     }
 
-    pub(in crate::app) fn request_always_approve_mode_change(&mut self, enabled: bool) {
+    pub(in crate::app) fn request_yolo_mode_change(&mut self, enabled: bool) {
         if self.replay_mode {
             return;
         }
-        self.always_approve_mode_change_pending = Some(enabled);
-        self.emit_ui_intent(UiIntent::SetAlwaysApproveMode { enabled });
+        self.yolo_mode_change_pending = Some(enabled);
+        self.emit_ui_intent(UiIntent::SetYoloMode { enabled });
     }
 
-    pub(crate) fn reject_always_approve_mode_change(&mut self) {
+    pub(crate) fn reject_yolo_mode_change(&mut self) {
         let permission_was_pending = self.active_permission().is_some();
-        self.always_approve_mode_change_pending = None;
+        self.yolo_mode_change_pending = None;
         self.suppressed_permissions.clear();
         self.reconcile_permission_focus(permission_was_pending);
     }
@@ -3661,7 +3660,7 @@ impl AppState {
         let EventV1::PermissionRequested(data) = &event.payload else {
             return false;
         };
-        self.always_approve_mode_change_pending == Some(true)
+        self.yolo_mode_change_pending == Some(true)
             && matches!(
                 data.kind.as_str(),
                 "edit_fs"

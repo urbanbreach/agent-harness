@@ -29,6 +29,7 @@ impl LiveCoordinatorConfigWarmup {
         let state = if demo_mode {
             LiveCoordinatorConfigWarmupState::Disabled
         } else if let Some(mut config) = settings.config.clone() {
+            config.runtime.yolo = settings.yolo;
             let session_dir = settings.session_dir.clone();
             LiveCoordinatorConfigWarmupState::Pending(tokio::task::spawn_blocking(move || {
                 profile_log::profile_handoff("warmup.default.begin");

@@ -73,7 +73,7 @@ pub enum Action {
     VariantCycle,
     AllowPermission,
     /// Toggle session approval mode, or open confirmation in a permission modal.
-    AlwaysApprovePermission,
+    ToggleYoloMode,
     /// Deny permission in modal
     DenyPermission,
     /// Dismiss modal
@@ -193,7 +193,7 @@ action_ids! {
     DiffHunkPrevious => "diff_hunk_previous",
     VariantCycle => "variant_cycle",
     AllowPermission => "allow_permission",
-    AlwaysApprovePermission => "always_approve_permission",
+    ToggleYoloMode => "yolo_mode",
     DenyPermission => "deny_permission",
     DismissModal => "dismiss_modal",
     HistoryUp => "history_up",
@@ -818,7 +818,7 @@ impl KeyMap {
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
-            Action::AlwaysApprovePermission,
+            Action::ToggleYoloMode,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('n'), KeyModifiers::CONTROL),

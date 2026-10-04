@@ -27,7 +27,7 @@ Permission selection and native file execution normalize paths differently. A su
 
 - [crates/harness-core/src/path_selector.rs:22](https://github.com/urbanbreach/agent-harness/blob/2e342840fa2d3dae7501af198166bd6742721e6f/crates/harness-core/src/path_selector.rs#L22) — Lexical selector normalization currently rejects every parent component.
 - [crates/harness-core/src/coord/permission.rs:756](https://github.com/urbanbreach/agent-harness/blob/2e342840fa2d3dae7501af198166bd6742721e6f/crates/harness-core/src/coord/permission.rs#L756) — Rejected paths are silently omitted.
-- [crates/harness-core/src/coord/permission.rs:106](https://github.com/urbanbreach/agent-harness/blob/2e342840fa2d3dae7501af198166bd6742721e6f/crates/harness-core/src/coord/permission.rs#L106) — Always-approve protects sensitive names using raw input rather than effective targets.
+- [crates/harness-core/src/coord/permission.rs:106](https://github.com/urbanbreach/agent-harness/blob/2e342840fa2d3dae7501af198166bd6742721e6f/crates/harness-core/src/coord/permission.rs#L106) — YOLO protects sensitive names using raw input rather than effective targets.
 - [crates/harness-core/src/coord/tool_execution.rs:172](https://github.com/urbanbreach/agent-harness/blob/2e342840fa2d3dae7501af198166bd6742721e6f/crates/harness-core/src/coord/tool_execution.rs#L172) — Coordinator builds the selectors before policy evaluation and grant handling.
 - [crates/harness-core/src/tool.rs:305](https://github.com/urbanbreach/agent-harness/blob/2e342840fa2d3dae7501af198166bd6742721e6f/crates/harness-core/src/tool.rs#L305) — Existing read resolver normalizes and canonicalizes execution paths, then applies external grants.
 - [crates/harness-tools/src/hashline_apply.rs:319](https://github.com/urbanbreach/agent-harness/blob/2e342840fa2d3dae7501af198166bd6742721e6f/crates/harness-tools/src/hashline_apply.rs#L319) — Existing-ancestor validation shows how creation targets are checked.
@@ -126,7 +126,7 @@ Run commands from the repository root. The audit used the existing installed too
 | Purpose | Command | Expected result |
 |---|---|---|
 | Workspace compile | `cargo check --workspace --locked --offline` | Exit 0. |
-| Focused behavior | `cargo nextest run --profile ci --locked --offline -p harness-core --lib -E 'test(permission_) \| test(always_approve)'` | Selected tests pass after the repair; selection must not be empty. |
+| Focused behavior | `cargo nextest run --profile ci --locked --offline -p harness-core --lib -E 'test(permission_) \| test(yolo)'` | Selected tests pass after the repair; selection must not be empty. |
 | Formatting check | `cargo fmt --all -- --check` | Exit 0; do not reformat unrelated files. |
 | Scoped lint | `cargo clippy -p harness-core --all-targets --all-features --locked --offline -- -D warnings` | Exit 0; no blanket lint suppression. |
 | Whitespace | `git diff --check` | Exit 0. |
@@ -174,9 +174,9 @@ Keep normalize_workspace_relative_path's pure configuration-selector contract un
 
 ### Step 3: Use effective targets for bypass and grant safety
 
-Update permission_grant_matcher and always_approve_can_bypass to consume the validated path information, threading the workspace/context through their callers in permission.rs and tool_execution.rs as needed. Sensitive-target asks must remain promptable even through a harmlessly named alias and even with always-approve enabled. If multiple identities prevent a safe single-path reusable grant, keep the existing request-digest fallback; do not broaden it. Revalidate targets when resuming a pending permission so a changed alias does not silently reuse stale authorization. Extend the existing always-approve and grant tests; preserve external-directory and question special handling.
+Update permission_grant_matcher and YOLO_can_bypass to consume the validated path information, threading the workspace/context through their callers in permission.rs and tool_execution.rs as needed. Sensitive-target asks must remain promptable even through a harmlessly named alias and even with YOLO enabled. If multiple identities prevent a safe single-path reusable grant, keep the existing request-digest fallback; do not broaden it. Revalidate targets when resuming a pending permission so a changed alias does not silently reuse stale authorization. Extend the existing yolo and grant tests; preserve external-directory and question special handling.
 
-**Verify:** `cargo nextest run --profile ci --locked --offline -p harness-core --lib -E 'test(permission_) | test(always_approve)'` → All policy/grant cases pass, including static-deny precedence, sensitive alias asks, and explicitly approved external access.
+**Verify:** `cargo nextest run --profile ci --locked --offline -p harness-core --lib -E 'test(permission_) | test(yolo)'` → All policy/grant cases pass, including static-deny precedence, sensitive alias asks, and explicitly approved external access.
 
 ### Step 4: Document and verify the resolution contract
 
@@ -192,17 +192,17 @@ Run workspace compilation, focused behavior, any additional behavior commands, f
 
 ## Test plan
 
-One coordinator behavior table should cover read/edit aliases and equivalent paths. Extend existing always-approve/grant coverage for the distinct bypass risk. Keep denied targets unchanged and assert no ToolCallStarted event; a selector-only unit test is insufficient. Use cfg(unix) for symlinks and retain platform-neutral normalization cases.
+One coordinator behavior table should cover read/edit aliases and equivalent paths. Extend existing yolo/grant coverage for the distinct bypass risk. Keep denied targets unchanged and assert no ToolCallStarted event; a selector-only unit test is insufficient. Use cfg(unix) for symlinks and retain platform-neutral normalization cases.
 
 ## Done criteria
 
 All must hold:
 
 - [x] The permission_path table verifies identical policy for effective internal targets and rejects invalid supplied paths before execution.
-- [x] Sensitive target aliases remain promptable with always-approve enabled; static denies still beat grants.
+- [x] Sensitive target aliases remain promptable with YOLO enabled; static denies still beat grants.
 - [x] Existing approved external-directory behavior and native containment tests pass.
 - [x] The shared effective-target helper accepts missing internal leaves through validated ancestors; plan 006 can reuse that contract.
-- [x] `cargo nextest run --profile ci --locked --offline -p harness-core --lib -E 'test(permission_) | test(always_approve)'` passes with a non-empty selection.
+- [x] `cargo nextest run --profile ci --locked --offline -p harness-core --lib -E 'test(permission_) | test(yolo)'` passes with a non-empty selection.
 - [x] `cargo check --workspace --locked --offline`, `cargo fmt --all -- --check`, `cargo clippy -p harness-core --all-targets --all-features --locked --offline -- -D warnings` and `git diff --check` pass, or a documented baseline blocker keeps this plan explicitly BLOCKED rather than DONE.
 - [x] Changed paths are within the Scope list; pre-existing user files are untouched.
 - [x] Execution evidence and the matching index status are updated; no implementation or verification result is invented.
@@ -240,7 +240,7 @@ they do not describe this implementation.
   repairs were needed.
 - The table covers read/edit deny and ask, internal parent components, both
   directions of alias policy, missing leaves, allowed controls, and invalid
-  supplied arguments. Further checks cover sensitive aliases with always-approve,
+  supplied arguments. Further checks cover sensitive aliases with YOLO,
   stable and retargeted run grants, static denies, and stale ordinary,
   external-directory, and doom-loop approvals.
 - The existing external-directory collector remains unchanged. An initial attempt
@@ -251,7 +251,7 @@ they do not describe this implementation.
 Validation:
 
 - `cargo nextest run --profile ci --locked --offline -p harness-core --lib -E
-  'test(permission_) | test(always_approve) | test(path_selector) |
+  'test(permission_) | test(yolo) | test(path_selector) |
   test(external_directory)'`: 42 passed, non-empty selection.
 - `cargo nextest run --profile ci --locked --offline -p harness-tools --test
   native_workspace_edit_routing_test`: 7 passed.

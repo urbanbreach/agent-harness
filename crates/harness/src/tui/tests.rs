@@ -50,6 +50,7 @@ fn live_tui_command() -> TuiCommand {
         continue_session: None,
         scenario: None,
         mock: false,
+        yolo: false,
         deterministic: false,
         session_dir: None,
         exit_on_finish: false,

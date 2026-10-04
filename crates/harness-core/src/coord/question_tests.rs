@@ -9,7 +9,7 @@ async fn questions_validate_answers_and_cancel_without_consuming_tool_capacity(
     let temp = tempfile::tempdir()?;
     let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
     config.tool_concurrency = 1;
-    config.always_approve_on_start = true;
+    config.yolo_on_start = true;
     let mut profile = AgentProfile::fallback("default");
     profile.toolset = vec!["question".into()];
     config.agent_profiles.insert("default".into(), profile);
@@ -50,7 +50,7 @@ async fn questions_validate_answers_and_cancel_without_consuming_tool_capacity(
         Ok::<_, Box<dyn std::error::Error>>(approvals)
     })
     .await??;
-    coordinator.set_always_approve_mode(true).await?;
+    coordinator.set_yolo_mode(true).await?;
     let first = approvals
         .iter()
         .find(|p| {

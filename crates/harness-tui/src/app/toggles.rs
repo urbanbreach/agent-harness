@@ -232,7 +232,7 @@ impl AppState {
                     label: entry.label.clone(),
                     description: entry.description.clone(),
                     enabled: if matches!(entry.kind, ToggleEntryKind::YoloMode) {
-                        self.always_approve_mode()
+                        self.yolo_mode()
                     } else {
                         entry.enabled
                     },
@@ -361,8 +361,8 @@ impl AppState {
             return;
         };
         if matches!(entry.kind, ToggleEntryKind::YoloMode) {
-            if self.always_approve_mode() {
-                self.request_always_approve_mode_change(false);
+            if self.yolo_mode() {
+                self.request_yolo_mode_change(false);
             } else {
                 self.toggles_yolo_confirm_visible = true;
             }
@@ -372,7 +372,7 @@ impl AppState {
     }
 
     fn enable_yolo_mode(&mut self) {
-        self.request_always_approve_mode_change(true);
+        self.request_yolo_mode_change(true);
     }
 
     fn add_toggle_entry_if_missing(&mut self, entry: ToggleEntryState) {
@@ -427,8 +427,8 @@ fn default_toggle_entries() -> Vec<ToggleEntryConfig> {
         },
         ToggleEntryConfig {
             kind: ToggleEntryKind::YoloMode,
-            label: "Always approve mode".to_string(),
-            description: "Auto-approve ordinary tool permissions for this session (YOLO, Ctrl+O)"
+            label: "YOLO mode".to_string(),
+            description: "Auto-approve ordinary tool permissions for this session (Ctrl+O)"
                 .to_string(),
             enabled: false,
         },

@@ -161,7 +161,7 @@ define_command_metadata! {
     ("move_up", "Move up", "Move up in list"),
     ("reload", "Reload", "Reload session"),
     ("allow_permission", "Allow permission", "Allow permission"),
-    ("always_approve_permission", "Toggle always-approve mode", "Toggle session approval mode; confirm when a permission prompt is open"),
+    ("yolo_mode", "Toggle YOLO mode", "Toggle session approval mode; confirm when a permission prompt is open"),
     ("deny_permission", "Deny permission", "Deny permission"),
     ("dismiss_modal", "Reject permission", "Reject permission"),
     ("history_up", "History up", "History up"),
@@ -322,7 +322,7 @@ pub(super) const fn help_category(action: Action) -> Option<HelpCategory> {
         | Action::SessionBackground
         | Action::OpenSessionHistory
         | Action::OpenLineageBrowser
-        | Action::AlwaysApprovePermission => Some(HelpCategory::Session),
+        | Action::ToggleYoloMode => Some(HelpCategory::Session),
         Action::ToggleTasks | Action::ToggleTodos => Some(HelpCategory::Dashboard),
         Action::OpenEventLog
         | Action::AllowPermission
@@ -343,7 +343,7 @@ define_slash_commands! {
     ("agents", "switch_model", &[], false, false),
     ("mcps", "toggles", &[], false, false),
     ("toggles", "toggles", &[], false, false),
-    ("always-approve", "always_approve_permission", &["yolo"], false, false),
+    ("yolo", "yolo_mode", &[], false, false),
     ("auth", "auth", &["login"], true, false),
     ("connect", "connect", &[], false, false),
     ("help", "help", &[], false, false),
@@ -469,7 +469,7 @@ mod tests {
                 "agents",
                 "mcps",
                 "toggles",
-                "always-approve",
+                "yolo",
                 "auth",
                 "connect",
                 "help",
