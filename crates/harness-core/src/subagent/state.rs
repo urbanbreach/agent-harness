@@ -210,7 +210,7 @@ pub(crate) fn read_finalized_payload(
         Err(_) => return unavailable(FinalizedStateUnavailable::Corrupt),
     };
     if bytes.len() as u64 != reference.byte_length
-        || format!("{:x}", Sha256::digest(&bytes)) != reference.state.sha256
+        || hex::encode(Sha256::digest(&bytes)) != reference.state.sha256
     {
         return unavailable(FinalizedStateUnavailable::Corrupt);
     }

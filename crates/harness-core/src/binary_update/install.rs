@@ -228,7 +228,7 @@ fn copy_artifact(reader: &mut impl Read, writer: &mut impl Write) -> io::Result<
     if bytes == 0 {
         return Err(invalid("empty artifact"));
     }
-    Ok((bytes, format!("{:x}", hash.finalize())))
+    Ok((bytes, hex::encode(hash.finalize())))
 }
 fn ordinary_permissions(file: &File) -> io::Result<fs::Permissions> {
     let permissions = file.metadata()?.permissions();

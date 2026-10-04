@@ -167,7 +167,7 @@ pub(crate) fn copy(
         let actual = blake3::hash(&body).to_hex().to_string();
         if let Some(expected) = finalized_digests.get(path) {
             use sha2::{Digest, Sha256};
-            if format!("{:x}", Sha256::digest(&body)) != *expected {
+            if hex::encode(Sha256::digest(&body)) != *expected {
                 return Err(SessionLineageError::Invalid(
                     "finalized-state artifact digest mismatch".into(),
                 ));

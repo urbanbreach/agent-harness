@@ -68,7 +68,7 @@ pub(super) fn references(
             state.owner_session_id.clone_from(&next.owner_session_id);
             state.source_reference = Some(Box::new(reference.clone()));
             let bytes = serde_json::to_vec(&state)?;
-            next.state.sha256 = format!("{:x}", Sha256::digest(&bytes));
+            next.state.sha256 = hex::encode(Sha256::digest(&bytes));
             next.byte_length = bytes.len() as u64;
             if next.byte_length > MAX_FINALIZED_STATE_BYTES {
                 return Err(SessionLineageError::Invalid(

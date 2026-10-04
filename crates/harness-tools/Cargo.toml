@@ -19,11 +19,11 @@ schemars.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tokio-util.workspace = true
-tree-sitter = "0.25"
+tree-sitter = "0.27"
 tree-sitter-bash = "0.25"
 async-trait = "0.1"
 blake3 = "1"
-base64 = "0.22"
+base64 = "0.23"
 tempfile.workspace = true
 similar = "3"
 globset = "0.4"
@@ -34,7 +34,8 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 encoding_rs = "0.8"
 rmcp = { version = "3.2", default-features = false, features = ["client", "transport-async-rw", "transport-streamable-http-client-reqwest"] }
 futures-util = { version = "0.3", features = ["sink"] }
-sse-stream = "0.2.5"
+# RMCP exposes sse-stream 0.2 types in its HTTP transport API.
+sse-stream = "0.2.6"
 shell-words = "1"
 htmd = "0.5"
 pulldown-cmark = { version = "0.13", default-features = false }

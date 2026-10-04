@@ -13,10 +13,10 @@ categories.workspace = true
 anyhow = "1.0"
 ratatui.workspace = true
 regex = "1"
-textwrap = { version = "=0.16.2", default-features = false, features = ["unicode-linebreak", "unicode-width"] }
-tree-sitter = "=0.25.10"
-tree-sitter-bash = "=0.25.0"
-tui-scrollbar = "=0.2.2"
+textwrap = { version = "=0.16.4", default-features = false, features = ["unicode-linebreak", "unicode-width"] }
+tree-sitter = "=0.27.0"
+tree-sitter-bash = "=0.25.1"
+tui-scrollbar = "=0.2.8"
 # The level-triggered reader continues draining input after large terminal bursts.
 crossterm = { workspace = true, features = ["use-dev-tty"] }
 crossbeam-channel.workspace = true
@@ -29,7 +29,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 sha2 = "0.11"
 syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "default-themes", "regex-fancy", "plist-load"] }
-two-face = { version = "=0.4.5", default-features = false, features = ["syntect-fancy"] }
+two-face = { version = "=0.5.2", default-features = false, features = ["syntect-fancy"] }
 unicode-width = "0.2"
 vte = "0.15"
 unicode-segmentation = "1.12"

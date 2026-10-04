@@ -1,0 +1,410 @@
+{
+  "date": "2026-10-05",
+  "timezone": "Europe/Helsinki",
+  "baseline_commit": "60f002312273fe2b8e206383500ff51f8eaa1456",
+  "candidate": "uncommitted dependency update on the baseline commit",
+  "candidate_patch_sha256": "37415bb5dd303db207b1f393f76b0c49514d0667218444333484daacd6cded29",
+  "cargo_lock_sha256": {
+    "before": "1f580bac9918a39e2c6a1fbbf6ce930893ee41a91238c3ba60bb94bd4f6fceea",
+    "after": "6f73e92c6dfe44425c5ebf1c18f329911d9e02e3944bedf34da838204145794a"
+  },
+  "environment": {
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+    "kernel": "Linux 7.2.5-3-omarchy",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12800H",
+    "cpu_governor": "powersave",
+    "release": {
+      "opt_level": 3,
+      "lto": "fat",
+      "codegen_units": 1,
+      "strip": "symbols"
+    },
+    "baseline_commit": "60f002312273fe2b8e206383500ff51f8eaa1456"
+  },
+  "dependency_update": {
+    "direct_rust_dependencies_changed": 35,
+    "existing_package_names_upgraded": 180,
+    "locked_packages_before": 538,
+    "locked_packages_after": 538,
+    "notable_rust_updates": {
+      "base64": {
+        "before": [
+          "0.22.1"
+        ],
+        "after": [
+          "0.23.1"
+        ]
+      },
+      "sha2": {
+        "before": [
+          "0.10.9",
+          "0.11.0"
+        ],
+        "after": [
+          "0.11.0"
+        ]
+      },
+      "toml": {
+        "before": [
+          "0.9.12+spec-1.1.0"
+        ],
+        "after": [
+          "1.1.6+spec-1.1.0"
+        ]
+      },
+      "tree-sitter": {
+        "before": [
+          "0.25.10"
+        ],
+        "after": [
+          "0.27.0"
+        ]
+      },
+      "tree-sitter-bash": {
+        "before": [
+          "0.25.0"
+        ],
+        "after": [
+          "0.25.1"
+        ]
+      },
+      "jsonschema": {
+        "before": [
+          "0.30.0"
+        ],
+        "after": [
+          "0.58.5"
+        ]
+      },
+      "two-face": {
+        "before": [
+          "0.4.5"
+        ],
+        "after": [
+          "0.5.2+bat-0.26.1"
+        ]
+      },
+      "textwrap": {
+        "before": [
+          "0.16.2"
+        ],
+        "after": [
+          "0.16.4"
+        ]
+      },
+      "tui-scrollbar": {
+        "before": [
+          "0.2.2"
+        ],
+        "after": [
+          "0.2.8"
+        ]
+      },
+      "tokio": {
+        "before": [
+          "1.52.3"
+        ],
+        "after": [
+          "1.53.2"
+        ]
+      },
+      "rmcp": {
+        "before": [
+          "3.4.1"
+        ],
+        "after": [
+          "3.5.0"
+        ]
+      }
+    },
+    "playwright_core": {
+      "before": "1.55.0",
+      "after": "1.63.0",
+      "node_minimum": "20"
+    },
+    "python_dev_tools": {
+      "basedpyright": "1.40.2",
+      "ruff": "0.16.10",
+      "lockfile_added": "uv.lock"
+    },
+    "ci_tool_pins": {
+      "cargo-nextest": {
+        "before": "0.9.98",
+        "after": "0.9.146"
+      },
+      "cargo-llvm-cov": {
+        "before": "0.6.18",
+        "after": "0.9.1"
+      }
+    },
+    "held_versions": {
+      "sse-stream": "0.2.6; RMCP 3.5.0 exposes 0.2 types in its transport API",
+      "generic-array": "0.14.7; crypto-common 0.1.7 pins this exact transitive version"
+    },
+    "vendored_patches": "Crossterm 0.29.0 and filedescriptor 0.8.3 remain at the latest published versions; local patches are unchanged",
+    "production_changes": "Six SHA-256 formatting calls use the existing hex encoder after the SHA-2 0.11 upgrade"
+  },
+  "validation": {
+    "workspace_nextest": {
+      "passed": 1963,
+      "skipped": 8,
+      "log": "nextest-ci.log"
+    },
+    "binary_smoke": {
+      "passed": 15,
+      "log": "binary-smoke.log"
+    },
+    "coverage_tool_smoke": {
+      "passed": 14,
+      "log": "coverage-smoke.log",
+      "lcov": "providers.lcov"
+    },
+    "javascript_qa": {
+      "passed": 63,
+      "before_log": "npm-before.log",
+      "after_log": "npm-after.log"
+    },
+    "pty": {
+      "before_passed": 16,
+      "after_passed": 16,
+      "failures_unchanged": [
+        "pty_compaction_stream_animates_resizes_and_cancels",
+        "pty_permission_overlay_resolves_and_preserves_draft",
+        "pty_scroll_follow_requires_second_clamped_page_down",
+        "pty_status_dialog_opens_without_sidebar_copy"
+      ],
+      "before_log": "pty-before.log",
+      "after_log": "pty.log"
+    },
+    "python_lint": {
+      "ruff_findings_before": 445,
+      "ruff_findings_after": 445,
+      "type_errors_before": 112,
+      "type_errors_after": 112,
+      "type_warnings_before": 59,
+      "type_warnings_after": 59,
+      "diagnostics_identical": true
+    },
+    "branding_gate": {
+      "pre_existing_findings": 5,
+      "affected_files_verified_unchanged": true
+    },
+    "test_suite_gates": "passed",
+    "clippy_all_targets_all_features": "passed",
+    "check_all_targets_all_features": "passed",
+    "dogfood_self_test": "passed",
+    "npm_audit": "0 vulnerabilities",
+    "uv_lock_check": "passed",
+    "uv_pip_check": "passed",
+    "format": "passed",
+    "diff_check": "passed",
+    "release_performance_budgets": {
+      "before_passed": 2,
+      "after_passed": 2
+    }
+  },
+  "measurement_method": {
+    "backend": "Fourteen samples per binary, alternating old/new execution in two batches with opposite starting orders. Medians reported.",
+    "tui": "Three isolated serial nextest processes per scenario, 240 frames per process; median p95 and RSS reported. Startup uses five additional alternating samples per binary; scrolling and 10,000-entry streaming use three additional alternating samples per binary.",
+    "binaries": "Both revisions compiled with Rust 1.98.0 and the unchanged release profile; saved executables used for reruns. No compilation ran during timing.",
+    "benchmark_nextest_version": "0.9.143, identical for both revisions",
+    "validation_nextest_version": "0.9.146",
+    "limitations": [
+      "Single laptop with the powersave governor and ordinary background applications; small timing differences are exploratory.",
+      "The first seven backend pairs suggested a 17.5% slowdown; fourteen pairs changed that to a 2.4% improvement. No consistent streaming regression was established.",
+      "The generic resize benchmark fails identically before and after with an unframed terminal-command error; it is excluded. The dedicated resize budget passes on both.",
+      "The driver stops at the failed resize scenario, so stream-events was not measured.",
+      "Cross-platform and live-provider/native desktop signoff were not run.",
+      "RSS changed direction in alternating reruns: the initial TUI memory reduction was not reproduced. No reliable memory improvement or regression was established."
+    ]
+  },
+  "binary_bytes": {
+    "before": 43212272,
+    "after": 43797288,
+    "change_percent": 1.35
+  },
+  "binary_sha256": {
+    "before": "a244092fb982853f02eb8149f6dec5d435341968371c30c35d928371e3655611",
+    "after": "83be7afd26815872ddb5d4db5c64c46b1319785a0b43fc96912e98853bab9eeb"
+  },
+  "backend": {
+    "startup_ms": {
+      "before": 9.3217,
+      "after": 8.9901,
+      "change_percent": -3.56
+    },
+    "first_fragment_ms": {
+      "before": 0.9209,
+      "after": 0.9488,
+      "change_percent": 3.03
+    },
+    "stream_and_commit_ms": {
+      "before": 36.5708,
+      "after": 35.6783,
+      "change_percent": -2.44
+    },
+    "peak_rss_kib": {
+      "before": 25136.0,
+      "after": 25226.0,
+      "change_percent": 0.36
+    },
+    "idle_cpu_percent": {
+      "before": 0.0,
+      "after": 0.0,
+      "change_percent": null
+    },
+    "cpu_total_ms": {
+      "before": 44.087,
+      "after": 44.437,
+      "change_percent": 0.79
+    }
+  },
+  "backend_correctness": {
+    "fragments": 5000,
+    "output_bytes": 25001,
+    "journal_bytes": 56787,
+    "durable_events": 11,
+    "fixture_output_and_history_assertions": "passed for every sample"
+  },
+  "tui": {
+    "startup-0": {
+      "p95_us": {
+        "before": 171,
+        "after": 171,
+        "change_percent": 0.0
+      },
+      "rss_after_kib": {
+        "before": 12492,
+        "after": 14164,
+        "change_percent": 13.38
+      }
+    },
+    "static-100": {
+      "p95_us": {
+        "before": 128,
+        "after": 128,
+        "change_percent": 0.0
+      },
+      "rss_after_kib": {
+        "before": 17840,
+        "after": 15168,
+        "change_percent": -14.98
+      }
+    },
+    "static-10000": {
+      "p95_us": {
+        "before": 409,
+        "after": 438,
+        "change_percent": 7.09
+      },
+      "rss_after_kib": {
+        "before": 85356,
+        "after": 82404,
+        "change_percent": -3.46
+      }
+    },
+    "scroll-10000": {
+      "p95_us": {
+        "before": 663,
+        "after": 664,
+        "change_percent": 0.15
+      },
+      "rss_after_kib": {
+        "before": 81544,
+        "after": 82896,
+        "change_percent": 1.66
+      }
+    },
+    "typing-10000": {
+      "p95_us": {
+        "before": 478,
+        "after": 498,
+        "change_percent": 4.18
+      },
+      "rss_after_kib": {
+        "before": 85560,
+        "after": 82680,
+        "change_percent": -3.37
+      }
+    },
+    "stream-100": {
+      "p95_us": {
+        "before": 716,
+        "after": 726,
+        "change_percent": 1.4
+      },
+      "rss_after_kib": {
+        "before": 19112,
+        "after": 16524,
+        "change_percent": -13.54
+      }
+    },
+    "stream-10000": {
+      "p95_us": {
+        "before": 1730,
+        "after": 1726,
+        "change_percent": -0.23
+      },
+      "rss_after_kib": {
+        "before": 83756,
+        "after": 85112,
+        "change_percent": 1.62
+      }
+    },
+    "code-100": {
+      "p95_us": {
+        "before": 1012,
+        "after": 991,
+        "change_percent": -2.08
+      },
+      "rss_after_kib": {
+        "before": 29544,
+        "after": 26980,
+        "change_percent": -8.68
+      }
+    },
+    "tool-10000": {
+      "p95_us": {
+        "before": 190937,
+        "after": 189942,
+        "change_percent": -0.52
+      },
+      "rss_after_kib": {
+        "before": 87976,
+        "after": 85976,
+        "change_percent": -2.27
+      }
+    },
+    "hover-10000": {
+      "p95_us": {
+        "before": 908,
+        "after": 913,
+        "change_percent": 0.55
+      },
+      "rss_after_kib": {
+        "before": 85580,
+        "after": 82460,
+        "change_percent": -3.65
+      }
+    },
+    "selection-10000": {
+      "p95_us": {
+        "before": 4310,
+        "after": 4267,
+        "change_percent": -1.0
+      },
+      "rss_after_kib": {
+        "before": 85296,
+        "after": 82664,
+        "change_percent": -3.09
+      }
+    }
+  },
+  "raw_artifacts": "target/dependency-update-20261004",
+  "reproduce_backend": "python3 scripts/measure-backend.py --binary <saved-binary> --output <report.json> --repetitions 14",
+  "reproduce_tui": "python3 scripts/measure-tui-performance.py --output <directory> --repetitions 3 --frames 240 --binaries-metadata <saved-binaries.json> --cargo-metadata <saved-cargo.json>",
+  "interpretation": "Runtime timings were essentially unchanged within run-to-run variation. RSS comparisons were unstable. The release executable grew by 1.35%.",
+  "uv_lock_sha256": "3819f45a6e667724b68a78b1e0723e1693842984d791b9bf13072a83c7f16c36",
+  "npm_lock_sha256": "40e41aaac76dcef933ab8415c9ea2f6dc704af3caf51b1cdd2301a6f55b5a42d"
+}
