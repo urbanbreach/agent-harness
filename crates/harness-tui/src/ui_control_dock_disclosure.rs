@@ -26,6 +26,10 @@ pub(super) fn render_control_dock_disclosure(
     let surface = theme.surface.canvas;
     let base = Style::default().bg(surface);
     frame.render_widget(Block::default().style(base), area);
+    if app.tasks_pane.visible && app.tasks_pane.focused {
+        super::ui_tasks_pane::render_footer(frame, app, area, theme);
+        return;
+    }
     if app.todo_pane_focused() {
         let key = base.fg(theme.text.primary).add_modifier(Modifier::BOLD);
         let label = base.fg(theme.text.secondary);

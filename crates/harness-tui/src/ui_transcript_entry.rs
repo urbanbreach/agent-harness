@@ -145,7 +145,8 @@ impl ResolvedTranscriptVisualEntryDraft {
                 tool.header.disclosure_state.is_some(),
                 tool.header.disclosure_state == Some(TranscriptToolCallDisclosureState::Expanded)
                     || (tool_family(tool) == TranscriptToolFamily::Task
-                        && tool.header.presentation.status == ToolCallPresentationStatus::Running),
+                        && tool.header.presentation.status == ToolCallPresentationStatus::Running
+                        && tool.header.subtitle.is_some()),
             ),
             TranscriptAssistantPart::Error(error) => {
                 ("error", Some(error.text.as_str()), false, false)

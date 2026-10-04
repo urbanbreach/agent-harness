@@ -1,0 +1,128 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.07s
+────────────
+ Nextest run ID da55969c-2ab9-4256-8a87-9e65f6da63ca with nextest profile: ci
+    Starting 1 test across 78 binaries (1640 tests and 1 binary skipped, including 1 binary via profile.default.default-filter)
+        FAIL [   0.102s] (1/1) harness-tui app::tests::native_subagent_tests::native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row
+  stdout ───
+
+    running 1 test
+    test app::tests::native_subagent_tests::native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::native_subagent_tests::native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1216 filtered out; finished in 0.10s
+
+  stderr ───
+
+    thread 'app::tests::native_subagent_tests::native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row' (31232) panicked at crates/harness-tui/src/app/tests/native_progress_tests.rs:96:5:
+    assertion `left == right` failed:                                                                                                                         
+      git:test-workspace /workspace/agent-harness                                                                           
+     ┌                                                                                                                    ✗ 
+     │   No running tasks. Press h to show all.                                                                           │ 
+     └                                                                                                                    ┘ 
+         ◈ Ran 1 subagent                                                                                                   
+         ◆ Subagent started: “Inspect files” (reviewer · child-model)                                                       
+                                                                                                                            
+         Parent kept streaming                                                                                              
+                                                                                                                            
+         ◆ Subagent completed in 1.2s: “Inspect files”                                                                      
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+         ◆ Subagent completed: “Inspect files” ·                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+        ⠋ Responding… 0.0s                                                                                            0.0s  
+                                                                                                                            
+      ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  
+      │ ❯ parent draft                                                                                                   │  
+      ╰──────────────────────────────────────────────────────────────────────────────────────────────────── parent-model ╯  
+                                                                                                                            
+      Enter:queue  │  Alt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts                           
+                                                                                                                            
+      left: 2
+     right: 1
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.106s] 1 test run: 0 passed, 1 failed, 1640 skipped
+        FAIL [   0.102s] (1/1) harness-tui app::tests::native_subagent_tests::native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row
+  stdout ───
+
+    running 1 test
+    test app::tests::native_subagent_tests::native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row ... FAILED
+
+    failures:
+
+    failures:
+        app::tests::native_subagent_tests::native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1216 filtered out; finished in 0.10s
+
+  stderr ───
+
+    thread 'app::tests::native_subagent_tests::native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row' (31232) panicked at crates/harness-tui/src/app/tests/native_progress_tests.rs:96:5:
+    assertion `left == right` failed:                                                                                                                         
+      git:test-workspace /workspace/agent-harness                                                                           
+     ┌                                                                                                                    ✗ 
+     │   No running tasks. Press h to show all.                                                                           │ 
+     └                                                                                                                    ┘ 
+         ◈ Ran 1 subagent                                                                                                   
+         ◆ Subagent started: “Inspect files” (reviewer · child-model)                                                       
+                                                                                                                            
+         Parent kept streaming                                                                                              
+                                                                                                                            
+         ◆ Subagent completed in 1.2s: “Inspect files”                                                                      
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+         ◆ Subagent completed: “Inspect files” ·                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+                                                                                                                            
+        ⠋ Responding… 0.0s                                                                                            0.0s  
+                                                                                                                            
+      ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  
+      │ ❯ parent draft                                                                                                   │  
+      ╰──────────────────────────────────────────────────────────────────────────────────────────────────── parent-model ╯  
+                                                                                                                            
+      Enter:queue  │  Alt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts                           
+                                                                                                                            
+      left: 2
+     right: 1
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+error: test run failed

@@ -1,0 +1,42 @@
+[
+  {
+    "name": "workspace-tests",
+    "command": "cargo nextest run --profile ci --workspace --all-features",
+    "result": "1960 passed; 8 tests and 7 binaries skipped",
+    "local_log": "/tmp/subagent-workspace-final4.log",
+    "sha256": "0f3b8e65812e3c09105183f3d41bc2dd57defc8eeee4a75f793c35ef582b152c"
+  },
+  {
+    "name": "clippy",
+    "command": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "result": "passed",
+    "local_log": "/tmp/subagent-workspace-clippy-final4.log",
+    "sha256": "9e2a887a409bb115b9accadd310c3f4c1c8c6d3f4b4744f8469867dd0d410a0c"
+  },
+  {
+    "name": "test-suite-gates",
+    "command": "python3 scripts/check-test-suite-gates.py",
+    "result": "passed; 0 violations",
+    "local_log": "/tmp/subagent-gates-final3.log",
+    "sha256": "9dbaeda37da424493a0057a1d54b636bc8c9da7e77a14322d41d4e63b18196d9"
+  },
+  {
+    "name": "dogfood",
+    "command": "bash scripts/harness-qa-dogfood.sh --self-test",
+    "result": "passed",
+    "local_log": "/tmp/subagent-dogfood-final.log",
+    "sha256": "24102cb840b0551c05341573b26d804f5bddf477c7281b3304cd36b29f275386"
+  },
+  {
+    "name": "quality-gates",
+    "command": "scripts/test-lanes.sh quality-gates",
+    "result": "failed on five pre-existing branding references",
+    "local_log": "/tmp/subagent-quality-final.log",
+    "sha256": "f27122b039d52c8a56ab2a22ca63027dd5b15bb557a56248b864f4c767360378"
+  },
+  {
+    "name": "format",
+    "command": "cargo fmt --all -- --check",
+    "result": "passed"
+  }
+]

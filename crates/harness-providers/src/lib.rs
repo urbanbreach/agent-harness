@@ -1,5 +1,7 @@
 //! Provider requests and streamed responses. Wire formats stay in this crate.
 mod error;
+mod retry_failure;
+pub use retry_failure::ProviderRetryFailure;
 pub mod mock;
 mod router;
 pub use router::ProviderRouter;

@@ -1,0 +1,77 @@
+{
+  "reference_revision": "2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8",
+  "reference_files": [
+    {
+      "role": "acp/tracker.rs",
+      "sha256": "f5628792997553d15d0548b997809034d419894f063c3ce2a70762567aa1de75",
+      "capture_source_sha256": "f5628792997553d15d0548b997809034d419894f063c3ce2a70762567aa1de75",
+      "identical": true
+    },
+    {
+      "role": "app/subagent.rs",
+      "sha256": "570ed9d833be396c3ad7d40834e858fa0c4ec11011bcfc0151097404fbf847c6",
+      "capture_source_sha256": "20ca2667eaad91a41f74a5bc200b1e71a265c51a4fc65c6555af4d2af77053c5",
+      "identical": false
+    },
+    {
+      "role": "app/error_display.rs",
+      "sha256": "b55790621547be4e2c545a80925e9e330dc9d333d11987a6a3190f8696179e91",
+      "capture_source_sha256": "b55790621547be4e2c545a80925e9e330dc9d333d11987a6a3190f8696179e91",
+      "identical": true
+    },
+    {
+      "role": "app/acp_handler/session_notification.rs",
+      "sha256": "003d8e4667bc5152e821301e9eea31e014b4dbbd5ee4a56ea5e7bef239a66072",
+      "capture_source_sha256": "003d8e4667bc5152e821301e9eea31e014b4dbbd5ee4a56ea5e7bef239a66072",
+      "identical": true
+    },
+    {
+      "role": "app/acp_handler/subagent_activity.rs",
+      "sha256": "c136c12f66d21f70c39ef8b44bd412b603de459240a82adae002d9a3c03bb4f5",
+      "capture_source_sha256": "c136c12f66d21f70c39ef8b44bd412b603de459240a82adae002d9a3c03bb4f5",
+      "identical": true
+    },
+    {
+      "role": "app/agent_view/session.rs",
+      "sha256": "5124dfddd438279bd4649c6f4e13fa3d38f8eecf38d5e944f949321d582e135d",
+      "capture_source_sha256": "5124dfddd438279bd4649c6f4e13fa3d38f8eecf38d5e944f949321d582e135d",
+      "identical": true
+    },
+    {
+      "role": "app/agent_view/subagent_takeover.rs",
+      "sha256": "d165621e94ecae4e240c8897eb90c6b81f30a06d6631364b3ddccda7f206b193",
+      "capture_source_sha256": "d165621e94ecae4e240c8897eb90c6b81f30a06d6631364b3ddccda7f206b193",
+      "identical": true
+    },
+    {
+      "role": "app/agent_view/queue.rs",
+      "sha256": "9ef1888061ae203809eeeac398c3b02a43b340fa1b142dcf09368551f5c3c733",
+      "capture_source_sha256": "9ef1888061ae203809eeeac398c3b02a43b340fa1b142dcf09368551f5c3c733",
+      "identical": true
+    },
+    {
+      "role": "views/tasks_pane.rs",
+      "sha256": "345f467c552d05819542ec600da83469bd9c574037f258607410098e78096963",
+      "capture_source_sha256": "345f467c552d05819542ec600da83469bd9c574037f258607410098e78096963",
+      "identical": true
+    },
+    {
+      "role": "views/turn_status.rs",
+      "sha256": "d9e61ffada1fcdf6ad17771bdd84d26dafa7f7876f8e4e5c1e3b6fba6e99ba9e",
+      "capture_source_sha256": "c6bd505dff670728412c5f41b7435207bd38a0f803fb00138c79c6837a32d0b9",
+      "identical": false
+    },
+    {
+      "role": "util.rs",
+      "sha256": "52083857f7570b1fc27caa30ab02ddbfa4ee95158a01c0299f2900d939ef8159",
+      "capture_source_sha256": "52083857f7570b1fc27caa30ab02ddbfa4ee95158a01c0299f2900d939ef8159",
+      "identical": true
+    },
+    {
+      "role": "render/line_utils.rs",
+      "sha256": "e7932ed7fe55fd49b17688b7135d63488ee26aae3f84a65f69b51921c564b784",
+      "capture_source_sha256": "e7932ed7fe55fd49b17688b7135d63488ee26aae3f84a65f69b51921c564b784",
+      "identical": true
+    }
+  ]
+}

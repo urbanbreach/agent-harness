@@ -251,6 +251,15 @@ fn assemble_user_surface_lines(
         surface,
     );
     collapse_user_surface_body(&mut lines, body_start, text_width, surface, body_style);
+    if theme.markdown_native {
+        for line in lines.iter_mut().skip(body_start + 1) {
+            line.spans[0] = surface_span("   ", body_style, surface);
+            line.spans.insert(
+                1,
+                surface_span("  ", Style::default().fg(theme.markdown.text), surface),
+            );
+        }
+    }
     if user_msg.queued {
         lines.push(user_surface_line(
             TRANSCRIPT_USER_BODY_PREFIX,
@@ -1123,14 +1132,6 @@ fn build_context_tool_group_render_surface(
             Style::default().fg(theme.terminal_colors.error),
         ));
     }
-    if let Some(summary) = label.filter(|summary| {
-        summary.cancelled_count > 0 && summary.verbs.contains(&TranscriptToolVerb::Subagent)
-    }) {
-        label_spans.push(Span::styled(
-            format!(" · {} cancelled", summary.cancelled_count),
-            Style::default().fg(theme.text.secondary),
-        ));
-    }
     let hook_spans = if expanded {
         Vec::new()
     } else {
@@ -1984,6 +1985,7 @@ mod tests {
                     max_attempts: 3,
                     delay_ms: None,
                     category: None,
+                    failure: None,
                 }),
                 ..harness_core::event::ProviderRequestStartedMetadata::default()
             }),

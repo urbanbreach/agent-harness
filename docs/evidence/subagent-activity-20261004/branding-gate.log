@@ -1,0 +1,6 @@
+Forbidden source-brand terms found outside allowed paths:
+  docs/evidence/tui-rewrite/runtime-state/post-measure-host.json:37: forbidden brand term
+  plans/001-role-scoped-subagents.md:30: forbidden brand term
+  plans/001-role-scoped-subagents.md:64: forbidden brand term
+  plans/001-role-scoped-subagents.md:65: forbidden brand term
+  plans/001-role-scoped-subagents.md:160: forbidden brand term

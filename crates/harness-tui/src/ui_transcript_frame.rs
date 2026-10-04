@@ -106,7 +106,8 @@ impl PreparedTranscript {
                 surfaces
             },
         );
-        layout.child_view = app.current_subagent_session_present();
+        layout.pin_prompt_at_bottom =
+            app.current_subagent_session_present() || !app.subagents.rows.is_empty();
         PreparedLayout {
             key,
             settings,

@@ -168,6 +168,7 @@ impl Worker {
             max_attempts: self.retry.max_retries.saturating_add(1),
             delay_ms: Some(0),
             category: None,
+            failure: None,
         };
         loop {
             let request = self.request(messages);
@@ -260,20 +261,19 @@ impl Worker {
                 return result;
             };
             if let Some((category, delay_ms)) = self.retry_delay(&error, retry.attempt, progress) {
+                if let CoordinatorError::Provider {
+                    category, message, ..
+                } = &error
+                {
+                    retry.failure = Some(harness_providers::ProviderRetryFailure::from_error(
+                        *category, message,
+                    ));
+                }
                 first_failure.get_or_insert(error);
                 retry.attempt += 1;
                 retry.category = Some(category);
                 retry.delay_ms = Some(delay_ms);
-                let deadline = tokio::time::Instant::now()
-                    .checked_add(std::time::Duration::from_millis(delay_ms))
-                    .ok_or_else(|| {
-                        CoordinatorError::Invalid("provider retry delay exceeds clock range".into())
-                    })?;
-                tokio::select! {
-                    biased;
-                    () = self.cancellation.cancelled() => return Err(CoordinatorError::Cancelled(self.turn.id.clone())),
-                    () = tokio::time::sleep_until(deadline) => {}
-                }
+                self.retry_backoff(retry, delay_ms).await?;
                 continue;
             }
             return Err(if matches!(error, CoordinatorError::Provider { .. }) {
@@ -282,6 +282,36 @@ impl Worker {
                 error
             });
         }
+    }
+    async fn retry_backoff(
+        &self,
+        retry: ProviderRequestRetryMetadata,
+        delay_ms: u64,
+    ) -> Result<(), CoordinatorError> {
+        let (actor, turn_id) = (self.actor.clone(), self.turn.id.clone());
+        self.handle
+            .call(move |runtime| {
+                runtime.live(
+                    actor,
+                    turn_id.clone(),
+                    LiveEventV1::ProviderRetrying {
+                        turn_id: turn_id.into(),
+                        retry,
+                    },
+                )
+            })
+            .await?;
+        let deadline = tokio::time::Instant::now()
+            .checked_add(std::time::Duration::from_millis(delay_ms))
+            .ok_or_else(|| {
+                CoordinatorError::Invalid("provider retry delay exceeds clock range".into())
+            })?;
+        tokio::select! {
+            biased;
+            () = self.cancellation.cancelled() => return Err(CoordinatorError::Cancelled(self.turn.id.clone())),
+            () = tokio::time::sleep_until(deadline) => {}
+        }
+        Ok(())
     }
     fn retry_delay(
         &self,

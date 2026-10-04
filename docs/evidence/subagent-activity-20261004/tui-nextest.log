@@ -1,0 +1,15 @@
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.24s
+────────────
+ Nextest run ID 9e649257-3a62-4847-8e01-ec87aacc2779 with nextest profile: ci
+    Starting 1636 tests across 78 binaries (7 tests and 1 binary skipped, including 5 tests and 1 binary via profile.default.default-filter)
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  4.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  2.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  4.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  2.000s] (─────────) harness-tui::tool_body_capture_test production_tool_body_captures
+────────────
+     Summary [  17.390s] 1636 tests run: 1636 passed (3 slow), 7 skipped
+        SLOW [   4.781s] ( 474/1636) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [   5.650s] (1474/1636) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [   2.907s] (1636/1636) harness-tui::tool_body_capture_test production_tool_body_captures

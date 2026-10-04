@@ -4,6 +4,9 @@ use harness_core::{coord::NativeSubagentRegistration, subagent::*};
 #[path = "native_progress_tests.rs"]
 mod progress;
 
+#[path = "native_activity_tests.rs"]
+mod activity;
+
 #[path = "native_child_viewer_tests.rs"]
 mod viewer;
 
@@ -49,6 +52,34 @@ fn transition(kind: SubagentTransitionKind) -> SubagentTransitionV1 {
     }
 }
 
+fn registration() -> NativeSubagentRegistration {
+    NativeSubagentRegistration {
+        payload_version: 1,
+        child_id: "child".into(),
+        spawner: "parent".into(),
+        root_agent: "parent".into(),
+        parent_tool: "spawn".into(),
+        parent_request: Some("req_parent".into()),
+        subagent_type: "explore".into(),
+        persona: Some("reviewer".into()),
+        role: None,
+        fork_context: true,
+        description: "Inspect files".into(),
+        prompt: "inspect".into(),
+        background: true,
+        isolation: SubagentIsolationMode::None,
+        source: None,
+        model: "child-model".into(),
+        system_prompt: String::new(),
+        tools: vec![],
+        permission_rules: Default::default(),
+        max_iters: None,
+        allowed_types: None,
+        model_inherited: true,
+        messaging_granted: false,
+    }
+}
+
 #[test]
 fn native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row() {
     let temp = tempfile::tempdir().unwrap_or_abort();
@@ -79,31 +110,7 @@ fn native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row() {
     app.ingest_event(envelope(
         5,
         "req_parent",
-        EventV1::NativeSubagentRegistered(Box::new(NativeSubagentRegistration {
-            payload_version: 1,
-            child_id: "child".into(),
-            spawner: "parent".into(),
-            root_agent: "parent".into(),
-            parent_tool: "spawn".into(),
-            parent_request: Some("req_parent".into()),
-            subagent_type: "explore".into(),
-            persona: Some("reviewer".into()),
-            role: None,
-            fork_context: true,
-            description: "Inspect files".into(),
-            prompt: "inspect".into(),
-            background: true,
-            isolation: SubagentIsolationMode::None,
-            source: None,
-            model: "child-model".into(),
-            system_prompt: String::new(),
-            tools: vec![],
-            permission_rules: Default::default(),
-            max_iters: None,
-            allowed_types: None,
-            model_inherited: true,
-            messaging_granted: false,
-        })),
+        EventV1::NativeSubagentRegistered(Box::new(registration())),
     ));
     let started = transition(SubagentTransitionKind::Spawned);
     app.ingest_event(envelope(

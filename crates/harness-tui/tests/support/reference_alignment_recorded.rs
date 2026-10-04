@@ -120,6 +120,7 @@ fn verify_lifecycle(tool: &str, args: &Value, width: u16, height: u16, failed: b
         causation_id: None,
         stream_key: None,
         payload: LiveEventV1::ProviderToolInputDelta {
+            tool_name: None,
             request_id: "provider".into(),
             tool_call_id: "tool-call".into(),
             delta: "{".into(),

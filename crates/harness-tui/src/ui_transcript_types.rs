@@ -148,6 +148,9 @@ impl TranscriptToolVerb {
 
     pub(super) fn from_tool_call(tool_call: &TranscriptToolCallSection) -> Option<Self> {
         let id = tool_call.header.tool_id.as_str();
+        if id == "background.notification" && tool_call.header.subtitle.is_none() {
+            return Some(Self::Subagent);
+        }
         let verb = Self::from_tool_id(id).unwrap_or_else(|| match id {
             "apply_patch"
             | "edit"
@@ -233,7 +236,7 @@ struct TranscriptToolVerbCount {
     verb: TranscriptToolVerb,
     count: usize,
     active_count: usize,
-    queued_count: usize,
+    running_sources: std::collections::BTreeSet<String>,
     sources: std::collections::BTreeSet<String>,
 }
 
@@ -262,7 +265,6 @@ pub(super) struct TranscriptToolGroupSummary {
     pub(super) waiting_count: usize,
     pub(super) succeeded_count: usize,
     pub(super) failed_count: usize,
-    pub(super) cancelled_count: usize,
     pub(super) disclosure: TranscriptToolDisclosureMode,
     pub(super) duration_ms: Option<u64>,
     pub(super) result_count: Option<u64>,
@@ -314,7 +316,6 @@ impl TranscriptToolGroupSummary {
             waiting_count: 0,
             succeeded_count: 0,
             failed_count: 0,
-            cancelled_count: 0,
             disclosure: TranscriptToolDisclosureMode::Collapsed,
             duration_ms: None,
             result_count: None,
@@ -341,7 +342,7 @@ impl TranscriptToolGroupSummary {
                 verb,
                 count: 1,
                 active_count: 0,
-                queued_count: 0,
+                running_sources: std::collections::BTreeSet::new(),
                 sources: std::collections::BTreeSet::new(),
             });
         }
@@ -350,17 +351,17 @@ impl TranscriptToolGroupSummary {
             .iter_mut()
             .find(|bucket| bucket.verb == verb)
         {
-            bucket.active_count += usize::from(
-                !tool_call.cancellation_requested
-                    && matches!(
-                        tool_call.header.presentation.status,
-                        ToolCallPresentationStatus::Queued | ToolCallPresentationStatus::Running
-                    ),
-            );
-            bucket.queued_count += usize::from(
-                !tool_call.cancellation_requested
-                    && tool_call.header.presentation.status == ToolCallPresentationStatus::Queued,
-            );
+            if !tool_call.cancellation_requested
+                && matches!(
+                    tool_call.header.presentation.status,
+                    ToolCallPresentationStatus::Queued | ToolCallPresentationStatus::Running
+                )
+            {
+                bucket.active_count += 1;
+                bucket
+                    .running_sources
+                    .extend(tool_call.group.sources.iter().cloned());
+            }
             bucket
                 .sources
                 .extend(tool_call.group.sources.iter().cloned());
@@ -372,7 +373,7 @@ impl TranscriptToolGroupSummary {
             ToolCallPresentationStatus::Waiting => return false,
             ToolCallPresentationStatus::Succeeded => self.succeeded_count += 1,
             ToolCallPresentationStatus::Failed => self.failed_count += 1,
-            ToolCallPresentationStatus::Cancelled => self.cancelled_count += 1,
+            ToolCallPresentationStatus::Cancelled => {}
         }
         self.disclosure = if tool_call.expanded {
             TranscriptToolDisclosureMode::Expanded
@@ -413,9 +414,6 @@ impl TranscriptToolGroupSummary {
         if self.failed_count > 0 {
             label.push_str(&format!(" · {} failed", self.failed_count));
         }
-        if self.cancelled_count > 0 && self.verbs.contains(&TranscriptToolVerb::Subagent) {
-            label.push_str(&format!(" · {} cancelled", self.cancelled_count));
-        }
         label
     }
 
@@ -430,20 +428,19 @@ impl TranscriptToolGroupSummary {
                     bucket.sources.len()
                 };
                 if bucket.verb == TranscriptToolVerb::Subagent {
-                    let running = bucket.active_count - bucket.queued_count;
+                    let running = if bucket.sources.is_empty() {
+                        bucket.active_count
+                    } else {
+                        bucket.running_sources.len()
+                    };
                     let (verb, active) = if running > 0 {
                         ("Running", running)
-                    } else if bucket.queued_count > 0 {
-                        ("Queued", bucket.queued_count)
                     } else {
-                        ("Ran", bucket.count)
+                        ("Ran", count)
                     };
                     let mut label = format!("{verb} {active} {}", bucket.verb.noun(active));
-                    if running > 0 && bucket.queued_count > 0 {
-                        label.push_str(&format!(", {} queued", bucket.queued_count));
-                    }
-                    if bucket.active_count > 0 && bucket.active_count < bucket.count {
-                        label.push_str(&format!(", {} done", bucket.count - bucket.active_count));
+                    if running > 0 && running < count {
+                        label.push_str(&format!(", {} completed", count - running));
                     }
                     return label;
                 }

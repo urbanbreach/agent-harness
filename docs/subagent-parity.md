@@ -7,6 +7,15 @@ Completed on 4 October 2026 against the reference application pager 1.0.45, sour
 `2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8`. The final implementation commit is
 `efea90e4`.
 
+The [lifecycle follow-up](evidence/subagent-lifecycle-20261004/README.md) corrects
+completion-delivery, reactivation, focus, and narrow-terminal gaps that the
+original captures did not exercise. Its source audit and fresh xterm.js evidence
+supersede this report's completion-related parity claim.
+
+The [activity follow-up](evidence/subagent-activity-20261004/README.md) covers
+activity states, classified retry errors, non-shell tool descriptions, and
+Unicode truncation, with separate source, logical, and xterm.js verification.
+
 The completion criteria are the original request: replace the old subagent
 implementation and match Reference's subagent logic, behavior, and views. OMO's
 505-scenario process and its approval machinery are not acceptance requirements.

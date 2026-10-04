@@ -155,7 +155,7 @@ fn subagent_rows_show_current_status_and_model_without_unfolding() -> Result<()>
                 assert!(text.contains("waiting for approval"), "{text}");
             }
             if phase == "mixed" {
-                assert!(text.contains("Running 2 subagents, 1 done"), "{text}");
+                assert!(text.contains(if width == 40 { "Running 2 subagents, 1" } else { "Running 2 subagents, 1 completed" }), "{text}");
                 assert!(text.contains("Explore · gpt-5.4"), "{text}");
                 assert!(!text.contains("Explore · gpt-5.4-mini"), "{text}");
             }

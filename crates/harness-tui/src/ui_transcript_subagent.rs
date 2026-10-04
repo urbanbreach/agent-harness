@@ -19,7 +19,7 @@ pub(super) fn refresh_status(
         .is_none()
         .then(|| app.subagent_request_projection(tool))
         .flatten();
-    let (status, verb) = if let Some(projection) = projection.as_ref() {
+    let (mut status, mut verb) = if let Some(projection) = projection.as_ref() {
         match projection.status.as_str() {
             "completed" => (Status::Succeeded, "completed"),
             "cancelled" => (Status::Cancelled, "cancelled"),
@@ -72,18 +72,35 @@ pub(super) fn refresh_status(
         .values()
         .find(|row| row.parent_tool == tool.tool_call_id)
     {
-        let terminal = task.is_some_and(|task| task.state.is_terminal());
+        let attempt = app
+            .subagents
+            .attempts
+            .values()
+            .find(|attempt| attempt.row.parent_tool == tool.tool_call_id);
+        let row = attempt.map_or(row, |attempt| &attempt.row);
+        if let Some(outcome) = attempt.and_then(|attempt| attempt.outcome) {
+            (verb, status) = terminal_status(outcome);
+        }
+        let terminal = attempt.map_or_else(
+            || task.is_some_and(|task| task.state.is_terminal()),
+            |attempt| attempt.outcome.is_some(),
+        );
+        section.header.presentation.status = status;
         let title = if terminal && !row.background {
             format!(
-                "Subagent {verb} in {}: “{}”",
+                "Subagent {verb} in {}{}: “{}”",
                 crate::app::subagents::duration_label(
-                    task.and_then(|task| task.timing_elapsed_ms).unwrap_or(0)
+                    attempt
+                        .and_then(|attempt| attempt.duration_ms)
+                        .or_else(|| task.and_then(|task| task.timing_elapsed_ms))
+                        .unwrap_or(0)
                 ),
+                failure_detail(attempt.and_then(|attempt| attempt.error.as_deref())),
                 collapse_inline_whitespace(&row.description)
             )
         } else {
             let activity = task
-                .filter(|task| !task.state.is_terminal())
+                .filter(|task| !terminal && !task.state.is_terminal())
                 .and_then(|task| task.current_child_tool_title.as_deref())
                 .map_or_else(String::new, |activity| format!(" · {activity}"));
             format!(
@@ -124,6 +141,15 @@ pub(super) fn notification_sections(
         let EventV1::BackgroundTaskNotification(data) = &event.payload else {
             continue;
         };
+        // Native completion delivery wakes the parent; its lifecycle already owns
+        // the transcript row. Legacy histories still need the notification row.
+        if app
+            .subagents
+            .rows
+            .contains_key(data.child_session_id.as_str())
+        {
+            continue;
+        }
         let request = data
             .delivered_turn_request_id
             .as_deref()
@@ -133,74 +159,88 @@ pub(super) fn notification_sections(
             .or_default()
             .push(notification_section(app, event, data));
     }
-    for row in app.subagents.rows.values().filter(|row| row.background) {
-        let Some(record) = app
-            .subagents
-            .history
-            .records
-            .get(&row.id)
-            .filter(|record| record.lifecycle.is_finished())
-        else {
+    for ((_, generation), attempt) in &app.subagents.attempts {
+        let row = &attempt.row;
+        if !row.background || app.current_session_id().is_some_and(|id| id != row.spawner) {
             continue;
-        };
-        let Some(outcome) = record.outcome else {
-            continue;
-        };
-        let Some(event) = app.events().find(|event| matches!(&event.payload, EventV1::SubagentTransition(data) if data.child_id.0 == row.id && data.generation == record.generation && data.transition == harness_core::subagent::SubagentTransitionKind::Finished && (data.attempt_id.is_none() || data.attempt_id.as_deref() == record.lifecycle.current_attempt_id()))) else { continue };
-        let delegated = app.delegated_child_request_ids_for_parent_view(app.current_session_id());
-        let current_request = app
-            .activities
-            .iter()
-            .rev()
-            .find(|activity| {
-                activity.first_seq <= event.seq && !delegated.contains(activity.request_id.as_str())
-            })
-            .map(|activity| activity.request_id.as_str());
-        let Some(request) = current_request
-            .or(row.parent_request.as_deref())
-            .or_else(|| {
-                app.activities
-                    .iter()
-                    .find(|activity| {
-                        activity
-                            .tool_calls
-                            .iter()
-                            .any(|tool| tool.tool_call_id == row.parent_tool)
-                    })
-                    .map(|activity| activity.request_id.as_str())
-            })
-        else {
-            continue;
-        };
-        use harness_core::subagent::SubagentTerminalOutcome as Outcome;
-        let (verb, status) = match outcome {
-            Outcome::Completed | Outcome::StationarityEnded => {
-                ("completed", ToolCallPresentationStatus::Succeeded)
+        }
+        let first_attempt = app.subagents.attempts.keys().find(|(id, _)| id == &row.id);
+        let mut add = |seq, id, title, status, duration| {
+            let delegated =
+                app.delegated_child_request_ids_for_parent_view(app.current_session_id());
+            let request = app
+                .activities
+                .iter()
+                .rev()
+                .find(|activity| {
+                    activity.first_seq <= seq && !delegated.contains(activity.request_id.as_str())
+                })
+                .map(|activity| activity.request_id.as_str())
+                .or(row.parent_request.as_deref());
+            if let Some(request) = request {
+                sections.entry(request).or_default().push(terminal_section(
+                    app,
+                    TerminalRow {
+                        id,
+                        child: row.id.clone(),
+                        seq,
+                        title,
+                        subtitle: None,
+                        status,
+                        duration,
+                    },
+                ));
             }
-            Outcome::Cancelled | Outcome::RemovedFromQueue => {
-                ("cancelled", ToolCallPresentationStatus::Cancelled)
-            }
-            _ => ("failed", ToolCallPresentationStatus::Failed),
         };
-        let duration = record.accounting.map(|accounting| accounting.duration_ms);
-        sections.entry(request).or_default().push(terminal_section(
-            app,
-            TerminalRow {
-                id: format!("background-notification:{}:{}", row.id, record.generation),
-                child: row.id.clone(),
-                seq: event.seq,
-                title: format!(
-                    "Subagent {verb} in {}: “{}”",
-                    crate::app::subagents::duration_label(duration.unwrap_or(0)),
+        if first_attempt.is_some_and(|(_, first)| first != generation) {
+            let activity = app
+                .native_subagent_task(&row.parent_tool)
+                .filter(|_| attempt.outcome.is_none())
+                .and_then(|task| task.current_child_tool_title)
+                .map_or_else(String::new, |activity| format!(" · {activity}"));
+            add(
+                attempt.first_seq,
+                format!("subagent-started:{}:{generation}", row.id),
+                format!(
+                    "Subagent started: “{}”{activity}{}",
+                    collapse_inline_whitespace(&row.description),
+                    row.meta
+                ),
+                if attempt.outcome.is_some() {
+                    ToolCallPresentationStatus::Succeeded
+                } else {
+                    ToolCallPresentationStatus::Running
+                },
+                None,
+            );
+        }
+        if let Some((seq, outcome)) = attempt
+            .finished_seq
+            .zip(attempt.outcome)
+            .filter(|_| row.background)
+        {
+            let (verb, status) = terminal_status(outcome);
+            add(
+                seq,
+                format!("background-notification:{}:{generation}", row.id),
+                format!(
+                    "Subagent {verb} in {}{}: “{}”",
+                    crate::app::subagents::duration_label(attempt.duration_ms.unwrap_or(0)),
+                    failure_detail(attempt.error.as_deref()),
                     collapse_inline_whitespace(&row.description)
                 ),
-                subtitle: None,
                 status,
-                duration,
-            },
-        ));
+                attempt.duration_ms,
+            );
+        }
     }
     sections
+}
+
+fn failure_detail(error: Option<&str>) -> String {
+    error.map_or_else(String::new, |error| {
+        format!(" ({})", collapse_inline_whitespace(error))
+    })
 }
 
 fn notification_section(
@@ -321,7 +361,17 @@ fn terminal_section(app: &AppState, row: TerminalRow) -> TranscriptOrderedToolCa
             details_preview_visible: false,
             animation_phase: app.transcript_animation_phase(),
             expanded: false,
-            rail_motion: ToolRailMotion::Settled,
+            rail_motion: if status == ToolCallPresentationStatus::Running
+                && app.transcript_motion_enabled()
+                && app.presentation_is_live()
+            {
+                ToolRailMotion::Running {
+                    elapsed: std::time::Duration::ZERO,
+                    sampled_phase: app.transcript_animation_phase(),
+                }
+            } else {
+                ToolRailMotion::Settled
+            },
             cancellation_requested: false,
         },
     }
@@ -338,5 +388,20 @@ fn format_duration(ms: u64) -> String {
         format!("{}m{}s", secs / 60, secs % 60)
     } else {
         format!("{}h{}m", secs / 3600, secs % 3600 / 60)
+    }
+}
+
+fn terminal_status(
+    outcome: harness_core::subagent::SubagentTerminalOutcome,
+) -> (&'static str, ToolCallPresentationStatus) {
+    use harness_core::subagent::SubagentTerminalOutcome as Outcome;
+    match outcome {
+        Outcome::Completed | Outcome::StationarityEnded => {
+            ("completed", ToolCallPresentationStatus::Succeeded)
+        }
+        Outcome::Cancelled | Outcome::RemovedFromQueue => {
+            ("cancelled", ToolCallPresentationStatus::Cancelled)
+        }
+        _ => ("failed", ToolCallPresentationStatus::Failed),
     }
 }

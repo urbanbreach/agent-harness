@@ -59,6 +59,10 @@ pub enum LiveEventV1 {
         trigger_reason: String,
         preview: Option<String>,
     },
+    ProviderRetrying {
+        turn_id: crate::ids::RequestId,
+        retry: ProviderRequestRetryMetadata,
+    },
     ProviderTextDelta {
         request_id: crate::ids::ProviderRequestId,
         delta: String,
@@ -70,6 +74,8 @@ pub enum LiveEventV1 {
     ProviderToolInputDelta {
         request_id: crate::ids::ProviderRequestId,
         tool_call_id: crate::ids::ToolCallId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_name: Option<String>,
         delta: String,
     },
 }

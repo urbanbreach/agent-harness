@@ -425,7 +425,7 @@ pub(super) fn foreground_child_status_control_demotes_the_active_handle() {
     let mut app = demotable_live_app(Arc::clone(&intents));
     let screen = render_text(&app, 140, 40);
     assert!(
-        status_row(&screen, "Waiting on subagent…").contains("[↓]"),
+        status_row(&screen, "Waiting for subagent…").contains("[↓]"),
         "{screen}"
     );
     let target = crate::ui::live_turn_background_rect(&app, TEST_FRAME_AREA)

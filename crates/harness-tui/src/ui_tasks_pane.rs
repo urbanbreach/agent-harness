@@ -72,11 +72,20 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, area: Rect, theme: &Them
     if app.task_pane_all_rows().is_empty() {
         frame.render_widget(
             Paragraph::new(if app.tasks_pane.show_done {
-                "No tasks or agents."
+                Line::from("No tasks or agents.")
             } else {
-                "No running tasks. Press h to show all."
+                Line::from(vec![
+                    Span::raw("No running tasks. Press "),
+                    Span::styled(
+                        "h",
+                        Style::default()
+                            .fg(theme.text.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" to show all."),
+                ])
             })
-            .style(Style::default().fg(theme.text.secondary)),
+            .style(Style::default().fg(theme.text.tertiary)),
             area,
         );
         return;
@@ -128,10 +137,14 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, area: Rect, theme: &Them
         let title_width = area.width.saturating_sub(2);
         let spans = title_spans(row, running, color, base, theme, usize::from(title_width));
         let spans = highlight_title(spans, &app.tasks_pane.query);
-        frame.render_widget(
-            Paragraph::new(Line::from(spans)),
-            Rect::new(area.x + 2, y, title_width, 1),
-        );
+        frame
+            .buffer_mut()
+            .set_line(area.x + 2, y, &Line::from(spans), title_width);
+        if selected {
+            frame
+                .buffer_mut()
+                .set_style(Rect::new(area.x, y, area.width, 1), base);
+        }
     }
     // Native overlays retain the unfiltered row positions during filtering.
     for (index, row) in app
@@ -219,7 +232,7 @@ fn title_spans(
             .trim(),
     );
     let activity = row.activity.as_deref().filter(|_| running);
-    let description = super::truncate_plain_text(
+    let description = crate::app::subagents::activity::truncate_width(
         &description,
         if activity.is_some() {
             40.min(width.saturating_sub(label.width()))
@@ -246,12 +259,10 @@ fn title_spans(
         ),
     ];
     if let Some(activity) = activity {
-        let used: usize = spans.iter().map(|span| span.width()).sum();
-        let text = super::truncate_plain_text(
-            &format!(" · {}", collapse_inline_whitespace(activity)),
-            width.saturating_sub(used),
-        );
-        spans.push(Span::styled(text, base.fg(theme.text.secondary)));
+        spans.push(Span::styled(
+            format!(" · {}", activity.trim()),
+            base.fg(theme.text.secondary),
+        ));
     }
     spans
 }
@@ -341,10 +352,11 @@ fn clear_overlay(frame: &mut Frame, area: Rect, y: u16, width: u16) {
         && buffer
             .cell((x, y))
             .is_some_and(|cell| !cell.symbol().trim().is_empty());
-    if ellipsis {
-        if let Some(cell) = buffer.cell_mut((x - 1, y)) {
-            cell.set_symbol("…");
-        }
-    }
+    let ellipsis_style = ellipsis
+        .then(|| buffer.cell((x - 1, y)).map(|cell| cell.style()))
+        .flatten();
     buffer.set_span(x, y, &Span::raw(" ".repeat(usize::from(width))), width);
+    if let Some(style) = ellipsis_style {
+        buffer.set_span(x - 1, y, &Span::styled("…", style), 1);
+    }
 }

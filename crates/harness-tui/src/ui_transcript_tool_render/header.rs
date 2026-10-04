@@ -18,7 +18,10 @@ pub(super) fn build_tool_header_spans(
         } else {
             title_style
         };
-        return subagent_header_spans(header, &title, theme, style, marker_style, width);
+        return crate::ui::ui_tool_wrapping::clip(
+            subagent_header_spans(header, &title, theme, style, marker_style, width),
+            width,
+        );
     }
     ordinary_tool_header_spans(header, theme, title_style, marker_style, width)
 }
@@ -170,11 +173,21 @@ fn subagent_header_spans(
     let detail = title.strip_prefix("Subagent ").unwrap_or(title);
     let detail = if let Some((prefix, quoted)) = detail.split_once('“') {
         if let Some((description, suffix)) = quoted.rsplit_once('”') {
+            let reserve =
+                if prefix.starts_with("completed in ") || prefix.starts_with("cancelled in ") {
+                    13
+                } else {
+                    11
+                };
             let available =
-                width.saturating_sub(13 + display_width(prefix) + display_width(suffix));
+                width.saturating_sub(reserve + display_width(prefix) + display_width(suffix));
             format!(
                 "{prefix}“{}”{suffix}",
-                truncate_plain_text(description, available)
+                if available == 0 {
+                    "…".into()
+                } else {
+                    truncate_plain_text(description, available)
+                }
             )
         } else {
             detail.to_owned()
@@ -397,9 +410,11 @@ pub(super) fn tool_call_marker_style(
             || (tool_call.header.presentation.status == ToolCallPresentationStatus::Failed
                 && !tool_call.details_visible())
             || (tool_call.header.visual_style == TranscriptToolCallVisualStyle::TaskInline
-                && tool_call
+                && (tool_call
                     .tool_call_id
-                    .starts_with("background-notification:")));
+                    .starts_with("background-notification:")
+                    || tool_call.header.title.starts_with("Subagent completed")
+                    || tool_call.header.title.starts_with("Subagent cancelled"))));
     let color = if dim_terminal
         && matches!(
             tool_call.header.presentation.status,
