@@ -20,7 +20,7 @@ pub(super) enum PendingWork {
     EditPaths {
         paths: Vec<PathBuf>,
         editing: bool,
-        always_approve: bool,
+        yolo: bool,
         permission_digest: String,
         reply: Reply<Vec<PathBuf>>,
     },
@@ -30,7 +30,7 @@ pub(super) struct ToolWork {
     pub tool: Arc<dyn Tool>,
     pub args: Value,
     pub permission_digest: String,
-    pub always_approve: bool,
+    pub yolo: bool,
     pub approval: ToolApproval,
     pub context: ToolContext,
 }
@@ -122,7 +122,7 @@ impl Runtime {
             .unwrap_or_else(|| self.tool_state.clone());
         let mut paths = Vec::new();
         let mut approved_paths = Vec::new();
-        let mut always_approve = requirements.iter().all(|(permission, value)| {
+        let mut yolo = requirements.iter().all(|(permission, value)| {
             super::grants::can_auto_approve(permission, PathBuf::from(value).as_path())
         });
         for input in tool
@@ -132,7 +132,7 @@ impl Runtime {
             let path = crate::tool::resolve_file_path(&cwd, &input)
                 .map_err(|e| CoordinatorError::Invalid(e.to_string()))?;
             approved_paths.push((cwd.join(&input), path.clone()));
-            always_approve &= tool.capability() != ToolCapability::ReadFs
+            yolo &= tool.capability() != ToolCapability::ReadFs
                 || [&input, &path]
                     .into_iter()
                     .all(|p| super::grants::can_auto_approve("read", p));
@@ -271,7 +271,7 @@ impl Runtime {
             tool,
             args,
             permission_digest: permission_digest.clone(),
-            always_approve,
+            yolo,
             approval: ToolApproval::Tool,
             context,
         };
@@ -283,8 +283,7 @@ impl Runtime {
                 })?;
             }
             PermissionAction::Ask
-                if !(self.config.always_approve_on_start && always_approve
-                    || self.tool_granted(&work))
+                if !(self.config.yolo_on_start && yolo || self.tool_granted(&work))
                     && tool_id != "question" =>
             {
                 self.ask_tool(work, tool_id, args_summary)?;

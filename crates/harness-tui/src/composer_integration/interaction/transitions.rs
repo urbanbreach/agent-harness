@@ -182,7 +182,7 @@ impl TransitionTable {
                     && !matches!(
                         action,
                         Action::AllowPermission
-                            | Action::AlwaysApprovePermission
+                            | Action::ToggleYoloMode
                             | Action::DenyPermission
                             | Action::DismissModal
                     )

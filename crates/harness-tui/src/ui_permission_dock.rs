@@ -44,8 +44,8 @@ pub(super) fn render_inline_permission_dock(
         return;
     }
 
-    let always_confirm = app.permission_modal_stage(&permission.permission_id)
-        == PermissionModalStage::AlwaysConfirm;
+    let yolo_confirm =
+        app.permission_modal_stage(&permission.permission_id) == PermissionModalStage::YoloConfirm;
     let dock_surface = theme.question_prompt.surface;
     let shell_surface = dock_surface;
     let tray_surface = dock_surface;
@@ -98,8 +98,8 @@ pub(super) fn render_inline_permission_dock(
     }
 
     if geometry.title.height > 0 {
-        let title = if always_confirm {
-            "Always allow".to_owned()
+        let title = if yolo_confirm {
+            "Enable YOLO mode".to_owned()
         } else {
             permission_modal_title(permission)
         };
@@ -208,7 +208,7 @@ pub(super) fn render_inline_permission_dock(
         return;
     }
 
-    if always_confirm {
+    if yolo_confirm {
         let expansion_label = (measure.detail_rows > 5).then_some(if measure.expanded {
             "Ctrl-F to collapse"
         } else {
@@ -269,8 +269,8 @@ pub(super) fn render_inline_permission_dock(
     let selection = app.permission_modal_selection(&permission.permission_id);
     let options = [
         (
-            "Yes, enable always-approve mode",
-            selection == PermissionModalSelection::AllowAlways,
+            "Yes, enable YOLO mode",
+            selection == PermissionModalSelection::EnableYolo,
         ),
         (
             "Yes, remember this approval for this session",
@@ -825,17 +825,11 @@ fn permission_prompt_hint_line(
 
     let count = option_count.max(1);
     let selected = selected_index.clamp(1, count);
-    let always = app.keymap.get_binding_str(Action::AlwaysApprovePermission);
-    let always_label = if available_width <= 60 {
-        if always == "-" {
-            "Ctrl+o:always".to_string()
-        } else {
-            format!("{always}:always")
-        }
-    } else if always == "-" {
-        "Ctrl+o:always-approve".to_string()
+    let yolo = app.keymap.get_binding_str(Action::ToggleYoloMode);
+    let yolo_label = if yolo == "-" {
+        "Ctrl+o:yolo".to_string()
     } else {
-        format!("{always}:always-approve")
+        format!("{yolo}:yolo")
     };
     let cancel = app.keymap.get_binding_str(Action::DismissModal);
     let cancel_label = if cancel == "-" {
@@ -848,7 +842,7 @@ fn permission_prompt_hint_line(
     let mut spans = vec![
         Span::styled(format!("{selected}/{count}:select"), primary_style),
         Span::styled("  │  ", separator_style),
-        Span::styled(always_label, primary_style),
+        Span::styled(yolo_label, primary_style),
         Span::styled("  │  ", separator_style),
         Span::styled(cancel_label, primary_style),
     ];

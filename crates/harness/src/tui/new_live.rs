@@ -415,7 +415,7 @@ async fn bootstrap_new_live_runtime(
     );
 
     let run_name = create_default_title(clock.as_ref(), false);
-    let always_approve_on_start = coordinator_config.always_approve_on_start;
+    let yolo_on_start = coordinator_config.yolo_on_start;
     let coordinator = spawn_coordinator(
         coordinator_config,
         clock,
@@ -428,8 +428,8 @@ async fn bootstrap_new_live_runtime(
         .await
         .map_err(|err| err.to_string())?;
     profile_handoff("new_live.start_run_done");
-    let _ = live_update_tx.send(LiveUpdate::AlwaysApproveModeChanged {
-        enabled: always_approve_on_start,
+    let _ = live_update_tx.send(LiveUpdate::YoloModeChanged {
+        enabled: yolo_on_start,
     });
     if let Some(config) = settings.config.as_ref() {
         let _ = logging::init_logging(config, &run.run_dir)?;

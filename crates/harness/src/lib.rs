@@ -57,6 +57,9 @@ struct Cli {
     profile: Option<String>,
     #[arg(long)]
     mock: bool,
+    /// Automatically approve ordinary tool requests; remember this mode for the session.
+    #[arg(long)]
+    yolo: bool,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -162,6 +165,7 @@ where
             continue_session: None,
             scenario: None,
             mock: cli.mock,
+            yolo: cli.yolo,
             deterministic: false,
             session_dir: None,
             exit_on_finish: false,
@@ -175,11 +179,13 @@ where
         Commands::Prompt(mut command) => {
             command.profile = command.profile.or(cli.profile);
             command.mock |= cli.mock;
+            command.options.yolo |= cli.yolo;
             prompt::execute(*command, cli.config.as_deref(), cli.session_dir, io, &deps)
         }
         Commands::Run(mut command) => {
             command.profile = command.profile.or(cli.profile);
             command.mock |= cli.mock;
+            command.options.yolo |= cli.yolo;
             prompt::execute_run(*command, cli.config.as_deref(), cli.session_dir, io, &deps)
         }
         Commands::Replay(command) => replay::execute(command, io),
@@ -223,7 +229,8 @@ where
             clap_complete::generate(shell, &mut Cli::command(), "harness", &mut script);
             io.stdout.write_all(&script).map_err(|e| e.to_string())
         }
-        Commands::Tui(command) => {
+        Commands::Tui(mut command) => {
+            command.yolo |= cli.yolo;
             let code = tui::execute_with_io(
                 command,
                 cli.config,

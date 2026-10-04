@@ -77,7 +77,11 @@ pub(crate) fn render_bordered_composer(
         .chrome
         .contains(&crate::composer_integration::ComposerChrome::Title)
     {
-        let badge = resolved.surface.right_label().unwrap_or(badge.as_str());
+        let badge = match resolved.surface.right_label() {
+            Some(label) if app.yolo_mode() => format!("{label} · YOLO"),
+            Some(label) => label.to_string(),
+            None => badge,
+        };
         let (badge_title, badge_style) = if badge.is_empty() {
             (String::new(), border_style)
         } else {
@@ -91,7 +95,23 @@ pub(crate) fn render_bordered_composer(
         let block = if badge_title.is_empty() {
             block
         } else {
-            block.title_bottom(Line::from(Span::styled(badge_title, badge_style)).right_aligned())
+            let title = if let Some((prefix, suffix)) =
+                badge_title.rsplit_once("YOLO").filter(|_| app.yolo_mode())
+            {
+                Line::from(vec![
+                    Span::raw(prefix.to_owned()),
+                    Span::styled(
+                        "YOLO",
+                        Style::default()
+                            .fg(theme.text.accent)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(suffix.to_owned()),
+                ])
+            } else {
+                Line::from(badge_title)
+            };
+            block.title_bottom(title.style(badge_style).right_aligned())
         };
         block
     } else {

@@ -43,7 +43,7 @@ pub struct BackgroundTaskSettings {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct RuntimeConfig {
-    pub always_approve: bool,
+    pub yolo: bool,
     #[serde(alias = "backgroundTasks")]
     pub background_tasks: BackgroundTaskSettings,
     #[serde(alias = "sessionDir")]
@@ -125,7 +125,6 @@ pub(super) fn normalize_aliases(value: &mut serde_json::Value) -> Result<(), Con
         (
             "/runtime",
             &[
-                ("alwaysApprove", "always_approve"),
                 ("backgroundTasks", "background_tasks"),
                 ("sessionDir", "session_dir"),
                 ("providerRetry", "provider_retry"),

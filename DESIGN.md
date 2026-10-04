@@ -161,7 +161,7 @@ Collapsed edits show trusted diff counts. Expanded diffs separate header and bod
 number the lines, apply syntax colors, and put change backgrounds on content
 rather than the number gutter. Numbered permission choices and keyboard navigation
 use the same coordinator decision. A rejection does not alter the composer draft;
-always-approve still needs confirmation.
+yolo still needs confirmation.
 
 Open tool content can show a 400 ms completion rail without changing layout.
 Schedule its expiry repaint. This state is temporary and never enters replay.

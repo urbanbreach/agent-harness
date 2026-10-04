@@ -279,6 +279,10 @@ pub struct TuiCommand {
     #[arg(long, default_value_t = false, conflicts_with_all = ["replay", "scenario"])]
     pub mock: bool,
 
+    /// Automatically approve ordinary tool requests; remember this mode for the session.
+    #[arg(long, conflicts_with_all = ["replay", "scenario"])]
+    pub yolo: bool,
+
     #[arg(long, default_value_t = false)]
     pub deterministic: bool,
 
@@ -441,6 +445,7 @@ async fn run_interactive_mode(
                             .as_ref()
                             .map(|config| config.ui.keybindings.clone()),
                         cmd.no_alt_screen,
+                        settings.yolo,
                     )
                 }
             },
@@ -562,6 +567,7 @@ async fn run_direct_continue_mode(
                             .as_ref()
                             .map(|config| config.ui.keybindings.clone()),
                         cmd.no_alt_screen,
+                        settings.yolo,
                     )
                 }
             },
@@ -633,11 +639,13 @@ async fn run_startup_launcher(
     auth_backend: TuiAuthBackendContext,
     keybindings: Option<BTreeMap<String, String>>,
     skip_alternate_screen: bool,
+    yolo: bool,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("startup_launcher.begin");
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
     let selected_intent_sink = Arc::clone(&selected_intent);
     let (live_update_tx, live_update_rx) = live_update_channel();
+    let _ = live_update_tx.send(LiveUpdate::YoloModeChanged { enabled: yolo });
     if let Some(message) = startup_notice {
         let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
             message,
@@ -770,7 +778,6 @@ async fn run_continue_session_bootstrap(
         &settings.config_digest,
     );
 
-    let always_approve_on_start = coordinator_config.always_approve_on_start;
     let coordinator = spawn_coordinator(
         coordinator_config,
         clock,
@@ -811,8 +818,11 @@ async fn run_continue_session_bootstrap(
             .to_vec(),
     );
     let (live_update_tx, live_update_rx) = live_update_channel();
-    let _ = live_update_tx.send(LiveUpdate::AlwaysApproveModeChanged {
-        enabled: always_approve_on_start,
+    let _ = live_update_tx.send(LiveUpdate::YoloModeChanged {
+        enabled: coordinator
+            .yolo_mode()
+            .await
+            .map_err(|err| err.to_string())?,
     });
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let intent_live_update_tx = live_update_tx.clone();

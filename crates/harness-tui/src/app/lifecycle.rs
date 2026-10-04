@@ -97,7 +97,7 @@ pub enum Focus {
 pub enum SessionMode {
     #[default]
     Normal,
-    AlwaysApprove,
+    Yolo,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,7 +117,7 @@ impl InterruptReason {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiIntent {
-    SetAlwaysApproveMode {
+    SetYoloMode {
         enabled: bool,
     },
     ResolvePermission {

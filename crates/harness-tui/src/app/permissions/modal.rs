@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum PermissionModalSelection {
     #[default]
-    AllowAlways,
+    EnableYolo,
     /// Session-scoped grant for the current permission request (freeze option 2).
     AllowSession,
     AllowOnce,
@@ -11,7 +11,7 @@ pub(crate) enum PermissionModalSelection {
 impl PermissionModalSelection {
     pub(crate) const fn number(self) -> usize {
         match self {
-            Self::AllowAlways => 1,
+            Self::EnableYolo => 1,
             Self::AllowSession => 2,
             Self::AllowOnce => 3,
             Self::Reject => 4,
@@ -20,7 +20,7 @@ impl PermissionModalSelection {
 
     pub(super) const fn from_number(number: char) -> Option<Self> {
         match number {
-            '1' => Some(Self::AllowAlways),
+            '1' => Some(Self::EnableYolo),
             '2' => Some(Self::AllowSession),
             '3' => Some(Self::AllowOnce),
             '4' => Some(Self::Reject),
@@ -28,11 +28,11 @@ impl PermissionModalSelection {
         }
     }
 
-    pub(super) fn cycle(self, forward: bool, allow_always: bool) -> Self {
-        let options = if allow_always {
-            // Permission order: always-approve, session edits, yes, reject.
+    pub(super) fn cycle(self, forward: bool, enable_yolo: bool) -> Self {
+        let options = if enable_yolo {
+            // Permission order: yolo, session edits, yes, reject.
             [
-                Self::AllowAlways,
+                Self::EnableYolo,
                 Self::AllowSession,
                 Self::AllowOnce,
                 Self::Reject,
@@ -74,5 +74,5 @@ impl PermissionConfirmSelection {
 pub(crate) enum PermissionModalStage {
     #[default]
     Decision,
-    AlwaysConfirm,
+    YoloConfirm,
 }

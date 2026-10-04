@@ -28,7 +28,7 @@ expression: snapshot.as_str()
                               │                                                          │
                               │    Model & Input ───────────────────────────────────     │
                               │   ◆ Switch Model                                /model   │
-                              │   ◆ Always Approve Mode                /always-approve   │
+                              │   ◆ YOLO mode                                    /yolo   │
                               │   ◆ Multiline Input                         /multiline   │
                               │                                                          │
                               │    Tools ───────────────────────────────────────────     │

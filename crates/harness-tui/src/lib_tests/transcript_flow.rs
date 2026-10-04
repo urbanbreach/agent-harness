@@ -655,7 +655,7 @@ pub(super) fn permission_overlay_preserves_draft_and_transcript_context() {
     assert!(!debug.contains("keep this draft"));
     assert!(!debug.contains("Select an activity to view transcript"));
     assert!(
-        debug.contains("always-approve") && debug.contains("No, reject"),
+        debug.contains("yolo") && debug.contains("No, reject"),
         "permission options should remain visible in the modal\n{debug}"
     );
 }
@@ -706,7 +706,7 @@ pub(super) fn permission_overlay_preserves_existing_draft_without_buffering_new_
     assert_eq!(app.composer.prompt_buffer, "keep t");
     assert_eq!(
         app.permission_modal_selection("perm_overlay_home_row_input"),
-        app::permissions::PermissionModalSelection::AllowAlways
+        app::permissions::PermissionModalSelection::EnableYolo
     );
 
     let debug = render_live_buffer(&app, 80, 24);

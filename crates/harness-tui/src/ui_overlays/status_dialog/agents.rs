@@ -201,7 +201,7 @@ pub(super) fn render_dashboard_peek(
                     .permission_modal_selection(&permission.permission_id)
                     .number();
                 for (index, label) in [
-                    "Enable always-approve mode",
+                    "Enable YOLO mode",
                     "Remember this approval for this session",
                     "Allow once",
                     "Reject and add feedback",

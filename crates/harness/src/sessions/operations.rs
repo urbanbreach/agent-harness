@@ -178,6 +178,7 @@ pub(super) fn continue_session(
             replay: None,
             scenario: None,
             mock: false,
+            yolo: false,
             deterministic: false,
             session_dir: None,
             exit_on_finish,

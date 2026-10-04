@@ -9,9 +9,10 @@ pub(super) fn render_collapsed_composer(
 ) {
     let surface = composer_input_surface(theme);
     let text = app.composer_render_text();
+    let mode = if app.yolo_mode() { "YOLO " } else { "" };
     let glyph = format!("{} ", theme.live_shell.transcript_glyphs.user_marker);
     let body_width = usize::from(area.width)
-        .saturating_sub(display_width(&glyph))
+        .saturating_sub(display_width(mode) + display_width(&glyph))
         .max(1);
     let resolved = super::presentation::resolve_composer(
         app,
@@ -27,6 +28,13 @@ pub(super) fn render_collapsed_composer(
         false,
     );
     let line = Line::from(vec![
+        Span::styled(
+            mode,
+            Style::default()
+                .fg(theme.text.accent)
+                .bg(surface)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(
             glyph,
             Style::default().fg(theme.terminal_colors.muted).bg(surface),

@@ -235,8 +235,16 @@ impl CoordinatorHandle {
         self.call(move |s| s.resolve_permission(&id, decision, reason))
             .await
     }
-    pub async fn set_always_approve_mode(&self, enabled: bool) -> Result<(), CoordinatorError> {
-        self.call(move |s| s.set_always_approve_mode(enabled)).await
+    pub async fn set_yolo_mode(&self, enabled: bool) -> Result<(), CoordinatorError> {
+        self.call(move |s| s.set_yolo_mode(enabled)).await
+    }
+
+    pub async fn yolo_mode(&self) -> Result<bool, CoordinatorError> {
+        self.call(|s| {
+            s.info()?;
+            Ok(s.config.yolo_on_start)
+        })
+        .await
     }
     pub async fn cancel_task(
         &self,

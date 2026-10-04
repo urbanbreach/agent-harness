@@ -18,7 +18,7 @@ pub fn config_json_schema() -> Value {
         ("PermissionDefaultsConfig", "webfetch webFetch;websearch webSearch;codesearch codeSearch;lsp codeLsp"),
         ("ProfilePermissions", "shell bash;webfetch webFetch;websearch webSearch;codesearch codeSearch;lsp codeLsp"),
         ("ShellAllowlist", "mode policy_mode policyMode;cwd_roots cwdRoots"),
-        ("RuntimeConfig", "always_approve alwaysApprove;background_tasks backgroundTasks;session_dir sessionDir;provider_retry providerRetry"),
+        ("RuntimeConfig", "background_tasks backgroundTasks;session_dir sessionDir;provider_retry providerRetry"),
         ("BackgroundTaskSettings", "defaultConcurrency default_concurrency;providerConcurrency provider_concurrency;modelConcurrency model_concurrency;staleTimeoutMs stale_timeout_ms;messageStalenessTimeoutMs message_staleness_timeout_ms"),
         ("ProviderRetryRuntimeConfig", "max_retries maxRetries;base_delay_ms baseDelayMs;max_delay_ms maxDelayMs"),
         ("CompactionSettings", "threshold_percent thresholdPercent;threshold_tokens thresholdTokens;model_thresholds modelThresholds;agent_thresholds agentThresholds;reserve_tokens reserveTokens;keep_recent_tokens keepRecentTokens;auto_retry_overflow autoRetryOverflow;structured_summary_contract structuredSummaryContract;estimated_token_triggers estimatedTokenTriggers;fallback_input_tokens fallbackInputTokens;split_oversized_turns splitOversizedTurns;suppress_auto_compaction suppressAutoCompaction"),

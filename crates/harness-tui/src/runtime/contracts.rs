@@ -33,10 +33,10 @@ pub enum LiveUpdate {
         result: Result<harness_core::conversation_rewind::RewindPoint, String>,
     },
     Event(Box<RuntimeEvent>),
-    AlwaysApproveModeChanged {
+    YoloModeChanged {
         enabled: bool,
     },
-    AlwaysApproveModeChangeFailed,
+    YoloModeChangeFailed,
     Status(String),
     ModelPromptNotice(String),
     SessionHistory(Vec<SessionHistoryEntry>),

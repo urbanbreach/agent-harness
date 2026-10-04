@@ -187,7 +187,7 @@ impl AppState {
         if self.permission_modal_is_active(permission_id) {
             self.permission_prompt.selection
         } else {
-            PermissionModalSelection::AllowAlways
+            PermissionModalSelection::EnableYolo
         }
     }
 
@@ -334,31 +334,31 @@ impl AppState {
         &mut self,
         permission_id: &str,
         forward: bool,
-        allow_always: bool,
+        enable_yolo: bool,
     ) {
         self.ensure_permission_modal_state(permission_id);
         let current = self.permission_modal_selection(permission_id);
         self.permission_prompt.permission_id = Some(permission_id.to_string());
         self.permission_prompt.stage = PermissionModalStage::Decision;
-        self.permission_prompt.selection = current.cycle(forward, allow_always);
+        self.permission_prompt.selection = current.cycle(forward, enable_yolo);
     }
 
     fn cycle_permission_modal_confirm_selection(&mut self, permission_id: &str, forward: bool) {
         self.ensure_permission_modal_state(permission_id);
         let current = self.permission_modal_confirm_selection(permission_id);
         self.permission_prompt.permission_id = Some(permission_id.to_string());
-        self.permission_prompt.stage = PermissionModalStage::AlwaysConfirm;
+        self.permission_prompt.stage = PermissionModalStage::YoloConfirm;
         self.permission_prompt.confirm_selection = current.cycle(forward);
     }
 
-    fn open_permission_allow_always_confirm(&mut self, permission_id: &str) {
+    fn open_permission_enable_yolo_confirm(&mut self, permission_id: &str) {
         self.ensure_permission_modal_state(permission_id);
         self.permission_prompt.permission_id = Some(permission_id.to_string());
-        self.permission_prompt.stage = PermissionModalStage::AlwaysConfirm;
+        self.permission_prompt.stage = PermissionModalStage::YoloConfirm;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
     }
 
-    fn close_permission_allow_always_confirm(&mut self, permission_id: &str) {
+    fn close_permission_enable_yolo_confirm(&mut self, permission_id: &str) {
         self.permission_prompt.permission_id = Some(permission_id.to_string());
         self.permission_prompt.stage = PermissionModalStage::Decision;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
@@ -368,7 +368,7 @@ impl AppState {
         if self.permission_modal_is_active(permission_id) {
             self.permission_prompt.permission_id = None;
             self.permission_prompt.stage = PermissionModalStage::Decision;
-            self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
+            self.permission_prompt.selection = PermissionModalSelection::EnableYolo;
             self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
             self.permission_prompt.detail_expanded = false;
             self.permission_prompt.feedback = None;
@@ -577,7 +577,7 @@ impl AppState {
                 PermissionModalStage::Decision => {
                     self.cycle_permission_modal_selection(&permission.permission_id, forward, true)
                 }
-                PermissionModalStage::AlwaysConfirm => self
+                PermissionModalStage::YoloConfirm => self
                     .cycle_permission_modal_confirm_selection(&permission.permission_id, forward),
             }
             return;
@@ -585,7 +585,7 @@ impl AppState {
 
         if key.code == KeyCode::Enter || !key.modifiers.intersects(command_modifiers) {
             if self.permission_modal_stage(&permission.permission_id)
-                == PermissionModalStage::AlwaysConfirm
+                == PermissionModalStage::YoloConfirm
             {
                 match key.code {
                     KeyCode::Left | KeyCode::Up | KeyCode::Char('h' | 'k') => {
@@ -603,12 +603,12 @@ impl AppState {
                         return;
                     }
                     KeyCode::Enter => {
-                        self.confirm_permission_allow_always(&permission.permission_id);
+                        self.confirm_permission_enable_yolo(&permission.permission_id);
                         self.maybe_auto_exit();
                         return;
                     }
                     KeyCode::Esc => {
-                        self.close_permission_allow_always_confirm(&permission.permission_id);
+                        self.close_permission_enable_yolo_confirm(&permission.permission_id);
                         return;
                     }
                     _ => return,
@@ -663,7 +663,7 @@ impl AppState {
             if matches!(
                 action,
                 Action::AllowPermission
-                    | Action::AlwaysApprovePermission
+                    | Action::ToggleYoloMode
                     | Action::DenyPermission
                     | Action::DismissModal
             ) {
@@ -690,22 +690,22 @@ impl AppState {
                     Some(PermissionGrantScope::Session),
                 );
             }
-            PermissionModalSelection::AllowAlways => {
-                self.open_permission_allow_always_confirm(permission_id)
+            PermissionModalSelection::EnableYolo => {
+                self.open_permission_enable_yolo_confirm(permission_id)
             }
             PermissionModalSelection::Reject => self.execute_action(Action::DenyPermission),
         }
         self.maybe_auto_exit();
     }
 
-    fn confirm_permission_allow_always(&mut self, permission_id: &str) {
+    fn confirm_permission_enable_yolo(&mut self, permission_id: &str) {
         if self.permission_modal_confirm_selection(permission_id)
             == PermissionConfirmSelection::Confirm
         {
             self.clear_permission_modal_selection(permission_id);
-            self.request_always_approve_mode_change(true);
+            self.request_yolo_mode_change(true);
         } else {
-            self.close_permission_allow_always_confirm(permission_id);
+            self.close_permission_enable_yolo_confirm(permission_id);
         }
     }
 
@@ -1001,7 +1001,7 @@ impl AppState {
             if matches!(
                 action,
                 Action::AllowPermission
-                    | Action::AlwaysApprovePermission
+                    | Action::ToggleYoloMode
                     | Action::DenyPermission
                     | Action::DismissModal
             ) {
@@ -1030,8 +1030,8 @@ impl AppState {
                 self.send_permission_intent(permission_id, PermissionDecision::Allow, reason, None);
                 true
             }
-            Action::AlwaysApprovePermission => {
-                self.open_permission_allow_always_confirm(&permission_id);
+            Action::ToggleYoloMode => {
+                self.open_permission_enable_yolo_confirm(&permission_id);
                 true
             }
             Action::DenyPermission | Action::DismissModal => {

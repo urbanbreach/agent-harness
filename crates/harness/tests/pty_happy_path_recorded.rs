@@ -211,7 +211,7 @@ fn record_permission_tool_edit_and_auto_exit(session_dir: &Path) -> serde_json::
     pty_phase("scenario:wait_permission_modal");
     screens.push(helper.wait_for("Allow Edit", "permission modal"));
     pty_phase("scenario:wait_permission_choices");
-    screens.push(helper.wait_for("always-approve", "permission choices"));
+    screens.push(helper.wait_for("yolo", "permission choices"));
     pty_phase("scenario:allow");
     helper.send_key(b'\r');
     helper.send_key(b'\r');

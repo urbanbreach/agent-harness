@@ -91,12 +91,12 @@ impl Runtime {
             .and_then(|id| self.agents.get(id))
             .map(|agent| &agent.policy);
         let mut ask = false;
-        let mut always_approve = true;
+        let mut yolo = true;
         let mut resolved = Vec::with_capacity(paths.len());
         for input in paths {
             let path = crate::tool::resolve_file_path(&cwd, &input)
                 .map_err(|e| CoordinatorError::Invalid(e.to_string()))?;
-            always_approve &= path.starts_with(root);
+            yolo &= path.starts_with(root);
             if editing {
                 self.validate_edit_path(&path)?;
             }
@@ -110,7 +110,7 @@ impl Runtime {
                     .iter()
                     .map(move |permission| (value, permission))
             }) {
-                always_approve &= super::grants::can_auto_approve(permission, value);
+                yolo &= super::grants::can_auto_approve(permission, value);
                 let selector = value.strip_prefix(root).unwrap_or(value).to_string_lossy();
                 match self
                     .config
@@ -139,7 +139,7 @@ impl Runtime {
         )?;
         let permission_digest = digest(&format!("edit-paths:{tool_id}:{summary}"));
         if !ask
-            || (self.config.always_approve_on_start && always_approve)
+            || (self.config.yolo_on_start && yolo)
             || self.has_grant(&tool_id, &permission_digest)
         {
             let _ = reply.send(self.approve_edit_paths(task, resolved, editing));
@@ -169,7 +169,7 @@ impl Runtime {
                 work: PendingWork::EditPaths {
                     paths: resolved,
                     editing,
-                    always_approve,
+                    yolo,
                     permission_digest,
                     reply,
                 },

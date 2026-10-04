@@ -49,7 +49,7 @@ pub enum SettingEditorKind {
 }
 pub fn setting_editor_kind(id: &str) -> Option<SettingEditorKind> {
     match id {
-        "runtime.always_approve"
+        "runtime.yolo"
         | "subagents.enabled"
         | "features.active_agent_messages"
         | "features.subagent_model_inheritance"

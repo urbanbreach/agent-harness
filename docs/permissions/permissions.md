@@ -8,7 +8,7 @@ operating-system boundary.
 
 Rules use `allow`, `ask` or `deny`. The last matching rule wins within each policy.
 Shared policy and the acting agent's role policy then combine: deny wins, followed
-by ask, then allow. A grant or always-approve mode cannot override a deny.
+by ask, then allow. A grant or YOLO mode cannot override a deny.
 
 Permission names are `bash`, `edit`, `read`, `question`, `task`, `webfetch`,
 `websearch`, `codesearch`, `lsp`, `external_directory`, and `doom_loop`. Native
@@ -46,9 +46,15 @@ allowance keeps the tool visible; execution still checks its actual arguments.
 
 An ask commits a permission request and waits. A configured timeout expires as a
 denial. Cancellation resolves waiting approvals and prevents the tool from
-starting. Enabling always-approve releases eligible pending requests and handles
+starting. Enabling YOLO releases eligible pending requests and handles
 future ordinary asks. Questions, sensitive reads, repeated-call checks and
 outside-workspace access keep their own approval requirements.
+
+`harness --yolo` starts with YOLO enabled. The TUI shows the active mode
+in the composer. Mode changes are recorded in the session journal,
+so resuming the session restores the last choice. Use `/yolo` or Ctrl+O to toggle
+it. New sessions use the launch flag or configuration rather than another session's
+choice.
 
 Remembered approvals have run, session or workspace scope. Run grants end with
 the run. Session grants restore from that session's journal. Workspace
@@ -72,7 +78,7 @@ they do not transfer to an unrelated tool. Expiring grants are not reused.
 A third consecutive identical tool request triggers `doom_loop`. Allowing once
 resets the streak. Remembering that approval suppresses later repetition asks;
 a child role's denial still wins. The streak resets when the run ends.
-Always-approve alone does not disable this guard.
+YOLO alone does not disable this guard.
 
 There are at most 4,096 retained grants. Workspace storage is limited to 1 MiB.
 Grant descriptions that would expose a registered secret use an opaque request

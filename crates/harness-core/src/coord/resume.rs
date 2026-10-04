@@ -181,6 +181,18 @@ impl Runtime {
                 workspace_root: info.workspace_root.to_string_lossy().into(),
             }),
         )?;
+        if self.config.yolo_on_start
+            || events
+                .iter()
+                .rev()
+                .find_map(|event| match event.payload {
+                    EventV1::YoloModeChanged { enabled } => Some(enabled),
+                    _ => None,
+                })
+                .unwrap_or(false)
+        {
+            self.set_yolo_mode(true)?;
+        }
         self.start_hooks()?;
         self.write_metadata()?;
         Ok(info)

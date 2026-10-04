@@ -3983,14 +3983,6 @@
         {
           "not": {
             "required": [
-              "always_approve",
-              "alwaysApprove"
-            ]
-          }
-        },
-        {
-          "not": {
-            "required": [
               "background_tasks",
               "backgroundTasks"
             ]
@@ -4014,14 +4006,6 @@
         }
       ],
       "properties": {
-        "alwaysApprove": {
-          "default": false,
-          "type": "boolean"
-        },
-        "always_approve": {
-          "default": false,
-          "type": "boolean"
-        },
         "backgroundTasks": {
           "$ref": "#/$defs/BackgroundTaskSettings",
           "default": {
@@ -4098,6 +4082,10 @@
         "session_dir": {
           "default": ".agent-harness/sessions",
           "type": "string"
+        },
+        "yolo": {
+          "default": false,
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -5185,7 +5173,6 @@
     "runtime": {
       "$ref": "#/$defs/RuntimeConfig",
       "default": {
-        "always_approve": false,
         "background_tasks": {
           "defaultConcurrency": 4,
           "messageStalenessTimeoutMs": 10000,
@@ -5219,7 +5206,8 @@
           "max_delay_ms": 30000,
           "max_retries": 2
         },
-        "session_dir": ".agent-harness/sessions"
+        "session_dir": ".agent-harness/sessions",
+        "yolo": false
       }
     },
     "skills": {

@@ -744,6 +744,7 @@ fn event_kind_label(event: &EventV1) -> &'static str {
         EventV1::PermissionRequested(_) => "permission_requested",
         EventV1::PermissionGrantRecorded(_) => "permission_grant_recorded",
         EventV1::PermissionResolved(_) => "permission_resolved",
+        EventV1::YoloModeChanged { .. } => "yolo_mode_changed",
         EventV1::EditProposed(_) => "edit_proposed",
         EventV1::EditApplied(_) => "edit_applied",
         EventV1::EditRejected(_) => "edit_rejected",

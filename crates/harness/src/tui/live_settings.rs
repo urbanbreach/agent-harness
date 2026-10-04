@@ -36,6 +36,7 @@ pub(super) struct LiveSettings {
     pub(super) workspace_root: PathBuf,
     pub(super) shell_allowlist: ShellAllowlist,
     pub(super) deterministic: bool,
+    pub(super) yolo: bool,
     pub(super) seed: u64,
     pub(super) config_digest: String,
     pub(super) launch_metadata: LaunchMetadata,
@@ -77,6 +78,9 @@ pub(super) fn resolve_tui_mode(
     workspace_root: PathBuf,
     config_context: &harness_core::config::ConfigLoadContext,
 ) -> Result<ResolvedTuiMode, String> {
+    if cmd.yolo && (cmd.replay.is_some() || cmd.scenario.is_some()) {
+        return Err("--yolo requires an interactive session".into());
+    }
     if let Some(run_dir) = &cmd.replay {
         let workspace_root = load_events_from_run_dir(run_dir)
             .ok()
@@ -292,6 +296,10 @@ fn resolve_live_settings_with_deps(
         launch_metadata
     };
     let toggles = runtime_toggles_config(live_config.as_ref(), &workspace_root);
+    let yolo = cmd.yolo
+        || live_config
+            .as_ref()
+            .is_some_and(|config| config.runtime.yolo);
 
     Ok(LiveSettings {
         config: live_config,
@@ -300,6 +308,7 @@ fn resolve_live_settings_with_deps(
         workspace_root,
         shell_allowlist,
         deterministic,
+        yolo,
         seed: config_seed,
         config_digest,
         launch_metadata,
@@ -345,6 +354,7 @@ pub(super) fn launch_metadata_for_mode(
 
 pub(super) fn demo_coordinator_config(settings: &LiveSettings) -> CoordinatorConfig {
     let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
+    coordinator_config.yolo_on_start = settings.yolo;
     coordinator_config.permission_policy = default_permission_policy();
     coordinator_config.tool_registry =
         Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
@@ -361,6 +371,7 @@ pub(super) fn interactive_coordinator_config(
         .clone()
         .ok_or_else(bootstrap::interactive_config_guidance)?;
     config.apply_session_dir_override(Some(settings.session_dir.clone()));
+    config.runtime.yolo = settings.yolo;
     bootstrap::build_interactive_coordinator_config(&config)
 }
 

@@ -13,7 +13,7 @@ pub(crate) struct RunCommand {
     #[arg(long, requires = "scenario")]
     deterministic: bool,
     #[command(flatten)]
-    options: Options,
+    pub(crate) options: Options,
     #[arg(long)]
     pub(crate) profile: Option<String>,
     #[arg(long)]

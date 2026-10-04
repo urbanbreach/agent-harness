@@ -1,4 +1,4 @@
-//! Whole-frame behavioral oracle captured before replacing the TUI.
+//! Whole-frame behavioral oracle captured before replacing the TUI, with YOLO labels updated.
 //! Only the pinned original source may record expectations. Candidate runs compare.
 use std::{fs, path::PathBuf, process::Command};
 

@@ -276,7 +276,7 @@ pub(super) fn live_shell_inline_tool_state_snapshot() {
     let rendered = render_live_lines(&app, 80, 24);
     println!("{rendered}");
 
-    assert_live_shell_contains(&app, 80, 24, &["Allow Edit", "always-approve", "┃"]);
+    assert_live_shell_contains(&app, 80, 24, &["Allow Edit", "yolo", "┃"]);
     let rendered = render_live_lines(&app, 80, 24);
     assert!(
         !rendered.contains("timeout"),
@@ -378,7 +378,7 @@ pub(super) fn live_shell_permission_preserves_draft_snapshot() {
     let rendered = render_live_lines(&app, 80, 24);
     println!("{rendered}");
 
-    assert_live_shell_contains(&app, 80, 24, &["Allow Edit", "always-approve"]);
+    assert_live_shell_contains(&app, 80, 24, &["Allow Edit", "yolo"]);
     assert!(!rendered.contains("keep this draft"));
 }
 

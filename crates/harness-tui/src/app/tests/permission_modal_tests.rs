@@ -180,7 +180,7 @@ pub(super) fn permission_modal_tab_walks_rows_and_modified_tab_is_inert() {
     app.handle_key(key_with_modifiers(KeyCode::Tab, KeyModifiers::SHIFT));
     assert_eq!(
         app.permission_modal_selection("perm_tab_walk"),
-        PermissionModalSelection::AllowAlways
+        PermissionModalSelection::EnableYolo
     );
     for (code, modifiers) in [
         (KeyCode::BackTab, KeyModifiers::NONE),
@@ -204,7 +204,7 @@ pub(super) fn permission_modal_tab_walks_rows_and_modified_tab_is_inert() {
         app.handle_key(key_with_modifiers(KeyCode::Tab, modifiers));
         assert_eq!(
             app.permission_modal_selection("perm_tab_walk"),
-            PermissionModalSelection::AllowAlways
+            PermissionModalSelection::EnableYolo
         );
     }
 }

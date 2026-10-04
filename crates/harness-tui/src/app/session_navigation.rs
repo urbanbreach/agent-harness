@@ -270,7 +270,7 @@ impl AppState {
     }
 
     fn slash_command_available(&self, command: &str) -> bool {
-        if command == "always-approve" {
+        if command == "yolo" {
             return !self.replay_mode;
         }
         match command {
@@ -342,7 +342,7 @@ impl AppState {
         self.submitted_permission_id = None;
         self.permission_prompt.permission_id = None;
         self.permission_prompt.stage = PermissionModalStage::Decision;
-        self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
+        self.permission_prompt.selection = PermissionModalSelection::EnableYolo;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
         self.question_prompt = super::QuestionPromptState::default();
         self.reload_requested = false;
@@ -359,9 +359,9 @@ impl AppState {
             return;
         }
         match command {
-            "always-approve" => {
+            "yolo" => {
                 self.restore_slash_draft(preserved_draft);
-                self.request_always_approve_mode_toggle();
+                self.request_yolo_mode_toggle();
             }
             "usage" | "extensions" => {
                 self.restore_slash_draft(preserved_draft);
@@ -1007,7 +1007,7 @@ impl AppState {
         self.submitted_permission_id = None;
         self.permission_prompt.permission_id = None;
         self.permission_prompt.stage = PermissionModalStage::Decision;
-        self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
+        self.permission_prompt.selection = PermissionModalSelection::EnableYolo;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
         self.question_prompt = super::QuestionPromptState::default();
         self.composer.prompt_history_index = None;

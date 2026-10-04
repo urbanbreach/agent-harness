@@ -86,7 +86,7 @@ def measure(binary, count, cancel):
         environment.update(HOME=str(root / 'home'), XDG_CONFIG_HOME=str(root / 'xdg'), HARNESS_DATA_HOME=str(root / 'data'))
         started = time.monotonic()
         process = subprocess.Popen([str(binary), '--cwd', str(root), '--config', str(config),
-                                    'prompt', '--text', 'launch delegations', '--dangerously-skip-permissions'],
+                                    'prompt', '--text', 'launch delegations', '--yolo'],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment, cwd=root)
         try:
             if cancel:

@@ -107,7 +107,7 @@ pub(crate) fn permission_dock_measure(
     };
     let option_rows = match app.permission_modal_stage(&permission.permission_id) {
         PermissionModalStage::Decision => 4,
-        PermissionModalStage::AlwaysConfirm => 2,
+        PermissionModalStage::YoloConfirm => 2,
     };
     let editor_rows = app
         .permission_feedback(&permission.permission_id)

@@ -47,7 +47,7 @@ fn permission_choice_hit_regions(
 
     match app.permission_modal_stage(&permission.permission_id) {
         PermissionModalStage::Decision => [
-            PermissionModalSelection::AllowAlways,
+            PermissionModalSelection::EnableYolo,
             PermissionModalSelection::AllowSession,
             PermissionModalSelection::AllowOnce,
             PermissionModalSelection::Reject,
@@ -73,7 +73,7 @@ fn permission_choice_hit_regions(
             })
         })
         .collect(),
-        PermissionModalStage::AlwaysConfirm => {
+        PermissionModalStage::YoloConfirm => {
             let mut x = tray.x;
             [
                 (PermissionConfirmSelection::Confirm, "Confirm"),
@@ -695,10 +695,10 @@ impl AppState {
             PermissionPointerTarget::Confirm(selection)
                 if permission.question_prompts.is_none()
                     && self.permission_modal_stage(&permission.permission_id)
-                        == PermissionModalStage::AlwaysConfirm =>
+                        == PermissionModalStage::YoloConfirm =>
             {
                 self.permission_prompt.permission_id = Some(permission.permission_id.clone());
-                self.permission_prompt.stage = PermissionModalStage::AlwaysConfirm;
+                self.permission_prompt.stage = PermissionModalStage::YoloConfirm;
                 self.permission_prompt.confirm_selection = selection;
                 true
             }

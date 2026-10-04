@@ -694,20 +694,20 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
     // The startup preference persists without changing the active session.
     app.settings_editor_selected = settings_registry()
         .iter()
-        .position(|entry| entry.setting_id.as_str() == "runtime.always_approve")
+        .position(|entry| entry.setting_id.as_str() == "runtime.yolo")
         .expect("startup approval setting");
     for enabled in [true, false, true] {
         app.handle_key(key(KeyCode::Enter));
         let loaded =
             harness_core::config::load_config_from_file(&path).expect("reload startup preference");
-        assert_eq!(loaded.runtime.always_approve, enabled);
-        assert!(!app.always_approve_mode());
+        assert_eq!(loaded.runtime.yolo, enabled);
+        assert!(!app.yolo_mode());
     }
     app.bind_settings_project_config(&path, false, compaction, true, true, true, false);
     assert_eq!(
         app.settings_editor_rows()
             .into_iter()
-            .find(|row| row.setting_id == "runtime.always_approve")
+            .find(|row| row.setting_id == "runtime.yolo")
             .expect("startup row")
             .effective_value
             .as_deref(),
@@ -718,7 +718,7 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
         !harness_core::config::load_config_from_file(&path)
             .expect("reset startup preference")
             .runtime
-            .always_approve
+            .yolo
     );
 
     exercise_typed_settings_drafts(&mut app, &path);

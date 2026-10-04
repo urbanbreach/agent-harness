@@ -174,7 +174,7 @@ async fn grants_match_exact_requests_and_respect_run_session_workspace_lifetimes
             }])?;
         let denied = make(config);
         denied.resume_run(run.run_id.to_string(), "denied").await?;
-        denied.set_always_approve_mode(true).await?;
+        denied.set_yolo_mode(true).await?;
         denied
             .request_tool_call(actor, None, "count", json!({"value":1}))
             .await?;
@@ -185,7 +185,7 @@ async fn grants_match_exact_requests_and_respect_run_session_workspace_lifetimes
 }
 
 #[tokio::test]
-async fn always_approve_releases_pending_tools_but_keeps_sensitive_requests_interactive(
+async fn yolo_releases_pending_tools_but_keeps_sensitive_requests_interactive(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let outside = tempfile::tempdir()?;
@@ -209,7 +209,7 @@ async fn always_approve_releases_pending_tools_but_keeps_sensitive_requests_inte
             (outside.path().join("outside.txt"), false),
         ] {
             let external = !path.starts_with(temp.path());
-            coordinator.set_always_approve_mode(already_enabled).await?;
+            coordinator.set_yolo_mode(already_enabled).await?;
             let id = coordinator
                 .request_tool_call(
                     EventActor::new(ActorKind::User, None),
@@ -223,7 +223,7 @@ async fn always_approve_releases_pending_tools_but_keeps_sensitive_requests_inte
             } else {
                 None
             };
-            coordinator.set_always_approve_mode(true).await?;
+            coordinator.set_yolo_mode(true).await?;
             if external && !already_enabled {
                 permission = Some(approval(&mut events, &id).await?);
             }
@@ -243,6 +243,58 @@ async fn always_approve_releases_pending_tools_but_keeps_sensitive_requests_inte
         }
     }
     coordinator.stop_run().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn yolo_persists_per_session() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let count = Arc::new(AtomicUsize::new(0));
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(super::tests::CountTool(Arc::clone(&count))));
+    let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
+    config.tool_registry = Arc::new(registry);
+    let mut session_id = String::new();
+    let mut completed = 0;
+    let actor = EventActor::new(ActorKind::User, None);
+    for (resume, force_on, enabled, disable) in [
+        (false, true, true, false),
+        (true, false, true, true),
+        (true, false, false, false),
+        (true, true, true, false),
+        (false, false, false, false),
+    ] {
+        config.yolo_on_start = force_on;
+        let coordinator = spawn_coordinator(
+            config.clone(),
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        let run = if resume {
+            coordinator.resume_run(&session_id, "continued").await?
+        } else {
+            coordinator.start_run("approval mode", temp.path()).await?
+        };
+        session_id = run.run_id.to_string();
+        let mut events = coordinator.event_store().await?.subscribe(1)?;
+        let id = coordinator
+            .request_tool_call(actor.clone(), None, "count", json!({}))
+            .await?;
+        if enabled {
+            super::history_tests::settled(&coordinator, &id).await?;
+            completed += 1;
+        } else {
+            let permission = approval(&mut events, &id).await?;
+            coordinator
+                .resolve_permission(permission, PermissionDecision::Deny, None)
+                .await?;
+        }
+        assert_eq!(count.load(Ordering::SeqCst), completed);
+        if disable {
+            coordinator.set_yolo_mode(false).await?;
+        }
+        coordinator.stop_run().await?;
+    }
     Ok(())
 }
 
@@ -283,7 +335,7 @@ async fn repeated_calls_require_approval_and_a_remembered_grant_cannot_override_
             .await?;
         if call == 3 || call == 6 {
             let permission = approval(&mut events, &id).await?;
-            coordinator.set_always_approve_mode(true).await?;
+            coordinator.set_yolo_mode(true).await?;
             assert_eq!(count.load(Ordering::SeqCst), call - 1);
             coordinator
                 .resolve_permission_with_grant_scope(

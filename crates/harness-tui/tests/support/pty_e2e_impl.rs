@@ -168,7 +168,7 @@ pub(crate) fn pty_permission_overlay_resolves_and_preserves_draft() {
     helper.wait_for(PERMISSION_DRAFT);
 
     helper.wait_for("Allow Edit");
-    helper.wait_for("always-approve");
+    helper.wait_for("yolo");
     let permission_screen = helper.screen_text();
     assert_permission_dock_shell(&permission_screen);
     assert!(

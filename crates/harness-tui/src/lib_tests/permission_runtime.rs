@@ -5,12 +5,7 @@ pub(super) fn permission_modal_snapshot_renders_request() {
     let mut app = app::AppState::new_live(None, false, None);
     app.ingest_event(permission_requested_event(1, "perm_1", "tool_call_1"));
 
-    assert_live_shell_contains(
-        &app,
-        80,
-        24,
-        &["Allow Edit", "always-approve", "No, reject", "Yes"],
-    );
+    assert_live_shell_contains(&app, 80, 24, &["Allow Edit", "yolo", "No, reject", "Yes"]);
 }
 
 pub(super) fn overlay_stack_orders_details_palette_permission() {
@@ -271,10 +266,10 @@ fn assert_permission_and_connection_status_strips() {
     assert_runtime_state(&permission_blocked, app::RuntimeStateKind::PermissionBlocked, "decision required · Apply hashline edit to demo.txt", Some("Apply hashline edit to demo.txt"), false, "Draft preserved under the checkpoint — deny stays fail-closed; allow once only after review.");
     let permission_blocked_debug = render_live_buffer(&permission_blocked, 80, 24);
     assert!(permission_blocked_debug.contains("Allow Edit"));
-    assert!(permission_blocked_debug.contains("always-approve"));
+    assert!(permission_blocked_debug.contains("yolo"));
     assert!(permission_blocked_debug.contains("No, reject"));
     assert!(
-        permission_blocked_debug.contains("always-approve")
+        permission_blocked_debug.contains("yolo")
             || permission_blocked_debug.contains("enter")
             || permission_blocked_debug.contains("confirm")
             || permission_blocked_debug.contains("←→")

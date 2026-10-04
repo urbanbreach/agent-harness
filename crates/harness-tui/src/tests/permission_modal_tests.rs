@@ -61,7 +61,7 @@ pub(super) fn permission_dock_packs_measured_content_rows() {
         "the shell footer follows the panel's bottom padding and spacer\n{rendered}"
     );
     assert!(
-        rendered.contains("Ctrl+o:always-approve") && rendered.contains("Ctrl+c:cancel"),
+        rendered.contains("Ctrl+o:yolo") && rendered.contains("Ctrl+c:cancel"),
         "4-option product keybind packing must stay closed\n{rendered}"
     );
     assert!(
@@ -114,7 +114,7 @@ pub(super) fn question_permission_modal_renders_questions_and_answer_input() {
     assert!(debug.contains("Shift+x:dismiss"));
     assert!(!debug.contains("Question required"));
     assert!(!debug.contains("default deny"));
-    assert!(!debug.contains("always-approve"));
+    assert!(!debug.contains("yolo"));
     assert!(!debug.contains("1. A"));
 }
 

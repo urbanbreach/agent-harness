@@ -143,7 +143,7 @@ pub fn is_available(app: &AppState, entry: &PaletteCommandEntry) -> bool {
 
         "model.list" => !app.startup_shell_visible(),
         "agent.list" | "mcp.list" => !app.startup_shell_visible() && app.model_switcher_supported(),
-        "model.always_approve" => !app.replay_mode,
+        "model.yolo" => !app.replay_mode,
         "model.multiline" => !app.startup_shell_visible(),
         "tools.hooks" | "tools.plugins" | "tools.marketplace" => !app.startup_shell_visible(),
         "variant.cycle" => !app.startup_shell_visible() && !app.replay_mode,

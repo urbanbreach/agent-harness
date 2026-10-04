@@ -40,7 +40,7 @@ impl Runtime {
                         .iter()
                         .any(|g| g.kind == PermissionKind::DoomLoop && g.expires_at.is_none())
                 {
-                    work.always_approve = false;
+                    work.yolo = false;
                     work.approval = ToolApproval::Repeated;
                     work.permission_digest = format!("doom_loop:{}", work.permission_digest);
                     let summary = format!(
@@ -73,7 +73,7 @@ impl Runtime {
                     });
             if needs_approval {
                 work.approval = ToolApproval::External;
-                work.always_approve = false;
+                work.yolo = false;
                 let summary = format!(
                     "Outside workspace: {}",
                     work.context
@@ -131,17 +131,22 @@ impl Runtime {
         Ok(())
     }
 
-    pub fn set_always_approve_mode(&mut self, enabled: bool) -> Result<(), CoordinatorError> {
-        self.info()?;
-        self.config.always_approve_on_start = enabled;
+    pub fn set_yolo_mode(&mut self, enabled: bool) -> Result<(), CoordinatorError> {
+        self.accepting()?;
+        self.emit_applied(
+            super::handle::system(),
+            None,
+            EventV1::YoloModeChanged { enabled },
+            |runtime, _| runtime.config.yolo_on_start = enabled,
+        )?;
         if enabled {
             let pending: Vec<_> = self
                 .pending
                 .iter()
                 .filter_map(|(id, pending)| {
                     let eligible = match &pending.work {
-                        PendingWork::Tool(work) => work.always_approve,
-                        PendingWork::EditPaths { always_approve, .. } => *always_approve,
+                        PendingWork::Tool(work) => work.yolo,
+                        PendingWork::EditPaths { yolo, .. } => *yolo,
                         PendingWork::Question { .. } => false,
                     };
                     eligible.then(|| id.clone())
@@ -151,9 +156,14 @@ impl Runtime {
                 if let Err(error) = self.resolve_permission(
                     &id,
                     PermissionDecision::Allow,
-                    Some("always-approve mode".into()),
+                    Some("YOLO mode".into()),
                 ) {
-                    self.config.always_approve_on_start = false;
+                    self.config.yolo_on_start = false;
+                    self.emit(
+                        super::handle::system(),
+                        None,
+                        EventV1::YoloModeChanged { enabled: false },
+                    )?;
                     return Err(error);
                 }
             }

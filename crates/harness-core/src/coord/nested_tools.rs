@@ -47,7 +47,7 @@ impl CoordinatorHandle {
                         .check(permission, selector, profile)
                     {
                         crate::perm::PermissionAction::Allow => true,
-                        crate::perm::PermissionAction::Ask => s.config.always_approve_on_start,
+                        crate::perm::PermissionAction::Ask => s.config.yolo_on_start,
                         crate::perm::PermissionAction::Deny => false,
                     }
                 }))
