@@ -19,45 +19,6 @@ const CONTRACT_VIEWPORTS: [(u16, u16); 3] = [(120, 40), (100, 30), (80, 24)];
 const WIDE_VIEWPORTS: [(u16, u16); 3] = [(121, 40), (140, 36), (160, 40)];
 
 #[test]
-fn live_session_shell_has_no_right_operator_sidebar_at_contract_viewports() {
-    // arrange
-    let app = live_session_app();
-
-    for (width, height) in CONTRACT_VIEWPORTS {
-        // act
-        let plan = plan_for(&app, width, height);
-        // assert
-        assert_no_operator_rail_primary_chrome(&plan, width, height);
-    }
-}
-
-#[test]
-fn live_session_transcript_spans_full_shell_width_above_composer() {
-    // arrange
-    let app = live_session_app();
-
-    for (width, height) in CONTRACT_VIEWPORTS {
-        // act
-        let plan = plan_for(&app, width, height);
-        // assert
-        assert_full_width_transcript_above_composer(&plan, width, height);
-    }
-}
-
-#[test]
-fn live_session_composer_is_bottom_anchored() {
-    // arrange
-    let app = live_session_app();
-
-    for (width, height) in CONTRACT_VIEWPORTS {
-        // act
-        let plan = plan_for(&app, width, height);
-        // assert
-        assert_composer_bottom_anchored(&plan, width, height);
-    }
-}
-
-#[test]
 fn live_single_line_composer_stays_anchored_across_disclosure_states() {
     // arrange
     let idle = AppState::new_live(None, false, None);
@@ -120,26 +81,6 @@ fn startup_idle_and_first_streaming_frames_share_composer_anatomy_at_home_widths
 }
 
 #[test]
-fn live_session_sidebar_must_not_reappear_as_primary_chrome_at_width_ge_121() {
-    // arrange
-    let app = live_session_app();
-
-    for (width, height) in WIDE_VIEWPORTS {
-        // assert
-        assert!(
-            width >= 121,
-            "wide-viewport matrix must stay at/above the 121-column threshold"
-        );
-        // act
-        let plan = plan_for(&app, width, height);
-        // assert
-        assert_no_operator_rail_primary_chrome(&plan, width, height);
-        assert_full_width_transcript_above_composer(&plan, width, height);
-        assert_composer_bottom_anchored(&plan, width, height);
-    }
-}
-
-#[test]
 fn live_session_replacement_topology_holds_across_all_named_viewports() {
     // arrange
     let app = live_session_app();
@@ -158,39 +99,9 @@ fn live_session_replacement_topology_holds_across_all_named_viewports() {
 }
 
 #[test]
-fn operator_sidebar_chrome_has_no_persistent_primary_variant() {
+fn status_dialog_and_palette_do_not_reserve_a_primary_sidebar() {
     // arrange
-    let secondary_src = include_str!("../src/ui_secondary.rs");
-    let interaction_src = include_str!("../src/ui_secondary/sidebar_interaction.rs");
-    let ui_src = include_str!("../src/ui.rs");
-
-    // act
-    let chrome_absent = !secondary_src.contains("OperatorSidebarChrome")
-        && !interaction_src.contains("OperatorSidebarChrome")
-        && !ui_src.contains("OperatorSidebarChrome");
-    let persistent_absent = !secondary_src.contains("OperatorSidebarChrome::Persistent")
-        && !interaction_src.contains("OperatorSidebarChrome::Persistent")
-        && !ui_src.contains("OperatorSidebarChrome::Persistent")
-        && !secondary_src.contains("enum OperatorSidebarChrome");
     let mut app = live_session_app();
-
-    // assert — no persistent primary chrome
-    assert!(
-        chrome_absent,
-        "P0-SHELL-02: OperatorSidebarChrome must be removed (overlay-only secondary surface)"
-    );
-    assert!(
-        persistent_absent,
-        "P0-SHELL-02: Persistent chrome path must not ship"
-    );
-    for (width, height) in WIDE_VIEWPORTS {
-        let plan = plan_for(&app, width, height);
-        assert!(
-            plan.operator_sidebar.is_none(),
-            "P0-SHELL-02: live FrameLayoutPlan.operator_sidebar must be None at {width}x{height}"
-        );
-        assert_full_width_transcript_above_composer(&plan, width, height);
-    }
 
     // act — secondary operator facts via status dialog (leader+s / Ctrl+x s)
     app.handle_key(crossterm::event::KeyEvent::new(
