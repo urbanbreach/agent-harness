@@ -362,7 +362,7 @@ fn agent_spawn_wait_advertises_queued_prompt_promotion() {
     // Then: agent.spawn shares the same send-now contract as task waits.
     // assert
     assert!(
-        row.contains("Waiting on subagent… 0.0s · 1 queued — Enter to send now"),
+        row.contains("Waiting for subagent… 0.0s · 1 queued — Enter to send now"),
         "status row: {row:?}"
     );
     assert!(row.contains("4.2s"), "status row: {row:?}");

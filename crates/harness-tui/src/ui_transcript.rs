@@ -582,7 +582,7 @@ fn render_measured_transcript_pane(
                     transcript_scroll,
                     app.transcript_view.selected_entry,
                     theme,
-                    app.current_subagent_session_present(),
+                    app.current_subagent_session_present() || app.native_subagent_selected(),
                 );
             }
             render_transcript_selection(

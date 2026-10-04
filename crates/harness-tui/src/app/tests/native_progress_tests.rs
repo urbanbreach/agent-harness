@@ -67,7 +67,13 @@ pub(super) fn assert_native_completion(app: &mut AppState, mut finished: Subagen
     }
     publish(app, 1, "req_child", 99);
     assert_count(app, 8);
-    app.set_tool_group_outputs_expanded(&["spawn".into()], true);
+    for id in [
+        "spawn",
+        "background-notification:child:1",
+        "background-notification:child:2",
+    ] {
+        app.set_tool_group_outputs_expanded(&[id.into()], true);
+    }
     let root = render_text(&app, 120, 40);
     assert_eq!(
         root.matches("Subagent completed in 1.2s").count(),
@@ -75,7 +81,96 @@ pub(super) fn assert_native_completion(app: &mut AppState, mut finished: Subagen
         "{root}"
     );
     assert_eq!(root.matches("Subagent started:").count(), 1, "{root}");
+    app.ingest_event(envelope(
+        11,
+        "req_child",
+        EventV1::BackgroundTaskNotification(harness_core::event::BackgroundTaskNotificationEvent {
+            parent_session_id: "parent".into(),
+            parent_agent_id: Some("parent".into()),
+            child_session_id: "child".into(),
+            child_request_id: "req_child".into(),
+            task_id: "req_child".into(),
+            description: "Inspect files".into(),
+            status: harness_core::event::BackgroundTaskNotificationStatus::Completed,
+            summary: "Inspection finished".into(),
+            terminal_event_id: "event-9".into(),
+            terminal_task_id: "req_child".into(),
+            delivered_turn_request_id: Some("wake-parent".into()),
+        }),
+    ));
+    let after_delivery = render_text(app, 120, 40);
+    assert_eq!(
+        root, after_delivery,
+        "completion delivery must not change the transcript"
+    );
     assert!(app.task_pane_rows().is_empty());
-    app.tasks_pane.show_done = true;
-    assert_eq!(app.task_pane_rows().len(), 2);
+    app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL));
+    app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
+    assert_eq!(
+        app.task_pane_rows().len(),
+        2,
+        "Ctrl+G must focus the hidden pane so h shows completed children"
+    );
+    app.handle_key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(app.current_session_id(), Some("child"));
+    let completed_child = render_text(app, 120, 40);
+    assert!(
+        completed_child.contains("Worked for 1.2s"),
+        "{completed_child}"
+    );
+    assert!(
+        !completed_child.contains("Ctrl+c:cancel"),
+        "{completed_child}"
+    );
+    app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+    let mut resumed = finished.clone();
+    resumed.generation = 2;
+    resumed.attempt_id = Some("req_child_again".into());
+    resumed.transition = SubagentTransitionKind::Spawned;
+    resumed.outcome = None;
+    resumed.accounting = None;
+    app.ingest_event(envelope(
+        12,
+        "req_child_again",
+        EventV1::SubagentTransition(Box::new(resumed.clone())),
+    ));
+    let root = render_text(app, 120, 40);
+    assert_eq!(
+        root.matches("Subagent completed in 1.2s").count(),
+        1,
+        "{root}"
+    );
+    resumed.transition = SubagentTransitionKind::Finished;
+    resumed.outcome = finished.outcome;
+    resumed.accounting = finished.accounting;
+    app.ingest_event(envelope(
+        13,
+        "req_child_again",
+        EventV1::SubagentTransition(Box::new(resumed)),
+    ));
+    let root = render_text(app, 120, 40);
+    assert_eq!(
+        root.matches("Subagent completed in 1.2s").count(),
+        2,
+        "{root}"
+    );
+    assert_eq!(root.matches("Subagent started:").count(), 2, "{root}");
+    assert!(!root.contains("Running 1 subagent"), "{root}");
+    assert!(
+        !root.contains("Ran 3 subagents"),
+        "start and finish rows count each child once\n{root}"
+    );
+    let events = app.events().cloned().collect();
+    app.replace_events(events);
+    let replayed = render_text(app, 120, 40);
+    assert_eq!(
+        replayed.matches("Subagent completed in 1.2s").count(),
+        2,
+        "{replayed}"
+    );
 }

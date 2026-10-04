@@ -24,9 +24,9 @@ pub(super) fn focus_shortcuts_follow_visible_shell_and_preserve_replay() {
                 (11, Terminal),
                 (9, Details),
                 (12, Prompt),
-                (10, Prompt),
                 (10, List),
-                (10, Prompt),
+                (10, Details),
+                (12, Prompt),
             ],
         ),
         (

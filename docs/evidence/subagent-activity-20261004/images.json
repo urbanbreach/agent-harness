@@ -1,0 +1,146 @@
+[
+  {
+    "scene": "retry-http-503",
+    "size": "120x40",
+    "checkpoint": "child-open",
+    "side": "reference",
+    "image": "retry-http-503-120x40-child-open-reference.png",
+    "sha256": "529212d09cc660c1a5468c552aca8ac3708942118e2de1facd8507312cf54793"
+  },
+  {
+    "scene": "retry-http-503",
+    "size": "120x40",
+    "checkpoint": "child-open",
+    "side": "candidate",
+    "image": "retry-http-503-120x40-child-open-candidate.png",
+    "sha256": "529212d09cc660c1a5468c552aca8ac3708942118e2de1facd8507312cf54793"
+  },
+  {
+    "scene": "retry-backoff",
+    "size": "120x40",
+    "checkpoint": "child-open",
+    "side": "reference",
+    "image": "retry-backoff-120x40-child-open-reference.png",
+    "sha256": "529212d09cc660c1a5468c552aca8ac3708942118e2de1facd8507312cf54793"
+  },
+  {
+    "scene": "retry-backoff",
+    "size": "120x40",
+    "checkpoint": "child-open",
+    "side": "candidate",
+    "image": "retry-backoff-120x40-child-open-candidate.png",
+    "sha256": "529212d09cc660c1a5468c552aca8ac3708942118e2de1facd8507312cf54793"
+  },
+  {
+    "scene": "description-multiline",
+    "size": "120x40",
+    "checkpoint": "child-open",
+    "side": "reference",
+    "image": "description-multiline-120x40-child-open-reference.png",
+    "sha256": "22e1a13a18eae637b6fb44b1d3668aa73e45fc396b1381080addd05faa7058c4"
+  },
+  {
+    "scene": "description-multiline",
+    "size": "120x40",
+    "checkpoint": "child-open",
+    "side": "candidate",
+    "image": "description-multiline-120x40-child-open-candidate.png",
+    "sha256": "22e1a13a18eae637b6fb44b1d3668aa73e45fc396b1381080addd05faa7058c4"
+  },
+  {
+    "scene": "writing-second",
+    "size": "120x40",
+    "checkpoint": "child-open",
+    "side": "reference",
+    "image": "writing-second-120x40-child-open-reference.png",
+    "sha256": "cb26bf867df69a962b69a64d17e3ddc78c57d5d488efd2a070c87c4fc9277f66"
+  },
+  {
+    "scene": "writing-second",
+    "size": "120x40",
+    "checkpoint": "child-open",
+    "side": "candidate",
+    "image": "writing-second-120x40-child-open-candidate.png",
+    "sha256": "cb26bf867df69a962b69a64d17e3ddc78c57d5d488efd2a070c87c4fc9277f66"
+  },
+  {
+    "scene": "description-combining",
+    "size": "80x24",
+    "checkpoint": "child-open",
+    "side": "reference",
+    "image": "description-combining-80x24-child-open-reference.png",
+    "sha256": "0263c61a0a6abbd20c793b6b7a5c2cd87e0e38de671d22da95680399c6a82559"
+  },
+  {
+    "scene": "description-combining",
+    "size": "80x24",
+    "checkpoint": "child-open",
+    "side": "candidate",
+    "image": "description-combining-80x24-child-open-candidate.png",
+    "sha256": "0263c61a0a6abbd20c793b6b7a5c2cd87e0e38de671d22da95680399c6a82559"
+  },
+  {
+    "scene": "wait-tasks",
+    "size": "80x24",
+    "checkpoint": "child-open",
+    "side": "reference",
+    "image": "wait-tasks-80x24-child-open-reference.png",
+    "sha256": "301a2bf695651d82bde8749646f95a6ee39f89bf93f33d508f7195d97bb60c1a"
+  },
+  {
+    "scene": "wait-tasks",
+    "size": "80x24",
+    "checkpoint": "child-open",
+    "side": "candidate",
+    "image": "wait-tasks-80x24-child-open-candidate.png",
+    "sha256": "301a2bf695651d82bde8749646f95a6ee39f89bf93f33d508f7195d97bb60c1a"
+  },
+  {
+    "scene": "writing-expired",
+    "size": "120x40",
+    "checkpoint": "tasks",
+    "side": "reference",
+    "image": "writing-expired-120x40-tasks-reference.png",
+    "sha256": "5a7b17351a218aa23214caf97b67bb4ba006d2fac1431b67c36d24533d002470"
+  },
+  {
+    "scene": "writing-expired",
+    "size": "120x40",
+    "checkpoint": "tasks",
+    "side": "candidate",
+    "image": "writing-expired-120x40-tasks-candidate.png",
+    "sha256": "87798fcac40070cea749164d2a2e25ac7e5433ead5601aefbf9468d05569df1c"
+  },
+  {
+    "scene": "writing-expired",
+    "size": "120x40",
+    "checkpoint": "child-open",
+    "side": "reference",
+    "image": "writing-expired-120x40-child-open-reference.png",
+    "sha256": "16055c8110f5903282e9fb97dff0359d3af47c7c1dd6067d01f60990c7b62bf6"
+  },
+  {
+    "scene": "writing-expired",
+    "size": "120x40",
+    "checkpoint": "child-open",
+    "side": "candidate",
+    "image": "writing-expired-120x40-child-open-candidate.png",
+    "sha256": "16055c8110f5903282e9fb97dff0359d3af47c7c1dd6067d01f60990c7b62bf6"
+  },
+  {
+    "scene": "writing-second",
+    "size": "72x24",
+    "checkpoint": "child-open",
+    "side": "reference",
+    "image": "writing-second-72x24-child-open-reference.png",
+    "sha256": "3819e69fa9bc31d2a21fbe8c476e98503764fa248d10eb411cb96d2a33ad325f"
+  },
+  {
+    "scene": "writing-second",
+    "size": "72x24",
+    "checkpoint": "child-open",
+    "side": "candidate",
+    "image": "writing-second-72x24-child-open-candidate.png",
+    "sha256": "21d825565d31c32c74148d9616b0fc01e3328e902f198fad3b27f681baccf494"
+  }
+]

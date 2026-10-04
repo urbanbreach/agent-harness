@@ -285,11 +285,11 @@ pub(super) fn app_transcript_viewport_layout(
     area: Rect,
     show_scrollbar: bool,
 ) -> TranscriptViewportLayout {
-    if !app.current_subagent_session_present() {
+    if !app.current_subagent_session_present() && app.subagents.rows.is_empty() {
         return transcript_viewport_layout(area, show_scrollbar);
     }
-    // The child frame reserves an outer gutter; the scrollbar never steals a
-    // transcript column. Painting and pointer hit-testing use this same lane.
+    // Subagent transcripts keep the scrollbar in the outer gutter so opening
+    // a group never changes its wrapping. Hit-testing uses this same lane.
     TranscriptViewportLayout {
         content: area,
         scrollbar_chrome: None,

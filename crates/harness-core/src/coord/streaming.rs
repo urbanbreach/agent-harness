@@ -255,7 +255,7 @@ pub(super) async fn read(
             Stream::ToolCallDelta {
                 tool_call_id,
                 arguments_delta,
-                ..
+                function_name,
             } => {
                 *progress = true;
                 if tool_call_id.is_empty() || tool_call_id.len() > 256 {
@@ -268,6 +268,9 @@ pub(super) async fn read(
                 Some(LiveEventV1::ProviderToolInputDelta {
                     request_id: request_id.into(),
                     tool_call_id: tool_call_id.into(),
+                    tool_name: function_name
+                        .filter(|name| name.len() <= 256)
+                        .map(|name| redactor.redact_text(aliases.get(&name).unwrap_or(&name))),
                     delta: arguments_delta,
                 })
             }
@@ -392,10 +395,22 @@ impl LiveOutput {
             _ => return Some(payload),
         };
         let delta = std::mem::take(delta);
+        let tool_name = match &payload {
+            LiveEventV1::ProviderToolInputDelta { tool_name, .. } => tool_name.clone(),
+            _ => None,
+        };
         let (template, pending, held) =
             self.pending
                 .entry(key)
                 .or_insert((payload, String::new(), false));
+        if let LiveEventV1::ProviderToolInputDelta {
+            tool_name: current, ..
+        } = template
+        {
+            if tool_name.is_some() {
+                current.clone_from(&tool_name);
+            }
+        }
         pending.push_str(&delta);
         if *held {
             return None;
@@ -405,7 +420,7 @@ impl LiveOutput {
         // ponytail: defer a suspicious tail over 4 KiB instead of rescanning it per delta.
         // The response-wide 4 MiB budget also bounds all retained tails together.
         *held = pending.len() > 4096;
-        (!safe.is_empty()).then(|| with_delta(template.clone(), safe))
+        (!safe.is_empty() || tool_name.is_some()).then(|| with_delta(template.clone(), safe))
     }
     fn finish(self, redactor: &dyn crate::redact::Redactor) -> Vec<LiveEventV1> {
         self.pending

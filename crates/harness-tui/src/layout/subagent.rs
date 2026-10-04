@@ -24,7 +24,7 @@ pub(crate) fn close(area: Rect) -> Option<Rect> {
     ))
 }
 
-pub(super) fn project(plan: &mut FrameLayoutPlan) {
+pub(super) fn project(plan: &mut FrameLayoutPlan, running: bool) {
     plan.dock = None;
     plan.composer = None;
     plan.disclosure = None;
@@ -58,6 +58,9 @@ pub(super) fn project(plan: &mut FrameLayoutPlan) {
         inner.width.saturating_sub(4),
         1,
     ));
+    if !running {
+        plan.status = None;
+    }
     if inner.height < 9 {
         plan.status = None;
         plan.header.height = u16::from(inner.height > 1);
@@ -69,7 +72,7 @@ pub(super) fn project(plan: &mut FrameLayoutPlan) {
         inner.x,
         inner.y.saturating_add(2),
         inner.width,
-        inner.height.saturating_sub(7),
+        inner.height.saturating_sub(if running { 7 } else { 5 }),
     );
     plan.content = transcript;
     plan.transcript = Some(transcript);

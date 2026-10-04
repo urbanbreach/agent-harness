@@ -179,14 +179,42 @@ async fn provider_fallback_advances_once_and_persists_for_queued_and_resumed_tur
 #[tokio::test]
 async fn retries_are_bounded_honor_backoff_and_stop_after_visible_output(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let failed = || {
-        Stream::categorized_error_with_retry_after_ms(
-            "first failure",
+    for (partial, exhausted, count, category, message, failure) in [
+        (
+            false,
+            false,
+            2,
             ProviderErrorCategory::RateLimited,
-            Some(u64::MAX),
-        )
-    };
-    for (partial, exhausted, count) in [(false, false, 2), (true, false, 1), (false, true, 2)] {
+            "first failure",
+            ProviderRetryFailure::RateLimited,
+        ),
+        (
+            true,
+            false,
+            1,
+            ProviderErrorCategory::RateLimited,
+            "first failure",
+            ProviderRetryFailure::RateLimited,
+        ),
+        (
+            false,
+            true,
+            2,
+            ProviderErrorCategory::RateLimited,
+            "first failure",
+            ProviderRetryFailure::RateLimited,
+        ),
+        (
+            false,
+            false,
+            2,
+            ProviderErrorCategory::TransportFailure,
+            "provider returned HTTP 503 Service Unavailable",
+            ProviderRetryFailure::HttpStatus(503),
+        ),
+    ] {
+        let failed =
+            || Stream::categorized_error_with_retry_after_ms(message, category, Some(u64::MAX));
         let temp = tempfile::tempdir()?;
         let first = if partial {
             vec![Stream::TextDelta("partial reply".into()), failed()]
@@ -215,6 +243,7 @@ async fn retries_are_bounded_honor_backoff_and_stop_after_visible_output(
             Arc::new(DefaultRedactor::default()),
         );
         let run = coordinator.start_run("retry", temp.path()).await?;
+        let mut live = coordinator.event_store().await?.subscribe_runtime(1)?;
         let actor = || EventActor::new(ActorKind::User, None);
         let agent = coordinator
             .spawn_agent_idle(actor(), "default", None)
@@ -227,12 +256,41 @@ async fn retries_are_bounded_honor_backoff_and_stop_after_visible_output(
         if partial || exhausted {
             assert_eq!(
                 result.err().ok_or("expected provider failure")?.to_string(),
-                "first failure"
+                message
             );
         } else {
             result?;
         }
         coordinator.stop_run().await?;
+        let mut retry_notice = None;
+        while let Some(event) = live.next().await {
+            match event? {
+                RuntimeEvent::Live(event) => {
+                    retry_notice = match event.payload {
+                        LiveEventV1::ProviderRetrying { retry, .. } => Some(retry),
+                        _ => retry_notice,
+                    };
+                }
+                RuntimeEvent::Durable(event) => match &event.payload {
+                    EventV1::ProviderRequestStarted(data)
+                        if data
+                            .metadata
+                            .as_ref()
+                            .and_then(|metadata| metadata.retry)
+                            .is_some_and(|retry| retry.attempt > 0) =>
+                    {
+                        assert_eq!(
+                            retry_notice.and_then(|retry| retry.failure),
+                            Some(failure),
+                            "retry must be announced before redispatch"
+                        );
+                    }
+                    EventV1::RunFinished(_) => break,
+                    _ => {}
+                },
+            }
+        }
+        assert_eq!(retry_notice.is_some(), count == 2);
         assert_eq!(provider.call_count(), count);
         let history = crate::store::read_events(&run.events_path)?;
         let attempts: Vec<_> = history
@@ -245,6 +303,7 @@ async fn retries_are_bounded_honor_backoff_and_stop_after_visible_output(
         assert_eq!(attempts.len(), count);
         assert_eq!(attempts[0].attempt, 0);
         if count == 2 {
+            assert_eq!(attempts[1].failure, Some(failure));
             assert_eq!(
                 (
                     attempts[1].attempt,

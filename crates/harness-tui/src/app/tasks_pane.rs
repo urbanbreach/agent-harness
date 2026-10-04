@@ -116,12 +116,12 @@ impl AppState {
                 items.push(TaskPaneRow {
                     id: child.id.clone(),
                     group: "Subagents",
-                    title: format!("{} {}", child.label, child.description),
+                    title: format!("{} {}", child.label, child.display_description),
                     activity: self
                         .activities
                         .iter()
                         .find(|entry| Some(&entry.request_id) == task.child_request_id.as_ref())
-                        .map(|activity| self.child_activity(activity)),
+                        .map(|activity| self.reported_child_activity(activity)),
                     model: child.model.clone(),
                     badge: child.context_badge(),
                     label: child.label.clone(),
@@ -284,7 +284,7 @@ impl AppState {
     pub(super) fn toggle_tasks_pane(&mut self) {
         if !self.tasks_pane.visible {
             self.tasks_pane.visible = true;
-            self.tasks_pane.focused = false;
+            self.tasks_pane.focused = true;
         } else if !self.tasks_pane.focused {
             self.tasks_pane.focused = true;
         } else {
@@ -297,10 +297,8 @@ impl AppState {
         }
         self.focus = if self.tasks_pane.focused {
             Focus::List
-        } else if self.replay_mode {
-            Focus::Details
         } else {
-            Focus::Prompt
+            Focus::Details
         };
     }
 

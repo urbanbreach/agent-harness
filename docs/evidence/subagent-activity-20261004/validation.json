@@ -1,0 +1,29 @@
+{
+  "workspace_nextest": {
+    "passed": 1962,
+    "skipped_tests": 8,
+    "skipped_binaries": 7,
+    "log": "workspace-nextest.log"
+  },
+  "final_tui_nextest": {
+    "passed": 1636,
+    "skipped_tests": 7,
+    "log": "tui-nextest.log"
+  },
+  "workspace_clippy": "passed",
+  "format": "passed",
+  "diff_check": "passed",
+  "test_suite_gates": "passed",
+  "quality_gates": {
+    "status": "failed",
+    "reason": "five pre-existing forbidden-branding references",
+    "log": "branding-gate.log"
+  },
+  "visual_inspection": [
+    "retry-http-503",
+    "description-multiline",
+    "writing-second",
+    "description-combining",
+    "wait-tasks"
+  ]
+}

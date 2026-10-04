@@ -214,7 +214,7 @@ use self::prompt_stash::{PromptStashEntry, PromptStashState};
 use self::question_prompt::QuestionPromptState;
 pub use self::session_history::SessionHistoryEntry;
 use self::session_projection::SessionProjection;
-pub(crate) use self::session_projection::{LiveTurnPhase, LiveTurnWatchers};
+pub(crate) use self::session_projection::{LiveTurnPhase, LiveTurnWatchers, WaitingReason};
 use self::session_stack::{SessionLineage, SessionNavigationSnapshot};
 pub(crate) use self::settings_editor::{human_label as settings_label, SettingsTab};
 use self::terminal_panel::terminal_panel_event_is_shell;
@@ -1753,6 +1753,8 @@ impl AppState {
     }
 
     fn ingest_live_event(&mut self, event: &LiveEventEnvelope) {
+        self.projection.phase_clock = Some(Arc::clone(&self.now_fn));
+        self.subagents.observed_at = Some(self.now());
         if self.route_live_fragment_while_viewing_child(event) {
             return;
         }
@@ -1975,7 +1977,8 @@ impl AppState {
             .correlation_id
             .as_deref()
             .unwrap_or(match &event.payload {
-                LiveEventV1::CompactionProgress { .. }
+                LiveEventV1::ProviderRetrying { .. }
+                | LiveEventV1::CompactionProgress { .. }
                 | LiveEventV1::RuntimeWarning { .. }
                 | LiveEventV1::SubagentProgress(_) => return,
                 LiveEventV1::ProviderTextDelta { request_id, .. }

@@ -1168,12 +1168,14 @@ impl AppState {
 
     #[cfg(test)]
     pub(crate) fn set_now_fn_for_test(&mut self, now_fn: Arc<dyn Fn() -> Instant + Send + Sync>) {
+        self.projection.phase_clock = Some(Arc::clone(&now_fn));
         self.now_fn = now_fn;
     }
 
     pub fn freeze_animation_clock(&mut self) {
         let now = self.now();
         self.now_fn = Arc::new(move || now);
+        self.projection.phase_clock = Some(Arc::clone(&self.now_fn));
     }
 
     pub(crate) fn runtime_state_activity(&self) -> Option<&ActivityEntry> {

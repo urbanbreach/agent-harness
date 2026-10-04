@@ -12,10 +12,12 @@ pub(super) enum TranscriptToolCallDisclosureState {
 }
 
 pub(super) fn tool_hidden_from_transcript(tool_call: &ToolCallEntry) -> bool {
-    tool_id_matches(tool_call, &["todo.read", "todoread", "todo.write", "todowrite"])
+    tool_id_matches(tool_call, &["todo.read", "todoread", "todo.write", "todowrite",
+        "get_task_output", "get_command_or_subagent_output", "get_task_or_subagent_output",
+        "wait_tasks", "wait_commands_or_subagents", "wait_tasks_or_subagents", "Await", "AwaitShell", "sleep", "wait"])
         // Streaming argument bytes have no canonical tool identity yet. Reference
         // keeps them in turn status until the actual ToolCall arrives.
-        || (tool_call.tool_id == "tool"
+        || (tool_call.status == ToolCallDisplayStatus::Queued
             && tool_call.canonical_tool_id.is_none()
             && tool_call.args_digest.is_empty())
 }

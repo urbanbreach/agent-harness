@@ -265,7 +265,11 @@ pub(super) fn render_live_turn_status(
         area,
     );
     let spinner_style = if uses_monitor_pulse {
-        Style::default().fg(theme.status.info)
+        Style::default().fg(if watchers.subagents > 0 {
+            theme.agents.build
+        } else {
+            theme.status.info
+        })
     } else {
         status.style
     };

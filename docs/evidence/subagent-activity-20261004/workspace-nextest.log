@@ -1,0 +1,44 @@
+    Blocking waiting for file lock on build directory
+   Compiling harness-tui v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness-tui)
+   Compiling harness v0.1.0 (/home/urbanbreach/Projects/agent-harness/crates/harness)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.32s
+────────────
+ Nextest run ID 83dbd249-d806-42ad-8462-c548b8255261 with nextest profile: ci
+    Starting 1962 tests across 132 binaries (8 tests and 7 binaries skipped, including 5 tests and 7 binaries via profile.default.default-filter)
+        SLOW [>  2.000s] (─────────) harness archives::tests::aggregate_limit_leaves_previous_archive_intact
+        SLOW [>  2.000s] (─────────) harness::inspect inspection_is_offline_redacted_and_reports_unknown_model_limits
+        SLOW [>  2.000s] (─────────) harness::prompt_models model_fallback_changes_prompt_family_and_keeps_explicit_instructions
+        SLOW [>  2.000s] (─────────) harness::subscription subscription_prompts_use_their_wire_contract_and_redact_credentials
+        SLOW [>  2.000s] (─────────) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_explicit_launch_reuses_no_config_startup
+        SLOW [>  2.000s] (─────────) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_legacy_tui_alias_reuses_no_config_startup
+        SLOW [>  2.000s] (─────────) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_without_config_reaches_connect_startup
+        SLOW [>  4.000s] (─────────) harness::prompt_models model_fallback_changes_prompt_family_and_keeps_explicit_instructions
+        SLOW [>  2.000s] (─────────) harness-core coord::subagents_tests::actual_finalized_state_survives_presentation_bounding_copy_and_readonly_reload
+        SLOW [>  2.000s] (─────────) harness-providers wire::tests::image_limits_are_checked_before_base64_encoding
+        SLOW [>  2.000s] (─────────) harness-tools::background_output notifications::accepted_background_work_reserves_parent_queue_capacity_for_its_notification
+        SLOW [>  2.000s] (─────────) harness-tools::background_output progress::running_child_reports_current_progress_without_double_counting_model_output
+        SLOW [>  4.000s] (─────────) harness-tools::background_output notifications::accepted_background_work_reserves_parent_queue_capacity_for_its_notification
+        SLOW [>  4.000s] (─────────) harness-tools::background_output progress::running_child_reports_current_progress_without_double_counting_model_output
+        SLOW [>  6.000s] (─────────) harness-tools::background_output notifications::accepted_background_work_reserves_parent_queue_capacity_for_its_notification
+        SLOW [>  2.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  4.000s] (─────────) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [>  2.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  4.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  6.000s] (─────────) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [>  2.000s] (─────────) harness-tui::tool_body_capture_test production_tool_body_captures
+────────────
+     Summary [  27.251s] 1962 tests run: 1962 passed (14 slow), 8 skipped
+        SLOW [   2.283s] ( 191/1962) harness::inspect inspection_is_offline_redacted_and_reports_unknown_model_limits
+        SLOW [   2.394s] ( 200/1962) harness archives::tests::aggregate_limit_leaves_previous_archive_intact
+        SLOW [   2.081s] ( 281/1962) harness::subscription subscription_prompts_use_their_wire_contract_and_redact_credentials
+        SLOW [   2.573s] ( 357/1962) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_explicit_launch_reuses_no_config_startup
+        SLOW [   2.780s] ( 470/1962) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_without_config_reaches_connect_startup
+        SLOW [   2.977s] ( 534/1962) harness::tui_cli_test part_02_replay_bootstrap_falls_back_when_recorded_test::tui_cli_legacy_tui_alias_reuses_no_config_startup
+        SLOW [   4.330s] ( 747/1962) harness::prompt_models model_fallback_changes_prompt_family_and_keeps_explicit_instructions
+        SLOW [   2.454s] ( 785/1962) harness-providers wire::tests::image_limits_are_checked_before_base64_encoding
+        SLOW [   3.269s] ( 797/1962) harness-core coord::subagents_tests::actual_finalized_state_survives_presentation_bounding_copy_and_readonly_reload
+        SLOW [   4.215s] ( 798/1962) harness-tools::background_output progress::running_child_reports_current_progress_without_double_counting_model_output
+        SLOW [   6.915s] ( 799/1962) harness-tools::background_output notifications::accepted_background_work_reserves_parent_queue_capacity_for_its_notification
+        SLOW [   5.243s] ( 800/1962) harness-tui app::tests::tool_runtime_capture_tests::native_tool_viewer_capture_uses_the_enter_handler
+        SLOW [   6.352s] (1800/1962) harness-tui::rewrite_reference_test recorded_terminal_journeys_match_reference_cells_and_intents
+        SLOW [   3.206s] (1962/1962) harness-tui::tool_body_capture_test production_tool_body_captures

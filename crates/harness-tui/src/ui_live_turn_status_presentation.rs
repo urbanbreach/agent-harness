@@ -94,7 +94,7 @@ impl LiveTurnStatus {
         let elapsed = Some(activity.last_mono_ms.saturating_sub(started));
         if let LiveTurnPhase::Retrying(attempt) = phase {
             return Self {
-                label: format!("Retrying (attempt {attempt})…"),
+                label: crate::app::subagents::activity::retry_label(activity, attempt),
                 style: Style::default().fg(theme.status.warning),
                 phase_elapsed_ms: elapsed,
                 shows_phase_timer: true,
@@ -111,20 +111,6 @@ impl LiveTurnStatus {
                     "Waiting on answers".to_string(),
                     Style::default().fg(theme.live_turn_activity_color()),
                     None,
-                ),
-                "spawn_subagent" | "task" | "agent.spawn" => (
-                    "Waiting on subagent…".to_string(),
-                    Style::default().fg(theme.live_turn_activity_color()),
-                    Some(tool.last_mono_ms.saturating_sub(tool.first_mono_ms)),
-                ),
-                "background_output"
-                | "get_command_or_subagent_output"
-                | "get_task_output"
-                | "wait_commands_or_subagents"
-                | "wait_tasks" => (
-                    "Waiting on task output…".to_string(),
-                    Style::default().fg(theme.live_turn_activity_color()),
-                    Some(tool.last_mono_ms.saturating_sub(tool.first_mono_ms)),
                 ),
                 _ => (
                     format!("Run {}", tool.effective_tool_id()),
@@ -148,19 +134,30 @@ impl LiveTurnStatus {
         let label = match phase {
             LiveTurnPhase::Thinking => "Thinking…".to_string(),
             LiveTurnPhase::Responding => "Responding…".to_string(),
-            // The normalized tool-input delta has no tool name until ToolCallRequested.
-            LiveTurnPhase::WritingToolCall { ordinal, .. } => {
-                if ordinal > 1 {
-                    format!("Preparing tool call ({ordinal})…")
+            LiveTurnPhase::WritingToolCall {
+                ordinal, tool_name, ..
+            } => crate::app::subagents::activity::writing_label(tool_name.as_deref(), ordinal),
+            LiveTurnPhase::Compacting => "Compacting…".into(),
+            LiveTurnPhase::WaitingFor(crate::app::WaitingReason::Subagents(count)) => {
+                if count > 1 {
+                    format!("Waiting for {count} subagents…")
                 } else {
-                    "Preparing tool call…".to_string()
+                    "Waiting for subagent…".into()
                 }
             }
+            LiveTurnPhase::WaitingFor(crate::app::WaitingReason::TasksComplete) => {
+                "Waiting on tasks…".into()
+            }
+            LiveTurnPhase::WaitingFor(crate::app::WaitingReason::TaskOutput(_)) => {
+                "Waiting on task output…".into()
+            }
+            LiveTurnPhase::WaitingFor(crate::app::WaitingReason::Sleep) => "Sleeping…".into(),
             _ => "Waiting for response…".to_string(),
         };
         Self {
             label,
             phase_elapsed_ms: elapsed,
+            allows_send_now: activity.is_sendable_wait(),
             ..Self::waiting(theme)
         }
     }

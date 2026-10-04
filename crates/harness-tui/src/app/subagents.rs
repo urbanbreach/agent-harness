@@ -1,5 +1,6 @@
 //! Event-derived child presentation. The core fold owns attempt reconciliation.
 use std::collections::BTreeMap;
+pub(crate) mod activity;
 
 use harness_core::{
     event::{EventEnvelopeV1, EventV1},
@@ -17,6 +18,7 @@ pub(crate) struct SubagentRow {
     pub first_seq: u64,
     pub label: String,
     pub description: String,
+    pub display_description: String,
     pub model: String,
     pub meta: String,
     pub background: bool,
@@ -44,6 +46,17 @@ pub(crate) struct SubagentPresentation {
     pub last_mono_ms: u64,
     pub observed_at: Option<std::time::Instant>,
     pub progress: BTreeMap<String, harness_core::event::SubagentProgressEvent>,
+    pub attempts: BTreeMap<(String, u64), SubagentAttempt>,
+}
+
+pub(crate) struct SubagentAttempt {
+    pub row: SubagentRow,
+    pub first_seq: u64,
+    pub finished_seq: Option<u64>,
+    pub outcome: Option<SubagentTerminalOutcome>,
+    pub duration_ms: Option<u64>,
+    pub request_id: Option<String>,
+    pub error: Option<String>,
 }
 
 impl SubagentPresentation {
@@ -109,7 +122,8 @@ impl SubagentPresentation {
                 for part in [data.persona.as_deref(), data.role.as_deref()]
                     .into_iter()
                     .flatten()
-                    .filter(|part| !part.trim().is_empty())
+                    .map(str::trim)
+                    .filter(|part| !part.is_empty())
                 {
                     if !parts
                         .iter()
@@ -135,7 +149,8 @@ impl SubagentPresentation {
                         parent_request: data.parent_request.clone(),
                         first_seq: event.seq,
                         label,
-                        description: description.into(),
+                        description: data.description.clone(),
+                        display_description: description.into(),
                         model: data.model.clone(),
                         meta,
                         background: data.background,
@@ -155,11 +170,79 @@ impl SubagentPresentation {
                             && record.lifecycle.current_attempt_id() == data.attempt_id.as_deref()
                     }) {
                         row.started_ms = event.mono_ms;
+                        row.first_seq = event.seq;
+                        row.background = data.metadata.notification_route.background;
+                        row.resumed |= data.generation > 1;
+                    }
+                }
+            }
+            EventV1::BackgroundTaskNotification(data) => {
+                if let Some(attempt) = self.attempts.values_mut().find(|attempt| {
+                    attempt.row.id == data.child_session_id.as_str()
+                        && attempt.request_id.as_deref() == Some(data.child_request_id.as_str())
+                }) {
+                    if data.status == harness_core::event::BackgroundTaskNotificationStatus::Failed
+                    {
+                        attempt.error = (!data.summary.is_empty()).then(|| data.summary.clone());
                     }
                 }
             }
             _ => {}
         }
+        if let EventV1::SubagentTransition(data) = &event.payload {
+            if let Some((row, record)) = self.rows.get(&data.child_id.0).zip(
+                self.history.records.get(&data.child_id.0).filter(|record| {
+                    accepted
+                        && record.generation == data.generation
+                        && record.lifecycle.has_current_attempt()
+                }),
+            ) {
+                let attempt = self
+                    .attempts
+                    .entry((row.id.clone(), record.generation))
+                    .or_insert_with(|| SubagentAttempt {
+                        row: row.clone(),
+                        first_seq: event.seq,
+                        finished_seq: None,
+                        outcome: None,
+                        duration_ms: None,
+                        request_id: record.lifecycle.current_attempt_id().map(str::to_owned),
+                        error: None,
+                    });
+                if record.lifecycle.is_finished() && record.outcome.is_some() {
+                    attempt.finished_seq.get_or_insert(event.seq);
+                    attempt.outcome = record.outcome;
+                    attempt.duration_ms =
+                        record.accounting.map(|accounting| accounting.duration_ms);
+                }
+            }
+        }
+    }
+}
+
+impl AppState {
+    pub(crate) fn is_native_subagent_target(
+        &self,
+        target: &crate::ui::TranscriptMouseTarget,
+    ) -> bool {
+        use crate::ui::TranscriptMouseTarget;
+        match target {
+            TranscriptMouseTarget::SubagentSession { session_id } => {
+                self.subagents.rows.contains_key(session_id)
+            }
+            TranscriptMouseTarget::ToolGroup { tool_call_ids } => tool_call_ids.iter().any(|id| {
+                self.native_subagent_task(id).is_some()
+                    || id.starts_with("background-notification:")
+                    || id.starts_with("subagent-started:")
+            }),
+            _ => false,
+        }
+    }
+
+    pub(crate) fn native_subagent_selected(&self) -> bool {
+        self.selected_transcript_entry()
+            .and_then(|entry| entry.target)
+            .is_some_and(|target| self.is_native_subagent_target(&target))
     }
 }
 
@@ -231,7 +314,7 @@ impl super::SessionProjection {
                 .activities
                 .iter()
                 .find(|activity| Some(activity.request_id.as_str()) == request.as_deref())
-                .map(|activity| self.child_activity(activity)),
+                .map(|activity| self.reported_child_activity(activity)),
             timing_elapsed_ms: record
                 .and_then(|record| record.accounting)
                 .map(|accounting| accounting.duration_ms),
@@ -242,40 +325,6 @@ impl super::SessionProjection {
             first_timestamp: None,
             last_timestamp: None,
         })
-    }
-}
-
-impl super::SessionProjection {
-    pub(crate) fn child_activity(&self, activity: &super::ActivityEntry) -> String {
-        use super::session_projection::LiveTurnPhase;
-        match self.live_turn_phase(activity).0 {
-            LiveTurnPhase::Waiting => "Waiting".into(),
-            LiveTurnPhase::Thinking => "Thinking".into(),
-            LiveTurnPhase::Responding => "Responding".into(),
-            LiveTurnPhase::Retrying(_) => "Retrying".into(),
-            LiveTurnPhase::WritingToolCall { .. } => "Writing tool call".into(),
-            LiveTurnPhase::ToolRunning(id) => activity
-                .tool_calls
-                .iter()
-                .find(|tool| tool.tool_call_id == id)
-                .map_or_else(
-                    || "Working".into(),
-                    |tool| {
-                        let title = serde_json::from_str::<serde_json::Value>(&tool.args_summary)
-                            .ok()
-                            .and_then(|args| {
-                                args.get("description")
-                                    .and_then(serde_json::Value::as_str)
-                                    .map(str::to_owned)
-                            })
-                            .unwrap_or_else(|| tool.effective_tool_id().into());
-                        format!(
-                            "Running: {}",
-                            crate::text::collapse_inline_whitespace(&title)
-                        )
-                    },
-                ),
-        }
     }
 }
 
@@ -343,7 +392,7 @@ impl AppState {
         let cancelled_at = self.inspected_child_cancel_started();
         Some(SubagentHeader {
             label: row.map_or(info.label, |row| row.label.clone()),
-            description: row.map_or(info.title, |row| row.description.clone()),
+            description: row.map_or(info.title, |row| row.display_description.clone()),
             model: row.map_or_else(
                 || {
                     self.activities
@@ -361,7 +410,7 @@ impl AppState {
                 "Waiting".into()
             } else {
                 self.activities.back().map_or_else(
-                    || "Waiting".into(),
+                    || "Waiting for response…".into(),
                     |activity| self.child_activity(activity),
                 )
             },

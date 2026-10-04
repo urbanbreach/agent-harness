@@ -238,17 +238,21 @@ async fn turn_waits_for_permission_then_feeds_tool_result_back_without_journalin
             && m.tool_call_id.as_deref() == Some("call-1")));
     coordinator.stop_run().await?;
     let mut visible = [String::new(), String::new(), String::new()];
+    let mut tool_names = Vec::new();
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
         while let Some(event) = runtime.next().await {
             match event? {
                 RuntimeEvent::Live(event) => {
-                    let (index, delta) = match event.payload {
-                        LiveEventV1::ProviderTextDelta { delta, .. } => (0, delta),
-                        LiveEventV1::ProviderReasoningDelta { delta, .. } => (1, delta),
-                        LiveEventV1::ProviderToolInputDelta { delta, .. } => (2, delta),
+                    let (index, delta, tool_name) = match event.payload {
+                        LiveEventV1::ProviderTextDelta { delta, .. } => (0, delta, None),
+                        LiveEventV1::ProviderReasoningDelta { delta, .. } => (1, delta, None),
+                        LiveEventV1::ProviderToolInputDelta {
+                            tool_name, delta, ..
+                        } => (2, delta, tool_name),
                         _ => continue,
                     };
                     visible[index].push_str(&delta);
+                    tool_names.extend(tool_name);
                 }
                 RuntimeEvent::Durable(event)
                     if matches!(event.payload, EventV1::RunFinished(_)) =>
@@ -269,6 +273,8 @@ async fn turn_waits_for_permission_then_feeds_tool_result_back_without_journalin
             "{\"token\":\"[REDACTED]\"}",
         ]
     );
+    assert!(!tool_names.is_empty());
+    assert!(tool_names.iter().all(|name| name == "count"));
     let journal = std::fs::read_to_string(run.events_path)?;
     assert!(!journal.contains("private reasoning"));
     assert!(!journal.contains("opaque-credential"));

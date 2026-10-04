@@ -43,6 +43,7 @@ mod settled_presentation;
 
 pub(crate) use live_turn_phase::LiveTurnPhase;
 use live_turn_phase::ProviderPhase;
+pub(crate) use live_turn_phase::WaitingReason;
 
 use self::background_notification::background_notification_for_request;
 
@@ -60,7 +61,9 @@ pub(crate) enum ProjectionDelta {
     ReplayPending,
 }
 
+#[derive(Clone)]
 pub(crate) struct LiveCompaction {
+    pub(crate) started_mono_ms: u64,
     pub(crate) agent_id: String,
     pub(crate) generation: u64,
     pub(crate) trigger_reason: String,
@@ -118,6 +121,7 @@ struct ReasoningTiming {
 pub struct SessionProjection {
     pub(crate) subagents: super::subagents::SubagentPresentation,
     live_compactions: BTreeMap<String, LiveCompaction>,
+    pub(super) phase_clock: Option<std::sync::Arc<dyn Fn() -> std::time::Instant + Send + Sync>>,
     // Incomplete child slices and rejected histories retain their inspection buffer.
     pub(crate) inspection_events: Option<Vec<EventEnvelopeV1>>,
     canonical_projection: Option<CanonicalSessionProjection>,
@@ -155,6 +159,11 @@ impl SessionProjection {
             self.subagents
                 .apply_progress(progress, source.subagents.last_mono_ms);
         }
+        self.phase_clock.clone_from(&source.phase_clock);
+        if let Some(compaction) = source.live_compactions.get(child) {
+            self.live_compactions
+                .insert(child.to_owned(), compaction.clone());
+        }
         for activity in &source.activities {
             if source
                 .child_request_agents
@@ -185,6 +194,7 @@ impl SessionProjection {
                 self.reasoning_timings.insert(*seq, timing.clone());
             }
         }
+        self.subagents.last_mono_ms = source.subagents.last_mono_ms;
         self.subagents.observed_at = source.subagents.observed_at;
         self.transcript_delta = ProjectionDelta::FullRebuild;
     }
@@ -289,12 +299,17 @@ impl SessionProjection {
     }
 
     pub(crate) fn ingest_live_event(&mut self, event: &LiveEventEnvelope) {
+        self.subagents.last_mono_ms = self.subagents.last_mono_ms.max(event.mono_ms);
         let (provider_request_id, tool_input) = match &event.payload {
             LiveEventV1::SubagentProgress(progress) => {
                 self.subagents.apply_progress(progress, event.mono_ms);
                 return;
             }
             LiveEventV1::RuntimeWarning { .. } => return,
+            LiveEventV1::ProviderRetrying { turn_id, retry } => {
+                self.note_retry(turn_id.as_str(), *retry, event.mono_ms);
+                return;
+            }
             LiveEventV1::CompactionProgress {
                 agent_id,
                 generation,
@@ -319,9 +334,15 @@ impl SessionProjection {
                         .map_or(0, |(index, _)| index);
                     text[start..].to_string()
                 });
+                let started_mono_ms = self
+                    .live_compactions
+                    .get(agent_id)
+                    .filter(|c| c.generation == *generation)
+                    .map_or(event.mono_ms, |c| c.started_mono_ms);
                 self.live_compactions.insert(
                     agent_id.clone(),
                     LiveCompaction {
+                        started_mono_ms,
                         agent_id: agent_id.clone(),
                         generation: *generation,
                         trigger_reason: trigger_reason.clone(),
@@ -372,7 +393,8 @@ impl SessionProjection {
         let activity = &mut self.activities[activity_index];
         activity.status = ActivityStatus::Streaming;
         match &event.payload {
-            LiveEventV1::CompactionProgress { .. }
+            LiveEventV1::ProviderRetrying { .. }
+            | LiveEventV1::CompactionProgress { .. }
             | LiveEventV1::RuntimeWarning { .. }
             | LiveEventV1::SubagentProgress(_) => return,
             LiveEventV1::ProviderTextDelta { delta, .. } => {
@@ -405,6 +427,7 @@ impl SessionProjection {
             }
             LiveEventV1::ProviderToolInputDelta {
                 tool_call_id,
+                tool_name,
                 delta,
                 ..
             } => {
@@ -414,6 +437,9 @@ impl SessionProjection {
                     .iter_mut()
                     .find(|tool_call| tool_call.tool_call_id == tool_call_id)
                 {
+                    if let Some(name) = tool_name {
+                        tool_call.tool_id.clone_from(name);
+                    }
                     tool_call.args_summary.push_str(delta);
                     tool_call.last_mono_ms = event.mono_ms;
                     tool_call.last_timestamp.clone_from(&event.ts);
@@ -421,7 +447,7 @@ impl SessionProjection {
                     activity.tool_calls.push(ToolCallEntry {
                         hook_executions: Vec::new(),
                         tool_call_id: tool_call_id.to_string(),
-                        tool_id: "tool".to_string(),
+                        tool_id: tool_name.clone().unwrap_or_else(|| "tool".to_string()),
                         canonical_tool_id: None,
                         alias_source_tool_id: None,
                         resolved_tool_identity: None,
@@ -932,6 +958,13 @@ impl SessionProjection {
         event: &EventEnvelopeV1,
         data: &BackgroundTaskNotificationEvent,
     ) {
+        if self
+            .subagents
+            .rows
+            .contains_key(data.child_session_id.as_str())
+        {
+            return;
+        }
         let request_id = data
             .delivered_turn_request_id
             .as_deref()
@@ -1598,7 +1631,13 @@ impl SessionProjection {
     fn enforce_transcript_memory_cap(&mut self) {
         self.provider_phases.retain(|request_id, _| {
             self.activities.iter().any(|activity| {
-                activity.request_id == *request_id && activity.status == ActivityStatus::Streaming
+                activity.request_id == *request_id
+                    && (activity.status == ActivityStatus::Streaming
+                        || self
+                            .child_request_agents
+                            .get(request_id)
+                            .and_then(|child| self.subagents.history.records.get(child))
+                            .is_some_and(|record| record.outcome.is_none()))
             })
         });
         let max_chars = self.memory_caps.max_transcript_chars;
@@ -1828,6 +1867,7 @@ mod tests {
                         max_attempts: 4,
                         delay_ms: None,
                         category: None,
+                        failure: None,
                     }),
                     ..harness_core::event::ProviderRequestStartedMetadata::default()
                 }),
@@ -1883,6 +1923,7 @@ mod tests {
                         max_attempts: 3,
                         delay_ms: None,
                         category: None,
+                        failure: None,
                     }),
                     ..harness_core::event::ProviderRequestStartedMetadata::default()
                 }),

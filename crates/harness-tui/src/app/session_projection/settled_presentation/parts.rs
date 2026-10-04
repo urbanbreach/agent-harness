@@ -213,3 +213,22 @@ fn lineage_entry(lineage: &SessionLineageProjection) -> TaskLineageEntry {
         child_request_id: lineage.child_request_id.clone(),
     }
 }
+
+// Canonical provenance records sequence numbers, not elapsed milliseconds. Child
+// inspection can rebuild without prior live entries to supply the tool clocks.
+pub(super) fn restore_tool_timing(
+    events: &[EventEnvelopeV1],
+    activities: &mut VecDeque<ActivityEntry>,
+) {
+    for tool in activities
+        .iter_mut()
+        .flat_map(|activity| &mut activity.tool_calls)
+    {
+        if let Ok(index) = events.binary_search_by_key(&tool.first_seq, |event| event.seq) {
+            tool.first_mono_ms = events[index].mono_ms;
+        }
+        if let Ok(index) = events.binary_search_by_key(&tool.last_seq, |event| event.seq) {
+            tool.last_mono_ms = events[index].mono_ms;
+        }
+    }
+}

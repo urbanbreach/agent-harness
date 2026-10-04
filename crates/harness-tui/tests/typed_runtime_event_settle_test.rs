@@ -211,6 +211,7 @@ fn typed_live_fragments_render_then_final_commit_settles_them() {
     app.ingest_runtime_event(live(
         "live-tool",
         LiveEventV1::ProviderToolInputDelta {
+            tool_name: None,
             request_id: "provider-1".into(),
             tool_call_id: "tool-1".into(),
             delta: "{\"path\":\"draft\"}".to_string(),

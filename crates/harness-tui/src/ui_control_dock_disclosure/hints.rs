@@ -30,8 +30,15 @@ pub(super) fn shortcut_row(
     primary_only: bool,
 ) -> Line<'static> {
     let base = Style::default().bg(theme.surface.canvas);
+    let native_selection = app.focus == crate::app::Focus::Details
+        && (app.native_subagent_selected()
+            || (app.transcript_view.selected_entry.is_none() && !app.subagents.rows.is_empty()));
     let key = base
-        .fg(theme.terminal_colors.primary)
+        .fg(if native_selection {
+            theme.terminal_colors.prompt_accent
+        } else {
+            theme.terminal_colors.primary
+        })
         .add_modifier(Modifier::BOLD);
     let label = base.fg(theme.terminal_colors.secondary);
     let separator = label.add_modifier(Modifier::DIM);
@@ -43,7 +50,24 @@ pub(super) fn shortcut_row(
         }
         spans.extend([Span::styled(binding, key), Span::styled(text, label)]);
     };
-    if turn && app.composer.composer_multiline_mode() && !primary_only {
+    if native_selection {
+        let group = app.selected_transcript_entry().is_some_and(|entry| {
+            matches!(
+                entry.target,
+                Some(crate::ui::TranscriptMouseTarget::ToolGroup { .. })
+            )
+        });
+        push("Enter".into(), if group { ":expand" } else { ":open" });
+        push(
+            "Ctrl+e".into(),
+            if app.transcript_thinking_visible() {
+                ":collapse thinking"
+            } else {
+                ":expand thinking"
+            },
+        );
+        push(preferred_binding(app, Action::Help, "Ctrl+x"), ":shortcuts");
+    } else if turn && app.composer.composer_multiline_mode() && !primary_only {
         push("Enter".into(), ":newline");
         push("Alt+Enter".into(), ":send");
         push(

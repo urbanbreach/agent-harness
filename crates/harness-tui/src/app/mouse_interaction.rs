@@ -1267,12 +1267,14 @@ impl AppState {
     }
 
     fn handle_transcript_target_click(&mut self, target: TranscriptMouseTarget, frame_area: Rect) {
-        if !matches!(
-            target,
-            TranscriptMouseTarget::Reasoning { .. }
-                | TranscriptMouseTarget::Tool { .. }
-                | TranscriptMouseTarget::ToolGroup { .. }
-        ) {
+        if !self.is_native_subagent_target(&target)
+            && !matches!(
+                target,
+                TranscriptMouseTarget::Reasoning { .. }
+                    | TranscriptMouseTarget::Tool { .. }
+                    | TranscriptMouseTarget::ToolGroup { .. }
+            )
+        {
             self.transcript_view.last_tool_click = None;
             self.activate_transcript_mouse_target(target);
             return;
@@ -1417,8 +1419,12 @@ impl AppState {
 
         if let Some(target) = ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
         {
-            self.handle_transcript_target_click(target, frame_area);
-            self.transcript_view.transcript_click_activated_on_down = true;
+            if self.is_native_subagent_target(&target) {
+                self.focus = Focus::Details;
+            } else {
+                self.handle_transcript_target_click(target, frame_area);
+                self.transcript_view.transcript_click_activated_on_down = true;
+            }
             self.clear_transcript_selection();
             self.clear_operator_sidebar_selection();
             return true;

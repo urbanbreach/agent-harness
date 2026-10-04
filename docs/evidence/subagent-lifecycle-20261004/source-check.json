@@ -1,0 +1,118 @@
+[
+  {
+    "reference_path": "scrollback/blocks/subagent.rs",
+    "sha256": "b4c86bee0da8b9acfa34408acf3600b62ddacc9a39540de02aac3329ecb6a48c",
+    "matches_capture_build": true,
+    "capture_source_sha256": "b4c86bee0da8b9acfa34408acf3600b62ddacc9a39540de02aac3329ecb6a48c"
+  },
+  {
+    "reference_path": "scrollback/state/verb_group.rs",
+    "sha256": "859c5955495aac85faff3a1d0561663d8482e38866e6ce09d7c171a22b15ae56",
+    "matches_capture_build": true,
+    "capture_source_sha256": "859c5955495aac85faff3a1d0561663d8482e38866e6ce09d7c171a22b15ae56"
+  },
+  {
+    "reference_path": "scrollback/scrollback_pane.rs",
+    "sha256": "0d43326ee970e51f25c9931b987020346e3537dccc4dd981f9f06c67e038bb1c",
+    "matches_capture_build": true,
+    "capture_source_sha256": "0d43326ee970e51f25c9931b987020346e3537dccc4dd981f9f06c67e038bb1c"
+  },
+  {
+    "reference_path": "app/acp_handler/session_notification.rs",
+    "sha256": "003d8e4667bc5152e821301e9eea31e014b4dbbd5ee4a56ea5e7bef239a66072",
+    "matches_capture_build": true,
+    "capture_source_sha256": "003d8e4667bc5152e821301e9eea31e014b4dbbd5ee4a56ea5e7bef239a66072"
+  },
+  {
+    "reference_path": "app/acp_handler/subagent_lifecycle.rs",
+    "sha256": "47970dee16de3bf8f3981dc8ecfa8db8378307e0c0106eb8de7cb5bae23e980f",
+    "matches_capture_build": true,
+    "capture_source_sha256": "47970dee16de3bf8f3981dc8ecfa8db8378307e0c0106eb8de7cb5bae23e980f"
+  },
+  {
+    "reference_path": "app/acp_handler/subagent_activity.rs",
+    "sha256": "c136c12f66d21f70c39ef8b44bd412b603de459240a82adae002d9a3c03bb4f5",
+    "matches_capture_build": true,
+    "capture_source_sha256": "c136c12f66d21f70c39ef8b44bd412b603de459240a82adae002d9a3c03bb4f5"
+  },
+  {
+    "reference_path": "app/subagent.rs",
+    "sha256": "570ed9d833be396c3ad7d40834e858fa0c4ec11011bcfc0151097404fbf847c6",
+    "matches_capture_build": false,
+    "capture_source_sha256": "20ca2667eaad91a41f74a5bc200b1e71a265c51a4fc65c6555af4d2af77053c5",
+    "difference": "test-support-only elapsed-clock override; diff inspected"
+  },
+  {
+    "reference_path": "app/agent_view/subagent_takeover.rs",
+    "sha256": "d165621e94ecae4e240c8897eb90c6b81f30a06d6631364b3ddccda7f206b193",
+    "matches_capture_build": true,
+    "capture_source_sha256": "d165621e94ecae4e240c8897eb90c6b81f30a06d6631364b3ddccda7f206b193"
+  },
+  {
+    "reference_path": "views/tasks_pane.rs",
+    "sha256": "345f467c552d05819542ec600da83469bd9c574037f258607410098e78096963",
+    "matches_capture_build": true,
+    "capture_source_sha256": "345f467c552d05819542ec600da83469bd9c574037f258607410098e78096963"
+  },
+  {
+    "reference_path": "views/overlay.rs",
+    "sha256": "591673590247bc2e1dd17971e6fb079f5c87840c86f76c044a272ff14d812a1a",
+    "matches_capture_build": true,
+    "capture_source_sha256": "591673590247bc2e1dd17971e6fb079f5c87840c86f76c044a272ff14d812a1a"
+  },
+  {
+    "reference_path": "app/agent_view/panes.rs",
+    "sha256": "e55bc7ca47737ab7c7e20745a604b9b2d3491104cae6426cd77e6ee0b14b1158",
+    "matches_capture_build": true,
+    "capture_source_sha256": "e55bc7ca47737ab7c7e20745a604b9b2d3491104cae6426cd77e6ee0b14b1158"
+  },
+  {
+    "reference_path": "app/agent_view/input.rs",
+    "sha256": "b4953d0cc774525946bfe8c4eccd22740127e97003dfa41882e260e9c937eb8b",
+    "matches_capture_build": true,
+    "capture_source_sha256": "b4953d0cc774525946bfe8c4eccd22740127e97003dfa41882e260e9c937eb8b"
+  },
+  {
+    "reference_path": "acp/tracker.rs",
+    "sha256": "f5628792997553d15d0548b997809034d419894f063c3ce2a70762567aa1de75",
+    "matches_capture_build": true,
+    "capture_source_sha256": "f5628792997553d15d0548b997809034d419894f063c3ce2a70762567aa1de75"
+  },
+  {
+    "reference_path": "views/turn_status.rs",
+    "sha256": "d9e61ffada1fcdf6ad17771bdd84d26dafa7f7876f8e4e5c1e3b6fba6e99ba9e",
+    "matches_capture_build": false,
+    "capture_source_sha256": "c6bd505dff670728412c5f41b7435207bd38a0f803fb00138c79c6837a32d0b9",
+    "difference": "test-support-only elapsed-clock override; diff inspected"
+  },
+  {
+    "reference_path": "scrollback/sticky.rs",
+    "sha256": "87aa641e658e9ed4bc6feb7bec96d42da4a4289079590d8b1fa6399da94b090c",
+    "matches_capture_build": true,
+    "capture_source_sha256": "87aa641e658e9ed4bc6feb7bec96d42da4a4289079590d8b1fa6399da94b090c"
+  },
+  {
+    "reference_path": "scrollback/state/layout.rs",
+    "sha256": "10c34df6d5f8cdcd67adcd79a293ed113e4748bb459fb0a2cf95409591e0cc46",
+    "matches_capture_build": true,
+    "capture_source_sha256": "10c34df6d5f8cdcd67adcd79a293ed113e4748bb459fb0a2cf95409591e0cc46"
+  },
+  {
+    "reference_path": "scrollback/state/types.rs",
+    "sha256": "b07f93b58bbb0611b3aacb6b299223e2f2e7319c332bc72a0b24ea9ce88b9f18",
+    "matches_capture_build": true,
+    "capture_source_sha256": "b07f93b58bbb0611b3aacb6b299223e2f2e7319c332bc72a0b24ea9ce88b9f18"
+  },
+  {
+    "reference_path": "app/error_display.rs",
+    "sha256": "b55790621547be4e2c545a80925e9e330dc9d333d11987a6a3190f8696179e91",
+    "matches_capture_build": true,
+    "capture_source_sha256": "b55790621547be4e2c545a80925e9e330dc9d333d11987a6a3190f8696179e91"
+  },
+  {
+    "reference_path": "views/agent.rs",
+    "sha256": "003c668c0e5ed6cd79ae235d2087a0f24f87a921464499d955f62eb0f8ce4ce6",
+    "matches_capture_build": true,
+    "capture_source_sha256": "003c668c0e5ed6cd79ae235d2087a0f24f87a921464499d955f62eb0f8ce4ce6"
+  }
+]

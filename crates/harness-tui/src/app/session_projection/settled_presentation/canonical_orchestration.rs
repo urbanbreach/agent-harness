@@ -6,6 +6,13 @@ pub(super) fn apply_canonical_background_notifications(
     activities: &mut VecDeque<ActivityEntry>,
     tasks: &mut BTreeMap<String, OrchestrationTaskRow>,
 ) {
+    let native_children = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::NativeSubagentRegistered(data) => Some(data.child_id.as_str()),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
     let cancelled = events
         .iter()
         .filter_map(|event| match &event.payload {
@@ -37,7 +44,7 @@ pub(super) fn apply_canonical_background_notifications(
             if activity.first_seq >= notification.seq {
                 activity.user_message = None;
             }
-        } else {
+        } else if !native_children.contains(data.child_session_id.as_str()) {
             let mut activity = new_streaming_activity_entry(NewStreamingActivityEntryArgs {
                 request_id: request_id.to_string(),
                 profile_label: profile_label(

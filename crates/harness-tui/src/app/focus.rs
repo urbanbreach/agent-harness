@@ -5,7 +5,9 @@ impl AppState {
         if self.replay_mode {
             if self.focus == Focus::Prompt
                 || (self.focus == Focus::Terminal && !self.terminal_panel_visible())
-                || (self.focus == Focus::List && self.active_review_surface.is_none())
+                || (self.focus == Focus::List
+                    && self.active_review_surface.is_none()
+                    && !self.tasks_pane.focused)
             {
                 self.focus = Focus::Details;
             }
@@ -17,7 +19,8 @@ impl AppState {
                 Focus::Terminal if self.active_review_surface.is_some() => Focus::Details,
                 Focus::List
                     if self.active_review_surface.is_none()
-                        && !self.session_shell_operator_rail_interactive() =>
+                        && !self.session_shell_operator_rail_interactive()
+                        && !self.tasks_pane.focused =>
                 {
                     Focus::Details
                 }

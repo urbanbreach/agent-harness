@@ -163,3 +163,42 @@ const fn task_state(state: ProjectedTaskState) -> OrchestrationTaskState {
         ProjectedTaskState::LateResult => OrchestrationTaskState::LateResult,
     }
 }
+
+// A terminal child notification also closes a retained child transcript. Preserve
+// a recorded turn terminal; otherwise supply its elapsed footer and stop stale
+// running indicators, including entries restored without live tool updates.
+pub(super) fn add_subagent_terminals(
+    subagents: &crate::app::subagents::SubagentPresentation,
+    activities: &mut VecDeque<ActivityEntry>,
+    terminals: &mut BTreeMap<String, SettledTurnTerminal>,
+) {
+    for attempt in subagents
+        .attempts
+        .values()
+        .filter(|attempt| attempt.outcome.is_some())
+    {
+        let Some(activity) = activities
+            .iter_mut()
+            .find(|activity| Some(activity.request_id.as_str()) == attempt.request_id.as_deref())
+        else {
+            continue;
+        };
+        for tool in &mut activity.tool_calls {
+            if matches!(
+                tool.status,
+                ToolCallDisplayStatus::Queued | ToolCallDisplayStatus::Running
+            ) {
+                tool.status = ToolCallDisplayStatus::Succeeded;
+            }
+        }
+        terminals
+            .entry(activity.request_id.clone())
+            .or_insert(SettledTurnTerminal {
+                state: ProjectedTaskState::Completed,
+                reason: None,
+                result_summary: None,
+                elapsed_ms: attempt.duration_ms,
+                terminal_mono_ms: None,
+            });
+    }
+}

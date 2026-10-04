@@ -120,8 +120,15 @@ impl AppState {
                 self.tasks_pane.query = PaneQuery::default();
             }
             KeyCode::Esc | KeyCode::Char('q') => {
+                self.tasks_pane.visible = false;
                 self.tasks_pane.focused = false;
-                self.focus = if self.replay_mode {
+                self.tasks_pane.auto_opened = false;
+                self.focus = Focus::Details;
+            }
+            KeyCode::Tab | KeyCode::Char(' ') => {
+                self.tasks_pane.fullscreen = false;
+                self.tasks_pane.focused = false;
+                self.focus = if key.code == KeyCode::Tab || self.replay_mode {
                     Focus::Details
                 } else {
                     Focus::Prompt

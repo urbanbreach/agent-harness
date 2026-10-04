@@ -44,7 +44,7 @@ impl MeasuredTranscriptSection {
 pub(super) struct MeasuredTranscriptLayout {
     pub(super) sections: Vec<Arc<MeasuredTranscriptSection>>,
     pub(super) total_height: usize,
-    pub(super) child_view: bool,
+    pub(super) pin_prompt_at_bottom: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -540,7 +540,7 @@ pub(super) fn measure_transcript_layout<Section>(
     MeasuredTranscriptLayout {
         sections: measured_sections,
         total_height: top_row,
-        child_view: false,
+        pin_prompt_at_bottom: false,
     }
 }
 
@@ -755,7 +755,8 @@ fn render_child_selection(
     else {
         return;
     };
-    let Some(placement) = transcript_visual_entry_viewport_placement(
+    let section = &layout.sections[section_index];
+    let Some(selected_placement) = transcript_visual_entry_viewport_placement(
         layout,
         area,
         scroll_top,
@@ -764,25 +765,48 @@ fn render_child_selection(
     ) else {
         return;
     };
-    let rect = placement.rect;
+    let range = selection_group_range(section, surface_index);
+    let mut placements = range.clone().filter_map(|index| {
+        transcript_visual_entry_viewport_placement(layout, area, scroll_top, section_index, index)
+            .map(|placement| (index, placement))
+    });
+    let Some((first, first_placement)) = placements.next() else {
+        return;
+    };
+    let (last, last_placement) = placements.next_back().unwrap_or((first, first_placement));
+    let rect = first_placement.rect.union(last_placement.rect);
     let left = rect.x.saturating_sub(1);
     let right = area.right();
     let top = rect.y.saturating_sub(1).max(area.y);
-    let surface = &layout.sections[section_index].surfaces[surface_index];
-    let clipped_top = placement.local_scroll > 0;
-    let clipped_bottom = placement.local_scroll + usize::from(rect.height) < surface.height;
+    let clipped_top = first > range.start || first_placement.local_scroll > 0;
+    let clipped_bottom = last + 1 < range.end
+        || last_placement.local_scroll + usize::from(last_placement.rect.height)
+            < section.surfaces[last].height;
     let bottom = if clipped_bottom {
         rect.bottom().saturating_sub(1)
     } else {
         rect.bottom()
     };
     let top = if clipped_top { rect.y } else { top };
+    let selected_rect = selected_placement.rect;
+    render_selected_context_header(
+        frame,
+        layout,
+        area,
+        scroll_top,
+        section_index,
+        surface_index,
+        theme,
+    );
     let style = Style::default().fg(crate::theme::quantize_color(
         Color::Rgb(60, 60, 65),
         theme.color_level(),
     ));
     for y in rect.y..rect.bottom().min(area.bottom()) {
-        if surface.kind != TranscriptRenderSurfaceKind::AssistantBody {
+        if section.surfaces[surface_index].kind != TranscriptRenderSurfaceKind::AssistantBody
+            && y >= selected_rect.y
+            && y < selected_rect.bottom()
+        {
             paint_compact_selection(
                 frame,
                 Rect::new(area.x, y, area.width, 1),
@@ -805,6 +829,81 @@ fn render_child_selection(
             cell.set_symbol(glyph).set_style(style);
         }
     }
+    let surface = &section.surfaces[surface_index];
+    if surface.metadata.foldable
+        && !surface.metadata.context_group
+        && surface.metadata.display_mode == TranscriptVisualEntryDisplayMode::Compact
+        && selected_placement.local_scroll == 0
+        && matches!(
+            surface.kind,
+            TranscriptRenderSurfaceKind::AssistantTool
+                | TranscriptRenderSurfaceKind::AssistantCommandTool
+                | TranscriptRenderSurfaceKind::AssistantReasoning
+        )
+    {
+        if let Some(line) = surface.lines.first() {
+            let text = line.to_string();
+            let content = text.trim_start();
+            let content = content
+                .strip_prefix(theme.live_shell.transcript_glyphs.rail)
+                .unwrap_or(content)
+                .trim_start();
+            let offset = unicode_width::UnicodeWidthStr::width(&text[..text.len() - content.len()]);
+            if let Some(cell) = frame.buffer_mut().cell_mut((
+                selected_rect
+                    .x
+                    .saturating_add(u16::try_from(offset).unwrap_or(u16::MAX)),
+                selected_rect.y,
+            )) {
+                cell.set_symbol(if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+                    ">"
+                } else {
+                    "›"
+                });
+            }
+        }
+    }
+}
+
+fn selection_group_range(
+    section: &MeasuredTranscriptSection,
+    selected: usize,
+) -> std::ops::Range<usize> {
+    use super::ui_transcript_interaction::TranscriptMouseTarget;
+    let selected_id = section.surfaces[selected].metadata.id;
+    for (index, surface) in section.surfaces.iter().enumerate().take(selected + 1).rev() {
+        if !surface.metadata.context_group
+            || surface.metadata.display_mode != TranscriptVisualEntryDisplayMode::Expanded
+        {
+            continue;
+        }
+        let Some(TranscriptMouseTarget::ToolGroup { tool_call_ids }) = surface
+            .interaction_rows
+            .as_ref()
+            .and_then(|rows| rows.first())
+            .and_then(Option::as_ref)
+            .map(|row| &row.target)
+        else {
+            continue;
+        };
+        let member = |id| {
+            matches!(id, TranscriptVisualEntryId::Part { semantic_key, .. }
+            if tool_call_ids.iter().any(|id| super::ui_transcript::ui_transcript_entry::semantic_key([id.as_str()]) == semantic_key))
+        };
+        if surface.metadata.id == selected_id || member(selected_id) {
+            let end = section
+                .surfaces
+                .iter()
+                .enumerate()
+                .skip(index + 1)
+                .filter(|(_, surface)| member(surface.metadata.id))
+                .map(|(index, _)| index + 1)
+                .next_back()
+                .unwrap_or(index + 1);
+            return index..end;
+        }
+    }
+    selected..selected + 1
 }
 
 fn render_selected_context_header(
@@ -1004,7 +1103,7 @@ fn sticky_user_surface<'a>(
         return None;
     }
     let viewport_bottom = scroll_top.saturating_add(viewport_height);
-    if !layout.child_view && viewport_bottom >= layout.total_height {
+    if !layout.pin_prompt_at_bottom && viewport_bottom >= layout.total_height {
         return None;
     }
     // Only the section containing the viewport's top can own a sticky prompt.
@@ -1070,7 +1169,11 @@ fn sticky_prompt_clip(
     let render_height = surface
         .height
         .saturating_sub(scroll_top.saturating_sub(top))
-        .max(surface.height.min(4))
+        .max(
+            surface
+                .height
+                .min(if layout.pin_prompt_at_bottom { 6 } else { 4 }),
+        )
         .min(viewport_height.saturating_sub(1));
     let push_boundary = scroll_top + render_height + 1;
     let next = layout
@@ -1296,7 +1399,7 @@ mod pin_tests {
                 ],
             })],
             total_height: total_content_rows,
-            child_view: false,
+            pin_prompt_at_bottom: false,
         }
     }
 
@@ -1358,7 +1461,7 @@ mod pin_tests {
                 surfaces: vec![body, inserted, footer],
             })],
             total_height: 3,
-            child_view: false,
+            pin_prompt_at_bottom: false,
         };
 
         // assert
@@ -1444,7 +1547,7 @@ mod pin_tests {
                 ],
             })],
             total_height: content_height,
-            child_view: false,
+            pin_prompt_at_bottom: false,
         }
     }
 

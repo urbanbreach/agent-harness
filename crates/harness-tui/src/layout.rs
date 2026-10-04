@@ -246,7 +246,15 @@ impl FrameLayoutPlan {
         };
         session::project(app, &mut plan, layout, child_footer);
         if child {
-            subagent::project(&mut plan);
+            subagent::project(
+                &mut plan,
+                app.subagent_header().is_some_and(|header| {
+                    matches!(
+                        header.status,
+                        crate::app::ActivityStatus::Queued | crate::app::ActivityStatus::Streaming
+                    )
+                }),
+            );
         }
         match app.overlay_stack().top() {
             Some(

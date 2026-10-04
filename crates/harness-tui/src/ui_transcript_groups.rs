@@ -83,6 +83,7 @@ pub(super) fn scan(turn: &TranscriptTurnSection) -> Vec<TranscriptToolGroup> {
         let expanded = anchor.is_some_and(|tool| tool.group.expanded)
             || tools.iter().any(|tool| {
                 tool.header.visual_style == TranscriptToolCallVisualStyle::TaskInline
+                    && tool.header.subtitle.is_some()
                     && !tool.header.title.starts_with("Subagent started:")
                     && matches!(
                         tool.header.presentation.status,

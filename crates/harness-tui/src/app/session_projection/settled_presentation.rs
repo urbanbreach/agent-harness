@@ -233,6 +233,12 @@ impl SessionProjection {
         );
 
         merge_presentation_enrichment(&mut settled_activities, &presentation_enrichment);
+        restore_tool_timing(events, &mut settled_activities);
+        add_subagent_terminals(
+            &self.subagents,
+            &mut settled_activities,
+            &mut turn_terminals,
+        );
         self.restore_uncommitted_assistant_suffixes(
             &presentation_enrichment,
             &mut settled_activities,

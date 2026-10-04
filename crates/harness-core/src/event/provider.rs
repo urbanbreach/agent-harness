@@ -1,3 +1,4 @@
+pub use harness_providers::ProviderRetryFailure;
 use harness_providers::{CompletionUsage, ProviderErrorCategory};
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +19,8 @@ pub struct ProviderRequestRetryMetadata {
     pub max_attempts: u32,
     pub delay_ms: Option<u64>,
     pub category: Option<ProviderErrorCategory>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<harness_providers::ProviderRetryFailure>,
 }
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
