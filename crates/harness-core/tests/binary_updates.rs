@@ -65,7 +65,7 @@ fn downloaded_updates_verify_before_publication_and_replace_with_a_preserved_bac
     let mismatch = download_update_artifact(url.as_str(), Some(&"0".repeat(64)), &downloads);
     assert!(mismatch.is_unavailable());
     assert_eq!(std::fs::read_dir(&downloads)?.count(), 0);
-    let sha = format!("{:x}", Sha256::digest(b"new executable"));
+    let sha = hex::encode(Sha256::digest(b"new executable"));
     let result = download_update_artifact(url.as_str(), Some(&sha), &downloads);
     let BinaryUpdateDownload::Downloaded {
         artifact_path,

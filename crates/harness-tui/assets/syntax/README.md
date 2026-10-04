@@ -6,6 +6,6 @@ Apache-2.0 terms are preserved in [`LICENSE.upstream`](LICENSE.upstream).
 The palette files and display names have been renamed for Harness; color values
 are unchanged.
 
-Harness uses them with two-face 0.4.5 syntax definitions for code, commands, and
+Harness uses them with two-face 0.5.2 syntax definitions for code, commands, and
 diffs. The foreground mapping is in
 [`ui_syntax_highlight.rs`](../../src/ui_syntax_highlight.rs).

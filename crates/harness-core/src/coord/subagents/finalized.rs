@@ -122,7 +122,7 @@ impl Runtime {
             unavailable,
         };
         if !unrepresentable && !policy_modified && bytes.len() as u64 <= MAX_FINALIZED_STATE_BYTES {
-            reference.state.sha256 = format!("{:x}", Sha256::digest(&bytes));
+            reference.state.sha256 = hex::encode(Sha256::digest(&bytes));
             reference.byte_length = bytes.len() as u64;
             crate::store::create_private_dir(&self.info()?.artifacts_dir)?;
             crate::store::write_private_atomic(

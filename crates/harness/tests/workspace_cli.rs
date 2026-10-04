@@ -164,7 +164,6 @@ fn plugin_commands_persist_lifecycle_without_executing_package_entries(
 #[test]
 fn update_cli_checks_downloads_replaces_and_restarts_without_repeating_update_arguments(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use sha2::{Digest, Sha256};
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir()?;
     let source = root.path().join("next binary");
@@ -176,7 +175,7 @@ fn update_cli_checks_downloads_replaces_and_restarts_without_repeating_update_ar
         fs::Permissions::from_mode(0o755),
     )?;
     let url = reqwest::Url::from_file_path(&source).map_err(|()| "file URL")?;
-    let digest = format!("{:x}", Sha256::digest(script));
+    let digest = "08f96418a486847f6690e6653d26ab8c9a78e952e85495f1d6117393ed400ac5".to_owned();
     harness_core::binary_update::write_local_update_manifest(
         root.path(),
         &harness_core::binary_update::LocalUpdateManifest {

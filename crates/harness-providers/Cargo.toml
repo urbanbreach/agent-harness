@@ -12,7 +12,7 @@ categories.workspace = true
 [dependencies]
 async-stream = "0.3"
 async-trait = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 blake3 = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }

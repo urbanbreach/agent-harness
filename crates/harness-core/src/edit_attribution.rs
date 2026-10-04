@@ -180,7 +180,7 @@ fn normalize_path(path: &Path) -> String {
     }
 }
 fn sha256_hex(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 pub fn content_digest12(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex()[..12].into()
