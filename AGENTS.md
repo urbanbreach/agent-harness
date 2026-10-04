@@ -7,6 +7,11 @@ Backend map updated for the rewrite on 2026-09-27. Terminal ownership is unchang
 Rust 2021 workspace for an agent harness: a coordinator-centered runtime with CLI,
 provider, native-tool, terminal UI, and deterministic test-support crates.
 
+## SKILL USAGE
+
+- Always use the Ponytail skill on ultra setting for all code work
+- Always use the unslop skill for all text and prose work
+
 ## STRUCTURE
 
 ```text
