@@ -27,7 +27,7 @@ release that capacity. Cancellation waits for tool cleanup before shutdown.
 | `get_command_or_subagent_output`, `wait_commands_or_subagents` | `task` | Read output or wait for owned children and background commands. |
 | `kill_command_or_subagent` | `task` | Cancel an owned child or background command. |
 | `send_subagent_message` | `task` | Steer, queue a message for, or interject into an authorized agent. |
-| `batch` | `batch`, plus each nested call | Run up to 25 independent calls and return results in input order. |
+| `eval` | `eval` (asks by default), plus each nested call | Persistent code cells, parallel tool composition, structured output, and background execution. See [eval](eval.md). |
 | `todoread` | `task` | Read the current run's journaled todo list. |
 | `todowrite` | `task` and `todowrite` | Replace the validated todo list. |
 | `session_list`, `session_read`, `session_search`, `session_info` | Tool ID | Inspect existing session journals. See [session tools](sessions.md). |
@@ -56,18 +56,15 @@ removes attachments from the discarded conversation. File reads are limited to
 8 MiB. A request may contain up to 16 attachments and 16 MiB of attachment bytes.
 Provider limits can be stricter. PDFs and other binary downloads are retained as private artifacts; their contents are not extracted or sent as provider input.
 
-## Batches
+## Code execution
 
-Pass `tool_calls`, an array of objects containing `tool` and `parameters`.
-`args` and `arguments` are accepted aliases for `parameters`. Empty batches and
-batches larger than 25 calls fail validation. Nested batches are rejected.
-
-Each call keeps the parent's agent identity, its own permission check, and a
-journal link to the batch. A denied or failed call does not cancel its siblings.
-The result includes ordered `details`, plus `successful` and `failed` counts.
-Cancelling a batch cancels its child calls and waits for their cleanup.
-Images follow the same input order. A batch that exceeds the aggregate attachment
-limit returns an error after all children finish cleanup.
+Use `eval` to compose tools in persistent JavaScript or Python cells. Ruby and
+Julia are opt-in. Every nested tool call keeps the caller's identity, permission
+checks, concurrency limits, and journal lineage. `parallel()` preserves input
+order; use `Promise.allSettled()` when sibling failures should stay independent.
+Cancellation reaches child calls and waits for cleanup. `display()` returns
+images through the normal attachment path. See [eval](eval.md) for helpers,
+background cells, runtime requirements, and the migration example.
 
 ## Todos
 

@@ -1,0 +1,1058 @@
+{
+  "reference-node": [
+    {
+      "name": "cold-js",
+      "samples": 10,
+      "median_ms": 51.881204000000025,
+      "p95_ms": 65.47847200000001
+    },
+    {
+      "name": "cold-py",
+      "samples": 10,
+      "median_ms": 141.25888600000008,
+      "p95_ms": 154.90515600000003
+    },
+    {
+      "name": "js-transform",
+      "samples": 62,
+      "median_ms": 19.954566000000113,
+      "p95_ms": 35.155251000000135
+    },
+    {
+      "name": "py-transform",
+      "samples": 62,
+      "median_ms": 19.733722999999827,
+      "p95_ms": 20.44265500000006
+    },
+    {
+      "name": "js-pipeline",
+      "samples": 62,
+      "median_ms": 2.1197620000002644,
+      "p95_ms": 2.292895999999928
+    },
+    {
+      "name": "js-output",
+      "samples": 62,
+      "median_ms": 5.27900099999988,
+      "p95_ms": 7.853623999999854
+    },
+    {
+      "name": "js-tools",
+      "samples": 62,
+      "median_ms": 1.1732139999999163,
+      "p95_ms": 1.8423210000000836
+    },
+    {
+      "name": "py-tools",
+      "samples": 62,
+      "median_ms": 19.308990999999878,
+      "p95_ms": 21.957644000000073
+    }
+  ],
+  "reference-bun": [
+    {
+      "name": "cold-js",
+      "samples": 10,
+      "median_ms": 40.967659999999995,
+      "p95_ms": 52.63042399999999
+    },
+    {
+      "name": "cold-py",
+      "samples": 10,
+      "median_ms": 138.02527199999997,
+      "p95_ms": 164.933988
+    },
+    {
+      "name": "js-transform",
+      "samples": 62,
+      "median_ms": 8.90415199999984,
+      "p95_ms": 11.240019000000075
+    },
+    {
+      "name": "py-transform",
+      "samples": 62,
+      "median_ms": 19.992823000000044,
+      "p95_ms": 21.41303999999991
+    },
+    {
+      "name": "js-pipeline",
+      "samples": 62,
+      "median_ms": 3.662210999999843,
+      "p95_ms": 4.164116999999806
+    },
+    {
+      "name": "js-output",
+      "samples": 62,
+      "median_ms": 5.125876000000062,
+      "p95_ms": 8.777141000000029
+    },
+    {
+      "name": "js-tools",
+      "samples": 62,
+      "median_ms": 2.3869610000001558,
+      "p95_ms": 3.322501999999986
+    },
+    {
+      "name": "py-tools",
+      "samples": 62,
+      "median_ms": 19.96532900000011,
+      "p95_ms": 23.278819000000112
+    }
+  ],
+  "harness-native": [
+    {
+      "name": "cold-js",
+      "samples": 10,
+      "median_ms": 41.512002,
+      "p95_ms": 47.232152
+    },
+    {
+      "name": "cold-py",
+      "samples": 10,
+      "median_ms": 110.753515,
+      "p95_ms": 116.127717
+    },
+    {
+      "name": "js-transform",
+      "samples": 62,
+      "median_ms": 17.828317,
+      "p95_ms": 35.025403
+    },
+    {
+      "name": "py-transform",
+      "samples": 62,
+      "median_ms": 19.851041,
+      "p95_ms": 21.574924
+    },
+    {
+      "name": "js-pipeline",
+      "samples": 62,
+      "median_ms": 1.497311,
+      "p95_ms": 1.6719339999999998
+    },
+    {
+      "name": "js-output",
+      "samples": 62,
+      "median_ms": 2.8965140000000003,
+      "p95_ms": 3.188442
+    },
+    {
+      "name": "js-tools",
+      "samples": 62,
+      "median_ms": 2.1467069999999997,
+      "p95_ms": 3.1141699999999997
+    },
+    {
+      "name": "py-tools",
+      "samples": 62,
+      "median_ms": 5.3943460000000005,
+      "p95_ms": 6.398746
+    }
+  ],
+  "comparison": [
+    {
+      "name": "cold-js",
+      "native_ms": 41.512002,
+      "node_ratio": 0.8001356714851873,
+      "bun_ratio": 1.013287114763206
+    },
+    {
+      "name": "cold-py",
+      "native_ms": 110.753515,
+      "node_ratio": 0.784046357267747,
+      "bun_ratio": 0.8024147563353472
+    },
+    {
+      "name": "js-transform",
+      "native_ms": 17.828317,
+      "node_ratio": 0.8934454901199003,
+      "bun_ratio": 2.002247603140683
+    },
+    {
+      "name": "py-transform",
+      "native_ms": 19.851041,
+      "node_ratio": 1.0059450515242447,
+      "bun_ratio": 0.992908355163248
+    },
+    {
+      "name": "js-pipeline",
+      "native_ms": 1.497311,
+      "node_ratio": 0.7063580722740634,
+      "bun_ratio": 0.4088543778608235
+    },
+    {
+      "name": "js-output",
+      "native_ms": 2.8965140000000003,
+      "node_ratio": 0.548686010856991,
+      "bun_ratio": 0.5650768766158146
+    },
+    {
+      "name": "js-tools",
+      "native_ms": 2.1467069999999997,
+      "node_ratio": 1.829765925057281,
+      "bun_ratio": 0.8993473290932946
+    },
+    {
+      "name": "py-tools",
+      "native_ms": 5.3943460000000005,
+      "node_ratio": 0.27936964702091555,
+      "bun_ratio": 0.2701856803862321
+    }
+  ],
+  "performance": {
+    "node": {
+      "geometric_mean_ratio": 0.7603418690827359,
+      "pass": true
+    },
+    "bun": {
+      "geometric_mean_ratio": 0.7408461742509276,
+      "pass": true
+    }
+  },
+  "conformance": {
+    "harness-native": [
+      {
+        "name": "js-persist",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "js-retained",
+        "error": false,
+        "text": "43"
+      },
+      {
+        "name": "js-await",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "js-destructure",
+        "error": false,
+        "text": "[3,{\"right\":4}]"
+      },
+      {
+        "name": "js-module",
+        "error": false,
+        "text": "\"memo.md\""
+      },
+      {
+        "name": "js-pipeline",
+        "error": false,
+        "text": "[7,10,13]"
+      },
+      {
+        "name": "js-parallel-index",
+        "error": false,
+        "text": "[0,1,2]"
+      },
+      {
+        "name": "js-parallel-errors",
+        "error": false,
+        "text": "first"
+      },
+      {
+        "name": "js-write-read",
+        "error": false,
+        "text": "\"blue\""
+      },
+      {
+        "name": "js-blob",
+        "error": false,
+        "text": "\"blob body\""
+      },
+      {
+        "name": "js-schema",
+        "error": false,
+        "text": "\"perf_echo\""
+      },
+      {
+        "name": "js-tool",
+        "error": false,
+        "text": "\"ok\""
+      },
+      {
+        "name": "js-completion",
+        "error": false,
+        "text": "{\"answer\":42}"
+      },
+      {
+        "name": "js-agent",
+        "error": false,
+        "text": "{\"answer\":42}"
+      },
+      {
+        "name": "js-pool",
+        "error": false,
+        "text": "\"wp_0123456789abcdef0123456789abcdef\""
+      },
+      {
+        "name": "js-pool-method",
+        "error": false,
+        "text": "\"ok\""
+      },
+      {
+        "name": "js-log-phase",
+        "error": false,
+        "text": "phase body\ndone"
+      },
+      {
+        "name": "js-display-json",
+        "error": false,
+        "text": "display[1]:\n{\n  \"result\": 17\n}"
+      },
+      {
+        "name": "js-error",
+        "error": true,
+        "text": "Error: parity failure\n    at file:///tmp/.tmp2FMOdB/.harness-eval-cell.js:2:7\n    at file:///tmp/.tmp2FMOdB/.harness-eval-cell.js:3:3\n    at AsyncLocalStorage.run (ext:deno_node/async_hooks.ts:113:16)\n    at __harness_run (harness-eval-prelude.js:245:40)\n    at file:///tmp/.tmp2FMOdB/.harness-eval-cell.js:1:1"
+      },
+      {
+        "name": "js-after-error",
+        "error": false,
+        "text": "37"
+      },
+      {
+        "name": "py-persist",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "py-retained",
+        "error": false,
+        "text": "43"
+      },
+      {
+        "name": "py-await",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "py-pipeline",
+        "error": false,
+        "text": "[7, 10, 13]"
+      },
+      {
+        "name": "py-write-read",
+        "error": false,
+        "text": "'blue\\n'"
+      },
+      {
+        "name": "py-schema",
+        "error": false,
+        "text": "'perf_echo'"
+      },
+      {
+        "name": "py-tool",
+        "error": false,
+        "text": "'ok'"
+      },
+      {
+        "name": "py-completion",
+        "error": false,
+        "text": "{'answer': 42}"
+      },
+      {
+        "name": "py-agent",
+        "error": false,
+        "text": "{'answer': 42}"
+      },
+      {
+        "name": "py-pool",
+        "error": false,
+        "text": "'wp_0123456789abcdef0123456789abcdef'"
+      },
+      {
+        "name": "py-pool-method",
+        "error": false,
+        "text": "'ok'"
+      },
+      {
+        "name": "py-magic",
+        "error": false,
+        "text": "magic-output['magic-output']"
+      },
+      {
+        "name": "py-display-json",
+        "error": false,
+        "text": "display[1]:\n{\n  \"result\": 17\n}"
+      },
+      {
+        "name": "py-error",
+        "error": true,
+        "text": "RuntimeError: parity failure"
+      },
+      {
+        "name": "py-after-error",
+        "error": false,
+        "text": "37"
+      },
+      {
+        "name": "rb-persist",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "rb-retained",
+        "error": false,
+        "text": "43"
+      },
+      {
+        "name": "rb-pipeline",
+        "error": false,
+        "text": "[7,10,13]"
+      },
+      {
+        "name": "rb-tool",
+        "error": false,
+        "text": "\"ok\""
+      },
+      {
+        "name": "rb-agent",
+        "error": false,
+        "text": "{\"answer\":42}"
+      },
+      {
+        "name": "rb-pool",
+        "error": false,
+        "text": "\"wp_0123456789abcdef0123456789abcdef\""
+      },
+      {
+        "name": "rb-error",
+        "error": true,
+        "text": "RuntimeError: parity failure"
+      },
+      {
+        "name": "rb-after-error",
+        "error": false,
+        "text": "37"
+      },
+      {
+        "name": "jl-persist",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "jl-retained",
+        "error": false,
+        "text": "43"
+      },
+      {
+        "name": "jl-pipeline",
+        "error": false,
+        "text": "[7,10,13]"
+      },
+      {
+        "name": "jl-tool",
+        "error": false,
+        "text": "\"ok\""
+      },
+      {
+        "name": "jl-agent",
+        "error": false,
+        "text": "{\"answer\":42}"
+      },
+      {
+        "name": "jl-pool",
+        "error": false,
+        "text": "\"wp_0123456789abcdef0123456789abcdef\""
+      },
+      {
+        "name": "jl-error",
+        "error": true,
+        "text": "parity failure"
+      },
+      {
+        "name": "jl-after-error",
+        "error": false,
+        "text": "37"
+      },
+      {
+        "name": "rb-declaration",
+        "error": false,
+        "text": "(no output)"
+      },
+      {
+        "name": "jl-declaration",
+        "error": false,
+        "text": "(no output)"
+      },
+      {
+        "name": "js-array-elision",
+        "error": false,
+        "text": "[0,2]"
+      }
+    ],
+    "reference-node": [
+      {
+        "name": "js-persist",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "js-retained",
+        "error": false,
+        "text": "43"
+      },
+      {
+        "name": "js-await",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "js-destructure",
+        "error": false,
+        "text": "[3,{\"right\":4}]"
+      },
+      {
+        "name": "js-module",
+        "error": false,
+        "text": "\"memo.md\""
+      },
+      {
+        "name": "js-pipeline",
+        "error": false,
+        "text": "[7,10,13]"
+      },
+      {
+        "name": "js-parallel-index",
+        "error": false,
+        "text": "[0,1,2]"
+      },
+      {
+        "name": "js-parallel-errors",
+        "error": false,
+        "text": "first"
+      },
+      {
+        "name": "js-write-read",
+        "error": false,
+        "text": "\"blue\""
+      },
+      {
+        "name": "js-blob",
+        "error": false,
+        "text": "\"blob body\""
+      },
+      {
+        "name": "js-schema",
+        "error": false,
+        "text": "\"perf_echo\""
+      },
+      {
+        "name": "js-tool",
+        "error": false,
+        "text": "\"ok\""
+      },
+      {
+        "name": "js-completion",
+        "error": false,
+        "text": "{\"answer\":42}"
+      },
+      {
+        "name": "js-agent",
+        "error": false,
+        "text": "{\"answer\":42}"
+      },
+      {
+        "name": "js-pool",
+        "error": false,
+        "text": "\"wp_0123456789abcdef0123456789abcdef\""
+      },
+      {
+        "name": "js-pool-method",
+        "error": false,
+        "text": "\"ok\""
+      },
+      {
+        "name": "js-log-phase",
+        "error": false,
+        "text": "phase body\ndone"
+      },
+      {
+        "name": "js-display-json",
+        "error": false,
+        "text": "display[1]:\n{\n  \"result\": 17\n}"
+      },
+      {
+        "name": "js-error",
+        "error": true,
+        "text": "parity failure"
+      },
+      {
+        "name": "js-after-error",
+        "error": false,
+        "text": "37"
+      },
+      {
+        "name": "py-persist",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "py-retained",
+        "error": false,
+        "text": "43"
+      },
+      {
+        "name": "py-await",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "py-pipeline",
+        "error": false,
+        "text": "[7, 10, 13]"
+      },
+      {
+        "name": "py-write-read",
+        "error": false,
+        "text": "'blue\\n'"
+      },
+      {
+        "name": "py-schema",
+        "error": false,
+        "text": "'perf_echo'"
+      },
+      {
+        "name": "py-tool",
+        "error": false,
+        "text": "'ok'"
+      },
+      {
+        "name": "py-completion",
+        "error": false,
+        "text": "{'answer': 42}"
+      },
+      {
+        "name": "py-agent",
+        "error": false,
+        "text": "{'answer': 42}"
+      },
+      {
+        "name": "py-pool",
+        "error": false,
+        "text": "'wp_0123456789abcdef0123456789abcdef'"
+      },
+      {
+        "name": "py-pool-method",
+        "error": false,
+        "text": "'ok'"
+      },
+      {
+        "name": "py-magic",
+        "error": false,
+        "text": "magic-output['magic-output']"
+      },
+      {
+        "name": "py-display-json",
+        "error": false,
+        "text": "display[1]:\n{\n  \"result\": 17\n}"
+      },
+      {
+        "name": "py-error",
+        "error": true,
+        "text": "parity failure"
+      },
+      {
+        "name": "py-after-error",
+        "error": false,
+        "text": "37"
+      },
+      {
+        "name": "rb-persist",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "rb-retained",
+        "error": false,
+        "text": "43"
+      },
+      {
+        "name": "rb-pipeline",
+        "error": false,
+        "text": "[7,10,13]"
+      },
+      {
+        "name": "rb-tool",
+        "error": false,
+        "text": "\"ok\""
+      },
+      {
+        "name": "rb-agent",
+        "error": false,
+        "text": "{\"answer\":42}"
+      },
+      {
+        "name": "rb-pool",
+        "error": false,
+        "text": "\"wp_0123456789abcdef0123456789abcdef\""
+      },
+      {
+        "name": "rb-error",
+        "error": true,
+        "text": "parity failure"
+      },
+      {
+        "name": "rb-after-error",
+        "error": false,
+        "text": "37"
+      },
+      {
+        "name": "jl-persist",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "jl-retained",
+        "error": false,
+        "text": "43"
+      },
+      {
+        "name": "jl-pipeline",
+        "error": false,
+        "text": "[7,10,13]"
+      },
+      {
+        "name": "jl-tool",
+        "error": false,
+        "text": "\"ok\""
+      },
+      {
+        "name": "jl-agent",
+        "error": false,
+        "text": "{\"answer\":42}"
+      },
+      {
+        "name": "jl-pool",
+        "error": false,
+        "text": "\"wp_0123456789abcdef0123456789abcdef\""
+      },
+      {
+        "name": "jl-error",
+        "error": true,
+        "text": "parity failure"
+      },
+      {
+        "name": "jl-after-error",
+        "error": false,
+        "text": "37"
+      },
+      {
+        "name": "rb-declaration",
+        "error": false,
+        "text": "(no output)"
+      },
+      {
+        "name": "jl-declaration",
+        "error": false,
+        "text": "(no output)"
+      },
+      {
+        "name": "js-array-elision",
+        "error": false,
+        "text": "[0,2]"
+      }
+    ],
+    "reference-bun": [
+      {
+        "name": "js-persist",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "js-retained",
+        "error": false,
+        "text": "43"
+      },
+      {
+        "name": "js-await",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "js-destructure",
+        "error": false,
+        "text": "[3,{\"right\":4}]"
+      },
+      {
+        "name": "js-module",
+        "error": false,
+        "text": "\"memo.md\""
+      },
+      {
+        "name": "js-pipeline",
+        "error": false,
+        "text": "[7,10,13]"
+      },
+      {
+        "name": "js-parallel-index",
+        "error": false,
+        "text": "[0,1,2]"
+      },
+      {
+        "name": "js-parallel-errors",
+        "error": false,
+        "text": "first"
+      },
+      {
+        "name": "js-write-read",
+        "error": false,
+        "text": "\"blue\""
+      },
+      {
+        "name": "js-blob",
+        "error": false,
+        "text": "\"blob body\""
+      },
+      {
+        "name": "js-schema",
+        "error": false,
+        "text": "\"perf_echo\""
+      },
+      {
+        "name": "js-tool",
+        "error": false,
+        "text": "\"ok\""
+      },
+      {
+        "name": "js-completion",
+        "error": false,
+        "text": "{\"answer\":42}"
+      },
+      {
+        "name": "js-agent",
+        "error": false,
+        "text": "{\"answer\":42}"
+      },
+      {
+        "name": "js-pool",
+        "error": false,
+        "text": "\"wp_0123456789abcdef0123456789abcdef\""
+      },
+      {
+        "name": "js-pool-method",
+        "error": false,
+        "text": "\"ok\""
+      },
+      {
+        "name": "js-log-phase",
+        "error": false,
+        "text": "phase body\ndone"
+      },
+      {
+        "name": "js-display-json",
+        "error": false,
+        "text": "display[1]:\n{\n  \"result\": 17\n}"
+      },
+      {
+        "name": "js-error",
+        "error": true,
+        "text": "parity failure"
+      },
+      {
+        "name": "js-after-error",
+        "error": false,
+        "text": "37"
+      },
+      {
+        "name": "py-persist",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "py-retained",
+        "error": false,
+        "text": "43"
+      },
+      {
+        "name": "py-await",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "py-pipeline",
+        "error": false,
+        "text": "[7, 10, 13]"
+      },
+      {
+        "name": "py-write-read",
+        "error": false,
+        "text": "'blue\\n'"
+      },
+      {
+        "name": "py-schema",
+        "error": false,
+        "text": "'perf_echo'"
+      },
+      {
+        "name": "py-tool",
+        "error": false,
+        "text": "'ok'"
+      },
+      {
+        "name": "py-completion",
+        "error": false,
+        "text": "{'answer': 42}"
+      },
+      {
+        "name": "py-agent",
+        "error": false,
+        "text": "{'answer': 42}"
+      },
+      {
+        "name": "py-pool",
+        "error": false,
+        "text": "'wp_0123456789abcdef0123456789abcdef'"
+      },
+      {
+        "name": "py-pool-method",
+        "error": false,
+        "text": "'ok'"
+      },
+      {
+        "name": "py-magic",
+        "error": false,
+        "text": "magic-output['magic-output']"
+      },
+      {
+        "name": "py-display-json",
+        "error": false,
+        "text": "display[1]:\n{\n  \"result\": 17\n}"
+      },
+      {
+        "name": "py-error",
+        "error": true,
+        "text": "parity failure"
+      },
+      {
+        "name": "py-after-error",
+        "error": false,
+        "text": "37"
+      },
+      {
+        "name": "rb-persist",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "rb-retained",
+        "error": false,
+        "text": "43"
+      },
+      {
+        "name": "rb-pipeline",
+        "error": false,
+        "text": "[7,10,13]"
+      },
+      {
+        "name": "rb-tool",
+        "error": false,
+        "text": "\"ok\""
+      },
+      {
+        "name": "rb-agent",
+        "error": false,
+        "text": "{\"answer\":42}"
+      },
+      {
+        "name": "rb-pool",
+        "error": false,
+        "text": "\"wp_0123456789abcdef0123456789abcdef\""
+      },
+      {
+        "name": "rb-error",
+        "error": true,
+        "text": "parity failure"
+      },
+      {
+        "name": "rb-after-error",
+        "error": false,
+        "text": "37"
+      },
+      {
+        "name": "jl-persist",
+        "error": false,
+        "text": "42"
+      },
+      {
+        "name": "jl-retained",
+        "error": false,
+        "text": "43"
+      },
+      {
+        "name": "jl-pipeline",
+        "error": false,
+        "text": "[7,10,13]"
+      },
+      {
+        "name": "jl-tool",
+        "error": false,
+        "text": "\"ok\""
+      },
+      {
+        "name": "jl-agent",
+        "error": false,
+        "text": "{\"answer\":42}"
+      },
+      {
+        "name": "jl-pool",
+        "error": false,
+        "text": "\"wp_0123456789abcdef0123456789abcdef\""
+      },
+      {
+        "name": "jl-error",
+        "error": true,
+        "text": "parity failure"
+      },
+      {
+        "name": "jl-after-error",
+        "error": false,
+        "text": "37"
+      },
+      {
+        "name": "rb-declaration",
+        "error": false,
+        "text": "(no output)"
+      },
+      {
+        "name": "jl-declaration",
+        "error": false,
+        "text": "(no output)"
+      },
+      {
+        "name": "js-array-elision",
+        "error": false,
+        "text": "[0,2]"
+      }
+    ],
+    "differences": []
+  },
+  "provenance": {
+    "node": "v26.7.0",
+    "bun": "1.4.2",
+    "platform": "linux",
+    "arch": "x64",
+    "reference_commit": "c196bc03276ce281e7d808959d6da55e177728ab",
+    "source": {
+      "algorithm": "sha256(path\\0content\\0)",
+      "hash": "5dc819f4a8c680ad8d2a8a72bbd34fb83cbbbac572e9a165428f87e292f19bf5",
+      "files": 6288,
+      "head": "5592fd2185a07edaae887f467b0709b2c4fc5123",
+      "headTree": "a3cf54eff660bc35a0284ec20e73c3ede1a3b4eb",
+      "dirty": true
+    },
+    "cases": {
+      "path": "scripts/qa/fixtures/eval-performance.json",
+      "bytes": 735,
+      "sha256": "870f58fa648f25d77cbcff1e1c44b8daafc031c9ab45c4bff30be36332cea92e"
+    },
+    "native_worker": {
+      "path": "target/release/harness-eval-worker",
+      "bytes": 124179800,
+      "sha256": "32a2cedc5c6d92927e5ee7348d21fa60cf1589611bd7a7e3ecc7447e3f485249"
+    },
+    "method": "ABC-CBA order. Each process takes 31 warm samples after 3 warmups per case (62 combined), plus five cold/reset samples per language (10 combined). Reference sources run on Node and Bun; the native Rust Session uses its release V8 worker. All use the same fixture and immediate host callback, including the public eval lifecycle and output retention. Harness coordinator overhead and full reference application overhead are outside this engine comparison.",
+    "source_unchanged": true
+  }
+}
