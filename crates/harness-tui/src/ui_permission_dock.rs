@@ -378,17 +378,18 @@ fn render_question_permission_dock(
     }
 
     if geometry.options.height > 0 && geometry.options.width > 0 {
-        if focused && !submission_pending {
-            if let Some(selected_row) = question_selected_visual_area(
+        if focused
+            && !submission_pending
+            && let Some(selected_row) = question_selected_visual_area(
                 geometry.options,
                 measure.scroll_offset,
                 measure.selected_range,
-            ) {
-                frame.render_widget(
-                    Block::default().style(Style::default().bg(theme.question_prompt.selected)),
-                    selected_row,
-                );
-            }
+            )
+        {
+            frame.render_widget(
+                Block::default().style(Style::default().bg(theme.question_prompt.selected)),
+                selected_row,
+            );
         }
         let hovered_visual_range = app
             .question_prompt_hovered(&permission.permission_id)
@@ -421,15 +422,12 @@ fn render_question_permission_dock(
     if geometry.sticky.height > 0 {
         render_question_sticky_background(frame, app, area, permission, theme, &geometry, &measure);
         frame.render_widget(Paragraph::new(sticky_body), geometry.sticky);
-        if focused && !submission_pending {
-            if let Some((row, column)) = measure.editor_cursor {
-                if row < geometry.sticky.height {
-                    frame.set_cursor_position((
-                        geometry.sticky.x + 8 + column,
-                        geometry.sticky.y + row,
-                    ));
-                }
-            }
+        if focused
+            && !submission_pending
+            && let Some((row, column)) = measure.editor_cursor
+            && row < geometry.sticky.height
+        {
+            frame.set_cursor_position((geometry.sticky.x + 8 + column, geometry.sticky.y + row));
         }
     }
 

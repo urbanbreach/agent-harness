@@ -164,57 +164,55 @@ impl SubagentPresentation {
                 if accepted && data.transition == SubagentTransitionKind::Spawned =>
             {
                 self.progress.remove(&data.child_id.0);
-                if let Some(row) = self.rows.get_mut(&data.child_id.0) {
-                    if self.history.records.get(&row.id).is_some_and(|record| {
+                if let Some(row) = self.rows.get_mut(&data.child_id.0)
+                    && self.history.records.get(&row.id).is_some_and(|record| {
                         record.generation == data.generation
                             && record.lifecycle.current_attempt_id() == data.attempt_id.as_deref()
-                    }) {
-                        row.started_ms = event.mono_ms;
-                        row.first_seq = event.seq;
-                        row.background = data.metadata.notification_route.background;
-                        row.resumed |= data.generation > 1;
-                    }
+                    })
+                {
+                    row.started_ms = event.mono_ms;
+                    row.first_seq = event.seq;
+                    row.background = data.metadata.notification_route.background;
+                    row.resumed |= data.generation > 1;
                 }
             }
             EventV1::BackgroundTaskNotification(data) => {
                 if let Some(attempt) = self.attempts.values_mut().find(|attempt| {
                     attempt.row.id == data.child_session_id.as_str()
                         && attempt.request_id.as_deref() == Some(data.child_request_id.as_str())
-                }) {
-                    if data.status == harness_core::event::BackgroundTaskNotificationStatus::Failed
-                    {
-                        attempt.error = (!data.summary.is_empty()).then(|| data.summary.clone());
-                    }
+                }) && data.status
+                    == harness_core::event::BackgroundTaskNotificationStatus::Failed
+                {
+                    attempt.error = (!data.summary.is_empty()).then(|| data.summary.clone());
                 }
             }
             _ => {}
         }
-        if let EventV1::SubagentTransition(data) = &event.payload {
-            if let Some((row, record)) = self.rows.get(&data.child_id.0).zip(
+        if let EventV1::SubagentTransition(data) = &event.payload
+            && let Some((row, record)) = self.rows.get(&data.child_id.0).zip(
                 self.history.records.get(&data.child_id.0).filter(|record| {
                     accepted
                         && record.generation == data.generation
                         && record.lifecycle.has_current_attempt()
                 }),
-            ) {
-                let attempt = self
-                    .attempts
-                    .entry((row.id.clone(), record.generation))
-                    .or_insert_with(|| SubagentAttempt {
-                        row: row.clone(),
-                        first_seq: event.seq,
-                        finished_seq: None,
-                        outcome: None,
-                        duration_ms: None,
-                        request_id: record.lifecycle.current_attempt_id().map(str::to_owned),
-                        error: None,
-                    });
-                if record.lifecycle.is_finished() && record.outcome.is_some() {
-                    attempt.finished_seq.get_or_insert(event.seq);
-                    attempt.outcome = record.outcome;
-                    attempt.duration_ms =
-                        record.accounting.map(|accounting| accounting.duration_ms);
-                }
+            )
+        {
+            let attempt = self
+                .attempts
+                .entry((row.id.clone(), record.generation))
+                .or_insert_with(|| SubagentAttempt {
+                    row: row.clone(),
+                    first_seq: event.seq,
+                    finished_seq: None,
+                    outcome: None,
+                    duration_ms: None,
+                    request_id: record.lifecycle.current_attempt_id().map(str::to_owned),
+                    error: None,
+                });
+            if record.lifecycle.is_finished() && record.outcome.is_some() {
+                attempt.finished_seq.get_or_insert(event.seq);
+                attempt.outcome = record.outcome;
+                attempt.duration_ms = record.accounting.map(|accounting| accounting.duration_ms);
             }
         }
     }

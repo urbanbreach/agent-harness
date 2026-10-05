@@ -8,7 +8,7 @@ members = [
     "crates/harness-tui",
     "crates/harness-testkit",
 ]
-resolver = "2"
+resolver = "3"
 exclude = ["vendor/filedescriptor", "vendor/crossterm"]
 
 [patch.crates-io]
@@ -18,7 +18,7 @@ filedescriptor = { path = "vendor/filedescriptor" }
 crossterm = { path = "vendor/crossterm" }
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 license = "MIT"
 version = "0.1.0"
 repository = "https://github.com/urbanbreach/agent-harness"
@@ -199,8 +199,6 @@ unnecessary_wraps = "allow"
 option_map_unit_fn = "allow"
 # allow: unnecessary_literal_bound — 14+ instances; literal bounds are stylistic
 unnecessary_literal_bound = "allow"
-# allow: incompatible_msrv — 2+ instances; MSRV compatibility is a separate effort
-incompatible_msrv = "allow"
 # allow: implicit_clone — 1+ instance; to_string on deref is idiomatic
 implicit_clone = "allow"
 # allow: format_push_string — 19+ instances; format! push is idiomatic

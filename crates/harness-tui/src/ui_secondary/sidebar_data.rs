@@ -68,10 +68,9 @@ fn operator_sidebar_session_title(app: &AppState) -> Option<OperatorRailTitle> {
             Some(sanitize_operator_sidebar_line(&data.title))
         }
         _ => None,
-    }) {
-        if !title.is_empty() {
-            return Some(OperatorRailTitle::Generated(title));
-        }
+    }) && !title.is_empty()
+    {
+        return Some(OperatorRailTitle::Generated(title));
     }
 
     let user_title = app
@@ -202,13 +201,13 @@ fn operator_sidebar_subagent_groups(app: &AppState) -> Vec<SubagentRailGroup> {
             continue;
         };
         let status = SubagentRailStatus::from_orchestration_state(row.state);
-        if row.parent_tool_call_id.is_none() && status.is_active() {
-            if let Some(count) = unlinked_active_tool_counts.get_mut(&agent_name) {
-                if *count > 0 {
-                    *count -= 1;
-                    continue;
-                }
-            }
+        if row.parent_tool_call_id.is_none()
+            && status.is_active()
+            && let Some(count) = unlinked_active_tool_counts.get_mut(&agent_name)
+            && *count > 0
+        {
+            *count -= 1;
+            continue;
         }
         let item = SubagentRailItem {
             description: String::new(),

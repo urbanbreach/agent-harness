@@ -93,10 +93,10 @@ impl Runtime {
                     .then(|| Arc::new(crate::tool::QuestionTool) as Arc<dyn Tool>)
             })
             .ok_or_else(|| CoordinatorError::UnknownTool(tool_id.clone()))?;
-        if tool_id == "skill" {
-            if let Some(agent) = actor.agent_id.as_deref() {
-                self.ensure_skill_startup(agent)?;
-            }
+        if tool_id == "skill"
+            && let Some(agent) = actor.agent_id.as_deref()
+        {
+            self.ensure_skill_startup(agent)?;
         }
         let profile = actor
             .agent_id

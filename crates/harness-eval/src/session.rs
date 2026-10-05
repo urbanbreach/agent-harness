@@ -134,10 +134,11 @@ impl Session {
                     cell.language
                 )
                 .into();
-                if args["action"] == "stop" && status == "cancelled" {
-                    if let Some(details) = result["details"].as_object_mut() {
-                        details.remove("isError");
-                    }
+                if args["action"] == "stop"
+                    && status == "cancelled"
+                    && let Some(details) = result["details"].as_object_mut()
+                {
+                    details.remove("isError");
                 }
                 events
                     .send(json!({"type":"result","id":id,"result":result}))
@@ -342,10 +343,10 @@ impl Inner {
         {
             let mut state = cell.state.lock().await;
             state.busy -= 1;
-            if state.busy == 0 {
-                if let Some(start) = state.blocked_since.take() {
-                    state.blocked_time += start.elapsed();
-                }
+            if state.busy == 0
+                && let Some(start) = state.blocked_since.take()
+            {
+                state.blocked_time += start.elapsed();
             }
         }
         self.pending.lock().await.remove(&id);
@@ -355,15 +356,10 @@ impl Inner {
     pub async fn retire_calls(&self, cell: &Cell) {
         let calls = {
             let mut pending = self.pending.lock().await;
-            let ids = pending
-                .iter()
-                .filter(|(_, (parent, _))| parent == &cell.id)
-                .map(|(id, _)| id.clone())
-                .collect::<Vec<_>>();
-            for id in &ids {
-                pending.remove(id);
-            }
-            ids
+            pending
+                .extract_if(.., |_, (parent, _)| parent == &cell.id)
+                .map(|(id, _)| id)
+                .collect::<Vec<_>>()
         };
         for id in calls {
             let _ = cell

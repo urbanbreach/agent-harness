@@ -71,10 +71,10 @@ pub(crate) fn encode(req: &CompletionRequest, protocol: Protocol) -> Result<Valu
         if let Some(thinking) = &req.thinking {
             body["thinking"] = thinking.clone();
         }
-    } else if req.context.cache_retention != CacheRetention::None {
-        if let Some(session) = &req.context.session_id {
-            body["prompt_cache_key"] = session.clone().into();
-        }
+    } else if req.context.cache_retention != CacheRetention::None
+        && let Some(session) = &req.context.session_id
+    {
+        body["prompt_cache_key"] = session.clone().into();
     }
     add_tools(&mut body, req, protocol)?;
     Ok(body)

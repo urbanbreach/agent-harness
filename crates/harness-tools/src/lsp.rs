@@ -190,17 +190,10 @@ impl Tool for LspTool {
         #[cfg(unix)]
         {
             let mut sessions = self.sessions.lock().await;
-            let keys: Vec<_> = sessions
-                .keys()
-                .filter(|(run, _)| run == run_id)
-                .cloned()
-                .collect();
             let mut result = Ok(());
-            for key in keys {
-                if let Some(mut session) = sessions.remove(&key) {
-                    if let Err(error) = session.close().await {
-                        result = Err(error);
-                    }
+            for (_, mut session) in sessions.extract_if(.., |(run, _), _| run == run_id) {
+                if let Err(error) = session.close().await {
+                    result = Err(error);
                 }
             }
             return result;

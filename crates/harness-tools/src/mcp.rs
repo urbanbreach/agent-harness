@@ -156,13 +156,13 @@ impl Tool for McpTool {
                 .unwrap_or("*")
                 .into(),
         )];
-        if self.method == "tools/call" {
-            if let Some(name) = args["tool"].as_str() {
-                requests.push((
-                    catalog::tool_id(&self.server.name, name),
-                    args.get("arguments").unwrap_or(&Value::Null).to_string(),
-                ));
-            }
+        if self.method == "tools/call"
+            && let Some(name) = args["tool"].as_str()
+        {
+            requests.push((
+                catalog::tool_id(&self.server.name, name),
+                args.get("arguments").unwrap_or(&Value::Null).to_string(),
+            ));
         }
         requests
     }
@@ -296,10 +296,10 @@ impl McpTool {
                 )));
             }
         }
-        if self.method == "tools/call" {
-            if let Some(tool) = args.remove("tool") {
-                args.insert("name".into(), tool);
-            }
+        if self.method == "tools/call"
+            && let Some(tool) = args.remove("tool")
+        {
+            args.insert("name".into(), tool);
         }
         if let Some(arguments) = args.get("arguments") {
             let object = arguments.as_object().ok_or_else(|| {

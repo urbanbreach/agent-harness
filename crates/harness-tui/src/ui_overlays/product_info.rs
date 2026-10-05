@@ -25,25 +25,25 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, theme: &Theme, root: Rec
     );
     let entries = app.product_info.matches();
     for region in &model.regions {
-        if let ModalTarget::Row(index) = region.target {
-            if let Some((label, _)) = entries.get(index) {
-                let row = modal_list_row(
-                    theme,
-                    ModalListRowSpec {
-                        area: region.area,
-                        state: ModalListRowState {
-                            selected: index == app.product_info.selected,
-                            hovered: app.modal_target_hovered(model.key, region.target),
-                            dimmed: false,
-                        },
-                        max_scroll: model.max_scroll,
+        if let ModalTarget::Row(index) = region.target
+            && let Some((label, _)) = entries.get(index)
+        {
+            let row = modal_list_row(
+                theme,
+                ModalListRowSpec {
+                    area: region.area,
+                    state: ModalListRowState {
+                        selected: index == app.product_info.selected,
+                        hovered: app.modal_target_hovered(model.key, region.target),
+                        dimmed: false,
                     },
-                );
-                frame.render_widget(
-                    Paragraph::new(crate::ui::safe_product_text(label)).style(row.style),
-                    row.layout.content,
-                );
-            }
+                    max_scroll: model.max_scroll,
+                },
+            );
+            frame.render_widget(
+                Paragraph::new(crate::ui::safe_product_text(label)).style(row.style),
+                row.layout.content,
+            );
         }
     }
     let preview = preview_rows(model.popup);

@@ -179,16 +179,15 @@ fn apply_update(
             {
                 app.set_status_banner(None);
             }
-            if let harness_core::event::RuntimeEvent::Live(live) = event.as_ref() {
-                if let harness_core::event::LiveEventV1::RuntimeWarning { message } = &live.payload
-                {
-                    app.show_toast(message.clone(), ToastVariant::Info);
-                }
+            if let harness_core::event::RuntimeEvent::Live(live) = event.as_ref()
+                && let harness_core::event::LiveEventV1::RuntimeWarning { message } = &live.payload
+            {
+                app.show_toast(message.clone(), ToastVariant::Info);
             }
-            if let harness_core::event::RuntimeEvent::Durable(durable) = event.as_ref() {
-                if !app.should_suppress_permission_event(durable) {
-                    experience.on_event(durable);
-                }
+            if let harness_core::event::RuntimeEvent::Durable(durable) = event.as_ref()
+                && !app.should_suppress_permission_event(durable)
+            {
+                experience.on_event(durable);
             }
             app.ingest_runtime_event(*event);
             experience.sync_activity(app);

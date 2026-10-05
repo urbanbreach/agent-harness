@@ -337,11 +337,11 @@ impl Runtime {
                 task_scope: None,
             })
         };
-        if let Some(command) = self.commands.get_mut(&id) {
-            if let Some(mut file) = command.output.take() {
-                file.flush()?;
-                file.sync_data()?;
-            }
+        if let Some(command) = self.commands.get_mut(&id)
+            && let Some(mut file) = command.output.take()
+        {
+            file.flush()?;
+            file.sync_data()?;
         }
         // Terminal waiters observe only a durably accepted terminal transition.
         self.emit_applied(job.actor, Some(id.clone()), payload, move |runtime, _| {

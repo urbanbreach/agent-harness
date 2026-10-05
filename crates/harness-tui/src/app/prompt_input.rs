@@ -354,10 +354,9 @@ impl AppState {
         if self.status_dashboard_is_active() {
             if let Some(dashboard) = self.dashboard.as_mut().filter(|dashboard| {
                 dashboard.focus() == crate::dashboard_integration::DashboardPane::Reply
-            }) {
-                if let Err(error) = dashboard.paste_reply(text) {
-                    self.status_banner = Some(error.to_string());
-                }
+            }) && let Err(error) = dashboard.paste_reply(text)
+            {
+                self.status_banner = Some(error.to_string());
             }
             return;
         }
@@ -581,11 +580,12 @@ impl AppState {
             return;
         }
 
-        if !self.replay_mode && !self.composer_disabled() {
-            if let Some(command) = self.typed_slash_command() {
-                self.execute_slash_command(command, self.slash_draft_snapshot.clone());
-                return;
-            }
+        if !self.replay_mode
+            && !self.composer_disabled()
+            && let Some(command) = self.typed_slash_command()
+        {
+            self.execute_slash_command(command, self.slash_draft_snapshot.clone());
+            return;
         }
 
         if self.composer.prompt_buffer.trim().is_empty()

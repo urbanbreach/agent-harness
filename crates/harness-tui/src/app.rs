@@ -1192,10 +1192,10 @@ impl AppState {
             .map_err(|error| error.to_string())?;
         if let (Some(run_id), Some(outline)) = (self.run_id(), self.transcript_outline.as_ref()) {
             let key = crate::dashboard::SelectionKey::new(run_id);
-            if peek.replace_blocks(&key, &self.transcript_blocks()).is_ok() {
-                if let Some(layout) = outline.layout() {
-                    let _ = peek.set_layout(&key, layout);
-                }
+            if peek.replace_blocks(&key, &self.transcript_blocks()).is_ok()
+                && let Some(layout) = outline.layout()
+            {
+                let _ = peek.set_layout(&key, layout);
             }
         }
         if let Some(key) = selected.as_ref() {
@@ -1847,10 +1847,10 @@ impl AppState {
             self.reconcile_interrupt_request();
             self.retarget_local_transcript_page_flip(&event);
         }
-        if page_flip_target.is_some() {
-            if let Some(activity_first_seq) = self.transcript_page_flip_activity_first_seq(&event) {
-                self.begin_transcript_page_flip(activity_first_seq);
-            }
+        if page_flip_target.is_some()
+            && let Some(activity_first_seq) = self.transcript_page_flip_activity_first_seq(&event)
+        {
+            self.begin_transcript_page_flip(activity_first_seq);
         }
         self.update_composer_queue_lifecycle(&event);
         self.seed_patch_file_expansions(&event);
@@ -3429,21 +3429,21 @@ impl AppState {
     ) {
         // FS plan summary already bound via probe_os_sandbox_product when workspace_root was set.
         // Re-probe with roots if seed was called with workspace only after early sandbox bind.
-        if self.sandbox_fs_plan_summary().is_none() {
-            if let Some(ref workspace) = probe_root {
-                let harness_state_dir = self
-                    .session_path
-                    .clone()
-                    .unwrap_or_else(|| workspace.join(".agent-harness"));
-                let roots = harness_core::sandbox::SandboxPathRoots {
-                    workspace_root: workspace.clone(),
-                    harness_state_dir,
-                    temp_dir: std::env::temp_dir(),
-                };
-                let sandbox = harness_core::sandbox::probe_os_sandbox_product(Some(&roots));
-                if let Some(summary) = sandbox.last_fs_plan {
-                    self.set_sandbox_fs_plan_summary(Some(summary));
-                }
+        if self.sandbox_fs_plan_summary().is_none()
+            && let Some(ref workspace) = probe_root
+        {
+            let harness_state_dir = self
+                .session_path
+                .clone()
+                .unwrap_or_else(|| workspace.join(".agent-harness"));
+            let roots = harness_core::sandbox::SandboxPathRoots {
+                workspace_root: workspace.clone(),
+                harness_state_dir,
+                temp_dir: std::env::temp_dir(),
+            };
+            let sandbox = harness_core::sandbox::probe_os_sandbox_product(Some(&roots));
+            if let Some(summary) = sandbox.last_fs_plan {
+                self.set_sandbox_fs_plan_summary(Some(summary));
             }
         }
 

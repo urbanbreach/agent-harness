@@ -304,7 +304,7 @@ impl ToolRegistry {
         }
         result
     }
-    pub(crate) fn secret_values(&self) -> impl Iterator<Item = String> + '_ {
+    pub(crate) fn secret_values(&self) -> impl Iterator<Item = String> {
         self.tools.values().flat_map(|tool| tool.secret_values())
     }
     pub fn set_profile_tool_description(

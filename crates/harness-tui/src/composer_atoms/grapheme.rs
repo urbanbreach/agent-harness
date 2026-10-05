@@ -26,7 +26,7 @@ impl GraphemeCluster {
     }
 }
 
-pub(crate) fn split_graphemes(text: &str) -> impl Iterator<Item = GraphemeCluster> + '_ {
+pub(crate) fn split_graphemes(text: &str) -> impl Iterator<Item = GraphemeCluster> {
     text.graphemes(true).map(GraphemeCluster::new)
 }
 

@@ -144,16 +144,15 @@ impl Paint {
             Tag::Strong | Tag::Emphasis | Tag::Strikethrough => self.set(range, dim),
             Tag::CodeBlock(kind) => {
                 self.set(range.clone(), dim.fg(theme.markdown.code));
-                if let CodeBlockKind::Fenced(language) = kind {
-                    if let Some(offset) = text[range.clone()]
+                if let CodeBlockKind::Fenced(language) = kind
+                    && let Some(offset) = text[range.clone()]
                         .find(language.as_ref())
                         .filter(|_| !language.is_empty())
-                    {
-                        self.set(
-                            range.start + offset..range.start + offset + language.len(),
-                            Style::default().fg(theme.markdown.heading_h3),
-                        );
-                    }
+                {
+                    self.set(
+                        range.start + offset..range.start + offset + language.len(),
+                        Style::default().fg(theme.markdown.heading_h3),
+                    );
                 }
             }
             Tag::BlockQuote(_) => {
@@ -200,14 +199,14 @@ impl Paint {
                         Style::default(),
                     );
                 }
-                if !title.is_empty() {
-                    if let Some(offset) = text[range.clone()].rfind(title.as_ref()) {
-                        self.set(
-                            range.start + offset.saturating_sub(1)
-                                ..(range.start + offset + title.len() + 1).min(range.end),
-                            Style::default().fg(theme.markdown.heading_h5),
-                        );
-                    }
+                if !title.is_empty()
+                    && let Some(offset) = text[range.clone()].rfind(title.as_ref())
+                {
+                    self.set(
+                        range.start + offset.saturating_sub(1)
+                            ..(range.start + offset + title.len() + 1).min(range.end),
+                        Style::default().fg(theme.markdown.heading_h5),
+                    );
                 }
             }
             _ => {}

@@ -132,9 +132,9 @@ def check(binary, scenario):
         env.update(TERM="xterm-256color", COLORTERM="truecolor", HARNESS_DISABLE_ANIMATIONS="1")
         if scenario in ("telemetry_failure", "handoff_failure"):
             blocker = Path(root) / "not-a-directory"
-            blocker.write_text("fixture\n")
-            key = "HARNESS_RESTORE_TRACE" if scenario == "handoff_failure" else "HARNESS_TUI_PRESENTATION_TRACE"
-            env[key] = str(blocker / "trace.json")
+            if scenario == "telemetry_failure":
+                blocker.write_text("fixture\n")
+            env["HARNESS_TUI_PRESENTATION_TRACE"] = str(blocker / "trace.json")
         with open("/dev/full", "wb", buffering=0) as full:
             child = subprocess.Popen([str(binary), scenario if scenario.startswith("handoff") else "idle"], stdin=slave,
                 stdout=full if scenario == "output_failure" else slave, stderr=slave,
@@ -214,6 +214,7 @@ def main():
                 assert result["resize_presented"], "resize without input did not redraw"
         assert all(result["termios_restored"] for result in reports), "terminal restoration failed"
         assert all(result["exit_code"] != 0 for result in reports[1:4]), "failure injection did not fail"
+        assert reports[3]["exits_sent"] == 1, "handoff failure must follow a completed session"
         assert reports[4]["exit_code"] == 0 and reports[4]["exits_sent"] == 4, "preserved handoffs failed"
         for result in (reports[1], reports[3]):
             assert all(result["protocol_exit"].values()), "initialization failure left terminal protocols active"

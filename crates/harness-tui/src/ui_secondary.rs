@@ -372,13 +372,13 @@ impl OperatorRailBodySection {
                     Span::styled(format!("{} ", disclosure_glyph(*disclosure)), heading_style),
                     Span::styled("MCP".to_string(), heading_style),
                 ];
-                if disclosure.collapsed {
-                    if let Some(summary) = collapsed_mcp_summary(items) {
-                        spans.push(Span::styled(
-                            format!(" {summary}"),
-                            Style::default().fg(theme.text.secondary),
-                        ));
-                    }
+                if disclosure.collapsed
+                    && let Some(summary) = collapsed_mcp_summary(items)
+                {
+                    spans.push(Span::styled(
+                        format!(" {summary}"),
+                        Style::default().fg(theme.text.secondary),
+                    ));
                 }
                 Line::from(spans)
             }

@@ -927,10 +927,10 @@ fn wait_for_waiting_timer_change(
 
     loop {
         drain_output(&mut helper.parser, &helper.output_rx);
-        if let Some(current) = waiting_status_timers(&helper.parser.screen().contents()) {
-            if &current != initial {
-                return current;
-            }
+        if let Some(current) = waiting_status_timers(&helper.parser.screen().contents())
+            && &current != initial
+        {
+            return current;
         }
 
         let now = Instant::now();

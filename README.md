@@ -142,7 +142,7 @@ stops without writing a bundle if its secret scan fails. See
 
 ## Contribute
 
-The workspace has six crates. Start with the [architecture guide](docs/architecture/architecture.md)
+The workspace uses Rust 2024 across seven crates and builds with the stable toolchain. Start with the [architecture guide](docs/architecture/architecture.md)
 for code ownership and the [terminal design guide](DESIGN.md) for UI changes.
 
 ```bash

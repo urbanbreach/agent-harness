@@ -279,24 +279,22 @@ impl FrameLayoutPlan {
                 .activities
                 .iter()
                 .any(|entry| entry.user_message.is_some())
-        {
-            if let (Some(message), Some(transcript)) =
+            && let (Some(message), Some(transcript)) =
                 (&app.model_prompt_notice, plan.transcript.as_mut())
-            {
-                let width = transcript.width.saturating_sub(4);
-                let rows = crate::ui::wrap_completion_text(message, usize::from(width)).len();
-                let height = u16::try_from(rows)
-                    .unwrap_or(u16::MAX)
-                    .min(transcript.height.saturating_sub(1));
-                plan.model_prompt_notice = Some(Rect::new(
-                    transcript.x.saturating_add(2),
-                    transcript.bottom().saturating_sub(height),
-                    width,
-                    height,
-                ));
-                transcript.height = transcript.height.saturating_sub(height);
-                plan.wheel_hit_areas.transcript = Some(*transcript);
-            }
+        {
+            let width = transcript.width.saturating_sub(4);
+            let rows = crate::ui::wrap_completion_text(message, usize::from(width)).len();
+            let height = u16::try_from(rows)
+                .unwrap_or(u16::MAX)
+                .min(transcript.height.saturating_sub(1));
+            plan.model_prompt_notice = Some(Rect::new(
+                transcript.x.saturating_add(2),
+                transcript.bottom().saturating_sub(height),
+                width,
+                height,
+            ));
+            transcript.height = transcript.height.saturating_sub(height);
+            plan.wheel_hit_areas.transcript = Some(*transcript);
         }
         plan
     }

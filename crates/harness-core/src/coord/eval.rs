@@ -126,10 +126,9 @@ impl CoordinatorHandle {
                 .get_mut(&parent)
                 .ok_or(CoordinatorError::UnknownTask(parent))?
                 .kind
+                && let Some(reply) = reply.take()
             {
-                if let Some(reply) = reply.take() {
-                    let _ = reply.send(Ok(result));
-                }
+                let _ = reply.send(Ok(result));
             }
             Ok(())
         })
@@ -170,8 +169,8 @@ impl CoordinatorHandle {
 
 fn describe_tool(tool: &dyn crate::tool::Tool) -> Result<Value, CoordinatorError> {
     let prelude = tool.kernel_prelude();
-    if let Some(prelude) = &prelude {
-        if prelude.exports.is_empty()
+    if let Some(prelude) = &prelude
+        && (prelude.exports.is_empty()
             || prelude.exports.iter().any(|name| {
                 name.starts_with("__")
                     || matches!(
@@ -193,13 +192,12 @@ fn describe_tool(tool: &dyn crate::tool::Tool) -> Result<Value, CoordinatorError
                             | "workpool"
                             | "write"
                     )
-            })
-        {
-            return Err(CoordinatorError::Invalid(format!(
-                "tool {} kernel prelude must export names without shadowing built-in eval helpers",
-                tool.id()
-            )));
-        }
+            }))
+    {
+        return Err(CoordinatorError::Invalid(format!(
+            "tool {} kernel prelude must export names without shadowing built-in eval helpers",
+            tool.id()
+        )));
     }
     let description = prelude.as_ref().map_or_else(
         || tool.description().to_owned(),

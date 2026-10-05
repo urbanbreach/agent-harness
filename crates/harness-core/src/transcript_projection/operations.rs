@@ -140,10 +140,9 @@ pub(super) fn apply(
                 .as_ref()
                 .and_then(|id| index.tools.get(id.as_str()))
                 .copied()
+                && let Some(tool) = tool_mut(output, location)
             {
-                if let Some(tool) = tool_mut(output, location) {
-                    tool.permissions.push(permission.clone());
-                }
+                tool.permissions.push(permission.clone());
             }
             let (message, part) =
                 push_part(output, index, event, ProjectedPart::Permission(permission));
@@ -202,10 +201,9 @@ pub(super) fn apply(
                 .as_ref()
                 .and_then(|id| index.tools.get(id.as_str()))
                 .copied()
+                && let Some(tool) = tool_mut(output, location)
             {
-                if let Some(tool) = tool_mut(output, location) {
-                    tool.artifacts.push(artifact.clone());
-                }
+                tool.artifacts.push(artifact.clone());
             }
             output.artifacts.push(artifact.clone());
             push_part(
@@ -453,14 +451,13 @@ fn task(output: &mut TranscriptProjection, index: &TranscriptIndex, event: &Even
                 .correlation_id
                 .as_ref()
                 .and_then(|id| index.turns.get(id))
+                && output.messages[at].state != ProjectedMessageState::Failed
             {
-                if output.messages[at].state != ProjectedMessageState::Failed {
-                    output.messages[at].state = if data.failure {
-                        ProjectedMessageState::Failed
-                    } else {
-                        ProjectedMessageState::Incomplete
-                    };
-                }
+                output.messages[at].state = if data.failure {
+                    ProjectedMessageState::Failed
+                } else {
+                    ProjectedMessageState::Incomplete
+                };
             }
         }
         EventV1::TaskResultLate(data) => {

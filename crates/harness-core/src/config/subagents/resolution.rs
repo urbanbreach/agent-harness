@@ -100,13 +100,13 @@ fn gate(
     if !config.toggle.get(name).copied().unwrap_or(true) {
         return Err(SubagentResolutionError::Disabled { name: name.into() });
     }
-    if let Some(allowed) = context.allowed_types {
-        if !allowed.iter().any(|entry| entry.eq_ignore_ascii_case(name)) {
-            return Err(SubagentResolutionError::NotAllowed {
-                name: name.into(),
-                allowed: allowed.to_vec(),
-            });
-        }
+    if let Some(allowed) = context.allowed_types
+        && !allowed.iter().any(|entry| entry.eq_ignore_ascii_case(name))
+    {
+        return Err(SubagentResolutionError::NotAllowed {
+            name: name.into(),
+            allowed: allowed.to_vec(),
+        });
     }
     Ok(definition)
 }
@@ -151,10 +151,11 @@ pub fn resolve_subagent_definition(
                 .into_iter()
                 .flatten()
                 .filter(|name| config.toggle.get(*name).copied().unwrap_or(true));
-            if let Some(only) = enabled.next() {
-                if enabled.next().is_none() && !only.eq_ignore_ascii_case("general-purpose") {
-                    name.clone_from(only);
-                }
+            if let Some(only) = enabled.next()
+                && enabled.next().is_none()
+                && !only.eq_ignore_ascii_case("general-purpose")
+            {
+                name.clone_from(only);
             }
         }
     }

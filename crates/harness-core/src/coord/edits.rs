@@ -134,10 +134,10 @@ impl Runtime {
             .edits
             .remove(id)
             .ok_or_else(|| CoordinatorError::Invalid("edit disappeared".into()))?;
-        if result.is_err() {
-            if let Some(snapshot) = &edit.snapshot {
-                self.reject_snapshot_edit(snapshot, &edit.actor)?;
-            }
+        if result.is_err()
+            && let Some(snapshot) = &edit.snapshot
+        {
+            self.reject_snapshot_edit(snapshot, &edit.actor)?;
         }
         let payload = match &result {
             Ok(digest) => EventV1::EditApplied(EditAppliedEvent {
@@ -154,17 +154,17 @@ impl Runtime {
             }),
         };
         self.emit(edit.actor.clone(), Some(task.into()), payload)?;
-        if let Ok(digest) = result {
-            if let Err(error) = self.record_edit_attribution(&edit.path, &digest) {
-                let message = self.redactor.redact_text(&format!(
-                    "File edit succeeded, but attribution was not recorded: {error}"
-                ));
-                let _ = self.live(
-                    edit.actor,
-                    task.into(),
-                    LiveEventV1::RuntimeWarning { message },
-                );
-            }
+        if let Ok(digest) = result
+            && let Err(error) = self.record_edit_attribution(&edit.path, &digest)
+        {
+            let message = self.redactor.redact_text(&format!(
+                "File edit succeeded, but attribution was not recorded: {error}"
+            ));
+            let _ = self.live(
+                edit.actor,
+                task.into(),
+                LiveEventV1::RuntimeWarning { message },
+            );
         }
         Ok(())
     }

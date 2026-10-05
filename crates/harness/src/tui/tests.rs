@@ -31,17 +31,17 @@ use harness_core::event::{
 use harness_core::store::{EventEnvelopeWithoutSeqV1, InMemoryEventStore};
 use harness_tui::app::{set_pending_live_prompt_draft, AppState, ModelOption};
 use std::collections::BTreeMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::Duration;
 
 fn mock_mode_cwd_test_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+    static LOCK: Mutex<()> = Mutex::new(());
+    &LOCK
 }
 
 pub(crate) fn startup_draft_test_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+    static LOCK: Mutex<()> = Mutex::new(());
+    &LOCK
 }
 
 fn live_tui_command() -> TuiCommand {

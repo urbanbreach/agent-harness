@@ -143,10 +143,9 @@ impl UndoStack {
                 .last()
                 .is_some_and(|entry| entry.group == group)
             && self.undo.tip.as_ref() == Some(&before)
+            && let Some((start, _, _)) = self.undo.pop()
         {
-            if let Some((start, _, _)) = self.undo.pop() {
-                before = start;
-            }
+            before = start;
         }
         self.undo.push(before, after, group);
         self.redo = Journal::default();

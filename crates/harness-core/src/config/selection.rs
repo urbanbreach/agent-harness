@@ -45,11 +45,10 @@ fn target(
         .providers
         .get(provider)
         .is_some_and(|p| p.models().contains_key(model))
+        && let Some((name, suffix)) = model.rsplit_once('/')
     {
-        if let Some((name, suffix)) = model.rsplit_once('/') {
-            model = name;
-            variant = variant.or(Some(suffix));
-        }
+        model = name;
+        variant = variant.or(Some(suffix));
     }
     let entry = resolve_configured_model_metadata(config, provider, model, variant)?;
     Ok(ResolvedModelTarget {

@@ -183,10 +183,10 @@ fn run_id_from_events(run_dir: &Path) -> String {
         let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        if let Some(run_id) = value.get("run_id").and_then(|v| v.as_str()) {
-            if !run_id.is_empty() {
-                return run_id.to_string();
-            }
+        if let Some(run_id) = value.get("run_id").and_then(|v| v.as_str())
+            && !run_id.is_empty()
+        {
+            return run_id.to_string();
         }
     }
     run_dir

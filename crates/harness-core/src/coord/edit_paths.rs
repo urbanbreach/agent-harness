@@ -203,12 +203,11 @@ impl Runtime {
             },
             ..
         }) = self.running.get_mut(task)
+            && editing
         {
-            if editing {
-                approved.extend(paths.iter().cloned());
-                approved.sort();
-                approved.dedup();
-            }
+            approved.extend(paths.iter().cloned());
+            approved.sort();
+            approved.dedup();
         }
         Ok(paths)
     }

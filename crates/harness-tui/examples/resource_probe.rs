@@ -63,10 +63,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     for index in 0..handoffs {
         if scenario == "handoff_failure" {
-            std::env::set_var(
-                "HARNESS_TUI_PRESENTATION_TRACE",
-                std::env::var_os("HARNESS_RESTORE_TRACE").ok_or("missing injected trace path")?,
+            let trace = std::path::PathBuf::from(
+                std::env::var_os("HARNESS_TUI_PRESENTATION_TRACE")
+                    .ok_or("missing injected trace path")?,
             );
+            let parent = trace.parent().ok_or("trace path has no parent")?;
+            std::fs::rename(parent, parent.with_extension("completed"))?;
+            std::fs::write(parent, "fixture\n")?;
         }
         run_tui_with_options(TuiOptions {
             mode: TuiMode::Replay {

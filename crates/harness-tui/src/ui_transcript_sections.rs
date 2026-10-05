@@ -33,14 +33,14 @@ pub(super) fn prepare_transcript_sections(
         .rposition(|(_, activity)| activity.status == ActivityStatus::Streaming);
 
     for (visible_index, (activity_index, activity)) in visible_activities.iter().enumerate() {
-        if *activity_index < dirty_from {
-            if let Some(section) = previous.get(visible_index).filter(|section| {
+        if *activity_index < dirty_from
+            && let Some(section) = previous.get(visible_index).filter(|section| {
                 (section.activity_first_seq, &section.request_id)
                     == (activity.first_seq, &activity.request_id)
-            }) {
-                turn_sections.push(Arc::clone(section));
-                continue;
-            }
+            })
+        {
+            turn_sections.push(Arc::clone(section));
+            continue;
         }
         turn_sections.push(Arc::new(build_turn_section(
             app,
@@ -115,14 +115,13 @@ fn inject_compaction_events(
 
         if let Some(turn_index) =
             target_turn_index.filter(|index| visible_activities[*index].0 >= dirty_from)
+            && let Some(turn) = turn_sections.get_mut(turn_index)
         {
-            if let Some(turn) = turn_sections.get_mut(turn_index) {
-                let turn = Arc::make_mut(turn);
-                turn.assistant_parts
-                    .push(TranscriptAssistantPart::Compaction(compaction_section));
-                turn.assistant_part_source_ids
-                    .push(TranscriptAssistantPartSourceId(event.seq));
-            }
+            let turn = Arc::make_mut(turn);
+            turn.assistant_parts
+                .push(TranscriptAssistantPart::Compaction(compaction_section));
+            turn.assistant_part_source_ids
+                .push(TranscriptAssistantPartSourceId(event.seq));
         }
     }
 }
@@ -135,7 +134,7 @@ fn turn_supports_assistant_footer(turn: &TranscriptTurnSection, app: &AppState) 
 pub(super) fn events_for_activity<'a>(
     app: &'a AppState,
     activity: &ActivityEntry,
-) -> impl DoubleEndedIterator<Item = &'a harness_core::event::EventEnvelopeV1> + Clone {
+) -> impl DoubleEndedIterator<Item = &'a harness_core::event::EventEnvelopeV1> + Clone + use<'a> {
     // Durable history is ordered by sequence; unrelated turns need no scan.
     app.event_slices()
         .map(|events| {

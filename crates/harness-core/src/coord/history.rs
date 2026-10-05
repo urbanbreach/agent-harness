@@ -49,10 +49,9 @@ pub(super) fn messages(
                 if let Some(turn) = users
                     .get(e.request_id.as_str())
                     .and_then(|index| turns.get_mut(*index))
+                    && let Some(user) = turn.first_mut()
                 {
-                    if let Some(user) = turn.first_mut() {
-                        user.attachments.clone_from(&e.attachments);
-                    }
+                    user.attachments.clone_from(&e.attachments);
                 }
             }
             EventV1::ArtifactWritten(e) => {

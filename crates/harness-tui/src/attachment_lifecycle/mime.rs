@@ -55,10 +55,10 @@ pub fn resolve(bytes: &[u8], hint: Option<MimeKind>) -> Result<MimeKind, Attachm
     if detected == MimeKind::Zip {
         return Ok(detected);
     }
-    if detected == MimeKind::Unknown {
-        if let Some(hint) = hint.filter(|mime| mime.is_allowed()) {
-            return Ok(hint);
-        }
+    if detected == MimeKind::Unknown
+        && let Some(hint) = hint.filter(|mime| mime.is_allowed())
+    {
+        return Ok(hint);
     }
     Err(AttachmentError::MimeRejected { mime: detected })
 }

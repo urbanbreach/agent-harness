@@ -44,14 +44,12 @@ impl SessionProjection {
                 | LiveTurnPhase::Responding
                 | LiveTurnPhase::Thinking
                 | LiveTurnPhase::ToolRunning(_)
-        ) {
-            if let Some(state) = self
-                .provider_phases
-                .get(&activity.request_id)
-                .filter(|state| matches!(state.phase, LiveTurnPhase::WritingToolCall { .. }))
-            {
-                return state.phase.clone();
-            }
+        ) && let Some(state) = self
+            .provider_phases
+            .get(&activity.request_id)
+            .filter(|state| matches!(state.phase, LiveTurnPhase::WritingToolCall { .. }))
+        {
+            return state.phase.clone();
         }
         if phase == LiveTurnPhase::Compacting {
             return self
@@ -455,15 +453,14 @@ impl SessionProjection {
                         ids.push(id.to_owned());
                     }
                 }
-                if ids.is_empty() {
-                    if let Some(id) = args
+                if ids.is_empty()
+                    && let Some(id) = args
                         .get("task_id")
                         .and_then(serde_json::Value::as_str)
                         .map(str::trim)
                         .filter(|id| !id.is_empty())
-                    {
-                        ids.push(id.to_owned());
-                    }
+                {
+                    ids.push(id.to_owned());
                 }
                 Some((0, WaitingReason::TaskOutput(ids)))
             }

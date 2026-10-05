@@ -111,22 +111,21 @@ async fn javascript_cells_preserve_language_semantics_and_output() -> Result {
         run(&session, "after-error", "value").await?["content"][0]["text"],
         "42"
     );
-    let spill = run(
-        &session,
-        "spill",
-        "print('begin\\n' + 'x'.repeat(100000) + '\\nend');",
-    )
-    .await?;
-    let path = spill["details"]["meta"]["artifactId"]
-        .as_str()
-        .ok_or("missing spill")?;
-    assert_eq!(
-        std::fs::read_to_string(path)?,
-        format!("begin\n{}\nend\n", "x".repeat(100000))
-    );
-    assert!(spill["content"][0]["text"]
-        .as_str()
-        .is_some_and(|text| text.len() < 2000 && text.contains("end")));
+    for (id, body, limit) in [
+        ("spill", "x".repeat(100000), 2000),
+        ("unicode-spill", "界🙂\n".repeat(20000), 55000),
+    ] {
+        let original = format!("begin\n{body}\nend\n");
+        let code = format!("print({});", serde_json::to_string(original.trim_end())?);
+        let spill = run(&session, id, &code).await?;
+        let path = spill["details"]["meta"]["artifactId"]
+            .as_str()
+            .ok_or("missing spill")?;
+        assert_eq!(std::fs::read_to_string(path)?, original);
+        assert!(spill["content"][0]["text"]
+            .as_str()
+            .is_some_and(|text| text.len() < limit && text.contains("end")));
+    }
     session.close().await?;
     Ok(())
 }

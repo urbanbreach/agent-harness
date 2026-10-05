@@ -161,16 +161,16 @@ fn build_user_render_surface(
     let interaction_rows = user_msg.wall_clock.as_ref().map(|_| {
         let mut rows = vec![None; lines.len()];
         let timestamp_end = content_width.saturating_sub(USER_TIMESTAMP_RIGHT_PADDING_WIDTH);
-        if timestamp_end > USER_TIMESTAMP_RESERVED_WIDTH.saturating_add(1) {
-            if let Some(row) = rows.get_mut(1) {
-                *row = Some(TranscriptInteractionRow {
-                    target: TranscriptMouseTarget::UserTimestamp {
-                        request_id: turn.request_id.clone(),
-                    },
-                    hit_start: timestamp_end.saturating_sub(USER_TIMESTAMP_RESERVED_WIDTH),
-                    hit_width: USER_TIMESTAMP_RESERVED_WIDTH,
-                });
-            }
+        if timestamp_end > USER_TIMESTAMP_RESERVED_WIDTH.saturating_add(1)
+            && let Some(row) = rows.get_mut(1)
+        {
+            *row = Some(TranscriptInteractionRow {
+                target: TranscriptMouseTarget::UserTimestamp {
+                    request_id: turn.request_id.clone(),
+                },
+                hit_start: timestamp_end.saturating_sub(USER_TIMESTAMP_RESERVED_WIDTH),
+                hit_width: USER_TIMESTAMP_RESERVED_WIDTH,
+            });
         }
         rows
     });

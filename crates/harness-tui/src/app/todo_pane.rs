@@ -291,10 +291,9 @@ impl AppState {
                     .todo_pane
                     .selected
                     .and_then(|index| self.todo_pane.items.get(index))
+                    && let Err(error) = crate::clipboard::copy(&item.content)
                 {
-                    if let Err(error) = crate::clipboard::copy(&item.content) {
-                        self.status_banner = Some(error.to_string());
-                    }
+                    self.status_banner = Some(error.to_string());
                 }
             }
             _ => {}

@@ -50,10 +50,10 @@ impl Tool for Fetch {
     fn permission_requests(&self, args: &Value) -> Vec<(String, String)> {
         let input = args["url"].as_str().unwrap_or_default();
         let mut requests = vec![(self.id().into(), input.into())];
-        if let Ok(url) = url(input) {
-            if url.as_str() != input {
-                requests.push((self.id().into(), url.to_string()));
-            }
+        if let Ok(url) = url(input)
+            && url.as_str() != input
+        {
+            requests.push((self.id().into(), url.to_string()));
         }
         requests
     }

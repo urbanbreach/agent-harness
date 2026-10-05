@@ -131,12 +131,11 @@ async fn wait_event(
     tokio::time::timeout(Duration::from_secs(15), async {
         while let Some(event) = events.next().await {
             let event = event?;
-            if let EventV1::TaskCancelled(task) = &event.payload {
-                if task.failure
-                    && task.task_scope == Some(harness_core::event::TaskTerminalScope::AgentTurn)
-                {
-                    return Err(format!("capture turn failed: {}", task.reason).into());
-                }
+            if let EventV1::TaskCancelled(task) = &event.payload
+                && task.failure
+                && task.task_scope == Some(harness_core::event::TaskTerminalScope::AgentTurn)
+            {
+                return Err(format!("capture turn failed: {}", task.reason).into());
             }
             if matches(&event.payload) {
                 return Ok::<_, Box<dyn std::error::Error>>(());

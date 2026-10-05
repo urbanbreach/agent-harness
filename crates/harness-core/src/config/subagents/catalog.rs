@@ -127,10 +127,7 @@ pub fn subagent_type_schema(types: &[SubagentTypeDescriptor]) -> Option<serde_js
                 .collect::<Vec<_>>()
                 .join(" ");
             if description.len() > 200 {
-                let mut end = 197;
-                while !description.is_char_boundary(end) {
-                    end -= 1;
-                }
+                let end = description.floor_char_boundary(197);
                 description.truncate(end);
                 description.push('\u{2026}');
             }

@@ -102,10 +102,10 @@ impl Runtime {
         {
             return Err(CoordinatorError::Stopping);
         }
-        if let Some(id) = &parent {
-            if !self.agents.contains_key(id) {
-                return Err(CoordinatorError::UnknownAgent(id.clone()));
-            }
+        if let Some(id) = &parent
+            && !self.agents.contains_key(id)
+        {
+            return Err(CoordinatorError::UnknownAgent(id.clone()));
         }
         let policy = PermissionPolicy::from_rules(profile.permission_ruleset.clone())
             .map_err(|e| CoordinatorError::Invalid(e.to_string()))?;
@@ -279,27 +279,27 @@ impl Runtime {
         }
         let mut fault = self.fault.clone();
         let mut failure = failure.or_else(|| fault.clone());
-        if failure.is_none() {
-            if let Err(error) = self.hook(
+        if failure.is_none()
+            && let Err(error) = self.hook(
                 crate::config::HookLifecycleEvent::RunFinished,
                 &system(),
                 None,
                 serde_json::json!({"outcome":"finished","output_summary":"run stopped"}),
-            ) {
-                fault = Some(error.to_string());
-                failure.clone_from(&fault);
-            }
+            )
+        {
+            fault = Some(error.to_string());
+            failure.clone_from(&fault);
         }
-        if let Some(error) = &failure {
-            if let Err(hook_error) = self.hook(
+        if let Some(error) = &failure
+            && let Err(hook_error) = self.hook(
                 crate::config::HookLifecycleEvent::RunFailed,
                 &system(),
                 None,
                 serde_json::json!({"outcome":"failed","failure_reason":error}),
-            ) {
-                fault = Some(hook_error.to_string());
-                failure = Some(format!("{error}; {hook_error}"));
-            }
+            )
+        {
+            fault = Some(hook_error.to_string());
+            failure = Some(format!("{error}; {hook_error}"));
         }
         let event = failure.map_or_else(
             || {

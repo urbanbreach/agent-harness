@@ -188,23 +188,21 @@ pub(super) fn discover(context: &ConfigDiscoveryContext, tui: bool) -> Vec<PathB
         .xdg_config_home
         .clone()
         .or_else(|| context.home.as_ref().map(|home| home.join(".config")));
-    if let Some(base) = global {
-        if let Some(path) = names
+    if let Some(base) = global
+        && let Some(path) = names
             .iter()
             .map(|name| base.join("harness").join(name))
             .find(|path| path.is_file())
-        {
-            paths.push(path);
-        }
+    {
+        paths.push(path);
     }
     if let Some(path) = if tui {
         &context.tui_config_path
     } else {
         &context.runtime_config_path
-    } {
-        if !paths.contains(path) {
-            paths.push(path.clone());
-        }
+    } && !paths.contains(path)
+    {
+        paths.push(path.clone());
     }
     for base in search_roots(&context.current_dir) {
         for prefix in ["", ".agent-harness"] {

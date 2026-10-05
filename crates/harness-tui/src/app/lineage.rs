@@ -61,14 +61,13 @@ impl LineageBrowserState {
             .collect();
         self.update_filter(filter_input);
 
-        if let Some(previous_selected) = previous_selected {
-            if let Some(index) = self
+        if let Some(previous_selected) = previous_selected
+            && let Some(index) = self
                 .visible
                 .iter()
                 .position(|node_index| self.nodes[*node_index].catalog.run_id == previous_selected)
-            {
-                self.selected = index;
-            }
+        {
+            self.selected = index;
         }
     }
 

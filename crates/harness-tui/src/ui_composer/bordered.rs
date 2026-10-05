@@ -92,7 +92,8 @@ pub(crate) fn render_bordered_composer(
                     .bg(surface),
             )
         };
-        let block = if badge_title.is_empty() {
+
+        if badge_title.is_empty() {
             block
         } else {
             let title = if let Some((prefix, suffix)) =
@@ -112,8 +113,7 @@ pub(crate) fn render_bordered_composer(
                 Line::from(badge_title)
             };
             block.title_bottom(title.style(badge_style).right_aligned())
-        };
-        block
+        }
     } else {
         block
     };
@@ -198,16 +198,15 @@ pub(crate) fn render_bordered_composer(
                 && viewport.cursor.is_some_and(|(cursor_row, cursor_col)| {
                     cursor_row == row && cursor_col == display_width(line)
                 })
+                && let Some(ghost) = composer_view.ghost
             {
-                if let Some(ghost) = composer_view.ghost {
-                    let cursor_col = viewport.cursor.map_or(0, |(_, cursor_col)| cursor_col);
-                    let available_width = usize::from(inner.width)
-                        .saturating_sub(glyph_cols.saturating_add(cursor_col));
-                    body.spans.push(Span::styled(
-                        super::ghost::truncate_to_width(ghost, available_width),
-                        crate::ghost_suggestions::muted_style(),
-                    ));
-                }
+                let cursor_col = viewport.cursor.map_or(0, |(_, cursor_col)| cursor_col);
+                let available_width =
+                    usize::from(inner.width).saturating_sub(glyph_cols.saturating_add(cursor_col));
+                body.spans.push(Span::styled(
+                    super::ghost::truncate_to_width(ghost, available_width),
+                    crate::ghost_suggestions::muted_style(),
+                ));
             }
             body
         })
@@ -217,20 +216,20 @@ pub(crate) fn render_bordered_composer(
         inner,
     );
 
-    if !connect_waiting_owns_input(app) {
-        if let Some((cursor_row, cursor_col)) = viewport.cursor {
-            let cursor_x = inner
-                .x
-                .saturating_add(
-                    u16::try_from(glyph_cols.saturating_add(cursor_col)).unwrap_or(u16::MAX),
-                )
-                .min(inner.x.saturating_add(inner.width.saturating_sub(1)));
-            let cursor_y = inner
-                .y
-                .saturating_add(u16::try_from(cursor_row).unwrap_or(u16::MAX))
-                .min(inner.y.saturating_add(inner.height.saturating_sub(1)));
-            frame.set_cursor_position((cursor_x, cursor_y));
-        }
+    if !connect_waiting_owns_input(app)
+        && let Some((cursor_row, cursor_col)) = viewport.cursor
+    {
+        let cursor_x = inner
+            .x
+            .saturating_add(
+                u16::try_from(glyph_cols.saturating_add(cursor_col)).unwrap_or(u16::MAX),
+            )
+            .min(inner.x.saturating_add(inner.width.saturating_sub(1)));
+        let cursor_y = inner
+            .y
+            .saturating_add(u16::try_from(cursor_row).unwrap_or(u16::MAX))
+            .min(inner.y.saturating_add(inner.height.saturating_sub(1)));
+        frame.set_cursor_position((cursor_x, cursor_y));
     }
 }
 

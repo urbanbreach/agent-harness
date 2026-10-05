@@ -295,22 +295,22 @@ async fn finish_created(
     cancellation: &CancellationToken,
     checkpoint: Option<WorkspaceCreationCheckpoint>,
 ) -> Result<PreparedSubagent, CoordinatorError> {
-    if let Some(checkpoint) = checkpoint {
-        if let Some(ownership) = &prepared.ownership {
-            let _ = checkpoint.entered.send(ownership.path.clone());
-            tokio::select! {
-                biased;
-                () = cancellation.cancelled() => {},
-                () = checkpoint.proceed.notified() => {},
-            }
+    if let Some(checkpoint) = checkpoint
+        && let Some(ownership) = &prepared.ownership
+    {
+        let _ = checkpoint.entered.send(ownership.path.clone());
+        tokio::select! {
+            biased;
+            () = cancellation.cancelled() => {},
+            () = checkpoint.proceed.notified() => {},
         }
     }
     if cancellation.is_cancelled() {
-        if let Some(ownership) = &prepared.ownership {
-            if let Err(error) = cleanup_owned(ownership).await {
-                prepared.failure = Some(error);
-                return Ok(prepared);
-            }
+        if let Some(ownership) = &prepared.ownership
+            && let Err(error) = cleanup_owned(ownership).await
+        {
+            prepared.failure = Some(error);
+            return Ok(prepared);
         }
         return Err(CoordinatorError::Cancelled("Subagent was cancelled".into()));
     }

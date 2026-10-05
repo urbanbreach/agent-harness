@@ -89,7 +89,7 @@ def main():
     paths = subprocess.check_output(["rg", "--files", "--hidden", "-g", "!.git"], cwd=ROOT, text=True).splitlines()
     violations = check(paths)
     if args.format:
-        result = subprocess.run(["rustfmt", "--edition", "2021", "--config", "skip_children=true", "--check", *[p for p in paths if backend(p)]], cwd=ROOT, check=False)
+        result = subprocess.run(["rustfmt", "--edition", "2024", "--config", "skip_children=true", "--check", *[p for p in paths if backend(p)]], cwd=ROOT, check=False)
         if result.returncode:
             violations.append({"path": "crates/", "detail": "backend formatting check failed"})
     if args.json:

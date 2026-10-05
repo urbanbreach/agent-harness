@@ -66,19 +66,17 @@ impl NotificationPolicy {
         if self.focus == FocusState::Focused && event.kind != NotificationKind::ActionRequired {
             return false;
         }
-        if let SuppressionState::Suppressed { until_tick } = self.suppression {
-            if event.created_at_tick < until_tick {
-                return false;
-            }
+        if let SuppressionState::Suppressed { until_tick } = self.suppression
+            && event.created_at_tick < until_tick
+        {
+            return false;
         }
-        if let Some((kind, title)) = &self.last_emitted {
-            if *kind == event.kind
-                && *title == format!("{}\0{}", event.title, event.body)
-                && event.created_at_tick.saturating_sub(self.last_emitted_tick)
-                    < self.debounce_ticks
-            {
-                return false;
-            }
+        if let Some((kind, title)) = &self.last_emitted
+            && *kind == event.kind
+            && *title == format!("{}\0{}", event.title, event.body)
+            && event.created_at_tick.saturating_sub(self.last_emitted_tick) < self.debounce_ticks
+        {
+            return false;
         }
         if event.created_at_tick.saturating_sub(self.window_start_tick) >= 100 {
             self.window_start_tick = event.created_at_tick;

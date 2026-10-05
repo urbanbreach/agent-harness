@@ -172,7 +172,7 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
         assert_eq!(j.app.composer.prompt_buffer, draft);
     }
     if scenario == "undo-long" {
-        assert!(frames > 0 && frames % 4 == 0);
+        assert!(frames > 0 && frames.is_multiple_of(4));
         for _ in 0..frames / 2 {
             j.app
                 .handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
@@ -396,7 +396,7 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
     }
     let after = resources()?;
     if scenario == "typing-long" {
-        if frames % 2 != 0 {
+        if !frames.is_multiple_of(2) {
             draft.push('x');
         }
         assert_eq!(j.app.composer.prompt_buffer, draft);

@@ -232,22 +232,22 @@ impl CronExecutor {
         if records.len() + batch.fired.len() > 4096 {
             return Err(CronScheduleError::Capacity);
         }
-        if let Some(path) = &path {
-            if !batch.fired.is_empty() {
-                if !bytes.is_empty() && bytes.last() != Some(&b'\n') {
-                    bytes.push(b'\n');
-                }
-                for record in &batch.fired {
-                    serde_json::to_writer(&mut bytes, record)
-                        .map_err(|_| journal_error(path, "cannot encode receipt"))?;
-                    bytes.push(b'\n');
-                }
-                if bytes.len() > 8 * 1024 * 1024 {
-                    return Err(CronScheduleError::Capacity);
-                }
-                store::write_private_atomic(path, &bytes)
-                    .map_err(|e| journal_error(path, &e.to_string()))?;
+        if let Some(path) = &path
+            && !batch.fired.is_empty()
+        {
+            if !bytes.is_empty() && bytes.last() != Some(&b'\n') {
+                bytes.push(b'\n');
             }
+            for record in &batch.fired {
+                serde_json::to_writer(&mut bytes, record)
+                    .map_err(|_| journal_error(path, "cannot encode receipt"))?;
+                bytes.push(b'\n');
+            }
+            if bytes.len() > 8 * 1024 * 1024 {
+                return Err(CronScheduleError::Capacity);
+            }
+            store::write_private_atomic(path, &bytes)
+                .map_err(|e| journal_error(path, &e.to_string()))?;
         }
         batch.skipped -= batch.fired.len();
         records.extend(batch.fired.iter().cloned());

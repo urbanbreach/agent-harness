@@ -29,10 +29,8 @@ impl Runtime {
             Some(message_id.clone()),
             EventV1::NativeSubagentMessage(Box::new(receipt.clone())),
             move |runtime, _| {
-                if !queue {
-                    if let Some(child) = runtime.native_subagents.get_mut(&owner) {
-                        child.messages.push_back(accepted);
-                    }
+                if !queue && let Some(child) = runtime.native_subagents.get_mut(&owner) {
+                    child.messages.push_back(accepted);
                 }
             },
         )?;
@@ -55,12 +53,12 @@ impl Runtime {
                 None,
                 None,
             )?;
-        } else if receipt.delivery == SendSubagentMessageDelivery::Interject {
-            if let Some(child) = self.native_subagents.get_mut(&target) {
-                child
-                    .wait_interrupt
-                    .send_modify(|epoch| *epoch = epoch.saturating_add(1));
-            }
+        } else if receipt.delivery == SendSubagentMessageDelivery::Interject
+            && let Some(child) = self.native_subagents.get_mut(&target)
+        {
+            child
+                .wait_interrupt
+                .send_modify(|epoch| *epoch = epoch.saturating_add(1));
         }
         Ok(SendSubagentMessageResult::Accepted { message_id })
     }

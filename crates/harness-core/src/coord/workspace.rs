@@ -190,10 +190,10 @@ impl Runtime {
             &info.events_path,
             fs::metadata(&info.events_path)?.len(),
         )? {
-            if let EventV1::WorkspaceSnapshot(snapshot) = event?.payload {
-                if snapshot.request_id.as_str() == request {
-                    reference = Some(snapshot);
-                }
+            if let EventV1::WorkspaceSnapshot(snapshot) = event?.payload
+                && snapshot.request_id.as_str() == request
+            {
+                reference = Some(snapshot);
             }
         }
         let reference = reference

@@ -23,10 +23,10 @@ pub fn restore_terminal_state_with<T: TerminalControl>(
         terminal.restore_mouse(state.mouse),
         terminal.restore_raw_mode(state.raw_mode),
     ] {
-        if let Err(error) = result {
-            if first_error.is_none() {
-                first_error = Some(error);
-            }
+        if let Err(error) = result
+            && first_error.is_none()
+        {
+            first_error = Some(error);
         }
     }
     first_error.map_or(Ok(()), Err)

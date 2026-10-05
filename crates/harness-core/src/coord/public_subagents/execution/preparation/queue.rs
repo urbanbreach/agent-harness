@@ -115,18 +115,17 @@ impl Runtime {
             .native_subagents
             .get(&agent)
             .is_some_and(|child| child.cleanup_pending)
+            && let Some(child) = self.native_subagents.get_mut(&agent)
         {
-            if let Some(child) = self.native_subagents.get_mut(&agent) {
-                child.cleanup_pending = false;
-                // Successful cleanup returns the original startup/cancellation
-                // error. A cleanup failure retains ownership for diagnosis.
-                if result
-                    .as_ref()
-                    .is_ok_and(|prepared| prepared.ownership.is_none())
-                {
-                    child.ownership = None;
-                    child.worktree = None;
-                }
+            child.cleanup_pending = false;
+            // Successful cleanup returns the original startup/cancellation
+            // error. A cleanup failure retains ownership for diagnosis.
+            if result
+                .as_ref()
+                .is_ok_and(|prepared| prepared.ownership.is_none())
+            {
+                child.ownership = None;
+                child.worktree = None;
             }
         }
         if self
@@ -134,13 +133,13 @@ impl Runtime {
             .get(&agent)
             .is_some_and(|child| child.phase == NativePhase::Finalizing)
         {
-            if let Ok(prepared) = result {
-                if let Some(child) = self.native_subagents.get_mut(&agent) {
-                    child.cwd = prepared.cwd;
-                    child.worktree = prepared.worktree;
-                    child.snapshot_ref = prepared.snapshot_ref;
-                    child.ownership = prepared.ownership;
-                }
+            if let Ok(prepared) = result
+                && let Some(child) = self.native_subagents.get_mut(&agent)
+            {
+                child.cwd = prepared.cwd;
+                child.worktree = prepared.worktree;
+                child.snapshot_ref = prepared.snapshot_ref;
+                child.ownership = prepared.ownership;
             }
             return self.publish_native_terminal(&agent);
         }

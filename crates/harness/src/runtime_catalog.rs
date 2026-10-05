@@ -28,12 +28,12 @@ pub(crate) fn resolve_runtime_catalog(
     let mut connected = add_connected_providers(&mut config, explicit, store, lookup)?;
     merge_cached_models(&mut config, store, lookup);
     for (name, provider) in &mut config.providers {
-        if provider.credential_provider(name) == Some(ProviderId::codex()) {
-            if let ProviderConfig::OpenAiCompatible(provider) = provider {
-                provider
-                    .models
-                    .retain(|model, _| harness_providers::codex_model_allowed(model));
-            }
+        if provider.credential_provider(name) == Some(ProviderId::codex())
+            && let ProviderConfig::OpenAiCompatible(provider) = provider
+        {
+            provider
+                .models
+                .retain(|model, _| harness_providers::codex_model_allowed(model));
         }
     }
     for (name, provider) in &config.providers {

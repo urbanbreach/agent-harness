@@ -822,10 +822,10 @@ pub(crate) fn viewer_wrap_lines(
                     .get(cursor..)
                     .and_then(|rest| rest.find(&value))
                     .unwrap_or(0);
-            if index > 0 {
-                if let Some(joiner) = joiners.last_mut() {
-                    *joiner = text.get(cursor..start).unwrap_or_default().to_owned();
-                }
+            if index > 0
+                && let Some(joiner) = joiners.last_mut()
+            {
+                *joiner = text.get(cursor..start).unwrap_or_default().to_owned();
             }
             cursor = start + value.len();
             output.push(wrapped);

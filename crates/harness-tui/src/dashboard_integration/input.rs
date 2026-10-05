@@ -163,20 +163,20 @@ impl DashboardInputRouter {
             }
             DashboardOverlayRoute::Pane(_) => {}
         }
-        if pane == DashboardPane::Roster {
-            if let Some(target) = context.roster.hit_test(event.column, event.row) {
-                return match (event.kind, target) {
-                    (MouseEventKind::Down(MouseButton::Left), RosterHitTarget::Row(key)) => {
-                        DashboardInput::Select(key)
-                    }
-                    (MouseEventKind::Down(MouseButton::Left), RosterHitTarget::Group(group)) => {
-                        DashboardInput::ToggleGroup(group)
-                    }
-                    (MouseEventKind::ScrollUp, _) => DashboardInput::Scroll(pane, -1),
-                    (MouseEventKind::ScrollDown, _) => DashboardInput::Scroll(pane, 1),
-                    _ => DashboardInput::Unhandled,
-                };
-            }
+        if pane == DashboardPane::Roster
+            && let Some(target) = context.roster.hit_test(event.column, event.row)
+        {
+            return match (event.kind, target) {
+                (MouseEventKind::Down(MouseButton::Left), RosterHitTarget::Row(key)) => {
+                    DashboardInput::Select(key)
+                }
+                (MouseEventKind::Down(MouseButton::Left), RosterHitTarget::Group(group)) => {
+                    DashboardInput::ToggleGroup(group)
+                }
+                (MouseEventKind::ScrollUp, _) => DashboardInput::Scroll(pane, -1),
+                (MouseEventKind::ScrollDown, _) => DashboardInput::Scroll(pane, 1),
+                _ => DashboardInput::Unhandled,
+            };
         }
         match event.kind {
             MouseEventKind::ScrollUp => DashboardInput::Scroll(pane, -1),

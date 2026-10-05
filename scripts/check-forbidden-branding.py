@@ -85,7 +85,7 @@ ALLOWED_MATCH_TEXT: Final[dict[Path, set[str]]] = {
         '"Pi" => "Π",',
     },
     Path("crates/harness-tui/src/startup_logo.rs"): {
-        "0.5 * (1.0 + (std::f32::consts::PI * distance / 0.38).cos())",
+        "f32::midpoint(1.0, (std::f32::consts::PI * distance / 0.38).cos())",
     },
 }
 SOURCE_PREFIX: Final[str] = "p" + "i"

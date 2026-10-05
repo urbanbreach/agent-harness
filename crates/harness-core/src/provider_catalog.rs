@@ -7,7 +7,7 @@ use std::{
     collections::BTreeMap,
     io::Read,
     path::Path,
-    sync::{Arc, OnceLock},
+    sync::{Arc, LazyLock},
 };
 mod cache;
 mod json;
@@ -72,14 +72,11 @@ impl ProviderCatalog {
         Self::parse(body, false, "file://<redacted>")
     }
     pub fn from_embedded() -> Result<Self, CatalogError> {
-        static CATALOG: OnceLock<Result<ProviderCatalog, String>> = OnceLock::new();
-        CATALOG
-            .get_or_init(|| {
-                Self::parse(EMBEDDED, true, "https://models.dev/api.json")
-                    .map_err(|e| e.to_string())
-            })
-            .clone()
-            .map_err(CatalogError::Invalid)
+        static CATALOG: LazyLock<Result<ProviderCatalog, String>> = LazyLock::new(|| {
+            ProviderCatalog::parse(EMBEDDED, true, "https://models.dev/api.json")
+                .map_err(|e| e.to_string())
+        });
+        CATALOG.clone().map_err(CatalogError::Invalid)
     }
     pub fn from_path(path: &Path) -> Result<Self, CatalogError> {
         let metadata = std::fs::symlink_metadata(path)?;

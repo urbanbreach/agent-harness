@@ -172,18 +172,18 @@ impl Drop for Record {
         } else {
             DefaultRedactor::default().redact_text(&String::from_utf8_lossy(&self.bytes))
         };
-        if let Ok(mut state) = LOG.lock() {
-            if let Some(log) = state.as_mut() {
-                // ponytail: synchronous low-volume diagnostics; use a bounded worker if profiling shows log I/O stalls.
-                if log.bytes.saturating_add(text.len() as u64) <= MAX_LOG
-                    && match &mut log.file {
-                        Some(file) => file.write_all(text.as_bytes()),
-                        None => io::stderr().write_all(text.as_bytes()),
-                    }
-                    .is_ok()
-                {
-                    log.bytes += text.len() as u64;
+        if let Ok(mut state) = LOG.lock()
+            && let Some(log) = state.as_mut()
+        {
+            // ponytail: synchronous low-volume diagnostics; use a bounded worker if profiling shows log I/O stalls.
+            if log.bytes.saturating_add(text.len() as u64) <= MAX_LOG
+                && match &mut log.file {
+                    Some(file) => file.write_all(text.as_bytes()),
+                    None => io::stderr().write_all(text.as_bytes()),
                 }
+                .is_ok()
+            {
+                log.bytes += text.len() as u64;
             }
         }
     }

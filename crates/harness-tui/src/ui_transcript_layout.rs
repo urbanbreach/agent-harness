@@ -840,27 +840,26 @@ fn render_child_selection(
                 | TranscriptRenderSurfaceKind::AssistantCommandTool
                 | TranscriptRenderSurfaceKind::AssistantReasoning
         )
+        && let Some(line) = surface.lines.first()
     {
-        if let Some(line) = surface.lines.first() {
-            let text = line.to_string();
-            let content = text.trim_start();
-            let content = content
-                .strip_prefix(theme.live_shell.transcript_glyphs.rail)
-                .unwrap_or(content)
-                .trim_start();
-            let offset = unicode_width::UnicodeWidthStr::width(&text[..text.len() - content.len()]);
-            if let Some(cell) = frame.buffer_mut().cell_mut((
-                selected_rect
-                    .x
-                    .saturating_add(u16::try_from(offset).unwrap_or(u16::MAX)),
-                selected_rect.y,
-            )) {
-                cell.set_symbol(if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
-                    ">"
-                } else {
-                    "›"
-                });
-            }
+        let text = line.to_string();
+        let content = text.trim_start();
+        let content = content
+            .strip_prefix(theme.live_shell.transcript_glyphs.rail)
+            .unwrap_or(content)
+            .trim_start();
+        let offset = unicode_width::UnicodeWidthStr::width(&text[..text.len() - content.len()]);
+        if let Some(cell) = frame.buffer_mut().cell_mut((
+            selected_rect
+                .x
+                .saturating_add(u16::try_from(offset).unwrap_or(u16::MAX)),
+            selected_rect.y,
+        )) {
+            cell.set_symbol(if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+                ">"
+            } else {
+                "›"
+            });
         }
     }
 }
@@ -1061,10 +1060,10 @@ pub(super) fn transcript_visual_entry_viewport_placement(
     let mut surface_top = section_content_top.saturating_add(surface.top_offset);
     if let Some((pin_section, pin_surface, delta)) =
         typed_footer_pin_delta(layout, viewport_height, scroll_top)
+        && pin_section == section_idx
+        && pin_surface == surface_idx
     {
-        if pin_section == section_idx && pin_surface == surface_idx {
-            surface_top = surface_top.saturating_add(delta);
-        }
+        surface_top = surface_top.saturating_add(delta);
     }
     let surface_bottom = surface_top.saturating_add(surface.height);
     let scroll_top = scroll_top.saturating_add(sticky_height);

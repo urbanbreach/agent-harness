@@ -294,22 +294,22 @@ pub(crate) fn execute(
         }
     };
     redact_in_place(&redactor, &mut report);
-    if !command.json {
-        if let Some(rows) = report.as_array() {
-            writeln!(io.stdout, "run_id\tstatus\tresumable\ttitle").map_err(|e| e.to_string())?;
-            for row in rows {
-                writeln!(
-                    io.stdout,
-                    "{}\t{}\t{}\t{}",
-                    row["run_id"].as_str().unwrap_or("?"),
-                    row["status"].as_str().unwrap_or("unavailable"),
-                    row["is_resumable"],
-                    row["run_name"].as_str().unwrap_or("")
-                )
-                .map_err(|e| e.to_string())?;
-            }
-            return Ok(());
+    if !command.json
+        && let Some(rows) = report.as_array()
+    {
+        writeln!(io.stdout, "run_id\tstatus\tresumable\ttitle").map_err(|e| e.to_string())?;
+        for row in rows {
+            writeln!(
+                io.stdout,
+                "{}\t{}\t{}\t{}",
+                row["run_id"].as_str().unwrap_or("?"),
+                row["status"].as_str().unwrap_or("unavailable"),
+                row["is_resumable"],
+                row["run_name"].as_str().unwrap_or("")
+            )
+            .map_err(|e| e.to_string())?;
         }
+        return Ok(());
     }
     crate::inspect::print_json(io, &report)
 }

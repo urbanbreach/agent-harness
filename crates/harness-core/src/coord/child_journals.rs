@@ -157,6 +157,14 @@ impl Runtime {
         .and_then(|id| self.child_journals.get_mut(id).map(|child| (id, child)))
         {
             child.append(event, id, &source, &self.config.session_dir.join(id))?;
+            // Terminal receipts can reopen a writer after TaskCompleted closed it.
+            if self
+                .native_subagents
+                .get(id)
+                .is_some_and(super::public_subagents::NativeSubagent::is_terminal)
+            {
+                child.journal = None;
+            }
         }
         Ok(())
     }

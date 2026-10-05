@@ -232,15 +232,15 @@ impl Cell {
 
 impl State {
     fn status(&mut self, event: Value) {
-        if event["op"] == "agent" && event["id"].is_string() {
-            if let Some(previous) = self
+        if event["op"] == "agent"
+            && event["id"].is_string()
+            && let Some(previous) = self
                 .statuses
                 .iter_mut()
                 .find(|previous| previous["op"] == "agent" && previous["id"] == event["id"])
-            {
-                *previous = event;
-                return;
-            }
+        {
+            *previous = event;
+            return;
         }
         self.statuses.push(event);
         if self.statuses.len() <= 100 {

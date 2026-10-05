@@ -299,10 +299,9 @@ impl AppState {
             if let (Some(values), Some(custom)) = (
                 answers.get_mut(index),
                 self.question_prompt.custom.get(index),
-            ) {
-                if !custom.is_empty() {
-                    values.push(custom.clone());
-                }
+            ) && !custom.is_empty()
+            {
+                values.push(custom.clone());
             }
         }
         answers
@@ -615,11 +614,11 @@ impl AppState {
                 }
             }
 
-            if let KeyCode::Char(number) = key.code {
-                if let Some(selection) = PermissionModalSelection::from_number(number) {
-                    self.activate_permission_modal_selection(&permission.permission_id, selection);
-                    return;
-                }
+            if let KeyCode::Char(number) = key.code
+                && let Some(selection) = PermissionModalSelection::from_number(number)
+            {
+                self.activate_permission_modal_selection(&permission.permission_id, selection);
+                return;
             }
 
             match key.code {
@@ -659,17 +658,17 @@ impl AppState {
             }
         }
 
-        if let Some(action) = self.keymap.get_action(&key) {
-            if matches!(
+        if let Some(action) = self.keymap.get_action(&key)
+            && matches!(
                 action,
                 Action::AllowPermission
                     | Action::ToggleYoloMode
                     | Action::DenyPermission
                     | Action::DismissModal
-            ) {
-                self.execute_action(action);
-                self.maybe_auto_exit();
-            }
+            )
+        {
+            self.execute_action(action);
+            self.maybe_auto_exit();
         }
     }
 
@@ -829,25 +828,24 @@ impl AppState {
             return;
         }
 
-        if let Some(prompt) = prompts.get(self.question_prompt.tab) {
-            if prompt.custom
-                && self.question_prompt.selection == prompt.options.len()
-                && (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT)
-                && matches!(key.code, KeyCode::Char(character) if character != ' ')
-                && !matches!(
-                    key.code,
-                    KeyCode::Char(character)
-                        if key.modifiers.is_empty()
-                            && question_option_index_for_key(character)
-                                .is_some_and(|index| index < prompt.options.len())
-                )
-            {
-                self.start_question_custom_edit(permission_id, prompt.multiple);
-                if let KeyCode::Char(character) = key.code {
-                    self.insert_question_answer_char(character);
-                }
-                return;
+        if let Some(prompt) = prompts.get(self.question_prompt.tab)
+            && prompt.custom
+            && self.question_prompt.selection == prompt.options.len()
+            && (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT)
+            && matches!(key.code, KeyCode::Char(character) if character != ' ')
+            && !matches!(
+                key.code,
+                KeyCode::Char(character)
+                    if key.modifiers.is_empty()
+                        && question_option_index_for_key(character)
+                            .is_some_and(|index| index < prompt.options.len())
+            )
+        {
+            self.start_question_custom_edit(permission_id, prompt.multiple);
+            if let KeyCode::Char(character) = key.code {
+                self.insert_question_answer_char(character);
             }
+            return;
         }
 
         if let Some(forward) = question_row_walk(&key) {
@@ -997,17 +995,17 @@ impl AppState {
     }
 
     fn handle_permission_keybinding(&mut self, key: KeyEvent) {
-        if let Some(action) = self.keymap.get_action(&key) {
-            if matches!(
+        if let Some(action) = self.keymap.get_action(&key)
+            && matches!(
                 action,
                 Action::AllowPermission
                     | Action::ToggleYoloMode
                     | Action::DenyPermission
                     | Action::DismissModal
-            ) {
-                self.execute_action(action);
-                self.maybe_auto_exit();
-            }
+            )
+        {
+            self.execute_action(action);
+            self.maybe_auto_exit();
         }
     }
 

@@ -244,10 +244,10 @@ impl AppState {
             }
             _ => Vec::new(),
         };
-        if let [id] = tool_ids.as_slice() {
-            if let Some(tool) = self.tool_call_entry(id) {
-                return ui::recorded_tool_viewer_content(tool);
-            }
+        if let [id] = tool_ids.as_slice()
+            && let Some(tool) = self.tool_call_entry(id)
+        {
+            return ui::recorded_tool_viewer_content(tool);
         }
         if !tool_ids.is_empty() {
             let text = tool_ids

@@ -1149,10 +1149,11 @@ impl AppState {
                 Some(LiveTurnPhase::WritingToolCall { .. })
             )
         );
-        if next != previous && !continued_writing {
-            if let Some(request_id) = self.live_turn_request_id.clone() {
-                self.restart_live_turn_phase_timing(&request_id);
-            }
+        if next != previous
+            && !continued_writing
+            && let Some(request_id) = self.live_turn_request_id.clone()
+        {
+            self.restart_live_turn_phase_timing(&request_id);
         }
     }
 

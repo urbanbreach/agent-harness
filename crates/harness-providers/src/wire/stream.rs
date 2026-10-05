@@ -223,10 +223,10 @@ impl StreamDecoder {
                 _ => {}
             },
             "content_block_stop" => {
-                if let Some(index) = value["index"].as_u64() {
-                    if let Some(block) = self.anthropic_thinking.get_mut(&index) {
-                        block.finished = true;
-                    }
+                if let Some(index) = value["index"].as_u64()
+                    && let Some(block) = self.anthropic_thinking.get_mut(&index)
+                {
+                    block.finished = true;
                 }
             }
             "message_delta" => {
@@ -362,10 +362,10 @@ impl StreamDecoder {
         let mut events = Vec::new();
         let mut ids = std::collections::BTreeSet::new();
         for (_, mut tool) in std::mem::take(&mut self.tools) {
-            if tool.arguments.is_empty() {
-                if let Some(input) = tool.initial_input {
-                    tool.arguments = input.to_string();
-                }
+            if tool.arguments.is_empty()
+                && let Some(input) = tool.initial_input
+            {
+                tool.arguments = input.to_string();
             }
             if tool.id.is_empty()
                 || tool.name.is_empty()

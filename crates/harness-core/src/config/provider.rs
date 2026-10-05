@@ -128,10 +128,10 @@ impl std::fmt::Debug for ProviderConfig {
 
 impl ProviderConfig {
     pub fn credential_provider(&self, name: &str) -> Option<AuthProviderId> {
-        if let Self::OpenAiCompatible(provider) = self {
-            if let Some(id) = &provider.auth_provider {
-                return Some(id.clone());
-            }
+        if let Self::OpenAiCompatible(provider) = self
+            && let Some(id) = &provider.auth_provider
+        {
+            return Some(id.clone());
         }
         if name == "openai-codex" {
             Some(AuthProviderId::codex())

@@ -43,20 +43,20 @@ impl Worker {
                 harness_providers::CompletionMessage::text(MessageRole::System, metadata),
             );
         }
-        if let Some(preloads) = &self.skill_preloads {
-            if !preloads.is_empty() {
-                request_messages.insert(
-                    0,
-                    harness_providers::CompletionMessage::text(
-                        MessageRole::System,
-                        preloads
-                            .iter()
-                            .map(|(_, body)| body.as_str())
-                            .collect::<Vec<_>>()
-                            .join("\n\n"),
-                    ),
-                );
-            }
+        if let Some(preloads) = &self.skill_preloads
+            && !preloads.is_empty()
+        {
+            request_messages.insert(
+                0,
+                harness_providers::CompletionMessage::text(
+                    MessageRole::System,
+                    preloads
+                        .iter()
+                        .map(|(_, body)| body.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n\n"),
+                ),
+            );
         }
         CompletionRequest {
             provider_id: Some(model.provider_id),

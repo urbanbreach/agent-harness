@@ -275,7 +275,7 @@ pub fn discover_extension_manifests(root: &Path) -> Vec<ExtensionManifestSummary
     summaries.sort_by(|a, b| a.extension_id.cmp(&b.extension_id));
     summaries
 }
-pub(crate) fn manifest_paths(root: &Path) -> impl Iterator<Item = std::path::PathBuf> {
+pub(crate) fn manifest_paths(root: &Path) -> impl Iterator<Item = std::path::PathBuf> + use<> {
     std::iter::once(root.join(EXTENSION_MANIFEST_FILE_NAME)).chain(
         std::fs::read_dir(root)
             .into_iter()

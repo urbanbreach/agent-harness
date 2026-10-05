@@ -113,10 +113,11 @@ fn clean_event(
         }
         EventV1::ProviderReasoningDelta(_) => false,
         EventV1::AssistantMessageFinished(message) => {
-            if let Some(text) = pending.remove(message.request_id.as_str()) {
-                if message.parts.is_empty() && !text.is_empty() {
-                    message.parts.push(AssistantPart::Text { text });
-                }
+            if let Some(text) = pending.remove(message.request_id.as_str())
+                && message.parts.is_empty()
+                && !text.is_empty()
+            {
+                message.parts.push(AssistantPart::Text { text });
             }
             message
                 .parts

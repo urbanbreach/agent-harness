@@ -182,13 +182,9 @@ impl Tool for EvalTool {
     async fn close_run(&self, run_id: &str) -> Result<(), ToolError> {
         let hosts = {
             let mut hosts = self.hosts.lock().await;
-            let keys: Vec<_> = hosts
-                .keys()
-                .filter(|(run, _)| run == run_id)
-                .cloned()
-                .collect();
-            keys.into_iter()
-                .filter_map(|key| hosts.remove(&key))
+            hosts
+                .extract_if(.., |(run, _), _| run == run_id)
+                .map(|(_, host)| host)
                 .collect::<Vec<_>>()
         };
         for slot in hosts {

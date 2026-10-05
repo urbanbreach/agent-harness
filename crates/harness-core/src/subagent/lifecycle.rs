@@ -324,16 +324,16 @@ impl LifecycleState {
         mut key: SubagentAttemptKey,
         event_seq: Option<u64>,
     ) -> LifecycleReduction {
-        if key == SubagentAttemptKey::Legacy {
-            if let Some(typed_key @ SubagentAttemptKey::Id(_)) = self.current.as_ref() {
-                let Some(attempt) = self.attempts.get(typed_key) else {
-                    return LifecycleReduction::Dropped;
-                };
-                if attempt.phase != AttemptPhase::Running {
-                    return LifecycleReduction::Dropped;
-                }
-                key = typed_key.clone();
+        if key == SubagentAttemptKey::Legacy
+            && let Some(typed_key @ SubagentAttemptKey::Id(_)) = self.current.as_ref()
+        {
+            let Some(attempt) = self.attempts.get(typed_key) else {
+                return LifecycleReduction::Dropped;
+            };
+            if attempt.phase != AttemptPhase::Running {
+                return LifecycleReduction::Dropped;
             }
+            key = typed_key.clone();
         }
         if let Some(attempt) = self.attempts.get(&key) {
             if attempt.phase != AttemptPhase::Running

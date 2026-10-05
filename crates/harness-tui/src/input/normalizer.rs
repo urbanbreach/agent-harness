@@ -191,13 +191,13 @@ impl InputNormalizer {
     }
 
     fn validate_timestamp(&mut self, at: Duration) -> Result<(), NormalizerError> {
-        if let Some(previous) = self.last_at {
-            if at < previous {
-                return Err(NormalizerError::NonMonotonicTimestamp {
-                    previous,
-                    current: at,
-                });
-            }
+        if let Some(previous) = self.last_at
+            && at < previous
+        {
+            return Err(NormalizerError::NonMonotonicTimestamp {
+                previous,
+                current: at,
+            });
         }
         self.last_at = Some(at);
         Ok(())

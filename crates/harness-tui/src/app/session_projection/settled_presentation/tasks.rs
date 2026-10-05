@@ -75,19 +75,17 @@ pub(super) fn add_task(
             && lineage
                 .and_then(|value| value.parent_tool_call_id.as_ref())
                 .is_none();
-    if is_turn_terminal {
-        if let Some(request_id) = request_id {
-            turn_terminals.insert(
-                request_id.to_string(),
-                SettledTurnTerminal {
-                    state: task.state,
-                    reason: task.reason.clone(),
-                    result_summary: task.result_summary.clone(),
-                    elapsed_ms: task.timing_elapsed_ms,
-                    terminal_mono_ms: task.terminal_mono_ms,
-                },
-            );
-        }
+    if is_turn_terminal && let Some(request_id) = request_id {
+        turn_terminals.insert(
+            request_id.to_string(),
+            SettledTurnTerminal {
+                state: task.state,
+                reason: task.reason.clone(),
+                result_summary: task.result_summary.clone(),
+                elapsed_ms: task.timing_elapsed_ms,
+                terminal_mono_ms: task.terminal_mono_ms,
+            },
+        );
     }
 }
 
@@ -126,11 +124,11 @@ pub(super) fn apply_turn_terminals(
         match terminal.state {
             ProjectedTaskState::Completed => {
                 activity.status = ActivityStatus::Done;
-                if activity.transcript_text.is_empty() {
-                    if let Some(result_summary) = terminal.result_summary.as_ref() {
-                        activity.transcript_text.clone_from(result_summary);
-                        activity.bump_revision();
-                    }
+                if activity.transcript_text.is_empty()
+                    && let Some(result_summary) = terminal.result_summary.as_ref()
+                {
+                    activity.transcript_text.clone_from(result_summary);
+                    activity.bump_revision();
                 }
                 completed.insert(request_id.clone());
             }

@@ -333,7 +333,7 @@ impl AppState {
         self.settings_editor_selected = indices[next];
     }
 
-    fn settings_indices(&self) -> impl Iterator<Item = usize> + '_ {
+    fn settings_indices(&self) -> impl Iterator<Item = usize> {
         let surface = self.settings_editor_tab.surface();
         settings_registry()
             .iter()
@@ -446,14 +446,14 @@ impl AppState {
         let Some(setting_id) = self.settings_editor_selected_id() else {
             return;
         };
-        if let Some(def) = setting_definition(setting_id) {
-            if def.is_secret() || matches!(def.sensitivity, SettingSensitivity::Secret) {
-                self.show_toast(
-                    format!("secret setting `{setting_id}` cannot be edited"),
-                    ToastVariant::Error,
-                );
-                return;
-            }
+        if let Some(def) = setting_definition(setting_id)
+            && (def.is_secret() || matches!(def.sensitivity, SettingSensitivity::Secret))
+        {
+            self.show_toast(
+                format!("secret setting `{setting_id}` cannot be edited"),
+                ToastVariant::Error,
+            );
+            return;
         }
         if !is_writable_setting(setting_id) {
             self.show_toast(
@@ -596,14 +596,14 @@ impl AppState {
         let Some(setting_id) = self.settings_editor_selected_id() else {
             return;
         };
-        if let Some(def) = setting_definition(setting_id) {
-            if def.is_secret() {
-                self.show_toast(
-                    format!("secret setting `{setting_id}` cannot be reset"),
-                    ToastVariant::Error,
-                );
-                return;
-            }
+        if let Some(def) = setting_definition(setting_id)
+            && def.is_secret()
+        {
+            self.show_toast(
+                format!("secret setting `{setting_id}` cannot be reset"),
+                ToastVariant::Error,
+            );
+            return;
         }
         if !is_writable_setting(setting_id) {
             self.show_toast(
@@ -789,13 +789,12 @@ impl AppState {
     }
 
     pub(in crate::app) fn settings_editor_choose(&mut self, index: usize) {
-        if let Some(edit) = &mut self.settings_interaction.edit {
-            if let SettingEditorKind::Choice(choices) = edit.kind {
-                if let Some(choice) = choices.get(index) {
-                    edit.editor = ComposerEditor::from_text(choice);
-                    edit.error = None;
-                }
-            }
+        if let Some(edit) = &mut self.settings_interaction.edit
+            && let SettingEditorKind::Choice(choices) = edit.kind
+            && let Some(choice) = choices.get(index)
+        {
+            edit.editor = ComposerEditor::from_text(choice);
+            edit.error = None;
         }
     }
 

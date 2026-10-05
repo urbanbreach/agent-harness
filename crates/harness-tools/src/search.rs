@@ -110,7 +110,9 @@ impl Tool for SearchTool {
         .map_err(|_| ToolError::Execution("file search stopped unexpectedly".into()))?
     }
 }
-pub(crate) fn files(root: &std::path::Path) -> impl Iterator<Item = Result<PathBuf, ToolError>> {
+pub(crate) fn files(
+    root: &std::path::Path,
+) -> impl Iterator<Item = Result<PathBuf, ToolError>> + use<> {
     ignore::WalkBuilder::new(root)
         .follow_links(false)
         .require_git(false)

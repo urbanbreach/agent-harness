@@ -84,10 +84,10 @@ impl Runtime {
             if self.running.contains_key(&preparation) {
                 self.cancel(&preparation, reason)?;
             }
-        } else if let Some(request) = request {
-            if self.running.contains_key(&request) {
-                self.cancel(&request, reason)?;
-            }
+        } else if let Some(request) = request
+            && self.running.contains_key(&request)
+        {
+            self.cancel(&request, reason)?;
         }
         Ok(())
     }
@@ -117,10 +117,10 @@ impl Runtime {
         child.foreground_attached = false;
         let tool = child.registration.parent_tool.clone();
         let request = child.request.clone();
-        if let Some(request) = &request {
-            if let Some(job) = self.running.get_mut(request) {
-                job.parent = None;
-            }
+        if let Some(request) = &request
+            && let Some(job) = self.running.get_mut(request)
+        {
+            job.parent = None;
         }
         if let Some(attempt) = self.agents[id].attempt.clone() {
             let transition = self.agent_transition(

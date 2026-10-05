@@ -133,23 +133,23 @@ pub(crate) fn runtime_state(input: RuntimeStateInput<'_>) -> RuntimeStateView<'_
         state.detail = Some(permission.summary.into());
         return state;
     }
-    if let Some(EventV1::TaskCancelled(cancelled)) = input.last_event {
-        if cancelled.task_scope != Some(TaskTerminalScope::ToolCall) {
-            state.kind = Kind::Cancelled;
-            state.detail = nonempty(&cancelled.reason);
-            state.summary = state.detail.as_deref().map_or_else(
-                || "last turn cancelled · ready to try again".into(),
-                |reason| {
-                    format!(
-                        "last turn cancelled · {}",
-                        sanitize_runtime_summary_fragment(reason)
-                    )
-                    .into()
-                },
-            );
-            state.composer_hint = "Type a prompt to retry the cancelled turn…";
-            return state;
-        }
+    if let Some(EventV1::TaskCancelled(cancelled)) = input.last_event
+        && cancelled.task_scope != Some(TaskTerminalScope::ToolCall)
+    {
+        state.kind = Kind::Cancelled;
+        state.detail = nonempty(&cancelled.reason);
+        state.summary = state.detail.as_deref().map_or_else(
+            || "last turn cancelled · ready to try again".into(),
+            |reason| {
+                format!(
+                    "last turn cancelled · {}",
+                    sanitize_runtime_summary_fragment(reason)
+                )
+                .into()
+            },
+        );
+        state.composer_hint = "Type a prompt to retry the cancelled turn…";
+        return state;
     }
     let Some(activity) = input.latest_activity else {
         if input.replay_mode {
@@ -157,10 +157,10 @@ pub(crate) fn runtime_state(input: RuntimeStateInput<'_>) -> RuntimeStateView<'_
         }
         return state;
     };
-    if activity.status == ActivityStatus::Streaming {
-        if let Some(state) = activity.tool_calls.last().and_then(tool_state) {
-            return state;
-        }
+    if activity.status == ActivityStatus::Streaming
+        && let Some(state) = activity.tool_calls.last().and_then(tool_state)
+    {
+        return state;
     }
     let (kind, suffix, hint) = match activity.status {
         ActivityStatus::Queued => (

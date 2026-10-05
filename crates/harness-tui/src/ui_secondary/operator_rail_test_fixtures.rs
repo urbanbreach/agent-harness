@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{Mutex, MutexGuard};
 
 use super::*;
 
 pub(crate) fn operator_sidebar_config_test_guard() -> MutexGuard<'static, ()> {
-    static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+    static GUARD: Mutex<()> = Mutex::new(());
     let guard = GUARD
-        .get_or_init(|| Mutex::new(()))
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     harness_core::config::clear_registered_integrations_config();

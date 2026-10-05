@@ -13,13 +13,13 @@ impl AppState {
     }
 
     fn copy_task_row(&mut self) {
-        if let Some(row) = self.task_pane_rows().get(self.tasks_pane.selected) {
-            if let Err(error) = super::super::clipboard::copy(&row.search_label()) {
-                self.show_toast(
-                    format!("clipboard copy failed: {error}"),
-                    super::super::ToastVariant::Error,
-                );
-            }
+        if let Some(row) = self.task_pane_rows().get(self.tasks_pane.selected)
+            && let Err(error) = super::super::clipboard::copy(&row.search_label())
+        {
+            self.show_toast(
+                format!("clipboard copy failed: {error}"),
+                super::super::ToastVariant::Error,
+            );
         }
     }
 
@@ -61,14 +61,13 @@ impl AppState {
             self.show_toast(error.to_string(), super::super::ToastVariant::Error);
         }
         self.reconcile_task_selection();
-        if self.tasks_pane.query.mode == PaneQueryMode::Search {
-            if let Some(index) = self
+        if self.tasks_pane.query.mode == PaneQueryMode::Search
+            && let Some(index) = self
                 .task_pane_rows()
                 .iter()
                 .position(|row| !row.header && self.tasks_pane.query.matches(&row.search_label()))
-            {
-                self.tasks_pane.selected = index;
-            }
+        {
+            self.tasks_pane.selected = index;
         }
         self.remember_task_selection();
         true

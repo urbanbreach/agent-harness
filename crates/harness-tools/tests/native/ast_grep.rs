@@ -225,10 +225,10 @@ async fn ast_finished(
     use tokio_stream::StreamExt;
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while let Some(event) = events.next().await {
-            if let EventV1::ToolCallFinished(result) = event?.payload {
-                if result.tool_call_id.as_str() == task {
-                    return Ok(result.status);
-                }
+            if let EventV1::ToolCallFinished(result) = event?.payload
+                && result.tool_call_id.as_str() == task
+            {
+                return Ok(result.status);
             }
         }
         Err("missing AST completion".into())
