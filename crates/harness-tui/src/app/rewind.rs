@@ -100,12 +100,10 @@ impl AppState {
         if let Some(state) = self.rewind.state.as_mut() {
             state.phase = RewindPhase::Loading;
         }
-        if cancel {
-            if let Some(compaction) = self.active_compaction() {
-                self.emit_ui_intent(UiIntent::CancelCompaction {
-                    agent_id: compaction.agent_id.clone(),
-                });
-            }
+        if cancel && let Some(compaction) = self.active_compaction() {
+            self.emit_ui_intent(UiIntent::CancelCompaction {
+                agent_id: compaction.agent_id.clone(),
+            });
         }
         self.emit_ui_intent(UiIntent::LoadRewindPoints {
             generation: self.rewind.generation,

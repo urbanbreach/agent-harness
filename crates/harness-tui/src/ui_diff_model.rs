@@ -389,11 +389,11 @@ fn push_diff_segments(target: &mut Vec<DiffSegment>, tokens: &[String], kind: Di
         return;
     }
     let chunk = tokens.concat();
-    if let Some(previous) = target.last_mut() {
-        if previous.kind == kind {
-            previous.text.push_str(&chunk);
-            return;
-        }
+    if let Some(previous) = target.last_mut()
+        && previous.kind == kind
+    {
+        previous.text.push_str(&chunk);
+        return;
     }
     target.push(DiffSegment { kind, text: chunk });
 }

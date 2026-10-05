@@ -269,15 +269,15 @@ pub(super) fn load_grants(
 ) -> Result<Vec<PermissionGrant>, CoordinatorError> {
     let mut grants = workspace_grants(root)?;
     for event in events {
-        if let EventV1::PermissionGrantRecorded(e) = &event.payload {
-            if e.grant.scope == PermissionGrantScope::Session {
-                if grants.len() >= MAX_GRANTS {
-                    return Err(CoordinatorError::Invalid(
-                        "session permission grant limit reached".into(),
-                    ));
-                }
-                grants.push(e.grant.clone());
+        if let EventV1::PermissionGrantRecorded(e) = &event.payload
+            && e.grant.scope == PermissionGrantScope::Session
+        {
+            if grants.len() >= MAX_GRANTS {
+                return Err(CoordinatorError::Invalid(
+                    "session permission grant limit reached".into(),
+                ));
             }
+            grants.push(e.grant.clone());
         }
     }
     for grant in &mut grants {

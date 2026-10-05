@@ -154,10 +154,10 @@ where
         Some(path) => deps.with_current_dir(path),
         None => deps,
     };
-    if cli.debug || cli.debug_file.is_some() {
-        if let Err(error) = logging::init_debug_logging(cli.debug, cli.debug_file.as_deref()) {
-            let _ = writeln!(io.stderr, "failed to initialize debug logging: {error}");
-        }
+    if (cli.debug || cli.debug_file.is_some())
+        && let Err(error) = logging::init_debug_logging(cli.debug, cli.debug_file.as_deref())
+    {
+        let _ = writeln!(io.stderr, "failed to initialize debug logging: {error}");
     }
     let command = cli.command.unwrap_or({
         Commands::Tui(tui::TuiCommand {

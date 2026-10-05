@@ -122,11 +122,10 @@ mod tests {
 
     #[test]
     fn streaming_reuses_committed_lines_and_invalidates_edits_and_palette_changes() {
-        let syntaxes = super::super::syntax_highlight_assets();
+        let syntaxes = &super::super::SYNTAX_SET;
         let syntax = syntaxes
-            .syntax_set
             .find_syntax_by_token("rust")
-            .unwrap_or_else(|| syntaxes.syntax_set.find_syntax_plain_text());
+            .unwrap_or_else(|| syntaxes.find_syntax_plain_text());
         CACHE.with_borrow_mut(Vec::clear);
         PARSED_LINES.set(0);
         let mut source = String::new();
@@ -134,7 +133,7 @@ mod tests {
         let palette = super::super::syntax_theme(&theme).unwrap_or_abort();
         for _ in 0..30 {
             source.push_str("let value = 42;\n");
-            assert!(highlight(syntax, &syntaxes.syntax_set, palette, true, &source).is_some());
+            assert!(highlight(syntax, syntaxes, palette, true, &source).is_some());
         }
         assert_eq!(
             PARSED_LINES.get(),
@@ -151,9 +150,9 @@ mod tests {
             ),
         ] {
             let palette = super::super::syntax_theme(&theme).unwrap_or_abort();
-            let cached = highlight(syntax, &syntaxes.syntax_set, palette, theme.is_dark(), body);
+            let cached = highlight(syntax, syntaxes, palette, theme.is_dark(), body);
             CACHE.with_borrow_mut(Vec::clear);
-            let fresh = highlight(syntax, &syntaxes.syntax_set, palette, theme.is_dark(), body);
+            let fresh = highlight(syntax, syntaxes, palette, theme.is_dark(), body);
             assert_eq!(cached, fresh);
         }
     }

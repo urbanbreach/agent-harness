@@ -39,13 +39,13 @@ impl OrderedValue {
     }
 
     pub fn rename(&mut self, old: &str, new: &str) -> Result<(), ConfigError> {
-        if let Self::Object(object) = self {
-            if let Some(value) = object.shift_remove(old) {
-                if object.contains_key(new) {
-                    return Err(ConfigError(format!("use only one of {old} and {new}")));
-                }
-                object.insert(new.into(), value);
+        if let Self::Object(object) = self
+            && let Some(value) = object.shift_remove(old)
+        {
+            if object.contains_key(new) {
+                return Err(ConfigError(format!("use only one of {old} and {new}")));
             }
+            object.insert(new.into(), value);
         }
         Ok(())
     }

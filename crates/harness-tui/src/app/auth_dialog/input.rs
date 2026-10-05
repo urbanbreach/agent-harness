@@ -221,17 +221,9 @@ impl AppState {
 }
 
 fn previous_char_boundary(value: &str, cursor: usize) -> usize {
-    value[..cursor]
-        .char_indices()
-        .last()
-        .map(|(index, _)| index)
-        .unwrap_or(0)
+    value.floor_char_boundary(cursor.saturating_sub(1))
 }
 
 fn next_char_boundary(value: &str, cursor: usize) -> usize {
-    value[cursor..]
-        .chars()
-        .next()
-        .map(|character| cursor + character.len_utf8())
-        .unwrap_or(value.len())
+    value.ceil_char_boundary(cursor.saturating_add(1))
 }

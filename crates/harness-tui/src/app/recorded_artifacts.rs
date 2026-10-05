@@ -82,7 +82,7 @@ impl AppState {
     }
 }
 
-fn artifact_paths(value: &serde_json::Value) -> impl Iterator<Item = String> + '_ {
+fn artifact_paths(value: &serde_json::Value) -> impl Iterator<Item = String> {
     std::iter::once(value)
         .chain(
             value

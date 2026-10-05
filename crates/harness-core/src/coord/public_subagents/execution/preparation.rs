@@ -232,10 +232,10 @@ impl Runtime {
         )?;
         if let Some(child) = self.native_subagents.get_mut(agent) {
             child.request = Some(request.clone());
-            if child.foreground_attached {
-                if let Some(job) = self.running.get_mut(&request) {
-                    job.parent = Some(child.registration.parent_tool.clone());
-                }
+            if child.foreground_attached
+                && let Some(job) = self.running.get_mut(&request)
+            {
+                job.parent = Some(child.registration.parent_tool.clone());
             }
         }
         Ok(())

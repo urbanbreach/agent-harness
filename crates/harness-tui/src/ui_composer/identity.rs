@@ -12,14 +12,13 @@ pub(crate) fn composer_model_badge(
     } else if !app.composer.prompt_buffer.is_empty() {
         identity.push("unknown".to_string());
     }
-    if let Some(reasoning) = app.current_model_reasoning_label() {
-        if !reasoning.is_empty()
-            && !identity
-                .iter()
-                .any(|part| part.eq_ignore_ascii_case(reasoning) || part.contains(reasoning))
-        {
-            identity.push(reasoning.to_string());
-        }
+    if let Some(reasoning) = app.current_model_reasoning_label()
+        && !reasoning.is_empty()
+        && !identity
+            .iter()
+            .any(|part| part.eq_ignore_ascii_case(reasoning) || part.contains(reasoning))
+    {
+        identity.push(reasoning.to_string());
     }
     identity.extend(extra_identity.iter().cloned());
 

@@ -483,14 +483,13 @@ async fn approval(
 ) -> Result<String, Box<dyn std::error::Error>> {
     tokio::time::timeout(Duration::from_secs(3), async {
         while let Some(event) = events.next().await {
-            if let EventV1::PermissionRequested(request) = event?.payload {
-                if request
+            if let EventV1::PermissionRequested(request) = event?.payload
+                && request
                     .tool_call_id
                     .as_ref()
                     .is_some_and(|id| id.as_str() == task)
-                {
-                    return Ok(request.permission_id);
-                }
+            {
+                return Ok(request.permission_id);
             }
         }
         Err("approval missing".into())

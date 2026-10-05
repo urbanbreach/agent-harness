@@ -61,10 +61,9 @@ impl AppState {
             .session_navigation_stack
             .first()
             .is_some_and(|parent| !parent.replay_mode)
+            && let Some(session_id) = self.current_session_id().map(str::to_owned)
         {
-            if let Some(session_id) = self.current_session_id().map(str::to_owned) {
-                self.request_child_cancel(session_id);
-            }
+            self.request_child_cancel(session_id);
         }
     }
 
@@ -136,14 +135,12 @@ impl AppState {
             && !self.handle_child_link_key(key)
             && !self.handle_child_content_key(key)
             && !self.handle_transcript_navigation_key(key)
-        {
-            if let Some(action) = self
+            && let Some(action) = self
                 .keymap
                 .get_action(&key)
                 .filter(|action| child_inspection_action(*action))
-            {
-                self.execute_action(action);
-            }
+        {
+            self.execute_action(action);
         }
         true
     }

@@ -79,16 +79,16 @@ pub(super) fn push_tool_call_diff_blocks(
             return true;
         }
 
-        if tool_call.effective_tool_id() == "apply_patch" {
-            if let Some(rows) = tool_call_apply_patch_file_rows(tool_call) {
-                for row in rows {
-                    detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-                        text: row,
-                        tone: TranscriptToolCallDetailTone::Secondary,
-                    });
-                }
-                return true;
+        if tool_call.effective_tool_id() == "apply_patch"
+            && let Some(rows) = tool_call_apply_patch_file_rows(tool_call)
+        {
+            for row in rows {
+                detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+                    text: row,
+                    tone: TranscriptToolCallDetailTone::Secondary,
+                });
             }
+            return true;
         }
 
         // Optional preview artifacts are not user-facing errors. The header already

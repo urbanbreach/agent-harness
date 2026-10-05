@@ -866,47 +866,45 @@ impl AppState {
             self.permission_prompt.pointer_down = None;
             return false;
         };
-        if self.question_prompt.editing {
-            if let PermissionPointerTarget::QuestionChoice(index) = region.target {
-                let option_count = permission
+        if self.question_prompt.editing
+            && let PermissionPointerTarget::QuestionChoice(index) = region.target
+        {
+            let option_count = permission
+                .question_prompts
+                .as_ref()
+                .and_then(|prompts| prompts.get(self.question_prompt.tab))
+                .map_or(0, |prompt| prompt.options.len());
+            if index == option_count {
+                let prompt = permission
                     .question_prompts
                     .as_ref()
-                    .and_then(|prompts| prompts.get(self.question_prompt.tab))
-                    .map_or(0, |prompt| prompt.options.len());
-                if index == option_count {
-                    let prompt = permission
-                        .question_prompts
-                        .as_ref()
-                        .and_then(|prompts| prompts.get(self.question_prompt.tab));
-                    let picked = self
-                        .question_prompt
-                        .custom_selected
-                        .get(self.question_prompt.tab)
-                        .copied()
-                        .unwrap_or(false);
-                    let glyphs = self.theme().live_shell.transcript_glyphs;
-                    let marker = match (prompt.is_some_and(|prompt| prompt.multiple), picked) {
-                        (true, true) => "[x]".to_string(),
-                        (true, false) => "[ ]".to_string(),
-                        (false, true) => format!("({})", glyphs.choice_selected),
-                        (false, false) => format!("({})", glyphs.choice_unselected),
-                    };
-                    let prefix_width =
-                        u16::try_from(format!("z {marker} {} ", glyphs.user_marker).width())
-                            .unwrap_or(u16::MAX);
-                    let column = usize::from(
-                        mouse
-                            .column
-                            .saturating_sub(region.area.x.saturating_add(prefix_width)),
-                    );
-                    self.question_prompt.answer_cursor = question_answer_cursor_for_column(
-                        &self.question_prompt.answer_buffer,
-                        column,
-                    );
-                    return true;
-                }
-                self.handle_permission_modal_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+                    .and_then(|prompts| prompts.get(self.question_prompt.tab));
+                let picked = self
+                    .question_prompt
+                    .custom_selected
+                    .get(self.question_prompt.tab)
+                    .copied()
+                    .unwrap_or(false);
+                let glyphs = self.theme().live_shell.transcript_glyphs;
+                let marker = match (prompt.is_some_and(|prompt| prompt.multiple), picked) {
+                    (true, true) => "[x]".to_string(),
+                    (true, false) => "[ ]".to_string(),
+                    (false, true) => format!("({})", glyphs.choice_selected),
+                    (false, false) => format!("({})", glyphs.choice_unselected),
+                };
+                let prefix_width =
+                    u16::try_from(format!("z {marker} {} ", glyphs.user_marker).width())
+                        .unwrap_or(u16::MAX);
+                let column = usize::from(
+                    mouse
+                        .column
+                        .saturating_sub(region.area.x.saturating_add(prefix_width)),
+                );
+                self.question_prompt.answer_cursor =
+                    question_answer_cursor_for_column(&self.question_prompt.answer_buffer, column);
+                return true;
             }
+            self.handle_permission_modal_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         }
         if region.target == PermissionPointerTarget::QuestionScrollbar {
             self.scroll_question_prompt(frame_area, Some(mouse.row), 0);
@@ -1462,19 +1460,19 @@ impl AppState {
         if self.transcript_view.transcript_selection_dragging {
             let transcript_hit =
                 ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
-            if let Some(cell) = transcript_hit {
-                if let Some(selection) = self.transcript_view.transcript_selection {
-                    self.set_transcript_selection(selection.anchor, cell);
-                }
+            if let Some(cell) = transcript_hit
+                && let Some(selection) = self.transcript_view.transcript_selection
+            {
+                self.set_transcript_selection(selection.anchor, cell);
             }
             true
         } else if self.secondary_surfaces.selection_dragging {
             let sidebar_hit =
                 ui::operator_sidebar_selection_cell(self, frame_area, mouse.column, mouse.row);
-            if let Some(cell) = sidebar_hit {
-                if let Some(selection) = self.secondary_surfaces.selection {
-                    self.set_operator_sidebar_selection(selection.anchor, cell);
-                }
+            if let Some(cell) = sidebar_hit
+                && let Some(selection) = self.secondary_surfaces.selection
+            {
+                self.set_operator_sidebar_selection(selection.anchor, cell);
             }
             true
         } else {
@@ -1488,10 +1486,10 @@ impl AppState {
         if self.secondary_surfaces.selection_dragging {
             let sidebar_hit =
                 ui::operator_sidebar_selection_cell(self, frame_area, mouse.column, mouse.row);
-            if let Some(cell) = sidebar_hit {
-                if let Some(selection) = self.secondary_surfaces.selection {
-                    self.set_operator_sidebar_selection(selection.anchor, cell);
-                }
+            if let Some(cell) = sidebar_hit
+                && let Some(selection) = self.secondary_surfaces.selection
+            {
+                self.set_operator_sidebar_selection(selection.anchor, cell);
             }
             self.secondary_surfaces.selection_dragging = false;
             let copy_on_select_disabled = clipboard::copy_on_select_disabled();
@@ -1515,10 +1513,10 @@ impl AppState {
         if self.transcript_view.transcript_selection_dragging {
             let transcript_hit =
                 ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
-            if let Some(cell) = transcript_hit {
-                if let Some(selection) = self.transcript_view.transcript_selection {
-                    self.set_transcript_selection(selection.anchor, cell);
-                }
+            if let Some(cell) = transcript_hit
+                && let Some(selection) = self.transcript_view.transcript_selection
+            {
+                self.set_transcript_selection(selection.anchor, cell);
             }
             self.transcript_view.transcript_selection_dragging = false;
             let copy_on_select_disabled = clipboard::copy_on_select_disabled();
@@ -1542,14 +1540,13 @@ impl AppState {
             self.transcript_view.transcript_scrollbar_drag = None;
             return true;
         }
-        if self.transcript_view.transcript_scrollbar_drag.is_none() {
-            if let Some(target) =
+        if self.transcript_view.transcript_scrollbar_drag.is_none()
+            && let Some(target) =
                 ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
-            {
-                self.handle_transcript_target_click(target, frame_area);
-                self.clear_transcript_selection();
-                return true;
-            }
+        {
+            self.handle_transcript_target_click(target, frame_area);
+            self.clear_transcript_selection();
+            return true;
         }
         self.transcript_view.transcript_scrollbar_drag = None;
         true

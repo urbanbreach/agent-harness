@@ -489,40 +489,36 @@ fn shared_child_events_preserve_parent_status_and_root_visibility() {
                 DashboardStatus::Completed
             );
         }
-        if !blocked {
-            if let Some(directory) = std::env::var_os("HARNESS_TOOL_RUNTIME_HARNESS_DIR") {
-                use ratatui::{
-                    backend::CrosstermBackend, layout::Rect, Terminal, TerminalOptions, Viewport,
-                };
-                let directory = std::path::PathBuf::from(directory);
-                std::fs::create_dir_all(&directory).unwrap_or_abort();
-                let mut app = harness_tui::app::AppState::new_replay(
-                    directory.join("parent"),
-                    journal.clone(),
-                );
-                for (width, height) in [(120, 40), (60, 20)] {
-                    let area = Rect::new(0, 0, width, height);
-                    app.open_status_dashboard_at(area);
-                    let mut bytes = Vec::new();
-                    let mut terminal = Terminal::with_options(
-                        CrosstermBackend::new(&mut bytes),
-                        TerminalOptions {
-                            viewport: Viewport::Fixed(area),
-                        },
-                    )
+        if !blocked && let Some(directory) = std::env::var_os("HARNESS_TOOL_RUNTIME_HARNESS_DIR") {
+            use ratatui::{
+                backend::CrosstermBackend, layout::Rect, Terminal, TerminalOptions, Viewport,
+            };
+            let directory = std::path::PathBuf::from(directory);
+            std::fs::create_dir_all(&directory).unwrap_or_abort();
+            let mut app =
+                harness_tui::app::AppState::new_replay(directory.join("parent"), journal.clone());
+            for (width, height) in [(120, 40), (60, 20)] {
+                let area = Rect::new(0, 0, width, height);
+                app.open_status_dashboard_at(area);
+                let mut bytes = Vec::new();
+                let mut terminal = Terminal::with_options(
+                    CrosstermBackend::new(&mut bytes),
+                    TerminalOptions {
+                        viewport: Viewport::Fixed(area),
+                    },
+                )
+                .unwrap_or_abort();
+                terminal
+                    .draw(|frame| harness_tui::ui::render_app(frame, &app))
                     .unwrap_or_abort();
-                    terminal
-                        .draw(|frame| harness_tui::ui::render_app(frame, &app))
-                        .unwrap_or_abort();
-                    drop(terminal);
-                    std::fs::write(
-                        directory.join(format!(
-                            "dashboard-parent-running-{width}x{height}-motion-0ms.ansi"
-                        )),
-                        bytes,
-                    )
-                    .unwrap_or_abort();
-                }
+                drop(terminal);
+                std::fs::write(
+                    directory.join(format!(
+                        "dashboard-parent-running-{width}x{height}-motion-0ms.ansi"
+                    )),
+                    bytes,
+                )
+                .unwrap_or_abort();
             }
         }
         let mut own_terminal = terminal.clone();

@@ -4,7 +4,7 @@ Backend map updated for the rewrite on 2026-09-27. Terminal ownership is unchang
 
 ## OVERVIEW
 
-Rust 2021 workspace for an agent harness: a coordinator-centered runtime with CLI,
+Rust 2024 workspace for an agent harness: a coordinator-centered runtime with CLI,
 provider, native-tool, terminal UI, and deterministic test-support crates.
 
 ## SKILL USAGE
@@ -20,6 +20,7 @@ agent-harness/
 │   ├── harness/             # CLI adapter and command orchestration
 │   ├── harness-core/        # coordinator, durable events, config, projections
 │   ├── harness-providers/   # provider transports and stream normalization
+│   ├── harness-eval/        # persistent code kernels and host-tool composition
 │   ├── harness-tools/       # native and MCP tool registry/execution
 │   ├── harness-tui/         # Ratatui/Crossterm live, replay, and review shells
 │   └── harness-testkit/     # temporary workspaces and preserved terminal fixtures
@@ -145,8 +146,8 @@ bash scripts/harness-qa-dogfood.sh --self-test
 
 ## NOTES
 
-- `rust-toolchain.toml` selects stable Rust with rustfmt and clippy; Cargo resolver 2
-  coordinates the six-crate workspace.
+- `rust-toolchain.toml` selects stable Rust with rustfmt and clippy; Cargo resolver 3
+  coordinates the seven-crate workspace.
 - Nextest defaults to no retries and CPU-count parallelism, excludes performance,
   live, PTY, and native binaries, and serializes process-global-state tests.
 - Performance contracts use release-mode tests; Linux PTY signoff requires

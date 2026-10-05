@@ -99,16 +99,17 @@ impl CoordinatorHandle {
             s.request_tool(job.actor.clone(), Some(parent), id, tool, args, Some(tx))
         })
         .await?;
-        if let (Some(cancel), Some(id)) = (cancellation, child_id) {
-            tokio::select! {
-                result = rx => result.map_err(|_| CoordinatorError::Closed)?,
-                () = cancel.cancelled() => {
-                    self.cancel_task(id.clone(), "eval bridge call cancelled").await?;
-                    Err(CoordinatorError::Cancelled(id))
+        match (cancellation, child_id) {
+            (Some(cancel), Some(id)) => {
+                tokio::select! {
+                    result = rx => result.map_err(|_| CoordinatorError::Closed)?,
+                    () = cancel.cancelled() => {
+                        self.cancel_task(id.clone(), "eval bridge call cancelled").await?;
+                        Err(CoordinatorError::Cancelled(id))
+                    }
                 }
             }
-        } else {
-            rx.await.map_err(|_| CoordinatorError::Closed)?
+            _ => rx.await.map_err(|_| CoordinatorError::Closed)?,
         }
     }
 }

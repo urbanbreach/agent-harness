@@ -89,10 +89,7 @@ impl Worker {
                         "model input budget cannot fit compaction instructions and summary".into(),
                     ));
                 }
-                end = offset + bytes;
-                while !transcript.is_char_boundary(end) {
-                    end -= 1;
-                }
+                end = transcript.floor_char_boundary(offset + bytes);
             }
             let permit = tokio::select! {
                 biased;

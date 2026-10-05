@@ -80,7 +80,7 @@ pub(crate) fn shimmer_row(
             / f32::from(u16::try_from(logo.width() + logo.height()).unwrap_or(u16::MAX));
         let distance = (diagonal - position).abs();
         let shine = if distance < 0.38 {
-            0.5 * (1.0 + (std::f32::consts::PI * distance / 0.38).cos())
+            f32::midpoint(1.0, (std::f32::consts::PI * distance / 0.38).cos())
         } else {
             0.0
         };

@@ -53,7 +53,7 @@ impl Output {
                 let end = if self.capped {
                     0
                 } else {
-                    boundary(segment, self.columns.saturating_sub(self.line_bytes))
+                    segment.floor_char_boundary(self.columns.saturating_sub(self.line_bytes))
                 };
                 retained.push_str(&segment[..end]);
                 self.line_bytes += end;
@@ -84,14 +84,11 @@ impl Output {
         } else {
             self.before_spill.push_str(text);
         }
-        let end = boundary(&retained, self.head_limit.saturating_sub(self.head.len()));
+        let end = retained.floor_char_boundary(self.head_limit.saturating_sub(self.head.len()));
         self.head.push_str(&retained[..end]);
         self.tail.push_str(&retained[end..]);
         if self.tail.len() > TAIL_BYTES {
-            let mut start = self.tail.len() - TAIL_BYTES;
-            while !self.tail.is_char_boundary(start) {
-                start += 1;
-            }
+            let start = self.tail.ceil_char_boundary(self.tail.len() - TAIL_BYTES);
             self.tail.drain(..start);
         }
         Ok(())
@@ -207,13 +204,6 @@ impl Output {
     }
 }
 
-fn boundary(text: &str, limit: usize) -> usize {
-    let mut end = text.len().min(limit);
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    end
-}
 fn lines(text: &str) -> usize {
     if text.is_empty() {
         0

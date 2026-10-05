@@ -178,14 +178,12 @@ impl Todos {
                     .as_ref()
                     .and_then(|v| v.get("todos"))
                     .filter(|v| v.is_array())
-                {
-                    if self
+                    && self
                         .versions
                         .last()
                         .is_none_or(|(_, previous)| previous != value)
-                    {
-                        self.versions.push((event.seq, value.clone()));
-                    }
+                {
+                    self.versions.push((event.seq, value.clone()));
                 }
             }
             EventV1::ConversationRewound(e) => {

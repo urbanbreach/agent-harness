@@ -44,19 +44,21 @@ def measure(binary, count, cancel):
                         delta = {'content': 'child report'}
                     else:
                         if last['role'] == 'tool':
-                            result = json.loads(last['content'])['data']
-                            assert result['status'] == 'completed', result
-                            assert result['session_id'] not in children
-                            children.append(result['session_id'])
+                            result = last['content']
+                            assert result.startswith('child report\n'), result
+                            child_id = next(line.removeprefix('subagent_id: ') for line in result.splitlines()
+                                            if line.startswith('subagent_id: '))
+                            assert child_id not in children
+                            children.append(child_id)
                         if len(children) in {0, 1, 16, 128, count}:
                             samples.append({'children': len(children), **resources(process.pid)})
                         if len(children) == count:
                             delta = {'content': 'delegation complete'}
                         else:
-                            args = {'subagent_type': 'general', 'prompt': f'child work {len(children)}',
-                                    'description': 'Resource measurement', 'load_skills': [], 'run_in_background': False}
+                            args = {'prompt': f'child work {len(children)}',
+                                    'description': 'Resource measurement', 'tools': [], 'background': False}
                             delta = {'tool_calls': [{'index': 0, 'id': f'call-{len(children)}', 'type': 'function',
-                                      'function': {'name': 'task', 'arguments': json.dumps(args)}}]}
+                                      'function': {'name': 'spawn_subagent', 'arguments': json.dumps(args)}}]}
                     self.send_response(200)
                     self.send_header('Content-Type', 'text/event-stream')
                     self.send_header('Connection', 'close')
@@ -77,8 +79,7 @@ def measure(binary, count, cancel):
                 'baseURL': f'http://127.0.0.1:{server.server_port}/v1', 'apiKeyEnv': [],
                 'models': {'fixture': {'limit': {'context': 2000000, 'output': 1000}}}}},
             'model': 'local/fixture',
-            'agent': {'default': {'tools': ['task'], 'max_iters': count + 1},
-                      'general': {'tools': [], 'max_iters': 1}},
+            'agent': {'default': {'tools': ['spawn_subagent'], 'max_iters': count + 1}},
             'runtime': {'prompt': {'wait_timeout_ms': 180000}, 'compaction': {'enabled': False},
                         'provider_retry': {'max_retries': 0}}
         }))
@@ -101,14 +102,20 @@ def measure(binary, count, cancel):
             if not cancel:
                 assert output == b'delegation complete\n', output
                 assert len(children) == count
-                assert samples[-1]['descriptors'] <= samples[0]['descriptors'] + 4, samples
             journals = list((root / '.agent-harness/sessions').glob('*/events.jsonl'))
-            root_journal = next(p for p in journals if not p.parent.name.startswith('child-'))
+            root_journal, = [p for p in journals
+                             if not json.loads((p.parent / 'meta.json').read_text()).get('harness_lineage')]
             events = [json.loads(line)['payload']['event_type'] for line in root_journal.read_text().splitlines()]
             assert events[-1] == ('run_failed' if cancel else 'run_finished'), events[-1]
             assert events.count('agent_spawned') == (2 if cancel else count + 1)
             for journal in journals:
-                assert json.loads(journal.read_text().splitlines()[-1])['payload']['event_type'] == events[-1]
+                if journal == root_journal:
+                    continue
+                payloads = [json.loads(line)['payload'] for line in journal.read_text().splitlines()]
+                assert any(p['event_type'] == ('task_cancelled' if cancel else 'task_completed')
+                           for p in payloads), payloads
+                assert payloads[-1]['event_type'] == 'native_subagent_receipt', payloads[-1]
+                assert payloads[-1]['data']['kind'] == 'terminal_published', payloads[-1]
             return {'cancelled': cancel, 'children': 1 if cancel else count, 'elapsed_ms': elapsed,
                     'resources': samples, 'journal_bytes': sum(p.stat().st_size for p in journals),
                     'root_events': len(events), 'journals': len(journals)}
@@ -136,6 +143,8 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
+    samples = report['delegation']['resources']
+    assert samples[-1]['descriptors'] <= samples[0]['descriptors'] + 4, samples
 
 
 if __name__ == '__main__':

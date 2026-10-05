@@ -1,4 +1,4 @@
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock};
 
 use ratatui::{
     style::{Color, Modifier, Style},
@@ -11,9 +11,7 @@ use syntect::parsing::SyntaxSet;
 
 use crate::theme::{quantize_color, Theme};
 
-struct SyntaxHighlightAssets {
-    syntax_set: SyntaxSet,
-}
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
 pub(super) fn render_highlighted_code_block(
     language: Option<&str>,
@@ -26,25 +24,16 @@ pub(super) fn render_highlighted_code_block(
     let mut lines = Vec::new();
 
     let highlighted = language.and_then(|language| {
-        let syntax_assets = syntax_highlight_assets();
-        let syntax = syntax_assets
-            .syntax_set
-            .find_syntax_by_token(language)
-            .or_else(|| {
-                let token = language.rsplit(':').next().unwrap_or(language);
-                std::path::Path::new(token)
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .and_then(|ext| syntax_assets.syntax_set.find_syntax_by_extension(ext))
-            })?;
+        let syntaxes = &*SYNTAX_SET;
+        let syntax = syntaxes.find_syntax_by_token(language).or_else(|| {
+            let token = language.rsplit(':').next().unwrap_or(language);
+            std::path::Path::new(token)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .and_then(|ext| syntaxes.find_syntax_by_extension(ext))
+        })?;
         let palette = syntax_theme(theme)?;
-        let highlighted = cache::highlight(
-            syntax,
-            &syntax_assets.syntax_set,
-            palette,
-            theme.is_dark(),
-            body,
-        )?;
+        let highlighted = cache::highlight(syntax, syntaxes, palette, theme.is_dark(), body)?;
         Some(
             highlighted
                 .into_iter()
@@ -88,15 +77,6 @@ pub(super) fn render_highlighted_code_block(
     }
 
     lines
-}
-
-fn syntax_highlight_assets() -> &'static SyntaxHighlightAssets {
-    static SYNTAX_ASSETS: OnceLock<SyntaxHighlightAssets> = OnceLock::new();
-
-    SYNTAX_ASSETS.get_or_init(|| {
-        let syntax_set = two_face::syntax::extra_newlines();
-        SyntaxHighlightAssets { syntax_set }
-    })
 }
 
 fn syntax_theme(theme: &Theme) -> Option<&'static SyntectTheme> {

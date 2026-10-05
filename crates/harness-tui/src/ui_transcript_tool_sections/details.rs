@@ -19,11 +19,9 @@ pub(super) fn finish(
     {
         row.header.title = edit_tool_action(tool).to_owned();
     }
-    if visible {
-        if let Some(output) = crate::ui::ui_recorded_tool_output::project(tool) {
-            blocks.clear();
-            blocks.push(TranscriptToolCallDetailBlock::Recorded(output));
-        }
+    if visible && let Some(output) = crate::ui::ui_recorded_tool_output::project(tool) {
+        blocks.clear();
+        blocks.push(TranscriptToolCallDetailBlock::Recorded(output));
     }
     if push_edit_diagnostics(blocks, tool, row.expanded) {
         row.header.visual_style = TranscriptToolCallVisualStyle::Block;
@@ -94,11 +92,11 @@ fn prepare_failed_tool_details(
             TranscriptToolCallDetailTone::Secondary
         };
         for block in detail_blocks {
-            if let TranscriptToolCallDetailBlock::Message { text, tone } = block {
-                if *tone == TranscriptToolCallDetailTone::Error {
-                    *text = format!("\n{text}");
-                    *tone = error_tone;
-                }
+            if let TranscriptToolCallDetailBlock::Message { text, tone } = block
+                && *tone == TranscriptToolCallDetailTone::Error
+            {
+                *text = format!("\n{text}");
+                *tone = error_tone;
             }
         }
     }

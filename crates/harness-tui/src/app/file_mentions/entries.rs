@@ -185,11 +185,12 @@ pub(super) fn search_file_mentions(
         .drain(..)
         .map(|entry| {
             let mut entry = entry.clone();
-            if matches!(entry.kind, FileMentionEntryKind::File) && !entry.is_directory {
-                if let Some(suffix) = range_query.suffix {
-                    entry.value.push_str(suffix);
-                    entry.display.push_str(suffix);
-                }
+            if matches!(entry.kind, FileMentionEntryKind::File)
+                && !entry.is_directory
+                && let Some(suffix) = range_query.suffix
+            {
+                entry.value.push_str(suffix);
+                entry.display.push_str(suffix);
             }
             entry
         })

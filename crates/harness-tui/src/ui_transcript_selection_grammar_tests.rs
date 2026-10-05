@@ -128,11 +128,11 @@ fn copy(app: &mut AppState, buffer: &Buffer, start: &str, end: &str) -> String {
             );
         }
     }
-    let result = copied
+
+    copied
         .borrow()
         .clone()
-        .expect("drag must copy painted text");
-    result
+        .expect("drag must copy painted text")
 }
 
 #[test]

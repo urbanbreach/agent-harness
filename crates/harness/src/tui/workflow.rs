@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -59,40 +58,21 @@ pub(super) fn handle_model_switch_intent(
     true
 }
 
-pub(super) async fn run_interactive_workflow_loop<
-    LoadStartupEntries,
-    StartupRunner,
-    NewSessionRunner,
-    NewWorktreeSessionRunner,
-    ContinueRunner,
-    ReplayRunner,
-    StartupFuture,
-    NewSessionFuture,
-    NewWorktreeSessionFuture,
-    ContinueFuture,
-    ReplayFuture,
->(
+pub(super) async fn run_interactive_workflow_loop(
     initial_workflow: InteractiveWorkflow,
-    mut load_startup_entries: LoadStartupEntries,
-    mut run_startup: StartupRunner,
-    mut run_new_session: NewSessionRunner,
-    mut run_new_worktree_session: NewWorktreeSessionRunner,
-    mut run_continue: ContinueRunner,
-    mut run_replay: ReplayRunner,
-) -> Result<(), String>
-where
-    LoadStartupEntries: FnMut() -> Result<Vec<SessionHistoryEntry>, String>,
-    StartupRunner: FnMut(Vec<SessionHistoryEntry>, Option<String>) -> StartupFuture,
-    StartupFuture: Future<Output = Result<InteractiveWorkflow, String>>,
-    NewSessionRunner: FnMut() -> NewSessionFuture,
-    NewSessionFuture: Future<Output = Result<InteractiveWorkflow, String>>,
-    NewWorktreeSessionRunner: FnMut(Option<String>, Option<PathBuf>) -> NewWorktreeSessionFuture,
-    NewWorktreeSessionFuture: Future<Output = Result<InteractiveWorkflow, String>>,
-    ContinueRunner: FnMut(String, PathBuf) -> ContinueFuture,
-    ContinueFuture: Future<Output = Result<InteractiveWorkflow, String>>,
-    ReplayRunner: FnMut(PathBuf) -> ReplayFuture,
-    ReplayFuture: Future<Output = Result<InteractiveWorkflow, String>>,
-{
+    mut load_startup_entries: impl FnMut() -> Result<Vec<SessionHistoryEntry>, String>,
+    mut run_startup: impl AsyncFnMut(
+        Vec<SessionHistoryEntry>,
+        Option<String>,
+    ) -> Result<InteractiveWorkflow, String>,
+    mut run_new_session: impl AsyncFnMut() -> Result<InteractiveWorkflow, String>,
+    mut run_new_worktree_session: impl AsyncFnMut(
+        Option<String>,
+        Option<PathBuf>,
+    ) -> Result<InteractiveWorkflow, String>,
+    mut run_continue: impl AsyncFnMut(String, PathBuf) -> Result<InteractiveWorkflow, String>,
+    mut run_replay: impl AsyncFnMut(PathBuf) -> Result<InteractiveWorkflow, String>,
+) -> Result<(), String> {
     let mut workflow = initial_workflow;
     let mut startup_notice = None;
     loop {
@@ -273,10 +253,10 @@ pub(super) fn capture_first_workflow(
     selected_workflow: &SelectedWorkflow,
     workflow: InteractiveWorkflow,
 ) {
-    if let Ok(mut slot) = selected_workflow.lock() {
-        if slot.is_none() {
-            *slot = Some(workflow);
-        }
+    if let Ok(mut slot) = selected_workflow.lock()
+        && slot.is_none()
+    {
+        *slot = Some(workflow);
     }
 }
 
@@ -299,7 +279,6 @@ pub(super) fn take_selected_workflow_or(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::future::ready;
 
     #[tokio::test]
     async fn worktree_errors_return_to_the_launcher_with_a_notice() -> Result<(), String> {
@@ -310,29 +289,29 @@ mod tests {
                 name: Some("collision".into()),
             },
             || Ok(Vec::new()),
-            |_, notice| {
+            async |_, notice| {
                 assert_eq!(notice.as_deref(), Some("worktree unavailable"));
                 launches += 1;
-                ready(Ok(if launches == 1 {
+                Ok(if launches == 1 {
                     InteractiveWorkflow::SwitchWorktreeSession {
                         worktree_path: PathBuf::from("checkout"),
                     }
                 } else {
                     InteractiveWorkflow::Quit
-                }))
+                })
             },
-            || ready(Ok(InteractiveWorkflow::Quit)),
-            |name, path| {
+            async || Ok(InteractiveWorkflow::Quit),
+            async |name, path| {
                 attempts += 1;
                 if attempts == 1 {
                     assert_eq!(name.as_deref(), Some("collision"));
                 } else {
                     assert_eq!(path, Some(PathBuf::from("checkout")));
                 }
-                ready(Err("worktree unavailable".into()))
+                Err("worktree unavailable".into())
             },
-            |_, _| ready(Ok(InteractiveWorkflow::Quit)),
-            |_| ready(Ok(InteractiveWorkflow::Quit)),
+            async |_, _| Ok(InteractiveWorkflow::Quit),
+            async |_| Ok(InteractiveWorkflow::Quit),
         )
         .await?;
         assert_eq!((launches, attempts), (2, 2));

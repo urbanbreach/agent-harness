@@ -228,12 +228,15 @@ pub(crate) fn build(
             .agent_model_fallbacks
             .insert(name.clone(), selection.fallback);
     }
-    result.provider = if let Some(provider) = deps.provider_override() {
-        provider
-    } else if mock {
-        Arc::new(harness_providers::mock::MockProvider::default())
-    } else {
-        providers(config, deps, &result.secret_registry)?
+    result.provider = match deps.provider_override() {
+        Some(provider) => provider,
+        _ => {
+            if mock {
+                Arc::new(harness_providers::mock::MockProvider::default())
+            } else {
+                providers(config, deps, &result.secret_registry)?
+            }
+        }
     };
     result.config_digest = blake3::hash(&serde_json::to_vec(config).map_err(|e| e.to_string())?)
         .to_hex()

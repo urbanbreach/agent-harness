@@ -366,10 +366,10 @@ impl LaunchMetadata {
                 && model.is_some_and(|model_id| option.model == model_id)
                 && option.variant() == variant
         });
-        if let Some(first) = exact_variant_matches.next() {
-            if exact_variant_matches.next().is_none() {
-                return Some(first);
-            }
+        if let Some(first) = exact_variant_matches.next()
+            && exact_variant_matches.next().is_none()
+        {
+            return Some(first);
         }
 
         let mut profile_matches = self.available_models.iter().filter(|option| {
@@ -377,10 +377,10 @@ impl LaunchMetadata {
                 && option.provider == provider
                 && model.is_some_and(|model_id| option.model == model_id)
         });
-        if let Some(first) = profile_matches.next() {
-            if profile_matches.next().is_none() {
-                return Some(first);
-            }
+        if let Some(first) = profile_matches.next()
+            && profile_matches.next().is_none()
+        {
+            return Some(first);
         }
 
         let mut matches = self.available_models.iter().filter(|option| {
@@ -545,10 +545,10 @@ fn metadata_for_profile_identity(
     if metadata.provider != provider {
         return None;
     }
-    if let Some(model_id) = model {
-        if metadata.model != model_id {
-            return None;
-        }
+    if let Some(model_id) = model
+        && metadata.model != model_id
+    {
+        return None;
     }
     Some(metadata)
 }

@@ -15,10 +15,8 @@ impl ProviderCatalog {
                 .ok()
                 .and_then(|m| m.elapsed().ok())
                 .is_some_and(|age| age < TTL);
-            if !fresh {
-                if let Some(url) = url {
-                    Self::refresh_in_background(path, url.into());
-                }
+            if !fresh && let Some(url) = url {
+                Self::refresh_in_background(path, url.into());
             }
             return Ok(catalog);
         }

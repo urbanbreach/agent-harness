@@ -70,12 +70,11 @@ impl SubagentTool {
     pub(crate) fn reference_alias(&self) -> Option<Self> {
         let mut alias = self.clone();
         alias.name = self.operation.alias()?;
-        if matches!(self.operation, SubagentOperation::Spawn) {
-            if let Some(properties) = alias.schema["properties"].as_object_mut() {
-                if let Some(background) = properties.remove("background") {
-                    properties.insert("run_in_background".into(), background);
-                }
-            }
+        if matches!(self.operation, SubagentOperation::Spawn)
+            && let Some(properties) = alias.schema["properties"].as_object_mut()
+            && let Some(background) = properties.remove("background")
+        {
+            properties.insert("run_in_background".into(), background);
         }
         Some(alias)
     }
@@ -120,12 +119,11 @@ impl Tool for SubagentTool {
         let call_id = ctx.tool_call_id.to_string();
         match self.operation {
             SubagentOperation::Spawn => {
-                if self.name == "task" {
-                    if let Some(properties) = args.as_object_mut() {
-                        if let Some(background) = properties.remove("run_in_background") {
-                            properties.insert("background".into(), background);
-                        }
-                    }
+                if self.name == "task"
+                    && let Some(properties) = args.as_object_mut()
+                    && let Some(background) = properties.remove("run_in_background")
+                {
+                    properties.insert("background".into(), background);
                 }
                 let input: SpawnSubagentInput = decode(args)?;
                 ctx.coordinator
@@ -245,10 +243,8 @@ fn output_result(value: GetCommandOrSubagentOutputValue) -> Result<ToolResult, T
 
 fn mark_not_found(result: &mut ToolResult, missing: bool) {
     // Native TaskNotFound is a logical error output, not a transport error.
-    if missing {
-        if let Some(value) = result.structured_json.as_mut() {
-            value["is_error"] = Value::Bool(true);
-        }
+    if missing && let Some(value) = result.structured_json.as_mut() {
+        value["is_error"] = Value::Bool(true);
     }
 }
 

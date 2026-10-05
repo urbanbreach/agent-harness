@@ -328,21 +328,21 @@ fn normalize_math_delimiters(text: &str) -> Cow<'_, str> {
         } else {
             None
         };
-        if let Some((closing, canonical)) = delimiters {
-            if let Some(end) = math_delimiter_end(&remaining[2..], closing) {
-                let body = remaining[2..2 + end].trim();
-                let crosses_block = body.lines().any(|line| line.trim().is_empty())
-                    || body
-                        .lines()
-                        .skip(1)
-                        .any(|line| line.trim_start().starts_with(['>', '|']));
-                if !body.is_empty() && !crosses_block {
-                    result.push_str(canonical);
-                    result.push_str(&body.lines().map(str::trim).collect::<Vec<_>>().join(" "));
-                    result.push_str(canonical);
-                    cursor += 2 + end + closing.len();
-                    continue;
-                }
+        if let Some((closing, canonical)) = delimiters
+            && let Some(end) = math_delimiter_end(&remaining[2..], closing)
+        {
+            let body = remaining[2..2 + end].trim();
+            let crosses_block = body.lines().any(|line| line.trim().is_empty())
+                || body
+                    .lines()
+                    .skip(1)
+                    .any(|line| line.trim_start().starts_with(['>', '|']));
+            if !body.is_empty() && !crosses_block {
+                result.push_str(canonical);
+                result.push_str(&body.lines().map(str::trim).collect::<Vec<_>>().join(" "));
+                result.push_str(canonical);
+                cursor += 2 + end + closing.len();
+                continue;
             }
         }
         if let Some(ch) = remaining.chars().next() {
@@ -736,13 +736,12 @@ pub(super) fn append_rich_text_block(
                 body,
                 raw,
             } => {
-                if matches!(language.as_deref(), Some("diff" | "patch")) {
-                    if let Some(diff_lines) =
+                if matches!(language.as_deref(), Some("diff" | "patch"))
+                    && let Some(diff_lines) =
                         render_structured_diff_lines(&body, None, prefix, width, false, theme)
-                    {
-                        lines.extend(diff_lines);
-                        continue;
-                    }
+                {
+                    lines.extend(diff_lines);
+                    continue;
                 }
 
                 if is_mermaid_language(language.as_deref()) {

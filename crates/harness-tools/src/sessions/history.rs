@@ -185,10 +185,10 @@ pub(crate) fn summary(ctx: &ToolContext, event: &EventEnvelopeV1) -> Value {
 pub(super) fn artifacts(ctx: &ToolContext, events: &[EventEnvelopeV1]) -> Value {
     let mut artifacts = BTreeMap::new();
     for event in events {
-        if let harness_core::event::EventV1::ArtifactWritten(e) = &event.payload {
-            if artifacts.len() < 200 {
-                artifacts.insert(safe(ctx, &e.path), e.bytes);
-            }
+        if let harness_core::event::EventV1::ArtifactWritten(e) = &event.payload
+            && artifacts.len() < 200
+        {
+            artifacts.insert(safe(ctx, &e.path), e.bytes);
         }
     }
     json!({"artifacts":artifacts,"limit":200})

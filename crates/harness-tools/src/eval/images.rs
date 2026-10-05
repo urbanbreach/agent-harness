@@ -16,12 +16,13 @@ pub(super) fn attachment(id: String, bytes: Vec<u8>) -> Result<AttachmentMetadat
     reader.limits(limits);
     let mut image = reader.decode().map_err(failure)?;
     const MAX_BYTES: usize = 4_718_592 / 4 * 3;
-    if image.width() <= 2000 && image.height() <= 2000 && bytes.len() <= MAX_BYTES {
-        if let Some(mime) =
+    if image.width() <= 2000
+        && image.height() <= 2000
+        && bytes.len() <= MAX_BYTES
+        && let Some(mime) =
             crate::media::mime(&bytes).filter(|_| !matches!(format, ImageFormat::WebP))
-        {
-            return crate::media::attachment(id, mime, &bytes);
-        }
+    {
+        return crate::media::attachment(id, mime, &bytes);
     }
     image = image.thumbnail(2000, 2000);
     loop {

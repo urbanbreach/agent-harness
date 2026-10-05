@@ -8,10 +8,10 @@ use std::time::Instant;
 
 impl Runtime {
     pub(super) fn finish_unchanged_demand(&mut self) -> Result<()> {
-        if let Some(trace) = self.trace.as_mut() {
-            if let Some(demand) = trace.take_render_demand() {
-                trace.record_no_visible_change(&demand)?;
-            }
+        if let Some(trace) = self.trace.as_mut()
+            && let Some(demand) = trace.take_render_demand()
+        {
+            trace.record_no_visible_change(&demand)?;
         }
         Ok(())
     }

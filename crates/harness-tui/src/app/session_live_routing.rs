@@ -41,14 +41,13 @@ impl AppState {
             let Some(id) = session_id_from_path(&snapshot.session_path) else {
                 continue;
             };
-            if event_agent_id(&event.actor, event.stream_key.as_deref()) == Some(id.as_str())
+            if (event_agent_id(&event.actor, event.stream_key.as_deref()) == Some(id.as_str())
                 || event.correlation_id.as_deref().is_some_and(|request| {
                     child_request_ids_for_session(&parent_snapshot.events, &id).contains(request)
-                })
+                }))
+                && let Some(view) = &mut snapshot.view
             {
-                if let Some(view) = &mut snapshot.view {
-                    view.projection.ingest_live_event(event);
-                }
+                view.projection.ingest_live_event(event);
             }
         }
         !visible

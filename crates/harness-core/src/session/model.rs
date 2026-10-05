@@ -97,11 +97,9 @@ impl CanonicalSession {
                     .users
                     .get(data.request_id.as_str())
                     .and_then(|id| self.entries.get_mut(id))
+                    && let SessionEntryPayload::UserMessage { attachments, .. } = &mut entry.payload
                 {
-                    if let SessionEntryPayload::UserMessage { attachments, .. } = &mut entry.payload
-                    {
-                        attachments.clone_from(&data.attachments);
-                    }
+                    attachments.clone_from(&data.attachments);
                 }
                 return;
             }

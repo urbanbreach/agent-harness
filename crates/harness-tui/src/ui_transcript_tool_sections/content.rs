@@ -236,10 +236,8 @@ fn eval_notices(
     let mut notices = Vec::new();
     if data["truncated"] == true {
         notices.push("Output truncated · Enter for details".to_owned());
-        if expanded {
-            if let Some(notice) = data["notice"].as_str() {
-                notices.push(notice.to_owned());
-            }
+        if expanded && let Some(notice) = data["notice"].as_str() {
+            notices.push(notice.to_owned());
         }
     }
     if let Some(notice) = data["memory_notice"].as_str() {

@@ -40,12 +40,13 @@ enum SearchType {
 
 pub fn register_remote_search_tools(registry: &mut ToolRegistry, config: RemoteSearchConfig) {
     let mut endpoint = config.endpoint.clone();
-    if let Ok(mut url) = reqwest::Url::parse(&endpoint) {
-        if url.host_str() == Some("mcp.exa.ai") && !url.query_pairs().any(|(k, _)| k == "tools") {
-            url.query_pairs_mut()
-                .append_pair("tools", "web_search_advanced_exa");
-            endpoint = url.into();
-        }
+    if let Ok(mut url) = reqwest::Url::parse(&endpoint)
+        && url.host_str() == Some("mcp.exa.ai")
+        && !url.query_pairs().any(|(k, _)| k == "tools")
+    {
+        url.query_pairs_mut()
+            .append_pair("tools", "web_search_advanced_exa");
+        endpoint = url.into();
     }
     let headers = config
         .auth_token

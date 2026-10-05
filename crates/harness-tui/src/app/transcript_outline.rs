@@ -210,7 +210,7 @@ impl TranscriptOutline {
         })
     }
 
-    pub(crate) fn markers(&self) -> impl Iterator<Item = (Rect, TimelineMarker)> + '_ {
+    pub(crate) fn markers(&self) -> impl Iterator<Item = (Rect, TimelineMarker)> {
         let first = self
             .turns
             .partition_point(|turn| turn.row < self.scroll_top);

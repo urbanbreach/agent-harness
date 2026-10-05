@@ -6,10 +6,10 @@ pub(super) struct Client {
 }
 impl rmcp::ClientHandler for Client {
     async fn on_tool_list_changed(&self, _: rmcp::service::NotificationContext<RoleClient>) {
-        if let Some(catalog) = self.catalog.upgrade() {
-            if let Ok(mut catalog) = catalog.write() {
-                catalog.clear();
-            }
+        if let Some(catalog) = self.catalog.upgrade()
+            && let Ok(mut catalog) = catalog.write()
+        {
+            catalog.clear();
         }
         harness_core::config::update_registered_mcp_server_tools(&self.name, BTreeMap::new());
     }

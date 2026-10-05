@@ -226,12 +226,12 @@ impl Session {
             )
             .await?;
         } else {
-            if self.documents.len() >= 64 {
-                if let Some((uri, _)) = self.documents.pop_first() {
-                    self.diagnostics.remove(&uri);
-                    self.notify("textDocument/didClose", json!({"textDocument":{"uri":uri}}))
-                        .await?;
-                }
+            if self.documents.len() >= 64
+                && let Some((uri, _)) = self.documents.pop_first()
+            {
+                self.diagnostics.remove(&uri);
+                self.notify("textDocument/didClose", json!({"textDocument":{"uri":uri}}))
+                    .await?;
             }
             self.notify("textDocument/didOpen", json!({"textDocument":{"uri":uri,"languageId":language,"version":version,"text":text}})).await?;
         }

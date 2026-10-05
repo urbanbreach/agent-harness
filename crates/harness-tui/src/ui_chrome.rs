@@ -546,10 +546,10 @@ fn compact_footer_hints(
             .or_else(|| hints.first().copied())
             .into_iter()
             .collect::<Vec<_>>();
-        if let Some(last) = hints.last().copied() {
-            if !compact.contains(&last) {
-                compact.push(last);
-            }
+        if let Some(last) = hints.last().copied()
+            && !compact.contains(&last)
+        {
+            compact.push(last);
         }
         compact.truncate(max_hints);
         return compact;
@@ -557,10 +557,10 @@ fn compact_footer_hints(
 
     let keep_head = max_hints.saturating_sub(1).max(1);
     let mut compact = hints.iter().take(keep_head).copied().collect::<Vec<_>>();
-    if let Some(last) = hints.last().copied() {
-        if !compact.contains(&last) {
-            compact.push(last);
-        }
+    if let Some(last) = hints.last().copied()
+        && !compact.contains(&last)
+    {
+        compact.push(last);
     }
     compact.truncate(max_hints);
     compact

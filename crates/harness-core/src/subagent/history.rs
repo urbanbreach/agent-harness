@@ -172,13 +172,12 @@ impl SubagentHistory {
             // First terminal accounting is sealed; later reconciliation cannot invent usage.
             record.outcome = record.outcome.or(terminal.outcome);
             record.accounting = record.accounting.or(terminal.accounting);
-            if let Some(reference) = terminal.finalized_state {
-                if reference.state.owner == event.child_id
-                    && reference.attempt_id == event.attempt_id.as_deref().unwrap_or("")
-                    && reference.generation == event.generation
-                {
-                    self.finalized.insert(event.child_id.0.clone(), reference);
-                }
+            if let Some(reference) = terminal.finalized_state
+                && reference.state.owner == event.child_id
+                && reference.attempt_id == event.attempt_id.as_deref().unwrap_or("")
+                && reference.generation == event.generation
+            {
+                self.finalized.insert(event.child_id.0.clone(), reference);
             }
         }
         true

@@ -58,10 +58,11 @@ impl AppState {
         let mut plan = MotionPlan::none();
         let fast_cadence = Duration::from_millis(crate::scheduling::runtime_flush_interval_ms());
 
-        if !self.reduced_motion && self.presentation_is_live() {
-            if let Some(remaining) = self.transcript_view.tool_motion.finish_remaining(now) {
-                plan = plan.merge(MotionDemand::until(remaining));
-            }
+        if !self.reduced_motion
+            && self.presentation_is_live()
+            && let Some(remaining) = self.transcript_view.tool_motion.finish_remaining(now)
+        {
+            plan = plan.merge(MotionDemand::until(remaining));
         }
 
         if let Some(deadline) = self

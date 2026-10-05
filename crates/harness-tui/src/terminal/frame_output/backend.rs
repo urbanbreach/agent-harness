@@ -143,7 +143,7 @@ impl Backend for FrameOutputBackend {
                 self.write_hyperlink_control(destination)?;
             }
             let result = self.inner.draw(std::iter::from_fn(|| {
-                let (&(y, x), cell) = pending.next_if(|(&(y, x), _)| {
+                let (&(y, x), cell) = pending.next_if(|&(&(y, x), _)| {
                     Self::destination_at(&current_links, x, y) == destination
                 })?;
                 Some((x, y, cell))

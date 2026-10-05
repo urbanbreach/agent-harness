@@ -406,10 +406,9 @@ impl LiveOutput {
         if let LiveEventV1::ProviderToolInputDelta {
             tool_name: current, ..
         } = template
+            && tool_name.is_some()
         {
-            if tool_name.is_some() {
-                current.clone_from(&tool_name);
-            }
+            current.clone_from(&tool_name);
         }
         pending.push_str(&delta);
         if *held {

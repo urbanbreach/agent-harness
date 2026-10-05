@@ -259,14 +259,13 @@ impl SessionProjection {
     }
 
     fn profile_label_for_event(&self, event: &EventEnvelopeV1) -> String {
-        if let EventV1::BackgroundTaskNotification(data) = &event.payload {
-            if let Some(profile) = data
+        if let EventV1::BackgroundTaskNotification(data) = &event.payload
+            && let Some(profile) = data
                 .parent_agent_id
                 .as_deref()
                 .and_then(|agent_id| self.agent_profiles.get(agent_id))
-            {
-                return profile.clone();
-            }
+        {
+            return profile.clone();
         }
 
         event
@@ -319,8 +318,7 @@ impl SessionProjection {
                     .iter_mut()
                     .flat_map(|a| &mut a.tool_calls)
                     .find(|t| t.tool_call_id == tool_call_id.as_str())
-                {
-                    if matches!(
+                    && (matches!(
                         tool.status,
                         ToolCallDisplayStatus::Queued
                             | ToolCallDisplayStatus::Running
@@ -328,19 +326,18 @@ impl SessionProjection {
                     ) || tool
                         .output_json
                         .as_ref()
+                        .is_some_and(|v| v["detached"] == true))
+                {
+                    let mut details = details.clone();
+                    details["detached"] = tool
+                        .output_json
+                        .as_ref()
                         .is_some_and(|v| v["detached"] == true)
-                    {
-                        let mut details = details.clone();
-                        details["detached"] = tool
-                            .output_json
-                            .as_ref()
-                            .is_some_and(|v| v["detached"] == true)
-                            .into();
-                        self.live_evals
-                            .insert(tool_call_id.to_string(), (output.clone(), details.clone()));
-                        tool.output_summary = Some(output.clone());
-                        tool.output_json = Some(details);
-                    }
+                        .into();
+                    self.live_evals
+                        .insert(tool_call_id.to_string(), (output.clone(), details.clone()));
+                    tool.output_summary = Some(output.clone());
+                    tool.output_json = Some(details);
                 }
                 return;
             }
@@ -442,10 +439,10 @@ impl SessionProjection {
             | LiveEventV1::SubagentProgress(_)
             | LiveEventV1::EvalProgress { .. } => return,
             LiveEventV1::ProviderTextDelta { delta, .. } => {
-                if !delta.is_empty() {
-                    if let Some(state) = self.transient_assistants.get_mut(provider_request_id) {
-                        state.text_first_seq.get_or_insert(activity.last_seq);
-                    }
+                if !delta.is_empty()
+                    && let Some(state) = self.transient_assistants.get_mut(provider_request_id)
+                {
+                    state.text_first_seq.get_or_insert(activity.last_seq);
                 }
                 if activity.transcript_text.is_empty() && activity.tool_calls.is_empty() {
                     activity.finish_thinking_mono(event.mono_ms);
@@ -454,17 +451,17 @@ impl SessionProjection {
                 activity.transcript_text.push_str(delta);
             }
             LiveEventV1::ProviderReasoningDelta { delta, .. } => {
-                if !delta.is_empty() {
-                    if let Some(state) = self.transient_assistants.get_mut(provider_request_id) {
-                        let seq = *state.reasoning_first_seq.get_or_insert(activity.last_seq);
-                        self.reasoning_timings
-                            .entry(seq)
-                            .or_insert(ReasoningTiming {
-                                first_seq: seq,
-                                started_mono_ms: event.mono_ms,
-                                finished_mono_ms: None,
-                            });
-                    }
+                if !delta.is_empty()
+                    && let Some(state) = self.transient_assistants.get_mut(provider_request_id)
+                {
+                    let seq = *state.reasoning_first_seq.get_or_insert(activity.last_seq);
+                    self.reasoning_timings
+                        .entry(seq)
+                        .or_insert(ReasoningTiming {
+                            first_seq: seq,
+                            started_mono_ms: event.mono_ms,
+                            finished_mono_ms: None,
+                        });
                 }
                 activity.thinking_text.push_str(delta);
                 activity.note_thinking_mono(event.mono_ms);
@@ -518,10 +515,10 @@ impl SessionProjection {
                 }
             }
         }
-        if let Some(tool_call_id) = tool_input {
-            if let Some(state) = self.transient_assistants.get_mut(provider_request_id) {
-                state.tool_call_ids.insert(tool_call_id.to_string());
-            }
+        if let Some(tool_call_id) = tool_input
+            && let Some(state) = self.transient_assistants.get_mut(provider_request_id)
+        {
+            state.tool_call_ids.insert(tool_call_id.to_string());
         }
         activity.last_mono_ms = event.mono_ms;
         activity.bump_revision();
@@ -564,11 +561,10 @@ impl SessionProjection {
                 .transient_assistants
                 .remove(data.request_id.as_str())
                 .and_then(|state| state.reasoning_first_seq)
+                && let Some(timing) = self.reasoning_timings.remove(&seq)
             {
-                if let Some(timing) = self.reasoning_timings.remove(&seq) {
-                    // The durable block replaces the live block without restarting its clock.
-                    self.reasoning_timings.insert(event.seq, timing);
-                }
+                // The durable block replaces the live block without restarting its clock.
+                self.reasoning_timings.insert(event.seq, timing);
             }
         }
     }
@@ -1598,10 +1594,10 @@ impl SessionProjection {
                 continue;
             }
 
-            if row.owner_kind == ActorKind::Worker {
-                if let Some(agent_id) = row.owner_agent_id.as_deref() {
-                    active_agents.insert(agent_id);
-                }
+            if row.owner_kind == ActorKind::Worker
+                && let Some(agent_id) = row.owner_agent_id.as_deref()
+            {
+                active_agents.insert(agent_id);
             }
 
             match row.state {

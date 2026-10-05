@@ -63,7 +63,7 @@ fn bytes(value: u64) -> String {
     if value >= 1024 * 1024 * 1024 {
         let tenths =
             value.saturating_mul(10).saturating_add(512 * 1024 * 1024) / (1024 * 1024 * 1024);
-        if tenths % 10 == 0 {
+        if tenths.is_multiple_of(10) {
             format!("{} GB", tenths / 10)
         } else {
             format!("{}.{} GB", tenths / 10, tenths % 10)

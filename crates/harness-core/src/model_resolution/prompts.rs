@@ -13,10 +13,10 @@ impl PromptSource {
     pub fn resolve(&self, profile: &str, family: PromptFamily, workspace: &Path) -> String {
         let explicit = configured_prompt_override(profile, self.configured.as_deref());
         let mut prompt = resolve_prompt(family, explicit, workspace).0;
-        if explicit.is_none() {
-            if let Some(role) = shipped_agent_prompt(profile) {
-                prompt.push_str(&format!("\n\n{role}"));
-            }
+        if explicit.is_none()
+            && let Some(role) = shipped_agent_prompt(profile)
+        {
+            prompt.push_str(&format!("\n\n{role}"));
         }
         prompt.push_str(&self.suffix);
         prompt

@@ -1295,11 +1295,10 @@ impl AppState {
                 if let Some(activity) = self
                     .activities
                     .get(self.transcript_view.selected_activity_index)
+                    && let Some(request_id) = activity.request_id.as_str().strip_prefix("error:")
                 {
-                    if let Some(request_id) = activity.request_id.as_str().strip_prefix("error:") {
-                        let prompt = request_id.to_string();
-                        self.replace_prompt_input(prompt);
-                    }
+                    let prompt = request_id.to_string();
+                    self.replace_prompt_input(prompt);
                 }
             }
             _ => {}

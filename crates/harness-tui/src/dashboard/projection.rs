@@ -116,10 +116,10 @@ pub fn build_dashboard_read_model(
     for (parent, children) in linked_children {
         for child in children {
             let child_key = SelectionKey::new(child);
-            if let Some(parent_id) = inferred_parents.get_mut(&child_key) {
-                if parent_id.is_none() {
-                    *parent_id = Some(parent.clone());
-                }
+            if let Some(parent_id) = inferred_parents.get_mut(&child_key)
+                && parent_id.is_none()
+            {
+                *parent_id = Some(parent.clone());
             }
         }
     }
@@ -133,13 +133,12 @@ pub fn build_dashboard_read_model(
         if let Some(parent) = inferred_parents
             .get(&row.selection_key)
             .and_then(Option::as_ref)
+            && known_keys.contains(&SelectionKey::new(parent.clone()))
         {
-            if known_keys.contains(&SelectionKey::new(parent.clone())) {
-                children_by_parent
-                    .entry(SelectionKey::new(parent.clone()))
-                    .or_default()
-                    .push(row.selection_key.clone());
-            }
+            children_by_parent
+                .entry(SelectionKey::new(parent.clone()))
+                .or_default()
+                .push(row.selection_key.clone());
         }
     }
     for children in children_by_parent.values_mut() {

@@ -56,10 +56,9 @@ pub(super) fn append_tool_call_section_lines(
     if transcript_target_is_hovered(
         coalesced_tool_header_target(tool).as_ref(),
         tool.hovered_target.as_ref(),
-    ) {
-        if let Some(header) = render.lines.first_mut() {
-            apply_header_hover(header, tool.expanded, theme);
-        }
+    ) && let Some(header) = render.lines.first_mut()
+    {
+        apply_header_hover(header, tool.expanded, theme);
     }
     render
 }

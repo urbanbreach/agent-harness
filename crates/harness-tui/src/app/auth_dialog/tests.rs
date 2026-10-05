@@ -162,14 +162,14 @@ fn prompt_input_supports_cursor_navigation_and_delete() {
     app.handle_connect_dialog_key(key(KeyCode::Enter));
     assert_eq!(app.connect_dialog.step, ConnectDialogStep::CustomProviderId);
 
-    type_text(&mut app, "ab");
+    type_text(&mut app, "界🙂");
     app.handle_connect_dialog_key(key(KeyCode::Left));
     type_text(&mut app, "x");
-    assert_eq!(app.connect_dialog.input_buffer, "axb");
+    assert_eq!(app.connect_dialog.input_buffer, "界x🙂");
 
     app.handle_connect_dialog_key(key(KeyCode::Home));
     app.handle_connect_dialog_key(key(KeyCode::Delete));
-    assert_eq!(app.connect_dialog.input_buffer, "xb");
+    assert_eq!(app.connect_dialog.input_buffer, "x🙂");
 
     app.handle_connect_dialog_key(key(KeyCode::End));
     app.handle_connect_dialog_key(key(KeyCode::Left));

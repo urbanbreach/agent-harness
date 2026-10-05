@@ -94,14 +94,13 @@ impl Runtime {
         if self.native_subagents.contains_key(agent) {
             if let FinalizedStateResult::Available { state } =
                 self.resolve_agent_finalized_state(agent)?
+                && let Some(snapshot) = state.skill_startup
             {
-                if let Some(snapshot) = state.skill_startup {
-                    self.agents
-                        .get_mut(agent)
-                        .ok_or_else(|| CoordinatorError::UnknownAgent(agent.into()))?
-                        .skill_startup = Some(Arc::new(snapshot));
-                    return Ok(());
-                }
+                self.agents
+                    .get_mut(agent)
+                    .ok_or_else(|| CoordinatorError::UnknownAgent(agent.into()))?
+                    .skill_startup = Some(Arc::new(snapshot));
+                return Ok(());
             }
             return Err(native_invalid(
                 "Native skill startup snapshot is unavailable after restore; start a fresh child."

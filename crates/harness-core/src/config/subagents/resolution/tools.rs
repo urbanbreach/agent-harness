@@ -64,15 +64,13 @@ pub(super) fn child_tools(
                     .tools
                     .iter()
                     .find(|declared| tool_matches(&declared.id, &tool))
-            }) {
-                if declared
-                    .params
-                    .as_ref()
-                    .and_then(|params| params.get("enabled_background"))
-                    == Some(&serde_json::Value::Bool(false))
-                {
-                    tool.background_capable = false;
-                }
+            }) && declared
+                .params
+                .as_ref()
+                .and_then(|params| params.get("enabled_background"))
+                == Some(&serde_json::Value::Bool(false))
+            {
+                tool.background_capable = false;
             }
             tool
         })

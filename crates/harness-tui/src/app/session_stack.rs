@@ -411,10 +411,8 @@ impl AppState {
                 }
             };
 
-        if push_current {
-            if let Some(current_snapshot) = self.current_session_snapshot() {
-                self.session_navigation_stack.push(current_snapshot);
-            }
+        if push_current && let Some(current_snapshot) = self.current_session_snapshot() {
+            self.session_navigation_stack.push(current_snapshot);
         }
 
         self.restore_session_snapshot(snapshot);
@@ -432,10 +430,8 @@ impl AppState {
             return;
         };
 
-        if push_current {
-            if let Some(current_snapshot) = self.current_session_snapshot() {
-                self.session_navigation_stack.push(current_snapshot);
-            }
+        if push_current && let Some(current_snapshot) = self.current_session_snapshot() {
+            self.session_navigation_stack.push(current_snapshot);
         }
 
         self.restore_session_snapshot(snapshot);
@@ -456,14 +452,17 @@ impl AppState {
             self.projection.subagents.observed_at = parent.projection.subagents.observed_at;
             self.sync_transcript_state(false);
         }
-        if let Some(view) = self.child_transcript_views.remove(&id) {
-            self.transcript_view = view;
-        } else {
-            let area = self
-                .last_frame_area
-                .unwrap_or(ratatui::layout::Rect::new(0, 0, 120, 40));
-            if let Some(entry) = crate::ui::transcript_navigation_entries(self, area).last() {
-                self.select_transcript_entry(entry);
+        match self.child_transcript_views.remove(&id) {
+            Some(view) => {
+                self.transcript_view = view;
+            }
+            _ => {
+                let area = self
+                    .last_frame_area
+                    .unwrap_or(ratatui::layout::Rect::new(0, 0, 120, 40));
+                if let Some(entry) = crate::ui::transcript_navigation_entries(self, area).last() {
+                    self.select_transcript_entry(entry);
+                }
             }
         }
     }
@@ -591,23 +590,21 @@ impl AppState {
             .current_session_id()
             .filter(|_| !self.session_navigation_stack.is_empty())
             .map(str::to_owned)
-        {
-            if self
+            && self
                 .subagents
                 .history
                 .records
                 .get(&id)
                 .is_some_and(|record| !record.lifecycle.is_finished())
-            {
-                self.child_transcript_views
-                    .insert(id, std::mem::take(&mut self.transcript_view));
-            }
+        {
+            self.child_transcript_views
+                .insert(id, std::mem::take(&mut self.transcript_view));
         }
-        if self.replay_mode {
-            if let Some(parent_snapshot) = self.session_navigation_stack.pop() {
-                self.restore_session_snapshot(parent_snapshot);
-                return;
-            }
+        if self.replay_mode
+            && let Some(parent_snapshot) = self.session_navigation_stack.pop()
+        {
+            self.restore_session_snapshot(parent_snapshot);
+            return;
         }
 
         let Some(parent_session_id) = self.current_parent_session_id() else {

@@ -113,18 +113,17 @@ pub(super) fn tool_json_nested_string(
 }
 
 pub(super) fn tool_summary_string(args_summary: &str, keys: &[&str]) -> Option<String> {
-    if let Ok(value) = serde_json::from_str::<serde_json::Value>(args_summary) {
-        if let Some(object) = value.as_object() {
-            if let Some(parsed) = keys.iter().find_map(|key| {
-                object
-                    .get(*key)
-                    .and_then(serde_json::Value::as_str)
-                    .map(collapse_inline_whitespace)
-                    .filter(|value| !value.is_empty())
-            }) {
-                return Some(parsed);
-            }
-        }
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(args_summary)
+        && let Some(object) = value.as_object()
+        && let Some(parsed) = keys.iter().find_map(|key| {
+            object
+                .get(*key)
+                .and_then(serde_json::Value::as_str)
+                .map(collapse_inline_whitespace)
+                .filter(|value| !value.is_empty())
+        })
+    {
+        return Some(parsed);
     }
 
     tool_summary_string_fragment(args_summary, keys)

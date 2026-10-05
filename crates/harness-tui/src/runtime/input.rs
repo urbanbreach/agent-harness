@@ -106,13 +106,13 @@ impl Runtime {
             TuiEvent::Mouse(mouse) => self.mouse(mouse, area),
         };
         let immediate = immediate || (!was_active && self.app.active_turn_in_progress());
-        if let Some(url) = self.app.take_link_to_open() {
-            if let Err(error) = harness_core::browser_oidc::launch_browser(&url) {
-                self.app.show_toast(
-                    format!("Could not open link: {error}"),
-                    crate::app::ToastVariant::Error,
-                );
-            }
+        if let Some(url) = self.app.take_link_to_open()
+            && let Err(error) = harness_core::browser_oidc::launch_browser(&url)
+        {
+            self.app.show_toast(
+                format!("Could not open link: {error}"),
+                crate::app::ToastVariant::Error,
+            );
         }
         let cause_id = if let Some(trace) = self.trace.as_mut() {
             Some(if changed {

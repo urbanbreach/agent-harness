@@ -219,7 +219,7 @@ fn perf_rewrite_viewer_public_boundary() -> Result {
             search_labels[1].contains("search: line_0050")
                 && !search_labels[1].contains("line_00505")
         );
-        let expected = if frames % 2 == 0 {
+        let expected = if frames.is_multiple_of(2) {
             "line_00500"
         } else {
             "line_00505"

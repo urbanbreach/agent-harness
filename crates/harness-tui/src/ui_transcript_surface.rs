@@ -167,22 +167,20 @@ fn child_line_style<'a>(
         return std::borrow::Cow::Owned(line);
     }
     trim_child_line_end(&mut line);
-    if timestamp {
-        if let Some(clock) = line.spans.last_mut() {
-            clock.style = clock.style.fg(theme.text.secondary);
-        }
+    if timestamp && let Some(clock) = line.spans.last_mut() {
+        clock.style = clock.style.fg(theme.text.secondary);
     }
-    if let Some(first) = line.spans.first_mut() {
-        if let Some(content) = first.content.strip_prefix(TRANSCRIPT_ENTRY_CONTENT_PREFIX) {
-            first.content = content.to_owned().into();
-            line.spans.insert(
-                0,
-                Span::styled(
-                    TRANSCRIPT_ENTRY_CONTENT_PREFIX,
-                    Style::default().fg(Color::Reset),
-                ),
-            );
-        }
+    if let Some(first) = line.spans.first_mut()
+        && let Some(content) = first.content.strip_prefix(TRANSCRIPT_ENTRY_CONTENT_PREFIX)
+    {
+        first.content = content.to_owned().into();
+        line.spans.insert(
+            0,
+            Span::styled(
+                TRANSCRIPT_ENTRY_CONTENT_PREFIX,
+                Style::default().fg(Color::Reset),
+            ),
+        );
     }
     std::borrow::Cow::Owned(line)
 }

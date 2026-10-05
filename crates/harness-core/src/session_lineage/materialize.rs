@@ -280,10 +280,10 @@ pub fn rewrite_child_event_envelope(
     event.seq = child_seq;
     event.event_id = format!("{child_run_id}-event-{child_seq}");
     event.causation_id = None;
-    if let Some(run) = source_run_id {
-        if event.stream_key.as_deref() == Some(&format!("run:{run}")) {
-            event.stream_key = Some(format!("run:{child_run_id}"));
-        }
+    if let Some(run) = source_run_id
+        && event.stream_key.as_deref() == Some(&format!("run:{run}"))
+    {
+        event.stream_key = Some(format!("run:{child_run_id}"));
     }
     // Turn/tool correlations remain valid inside the child and are required by resume.
     event

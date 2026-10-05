@@ -199,10 +199,14 @@ fn perf_interactive_resources_under_load() -> TestResult {
     };
     let paint = |app: &mut AppState,
                  terminal: &mut Terminal<FrameOutputBackend>,
-                 output: &mut FrameOutput|
+                 output: &mut FrameOutput,
+                 resize: Option<Rect>|
      -> TestResult {
-        app.set_frame_area(terminal.get_frame().area());
         output.begin_frame()?;
+        if let Some(area) = resize {
+            terminal.resize(area)?;
+        }
+        app.set_frame_area(terminal.get_frame().area());
         terminal
             .backend_mut()
             .set_hyperlinks(std::mem::take(&mut app.transcript_view.hyperlinks));
@@ -219,6 +223,7 @@ fn perf_interactive_resources_under_load() -> TestResult {
                 output: &mut FrameOutput,
                 index: usize|
      -> TestResult {
+        let mut resize = None;
         match scenario.as_str() {
             "startup" => {
                 app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(8))
@@ -251,7 +256,7 @@ fn perf_interactive_resources_under_load() -> TestResult {
                         None,
                         None,
                     );
-                    paint(app, terminal, output)?;
+                    paint(app, terminal, output, None)?;
                 }
                 assert_eq!(
                     crate::ui::transcript_selection_text(
@@ -279,7 +284,7 @@ fn perf_interactive_resources_under_load() -> TestResult {
                 );
             }
             "typing" => {
-                app.handle_key(key(if index % 2 == 0 {
+                app.handle_key(key(if index.is_multiple_of(2) {
                     KeyCode::Char('x')
                 } else {
                     KeyCode::Backspace
@@ -319,12 +324,16 @@ fn perf_interactive_resources_under_load() -> TestResult {
                 app.bump_transcript_render_epoch();
             }
             "resize" => {
-                let area = Rect::new(0, 0, if index % 2 == 0 { 80 } else { 160 }, 48);
-                terminal.resize(area)?;
+                resize = Some(Rect::new(
+                    0,
+                    0,
+                    if index.is_multiple_of(2) { 80 } else { 160 },
+                    48,
+                ));
             }
             _ => return Err(format!("unknown performance scenario: {scenario}").into()),
         }
-        paint(app, terminal, output)
+        paint(app, terminal, output, resize)
     };
     for index in 0..10 {
         step(&mut app, &mut terminal, &mut output, index)?;

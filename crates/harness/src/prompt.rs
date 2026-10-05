@@ -181,10 +181,10 @@ fn execute_prompt(
     if !coordinator_config.agent_profiles.contains_key(&profile) {
         return Err(format!("unknown profile: {profile}"));
     }
-    if command.fork_session {
-        if let Some(resume) = &mut resume {
-            resume.fork(command.session_id.as_deref())?;
-        }
+    if command.fork_session
+        && let Some(resume) = &mut resume
+    {
+        resume.fork(command.session_id.as_deref())?;
     }
     coordinator_config.session_dir = resume
         .as_ref()

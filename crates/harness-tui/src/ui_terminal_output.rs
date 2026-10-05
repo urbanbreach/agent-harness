@@ -44,13 +44,12 @@ pub(super) fn render(text: &str, base: Style, theme: &crate::theme::Theme) -> Ve
         .join("\n");
     if let crate::transcript_blocks::RawPayload::Text(redacted) =
         crate::transcript_blocks::RawDisclosure::from_text(&plain).payload
+        && redacted != plain
     {
-        if redacted != plain {
-            return redacted
-                .lines()
-                .map(|line| Line::from(Span::styled(line.to_string(), base)))
-                .collect();
-        }
+        return redacted
+            .lines()
+            .map(|line| Line::from(Span::styled(line.to_string(), base)))
+            .collect();
     }
     lines
 }

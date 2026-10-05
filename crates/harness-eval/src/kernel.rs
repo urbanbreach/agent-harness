@@ -208,15 +208,14 @@ impl Process {
     pub async fn interrupt(&mut self, id: &str) -> Result<()> {
         self.send(json!({"type":"cancel","id":id})).await?;
         #[cfg(unix)]
-        if self.language == "jl" {
-            if let Some(pid) = self
+        if self.language == "jl"
+            && let Some(pid) = self
                 .child
                 .id()
                 .and_then(|id| i32::try_from(id).ok())
                 .and_then(rustix::process::Pid::from_raw)
-            {
-                rustix::process::kill_process(pid, rustix::process::Signal::INT)?;
-            }
+        {
+            rustix::process::kill_process(pid, rustix::process::Signal::INT)?;
         }
         Ok(())
     }

@@ -377,12 +377,10 @@ fn sync_reasoning(parts: &mut Vec<SequencedPart>, activity: &ActivityEntry, thin
         2.. => {
             if let Some(rest) =
                 remainder(parts, &activity.thinking_text, true).filter(|rest| !rest.is_empty())
-            {
-                if let Some((_, TranscriptAssistantPart::Reasoning(last))) =
+                && let Some((_, TranscriptAssistantPart::Reasoning(last))) =
                     parts.iter_mut().rfind(|part| reasoning(part))
-                {
-                    last.text.push_str(rest);
-                }
+            {
+                last.text.push_str(rest);
             }
         }
         _ => {}

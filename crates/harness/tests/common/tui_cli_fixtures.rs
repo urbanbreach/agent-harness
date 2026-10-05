@@ -1,7 +1,6 @@
 use harness::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};

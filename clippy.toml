@@ -5,9 +5,6 @@ type-complexity-threshold = 250
 too-many-arguments-threshold = 6
 too-many-lines-threshold = 100
 
-# msrv - keeps clippy from suggesting features past our MSRV
-msrv = "1.83"
-
 # Avoid `panic` lint complaining about derived Debug impls calling unreachable_unchecked etc.
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true

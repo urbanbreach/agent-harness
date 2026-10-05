@@ -159,16 +159,16 @@ impl Worker {
                 }
             };
             let reported_native_usage = self.native && response.usage.is_some();
-            if self.native {
-                if let Some(usage) = &response.usage {
-                    messages.native_context_usage = Some(crate::subagent::SubagentContextUsage {
-                        total_tokens: u64::from(usage.total_tokens),
-                        estimate_after_last_response: None,
-                        estimate_at_last_response: super::super::context::native_tokens(
-                            &messages.entries,
-                        ),
-                    });
-                }
+            if self.native
+                && let Some(usage) = &response.usage
+            {
+                messages.native_context_usage = Some(crate::subagent::SubagentContextUsage {
+                    total_tokens: u64::from(usage.total_tokens),
+                    estimate_after_last_response: None,
+                    estimate_at_last_response: super::super::context::native_tokens(
+                        &messages.entries,
+                    ),
+                });
             }
             let calls = response.calls;
             if let Some(request) = response.logical_request {

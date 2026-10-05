@@ -125,10 +125,10 @@ pub fn check_for_update_from_manifest(
     else {
         return failed("invalid current or channel version");
     };
-    if let Some(minimum) = manifest.min_version.as_deref().and_then(version) {
-        if current.cmp_precedence(&minimum).is_lt() {
-            return failed("current version is below the minimum supported for this update");
-        }
+    if let Some(minimum) = manifest.min_version.as_deref().and_then(version)
+        && current.cmp_precedence(&minimum).is_lt()
+    {
+        return failed("current version is below the minimum supported for this update");
     }
     let channel = manifest.channel.clone();
     let channel_version = manifest.version.clone();

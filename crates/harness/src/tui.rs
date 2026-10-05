@@ -218,7 +218,7 @@ fn connect_provider_options(
         if provider_ids.contains(provider_id) {
             continue;
         }
-        let ProviderConfig::OpenAiCompatible(ref oc) = provider_config else {
+        let ProviderConfig::OpenAiCompatible(oc) = provider_config else {
             continue;
         };
         let label = oc.name.as_deref().unwrap_or(provider_id).to_string();
@@ -240,19 +240,17 @@ fn connect_provider_options(
         } else if !oc.api_key_env.is_empty() {
             let env_var = oc.api_key_env[0].clone();
             let already_set = std::env::var(&env_var).is_ok_and(|v| !v.trim().is_empty());
-            if !already_set {
-                if let Some(id) = ProviderId::parse(provider_id.as_str()) {
-                    provider_ids.insert(provider_id.clone());
-                    providers.push(ConnectProviderOption {
-                        id,
-                        label,
-                        description: "API key".to_string(),
-                        methods: vec![AuthMethodSpec::ApiKey {
-                            label: "Manually enter API Key".to_string(),
-                        }],
-                        models: Vec::new(),
-                    });
-                }
+            if !already_set && let Some(id) = ProviderId::parse(provider_id.as_str()) {
+                provider_ids.insert(provider_id.clone());
+                providers.push(ConnectProviderOption {
+                    id,
+                    label,
+                    description: "API key".to_string(),
+                    methods: vec![AuthMethodSpec::ApiKey {
+                        label: "Manually enter API Key".to_string(),
+                    }],
+                    models: Vec::new(),
+                });
             }
         }
     }
@@ -416,87 +414,67 @@ async fn run_interactive_mode(
     let coordinator_config_warmup = LiveCoordinatorConfigWarmup::start(settings, demo_mode);
     profile_handoff("interactive_mode.warmup_started");
 
-    let result =
-        run_interactive_workflow_loop(
-            InteractiveWorkflow::Startup,
-            {
-                let launch_selection = Arc::clone(&launch_selection);
-                move || {
-                    set_pending_live_launch_metadata(launch_metadata_for_mode(
-                        settings,
-                        &launch_selection,
-                    ));
-                    load_startup_session_history_entries(&settings.session_dir)
-                }
-            },
-            {
-                let launch_selection = Arc::clone(&launch_selection);
-                move |session_history_entries, startup_notice| {
-                    run_startup_launcher(
-                        cmd.exit_on_finish,
-                        session_history_entries,
-                        startup_notice,
-                        Arc::clone(&launch_selection),
-                        persist_model_selection,
-                        Some(prompt_history_path_for_session_dir(&settings.session_dir)),
-                        TuiAuthBackendContext::from_settings(settings),
-                        settings
-                            .config
-                            .as_ref()
-                            .map(|config| config.ui.keybindings.clone()),
-                        cmd.no_alt_screen,
-                        settings.yolo,
-                    )
-                }
-            },
-            {
-                let launch_selection = Arc::clone(&launch_selection);
-                let coordinator_config_warmup = coordinator_config_warmup.clone();
-                move || {
-                    run_new_live_session(
-                        cmd,
-                        settings,
-                        demo_mode,
-                        Arc::clone(&launch_selection),
-                        coordinator_config_warmup.clone(),
-                    )
-                }
-            },
-            {
-                let launch_selection = Arc::clone(&launch_selection);
-                let coordinator_config_warmup = coordinator_config_warmup.clone();
-                move |name, worktree_path| {
-                    run_new_worktree_live_session(
-                        cmd,
-                        settings,
-                        demo_mode,
-                        name,
-                        worktree_path,
-                        Arc::clone(&launch_selection),
-                        coordinator_config_warmup.clone(),
-                    )
-                }
-            },
-            {
-                let launch_selection = Arc::clone(&launch_selection);
-                let coordinator_config_warmup = coordinator_config_warmup.clone();
-                move |run_id, run_dir| {
-                    run_continue_session_bootstrap(
-                        cmd,
-                        settings,
-                        demo_mode,
-                        run_id,
-                        run_dir,
-                        Arc::clone(&launch_selection),
-                        coordinator_config_warmup.clone(),
-                    )
-                }
-            },
-            |run_dir| async move {
-                run_replay_tui(run_dir, cmd.exit_on_finish, cmd.no_alt_screen).await
-            },
-        )
-        .await;
+    let result = run_interactive_workflow_loop(
+        InteractiveWorkflow::Startup,
+        || {
+            set_pending_live_launch_metadata(launch_metadata_for_mode(settings, &launch_selection));
+            load_startup_session_history_entries(&settings.session_dir)
+        },
+        async |session_history_entries, startup_notice| {
+            run_startup_launcher(
+                cmd.exit_on_finish,
+                session_history_entries,
+                startup_notice,
+                Arc::clone(&launch_selection),
+                persist_model_selection,
+                Some(prompt_history_path_for_session_dir(&settings.session_dir)),
+                TuiAuthBackendContext::from_settings(settings),
+                settings
+                    .config
+                    .as_ref()
+                    .map(|config| config.ui.keybindings.clone()),
+                cmd.no_alt_screen,
+                settings.yolo,
+            )
+            .await
+        },
+        async || {
+            run_new_live_session(
+                cmd,
+                settings,
+                demo_mode,
+                Arc::clone(&launch_selection),
+                coordinator_config_warmup.clone(),
+            )
+            .await
+        },
+        async |name, worktree_path| {
+            run_new_worktree_live_session(
+                cmd,
+                settings,
+                demo_mode,
+                name,
+                worktree_path,
+                Arc::clone(&launch_selection),
+                coordinator_config_warmup.clone(),
+            )
+            .await
+        },
+        async |run_id, run_dir| {
+            run_continue_session_bootstrap(
+                cmd,
+                settings,
+                demo_mode,
+                run_id,
+                run_dir,
+                Arc::clone(&launch_selection),
+                coordinator_config_warmup.clone(),
+            )
+            .await
+        },
+        async |run_dir| run_replay_tui(run_dir, cmd.exit_on_finish, cmd.no_alt_screen).await,
+    )
+    .await;
 
     if persist_model_selection {
         persist_launch_selection_for_exit(
@@ -538,87 +516,67 @@ async fn run_direct_continue_mode(
         })?
         .to_string();
 
-    let result =
-        run_interactive_workflow_loop(
-            InteractiveWorkflow::Continue { run_id, run_dir },
-            {
-                let launch_selection = Arc::clone(&launch_selection);
-                move || {
-                    set_pending_live_launch_metadata(launch_metadata_for_mode(
-                        settings,
-                        &launch_selection,
-                    ));
-                    load_startup_session_history_entries(&settings.session_dir)
-                }
-            },
-            {
-                let launch_selection = Arc::clone(&launch_selection);
-                move |session_history_entries, startup_notice| {
-                    run_startup_launcher(
-                        cmd.exit_on_finish,
-                        session_history_entries,
-                        startup_notice,
-                        Arc::clone(&launch_selection),
-                        persist_model_selection,
-                        Some(prompt_history_path_for_session_dir(&settings.session_dir)),
-                        TuiAuthBackendContext::from_settings(settings),
-                        settings
-                            .config
-                            .as_ref()
-                            .map(|config| config.ui.keybindings.clone()),
-                        cmd.no_alt_screen,
-                        settings.yolo,
-                    )
-                }
-            },
-            {
-                let launch_selection = Arc::clone(&launch_selection);
-                let coordinator_config_warmup = coordinator_config_warmup.clone();
-                move || {
-                    run_new_live_session(
-                        cmd,
-                        settings,
-                        demo_mode,
-                        Arc::clone(&launch_selection),
-                        coordinator_config_warmup.clone(),
-                    )
-                }
-            },
-            {
-                let launch_selection = Arc::clone(&launch_selection);
-                let coordinator_config_warmup = coordinator_config_warmup.clone();
-                move |name, worktree_path| {
-                    run_new_worktree_live_session(
-                        cmd,
-                        settings,
-                        demo_mode,
-                        name,
-                        worktree_path,
-                        Arc::clone(&launch_selection),
-                        coordinator_config_warmup.clone(),
-                    )
-                }
-            },
-            {
-                let launch_selection = Arc::clone(&launch_selection);
-                let coordinator_config_warmup = coordinator_config_warmup.clone();
-                move |run_id, run_dir| {
-                    run_continue_session_bootstrap(
-                        cmd,
-                        settings,
-                        demo_mode,
-                        run_id,
-                        run_dir,
-                        Arc::clone(&launch_selection),
-                        coordinator_config_warmup.clone(),
-                    )
-                }
-            },
-            |run_dir| async move {
-                run_replay_tui(run_dir, cmd.exit_on_finish, cmd.no_alt_screen).await
-            },
-        )
-        .await;
+    let result = run_interactive_workflow_loop(
+        InteractiveWorkflow::Continue { run_id, run_dir },
+        || {
+            set_pending_live_launch_metadata(launch_metadata_for_mode(settings, &launch_selection));
+            load_startup_session_history_entries(&settings.session_dir)
+        },
+        async |session_history_entries, startup_notice| {
+            run_startup_launcher(
+                cmd.exit_on_finish,
+                session_history_entries,
+                startup_notice,
+                Arc::clone(&launch_selection),
+                persist_model_selection,
+                Some(prompt_history_path_for_session_dir(&settings.session_dir)),
+                TuiAuthBackendContext::from_settings(settings),
+                settings
+                    .config
+                    .as_ref()
+                    .map(|config| config.ui.keybindings.clone()),
+                cmd.no_alt_screen,
+                settings.yolo,
+            )
+            .await
+        },
+        async || {
+            run_new_live_session(
+                cmd,
+                settings,
+                demo_mode,
+                Arc::clone(&launch_selection),
+                coordinator_config_warmup.clone(),
+            )
+            .await
+        },
+        async |name, worktree_path| {
+            run_new_worktree_live_session(
+                cmd,
+                settings,
+                demo_mode,
+                name,
+                worktree_path,
+                Arc::clone(&launch_selection),
+                coordinator_config_warmup.clone(),
+            )
+            .await
+        },
+        async |run_id, run_dir| {
+            run_continue_session_bootstrap(
+                cmd,
+                settings,
+                demo_mode,
+                run_id,
+                run_dir,
+                Arc::clone(&launch_selection),
+                coordinator_config_warmup.clone(),
+            )
+            .await
+        },
+        async |run_dir| run_replay_tui(run_dir, cmd.exit_on_finish, cmd.no_alt_screen).await,
+    )
+    .await;
 
     if persist_model_selection {
         persist_launch_selection_for_exit(
@@ -667,10 +625,9 @@ async fn run_startup_launcher(
             if let UiIntent::SwitchModel {
                 launch_metadata, ..
             } = &intent
+                && let Some(notice) = auth_backend.model_prompt_notice(launch_metadata)
             {
-                if let Some(notice) = auth_backend.model_prompt_notice(launch_metadata) {
-                    let _ = auth_update_tx.send(notice);
-                }
+                let _ = auth_update_tx.send(notice);
             }
             return;
         }
@@ -960,10 +917,10 @@ async fn run_continue_session_bootstrap(
 
 async fn stop_live_source_run(coordinator: &CoordinatorHandle) -> Result<(), String> {
     let stop_result = coordinator.stop_run().await;
-    if let Err(err) = stop_result {
-        if !matches!(err, CoordinatorError::RunNotStarted) {
-            return Err(err.to_string());
-        }
+    if let Err(err) = stop_result
+        && !matches!(err, CoordinatorError::RunNotStarted)
+    {
+        return Err(err.to_string());
     }
     Ok(())
 }
@@ -1121,10 +1078,10 @@ async fn run_live_mode(
         event_forwarder_task.abort();
         ui_intent_task.abort();
 
-        if let Err(err) = stop_result {
-            if !matches!(err, CoordinatorError::RunNotStarted) {
-                return Err(err.to_string());
-            }
+        if let Err(err) = stop_result
+            && !matches!(err, CoordinatorError::RunNotStarted)
+        {
+            return Err(err.to_string());
         }
     }
 

@@ -56,17 +56,17 @@ impl Runtime {
                             .is_some()
                 })
         });
-        if let (Some(poll), Some(completed)) = (poll, &snapshot.completed) {
-            if completed.output.len() > 16_000 {
-                let mut clipped = completed.clone();
-                let end = completed.output.floor_char_boundary(16_000);
-                clipped.output.truncate(end);
-                clipped.output.push_str(&format!(
+        if let (Some(poll), Some(completed)) = (poll, &snapshot.completed)
+            && completed.output.len() > 16_000
+        {
+            let mut clipped = completed.clone();
+            let end = completed.output.floor_char_boundary(16_000);
+            clipped.output.truncate(end);
+            clipped.output.push_str(&format!(
                     "\n[output truncated: {end} of {} bytes shown]\nUse {poll}(\"{id}\") to see the full output.",
                     completed.output.len(),
                 ));
-                result.output = completed_body(&clipped);
-            }
+            result.output = completed_body(&clipped);
         }
         result.to_prompt_text()
     }

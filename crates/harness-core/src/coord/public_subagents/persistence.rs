@@ -79,23 +79,22 @@ impl Runtime {
         crate::redact::redact_in_place(self.redactor.as_ref(), &mut metadata);
         let bytes = serde_json::to_vec_pretty(&metadata)?;
         crate::store::write_private_atomic(&directory.join("meta.json"), &bytes)?;
-        if terminal {
-            if let Some(output) = snapshot
+        if terminal
+            && let Some(output) = snapshot
                 .completed
                 .as_ref()
                 .filter(|output| !output.output.is_empty())
-            {
-                let mut output = serde_json::json!({
-                    "schema_version": 1, "subagent_id": agent,
-                    "output": output.output, "tool_calls": output.tool_calls,
-                    "turns": output.turns, "duration_ms": output.duration_ms,
-                });
-                crate::redact::redact_in_place(self.redactor.as_ref(), &mut output);
-                crate::store::write_private_atomic(
-                    &directory.join("output.json"),
-                    &serde_json::to_vec(&output)?,
-                )?;
-            }
+        {
+            let mut output = serde_json::json!({
+                "schema_version": 1, "subagent_id": agent,
+                "output": output.output, "tool_calls": output.tool_calls,
+                "turns": output.turns, "duration_ms": output.duration_ms,
+            });
+            crate::redact::redact_in_place(self.redactor.as_ref(), &mut output);
+            crate::store::write_private_atomic(
+                &directory.join("output.json"),
+                &serde_json::to_vec(&output)?,
+            )?;
         }
         Ok(())
     }
