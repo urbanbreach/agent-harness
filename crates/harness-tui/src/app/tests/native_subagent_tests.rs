@@ -367,6 +367,7 @@ fn command_task_viewer_subscribes_updates_and_discards_late_output_after_close()
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
         Arc::new(move |intent| sink_intents.lock().unwrap_or_abort().push(intent));
     let mut app = AppState::new_live(None, false, Some(sink));
+    app.restart_motion_epoch_for_evidence();
     app.set_frame_area(Rect::new(0, 0, 120, 40));
     for event in [
         run_started(1),
@@ -431,6 +432,14 @@ fn command_task_viewer_subscribes_updates_and_discards_late_output_after_close()
         stderr: String::new(),
     };
     assert!(app.apply_command_output(snapshot.clone()));
+    assert!(!render_text(&app, 120, 40).contains("Building modules"));
+    app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(112));
+    let partial = render_text(&app, 120, 40);
+    assert!(
+        partial.contains("Bui") && !partial.contains("Building modules"),
+        "{partial}"
+    );
+    app.set_reduced_motion_for_evidence(true);
     assert!(render_text(&app, 120, 40).contains("Building modules"));
     snapshot.result.task_id = "another-command".into();
     assert!(!app.apply_command_output(snapshot.clone()));

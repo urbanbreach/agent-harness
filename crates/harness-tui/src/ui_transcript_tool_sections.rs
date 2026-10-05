@@ -34,6 +34,8 @@ pub(super) fn build_tool_call_section(
     stacked_diffs: bool,
     session_path: Option<&Path>,
 ) -> Option<TranscriptToolCallSection> {
+    let visible_tool = app.smoothed_tool(tool_call);
+    let tool_call = visible_tool.as_ref();
     if tool_hidden_from_transcript(tool_call) {
         return None;
     }

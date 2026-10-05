@@ -102,7 +102,9 @@ fn streaming_delta_preserves_unrelated_tool_and_selection() {
                 },
             },
         )));
-        app.advance_transcript_animation_phase();
+        for _ in 0..80 {
+            app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(16));
+        }
         let cached = render(&mut app);
         assert!(cached.3.iter().any(|row| row.text.contains("grows")));
 

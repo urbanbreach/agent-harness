@@ -152,7 +152,8 @@ fn build_turn_section(
     notifications: Vec<TranscriptOrderedToolCallSection>,
     queued_user_message: bool,
 ) -> TranscriptTurnSection {
-    let activity = &app.activities[activity_index];
+    let visible_activity = app.smoothed_activity(&app.activities[activity_index]);
+    let activity = visible_activity.as_ref();
     let timestamps_visible = app.transcript_timestamps_visible();
     let notification_created_activity = notifications
         .iter()

@@ -170,6 +170,9 @@ pub(crate) fn parent_transcript_hides_child_prompt_before_task_tool_finishes() {
             },
         },
     )));
+    (0..40).for_each(|_| {
+        app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(16));
+    });
     let child_text = render_text(&app, 140, 40);
     assert!(child_text.contains("Child followup prompt"));
     assert!(child_text.contains("Child followup response"));

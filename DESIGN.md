@@ -183,6 +183,12 @@ consume composer space or change transcript measurement.
 
 ## Motion, focus, and borders
 
+Live replies, reasoning, tool input, eval output, and command output reveal whole
+graphemes at a 16 ms cadence after an 80 ms initial buffer. The reveal rate follows
+incoming text and catches up during bursts. Durable completion, disconnection,
+and reduced motion settle pending text immediately. History and runtime state
+remain complete while only the displayed text is paced.
+
 Animate work and state changes only. Spinners, pulses, and completion feedback
 must remain understandable with motion disabled. Do not rely on timing for
 confirmation. A mouse hover can clarify a control, but cannot reveal its only

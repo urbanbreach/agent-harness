@@ -306,6 +306,7 @@ impl AppState {
     }
 
     fn current_session_snapshot(&mut self) -> Option<SessionNavigationSnapshot> {
+        self.settle_streaming_text();
         Some(SessionNavigationSnapshot {
             session_path: self.session_path.clone()?,
             lineage: self.session_lineage.clone(),
@@ -329,6 +330,7 @@ impl AppState {
     }
 
     fn restore_session_snapshot(&mut self, snapshot: SessionNavigationSnapshot) {
+        self.streaming_text.clear();
         self.replay_mode = snapshot.replay_mode;
         self.session_path = Some(snapshot.session_path);
         self.session_lineage = snapshot.lineage;

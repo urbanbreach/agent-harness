@@ -218,8 +218,13 @@ impl Capture {
             "advance" => {
                 let ms = action["ms"].as_u64().ok_or("missing ms")?;
                 self.now_ms += ms;
-                self.app
-                    .advance_wall_clock_for_motion_evidence(Duration::from_millis(ms));
+                let mut remaining = ms;
+                while remaining > 0 {
+                    let frame_ms = remaining.min(16);
+                    self.app
+                        .advance_wall_clock_for_motion_evidence(Duration::from_millis(frame_ms));
+                    remaining -= frame_ms;
+                }
                 // The production scheduler expires terminal flashes separately from sampling time.
                 self.app.refresh_motion_for_evidence();
             }
@@ -358,6 +363,7 @@ fn assistant_timestamp_keeps_a_gutter_at_the_wrap_boundary() -> Result<()> {
     let mut state = Capture::new(&fixture)?;
     state.live("provider_text_delta", json!({"request_id":"provider", "delta":
         "I’ll inspect the first transcript section before continuing with the ordered delay and projection read."}))?;
+    state.app.set_reduced_motion_for_evidence(true);
     for width in [80, 120] {
         let buffer = render(&mut state.app, width, 40)?;
         let rows = buffer

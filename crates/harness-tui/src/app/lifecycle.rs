@@ -595,6 +595,7 @@ impl AppState {
 
 impl AppState {
     pub fn apply_runtime_event_stream_closed(&mut self) -> bool {
+        self.settle_streaming_text();
         const MESSAGE: &str = "live event stream disconnected";
         if self.status_banner.as_deref() == Some(MESSAGE) {
             return false;
