@@ -16,6 +16,15 @@ static SECRETS: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
     ))
 });
 
+// A superset of every secret prefix. The full assignment pattern starts with
+// an arbitrary identifier, so it is expensive on long ordinary output lines.
+static PREFIX: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"(?i:bearer|cookie|api[_-]?key|(?:access|refresh|id)[_-]?token|password|passwd|client[_-]?secret|[?&](?:token|secret)=|https?://)",
+        r"|sk-|AIza|AKIA|github_pat_|gh[pousr]_|-----BEGIN"
+    ))
+});
+
 pub trait Redactor {
     fn redact_text(&self, text: &str) -> String;
     /// Bytes that future fragments cannot turn into a redaction match.
@@ -115,18 +124,15 @@ pub struct DefaultRedactor {
 
 impl Redactor for DefaultRedactor {
     fn redact_text(&self, text: &str) -> String {
+        if PREFIX.as_ref().is_ok_and(|prefix| !prefix.is_match(text)) {
+            return text.to_owned();
+        }
         match SECRETS.as_ref() {
             Ok(regex) => regex.replace_all(text, replace_secret).into_owned(),
             Err(_) => "[REDACTED]".into(),
         }
     }
     fn streaming_prefix(&self, text: &str) -> usize {
-        static PREFIX: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
-            Regex::new(concat!(
-                r"(?i:bearer|cookie|api[_-]?key|(?:access|refresh|id)[_-]?token|password|passwd|client[_-]?secret|[?&](?:token|secret)=|https?://)",
-                r"|sk-|AIza|AKIA|github_pat_|gh[pousr]_|-----BEGIN"
-            ))
-        });
         PREFIX.as_ref().map_or(0, |pattern| {
             word_prefix(text, |word| pattern.is_match(word))
         })
@@ -150,6 +156,9 @@ fn word_prefix(text: &str, suspect: impl Fn(&str) -> bool) -> usize {
 }
 impl DefaultRedactor {
     pub fn secret_finding_count(&self, text: &str) -> usize {
+        if PREFIX.as_ref().is_ok_and(|prefix| !prefix.is_match(text)) {
+            return 0;
+        }
         SECRETS.as_ref().map_or(1, |re| {
             re.captures_iter(text)
                 .filter(|c| replace_secret(c) != c[0])
@@ -383,16 +392,43 @@ mod tests {
         assert_eq!(redactor.secret_finding_count(&safe), 0);
         assert_eq!(redactor.redact_text(&safe), safe);
         assert!(!safe.contains("secret-body"));
-        for text in [
-            "API_KEY=\"private-quoted\"",
-            "PASSWORD='private-quoted'",
-            "+  \"client_secret\": \"private-quoted\",",
+        // Each family is scanned separately so an unrelated prefix cannot hide
+        // a false negative in the fast path for ordinary, long output.
+        for (text, secret) in [
+            ("API_KEY=\"private-quoted\"", "private-quoted"),
+            ("PASSWORD='private-quoted'", "private-quoted"),
+            (
+                "+  \"client_secret\": \"private-quoted\",",
+                "private-quoted",
+            ),
+            ("CLIENTſECRET='private-quoted'", "private-quoted"),
+            ("coo\u{212a}ie: session=private-quoted", "private-quoted"),
+            ("OPENAI_ACCESS_TOKEN='private-quoted'", "private-quoted"),
+            ("REFRESH-TOKEN=private-quoted", "private-quoted"),
+            ("ID_TOKEN=private-quoted", "private-quoted"),
+            ("PASSWD=private-quoted", "private-quoted"),
+            ("Bearer abc.def.ghi", "abc.def.ghi"),
+            ("https://name:private-quoted@example.test", "private-quoted"),
+            ("?secret=private-quoted", "private-quoted"),
+            ("&token=private-quoted", "private-quoted"),
+            ("sk-1234567890abcdefgh", "sk-1234567890abcdefgh"),
+            ("AIza12345678901234567890", "AIza12345678901234567890"),
+            ("AKIA1234567890123456", "AKIA1234567890123456"),
+            (
+                "github_pat_12345678901234567890",
+                "github_pat_12345678901234567890",
+            ),
+            ("ghp_12345678901234567890", "ghp_12345678901234567890"),
+            (
+                "-----BEGIN PRIVATE KEY-----\nprivate-quoted",
+                "private-quoted",
+            ),
         ] {
-            let safe = redactor.redact_text(text);
-            assert!(
-                !safe.contains("private-quoted"),
-                "unredacted assignment: {safe}"
-            );
+            let text = format!("{}\n{text}", "ordinary-output ".repeat(1024));
+            assert!(redactor.secret_finding_count(&text) > 0);
+            let safe = redactor.redact_text(&text);
+            assert!(!safe.contains(secret), "unredacted credential: {secret}");
+            assert_eq!(redactor.secret_finding_count(&safe), 0);
             assert_eq!(redactor.redact_text(&safe), safe);
         }
     }
