@@ -10,6 +10,10 @@ Do not add coverage for getters, derived types, delegation, or impossible states
 
 ## Everyday checks
 
+Install Node.js 24 or newer on `PATH` for the JavaScript eval tests. The eval
+lane also requires the configured Python, Ruby, and Julia interpreters; missing
+requirements fail the lane. No npm packages are needed for the eval runtime.
+
 ```bash
 python3 scripts/check-test-suite-gates.py --format
 cargo check --workspace

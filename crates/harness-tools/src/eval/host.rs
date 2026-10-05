@@ -1,5 +1,5 @@
 use super::*;
-use harness_eval::{Session, SessionOptions, WorkerCommand};
+use harness_eval::{Session, SessionOptions};
 use tokio::sync::mpsc;
 
 pub(super) struct Host {
@@ -9,28 +9,7 @@ pub(super) struct Host {
 impl Host {
     pub async fn start(ctx: &ToolContext, config: &EvalConfig) -> Result<Self, ToolError> {
         let scratch = Arc::new(tempfile::Builder::new().prefix("harness-eval-").tempdir()?);
-        let current = std::env::current_exe()?;
-        let (executable, args) = if current.file_stem().is_some_and(|name| name == "harness") {
-            (current, vec!["__eval-worker".into()])
-        } else {
-            let directory = current
-                .parent()
-                .ok_or_else(|| failure("executable directory unavailable"))?;
-            let directory = if directory.file_name().is_some_and(|name| name == "deps") {
-                directory.parent().unwrap_or(directory)
-            } else {
-                directory
-            };
-            let worker = directory.join(format!(
-                "harness-eval-worker{}",
-                std::env::consts::EXE_SUFFIX
-            ));
-            if !worker.is_file() {
-                return Err(failure("native eval worker is missing; install harness-eval-worker beside the host executable"));
-            }
-            (worker, Vec::new())
-        };
-        let mut environment = tokio::process::Command::new(&executable);
+        let mut environment = tokio::process::Command::new("node");
         harness_core::process::environment(&mut environment);
         let environment = environment
             .as_std()
@@ -67,11 +46,7 @@ impl Host {
             settings.remove("languages");
         }
         let session = Session::new(SessionOptions {
-            worker: WorkerCommand {
-                executable,
-                args,
-                environment,
-            },
+            environment,
             cwd: ctx.workspace_root.clone(),
             artifacts: scratch.path().join("artifacts"),
             local_dir: ctx

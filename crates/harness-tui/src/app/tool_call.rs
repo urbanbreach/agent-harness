@@ -123,8 +123,15 @@ pub struct EditEntry {
 }
 
 impl ToolCallEntry {
+    pub(crate) fn input_is_streaming(&self) -> bool {
+        self.status == ToolCallDisplayStatus::Queued
+            && self.canonical_tool_id.is_none()
+            && self.args_digest.is_empty()
+    }
+
     pub(crate) fn has_execution_motion(&self) -> bool {
-        self.status == ToolCallDisplayStatus::Running
+        self.input_is_streaming()
+            || self.status == ToolCallDisplayStatus::Running
             || (self.status == ToolCallDisplayStatus::Queued
                 && matches!(self.effective_tool_id(), "bash" | "shell.run"))
     }

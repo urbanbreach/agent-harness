@@ -1,6 +1,4 @@
 (async () => {
-  globalThis.__harness_bootstrap_node();
-  delete globalThis.__harness_bootstrap_node;
   const native = globalThis.__harness_ops;
   delete globalThis.__harness_ops;
   const registry = globalThis.__harness_create_registry(native);

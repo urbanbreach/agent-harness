@@ -825,8 +825,7 @@ run_mode() {
       run_simulation
       ;;
     eval)
-      run_stage eval native "$repo_root" cargo nextest run --profile ci -p harness-eval --test session || true
-      run_stage eval worker "$repo_root" cargo build -p harness-eval --bin harness-eval-worker || true
+      run_stage eval native "$repo_root" cargo nextest run --profile ci -p harness-eval || true
       run_stage eval kernels "$repo_root" env HARNESS_EVAL_SIGNOFF=1 cargo nextest run --profile ci -p harness-tools --test eval --test mcp --run-ignored all -E '(binary(eval) or test(eval_mcp)) and not test(capture_eval) and not test(perf_eval)' || true
       ;;
     signoff-binary)

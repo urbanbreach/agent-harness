@@ -1,4 +1,4 @@
-use harness_eval::{Session, SessionOptions, Settings, WorkerCommand};
+use harness_eval::{Session, SessionOptions, Settings};
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, time::Duration};
 use tokio::sync::mpsc;
@@ -8,14 +8,10 @@ type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + 
 fn session(settings: Settings) -> Result<(Session, tempfile::TempDir)> {
     let root = tempfile::tempdir()?;
     let session = Session::new(SessionOptions {
-        worker: WorkerCommand {
-            executable: env!("CARGO_BIN_EXE_harness-eval-worker").into(),
-            args: Vec::new(),
-            environment: BTreeMap::from([(
-                "PATH".into(),
-                std::env::var_os("PATH").unwrap_or_default(),
-            )]),
-        },
+        environment: BTreeMap::from([(
+            "PATH".into(),
+            std::env::var_os("PATH").unwrap_or_default(),
+        )]),
         cwd: root.path().into(),
         artifacts: root.path().join("artifacts"),
         local_dir: root.path().join("local"),
@@ -58,6 +54,13 @@ async fn javascript_cells_preserve_language_semantics_and_output() -> Result {
         root.path().join("typed.ts"),
         "export const answer: number = 42;",
     )?;
+    let package = root.path().join("node_modules/eval-fixture");
+    std::fs::create_dir_all(&package)?;
+    std::fs::write(
+        package.join("package.json"),
+        r#"{"type":"module","exports":{"import":"./entry.mjs"}}"#,
+    )?;
+    std::fs::write(package.join("entry.mjs"), "export default 42;")?;
     let cases = [
         ("var value = 40; value + 2", "42\n"),
         ("value += 2; value", "42\n"),
@@ -72,7 +75,8 @@ async fn javascript_cells_preserve_language_semantics_and_output() -> Result {
         ("[path.extname('a.rs'),imported]", "[\".rs\",42]\n"),
         ("import common, {answer as cjsAnswer} from './common.cjs'; [common.answer,cjsAnswer]", "[42,42]"),
         ("import {answer as tsAnswer} from './typed.ts'; tsAnswer", "42"),
-        ("import {writeSync} from 'node:fs'; writeSync(1,'raw stdout\\n'); writeSync(2,'raw stderr\\n'); print('after native writes');", "raw stdout\nraw stderr\nafter native writes"),
+        ("import packageAnswer from 'eval-fixture'; packageAnswer", "42"),
+        ("import {writeSync} from 'node:fs'; print('before native writes'); writeSync(1,'raw stdout\\n'); writeSync(2,'raw stderr\\n'); print('after native writes');", "before native writes\nraw stdout\nraw stderr\nafter native writes"),
         ("import {spawnSync} from 'node:child_process'; spawnSync('sh',['-c','printf child'],{stdio:'inherit'}); print(' process');", "child process"),
         ("return 4; 99", "4\n"),
         ("if(false) return 1; 2", "(no output)"),
@@ -334,11 +338,18 @@ async fn kernel_tools_are_reentrant_scoped_and_fenced_by_revision() -> Result {
     let nested = event(&mut invoked, "call").await?;
     assert_ne!(nested["parent"], waiting["parent"]);
     assert_eq!(nested["args"]["parameters"]["path"], "memo.txt");
+    session.send(json!({"type":"reply","id":waiting["id"],"result":{"content":[{"type":"text","text":"parent finished"}],"details":{}}})).await?;
+    assert_ne!(
+        event(&mut parent, "result").await?["result"]["details"]["isError"],
+        true
+    );
     session.send(json!({"type":"reply","id":nested["id"],"result":{"content":[{"type":"text","text":"nested body"}],"details":{}}})).await?;
     assert_eq!(
         event(&mut invoked, "result").await?["result"],
         "nested body"
     );
+    let mut parent = session.execute("parent-again", json!({"language":"js","summary":"Wait while child tools run","code":"await tool.probe({});","on_timeout":"error"}), tools.clone(), false).await?;
+    event(&mut parent, "call").await?;
     for scope in [
         json!({"tools":{"deny":["read"]}}),
         json!({"tools":{"allow":"malformed"}}),
@@ -366,7 +377,9 @@ async fn kernel_tools_are_reentrant_scoped_and_fenced_by_revision() -> Result {
         )
         .await?;
     event(&mut interrupted, "call").await?;
-    session.send(json!({"type":"cancel","id":"parent"})).await?;
+    session
+        .send(json!({"type":"cancel","id":"parent-again"}))
+        .await?;
     assert_eq!(
         event(&mut parent, "result").await?["result"]["details"]["cells"][0]["status"],
         "cancelled"

@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-#[ignore = "requires native eval worker; scripts/test-lanes.sh eval"]
+#[ignore = "requires Node.js 24+; scripts/test-lanes.sh eval"]
 async fn child_agents_invoke_kernel_tools_without_leaking_them_to_siblings() -> Result {
     let provider = MockProvider::script([
         vec![

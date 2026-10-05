@@ -10,10 +10,20 @@ Existing agent tool lists should replace `batch` with `eval`. There is no alias
 for the removed tool. Review `permission.eval` when migrating: eval can execute
 local code, so its approval is separate from each nested tool's approval.
 
-JavaScript uses the V8 runtime embedded in Harness. Node.js and Bun are not
-required. Python uses `python3` or `python`; Ruby uses `ruby`; Julia uses `julia`. Missing
+JavaScript requires Node.js 24 or newer on `PATH`. Install the current Node.js
+LTS release and verify it with `node --version`. Harness ships the worker scripts
+and an MIT-licensed Acorn parser, so eval needs no npm install. A missing or older
+Node installation produces an actionable error when JavaScript is first used.
+Python uses `python3` or `python`; Ruby uses `ruby`; Julia uses `julia`. Missing
 optional interpreters are omitted from the tool schema. Kernels start on first
 use and close with the run. Startup and replay do not launch them.
+
+The JavaScript process persists between cells. A supervisor keeps the control
+channel responsive during blocking code and captures native stdout/stderr writes
+separately from protocol messages. Both processes close with the kernel. The
+worker ignores `NODE_OPTIONS`; project imports use Node's module resolution and
+TypeScript support. JSX and TypeScript syntax that requires a separate compiler
+must be compiled by the project before import.
 
 ## Calls
 

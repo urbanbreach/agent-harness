@@ -1204,7 +1204,7 @@ fn tool_section_rail_color(
     theme: &Theme,
 ) -> Color {
     match (family, tool.header.presentation.status) {
-        (TranscriptToolFamily::Execute, ToolCallPresentationStatus::Queued)
+        (_, ToolCallPresentationStatus::Queued)
             if matches!(tool.rail_motion, ToolRailMotion::Running { .. }) =>
         {
             theme.text.accent

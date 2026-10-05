@@ -4,7 +4,6 @@ use std::sync::Arc;
 mod ast_grep;
 mod eval;
 pub use eval::register as register_eval_tool;
-pub use harness_eval::worker_main as eval_worker_main;
 mod files;
 mod formatters;
 mod github;

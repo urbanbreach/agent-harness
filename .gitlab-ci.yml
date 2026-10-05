@@ -20,6 +20,7 @@ variables:
   NEXTEST_PROFILE: "ci"
   CARGO_NEXTEST_VERSION: "0.9.146"
   CARGO_LLVM_COV_VERSION: "0.9.1"
+  NODE_VERSION: "24.21.0"
 
 .rust_cache: &rust_cache
   key: "${CI_PROJECT_NAME}-${CI_COMMIT_REF_SLUG}"
@@ -45,8 +46,28 @@ variables:
       wild --version
     ); fi
 
+.node_before_script: &node_before_script
+  - |
+    (
+      set -eu
+      apt-get update
+      apt-get install -y --no-install-recommends curl ca-certificates xz-utils
+      case "$(uname -m)" in x86_64) node_arch=x64 ;; aarch64) node_arch=arm64 ;; *) exit 1 ;; esac
+      node_tmp="$(mktemp -d)"
+      trap 'rm -rf -- "$node_tmp"' EXIT
+      cd "$node_tmp"
+      node_archive="node-v${NODE_VERSION}-linux-${node_arch}.tar.xz"
+      curl --fail --location --retry 3 --output "$node_archive" "https://nodejs.org/dist/v${NODE_VERSION}/${node_archive}"
+      curl --fail --location --retry 3 --output SHASUMS256.txt "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"
+      sha256sum --check --ignore-missing SHASUMS256.txt
+      tar -xJf "$node_archive"
+      install -m 755 "node-v${NODE_VERSION}-linux-${node_arch}/bin/node" /usr/local/bin/node
+      node --version
+    )
+
 .rust_nextest_before_script: &rust_nextest_before_script
   - *rust_linker_before_script
+  - *node_before_script
   - rustup component add rustfmt clippy
   - cargo install cargo-nextest --version "${CARGO_NEXTEST_VERSION}" --locked
 
@@ -169,6 +190,7 @@ rust:coverage:
   cache: *rust_cache
   before_script:
     - *rust_linker_before_script
+    - *node_before_script
     - rustup component add llvm-tools-preview
     - cargo install cargo-nextest --version "${CARGO_NEXTEST_VERSION}" --locked
     - cargo install cargo-llvm-cov --version "${CARGO_LLVM_COV_VERSION}" --locked

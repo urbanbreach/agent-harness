@@ -2,15 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
 #[derive(Clone, Debug)]
-pub struct WorkerCommand {
-    pub executable: PathBuf,
-    pub args: Vec<OsString>,
-    pub environment: BTreeMap<OsString, OsString>,
-}
-
-#[derive(Clone, Debug)]
 pub struct SessionOptions {
-    pub worker: WorkerCommand,
+    pub environment: BTreeMap<OsString, OsString>,
     pub cwd: PathBuf,
     pub artifacts: PathBuf,
     pub local_dir: PathBuf,
