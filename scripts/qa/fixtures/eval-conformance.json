@@ -1,0 +1,272 @@
+[
+  {
+    "name": "js-persist",
+    "language": "js",
+    "code": "var parityValue = 37; parityValue + 5"
+  },
+  {
+    "name": "js-retained",
+    "language": "js",
+    "code": "parityValue + 6"
+  },
+  {
+    "name": "js-await",
+    "language": "js",
+    "code": "await Promise.resolve(6 * 7)"
+  },
+  {
+    "name": "js-destructure",
+    "language": "js",
+    "code": "const {left,...others} = {left:3,right:4}; [left,others]"
+  },
+  {
+    "name": "js-module",
+    "language": "js",
+    "code": "import {basename} from 'node:path'; basename('/example/memo.md')"
+  },
+  {
+    "name": "js-pipeline",
+    "language": "js",
+    "code": "await pipeline([2,3,4], n=>n*3, n=>n+1)"
+  },
+  {
+    "name": "js-parallel-index",
+    "language": "js",
+    "code": "await parallel([i=>i,i=>i,i=>i])"
+  },
+  {
+    "name": "js-parallel-errors",
+    "language": "js",
+    "code": "try {await parallel([async()=>{await new Promise(r=>setTimeout(r,10)); throw Error('first')},()=>{throw Error('second')}])} catch(e) {print(e.message)}"
+  },
+  {
+    "name": "js-write-read",
+    "language": "js",
+    "code": "await write('memo.txt','red\\nblue\\ngreen'); await read('memo.txt',2,1)"
+  },
+  {
+    "name": "js-blob",
+    "language": "js",
+    "code": "await write('blob.txt',new Blob(['blob body'])); await read('blob.txt')"
+  },
+  {
+    "name": "js-schema",
+    "language": "js",
+    "code": "(await tool_schema('perf_echo')).name"
+  },
+  {
+    "name": "js-tool",
+    "language": "js",
+    "code": "(await tool.perf_echo({})).text"
+  },
+  {
+    "name": "js-completion",
+    "language": "js",
+    "code": "await completion('answer',{schema:{type:'object'}})"
+  },
+  {
+    "name": "js-agent",
+    "language": "js",
+    "code": "await agent('answer',{schema:{type:'object'}})"
+  },
+  {
+    "name": "js-pool",
+    "language": "js",
+    "code": "var parityPool = await workpool('task','checking'); parityPool.pool_id"
+  },
+  {
+    "name": "js-pool-method",
+    "language": "js",
+    "code": "(await parityPool.inspect()).text"
+  },
+  {
+    "name": "js-log-phase",
+    "language": "js",
+    "code": "phase('reading'); log('phase body'); print('done');"
+  },
+  {
+    "name": "js-display-json",
+    "language": "js",
+    "code": "display({result:17});"
+  },
+  {
+    "name": "js-error",
+    "language": "js",
+    "code": "throw Error('parity failure')"
+  },
+  {
+    "name": "js-after-error",
+    "language": "js",
+    "code": "parityValue"
+  },
+  {
+    "name": "py-persist",
+    "language": "py",
+    "code": "parity_value = 37\nparity_value + 5"
+  },
+  {
+    "name": "py-retained",
+    "language": "py",
+    "code": "parity_value + 6"
+  },
+  {
+    "name": "py-await",
+    "language": "py",
+    "code": "import asyncio\nawait asyncio.sleep(0)\n42"
+  },
+  {
+    "name": "py-pipeline",
+    "language": "py",
+    "code": "pipeline([2,3,4], lambda n:n*3, lambda n:n+1)"
+  },
+  {
+    "name": "py-write-read",
+    "language": "py",
+    "code": "write('python.txt','red\\nblue\\ngreen')\nread('python.txt',2,1)"
+  },
+  {
+    "name": "py-schema",
+    "language": "py",
+    "code": "tool_schema('perf_echo')['name']"
+  },
+  {
+    "name": "py-tool",
+    "language": "py",
+    "code": "tool.perf_echo()['text']"
+  },
+  {
+    "name": "py-completion",
+    "language": "py",
+    "code": "completion('answer','default',None,{'type':'object'})"
+  },
+  {
+    "name": "py-agent",
+    "language": "py",
+    "code": "agent('answer',schema={'type':'object'})"
+  },
+  {
+    "name": "py-pool",
+    "language": "py",
+    "code": "parity_pool = workpool('task','checking')\nparity_pool.pool_id"
+  },
+  {
+    "name": "py-pool-method",
+    "language": "py",
+    "code": "parity_pool.inspect()['text']"
+  },
+  {
+    "name": "py-magic",
+    "language": "py",
+    "code": "!printf magic-output"
+  },
+  {
+    "name": "py-display-json",
+    "language": "py",
+    "code": "display({\"result\":17})"
+  },
+  {
+    "name": "py-error",
+    "language": "py",
+    "code": "raise RuntimeError('parity failure')"
+  },
+  {
+    "name": "py-after-error",
+    "language": "py",
+    "code": "parity_value"
+  },
+  {
+    "name": "rb-persist",
+    "language": "rb",
+    "code": "parity_value = 37; parity_value + 5"
+  },
+  {
+    "name": "rb-retained",
+    "language": "rb",
+    "code": "parity_value + 6"
+  },
+  {
+    "name": "rb-pipeline",
+    "language": "rb",
+    "code": "pipeline([2,3,4], ->(n){n*3}, ->(n){n+1})"
+  },
+  {
+    "name": "rb-tool",
+    "language": "rb",
+    "code": "tool.perf_echo()[\"text\"]"
+  },
+  {
+    "name": "rb-agent",
+    "language": "rb",
+    "code": "agent(\"answer\", schema: {type: \"object\"})"
+  },
+  {
+    "name": "rb-pool",
+    "language": "rb",
+    "code": "parity_pool = workpool(\"task\",\"checking\"); parity_pool.pool_id"
+  },
+  {
+    "name": "rb-error",
+    "language": "rb",
+    "code": "raise \"parity failure\""
+  },
+  {
+    "name": "rb-after-error",
+    "language": "rb",
+    "code": "parity_value"
+  },
+  {
+    "name": "jl-persist",
+    "language": "jl",
+    "code": "parity_value = 37; parity_value + 5"
+  },
+  {
+    "name": "jl-retained",
+    "language": "jl",
+    "code": "parity_value + 6"
+  },
+  {
+    "name": "jl-pipeline",
+    "language": "jl",
+    "code": "pipeline([2,3,4], n->n*3, n->n+1)"
+  },
+  {
+    "name": "jl-tool",
+    "language": "jl",
+    "code": "tool.perf_echo()[\"text\"]"
+  },
+  {
+    "name": "jl-agent",
+    "language": "jl",
+    "code": "agent(\"answer\"; schema=Dict(\"type\"=>\"object\"))"
+  },
+  {
+    "name": "jl-pool",
+    "language": "jl",
+    "code": "parity_pool = workpool(Dict(\"category\"=>\"default\", \"prompt\"=>\"checking\"),\"checking\"); parity_pool.pool_id"
+  },
+  {
+    "name": "jl-error",
+    "language": "jl",
+    "code": "error(\"parity failure\")"
+  },
+  {
+    "name": "jl-after-error",
+    "language": "jl",
+    "code": "parity_value"
+  },
+  {
+    "name": "rb-declaration",
+    "language": "rb",
+    "code": "declaration_only = 91"
+  },
+  {
+    "name": "jl-declaration",
+    "language": "jl",
+    "code": "declaration_only = 91"
+  },
+  {
+    "name": "js-array-elision",
+    "language": "js",
+    "code": "var consumed = 0; var [kept,,] = {[Symbol.iterator]:function*(){for(let i=0;i<3;i++){consumed++;yield i;}}}; [kept,consumed]"
+  }
+]

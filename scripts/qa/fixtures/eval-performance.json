@@ -1,0 +1,8 @@
+[
+  {"name":"js-transform", "language":"js", "code":"Array.from({length:200000}, (_, i) => ({value:i, keep:i%3===0})).filter(x=>x.keep).reduce((sum,x)=>sum+x.value,0)"},
+  {"name":"py-transform", "language":"py", "code":"sum(i * i for i in range(200000))"},
+  {"name":"js-pipeline", "language":"js", "code":"await pipeline(Array.from({length:2000},(_,i)=>i), n=>n*2, n=>n+1)"},
+  {"name":"js-output", "language":"js", "code":"print(Array.from({length:2000},(_,i)=>`row ${i}: ${'x'.repeat(80)}`).join('\\n'))"},
+  {"name":"js-tools", "language":"js", "code":"await parallel(Array.from({length:16},()=>()=>tool.perf_echo({})))"},
+  {"name":"py-tools", "language":"py", "code":"parallel([lambda: tool.perf_echo() for _ in range(16)])"}
+]
