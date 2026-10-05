@@ -9,7 +9,7 @@ MCP, or LSP peers instead of mocking away the boundary under test.
 | Reads, edits, patch | `files.rs`, `patch.rs` |
 | Formatting and language edits | `formatting.rs`, `lsp.rs` |
 | Delegation, history, cancellation | `tasks.rs`, `background_output.rs` |
-| Parallel results and permissions | `batch.rs` |
+| Parallel results and permissions | `eval.rs` |
 | Network transports | `mcp.rs`, `web.rs`, `remote_search.rs`, `github.rs` |
 | Skills and inspection | `skills.rs`, `sessions.rs`, `todos.rs` |
 | Actual subprocesses and platform probes | `binary_smoke.rs`, `native/` |

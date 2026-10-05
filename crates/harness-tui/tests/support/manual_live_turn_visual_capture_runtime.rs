@@ -157,7 +157,9 @@ pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::er
 
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
-            run_dir: run_dir.path().to_path_buf(),
+            run_dir: std::env::var_os("HARNESS_TUI_MANUAL_RUN_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| run_dir.path().to_path_buf()),
             historical_events,
             session_history_entries: Vec::new(),
             prompt_history_path: None,

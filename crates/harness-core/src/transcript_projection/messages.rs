@@ -192,7 +192,7 @@ fn commit_parts(
         };
         message.parts.push(part);
     }
-    // Coordinator-owned batch children are absent from the provider's commit.
+    // Coordinator-owned eval children are absent from the provider's commit.
     message
         .parts
         .extend(tools.into_values().map(ProjectedPart::ToolCall));

@@ -49,6 +49,11 @@ pub struct LiveEventEnvelope {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event_type", content = "data", rename_all = "snake_case")]
 pub enum LiveEventV1 {
+    EvalProgress {
+        tool_call_id: crate::ids::ToolCallId,
+        output: String,
+        details: serde_json::Value,
+    },
     SubagentProgress(SubagentProgressEvent),
     RuntimeWarning {
         message: String,
@@ -111,6 +116,7 @@ pub enum ActorKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event_type", content = "data", rename_all = "snake_case")]
 pub enum EventV1 {
+    EvalCellFinished(ToolCallFinishedEvent),
     RunStarted(RunStartedEvent),
     RunFinished(RunFinishedEvent),
     UserMessageSubmitted(UserMessageSubmittedEvent),
@@ -203,6 +209,7 @@ impl EventV1 {
             Self::ToolCallRequested(..) => "tool_call_requested",
             Self::ToolCallStarted(..) => "tool_call_started",
             Self::ToolCallFinished(..) => "tool_call_finished",
+            Self::EvalCellFinished(..) => "eval_cell_finished",
             Self::PermissionRequested(..) => "permission_requested",
             Self::PermissionGrantRecorded(..) => "permission_grant_recorded",
             Self::PermissionResolved(..) => "permission_resolved",
@@ -232,7 +239,9 @@ impl EventV1 {
         match self {
             Self::TaskCompleted(e) => e.metadata.as_ref()?.lineage.as_ref(),
             Self::ToolCallRequested(e) => e.metadata.as_ref()?.lineage.as_ref(),
-            Self::ToolCallFinished(e) => e.metadata.as_ref()?.lineage.as_ref(),
+            Self::ToolCallFinished(e) | Self::EvalCellFinished(e) => {
+                e.metadata.as_ref()?.lineage.as_ref()
+            }
             _ => None,
         }?
         .non_empty_parent_session_id()

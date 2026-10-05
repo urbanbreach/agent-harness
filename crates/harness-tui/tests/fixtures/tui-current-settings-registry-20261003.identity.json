@@ -79,6 +79,10 @@
         "None"
       ],
       [
+        "permission.eval",
+        "None"
+      ],
+      [
         "permission.webfetch",
         "None"
       ],
@@ -490,6 +494,18 @@
         "schema_id": "harness.runtime.permission.task",
         "sensitivity": "public",
         "setting_id": "permission.task",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": "eval",
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.permission.eval",
+        "sensitivity": "public",
+        "setting_id": "permission.eval",
         "surface": "runtime"
       },
       {
@@ -1010,5 +1026,5 @@
       }
     ]
   },
-  "fixture_sha256": "21e7fd4e600103f3339a8605eb7dc75212cd55bef7edcd8cf8bc1aecc12c5731"
+  "fixture_sha256": "f6a281e8bc0894ed19436ce1cbadbee28f90f144230cdbe8891116c87f950411"
 }

@@ -78,7 +78,7 @@ impl Runtime {
         self.grants.iter().any(|g| {
             g.expires_at.is_none()
                 && g.tool.effective_tool_id == work.tool.id()
-                && g.kind == capability_kind(work.tool.capability())
+                && g.kind == capability_kind(work.tool.capability(), work.tool.id())
                 && g.matcher.matches(&matcher)
         })
     }
@@ -148,7 +148,7 @@ impl Runtime {
             PendingWork::Tool(work) if work.approval == ToolApproval::External => {
                 PermissionKind::ExternalDirectory
             }
-            _ => capability_kind(capability),
+            _ => capability_kind(capability, tool_id),
         };
         let tool = PermissionToolSelector {
             effective_tool_id: tool_id.into(),
@@ -234,7 +234,10 @@ impl Runtime {
         Ok(())
     }
 }
-fn capability_kind(capability: ToolCapability) -> PermissionKind {
+fn capability_kind(capability: ToolCapability, tool_id: &str) -> PermissionKind {
+    if tool_id == "eval" {
+        return PermissionKind::Eval;
+    }
     match capability {
         ToolCapability::ReadFs => PermissionKind::Read,
         ToolCapability::EditFs => PermissionKind::EditFs,

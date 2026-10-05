@@ -48,7 +48,7 @@ pub(crate) fn tool_call_has_transcript_disclosure(tool_call: &ToolCallEntry) -> 
     let output = tool_call.output_summary.as_deref().unwrap_or_default();
     !tool_call.artifact_refs.is_empty()
         || match tool_call.effective_tool_id() {
-            "shell.run" | "bash" => true,
+            "shell.run" | "bash" | "eval" => true,
             "edit.hashline_apply" => tool_call_has_preview_content(tool_call),
             "write" | "fs.write" | "edit" => {
                 matches!(

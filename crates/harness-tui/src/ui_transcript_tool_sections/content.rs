@@ -29,6 +29,7 @@ pub(super) fn populate(
             | "apply_patch"
             | "user.question"
             | "question"
+            | "eval"
     );
     let header = &mut row.header;
     let blocks = &mut row.detail_blocks;
@@ -168,9 +169,41 @@ pub(super) fn populate(
             }
             (question_tool_title(tool, &answers), Some("→"))
         }
-        "tool.batch" | "batch" => {
+        "eval" => {
             header.visual_style = Block;
-            (batch_tool_title(tool), Some("#"))
+            let action = tool_summary_string(&tool.args_summary, &["action"])
+                .unwrap_or_else(|| "run".into());
+            let title = tool_summary_string(&tool.args_summary, &["summary", "title"])
+                .unwrap_or_else(|| {
+                    match action.as_str() {
+                        "peek" => "Inspect eval cell",
+                        "stop" => "Stop eval cell",
+                        "list" => "List eval cells",
+                        _ => "Evaluate code",
+                    }
+                    .into()
+                });
+            blocks.push(TranscriptToolCallDetailBlock::EvalPanel {
+                code: serde_json::from_str::<serde_json::Value>(&tool.args_summary)
+                    .ok()
+                    .and_then(|v| v["code"].as_str().map(str::to_owned))
+                    .unwrap_or_default(),
+                language: tool_summary_string(&tool.args_summary, &["language"])
+                    .unwrap_or_default(),
+                output: tool
+                    .output_json
+                    .as_ref()
+                    .filter(|_| action == "run")
+                    .and_then(|data| data["cells"][0]["output"].as_str())
+                    .map(str::to_owned)
+                    .or_else(|| tool.output_summary.clone())
+                    .unwrap_or_default(),
+                failed: tool.status == ToolCallDisplayStatus::Failed,
+            });
+            if action == "run" {
+                eval_notices(blocks, tool, row.expanded);
+            }
+            (title, None)
         }
         _ if is_mcp_tool_id(id) => (mcp_tool_title(tool, id), Some("⚙")),
         _ => {
@@ -185,6 +218,34 @@ pub(super) fn populate(
     generic
 }
 
+fn eval_notices(
+    blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    tool: &ToolCallEntry,
+    expanded: bool,
+) {
+    let Some(data) = &tool.output_json else {
+        return;
+    };
+    let mut notices = Vec::new();
+    if data["truncated"] == true {
+        notices.push("Output truncated · Enter for details".to_owned());
+        if expanded {
+            if let Some(notice) = data["notice"].as_str() {
+                notices.push(notice.to_owned());
+            }
+        }
+    }
+    if let Some(notice) = data["memory_notice"].as_str() {
+        notices.push(notice.to_owned());
+    }
+    if !notices.is_empty() {
+        blocks.push(TranscriptToolCallDetailBlock::Message {
+            text: notices.join("\n"),
+            tone: TranscriptToolCallDetailTone::Primary,
+        });
+    }
+}
+
 pub(super) fn subtitle(
     header: &mut TranscriptToolCallHeader,
     tool: &ToolCallEntry,
@@ -194,6 +255,49 @@ pub(super) fn subtitle(
 ) {
     let id = tool.effective_tool_id();
     let subtitle = match id {
+        "eval" => {
+            let language =
+                tool_summary_string(&tool.args_summary, &["language"]).unwrap_or_default();
+            let language = match language.as_str() {
+                "js" => "JavaScript",
+                "py" => "Python",
+                "rb" => "Ruby",
+                "jl" => "Julia",
+                _ => "Eval",
+            };
+            let data = tool.output_json.as_ref();
+            let state = data
+                .filter(|v| v["detached"] == true)
+                .map(|_| "detached")
+                .or_else(|| data.and_then(|v| v["cells"][0]["status"].as_str()))
+                .unwrap_or(match tool.status {
+                    ToolCallDisplayStatus::Running => "running",
+                    ToolCallDisplayStatus::Queued => "queued",
+                    ToolCallDisplayStatus::PendingPermission => "approval needed",
+                    ToolCallDisplayStatus::Succeeded => "complete",
+                    ToolCallDisplayStatus::Failed => "failed",
+                });
+            let mut parts = vec![language.to_owned()];
+            if state != "complete" && tool.status != ToolCallDisplayStatus::Failed {
+                parts.push(state.to_owned());
+            }
+            if let Some(count) = data
+                .and_then(|v| v["toolCallCount"].as_u64())
+                .filter(|n| *n > 0)
+            {
+                parts.push(format!(
+                    "{count} tool call{}",
+                    if count == 1 { "" } else { "s" }
+                ));
+            }
+            if let Some(duration) = data
+                .and_then(|v| v["durationMs"].as_u64())
+                .filter(|_| !matches!(state, "running" | "queued" | "detached"))
+            {
+                parts.push(format_duration_ms(duration));
+            }
+            Some(parts.join(" · "))
+        }
         "shell.run" | "bash" => {
             crate::ui::ui_transcript_bash::shell_tool_workdir_display(tool, session_path)
                 .map(|path| format!("in {path}"))

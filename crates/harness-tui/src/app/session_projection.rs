@@ -145,6 +145,7 @@ pub struct SessionProjection {
     fallback_profile_label: String,
     seen_seqs: BTreeSet<u64>,
     transient_assistants: BTreeMap<String, TransientAssistantState>,
+    live_evals: BTreeMap<String, (String, serde_json::Value)>,
     provider_phases: BTreeMap<String, ProviderPhase>,
     reasoning_timings: BTreeMap<u64, ReasoningTiming>,
     pub(crate) pending_permissions: BTreeMap<String, PendingPermission>,
@@ -183,6 +184,12 @@ impl SessionProjection {
                 self.transient_assistants
                     .insert(activity.request_id.clone(), transient.clone());
             }
+            for tool in &activity.tool_calls {
+                if let Some(progress) = source.live_evals.get(&tool.tool_call_id) {
+                    self.live_evals
+                        .insert(tool.tool_call_id.clone(), progress.clone());
+                }
+            }
             if let Some(phase) = source.provider_phases.get(&activity.request_id) {
                 self.provider_phases
                     .insert(activity.request_id.clone(), phase.clone());
@@ -220,6 +227,7 @@ impl SessionProjection {
         self.terminal_elapsed_ms.clear();
         self.seen_seqs.clear();
         self.transient_assistants.clear();
+        self.live_evals.clear();
         self.provider_phases.clear();
         self.reasoning_timings.clear();
         self.pending_permissions.clear();
@@ -301,6 +309,41 @@ impl SessionProjection {
     pub(crate) fn ingest_live_event(&mut self, event: &LiveEventEnvelope) {
         self.subagents.last_mono_ms = self.subagents.last_mono_ms.max(event.mono_ms);
         let (provider_request_id, tool_input) = match &event.payload {
+            LiveEventV1::EvalProgress {
+                tool_call_id,
+                output,
+                details,
+            } => {
+                if let Some(tool) = self
+                    .activities
+                    .iter_mut()
+                    .flat_map(|a| &mut a.tool_calls)
+                    .find(|t| t.tool_call_id == tool_call_id.as_str())
+                {
+                    if matches!(
+                        tool.status,
+                        ToolCallDisplayStatus::Queued
+                            | ToolCallDisplayStatus::Running
+                            | ToolCallDisplayStatus::PendingPermission
+                    ) || tool
+                        .output_json
+                        .as_ref()
+                        .is_some_and(|v| v["detached"] == true)
+                    {
+                        let mut details = details.clone();
+                        details["detached"] = tool
+                            .output_json
+                            .as_ref()
+                            .is_some_and(|v| v["detached"] == true)
+                            .into();
+                        self.live_evals
+                            .insert(tool_call_id.to_string(), (output.clone(), details.clone()));
+                        tool.output_summary = Some(output.clone());
+                        tool.output_json = Some(details);
+                    }
+                }
+                return;
+            }
             LiveEventV1::SubagentProgress(progress) => {
                 self.subagents.apply_progress(progress, event.mono_ms);
                 return;
@@ -396,7 +439,8 @@ impl SessionProjection {
             LiveEventV1::ProviderRetrying { .. }
             | LiveEventV1::CompactionProgress { .. }
             | LiveEventV1::RuntimeWarning { .. }
-            | LiveEventV1::SubagentProgress(_) => return,
+            | LiveEventV1::SubagentProgress(_)
+            | LiveEventV1::EvalProgress { .. } => return,
             LiveEventV1::ProviderTextDelta { delta, .. } => {
                 if !delta.is_empty() {
                     if let Some(state) = self.transient_assistants.get_mut(provider_request_id) {
@@ -489,6 +533,9 @@ impl SessionProjection {
 
     fn finish_transient_state_for_event(&mut self, event: &EventEnvelopeV1) {
         match &event.payload {
+            EventV1::ToolCallFinished(data) | EventV1::EvalCellFinished(data) => {
+                self.live_evals.remove(data.tool_call_id.as_str());
+            }
             EventV1::ToolCallRequested(_) => {
                 let request_id = self
                     .activities
@@ -783,7 +830,9 @@ impl SessionProjection {
                 .or_else(|| tool_index(data.tool_call_id.as_str()))
                 .or_else(|| self.activities.len().checked_sub(1)),
             EventV1::ToolCallStarted(data) => tool_index(data.tool_call_id.as_str()),
-            EventV1::ToolCallFinished(data) => tool_index(data.tool_call_id.as_str()),
+            EventV1::ToolCallFinished(data) | EventV1::EvalCellFinished(data) => {
+                tool_index(data.tool_call_id.as_str())
+            }
             EventV1::PermissionRequested(data) => data
                 .tool_call_id
                 .as_ref()
@@ -1393,7 +1442,7 @@ impl SessionProjection {
                         request_id.map_or(("task", row.task_id.as_str()), |id| ("request", id));
                     subagent_identities.insert(identity);
                 }
-                Some("batch") => {
+                Some("eval") => {
                     watchers.workflows = watchers.workflows.saturating_add(1);
                 }
                 Some("monitor") => {

@@ -21,8 +21,8 @@ use serde_json::{json, Value};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const FIXTURE: &str = include_str!("../../../scripts/qa/fixtures/tool-order-scenarios.json");
 
-#[path = "tool_order_capture/batch_lifecycle_test.rs"]
-mod batch_lifecycle;
+#[path = "tool_order_capture/eval_lifecycle_test.rs"]
+mod eval_lifecycle;
 
 struct Capture {
     app: AppState,

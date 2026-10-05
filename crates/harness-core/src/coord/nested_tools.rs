@@ -60,8 +60,20 @@ impl CoordinatorHandle {
         tool: impl Into<String>,
         args: Value,
     ) -> Result<ToolResult, CoordinatorError> {
+        self.execute_nested_tool_with_id(parent, tool, args, None, None)
+            .await
+    }
+    pub async fn execute_nested_tool_with_id(
+        &self,
+        parent: impl Into<String>,
+        tool: impl Into<String>,
+        args: Value,
+        id: Option<String>,
+        cancellation: Option<CancellationToken>,
+    ) -> Result<ToolResult, CoordinatorError> {
         let (parent, tool) = (parent.into(), tool.into());
         let (tx, rx) = oneshot::channel();
+        let child_id = id.clone();
         self.call(move |s| {
             s.check_task(&parent)?;
             let job = s
@@ -81,13 +93,23 @@ impl CoordinatorHandle {
                     "nested calls require a running orchestration tool".into(),
                 ));
             }
-            if tool == "batch" {
-                return Err(CoordinatorError::Invalid("batch cannot be nested".into()));
+            if tool == "eval" {
+                return Err(CoordinatorError::Invalid("eval cannot be nested".into()));
             }
-            s.request_tool(job.actor.clone(), Some(parent), None, tool, args, Some(tx))
+            s.request_tool(job.actor.clone(), Some(parent), id, tool, args, Some(tx))
         })
         .await?;
-        rx.await.map_err(|_| CoordinatorError::Closed)?
+        if let (Some(cancel), Some(id)) = (cancellation, child_id) {
+            tokio::select! {
+                result = rx => result.map_err(|_| CoordinatorError::Closed)?,
+                () = cancel.cancelled() => {
+                    self.cancel_task(id.clone(), "eval bridge call cancelled").await?;
+                    Err(CoordinatorError::Cancelled(id))
+                }
+            }
+        } else {
+            rx.await.map_err(|_| CoordinatorError::Closed)?
+        }
     }
 }
 impl Runtime {

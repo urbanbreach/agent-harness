@@ -39,9 +39,8 @@ use super::ui_tool_style::{
     generic_tool_visual_style, tool_call_header_style, TranscriptToolCallVisualStyle,
 };
 use super::ui_tool_titles::{
-    background_output_tool_subtitle, background_output_tool_title, batch_tool_title,
-    edit_tool_title, format_duration_ms, generic_tool_title, is_mcp_tool_id, mcp_tool_title,
-    write_tool_title,
+    background_output_tool_subtitle, background_output_tool_title, edit_tool_title,
+    format_duration_ms, generic_tool_title, is_mcp_tool_id, mcp_tool_title, write_tool_title,
 };
 use super::ui_tool_titles_harness::{
     ast_grep_tool_title, background_cancel_tool_title, invalid_tool_title, lsp_tool_title,

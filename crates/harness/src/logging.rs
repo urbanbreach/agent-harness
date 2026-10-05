@@ -2,6 +2,10 @@
 mod tests {
     use super::*;
     #[test]
+    #[allow(
+        clippy::cognitive_complexity,
+        reason = "tracing macros expand into branches; this test covers one logging lifecycle"
+    )]
     fn logs_filter_redact_and_switch_files() -> Result<(), Box<dyn std::error::Error>> {
         let temp = tempfile::tempdir()?;
         let mut config = harness_core::config::load_config_from_str("{}")?;

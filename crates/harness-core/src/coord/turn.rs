@@ -17,6 +17,7 @@ pub(super) struct Turn {
     pub manual: Option<super::compaction::Manual>,
 }
 pub(super) struct Worker {
+    pub(super) tool_scope: Option<String>,
     pub(super) handle: CoordinatorHandle,
     pub(super) provider: Arc<dyn harness_providers::Provider>,
     pub(super) permits: Arc<tokio::sync::Semaphore>,
@@ -211,6 +212,7 @@ impl Runtime {
         let session = self.info()?.run_id.to_string();
         let native_schema = self.native_subagent_schema(agent_id)?;
         let native = self.native_subagents.contains_key(agent_id);
+        let tool_scope = self.tool_scope(Some(agent_id));
         let workspace =
             self.execution_cwd(&EventActor::new(ActorKind::Worker, Some(agent_id.into())))?;
         if self
@@ -273,6 +275,7 @@ impl Runtime {
         let actor = EventActor::new(ActorKind::Worker, Some(agent_id.into()));
         let cancellation = CancellationToken::new();
         let worker = Worker {
+            tool_scope: tool_scope.clone(),
             handle,
             provider: Arc::clone(&self.config.provider),
             permits: Arc::clone(if native {
@@ -321,6 +324,7 @@ impl Runtime {
                 }),
             tools: self.config.tool_registry.definitions(
                 &agent.profile,
+                tool_scope.as_deref(),
                 (&self.config.permission_policy, &agent.policy),
             ),
             registry: Arc::clone(&self.config.tool_registry),

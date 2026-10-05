@@ -157,6 +157,7 @@ impl HarnessConfig {
         }
     }
     pub fn validate(&self) -> Result<(), ConfigError> {
+        self.eval.validate()?;
         let runtime = &self.runtime;
         let tasks = &runtime.background_tasks;
         if [

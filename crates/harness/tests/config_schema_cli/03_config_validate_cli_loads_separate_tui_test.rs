@@ -238,7 +238,7 @@ fn compatibility_config_shape_accepts_subagents_and_safe_inert_keys() {
           tools: { bash: true },
           tool_output: { max_lines: 20 },
           compaction: { auto: true, tail_turns: 2 },
-          experimental: { batch_tool: true },
+          experimental: { future_feature: true },
           skills: { paths: [".harness/skill"], urls: ["https://example.test/skills"] },
           mcp: {
             local_docs: {

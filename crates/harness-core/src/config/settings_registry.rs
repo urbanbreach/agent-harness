@@ -121,7 +121,7 @@ static REGISTRY: LazyLock<Vec<SettingDefinition>> = LazyLock::new(|| {
     let mut entries = entries!("harness.runtime.", Runtime;
         "model", "small_model", "agent", "provider", "skills", "mcp", "formatter", "instructions", "model_profile", "lsp",
         "disabled_providers", "enabled_providers", "shell", "logging", "ui",
-        "permission.bash", "permission.edit", "permission.question", "permission.task", "permission.webfetch", "permission.websearch",
+        "permission.bash", "permission.edit", "permission.question", "permission.task", "permission.eval", "permission.webfetch", "permission.websearch",
         "permission.codesearch", "permission.lsp", "permission.read", "permission.external_directory", "permission.doom_loop", "permission.shell_allowlist",
         "provider.apiKey", "hashline_edit" => "true", "worktree.relative_base" => ".agent-harness/worktrees", "worktree.branch_prefix" => "harness/wt-",
         "subagents", "subagents.enabled" => "true", "subagents.max_depth" => "1", "subagents.max_concurrent" => "32",

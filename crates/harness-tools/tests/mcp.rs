@@ -16,6 +16,9 @@ use tokio::{
     sync::{Mutex, Notify},
 };
 use tokio_stream::StreamExt;
+#[path = "mcp/eval.rs"]
+mod eval;
+
 const IMAGE: &str =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 

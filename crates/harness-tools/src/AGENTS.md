@@ -10,7 +10,7 @@ large results spill through the coordinator's private artifact path.
 | Search and structural edits | `search.rs`, `ast_grep.rs`, `ast_grep/` |
 | Shell processes | `shell.rs`, `shell/`, `process.rs` |
 | Formatting and language servers | `formatters.rs`, `formatters/`, `lsp.rs`, `lsp/` |
-| Delegation and batching | `tasks.rs`, `tasks/`, `batch.rs` |
+| Delegation and code execution | `subagents.rs`, `eval.rs`, `eval/` |
 | Skills and sessions | `skills.rs`, `skills/`, `sessions.rs`, `sessions/` |
 | Network tools | `web.rs`, `remote_search.rs`, `mcp/`, `github.rs` |
 

@@ -336,7 +336,8 @@ impl SessionProjection {
             LiveEventV1::ProviderRetrying { .. }
             | LiveEventV1::CompactionProgress { .. }
             | LiveEventV1::RuntimeWarning { .. }
-            | LiveEventV1::SubagentProgress(_) => return,
+            | LiveEventV1::SubagentProgress(_)
+            | LiveEventV1::EvalProgress { .. } => return,
             LiveEventV1::ProviderReasoningDelta { request_id, delta } => {
                 (request_id, delta, LiveTurnPhase::Thinking)
             }

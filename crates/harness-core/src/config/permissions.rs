@@ -11,6 +11,7 @@ pub struct ProfilePermissions {
     pub network: Option<PermissionMode>,
     pub question: Option<PermissionMode>,
     pub task: Option<PermissionMode>,
+    pub eval: Option<PermissionMode>,
     pub todowrite: Option<PermissionMode>,
     #[serde(alias = "webFetch")]
     pub webfetch: Option<PermissionMode>,
@@ -45,6 +46,7 @@ pub struct PermissionDefaultsConfig {
     pub network: PermissionMode,
     pub question: Option<PermissionMode>,
     pub task: Option<PermissionMode>,
+    pub eval: Option<PermissionMode>,
     #[serde(alias = "webFetch")]
     pub webfetch: Option<PermissionMode>,
     #[serde(alias = "webSearch")]

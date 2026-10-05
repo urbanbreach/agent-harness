@@ -59,7 +59,16 @@ impl<'a> InFlight<'a> {
             }
             EventV1::ToolCallRequested(e) => Some(("tool", e.tool_call_id.as_str(), true)),
             EventV1::ToolCallStarted(e) => Some(("tool", e.tool_call_id.as_str(), true)),
-            EventV1::ToolCallFinished(e) => Some(("tool", e.tool_call_id.as_str(), false)),
+            EventV1::ToolCallFinished(e)
+                if e.output_json
+                    .as_ref()
+                    .is_some_and(|v| v["detached"] == true) =>
+            {
+                None
+            }
+            EventV1::ToolCallFinished(e) | EventV1::EvalCellFinished(e) => {
+                Some(("tool", e.tool_call_id.as_str(), false))
+            }
             EventV1::PermissionRequested(e) => Some(("permission", e.permission_id.as_str(), true)),
             EventV1::PermissionResolved(e) => Some(("permission", e.permission_id.as_str(), false)),
             EventV1::EditProposed(e) => Some(("edit", e.edit_id.as_str(), true)),

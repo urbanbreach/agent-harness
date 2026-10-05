@@ -13,6 +13,16 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 use tokio_stream::StreamExt;
 
+#[path = "eval/runtime.rs"]
+mod runtime;
+
+fn signoff() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var("HARNESS_EVAL_SIGNOFF").as_deref() != Ok("1") {
+        return Err("set HARNESS_EVAL_SIGNOFF=1 to run actual eval runtimes".into());
+    }
+    Ok(())
+}
+
 struct Probe {
     started: Semaphore,
     release: [Semaphore; 2],
@@ -27,6 +37,14 @@ impl Tool for Probe {
     }
     fn parameters_json_schema(&self) -> Value {
         json!({"type":"object"})
+    }
+    fn kernel_prelude(&self) -> Option<harness_core::tool::KernelPrelude> {
+        Some(harness_core::tool::KernelPrelude {
+            javascript: "globalThis.probe_once = () => tool.probe({slot:0});".into(),
+            python: "def probe_once():\n    return tool.probe(slot=0)".into(),
+            documentation: "probe_once() invokes the permitted probe tool.".into(),
+            exports: vec!["probe_once".into()],
+        })
     }
     fn permission_requests(&self, args: &Value) -> Vec<(String, String)> {
         vec![(
@@ -58,8 +76,10 @@ impl Tool for Probe {
 }
 
 #[tokio::test]
-async fn batches_share_capacity_preserve_order_permissions_and_cancellation(
+#[ignore = "requires native eval worker; scripts/test-lanes.sh eval"]
+async fn eval_shares_capacity_preserve_order_permissions_and_cancellation(
 ) -> Result<(), Box<dyn std::error::Error>> {
+    signoff()?;
     let root = tempfile::tempdir()?;
     let probe = Arc::new(Probe {
         started: Semaphore::new(0),
@@ -72,15 +92,15 @@ async fn batches_share_capacity_preserve_order_permissions_and_cancellation(
     config.provider = Arc::new(harness_providers::mock::MockProvider::script([
         vec![
             harness_providers::ProviderStreamEvent::ToolCallComplete {
-                tool_call_id: "child-batch".into(),
-                function_name: "batch".into(),
-                arguments_json: json!({"tool_calls":[{"tool":"probe","parameters":{"slot":0}}]})
+                tool_call_id: "child-eval".into(),
+                function_name: "eval".into(),
+                arguments_json: json!({"language":"js","summary":"Probe child capacity","code":"await tool.probe({slot:0})"})
                     .to_string(),
             },
             harness_providers::ProviderStreamEvent::Done { usage: None },
         ],
         vec![
-            harness_providers::ProviderStreamEvent::TextDelta("child batch done".into()),
+            harness_providers::ProviderStreamEvent::TextDelta("child eval done".into()),
             harness_providers::ProviderStreamEvent::Done { usage: None },
         ],
     ]));
@@ -98,40 +118,18 @@ async fn batches_share_capacity_preserve_order_permissions_and_cancellation(
         },
     ])?;
     let mut profile = AgentProfile::fallback("default");
-    profile.model_ref = "mock:batch".into();
-    profile.toolset = vec!["batch".into(), "probe".into(), "spawn_subagent".into()];
+    profile.model_ref = "mock:eval".into();
+    profile.toolset = vec!["eval".into(), "probe".into(), "spawn_subagent".into()];
     config.agent_profiles.insert("default".into(), profile);
-    config.agent_model_targets.insert(
-        "default".into(),
-        ResolvedModelTarget {
-            model_ref: "mock:batch".into(),
-            provider: "mock".into(),
-            model: "batch".into(),
-            variant: None,
-            reasoning_effort: None,
-            text_verbosity: None,
-            reasoning_summary: None,
-            thinking: None,
-            limits: ResolvedModelLimits::default(),
-            resolution: harness_core::model_resolution::resolve_model(
-                harness_core::model_resolution::ModelResolutionInput {
-                    provider: "mock",
-                    model: "batch",
-                    metadata_family: None,
-                    input_modalities: &[],
-                    supports_tool_calls: Some(true),
-                    supports_reasoning_summaries: Some(true),
-                },
-            ),
-            catalog_entry: None,
-        },
-    );
+    config
+        .agent_model_targets
+        .insert("default".into(), model_target());
     let handle = spawn_coordinator(
         config,
         Arc::new(FakeClock::new()),
         Arc::new(DefaultRedactor::default()),
     );
-    let info = handle.start_run("batch", root.path()).await?;
+    let info = handle.start_run("eval", root.path()).await?;
     let agent = handle
         .spawn_agent_idle(EventActor::new(ActorKind::User, None), "default", None)
         .await?;
@@ -145,47 +143,50 @@ async fn batches_share_capacity_preserve_order_permissions_and_cancellation(
                 .execute_agent_tool_call(
                     actor,
                     None,
-                    "batch",
-                    json!({"tool_calls":[
-                        {"tool":"probe","parameters":{"slot":0}},
-                        {"tool":"probe","arguments":{"slot":1}},
-                        {"tool":"probe","args":{"slot":0,"deny":true}},
-                        {"tool":"batch","parameters":{}},
-                        {"tool":"unknown","parameters":{}},
-                    ]}),
+                    "eval",
+                    json!({"language":"js","summary":"Compose independent calls","code":r#"
+                        const results = await Promise.allSettled([
+                            tool.probe({slot:0}), tool.probe({slot:1}),
+                            tool.probe({slot:0,deny:true}), tool.eval({}), tool.unknown({})
+                        ]);
+                        display(results.map(r => r.status === 'fulfilled'
+                            ? {text:r.value.text, error:r.value.hasError}
+                            : {error:true, reason:String(r.reason)}));
+                    "#}),
                 )
                 .await
         })
     };
-    tokio::time::timeout(Duration::from_secs(2), probe.started.acquire_many(2))
+    tokio::time::timeout(Duration::from_secs(15), probe.started.acquire_many(2))
         .await??
         .forget();
     probe.release[1].add_permits(1);
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(15), async {
         while let Some(event) = events.next().await {
             if matches!(event?.payload, EventV1::ToolCallFinished(ref t) if t.output_summary.as_deref() == Some("second")) { return Ok::<_, Box<dyn std::error::Error>>(()); }
         }
         Err("second call did not complete".into())
     }).await??;
     probe.release[0].add_permits(1);
-    let output = tokio::time::timeout(Duration::from_secs(2), execution).await???;
-    assert!(output.is_error());
-    let result = output.structured_json.ok_or("batch results missing")?;
-    assert_eq!(result["successful"], 1);
-    assert_eq!(result["failed"], 4);
-    assert_eq!(result["details"][0]["output"], "first");
-    assert_eq!(result["details"][1]["output"], "second");
-    assert_eq!(result["details"][2]["status"], "failed");
+    let output = tokio::time::timeout(Duration::from_secs(15), execution).await???;
+    assert!(!output.is_error(), "{}", output.display_text);
+    let result = output.structured_json.ok_or("eval results missing")?;
+    let results = &result["jsonOutputs"][0];
+    assert_eq!(results[0]["text"], "first");
+    assert_eq!(results[0]["error"], false);
+    assert_eq!(results[1]["text"], "second");
+    assert_eq!(results[1]["error"], true);
+    assert!((2..5).all(|i| results[i]["error"] == true));
     let history = harness_core::store::read_events(&info.events_path)?;
-    let batch = history
+    let eval = history
         .iter()
         .find_map(|e| match &e.payload {
-            EventV1::ToolCallRequested(t) if t.tool_id == "batch" => {
+            EventV1::ToolCallRequested(t) if t.tool_id == "eval" => {
                 Some(t.tool_call_id.to_string())
             }
             _ => None,
         })
-        .ok_or("batch missing")?;
+        .ok_or("eval missing")?;
     let children: Vec<_> = history
         .iter()
         .filter_map(|e| match &e.payload {
@@ -201,22 +202,27 @@ async fn batches_share_capacity_preserve_order_permissions_and_cancellation(
                 .as_ref()
                 .and_then(|m| m.lineage.as_ref())
                 .and_then(|l| l.parent_tool_call_id.as_deref()),
-            Some(batch.as_str())
+            Some(eval.as_str())
         );
     }
-    let batch = handle.request_tool_call(actor.clone(), None, "batch", json!({"tool_calls":[{"tool":"probe","parameters":{"slot":0}},{"tool":"probe","parameters":{"slot":1}}]})).await?;
-    tokio::time::timeout(Duration::from_secs(2), probe.started.acquire_many(2))
+    let eval = handle.request_tool_call(actor.clone(), None, "eval", json!({"language":"js","summary":"Cancel composed calls","code":"await Promise.all([tool.probe({slot:0}),tool.probe({slot:1})])"})).await?;
+    tokio::time::timeout(Duration::from_secs(15), probe.started.acquire_many(2))
         .await??
         .forget();
-    handle.cancel_task(batch.clone(), "cancel batch").await?;
-    tokio::time::timeout(Duration::from_secs(2), async {
+    handle.cancel_task(eval.clone(), "cancel eval").await?;
+    tokio::time::timeout(Duration::from_secs(15), async {
         while let Some(event) = events.next().await {
-            if matches!(event?.payload, EventV1::ToolCallFinished(ref t) if t.tool_call_id.as_str() == batch) { return Ok::<_, Box<dyn std::error::Error>>(()); }
+            if matches!(event?.payload, EventV1::ToolCallFinished(ref t) if t.tool_call_id.as_str() == eval) { return Ok::<_, Box<dyn std::error::Error>>(()); }
         }
-        Err("cancelled batch did not finish".into())
+        Err("cancelled eval did not finish".into())
     }).await??;
     assert!(handle
-        .execute_agent_tool_call(actor.clone(), None, "batch", json!({"tool_calls":[]}))
+        .execute_agent_tool_call(
+            actor.clone(),
+            None,
+            "eval",
+            json!({"language":"js","summary":"Reject empty cell","code":""})
+        )
         .await
         .is_err());
     probe.release[0].add_permits(1);
@@ -225,11 +231,11 @@ async fn batches_share_capacity_preserve_order_permissions_and_cancellation(
             actor,
             None,
             "spawn_subagent",
-            json!({"prompt":"Run a batch.","description":"Run nested batch","background":false}),
+            json!({"prompt":"Run an eval.","description":"Run nested eval","background":false}),
         )
         .await?;
     let child = child.structured_json.ok_or("missing child result")?;
-    assert_eq!(child["output"], "child batch done");
+    assert_eq!(child["output"], "child eval done");
     let child = child["subagent_id"]
         .as_str()
         .ok_or("missing child id")?
@@ -259,7 +265,32 @@ async fn batches_share_capacity_preserve_order_permissions_and_cancellation(
         })
         .ok_or("nested child lineage missing")?;
     assert_eq!(nested.child_provider_id.as_deref(), Some("mock"));
-    assert_eq!(nested.child_model_id.as_deref(), Some("batch"));
+    assert_eq!(nested.child_model_id.as_deref(), Some("eval"));
     assert_eq!(nested.child_session_id.as_deref(), Some(child.as_str()));
     Ok(())
+}
+
+fn model_target() -> ResolvedModelTarget {
+    ResolvedModelTarget {
+        model_ref: "mock:eval".into(),
+        provider: "mock".into(),
+        model: "eval".into(),
+        variant: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        reasoning_summary: None,
+        thinking: None,
+        limits: ResolvedModelLimits::default(),
+        resolution: harness_core::model_resolution::resolve_model(
+            harness_core::model_resolution::ModelResolutionInput {
+                provider: "mock",
+                model: "eval",
+                metadata_family: None,
+                input_modalities: &[],
+                supports_tool_calls: Some(true),
+                supports_reasoning_summaries: Some(true),
+            },
+        ),
+        catalog_entry: None,
+    }
 }

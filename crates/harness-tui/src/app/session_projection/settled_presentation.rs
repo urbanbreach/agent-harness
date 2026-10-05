@@ -265,6 +265,7 @@ impl SessionProjection {
                 activity.status = ActivityStatus::Streaming;
             }
         }
+        apply_live_eval_output(&mut activities, &self.live_evals);
         self.run_terminal_seen = run_summary.status != harness_core::proj::RunStatus::Running;
         apply_run_status(&mut activities, run_summary);
         self.activities = if from == 0 {
@@ -393,6 +394,18 @@ fn mark_user_only_activities(activities: &mut VecDeque<ActivityEntry>, from: usi
             } else {
                 ActivityStatus::Queued
             };
+        }
+    }
+}
+
+fn apply_live_eval_output(
+    activities: &mut VecDeque<ActivityEntry>,
+    live: &BTreeMap<String, (String, serde_json::Value)>,
+) {
+    for tool in activities.iter_mut().flat_map(|a| &mut a.tool_calls) {
+        if let Some((output, details)) = live.get(&tool.tool_call_id) {
+            tool.output_summary = Some(output.clone());
+            tool.output_json = Some(details.clone());
         }
     }
 }

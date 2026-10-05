@@ -95,24 +95,6 @@ async fn file_edits_require_current_reads_and_obey_external_path_policy(
         .is_err_and(|error| error.contains("credential")));
     assert_eq!(fs::read_dir(&run.artifacts_dir)?.count(), before);
     assert!(!fs::read_to_string(&run.events_path)?.contains("PDF_BODY_NOT_JOURNALED"));
-    let images = coordinator
-        .execute_agent_tool_call(
-            actor(),
-            None,
-            "batch",
-            json!({"tool_calls":[
-                {"tool":"read","parameters":{"path":"picture.png"}},
-                {"tool":"read","parameters":{"path":"picture.png"}},
-            ]}),
-        )
-        .await?;
-    assert_eq!(images.attachments.len(), 2, "batch must keep nested media");
-    assert_ne!(images.attachments[0].id, images.attachments[1].id);
-    let too_many = vec![json!({"tool":"read","parameters":{"path":"picture.png"}}); 17];
-    assert!(coordinator
-        .execute_agent_tool_call(actor(), None, "batch", json!({"tool_calls":too_many}))
-        .await
-        .is_err_and(|e| e.contains("attachment limit")));
     assert!(!std::fs::read_to_string(&run.events_path)?.contains(encoded));
     assert!(
         coordinator

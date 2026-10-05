@@ -49,7 +49,11 @@ impl Runtime {
                 .into_iter()
                 .find(|name| {
                     self.config.tool_registry.allows(&agent.profile, name)
-                        && self.config.tool_registry.get(name).is_some()
+                        && self
+                            .config
+                            .tool_registry
+                            .get_for(name, self.tool_scope(Some(parent)).as_deref())
+                            .is_some()
                 })
         });
         if let (Some(poll), Some(completed)) = (poll, &snapshot.completed) {

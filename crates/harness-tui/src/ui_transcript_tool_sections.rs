@@ -75,7 +75,7 @@ pub(super) fn build_tool_call_section(
             )
             || matches!(
                 tool_call.effective_tool_id(),
-                "edit.hashline_apply" | "apply_patch" | "todo.write" | "todowrite"
+                "edit.hashline_apply" | "apply_patch" | "todo.write" | "todowrite" | "eval"
             ));
     // These reference blocks have no animated accent; only commands and task
     // lifecycle rows signal execution with a wave.

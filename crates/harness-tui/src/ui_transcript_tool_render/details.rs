@@ -30,6 +30,14 @@ impl ToolPainter<'_> {
             TranscriptToolCallDetailBlock::Message { text, tone } => {
                 self.message(text, *tone, tool_id)
             }
+            TranscriptToolCallDetailBlock::EvalPanel {
+                code,
+                language,
+                output,
+                failed,
+            } => {
+                self.eval(code, language, output, *failed, expanded);
+            }
             TranscriptToolCallDetailBlock::BashPanel {
                 command,
                 output,
@@ -105,7 +113,7 @@ impl ToolPainter<'_> {
         append_noninteractive_rows(&self.render.lines, &mut self.render.interaction_rows, start);
     }
 
-    fn prebuilt(&mut self, indent: &str, surface: Color, rows: Vec<Line<'static>>) {
+    pub(super) fn prebuilt(&mut self, indent: &str, surface: Color, rows: Vec<Line<'static>>) {
         append_prebuilt_surface_lines(
             &mut self.render.lines,
             indent,

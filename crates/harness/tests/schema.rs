@@ -21,6 +21,7 @@ fn public_schema_accepts_loader_syntax_and_rejects_misspelled_settings(
     for config in [
         example,
         json!({"formatter":true}),
+        json!({"eval":{"languages":["js","py"],"parallel_pool_width":8},"permission":{"eval":"ask"}}),
         json!({"formatter":{"languages":{"demo":{"command":["formatter","$FILE"]}},"uvformat":{"disabled":true}}}),
         json!({"provider":{"local":{"type":"openai_compatible","baseURL":"http://localhost:1234","models":{"fixture":{}}}},"model":"local/fixture","instructions":["Follow the rules"],"permission":{"bash":{"git *":"allow","*":"deny"}},"agent":{"default":{"tools":{"read":true,"bash":false},"permission":"deny"}},"formatter":false,"lsp":false}),
         json!({"providers":{"local":{"type":"openai_compatible","options":{"base_url":"http://localhost:1234"},"models":{"fixture":{}}}},"model":"local/fixture","runtime":{"yolo":true,"compaction":{"thresholdPercent":80,"keep_recent_tokens":2000}}}),
@@ -35,6 +36,10 @@ fn public_schema_accepts_loader_syntax_and_rejects_misspelled_settings(
     }
     for config in [
         json!({"runtme":{}}),
+        json!({"eval":{"languages":["javascript"]}}),
+        json!({"eval":{"languages":["js","js"]}}),
+        json!({"eval":{"run_budget_seconds":0}}),
+        json!({"eval":{"max_detached_cells":257}}),
         json!({"runtime":{"compaction":{"threshold_percent":101}}}),
         json!({"permission":{"bash":"always"}}),
         json!({"agent":{"default":{"toos":[]}}}),

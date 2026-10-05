@@ -23,6 +23,7 @@ pub enum PermissionKind {
     Network,
     Question,
     Task,
+    Eval,
     WebFetch,
     WebSearch,
     CodeSearch,

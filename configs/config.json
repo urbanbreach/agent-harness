@@ -570,6 +570,141 @@
       },
       "type": "object"
     },
+    "EvalConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "cell_timeout_seconds": {
+          "default": 30,
+          "format": "uint64",
+          "maximum": 86400,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "foreground_window_seconds": {
+          "default": 60,
+          "format": "uint64",
+          "maximum": 86400,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "hard_limit_seconds": {
+          "default": 1800,
+          "format": "uint64",
+          "maximum": 86400,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "languages": {
+          "default": [
+            "js",
+            "py"
+          ],
+          "items": {
+            "enum": [
+              "js",
+              "py",
+              "rb",
+              "jl"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "max_detached_cells": {
+          "default": 15,
+          "format": "uint",
+          "maximum": 256,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "memory": {
+          "$ref": "#/$defs/EvalMemoryConfig",
+          "default": {
+            "ceiling_mb": 2048,
+            "gc_watermark_mb": 256,
+            "notice_mb": 1024,
+            "retained_images_mb": 256,
+            "retained_results_mb": 32
+          }
+        },
+        "output_head_bytes": {
+          "default": 20480,
+          "format": "uint",
+          "maximum": 51200,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "output_max_columns": {
+          "default": 768,
+          "format": "uint",
+          "maximum": 16384,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "parallel_pool_width": {
+          "default": 4,
+          "format": "uint",
+          "maximum": 256,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "run_budget_seconds": {
+          "default": 300,
+          "format": "uint64",
+          "maximum": 86400,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status_events": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "EvalMemoryConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "ceiling_mb": {
+          "default": 2048,
+          "format": "uint",
+          "maximum": 1048576,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "gc_watermark_mb": {
+          "default": 256,
+          "format": "uint",
+          "maximum": 1048576,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "notice_mb": {
+          "default": 1024,
+          "format": "uint",
+          "maximum": 1048576,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retained_images_mb": {
+          "default": 256,
+          "format": "uint",
+          "maximum": 1048576,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retained_results_mb": {
+          "default": 32,
+          "format": "uint",
+          "maximum": 1048576,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "FormatterConfig": {
       "additionalProperties": {
         "$ref": "#/$defs/FormatterOverride"
@@ -2074,6 +2209,17 @@
           "$ref": "#/$defs/PermissionAction",
           "default": "allow"
         },
+        "eval": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "ask"
+        },
         "external_directory": {
           "anyOf": [
             {
@@ -2316,6 +2462,7 @@
             "codesearch": "allow",
             "doom_loop": "ask",
             "edit": "allow",
+            "eval": "ask",
             "external_directory": "ask",
             "lsp": "allow",
             "network": "allow",
@@ -2667,6 +2814,13 @@
                     }
                   ]
                 },
+                "eval": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
+                  ]
+                },
                 "external_directory": {
                   "anyOf": [
                     {
@@ -2883,6 +3037,13 @@
                       },
                       "type": "object"
                     }
+                  ]
+                },
+                "eval": {
+                  "enum": [
+                    "allow",
+                    "ask",
+                    "deny"
                   ]
                 },
                 "external_directory": {
@@ -3216,6 +3377,17 @@
           "default": null
         },
         "edit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "eval": {
           "anyOf": [
             {
               "$ref": "#/$defs/PermissionAction"
@@ -4341,61 +4513,227 @@
     "SubagentFeaturesConfig": {
       "additionalProperties": false,
       "properties": {
-        "active_agent_messages": { "default": null, "type": ["boolean", "null"] },
-        "subagent_model_inheritance": { "default": null, "type": ["boolean", "null"] },
-        "subagent_worktree_snapshot": { "default": null, "type": ["boolean", "null"] }
+        "active_agent_messages": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "subagent_model_inheritance": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "subagent_worktree_snapshot": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
       },
       "type": "object"
     },
     "SubagentPersona": {
       "additionalProperties": false,
       "properties": {
-        "default_isolation": { "default": null, "type": ["string", "null"] },
-        "description": { "default": null, "type": ["string", "null"] },
-        "inputs": { "default": [], "items": { "$ref": "#/$defs/SubagentPersonaIoField" }, "type": "array" },
-        "instructions": { "default": null, "type": ["string", "null"] },
-        "instructions_file": { "default": null, "type": ["string", "null"] },
-        "model": { "default": null, "type": ["string", "null"] },
-        "outputs": { "default": [], "items": { "$ref": "#/$defs/SubagentPersonaIoField" }, "type": "array" },
-        "reasoning_effort": { "default": null, "type": ["string", "null"] }
+        "default_isolation": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "inputs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SubagentPersonaIoField"
+          },
+          "type": "array"
+        },
+        "instructions": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "instructions_file": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outputs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SubagentPersonaIoField"
+          },
+          "type": "array"
+        },
+        "reasoning_effort": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
       "type": "object"
     },
     "SubagentPersonaIoField": {
       "additionalProperties": false,
       "properties": {
-        "description": { "type": "string" },
-        "io_type": { "default": "file", "type": "string" },
-        "name": { "type": "string" },
-        "required": { "default": false, "type": "boolean" }
+        "description": {
+          "type": "string"
+        },
+        "io_type": {
+          "default": "file",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "required": {
+          "default": false,
+          "type": "boolean"
+        }
       },
-      "required": ["name", "description"],
+      "required": [
+        "name",
+        "description"
+      ],
       "type": "object"
     },
     "SubagentRole": {
       "additionalProperties": false,
       "properties": {
-        "default_capability_mode": { "default": null, "type": ["string", "null"] },
-        "default_isolation": { "default": null, "type": ["string", "null"] },
-        "description": { "default": "", "type": "string" },
-        "model": { "default": null, "type": ["string", "null"] },
-        "prompt_file": { "default": null, "type": ["string", "null"] },
-        "reasoning_effort": { "default": null, "type": ["string", "null"] }
+        "default_capability_mode": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default_isolation": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "model": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt_file": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoning_effort": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
       "type": "object"
     },
     "SubagentsConfig": {
       "additionalProperties": false,
       "properties": {
-        "enabled": { "default": true, "type": "boolean" },
-        "limit_behavior": { "default": null, "type": ["string", "null"] },
-        "max_concurrent": { "default": null, "format": "int64", "type": ["integer", "null"] },
-        "max_depth": { "default": null, "format": "int64", "type": ["integer", "null"] },
-        "models": { "additionalProperties": { "type": "string" }, "default": {}, "type": "object" },
-        "personas": { "additionalProperties": { "$ref": "#/$defs/SubagentPersona" }, "default": {}, "type": "object" },
-        "roles": { "additionalProperties": { "$ref": "#/$defs/SubagentRole" }, "default": {}, "type": "object" },
-        "sampling_limit": { "default": null, "format": "int64", "type": ["integer", "null"] },
-        "toggle": { "additionalProperties": { "type": "boolean" }, "default": {}, "type": "object" }
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "limit_behavior": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_concurrent": {
+          "default": null,
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_depth": {
+          "default": null,
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "models": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "personas": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SubagentPersona"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "roles": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SubagentRole"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "sampling_limit": {
+          "default": null,
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "toggle": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "default": {},
+          "type": "object"
+        }
       },
       "type": "object"
     },
@@ -4587,6 +4925,31 @@
         "type": "string"
       },
       "type": "array"
+    },
+    "eval": {
+      "$ref": "#/$defs/EvalConfig",
+      "default": {
+        "cell_timeout_seconds": 30,
+        "foreground_window_seconds": 60,
+        "hard_limit_seconds": 1800,
+        "languages": [
+          "js",
+          "py"
+        ],
+        "max_detached_cells": 15,
+        "memory": {
+          "ceiling_mb": 2048,
+          "gc_watermark_mb": 256,
+          "notice_mb": 1024,
+          "retained_images_mb": 256,
+          "retained_results_mb": 32
+        },
+        "output_head_bytes": 20480,
+        "output_max_columns": 768,
+        "parallel_pool_width": 4,
+        "run_budget_seconds": 300,
+        "status_events": true
+      }
     },
     "features": {
       "$ref": "#/$defs/SubagentFeaturesConfig",
@@ -4798,6 +5161,13 @@
                   },
                   "type": "object"
                 }
+              ]
+            },
+            "eval": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
               ]
             },
             "external_directory": {
@@ -5024,6 +5394,13 @@
                   },
                   "type": "object"
                 }
+              ]
+            },
+            "eval": {
+              "enum": [
+                "allow",
+                "ask",
+                "deny"
               ]
             },
             "external_directory": {

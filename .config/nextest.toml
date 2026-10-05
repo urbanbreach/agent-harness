@@ -34,6 +34,16 @@ slow-timeout = { period = "30s", terminate-after = 10 }
 [test-groups.process-global-state]
 max-threads = 1
 
+# These signoff cases start four interpreters and deliberately exhaust cell deadlines.
+[[profile.default.overrides]]
+filter = 'package(harness-tools) & (test(execution_deadlines_interrupt_busy_kernels_and_allow_the_next_cell) | test(kernels_preserve_state_compose_tools_and_reset_independently))'
+slow-timeout = { period = "10s", terminate-after = 6 }
+
+# The comparison includes cold kernels, repeated workloads and four-language conformance.
+[[profile.perf.overrides]]
+filter = 'package(harness-eval) & test(perf_native_eval)'
+slow-timeout = { period = "30s", terminate-after = 3 }
+
 # These fixed multi-frame captures complete within the existing deadline alone.
 # Reserve the runner budget rather than extending their deadline under load.
 [[profile.default.overrides]]
