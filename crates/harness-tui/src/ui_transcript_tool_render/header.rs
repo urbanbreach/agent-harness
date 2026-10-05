@@ -7,6 +7,9 @@ pub(super) fn build_tool_header_spans(
     marker_style: Style,
     width: usize,
 ) -> Vec<Span<'static>> {
+    if header.tool_id == "eval" {
+        return super::eval::header(header, theme, title_style, marker_style, width);
+    }
     if header.visual_style == TranscriptToolCallVisualStyle::TaskInline
         && header.title.starts_with("Subagent ")
         && header.subtitle.is_none()

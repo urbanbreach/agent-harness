@@ -1983,7 +1983,8 @@ impl AppState {
                 LiveEventV1::ProviderRetrying { .. }
                 | LiveEventV1::CompactionProgress { .. }
                 | LiveEventV1::RuntimeWarning { .. }
-                | LiveEventV1::SubagentProgress(_) => return,
+                | LiveEventV1::SubagentProgress(_)
+                | LiveEventV1::EvalProgress { .. } => return,
                 LiveEventV1::ProviderTextDelta { request_id, .. }
                 | LiveEventV1::ProviderReasoningDelta { request_id, .. }
                 | LiveEventV1::ProviderToolInputDelta { request_id, .. } => request_id.as_str(),

@@ -45,6 +45,7 @@ impl Runtime {
         let Some(mut job) = self.running.remove(&id) else {
             return Ok(());
         };
+        let detached_eval = self.detached_evals.remove(&id);
         if job.cancellation.is_cancelled() {
             result = Err(CoordinatorError::Cancelled(
                 job.reason.take().unwrap_or_else(|| "task cancelled".into()),
@@ -52,7 +53,8 @@ impl Runtime {
         }
         // Keep completion identities even when a large report spills to an artifact.
         let consumed_notifications = self.consumed_child_notifications(&job, &result);
-        let mut raw_tool_result = if messages.is_none()
+        let mut raw_tool_result = if !detached_eval
+            && messages.is_none()
             && job.parent.as_ref().is_some_and(|parent| {
                 self.running
                     .get(parent)
@@ -94,7 +96,8 @@ impl Runtime {
                             | "get_task_output"
                             | "wait_tasks"
                             | "kill_task"
-                    ) || tool_id == "bash" && command_handle
+                    ) || tool_id == "eval"
+                        || tool_id == "bash" && command_handle
                 }
                 _ => false,
             };
@@ -115,7 +118,9 @@ impl Runtime {
         } else {
             TaskTerminalScope::ToolCall
         };
-        let written = if scope == TaskTerminalScope::ToolCall {
+        let written = if detached_eval {
+            self.finish_detached_eval(&id, &job.actor, &result)
+        } else if scope == TaskTerminalScope::ToolCall {
             self.record_tool_result(
                 &id,
                 &job.actor,

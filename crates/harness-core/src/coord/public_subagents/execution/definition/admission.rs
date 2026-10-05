@@ -214,6 +214,13 @@ impl Runtime {
             Some(tool.clone()),
             EventV1::NativeSubagentRegistered(Box::new(registration.clone())),
         )?;
+        self.config
+            .tool_registry
+            .inherit_scoped(
+                &self.tool_scope(Some(&parent)).unwrap_or_default(),
+                &self.tool_scope(Some(&id)).unwrap_or_default(),
+            )
+            .map_err(|error| native_invalid(error.to_string()))?;
         self.spawn_agent_with_profile(
             actor,
             registration.profile(),

@@ -31,6 +31,7 @@ pub use public_subagents::{
 mod children_tests;
 mod edit_paths;
 mod edits;
+mod eval;
 #[cfg(test)]
 mod failure_tests;
 #[cfg(test)]
@@ -102,6 +103,8 @@ pub struct CoordinatorConfig {
     pub session_dir: PathBuf,
     pub run_id_override: Option<String>,
     pub deterministic_store: bool,
+    /// Interactive callers can receive detached eval completions after the foreground receipt.
+    pub interactive: bool,
     pub command_buffer: usize,
     pub permission_policy: PermissionPolicy,
     pub yolo_on_start: bool,
@@ -136,6 +139,7 @@ impl CoordinatorConfig {
             session_dir: session_dir.into(),
             run_id_override: None,
             deterministic_store: false,
+            interactive: false,
             command_buffer: 64,
             permission_policy: PermissionPolicy::default(),
             yolo_on_start: false,

@@ -11,7 +11,7 @@ defaults! {
         schema: None, providers: BTreeMap::new(), disabled_providers: Vec::new(), enabled_providers: Vec::new(), model_profiles: BTreeMap::new(),
         agents: BTreeMap::new(), subagents: SubagentsConfig::default(), features: SubagentFeaturesConfig::default(),
         permissions: PermissionsConfig::default(), runtime: RuntimeConfig::default(), integrations: IntegrationsConfig::default(),
-        hooks: HooksConfig::default(), skills: SkillsConfig::default(), lsp: LspConfig::default(), background_task: BackgroundTaskSettings::default(),
+        hooks: HooksConfig::default(), skills: SkillsConfig::default(), lsp: LspConfig::default(), eval: EvalConfig::default(), background_task: BackgroundTaskSettings::default(),
         paths: PathsConfig::default(), deterministic: DeterministicConfig::default(), ui: UiConfig::default(), logging: LoggingConfig::default(),
         hashline_edit: true, formatter: FormatterConfig::default(), instruction_files: Vec::new(), small_model: None
     }
@@ -39,7 +39,7 @@ defaults! {
     }
     PermissionDefaultsConfig {
         edit: PermissionMode::Allow, shell: PermissionMode::Allow, network: PermissionMode::Allow, question: Some(PermissionMode::Deny),
-        task: Some(PermissionMode::Allow), webfetch: Some(PermissionMode::Allow), websearch: Some(PermissionMode::Allow), codesearch: Some(PermissionMode::Allow),
+        task: Some(PermissionMode::Allow), eval: Some(PermissionMode::Ask), webfetch: Some(PermissionMode::Allow), websearch: Some(PermissionMode::Allow), codesearch: Some(PermissionMode::Allow),
         lsp: Some(PermissionMode::Allow), read: Some(PermissionMode::Allow), external_directory: Some(PermissionMode::Ask), doom_loop: Some(PermissionMode::Ask)
     }
     PermissionsConfig { defaults: PermissionDefaultsConfig::default(), fallback: None, rules: default_permission_rule_set_with_read_env(), shell_allowlist: ShellAllowlist::default() }

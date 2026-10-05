@@ -741,6 +741,7 @@ fn event_kind_label(event: &EventV1) -> &'static str {
         EventV1::ToolCallRequested(_) => "tool_call_requested",
         EventV1::ToolCallStarted(_) => "tool_call_started",
         EventV1::ToolCallFinished(_) => "tool_call_finished",
+        EventV1::EvalCellFinished(_) => "eval_cell_finished",
         EventV1::PermissionRequested(_) => "permission_requested",
         EventV1::PermissionGrantRecorded(_) => "permission_grant_recorded",
         EventV1::PermissionResolved(_) => "permission_resolved",

@@ -43,7 +43,16 @@ impl Runtime {
             .agents
             .get(agent)
             .ok_or_else(|| CoordinatorError::UnknownAgent(agent.into()))?;
-        let reserved = self.native_notification_reservations(agent);
+        let reserved = self.native_notification_reservations(agent)
+            + self
+                .detached_evals
+                .iter()
+                .filter(|id| {
+                    self.running
+                        .get(*id)
+                        .is_some_and(|job| job.actor.agent_id.as_deref() == Some(agent))
+                })
+                .count();
         if state.queue.len().saturating_add(reserved) >= self.config.command_buffer {
             return Err(CoordinatorError::Invalid(
                 "agent prompt queue is full, including reserved background notifications".into(),
@@ -104,7 +113,9 @@ impl Runtime {
             EventV1::ToolCallRequested(event) => {
                 &mut event.metadata.get_or_insert_default().lineage
             }
-            EventV1::ToolCallFinished(event) => &mut event.metadata.get_or_insert_default().lineage,
+            EventV1::ToolCallFinished(event) | EventV1::EvalCellFinished(event) => {
+                &mut event.metadata.get_or_insert_default().lineage
+            }
             _ => return,
         };
         if target.is_none() {

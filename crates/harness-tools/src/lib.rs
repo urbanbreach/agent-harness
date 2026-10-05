@@ -2,7 +2,9 @@
 use harness_core::{config::ShellAllowlist, tool::ToolRegistry};
 use std::sync::Arc;
 mod ast_grep;
-mod batch;
+mod eval;
+pub use eval::register as register_eval_tool;
+pub use harness_eval::worker_main as eval_worker_main;
 mod files;
 mod formatters;
 mod github;
@@ -69,7 +71,7 @@ pub fn coordinator_registry_with_skills(
         &harness_core::config::SubagentDefinitionSnapshot::default(),
         None,
     );
-    registry.register(Arc::new(batch::BatchTool));
+    register_eval_tool(&mut registry, Default::default());
     registry.register(Arc::new(todos::TodoTool::Read));
     registry.register(Arc::new(todos::TodoTool::Write));
     registry.register(Arc::new(web::Fetch));

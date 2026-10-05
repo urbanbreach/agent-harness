@@ -97,12 +97,20 @@ pub(super) fn apply(
                 tool.provenance.extend(event);
             }
         }
-        EventV1::ToolCallFinished(data) => {
+        EventV1::ToolCallFinished(data) | EventV1::EvalCellFinished(data) => {
             let location = tool_location(output, index, event, data.tool_call_id.as_str());
             if let Some(tool) = tool_mut(output, location) {
-                tool.state = match data.status {
-                    ToolCallStatus::Succeeded => ProjectedToolCallState::Succeeded,
-                    ToolCallStatus::Failed => ProjectedToolCallState::Failed,
+                tool.state = if data
+                    .output_json
+                    .as_ref()
+                    .is_some_and(|v| v["detached"] == true)
+                {
+                    ProjectedToolCallState::Running
+                } else {
+                    match data.status {
+                        ToolCallStatus::Succeeded => ProjectedToolCallState::Succeeded,
+                        ToolCallStatus::Failed => ProjectedToolCallState::Failed,
+                    }
                 };
                 tool.status = Some(data.status);
                 tool.output_summary.clone_from(&data.output_summary);

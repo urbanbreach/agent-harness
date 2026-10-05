@@ -261,6 +261,12 @@ where
 }
 
 pub fn run_os() -> ExitCode {
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "__eval-worker")
+    {
+        return harness_tools::eval_worker_main();
+    }
     let _ = dotenvy::dotenv();
     let (stdin, stdout, stderr) = (std::io::stdin(), std::io::stdout(), std::io::stderr());
     let terminal = stdin.is_terminal();

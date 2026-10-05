@@ -44,6 +44,30 @@ pub fn config_json_schema() -> Value {
         }
     }
     defs["ProfileConfig"]["properties"]["permissions"] = permission_schema(true);
+    let eval = &mut defs["EvalConfig"]["properties"];
+    eval["languages"]["items"] = json!({"type":"string","enum":["js","py","rb","jl"]});
+    eval["languages"]["minItems"] = json!(1);
+    eval["languages"]["uniqueItems"] = json!(true);
+    for field in [
+        "cell_timeout_seconds",
+        "foreground_window_seconds",
+        "run_budget_seconds",
+        "hard_limit_seconds",
+    ] {
+        eval[field]["minimum"] = json!(1);
+        eval[field]["maximum"] = json!(86400);
+    }
+    for field in ["max_detached_cells", "parallel_pool_width"] {
+        eval[field]["minimum"] = json!(1);
+        eval[field]["maximum"] = json!(256);
+    }
+    eval["output_head_bytes"]["maximum"] = json!(51200);
+    eval["output_max_columns"]["maximum"] = json!(16384);
+    if let Some(properties) = defs["EvalMemoryConfig"]["properties"].as_object_mut() {
+        for value in properties.values_mut() {
+            value["maximum"] = json!(1_048_576);
+        }
+    }
     defs["FormatterConfig"]["properties"]["languages"] =
         json!({"type":"object","additionalProperties":{"$ref":"#/$defs/FormatterOverride"}});
     defs["ProfileConfig"]["properties"]["tools"] = json!({"anyOf":[
@@ -90,6 +114,7 @@ fn permission_schema(profile: bool) -> Value {
     for name in [
         "*",
         "network",
+        "eval",
         "question",
         "webfetch",
         "websearch",

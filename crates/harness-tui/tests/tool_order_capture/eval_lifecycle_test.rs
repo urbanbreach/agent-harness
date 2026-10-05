@@ -1,17 +1,17 @@
 use super::*;
 
 #[test]
-fn batch_children_settle_and_batch_output_opens_after_the_response_commit() -> Result<()> {
+fn eval_children_settle_and_eval_output_opens_after_the_response_commit() -> Result<()> {
     let fixture: Value = serde_json::from_str(FIXTURE)?;
     let area = Rect::new(0, 0, 120, 40);
     for commit_first in [true, false] {
         let mut state = Capture::new(&fixture)?;
         state.app.set_frame_area(area);
-        state.tools.insert("batch".into(), json!({
-            "tool":"batch", "args":{"tool_calls":[{"tool":"bash", "parameters":{"command":"printf alpha"}}]},
-            "output":"Batch completed"
+        state.tools.insert("eval".into(), json!({
+            "tool":"eval", "args":{"language":"js","summary":"Inspect command output","code":"await tool.bash({command: 'printf alpha'})"},
+            "output":"Eval completed"
         }));
-        state.intent("batch");
+        state.intent("eval");
         let parts = state.parts.clone();
         for before_requests in [true, false] {
             if before_requests == commit_first {
@@ -24,14 +24,14 @@ fn batch_children_settle_and_batch_output_opens_after_the_response_commit() -> R
                 )?;
             }
             if before_requests {
-                for id in ["batch", "command-a"] {
+                for id in ["eval", "command-a"] {
                     state.action(&json!({"op":"request", "id":id}), &fixture)?;
                     state.action(&json!({"op":"start", "id":id}), &fixture)?;
                 }
             }
         }
         // The child call is coordinator-owned and absent from the provider's response.
-        for id in ["command-a", "batch"] {
+        for id in ["command-a", "eval"] {
             state.action(&json!({"op":"finish", "id":id}), &fixture)?;
         }
         state.event(
@@ -46,7 +46,7 @@ fn batch_children_settle_and_batch_output_opens_after_the_response_commit() -> R
         let settled = render(&mut state.app, area.width, area.height)?;
         state.action(&json!({"op":"advance", "ms":330}), &fixture)?;
         let later = render(&mut state.app, area.width, area.height)?;
-        for label in ["Batch 1 tool", "printf alpha"] {
+        for label in ["Inspect command output", "printf alpha"] {
             let row = settled
                 .content
                 .chunks(120)
@@ -64,17 +64,17 @@ fn batch_children_settle_and_batch_output_opens_after_the_response_commit() -> R
             );
         }
         state.app.focus = Focus::Details;
-        assert!(state.app.select_transcript_tool("batch"));
+        assert!(state.app.select_transcript_tool("eval"));
         state
             .app
             .handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
-        assert!(state.app.is_tool_output_expanded_for_test("batch"));
+        assert!(state.app.is_tool_output_expanded_for_test("eval"));
         let opened = render(&mut state.app, area.width, area.height)?;
         assert!(opened.content.chunks(120).any(|row| row
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>()
-            .contains("Batch completed")));
+            .contains("Eval completed")));
     }
     Ok(())
 }

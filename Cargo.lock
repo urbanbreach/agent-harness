@@ -4681,6 +4681,7 @@ dependencies = [
  "harness-providers",
  "htmd",
  "ignore",
+ "image",
  "pulldown-cmark",
  "regex",
  "reqwest",

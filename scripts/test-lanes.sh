@@ -25,6 +25,7 @@ Modes:
   fast                 Backend format checks, workspace Clippy/check, and deterministic nextest.
   integration          Partitioned deterministic T1-T3 nextest run for CI fan-out checks.
   quality-gates        Backend size, test isolation, opt-in boundaries, and cassette secret checks.
+  eval                 Opt-in persistent code kernels, native tool composition and lifecycle checks.
   perf                 Release TUI budgets and local backend streaming/resource measurements.
   coverage             Coverage ratchet lane via scripts/coverage-ratchet.sh.
   simulation           Offline scenario determinism, permission denial, continuation, and fork checks.
@@ -111,7 +112,7 @@ while [[ $# -gt 0 ]]; do
       usage
       exit 0
       ;;
-    fast|integration|quality-gates|perf|coverage|simulation|signoff-binary|signoff-pty|signoff-live|signoff-native|stress-offline|stress-live|all-deterministic|help)
+    fast|integration|quality-gates|eval|perf|coverage|simulation|signoff-binary|signoff-pty|signoff-live|signoff-native|stress-offline|stress-live|all-deterministic|help)
       if [[ -n "$mode" ]]; then
         printf 'Multiple modes provided: %s and %s\n' "$mode" "$1" >&2
         usage >&2
@@ -822,6 +823,11 @@ run_mode() {
       ;;
     simulation)
       run_simulation
+      ;;
+    eval)
+      run_stage eval native "$repo_root" cargo nextest run --profile ci -p harness-eval --test session || true
+      run_stage eval worker "$repo_root" cargo build -p harness-eval --bin harness-eval-worker || true
+      run_stage eval kernels "$repo_root" env HARNESS_EVAL_SIGNOFF=1 cargo nextest run --profile ci -p harness-tools --test eval --test mcp --run-ignored all -E '(binary(eval) or test(eval_mcp)) and not test(capture_eval) and not test(perf_eval)' || true
       ;;
     signoff-binary)
       run_signoff_binary

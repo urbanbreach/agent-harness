@@ -8,6 +8,7 @@ use std::{
 };
 mod defaults;
 mod discovery;
+mod eval;
 mod extensions;
 mod integrations;
 mod limits;
@@ -33,6 +34,7 @@ mod subagents;
 pub use crate::perm::PermissionAction as PermissionMode;
 pub use defaults::{default_permission_rule_set_with_read_env, default_read_env_permission_rules};
 pub use discovery::*;
+pub use eval::*;
 pub use extensions::*;
 pub use integrations::*;
 pub use limits::*;
@@ -91,6 +93,7 @@ pub struct HarnessConfig {
     pub hooks: HooksConfig,
     pub skills: SkillsConfig,
     pub lsp: LspConfig,
+    pub eval: EvalConfig,
     #[serde(skip)]
     pub background_task: BackgroundTaskSettings,
     #[serde(skip)]

@@ -84,7 +84,10 @@ impl Runtime {
         let tool = self
             .config
             .tool_registry
-            .get(&tool_id)
+            .get_for(
+                &tool_id,
+                self.tool_scope(actor.agent_id.as_deref()).as_deref(),
+            )
             .or_else(|| {
                 (tool_id == "question")
                     .then(|| Arc::new(crate::tool::QuestionTool) as Arc<dyn Tool>)
@@ -234,6 +237,7 @@ impl Runtime {
             .map_or_else(CancellationToken::new, |job| job.cancellation.child_token());
         let context = ToolContext {
             run_id: self.info()?.run_id.to_string(),
+            interactive: self.config.interactive,
             workspace_root: cwd,
             policy_roots: vec![policy_root],
             artifacts_dir: self.info()?.artifacts_dir.clone(),

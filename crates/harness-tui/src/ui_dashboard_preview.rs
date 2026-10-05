@@ -100,7 +100,7 @@ mod tests {
             id: BlockId::from_replay(1, 0, 0),
             kind: BlockKind::Tool,
             lifecycle: BlockLifecycle::Completed,
-            content: format!("Batch completed\n{}", "full tool output\n".repeat(10_000)),
+            content: format!("Eval completed\n{}", "full tool output\n".repeat(10_000)),
             fold_state: FoldState::Collapsed,
             raw: None,
         };
@@ -108,7 +108,7 @@ mod tests {
         let theme = Theme::default();
         let measured = lines(&blocks, 80, &theme);
         assert_eq!(measured.len(), 1);
-        assert_eq!(measured[0].to_string(), "Batch completed");
+        assert_eq!(measured[0].to_string(), "Eval completed");
         assert_eq!(frame(&blocks, 80, 10, 0, &theme), measured);
         blocks[0].kind = BlockKind::Thinking;
         assert_eq!(lines(&blocks, 80, &theme)[0].to_string(), "Thought");

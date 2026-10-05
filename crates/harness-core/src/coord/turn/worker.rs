@@ -214,9 +214,11 @@ impl Worker {
             }
             self.run_tools(&request_id, response.event_seq, calls, messages)
                 .await?;
-            self.tools = self
-                .registry
-                .definitions(&self.profile, (&self.permissions.0, &self.permissions.1));
+            self.tools = self.registry.definitions(
+                &self.profile,
+                self.tool_scope.as_deref(),
+                (&self.permissions.0, &self.permissions.1),
+            );
             super::super::public_subagent_hooks::apply_native_schema_hints(
                 &mut self.tools,
                 &self.native_schema,

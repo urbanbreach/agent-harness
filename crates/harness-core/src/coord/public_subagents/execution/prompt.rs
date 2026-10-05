@@ -20,6 +20,7 @@ impl Runtime {
         let state = &self.agents[agent];
         let mut available = self.config.tool_registry.definitions(
             &state.profile,
+            self.tool_scope(Some(agent)).as_deref(),
             (&self.config.permission_policy, &state.policy),
         );
         crate::coord::public_subagent_hooks::apply_native_schema_hints(

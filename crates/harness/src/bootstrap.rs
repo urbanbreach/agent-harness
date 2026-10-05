@@ -70,7 +70,9 @@ pub(crate) fn interactive_agent_profiles(
 pub(crate) fn build_interactive_coordinator_config(
     config: &HarnessConfig,
 ) -> Result<CoordinatorConfig, String> {
-    build(config, &CliDeps::real(), false)
+    let mut result = build(config, &CliDeps::real(), false)?;
+    result.interactive = true;
+    Ok(result)
 }
 pub(crate) fn build(
     config: &HarnessConfig,
@@ -142,6 +144,7 @@ pub(crate) fn build(
     harness_tools::register_mcp_tools(&mut registry, config.integrations.mcp.clone())
         .map_err(|e| e.to_string())?;
     harness_tools::register_lsp_tools(&mut registry, config.lsp.clone());
+    harness_tools::register_eval_tool(&mut registry, config.eval.clone());
     harness_tools::register_github_tools(&mut registry, &|key| deps.env_var_value(key));
     harness_tools::register_shell_tool(
         &mut registry,

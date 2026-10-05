@@ -37,10 +37,10 @@ impl Runtime {
         Ok(definitions)
     }
 
-    fn native_tools(&self) -> Vec<SubagentTool> {
+    fn native_tools(&self, parent: &str) -> Vec<SubagentTool> {
         self.config
             .tool_registry
-            .tool_ids()
+            .tool_ids_for(self.tool_scope(Some(parent)).as_deref())
             .into_iter()
             .map(|id| {
                 let kind = match id.as_str() {
@@ -94,7 +94,7 @@ impl Runtime {
                     match self
                         .config
                         .tool_registry
-                        .get(&id)
+                        .get_for(&id, self.tool_scope(Some(parent)).as_deref())
                         .map(|tool| tool.capability())
                     {
                         Some(ToolCapability::EditFs) => match kind {
@@ -178,7 +178,7 @@ impl Runtime {
             .native_subagents
             .get(parent_id)
             .and_then(|child| child.registration.allowed_types.as_deref());
-        let tools = self.native_tools();
+        let tools = self.native_tools(parent_id);
         let mcp: Vec<_> = tools.iter().filter_map(|t| t.mcp_server.clone()).collect();
         let definitions = self.native_definitions(&parent.cwd)?;
         let policy = self
@@ -236,6 +236,28 @@ impl Runtime {
         };
         let mut resolved = resolve_subagent_definition(&self.config.subagents, &request, &context)
             .map_err(native_resolution_error)?;
+        if let Some(tools) = &input.tools {
+            if tools.len() > 256 || tools.iter().any(|id| id.is_empty() || id.len() > 256) {
+                return Err(native_invalid("invalid child tool restriction".into()));
+            }
+            for tool in self
+                .config
+                .tool_registry
+                .scoped_tools(&self.tool_scope(Some(parent_id)).unwrap_or_default())
+            {
+                if tools.iter().any(|name| name == tool.id())
+                    && !resolved.tools.iter().any(|entry| entry.id == tool.id())
+                {
+                    resolved.tools.push(SubagentTool {
+                        id: tool.id().into(),
+                        kind: None,
+                        mcp_server: None,
+                        background_capable: false,
+                    });
+                }
+            }
+            resolved.tools.retain(|tool| tools.contains(&tool.id));
+        }
         let (state, reference) = source.map_or((None, None), |(state, reference, _)| {
             (Some(state), reference)
         });

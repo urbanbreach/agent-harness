@@ -255,6 +255,7 @@ fn permissions(
         "network",
         "question",
         "task",
+        "eval",
         "webfetch",
         "websearch",
         "codesearch",
@@ -352,7 +353,7 @@ fn permissions(
 }
 
 fn shipped_profiles(model: &str) -> BTreeMap<String, ProfileConfig> {
-    const READ: &str = "read glob grep list ast_grep_search webfetch websearch session_list session_read session_search session_info batch bash lsp skill";
+    const READ: &str = "read glob grep list ast_grep_search webfetch websearch session_list session_read session_search session_info bash lsp skill";
     ["default", "explore", "general", "librarian"]
         .into_iter()
         .map(|name| {
@@ -361,7 +362,7 @@ fn shipped_profiles(model: &str) -> BTreeMap<String, ProfileConfig> {
                 tools.push("codesearch".into());
             }
             if matches!(name, "default" | "general") {
-                tools.extend(["edit", "write", "apply_patch"].map(str::to_owned));
+                tools.extend(["edit", "write", "apply_patch", "eval"].map(str::to_owned));
             }
             if name == "default" {
                 tools.extend(

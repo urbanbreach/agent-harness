@@ -81,7 +81,7 @@ pub fn project_session_catalog_entry<'a>(
                 None
             }
             EventV1::ToolCallRequested(e) => e.metadata.as_ref().and_then(|m| m.lineage.as_ref()),
-            EventV1::ToolCallFinished(e) => {
+            EventV1::ToolCallFinished(e) | EventV1::EvalCellFinished(e) => {
                 if let Some(metadata) = &e.metadata {
                     artifacts.extend(metadata.artifact_refs.iter().map(|a| a.path.as_str()));
                 }

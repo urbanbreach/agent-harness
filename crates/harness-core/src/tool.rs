@@ -104,6 +104,7 @@ impl ToolResult {
 #[derive(Clone)]
 pub struct ToolContext {
     pub run_id: String,
+    pub interactive: bool,
     pub workspace_root: PathBuf,
     pub(crate) policy_roots: Vec<PathBuf>,
     pub artifacts_dir: PathBuf,
@@ -147,6 +148,10 @@ pub trait Tool: Send + Sync {
         ""
     }
     fn parameters_json_schema(&self) -> Value;
+    /// Optional globals installed while this tool is active in an eval cell.
+    fn kernel_prelude(&self) -> Option<KernelPrelude> {
+        None
+    }
     fn capability(&self) -> ToolCapability;
     fn filesystem_paths(&self, _args: &Value) -> Result<Vec<PathBuf>, ToolError> {
         Ok(Vec::new())
@@ -174,11 +179,20 @@ pub trait Tool: Send + Sync {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KernelPrelude {
+    pub javascript: String,
+    pub python: String,
+    pub documentation: String,
+    pub exports: Vec<String>,
+}
+
 #[derive(Default)]
 pub struct ToolRegistry {
     tools: BTreeMap<String, Arc<dyn Tool>>,
     descriptions: BTreeMap<(String, String), String>,
     catalogs: BTreeMap<String, ToolCatalog>,
+    scoped: RwLock<BTreeMap<String, BTreeMap<String, Arc<dyn Tool>>>>,
 }
 /// Descriptors obtained by an approved discovery call; reading a catalog never performs I/O.
 pub type ToolCatalog = Arc<RwLock<BTreeMap<String, Arc<dyn Tool>>>>;
@@ -198,6 +212,62 @@ impl ToolRegistry {
                 .values()
                 .find_map(|catalog| catalog.read().ok()?.get(id).cloned())
         })
+    }
+    pub(crate) fn get_for(&self, id: &str, agent: Option<&str>) -> Option<Arc<dyn Tool>> {
+        self.get(id)
+            .or_else(|| self.scoped.read().ok()?.get(agent?)?.get(id).cloned())
+    }
+    pub(crate) fn scoped_tools(&self, agent: &str) -> Vec<Arc<dyn Tool>> {
+        self.scoped
+            .read()
+            .ok()
+            .and_then(|scoped| {
+                scoped
+                    .get(agent)
+                    .map(|tools| tools.values().cloned().collect())
+            })
+            .unwrap_or_default()
+    }
+    pub(crate) fn register_scoped(
+        &self,
+        agent: &str,
+        tools: Vec<Arc<dyn Tool>>,
+    ) -> Result<(), ToolError> {
+        if tools.iter().any(|tool| self.get(tool.id()).is_some()) {
+            return Err(ToolError::InvalidArguments(
+                "kernel tool collides with a registered host tool".into(),
+            ));
+        }
+        let mut scoped = self
+            .scoped
+            .write()
+            .map_err(|error| ToolError::Execution(error.to_string()))?;
+        let catalog = scoped.entry(agent.into()).or_default();
+        if catalog.len()
+            + tools
+                .iter()
+                .filter(|tool| !catalog.contains_key(tool.id()))
+                .count()
+            > 256
+        {
+            return Err(ToolError::InvalidArguments("too many kernel tools".into()));
+        }
+        catalog.extend(tools.into_iter().map(|tool| (tool.id().into(), tool)));
+        Ok(())
+    }
+    pub(crate) fn inherit_scoped(&self, parent: &str, child: &str) -> Result<(), ToolError> {
+        self.register_scoped(child, self.scoped_tools(parent))
+    }
+    pub(crate) fn tool_ids_for(&self, agent: Option<&str>) -> Vec<String> {
+        let mut ids = self.tool_ids();
+        if let Some(agent) = agent {
+            ids.extend(
+                self.scoped_tools(agent)
+                    .iter()
+                    .map(|tool| tool.id().to_owned()),
+            );
+        }
+        ids
     }
     pub fn register_catalog(&mut self, permission_anchor: String, catalog: ToolCatalog) {
         self.catalogs.insert(permission_anchor, catalog);
@@ -223,6 +293,9 @@ impl ToolRegistry {
         ids
     }
     pub(crate) async fn close_run(&self, run: &str) -> Result<(), ToolError> {
+        if let Ok(mut scoped) = self.scoped.write() {
+            scoped.retain(|key, _| !key.starts_with(&format!("{run}:")));
+        }
         let mut result = Ok(());
         for tool in self.tools.values() {
             if let Err(error) = tool.close_run(run).await {
@@ -251,6 +324,7 @@ impl ToolRegistry {
     pub(crate) fn definitions(
         &self,
         profile: &crate::agent::AgentProfile,
+        agent: Option<&str>,
         permissions: (
             &crate::perm::PermissionPolicy,
             &crate::perm::PermissionPolicy,
@@ -260,7 +334,7 @@ impl ToolRegistry {
         let mut tools: Vec<_> = profile
             .toolset
             .iter()
-            .filter_map(|id| self.get(id))
+            .filter_map(|id| self.get_for(id, agent))
             .filter(|tool| seen.insert(tool.id().to_owned()))
             .collect();
         for id in &profile.toolset {

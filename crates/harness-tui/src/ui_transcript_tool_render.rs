@@ -8,6 +8,8 @@ use header::{
 mod details;
 #[path = "ui_transcript_tool_render/errors.rs"]
 mod errors;
+#[path = "ui_transcript_tool_render/eval.rs"]
+mod eval;
 #[path = "ui_transcript_tool_render/header.rs"]
 mod header;
 #[path = "ui_transcript_tool_render/shell.rs"]

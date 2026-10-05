@@ -54,6 +54,8 @@ pub struct SpawnSubagentInput {
     /// Explicit child working directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    /// Optional subset of the child's permitted tools; never adds capabilities.
+    pub tools: Option<Vec<String>>,
     /// Optional model slug.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -87,6 +89,8 @@ struct SpawnSubagentInputDe {
     #[serde(default)]
     model: Option<String>,
     #[serde(default)]
+    tools: Option<Vec<String>>,
+    #[serde(default)]
     workspace: Option<String>,
     #[serde(default)]
     task_id: Option<String>,
@@ -113,6 +117,7 @@ impl<'de> Deserialize<'de> for SpawnSubagentInput {
             resume_from: raw.resume_from,
             cwd: raw.cwd,
             model: raw.model,
+            tools: raw.tools,
             workspace: raw.workspace,
             task_id: raw.task_id,
         })
@@ -140,6 +145,8 @@ impl Serialize for SpawnSubagentInput {
             #[serde(skip_serializing_if = "Option::is_none")]
             model: Option<&'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
+            tools: Option<&'a Vec<String>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             workspace: Option<&'a str>,
             task_id: Option<&'a str>,
         }
@@ -155,6 +162,7 @@ impl Serialize for SpawnSubagentInput {
             resume_from: self.resume_from.as_deref(),
             cwd: self.cwd.as_deref(),
             model: self.model.as_deref(),
+            tools: self.tools.as_ref(),
             workspace: self.workspace.as_deref(),
             task_id: self.task_id.as_deref(),
         }

@@ -179,12 +179,12 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallRequested(
             harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tool_call_batch".into(),
-                tool_id: "tool.batch".to_string(),
-                args_summary: r#"{"requested_call_count":2}"#.to_string(),
-                args_digest: "digest-tool-batch".to_string(),
+                tool_call_id: "tool_call_eval".into(),
+                tool_id: "eval".to_string(),
+                args_summary: r#"{"language":"js","summary":"Inspect workspace files","code":"await parallel([() => tool.read({path:'Cargo.toml'}), () => tool.read({path:'README.md'})])"}"#.to_string(),
+                args_digest: "digest-tool-eval".to_string(),
                 metadata: Some(harness_core::event::ToolCallMetadata {
-                    canonical_tool_id: Some("tool.batch".to_string()),
+                    canonical_tool_id: Some("eval".to_string()),
                     ..Default::default()
                 }),
             },
@@ -194,7 +194,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
         8,
         harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None),
         harness_core::event::EventV1::ToolCallStarted(harness_core::event::ToolCallStartedEvent {
-            tool_call_id: "tool_call_batch".into(),
+            tool_call_id: "tool_call_eval".into(),
         }),
     ));
     app.ingest_event(operator_rail_test_event(
