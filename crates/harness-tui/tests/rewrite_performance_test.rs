@@ -183,14 +183,32 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
     }
     let construction_us = construction.elapsed().as_micros();
     let mut updates = VecDeque::new();
-    if scenario == "stream" {
+    if matches!(scenario.as_str(), "stream" | "tool-stream") {
         j.seq = u64::try_from(count * 4)?;
         j.start("turn", "Stream synthetic text")?;
         for index in 0..frames + 10 {
+            let (kind, data) = if scenario == "tool-stream" {
+                let delta = if index == 0 {
+                    format!(
+                        r#"{{"language":"js","code":"{}"#,
+                        "const seed = 42;\\n".repeat(1000)
+                    )
+                } else {
+                    format!("const latest_{index} = '界';\\n")
+                };
+                (
+                    "provider_tool_input_delta",
+                    json!({"request_id":"turn", "tool_call_id":"eval", "tool_name":"eval", "delta":delta}),
+                )
+            } else {
+                (
+                    "provider_text_delta",
+                    json!({"request_id": "turn", "delta": " **token** 界 e\u{301} 👩‍💻"}),
+                )
+            };
             updates.push_back(serde_json::from_value::<RuntimeEvent>(
                 json!({"delivery": "live",
-                "event": envelope(u64::try_from(index)?, "provider_text_delta",
-                    json!({"request_id": "turn", "delta": " **token** 界 e\u{301} 👩‍💻"}))}),
+                "event": envelope(u64::try_from(index)?, kind, data)}),
             )?);
         }
     }
@@ -283,7 +301,7 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
                 },
                 KeyModifiers::NONE,
             )),
-            "stream" => j
+            "stream" | "tool-stream" => j
                 .app
                 .ingest_runtime_event(updates.pop_front().ok_or("missing stream event")?),
             "settle" => {
@@ -389,6 +407,16 @@ fn perf_rewrite_public_boundary_workloads() -> Result {
         assert!(
             visible.contains("token"),
             "stream output never became visible"
+        );
+    }
+    if scenario == "tool-stream" {
+        assert!(
+            visible.contains(&format!("latest_{}", frames + 9)),
+            "live input never became visible: {visible}"
+        );
+        assert!(
+            !visible.contains("const seed"),
+            "old input escaped the preview window"
         );
     }
     if scenario == "settle" {

@@ -141,6 +141,12 @@ access. Confirmation temporarily replaces unrelated hints.
 
 ### Tools and diffs
 
+Show tool input as it arrives, with syntax colors and the newest five wrapped
+rows. Keep a visible writing label and allow expansion without waiting for
+execution. Eval keeps the same code preview after execution; its result opens
+with the details, while failures remain visible. Live argument previews never
+enter replay history.
+
 Use distinct glyphs for queued, running, waiting, succeeded, failed, and cancelled
 tools. Preserve the distinction in ASCII and reduced-color modes. Pulse only the
 running marker, not the label, path, or output. Cached layouts repaint the marker

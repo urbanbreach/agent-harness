@@ -30,6 +30,9 @@ impl ToolPainter<'_> {
             TranscriptToolCallDetailBlock::Message { text, tone } => {
                 self.message(text, *tone, tool_id)
             }
+            TranscriptToolCallDetailBlock::InputPreview { text, language } => {
+                self.input(text, language, expanded);
+            }
             TranscriptToolCallDetailBlock::EvalPanel {
                 code,
                 language,

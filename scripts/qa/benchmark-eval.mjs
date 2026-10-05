@@ -35,7 +35,9 @@ async function sample(name) {
   });
   measurements.set(name, rows);
 }
-run("cargo", ["nextest", "list", "--release", "-p", "harness-eval", "--test", "performance"]);
+const listing = JSON.parse(capture("cargo", ["nextest", "list", "--release", "-p", "harness-eval", "--test", "performance", "--message-format", "json", "--list-type", "binaries-only"]));
+const binary = Object.values(listing["rust-binaries"]).find(entry => entry["binary-name"] === "performance")?.["binary-path"];
+if (!binary) throw new Error("eval benchmark binary missing");
 const order = reference
   ? ["reference-node", "reference-bun", "harness-native", "harness-native", "reference-bun", "reference-node"]
   : ["harness-native", "harness-native"];
@@ -73,8 +75,8 @@ report.conformance.differences = report.conformance["harness-native"].flatMap((r
 report.provenance = {
   node:process.version, ...(reference ? {bun:capture("bun", ["--version"]), reference_runner:await fileReceipt(reference,root)} : {}), platform:process.platform, arch:process.arch,
   source:sourceTree, cases:await fileReceipt(cases,root),
-  native_worker:await fileReceipt(join(root,"target/release/harness-eval-worker"),root),
-  method:`${reference ? "ABC-CBA order against the supplied runner on Node and Bun." : "Two native runs; no reference comparison."} Each process takes 31 warm samples after 3 warmups per case (62 combined), plus five cold/reset samples per language (10 combined). The native Rust Session uses its release V8 worker. Timings include the public eval lifecycle and output retention with immediate host callbacks. Coordinator and full application overhead are outside this engine measurement.`,
+  eval_binary:await fileReceipt(binary,root), node_binary:await fileReceipt(process.execPath,root),
+  method:`${reference ? "ABC-CBA order against the supplied runner on Node and Bun." : "Two native runs; no reference comparison."} Each process takes 31 warm samples after 3 warmups per case (62 combined), plus five cold/reset samples per language (10 combined). The native Rust Session uses the installed Node.js worker. Timings include the public eval lifecycle and output retention with immediate host callbacks. Coordinator and full application overhead are outside this engine measurement.`,
 };
 const finalTree = await currentTree(root);
 if (sourceTree.hash !== finalTree.hash) throw new Error("Source changed during the benchmark; rerun on the final tree");

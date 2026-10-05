@@ -63,7 +63,10 @@ impl Kernel {
             sender,
             cancellation: cancellation.clone(),
         };
-        let pid = process.child.id();
+        let pid = process.runtime["pid"]
+            .as_u64()
+            .and_then(|pid| u32::try_from(pid).ok())
+            .or_else(|| process.child.id());
         let runtime = process.runtime.clone();
         let task = tokio::spawn(pump(process, commands, cancellation));
         Ok(Self {

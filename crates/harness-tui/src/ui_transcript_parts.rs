@@ -252,6 +252,14 @@ impl AssistantParts<'_> {
                 body(text, self.activity.status),
             ));
         }
+        // Live calls can share a durable sequence number. Preserve their arrival
+        // order before the remaining synthetic notification rows.
+        for tool in &self.activity.tool_calls {
+            if let Some((seq, section)) = self.tools.remove(&tool.tool_call_id) {
+                self.parts
+                    .push((seq, TranscriptAssistantPart::ToolCall(Box::new(section))));
+            }
+        }
         self.parts.extend(
             self.tools
                 .into_values()

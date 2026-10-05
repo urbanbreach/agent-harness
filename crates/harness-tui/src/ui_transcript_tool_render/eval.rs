@@ -26,7 +26,13 @@ pub(super) fn header(
     for part in metadata {
         if matches!(
             part,
-            "running" | "queued" | "detached" | "approval needed" | "cancelled" | "Failed"
+            "writing"
+                | "running"
+                | "queued"
+                | "detached"
+                | "approval needed"
+                | "cancelled"
+                | "Failed"
         ) {
             essential.push_str(" · ");
             essential.push_str(part);
@@ -72,6 +78,67 @@ pub(super) fn header(
 }
 
 impl ToolPainter<'_> {
+    pub(super) fn input(&mut self, code: &str, language: &str, expanded: bool) {
+        if code.is_empty() {
+            return;
+        }
+        let theme = self.theme;
+        let width = usize::from(transcript_surface_content_width(self.width, false))
+            .saturating_sub(surface_prefix_width(TRANSCRIPT_TOOL_BODY_PREFIX) + 2)
+            .max(1);
+        let code = crate::ui::ui_tool_output::safe_tool_text(code);
+        let language = match language {
+            "js" => "javascript",
+            "py" => "python",
+            "rb" => "ruby",
+            "jl" => "julia",
+            other => other,
+        };
+        let highlighted = crate::ui::ui_syntax_highlight::render_highlighted_code_block(
+            Some(language),
+            &code,
+            &code,
+            "",
+            theme.text.primary,
+            theme,
+        );
+        // One extra logical line retains the omission marker. Only the visible
+        // tail needs display-cell wrapping; syntax state still covers the source.
+        let start = if expanded {
+            0
+        } else {
+            highlighted.len().saturating_sub(6)
+        };
+        let rows = highlighted
+            .into_iter()
+            .skip(start)
+            .flat_map(|line| {
+                wrap_preformatted_spans(line.spans, width)
+                    .into_iter()
+                    .map(Line::from)
+            })
+            .collect();
+        let rows = crate::ui::ui_tool_output::measured_output_preview(
+            rows,
+            (0, 5),
+            expanded,
+            Style::default().fg(theme.text.secondary),
+        );
+        self.prebuilt(
+            TRANSCRIPT_TOOL_BODY_PREFIX,
+            theme.markdown.code_background,
+            with_gutter(
+                rows,
+                if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+                    "< "
+                } else {
+                    "← "
+                },
+                theme.text.accent,
+            ),
+        );
+    }
+
     pub(super) fn eval(
         &mut self,
         code: &str,
@@ -80,50 +147,14 @@ impl ToolPainter<'_> {
         failed: bool,
         expanded: bool,
     ) {
+        self.input(code, language, expanded);
         let theme = self.theme;
         let width = usize::from(transcript_surface_content_width(self.width, false))
             .saturating_sub(surface_prefix_width(TRANSCRIPT_TOOL_BODY_PREFIX) + 2)
             .max(1);
-        let code = crate::ui::ui_tool_output::safe_tool_text(code);
-        let output = crate::ui::ui_tool_output::safe_tool_text(output);
-        let language = match language {
-            "js" => "javascript",
-            "py" => "python",
-            "rb" => "ruby",
-            "jl" => "julia",
-            other => other,
-        };
         let ascii = theme.glyph_mode() == crate::theme::GlyphMode::Ascii;
-        if !code.is_empty() {
-            let highlighted = crate::ui::ui_syntax_highlight::render_highlighted_code_block(
-                Some(language),
-                &code,
-                &code,
-                "",
-                theme.text.primary,
-                theme,
-            );
-            let rows = highlighted
-                .into_iter()
-                .flat_map(|line| {
-                    wrap_preformatted_spans(line.spans, width)
-                        .into_iter()
-                        .map(Line::from)
-                })
-                .collect();
-            let rows = crate::ui::ui_tool_output::measured_output_preview(
-                rows,
-                (5, 2),
-                expanded,
-                Style::default().fg(theme.text.secondary),
-            );
-            self.prebuilt(
-                TRANSCRIPT_TOOL_BODY_PREFIX,
-                theme.markdown.code_background,
-                with_gutter(rows, if ascii { "< " } else { "← " }, theme.text.secondary),
-            );
-        }
-        if !output.is_empty() {
+        if !output.is_empty() && (expanded || failed) {
+            let output = crate::ui::ui_tool_output::safe_tool_text(output);
             if !code.is_empty() {
                 self.render.lines.push(Line::default());
             }

@@ -628,6 +628,10 @@ pub(in crate::ui) enum TranscriptToolCallDetailBlock {
         text: String,
         tone: TranscriptToolCallDetailTone,
     },
+    InputPreview {
+        text: String,
+        language: String,
+    },
     EvalPanel {
         code: String,
         language: String,

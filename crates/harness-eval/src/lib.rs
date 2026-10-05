@@ -16,11 +16,10 @@ mod request;
 mod retention;
 mod session;
 mod settings;
-pub use javascript::worker_main;
 pub use kernel_tools::KernelToolError;
 pub use request::normalize_request;
 pub use session::Session;
-pub use settings::{MemorySettings, SessionOptions, Settings, WorkerCommand};
+pub use settings::{MemorySettings, SessionOptions, Settings};
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 type Result<T> = std::result::Result<T, Error>;

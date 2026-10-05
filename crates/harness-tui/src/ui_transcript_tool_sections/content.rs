@@ -179,7 +179,7 @@ pub(super) fn populate(
                         "peek" => "Inspect eval cell",
                         "stop" => "Stop eval cell",
                         "list" => "List eval cells",
-                        _ => "Evaluate code",
+                        _ => "code",
                     }
                     .into()
                 });
@@ -203,7 +203,14 @@ pub(super) fn populate(
             if action == "run" {
                 eval_notices(blocks, tool, row.expanded);
             }
-            (title, None)
+            (
+                if action == "run" {
+                    format!("Eval {title}")
+                } else {
+                    title
+                },
+                None,
+            )
         }
         _ if is_mcp_tool_id(id) => (mcp_tool_title(tool, id), Some("⚙")),
         _ => {

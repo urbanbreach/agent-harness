@@ -1,0 +1,357 @@
+{
+  "harness-native": [
+    {
+      "name": "cold-js",
+      "samples": 10,
+      "median_ms": 61.720676000000005,
+      "p95_ms": 66.01473700000001
+    },
+    {
+      "name": "cold-py",
+      "samples": 10,
+      "median_ms": 53.801849,
+      "p95_ms": 56.56825
+    },
+    {
+      "name": "js-transform",
+      "samples": 62,
+      "median_ms": 8.594584000000001,
+      "p95_ms": 16.776914
+    },
+    {
+      "name": "py-transform",
+      "samples": 62,
+      "median_ms": 9.438618,
+      "p95_ms": 9.842321
+    },
+    {
+      "name": "js-pipeline",
+      "samples": 62,
+      "median_ms": 0.8390230000000001,
+      "p95_ms": 1.1028870000000002
+    },
+    {
+      "name": "js-output",
+      "samples": 62,
+      "median_ms": 1.9778220000000002,
+      "p95_ms": 2.3676880000000002
+    },
+    {
+      "name": "js-tools",
+      "samples": 62,
+      "median_ms": 0.52161,
+      "p95_ms": 1.28346
+    },
+    {
+      "name": "py-tools",
+      "samples": 62,
+      "median_ms": 2.2851500000000002,
+      "p95_ms": 2.534723
+    }
+  ],
+  "conformance": {
+    "harness-native": [
+      {
+        "error": false,
+        "name": "js-persist",
+        "text": "42"
+      },
+      {
+        "error": false,
+        "name": "js-retained",
+        "text": "43"
+      },
+      {
+        "error": false,
+        "name": "js-await",
+        "text": "42"
+      },
+      {
+        "error": false,
+        "name": "js-destructure",
+        "text": "[3,{\"right\":4}]"
+      },
+      {
+        "error": false,
+        "name": "js-module",
+        "text": "\"memo.md\""
+      },
+      {
+        "error": false,
+        "name": "js-pipeline",
+        "text": "[7,10,13]"
+      },
+      {
+        "error": false,
+        "name": "js-parallel-index",
+        "text": "[0,1,2]"
+      },
+      {
+        "error": false,
+        "name": "js-parallel-errors",
+        "text": "first"
+      },
+      {
+        "error": false,
+        "name": "js-write-read",
+        "text": "\"blue\""
+      },
+      {
+        "error": false,
+        "name": "js-blob",
+        "text": "\"blob body\""
+      },
+      {
+        "error": false,
+        "name": "js-schema",
+        "text": "\"perf_echo\""
+      },
+      {
+        "error": false,
+        "name": "js-tool",
+        "text": "\"ok\""
+      },
+      {
+        "error": false,
+        "name": "js-completion",
+        "text": "{\"answer\":42}"
+      },
+      {
+        "error": false,
+        "name": "js-agent",
+        "text": "{\"answer\":42}"
+      },
+      {
+        "error": false,
+        "name": "js-pool",
+        "text": "\"wp_0123456789abcdef0123456789abcdef\""
+      },
+      {
+        "error": false,
+        "name": "js-pool-method",
+        "text": "\"ok\""
+      },
+      {
+        "error": false,
+        "name": "js-log-phase",
+        "text": "phase body\ndone"
+      },
+      {
+        "error": false,
+        "name": "js-display-json",
+        "text": "display[1]:\n{\n  \"result\": 17\n}"
+      },
+      {
+        "error": true,
+        "name": "js-error",
+        "text": "Error: parity failure\n    at /tmp/.tmp8wOwHs/.harness-eval-cell.js:2:7\n    at /tmp/.tmp8wOwHs/.harness-eval-cell.js:3:3\n    at Script.runInThisContext (node:vm:138:12)\n    at Object.runInThisContext (node:vm:318:38)\n    at evaluate (/tmp/.tmp8wOwHs/artifacts/kernel-output-AXm6yw/runtime.cjs:15:31)\n    at /tmp/.tmp8wOwHs/artifacts/kernel-output-AXm6yw/runtime.cjs:91:27\n    at AsyncLocalStorage.run (node:internal/async_local_storage/async_context_frame:66:14)\n    at __harness_run (/tmp/.tmp8wOwHs/.harness-eval-cell.js:243:40)\n    at run (/tmp/.tmp8wOwHs/artifacts/kernel-output-AXm6yw/runtime.cjs:90:25)\n    at handle (/tmp/.tmp8wOwHs/artifacts/kernel-output-AXm6yw/runtime.cjs:107:25)"
+      },
+      {
+        "error": false,
+        "name": "js-after-error",
+        "text": "37"
+      },
+      {
+        "error": false,
+        "name": "py-persist",
+        "text": "42"
+      },
+      {
+        "error": false,
+        "name": "py-retained",
+        "text": "43"
+      },
+      {
+        "error": false,
+        "name": "py-await",
+        "text": "42"
+      },
+      {
+        "error": false,
+        "name": "py-pipeline",
+        "text": "[7, 10, 13]"
+      },
+      {
+        "error": false,
+        "name": "py-write-read",
+        "text": "'blue\\n'"
+      },
+      {
+        "error": false,
+        "name": "py-schema",
+        "text": "'perf_echo'"
+      },
+      {
+        "error": false,
+        "name": "py-tool",
+        "text": "'ok'"
+      },
+      {
+        "error": false,
+        "name": "py-completion",
+        "text": "{'answer': 42}"
+      },
+      {
+        "error": false,
+        "name": "py-agent",
+        "text": "{'answer': 42}"
+      },
+      {
+        "error": false,
+        "name": "py-pool",
+        "text": "'wp_0123456789abcdef0123456789abcdef'"
+      },
+      {
+        "error": false,
+        "name": "py-pool-method",
+        "text": "'ok'"
+      },
+      {
+        "error": false,
+        "name": "py-magic",
+        "text": "magic-output['magic-output']"
+      },
+      {
+        "error": false,
+        "name": "py-display-json",
+        "text": "display[1]:\n{\n  \"result\": 17\n}"
+      },
+      {
+        "error": true,
+        "name": "py-error",
+        "text": "RuntimeError: parity failure"
+      },
+      {
+        "error": false,
+        "name": "py-after-error",
+        "text": "37"
+      },
+      {
+        "error": false,
+        "name": "rb-persist",
+        "text": "42"
+      },
+      {
+        "error": false,
+        "name": "rb-retained",
+        "text": "43"
+      },
+      {
+        "error": false,
+        "name": "rb-pipeline",
+        "text": "[7,10,13]"
+      },
+      {
+        "error": false,
+        "name": "rb-tool",
+        "text": "\"ok\""
+      },
+      {
+        "error": false,
+        "name": "rb-agent",
+        "text": "{\"answer\":42}"
+      },
+      {
+        "error": false,
+        "name": "rb-pool",
+        "text": "\"wp_0123456789abcdef0123456789abcdef\""
+      },
+      {
+        "error": true,
+        "name": "rb-error",
+        "text": "RuntimeError: parity failure"
+      },
+      {
+        "error": false,
+        "name": "rb-after-error",
+        "text": "37"
+      },
+      {
+        "error": false,
+        "name": "jl-persist",
+        "text": "42"
+      },
+      {
+        "error": false,
+        "name": "jl-retained",
+        "text": "43"
+      },
+      {
+        "error": false,
+        "name": "jl-pipeline",
+        "text": "[7,10,13]"
+      },
+      {
+        "error": false,
+        "name": "jl-tool",
+        "text": "\"ok\""
+      },
+      {
+        "error": false,
+        "name": "jl-agent",
+        "text": "{\"answer\":42}"
+      },
+      {
+        "error": false,
+        "name": "jl-pool",
+        "text": "\"wp_0123456789abcdef0123456789abcdef\""
+      },
+      {
+        "error": true,
+        "name": "jl-error",
+        "text": "parity failure"
+      },
+      {
+        "error": false,
+        "name": "jl-after-error",
+        "text": "37"
+      },
+      {
+        "error": false,
+        "name": "rb-declaration",
+        "text": "(no output)"
+      },
+      {
+        "error": false,
+        "name": "jl-declaration",
+        "text": "(no output)"
+      },
+      {
+        "error": false,
+        "name": "js-array-elision",
+        "text": "[0,2]"
+      }
+    ],
+    "differences": []
+  },
+  "provenance": {
+    "node": "v26.7.0",
+    "platform": "linux",
+    "arch": "x64",
+    "source": {
+      "algorithm": "sha256(path\\0content\\0)",
+      "hash": "b6319f518145938c55ae4f6bd12d4ef48d199cea778739e52e93a3d5d9933a51",
+      "files": 6285,
+      "head": "48e577c27cc9b6abb8d7f6b3711f6dcc0a258a51",
+      "headTree": "d94eae2401e1658bdb306ddcfa4df5aa3ca888c4",
+      "dirty": true
+    },
+    "cases": {
+      "path": "scripts/qa/fixtures/eval-performance.json",
+      "bytes": 735,
+      "sha256": "870f58fa648f25d77cbcff1e1c44b8daafc031c9ab45c4bff30be36332cea92e"
+    },
+    "eval_binary": {
+      "path": "target/release/deps/performance-aef2fb5c7e7a16ec",
+      "bytes": 2261040,
+      "sha256": "aeb37377c50825d92554e1ff8d0ddd67783a1b0dae01fc20ff44fa70bdddb39f"
+    },
+    "node_binary": {
+      "path": "../../.local/share/mise/installs/node/26.7.0/bin/node",
+      "bytes": 147870928,
+      "sha256": "ad19784f7e90ba789a099eccba77ede8dc90a778c424f1c10a70fed3ff903fdc"
+    },
+    "method": "Two native runs; no reference comparison. Each process takes 31 warm samples after 3 warmups per case (62 combined), plus five cold/reset samples per language (10 combined). The native Rust Session uses the installed Node.js worker. Timings include the public eval lifecycle and output retention with immediate host callbacks. Coordinator and full application overhead are outside this engine measurement.",
+    "source_unchanged": true
+  }
+}

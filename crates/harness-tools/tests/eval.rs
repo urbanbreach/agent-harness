@@ -76,7 +76,7 @@ impl Tool for Probe {
 }
 
 #[tokio::test]
-#[ignore = "requires native eval worker; scripts/test-lanes.sh eval"]
+#[ignore = "requires Node.js 24+; scripts/test-lanes.sh eval"]
 async fn eval_shares_capacity_preserve_order_permissions_and_cancellation(
 ) -> Result<(), Box<dyn std::error::Error>> {
     signoff()?;

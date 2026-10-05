@@ -1,4 +1,4 @@
-use harness_eval::{Session, SessionOptions, Settings, WorkerCommand};
+use harness_eval::{Session, SessionOptions, Settings};
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, time::Instant};
 
@@ -48,11 +48,7 @@ async fn perf_native_eval() -> Result {
         .ok_or("HARNESS_EVAL_PERF_OUTPUT is required")?;
     let directory = tempfile::tempdir()?;
     let session = Session::new(SessionOptions {
-        worker: WorkerCommand {
-            executable: env!("CARGO_BIN_EXE_harness-eval-worker").into(),
-            args: Vec::new(),
-            environment: std::env::vars_os().collect(),
-        },
+        environment: std::env::vars_os().collect(),
         cwd: directory.path().into(),
         artifacts: directory.path().join("artifacts"),
         local_dir: directory.path().join("local"),

@@ -43,6 +43,11 @@ cargo build -p harness --locked
 ./target/debug/harness tui --mock
 ```
 
+JavaScript `eval` requires [Node.js 24 or newer](https://nodejs.org/en/download)
+on `PATH`. Install the current Node.js LTS release and check `node --version`.
+Harness includes its eval scripts and parser; no npm install is needed to use
+eval. Python eval also needs `python3` or `python`.
+
 Type `hello` and press Enter to receive the scripted reply. Press `Ctrl+p` for
 the command palette. The mock provider accepts fixture prompts, so use a live
 provider for your own coding tasks.

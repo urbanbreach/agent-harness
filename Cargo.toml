@@ -331,7 +331,6 @@ debug = "line-tables-only"
 
 [profile.release]
 opt-level = 3
-# The embedded runtime makes monolithic LTO prohibitively slow; optimize modules in parallel.
 lto = "thin"
 codegen-units = 1
 strip = "symbols"

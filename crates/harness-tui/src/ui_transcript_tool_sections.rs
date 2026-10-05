@@ -12,6 +12,8 @@ mod content;
 mod details;
 #[path = "ui_transcript_tool_sections/diffs.rs"]
 mod diffs;
+#[path = "ui_transcript_tool_sections/input.rs"]
+mod input;
 #[cfg(test)]
 #[path = "ui_transcript_tool_sections/tests.rs"]
 mod tests;
@@ -87,7 +89,8 @@ pub(super) fn build_tool_call_section(
     if section.cancellation_requested {
         section.rail_motion = ToolRailMotion::Settled;
     }
-    if matches!(section.rail_motion, ToolRailMotion::Running { .. })
+    if !tool_call.input_is_streaming()
+        && matches!(section.rail_motion, ToolRailMotion::Running { .. })
         && matches!(
             tool_family(&section),
             TranscriptToolFamily::Read
@@ -179,6 +182,11 @@ pub(super) fn build_transcript_tool_call_section(
         rail_motion: ToolRailMotion::Settled,
         cancellation_requested: false,
     };
+    if tool.input_is_streaming() {
+        input::populate(&mut row, tool);
+        row.rail_motion = tool_rail_motion(tool, app, true);
+        return row;
+    }
     let generic = content::populate(&mut row, tool, app, visible, stacked_diffs, session_path);
     details::finish(&mut row, tool, app, generic && visible, visible);
     content::subtitle(&mut row.header, tool, app, expanded, session_path);

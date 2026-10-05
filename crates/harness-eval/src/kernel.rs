@@ -30,9 +30,8 @@ impl Process {
             .prefix("kernel-output-")
             .tempdir_in(&options.artifacts)?;
         let mut command = if language == "js" {
-            let mut command = Command::new(&options.worker.executable);
-            command.args(&options.worker.args);
-            command
+            let executable = interpreter(options, &["node"]).map_err(|_| "JavaScript eval requires Node.js 24 or newer on PATH; install Node.js and restart Harness")?;
+            crate::javascript::command(&executable, capture.path())?
         } else if language == "py" {
             let mut command = Command::new(interpreter(options, &["python3", "python"])?);
             command.args([
@@ -65,13 +64,10 @@ impl Process {
         command
             .current_dir(&options.cwd)
             .env_clear()
-            .envs(
-                options
-                    .worker
-                    .environment
-                    .iter()
-                    .filter(|(name, _)| !name.to_string_lossy().starts_with("PI_")),
-            )
+            .envs(options.environment.iter().filter(|(name, _)| {
+                !name.to_string_lossy().starts_with("PI_")
+                    && (language != "js" || *name != "NODE_OPTIONS")
+            }))
             .envs(&options.session_env)
             .env("HARNESS_EVAL_CAPTURE_DIR", capture.path())
             .stdin(Stdio::piped())
@@ -238,13 +234,15 @@ impl Process {
 
 fn interpreter(options: &SessionOptions, names: &[&str]) -> Result<std::path::PathBuf> {
     let path = options
-        .worker
         .environment
         .get(std::ffi::OsStr::new("PATH"))
         .ok_or("eval interpreter PATH is unset")?;
     for name in names {
         for directory in std::env::split_paths(path) {
-            let candidate = options.cwd.join(directory).join(name);
+            let candidate = options
+                .cwd
+                .join(directory)
+                .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
             let Ok(metadata) = std::fs::metadata(&candidate) else {
                 continue;
             };

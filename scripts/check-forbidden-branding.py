@@ -56,6 +56,8 @@ ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
     Path("scripts/check-forbidden-branding.py"): set(),
     Path("configs/config.json"): {710, 835},
     Path("configs/provider-catalog.generated.json"): {1},
+    # Upstream Unicode category Pi means Initial_Punctuation.
+    Path("crates/harness-eval/vendor/acorn.cjs"): {4035},
     Path("crates/harness-core/src/config/public.rs"): {
         60, 193, 315, 477, 483, 489, 497, 660,
     },
