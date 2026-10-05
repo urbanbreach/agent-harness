@@ -4,10 +4,50 @@ use std::time::Duration;
 use harness_tui::{
     live_update_channel, run_tui_with_options, LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions,
 };
+use serde_json::json;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scenario = std::env::args().nth(1).unwrap_or_else(|| "idle".into());
     let (sender, update_rx) = live_update_channel();
+    if scenario == "eval" {
+        let mut seq = 0;
+        let mut send = |kind, data| -> Result<(), Box<dyn std::error::Error>> {
+            seq += 1;
+            sender.send(LiveUpdate::Event(Box::new(serde_json::from_value(
+                json!({
+                    "delivery": "durable",
+                    "event": {
+                        "schema_version": 1, "event_id": format!("probe-{seq}"), "seq": seq,
+                        "run_id": "probe", "mono_ms": seq, "ts": null,
+                        "actor": {"kind": "worker", "agent_id": "worker"},
+                        "correlation_id": "turn", "causation_id": null, "stream_key": null,
+                        "payload": {"event_type": kind, "data": data}
+                    }
+                }),
+            )?)))?;
+            Ok(())
+        };
+        send(
+            "user_message_submitted",
+            json!({"request_id":"turn", "text":"Check the workspace"}),
+        )?;
+        send(
+            "provider_request_started",
+            json!({"request_id":"turn", "provider_id":"mock", "model_id":"mock", "prompt_summary":"Fixture", "request_digest":"fixture", "metadata":null}),
+        )?;
+        for id in 0..3 {
+            let tool_call_id = format!("eval-{id}");
+            send(
+                "tool_call_requested",
+                json!({"tool_call_id":tool_call_id, "tool_id":"eval",
+                "args_summary":json!({"language":"js", "summary":"Check workspace", "code":"const result = await tools.shell.run({command: 'pwd'});\nconsole.log(result);"}).to_string(), "args_digest":"fixture"}),
+            )?;
+            send(
+                "tool_call_started",
+                json!({"tool_call_id":tool_call_id, "tool_id":"eval", "metadata":null}),
+            )?;
+        }
+    }
     let mode = if matches!(scenario.as_str(), "idle" | "handoff" | "handoff_failure") {
         TuiMode::Replay {
             run_dir: std::env::current_dir()?,

@@ -37,11 +37,14 @@ and [Wild 0.10.0](docs/testing/build-performance.md) before building:
 ```bash
 git clone https://github.com/urbanbreach/agent-harness.git
 cd agent-harness
-cargo build -p harness --locked
+cargo build --release -p harness --locked
 
 # Try the terminal UI without credentials or network access.
-./target/debug/harness tui --mock
+./target/release/harness tui --mock
 ```
+
+Use the release build for interactive sessions. Unoptimized development builds
+spend substantially more CPU rendering active tools and streaming text.
 
 JavaScript `eval` requires [Node.js 24 or newer](https://nodejs.org/en/download)
 on `PATH`. Install the current Node.js LTS release and check `node --version`.
