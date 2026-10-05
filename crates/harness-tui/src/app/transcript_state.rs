@@ -268,7 +268,9 @@ impl AppState {
     }
 
     pub(crate) fn close_transcript_viewer(&mut self) -> bool {
-        if self.inspected_command.take().is_some() {
+        if let Some(id) = self.inspected_command.take() {
+            self.streaming_text
+                .remove(&super::streaming::StreamKey::Command(id));
             self.emit_ui_intent(UiIntent::InspectCommand { task_id: None });
         }
         let Some(viewer) = self.transcript_viewer.take() else {

@@ -11,6 +11,9 @@ const BACKGROUND_CADENCE: Duration = Duration::from_millis(264);
 impl AppState {
     pub(crate) fn set_reduced_motion(&mut self, reduced_motion: bool) {
         self.reduced_motion = reduced_motion;
+        if reduced_motion {
+            self.settle_streaming_text();
+        }
         if self
             .transcript_view
             .tool_motion
@@ -89,6 +92,13 @@ impl AppState {
             plan = plan.merge(MotionDemand::until(deadline.saturating_duration_since(now)));
         }
         if !self.reduced_motion {
+            if self
+                .streaming_text
+                .values()
+                .any(super::streaming_text::StreamingText::pending)
+            {
+                plan = plan.merge(MotionDemand::fast(super::streaming_text::FRAME_INTERVAL));
+            }
             plan = if self.fast_visible_motion_active() {
                 plan.merge(MotionDemand::fast(fast_cadence))
             } else if self.startup_welcome_transition_pending()
@@ -120,6 +130,7 @@ impl AppState {
     }
 
     pub(crate) fn sample_motion_clock(&mut self) {
+        self.advance_streaming_text();
         if self.reduced_motion {
             self.sampled_motion_elapsed = Duration::ZERO;
             self.transcript_view.transcript_animation_phase = 0;

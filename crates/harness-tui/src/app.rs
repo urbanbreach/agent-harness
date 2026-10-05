@@ -145,6 +145,8 @@ mod question_prompt;
 mod recorded_artifacts;
 mod secondary_surfaces;
 pub(crate) mod session_history;
+mod streaming;
+mod streaming_text;
 pub(crate) mod subagents;
 pub(crate) use session_history::format_relative_age;
 pub(crate) mod pane_query;
@@ -642,6 +644,7 @@ pub struct AppState {
     sampled_motion_elapsed: Duration,
     motion_revision: u64,
     reduced_motion: bool,
+    streaming_text: BTreeMap<streaming::StreamKey, streaming_text::StreamingText>,
     now_fn: Arc<dyn Fn() -> Instant + Send + Sync>,
     on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
 }
@@ -898,6 +901,7 @@ impl Default for AppState {
             sampled_motion_elapsed: Duration::ZERO,
             motion_revision: 0,
             reduced_motion: false,
+            streaming_text: BTreeMap::new(),
             now_fn: Arc::new(Instant::now),
             on_ui_intent: None,
         }
@@ -1686,6 +1690,7 @@ impl AppState {
     }
 
     pub fn replace_events(&mut self, events: Vec<EventEnvelopeV1>) {
+        self.streaming_text.clear();
         self.recorded_artifacts.clear();
         for event in &events {
             self.cache_recorded_artifacts(event);
@@ -1769,6 +1774,7 @@ impl AppState {
         let previous_phase = self.current_live_turn_phase();
         self.note_live_fragment_timing(event);
         self.projection.ingest_live_event(event);
+        self.observe_streaming_text(event);
         self.sync_live_turn_phase_timing(previous_phase);
         self.sync_transcript_state(true);
         if self.status_dashboard_is_active() {
@@ -1799,6 +1805,10 @@ impl AppState {
         if self.projection.has_seen_seq(event.seq) {
             return;
         }
+
+        // Durable boundaries settle display prefixes before canonical content replaces them.
+        self.streaming_text
+            .retain(|key, _| matches!(key, streaming::StreamKey::Command(_)));
 
         let permission_was_pending = !historical && self.active_permission().is_some();
         self.starting_session_seed = false;

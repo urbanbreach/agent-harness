@@ -145,7 +145,7 @@ pub struct SessionProjection {
     fallback_profile_label: String,
     seen_seqs: BTreeSet<u64>,
     transient_assistants: BTreeMap<String, TransientAssistantState>,
-    live_evals: BTreeMap<String, (String, serde_json::Value)>,
+    pub(super) live_evals: BTreeMap<String, (String, serde_json::Value)>,
     provider_phases: BTreeMap<String, ProviderPhase>,
     reasoning_timings: BTreeMap<u64, ReasoningTiming>,
     pub(crate) pending_permissions: BTreeMap<String, PendingPermission>,

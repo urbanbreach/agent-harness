@@ -17,6 +17,7 @@ use harness_tui::app::AppState;
 use harness_tui::render_test::render_to_string;
 use harness_tui::ui;
 use ratatui::layout::Rect;
+use std::time::Duration;
 
 #[path = "typed_runtime_event_settle/edits.rs"]
 mod edits;
@@ -61,10 +62,17 @@ fn render(app: &AppState) -> String {
     })
 }
 
+fn advance_stream(app: &mut AppState) {
+    for _ in 0..40 {
+        app.advance_wall_clock_for_motion_evidence(Duration::from_millis(16));
+    }
+}
+
 #[test]
 fn canonical_response_text_coalesces_before_its_tools_between_steps() {
     // Given: a turn that has already called a tool.
     let mut app = AppState::new_live(None, false, None);
+    app.set_reduced_motion_for_evidence(true);
     app.ingest_runtime_event(durable(
         1,
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
@@ -172,6 +180,7 @@ fn canonical_response_text_coalesces_before_its_tools_between_steps() {
 fn typed_live_fragments_render_then_final_commit_settles_them() {
     // Given: a live turn with its durable request barrier.
     let mut app = AppState::new_live(None, false, None);
+    app.restart_motion_epoch_for_evidence();
     app.ingest_runtime_event(durable(
         1,
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
@@ -199,6 +208,14 @@ fn typed_live_fragments_render_then_final_commit_settles_them() {
             delta: "draft reasoning".to_string(),
         },
     ));
+    assert!(!render(&app).contains("draft reasoning"));
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(112));
+    let partial = render(&app);
+    assert!(
+        partial.contains("dra") && !partial.contains("draft reasoning"),
+        "{partial}"
+    );
+    advance_stream(&mut app);
     let thinking = render(&app);
     assert!(thinking.contains("draft reasoning"), "{thinking}");
     app.ingest_runtime_event(live(
@@ -219,6 +236,8 @@ fn typed_live_fragments_render_then_final_commit_settles_them() {
     ));
 
     // Then: live content is visible but is not added to durable event history.
+    assert!(!render(&app).contains("draft answer"));
+    advance_stream(&mut app);
     let transient = render(&app);
     assert!(transient.contains("draft answer"), "{transient}");
     assert!(transient.contains("draft"), "{transient}");
@@ -229,6 +248,15 @@ fn typed_live_fragments_render_then_final_commit_settles_them() {
         "argument fragments must not create placeholder tool rows\n{transient}"
     );
     assert_eq!(app.selected_event().map(|event| event.seq), Some(2));
+
+    // Commit while another suffix is still buffered. No later tick may restore it.
+    app.ingest_runtime_event(live(
+        "buffered-tail",
+        LiveEventV1::ProviderTextDelta {
+            request_id: "provider-1".into(),
+            delta: " unfinished suffix".into(),
+        },
+    ));
 
     // When: the durable assistant commit arrives with canonical content.
     app.ingest_runtime_event(durable(
@@ -265,6 +293,8 @@ fn typed_live_fragments_render_then_final_commit_settles_them() {
     assert_eq!(settled.matches("Reading 1 file").count(), 1, "{settled}");
     assert!(!settled.contains("Read draft"), "{settled}");
     assert_eq!(app.selected_event().map(|event| event.seq), Some(3));
+    advance_stream(&mut app);
+    assert_eq!(render(&app), settled);
 
     let canonical = app
         .canonical_projection()

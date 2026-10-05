@@ -370,13 +370,17 @@ impl AppState {
         if self.inspected_command.as_deref() != Some(snapshot.result.task_id.as_str()) {
             return false;
         }
-        let Some(viewer) = &mut self.transcript_viewer else {
+        if self.transcript_viewer.is_none() {
             return false;
-        };
-        let text = format!(
-            "{}\n{}\n\n{}{}{}",
-            snapshot.result.command,
-            snapshot.result.status,
+        }
+        let key = super::streaming::StreamKey::Command(snapshot.result.task_id.to_string());
+        let header = crate::ui::safe_product_text(&format!(
+            "{}\n{}\n\n",
+            snapshot.result.command, snapshot.result.status
+        ));
+        let text = crate::ui::safe_product_text(&format!(
+            "{}{}{}{}",
+            header,
             snapshot.stdout,
             snapshot.stderr,
             if snapshot.result.truncated {
@@ -384,7 +388,21 @@ impl AppState {
             } else {
                 ""
             }
-        );
+        ));
+        if !snapshot.is_terminal() && !self.reduced_motion && self.presentation_is_live() {
+            let now = self.now();
+            let initial = header.len().min(text.len());
+            self.streaming_text
+                .entry(key)
+                .and_modify(|stream| stream.update(&text, now))
+                .or_insert_with(|| super::streaming_text::StreamingText::new(&text, initial, now));
+            self.refresh_streaming_command();
+            return true;
+        }
+        self.streaming_text.remove(&key);
+        let Some(viewer) = &mut self.transcript_viewer else {
+            return false;
+        };
         let _ = viewer.update_content(crate::transcript_block_viewer::ViewerBlockContent::new(
             &text,
             Some(&text),

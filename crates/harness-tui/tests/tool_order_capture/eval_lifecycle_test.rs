@@ -31,6 +31,7 @@ fn tool_input_streams_before_execution_and_follows_the_wrapped_tail() -> Result<
                 .collect::<String>();
             assert!(text.contains("writing"), "{name}: {text}");
         }
+        state.action(&json!({"op":"advance", "ms":2000}), &fixture)?;
         let screen = render(&mut state.app, 40, 30)?;
         let text = screen
             .content
@@ -76,6 +77,7 @@ fn tool_input_streams_before_execution_and_follows_the_wrapped_tail() -> Result<
 fn concurrent_input_previews_keep_arrival_order_and_the_active_field_visible() -> Result<()> {
     let fixture: Value = serde_json::from_str(FIXTURE)?;
     let mut state = Capture::new(&fixture)?;
+    state.app.set_reduced_motion_for_evidence(true);
     for op in ["request", "start", "finish"] {
         state.action(&json!({"op":op, "id":"a"}), &fixture)?;
     }
@@ -117,15 +119,23 @@ fn streaming_input_redacts_nested_credentials_and_terminal_controls() -> Result<
         state.live("provider_tool_input_delta", json!({
             "request_id":"provider", "tool_call_id":"draft", "tool_name":"custom.inspect", "delta":fragment
         }))?;
-        let screen = render(&mut state.app, 120, 40)?;
-        let text = screen
+        for _ in 0..30 {
+            state.action(&json!({"op":"advance", "ms":64}), &fixture)?;
+            let screen = render(&mut state.app, 120, 40)?;
+            let text = screen
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            for hidden in ["NEVER_SHOW", "/private/fixture", "[31m", "\\u00"] {
+                assert!(!text.contains(hidden), "{hidden} leaked: {text}");
+            }
+        }
+        let text = render(&mut state.app, 120, 40)?
             .content
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();
-        for hidden in ["NEVER_SHOW", "/private/fixture", "[31m", "\\u00"] {
-            assert!(!text.contains(hidden), "{hidden} leaked: {text}");
-        }
         assert!(text.contains("<redacted>"), "{text}");
     }
     let screen = render(&mut state.app, 120, 40)?;
@@ -137,6 +147,53 @@ fn streaming_input_redacts_nested_credentials_and_terminal_controls() -> Result<
     assert!(
         text.contains("visible text") && text.contains("note.txt"),
         "{text}"
+    );
+    Ok(())
+}
+
+#[test]
+fn eval_output_reveals_the_cell_text_and_settles_on_completion() -> Result<()> {
+    let fixture: Value = serde_json::from_str(FIXTURE)?;
+    let mut state = Capture::new(&fixture)?;
+    state.tools.insert("eval".into(), json!({
+        "tool":"eval", "args":{"language":"js","summary":"Inspect output","code":"console.log('hello')"},
+        "output":"Eval completed"
+    }));
+    for op in ["request", "start", "open"] {
+        state.action(&json!({"op":op, "id":"eval"}), &fixture)?;
+    }
+    state.live("eval_progress", json!({
+        "tool_call_id":"eval", "output":"1/1 cells running\n[1] js Inspect output running\nhello from the cell",
+        "details":{"cells":[{"output":"hello from the cell"}]}
+    }))?;
+    let text = |app: &mut AppState| -> Result<String> {
+        Ok(render(app, 120, 40)?
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect())
+    };
+    assert!(!text(&mut state.app)?.contains("hello from the cell"));
+    state.action(&json!({"op":"advance", "ms":112}), &fixture)?;
+    let partial = text(&mut state.app)?;
+    assert!(
+        partial.contains("hel") && !partial.contains("hello from the cell"),
+        "{partial}"
+    );
+    state.action(&json!({"op":"advance", "ms":600}), &fixture)?;
+    let revealed = text(&mut state.app)?;
+    assert!(revealed.contains("hello from the cell"), "{revealed}");
+    assert!(!revealed.contains("1/1 cells running"), "{revealed}");
+    state.action(&json!({"op":"finish", "id":"eval"}), &fixture)?;
+    state.live("eval_progress", json!({
+        "tool_call_id":"eval", "output":"late output", "details":{"cells":[{"output":"late output"}]}
+    }))?;
+    assert!(!text(&mut state.app)?.contains("late output"));
+    state.action(&json!({"op":"advance", "ms":600}), &fixture)?;
+    let finished = text(&mut state.app)?;
+    assert!(
+        finished.contains("Eval completed") && !finished.contains("hello from the cell"),
+        "{finished}"
     );
     Ok(())
 }

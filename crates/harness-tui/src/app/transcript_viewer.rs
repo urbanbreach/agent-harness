@@ -3,7 +3,7 @@ use crate::transcript_selection::{CellPoint, NavigationKey, Viewport};
 
 impl AppState {
     pub(super) fn refresh_transcript_viewer(&mut self) {
-        if self.transcript_viewer.is_none() {
+        if self.transcript_viewer.is_none() || self.inspected_command.is_some() {
             return;
         }
         let Some(entry) = self.selected_transcript_entry() else {

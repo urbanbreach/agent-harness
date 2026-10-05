@@ -247,13 +247,13 @@ impl AppState {
         if let [id] = tool_ids.as_slice()
             && let Some(tool) = self.tool_call_entry(id)
         {
-            return ui::recorded_tool_viewer_content(tool);
+            return ui::recorded_tool_viewer_content(&self.smoothed_tool(tool));
         }
         if !tool_ids.is_empty() {
             let text = tool_ids
                 .iter()
                 .filter_map(|id| self.tool_call_entry(id))
-                .map(ui::recorded_tool_viewer_text)
+                .map(|tool| ui::recorded_tool_viewer_text(&self.smoothed_tool(tool)))
                 .collect::<Vec<_>>()
                 .join("\n\n");
             return crate::transcript_block_viewer::ViewerBlockContent::new(&text, Some(&text));
