@@ -229,5 +229,11 @@ fn canonical_arguments(summary: &str) -> String {
     serde_json::from_str::<serde_json::Value>(summary)
         .ok()
         .filter(serde_json::Value::is_object)
-        .map_or_else(|| "{}".into(), |value| value.to_string())
+        .map_or_else(
+            || "{}".into(),
+            |mut value| {
+                value.sort_all_objects();
+                value.to_string()
+            },
+        )
 }

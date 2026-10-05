@@ -920,7 +920,10 @@ pub(crate) fn format_detail_payload(payload: &str) -> String {
     }
 
     match serde_json::from_str::<serde_json::Value>(trimmed) {
-        Ok(value) => serde_json::to_string_pretty(&value).unwrap_or_else(|_| trimmed.to_string()),
+        Ok(mut value) => {
+            value.sort_all_objects();
+            serde_json::to_string_pretty(&value).unwrap_or_else(|_| trimmed.to_string())
+        }
         Err(_) => trimmed.to_string(),
     }
 }
