@@ -48,10 +48,12 @@ impl Runtime {
         parent: Option<String>,
         id: Option<String>,
         tool_id: String,
-        args: Value,
+        mut args: Value,
         reply: Option<Reply<ToolResult>>,
     ) -> Result<String, CoordinatorError> {
         self.accepting()?;
+        // Keep permission digests independent of dependency-selected JSON map ordering.
+        args.sort_all_objects();
         if self.stopped_sessions.contains(self.info()?.run_id.as_str())
             || actor.agent_id.as_ref().is_some_and(|id| {
                 self.stopped_sessions.contains(id) || self.killed_agents.contains(id)

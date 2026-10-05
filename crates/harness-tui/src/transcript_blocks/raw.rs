@@ -46,7 +46,9 @@ impl RawDisclosure {
 
     pub fn from_json(source: &Value) -> Self {
         let mut redactions = Vec::new();
-        let payload = RawPayload::Json(redact_value(source, "$", &mut redactions));
+        let mut value = redact_value(source, "$", &mut redactions);
+        value.sort_all_objects();
+        let payload = RawPayload::Json(value);
         Self {
             payload,
             redactions,
