@@ -1,5 +1,36 @@
 # Build performance
 
+## Interactive CPU usage
+
+Use `cargo build --release -p harness --locked` and `./target/release/harness`
+for interactive sessions. The development profile below prioritizes rebuild
+time and leaves rendering unoptimized.
+
+On 2026-10-05, the offline runtime probe displayed three running eval calls at
+160 × 48 cells. Two four-second samples after warm-up gave these results:
+
+| Build | CPU, percent of one core | Frames per second | Terminal bytes per sample |
+| --- | ---: | ---: | ---: |
+| Development, unoptimized | 53.75–54.25 | 250 | 425,320 |
+| Development, only TUI crate at optimization level 1 | 44.50–44.75 | 250 | 425,320 |
+| Release | 9.00 | 250 | 425,320 |
+
+The probe executes no eval code. This measures the terminal runtime and renderer,
+including tool animation, without a terminal emulator or provider. The release
+build reduced CPU by about 83% with the same frame count and output size. No
+animation, input, or streaming cadence was changed. The development settings
+remain unchanged to preserve rebuild speed.
+
+Reproduce the display workload with:
+
+```bash
+cargo build --release -p harness-tui --example resource_probe
+python3 scripts/measure-tui-runtime.py --binary target/release/examples/resource_probe \
+  --scenario eval --seconds 4 --repetitions 2 --output /tmp/harness-eval-display-cpu.json
+```
+
+## Rebuild timings
+
 Measured on 2026-09-23 at commit `4f966051d3ceb1209f8feb7cf4afbd5c61666f63`.
 
 ## Selected settings

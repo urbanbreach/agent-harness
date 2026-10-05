@@ -83,7 +83,7 @@ def measure(binary, scenario, seconds, cadence):
                 child.wait()
             os.close(master)
     intervals = sorted((right - left) * 1000 for left, right in zip(timestamps, timestamps[1:]))
-    if scenario in ("typing", "burst", "slow-burst") and not timestamps:
+    if scenario in ("typing", "burst", "slow-burst", "eval") and not timestamps:
         raise RuntimeError(f"{scenario} produced no visible frames")
     return {"scenario": scenario, "seconds": seconds, "cadence_ms": cadence,
             "cpu_percent_one_core": (after[0] - before[0]) / seconds * 100,
@@ -100,11 +100,13 @@ def main():
     parser.add_argument("--seconds", type=float, default=4)
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--cadence", type=int)
+    scenarios = ("idle", "startup", "typing", "burst", "slow-burst", "eval")
+    parser.add_argument("--scenario", choices=scenarios)
     args = parser.parse_args()
     if args.seconds <= 0 or args.repetitions < 1:
         parser.error("seconds and repetitions must be positive")
     samples = []
-    for scenario in ("idle", "startup", "typing", "burst", "slow-burst"):
+    for scenario in (args.scenario,) if args.scenario else scenarios:
         for _ in range(args.repetitions):
             result = measure(args.binary.resolve(), scenario, args.seconds, args.cadence)
             samples.append(result)
