@@ -95,10 +95,19 @@ approval. These checks do not provide race-free filesystem confinement.
 The caller needs the `spawn_subagent` tool and `task` permission to start a child
 or resume completed child context.
 Each child uses its own role policy and tools under the shared project policy.
-A parent's role restrictions are not copied into the child. Nested batch calls
+A parent's role restrictions are not copied into the child. Nested eval tool calls
 use the same coordinator checks. Skills provide instructions, not authority.
 See [agents and tasks](../operations/generic-agent-and-tasks.md).
 
 Approving bash permits host commands within the configured shell parser and
 allowlist. Network tools can transmit data to their configured services. Optional
 [OS confinement](../tools/shell.md) remains separate from operator approval.
+
+## Eval permission
+
+`permission.eval` accepts `allow`, `ask`, or `deny` and defaults to `ask`.
+An approval permits arbitrary local code, imports, subprocesses, and direct
+filesystem/network access from a persistent interpreter. It is not a sandbox.
+The shipped read-only profiles do not include eval. Calls through `tool.<name>`
+still use the caller's normal toolset and permission checks; an eval approval
+does not grant any nested tool permission. See [eval](../tools/eval.md).
