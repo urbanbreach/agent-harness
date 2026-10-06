@@ -200,6 +200,22 @@ pub(crate) fn execute(
                 None => return Err("choose an auth provider: harness auth login <provider>".into()),
             };
             let id = resolve(&name)?;
+            let method = login.method.unwrap_or(if login.api_key_stdin {
+                Method::ApiKey
+            } else if id == ProviderId::codex() {
+                Method::Browser
+            } else if id == ProviderId::github_copilot() {
+                Method::Device
+            } else {
+                Method::ApiKey
+            });
+            // The OpenAI catalog offers ChatGPT OAuth, whose credentials belong to Codex.
+            let id =
+                if id.as_str() == "openai" && matches!(method, Method::Browser | Method::Device) {
+                    ProviderId::codex()
+                } else {
+                    id
+                };
             if let Some(token) = login.mock_token {
                 let refresh = login.mock_refresh_token.unwrap_or_else(|| token.clone());
                 let mut credential = StoredCredential::oauth(
@@ -215,15 +231,6 @@ pub(crate) fn execute(
                     .map_err(|e| e.to_string())?;
                 return Ok(());
             }
-            let method = login.method.unwrap_or(if login.api_key_stdin {
-                Method::ApiKey
-            } else if id == ProviderId::codex() {
-                Method::Browser
-            } else if id == ProviderId::github_copilot() {
-                Method::Device
-            } else {
-                Method::ApiKey
-            });
             if matches!(method, Method::ApiKey) {
                 let token = if login.api_key_stdin {
                     let mut token = String::new();

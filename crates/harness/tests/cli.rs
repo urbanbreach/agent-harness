@@ -11,6 +11,66 @@ use std::{
 };
 
 #[test]
+fn openai_login_routes_oauth_to_codex_and_keeps_api_keys_separate(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use harness_core::auth::{CredentialStore, ProviderId, StoredCredential};
+
+    for method in ["browser", "device", "api-key"] {
+        let root = tempfile::tempdir()?;
+        let data = root.path().join("data");
+        let config = root.path().join("fixture.json");
+        fs::write(
+            &config,
+            r#"{"provider":{"openai":{"type":"openai_compatible"}}}"#,
+        )?;
+        let store = CredentialStore::new(data.join("harness"));
+        store.save(&StoredCredential::oauth(
+            ProviderId::codex(),
+            "old-access-token",
+            "old-refresh-token",
+            None,
+            "2026-09-28T00:00:00Z",
+        ))?;
+        let deps = CliDeps::real()
+            .with_current_dir(root.path().into())
+            .with_env("HARNESS_DATA_HOME", data.to_str().ok_or("data path")?)
+            .without_env("HARNESS_CONFIG_CONTENT");
+        let mut args = vec![
+            "login".into(),
+            "openai".into(),
+            "--method".into(),
+            method.into(),
+        ];
+        if method == "api-key" {
+            args.push("--api-key-stdin".into());
+        } else {
+            args.extend(["--mock-token".into(), "new-access-token".into()]);
+        }
+        let output =
+            harness::execute_auth_backend_args(&args, Some(config), None, "new-api-key", &deps);
+        assert_eq!(output.code, 0, "{}", output.stderr);
+        let codex = store
+            .load(&ProviderId::codex())?
+            .ok_or("Codex credential missing")?;
+        let openai = store.load(&ProviderId::parse("openai").ok_or("OpenAI provider")?)?;
+        if method == "api-key" {
+            assert_eq!(codex.access_token.as_deref(), Some("old-access-token"));
+            assert_eq!(
+                openai.ok_or("API key missing")?.api_key.as_deref(),
+                Some("new-api-key")
+            );
+        } else {
+            assert_eq!(codex.access_token.as_deref(), Some("new-access-token"));
+            assert!(
+                openai.is_none(),
+                "ChatGPT login must replace the Codex credential"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn invalid_prompt_setup_fails_before_creating_a_session() -> Result<(), Box<dyn std::error::Error>>
 {
     for kind in ["environment", "input", "run_input"] {
