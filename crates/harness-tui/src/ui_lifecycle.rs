@@ -353,7 +353,7 @@ fn welcome_action_emphasis(app: &AppState, index: usize) -> WelcomeActionEmphasi
 
 fn welcome_changelog_section_style(theme: &Theme, app: &AppState) -> Style {
     let surface = theme.surface.canvas;
-    if app.welcome_state().hovered_action() == Some(2) {
+    if app.welcome_state().changelog_header_hovered() {
         Style::default().fg(theme.text.primary).bg(surface)
     } else {
         Style::default()

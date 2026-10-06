@@ -602,10 +602,11 @@ impl AppState {
                     .handle(crate::welcome_surface::WelcomeInput::FocusPrompt);
                 self.focus = Focus::Prompt;
             }
-            crate::welcome_surface::WelcomeRegion::Menu => {
+            crate::welcome_surface::WelcomeRegion::Menu
+            | crate::welcome_surface::WelcomeRegion::ChangelogHeader => {
                 if let Some(index) = hit.item_index {
                     let was_expanded = self.startup_welcome_expanded();
-                    self.welcome.set_hovered_action(Some(index));
+                    self.welcome.set_hovered_hit(Some(hit));
                     self.welcome.focus_menu_item(index);
                     if self.welcome.selected_action()
                         == Some(crate::welcome_surface::WelcomeAction::Changelog)
@@ -1222,7 +1223,7 @@ impl AppState {
     }
 
     fn handle_surface_mouse_move(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
-        let hovered_welcome_action = self
+        let hovered_welcome_hit = self
             .startup_shell_visible()
             .then(|| {
                 let startup_area = crate::layout::FrameLayoutPlan::for_app(self, frame_area)
@@ -1230,10 +1231,9 @@ impl AppState {
                     .unwrap_or(frame_area);
                 self.welcome_hit_map(startup_area)
                     .hit(mouse.column, mouse.row)
-                    .and_then(|hit| hit.item_index)
             })
             .flatten();
-        let welcome_hover_changed = self.welcome.set_hovered_action(hovered_welcome_action);
+        let welcome_hover_changed = self.welcome.set_hovered_hit(hovered_welcome_hit);
         let hovered_live_turn_stop = ui::live_turn_stop_rect(self, frame_area)
             .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
         let hovered_live_turn_background = ui::live_turn_background_rect(self, frame_area)

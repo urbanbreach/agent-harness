@@ -5,30 +5,66 @@ fn startup_with_affordances_visible() -> AppState {
 }
 
 pub(super) fn welcome_mouse_move_applies_hover_state_to_the_action_row() {
-    let mut app = startup_with_affordances_visible();
-    let (column, row) = transcript_click_position(&app, "New worktree");
+    for frame_area in [TEST_FRAME_AREA, Rect::new(0, 0, 80, 40)] {
+        let mut app = startup_with_affordances_visible();
+        let startup_area = FrameLayoutPlan::for_app(&app, frame_area)
+            .transcript
+            .unwrap_or_abort();
+        let layout = app.welcome_layout(startup_area);
+        let header = layout.changelog_header_rect.unwrap_or_abort();
+        let mut terminal =
+            Terminal::new(TestBackend::new(frame_area.width, frame_area.height))
+                .unwrap_or_abort();
 
-    let changed = app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Moved,
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
+        for (target, header_hovered, hovered_action) in [
+            (layout.action_rects[0], false, Some(0)),
+            (layout.action_rects[2], false, Some(2)),
+            (header, true, None),
+            (layout.action_rects[2], false, Some(2)),
+            (header, true, None),
+            ((0, 0, 1, 1), false, None),
+        ] {
+            let changed = app.handle_mouse(
+                MouseEvent {
+                    kind: MouseEventKind::Moved,
+                    column: target.0,
+                    row: target.1,
+                    modifiers: KeyModifiers::NONE,
+                },
+                frame_area,
+                None,
+                None,
+                None,
+            );
+            terminal
+                .draw(|frame| render_app(frame, &app))
+                .unwrap_or_abort();
+            let buffer = terminal.backend().buffer();
+            let heading = &buffer[(header.0, header.1)];
 
-    assert_eq!(
-        (
-            changed,
-            app.welcome_state().hovered_action(),
-            rendered_cell_bg(&app, column, row),
-        ),
-        (true, Some(0), app.theme().surface.card)
-    );
+            assert!(changed, "moving to {target:?} must redraw at {frame_area:?}");
+            assert_eq!(
+                (heading.fg, heading.modifier.contains(Modifier::DIM)),
+                if header_hovered {
+                    (app.theme().text.primary, false)
+                } else {
+                    (app.theme().text.secondary, true)
+                },
+                "heading hover at {target:?} in {frame_area:?}"
+            );
+            for (index, rect) in layout.action_rects.iter().enumerate() {
+                assert_eq!(
+                    buffer[(rect.0, rect.1)].bg,
+                    if hovered_action == Some(index) {
+                        app.theme().surface.card
+                    } else {
+                        app.theme().surface.canvas
+                    },
+                    "menu row {index} at {target:?} in {frame_area:?}"
+                );
+            }
+        }
+    }
 }
 
 pub(super) fn welcome_mouse_move_away_clears_hover_state_and_row_surface() {
@@ -137,7 +173,7 @@ pub(super) fn welcome_changelog_keyboard_activation_opens_modal_and_restores_foc
 }
 
 pub(super) fn welcome_changelog_mouse_down_preserves_pointer_hover_for_inline_preview() {
-    // Given: the pointer presses the collapsed Changelog action at the canonical viewport.
+    // Given: the pointer presses the Changelog heading at the canonical viewport.
     let mut app = startup_with_affordances_visible();
     let frame_area = Rect::new(0, 0, 100, 30);
     let (column, row) = transcript_click_position_in_area(&app, frame_area, "Changelog");
@@ -156,8 +192,9 @@ pub(super) fn welcome_changelog_mouse_down_preserves_pointer_hover_for_inline_pr
         None,
     );
 
-    // Then: expansion retains the pointer-owned Changelog hover state.
-    assert_eq!(app.welcome_state().hovered_action(), Some(2));
+    // Then: opening the modal retains hover on the heading alone.
+    assert!(app.welcome_state().changelog_header_hovered());
+    assert_eq!(app.welcome_state().hovered_action(), None);
 }
 
 

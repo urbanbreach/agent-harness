@@ -1,3 +1,5 @@
+use super::{WelcomeHit, WelcomeRegion};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WelcomeFocus {
     Prompt,
@@ -67,7 +69,7 @@ pub enum InputResult {
 
 pub struct WelcomeState {
     focus: WelcomeFocus,
-    hovered_action: Option<usize>,
+    hovered_hit: Option<WelcomeHit>,
     pressed_action: Option<WelcomePointerPress>,
     menu_item_count: usize,
     dismissed: bool,
@@ -87,7 +89,7 @@ impl WelcomeState {
     pub fn new(menu_item_count: usize, authed: bool) -> Self {
         Self {
             focus: WelcomeFocus::Prompt,
-            hovered_action: None,
+            hovered_hit: None,
             pressed_action: None,
             menu_item_count,
             dismissed: false,
@@ -108,7 +110,7 @@ impl WelcomeState {
     pub fn dismiss_for_input(&mut self) {
         self.dismissed = true;
         self.focus = WelcomeFocus::Prompt;
-        self.hovered_action = None;
+        self.hovered_hit = None;
     }
 
     pub fn is_dismissed(&self) -> bool {
@@ -123,15 +125,25 @@ impl WelcomeState {
     }
 
     pub fn hovered_action(&self) -> Option<usize> {
-        self.hovered_action
+        self.hovered_hit
+            .filter(|hit| hit.region == WelcomeRegion::Menu)
+            .and_then(|hit| hit.item_index)
     }
 
-    pub fn set_hovered_action(&mut self, index: Option<usize>) -> bool {
-        let next = index.filter(|index| *index < self.menu_item_count);
-        if self.hovered_action == next {
+    pub fn changelog_header_hovered(&self) -> bool {
+        self.hovered_hit
+            .is_some_and(|hit| hit.region == WelcomeRegion::ChangelogHeader)
+    }
+
+    pub fn set_hovered_hit(&mut self, hit: Option<WelcomeHit>) -> bool {
+        let next = hit.filter(|hit| {
+            hit.item_index
+                .is_some_and(|index| index < self.menu_item_count)
+        });
+        if self.hovered_hit == next {
             return false;
         }
-        self.hovered_action = next;
+        self.hovered_hit = next;
         true
     }
 
