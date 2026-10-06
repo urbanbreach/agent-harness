@@ -64,7 +64,7 @@ fn render_compaction_status(frame: &mut Frame, app: &AppState, area: Rect, theme
         usize::from(area.width).saturating_sub(display_width(&status).saturating_add(1));
     let tail = compaction_preview_tail(preview, remaining);
     let label = status.strip_prefix(spinner).unwrap_or(&status);
-    let line = Line::from(vec![
+    let mut line = Line::from(vec![
         Span::styled(spinner.to_string(), Style::default().fg(theme.text.accent)),
         Span::styled(label.to_string(), Style::default().fg(theme.text.secondary)),
         Span::styled(
@@ -76,6 +76,7 @@ fn render_compaction_status(frame: &mut Frame, app: &AppState, area: Rect, theme
             Style::default().fg(theme.text.secondary),
         ),
     ]);
+    append_prompt_notice(&mut line, app, usize::from(area.width), theme);
     frame.render_widget(
         Paragraph::new(line).style(Style::default().bg(theme.surface.canvas)),
         area,
@@ -90,7 +91,16 @@ pub(super) fn render_live_turn_status(
     theme: &Theme,
 ) {
     let area = crate::layout::live_turn_status_content_area(area, theme);
-    if area.width == 0 || area.height == 0 || !app.live_turn_status_visible() {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    if !app.live_turn_status_visible() {
+        let mut line = Line::default();
+        append_prompt_notice(&mut line, app, usize::from(area.width), theme);
+        frame.render_widget(
+            Paragraph::new(line).style(Style::default().bg(theme.surface.canvas)),
+            area,
+        );
         return;
     }
 
@@ -294,9 +304,17 @@ pub(super) fn render_live_turn_status(
             Style::default().fg(theme.live_turn_timer_color()),
         ));
     }
+    let mut line = Line::from(left_spans);
+    append_prompt_notice(
+        &mut line,
+        app,
+        usize::from(area.width)
+            .saturating_sub(right_width)
+            .saturating_sub(usize::from(right_width > 0)),
+        theme,
+    );
     frame.render_widget(
-        Paragraph::new(Line::from(left_spans))
-            .style(Style::default().bg(theme.live_turn_background_color())),
+        Paragraph::new(line).style(Style::default().bg(theme.live_turn_background_color())),
         area,
     );
     let right_spans = RightStatusInput {
@@ -314,6 +332,25 @@ pub(super) fn render_live_turn_status(
             .alignment(Alignment::Right),
         area,
     );
+}
+
+fn append_prompt_notice(line: &mut Line<'_>, app: &AppState, width: usize, theme: &Theme) {
+    let Some(notice) = app.model_prompt_notice.as_deref() else {
+        return;
+    };
+    let text = if line.width() == 0 {
+        truncate_plain_text(notice, width)
+    } else {
+        let text = format!(" · {notice}");
+        if line.width().saturating_add(display_width(&text)) > width {
+            return;
+        }
+        text
+    };
+    line.spans.push(Span::styled(
+        text,
+        Style::default().fg(theme.text.secondary),
+    ));
 }
 
 fn compaction_preview_tail(text: &str, width: usize) -> &str {

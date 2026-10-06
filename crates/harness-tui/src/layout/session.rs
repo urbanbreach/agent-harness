@@ -97,7 +97,7 @@ pub(super) fn project(
     } else {
         let composer_height = prompt_height(app, column, terminal_height, startup);
         let spacer = composer_footer_spacer_rows(terminal_height);
-        let status = if app.live_turn_status_visible() {
+        let status = if app.live_turn_status_visible() || app.model_prompt_notice.is_some() {
             tokens.spacing.heights.status
         } else {
             0
@@ -112,6 +112,8 @@ pub(super) fn project(
             0
         } else if startup {
             composer_height
+                .saturating_add(status)
+                .saturating_add(if status > 0 { status_gap } else { 0 })
         } else {
             composer_height
                 .saturating_add(status_gap)
@@ -123,12 +125,17 @@ pub(super) fn project(
         let [_, body, shell] = surfaces::split_rows(column, 0, height);
         plan.transcript = Some(body);
         if startup {
+            let [status, _, composer] = surfaces::split_rows(shell, status, composer_height);
             ControlDockLayout {
                 shell,
-                status: None,
+                status: (status.height > 0).then_some(status),
                 composer: Rect {
-                    height: shell.height.saturating_sub(1).max(3).min(shell.height),
-                    ..shell
+                    height: composer
+                        .height
+                        .saturating_sub(1)
+                        .max(3)
+                        .min(composer.height),
+                    ..composer
                 },
                 disclosure: None,
             }

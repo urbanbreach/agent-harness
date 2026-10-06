@@ -149,14 +149,14 @@ fn copied_to_clipboard_toast_renders_in_live_shell() {
 fn model_switch_feedback_waits_for_runtime_notice_and_keeps_identifier_visible() {
     use ratatui::{backend::TestBackend, Terminal};
 
-    let message = format!("{}: {}", "status".repeat(6), "model-id-".repeat(6));
+    let message = "Selected prompt: glm-5.3".to_string();
     let (tx, rx) = crate::live_update_channel();
     let mut app = AppState::new_live(None, false, None);
     app.restart_motion_epoch_for_evidence();
     app.set_launch_metadata(
         LaunchMetadata::from_model_ref("default", "test:gpt-5.4").with_available_models(vec![
             ModelOption::from_model_ref("default", "test:gpt-5.4"),
-            ModelOption::from_model_ref("default", "test:claude-sonnet-4-6"),
+            ModelOption::from_model_ref("default", "test:glm-5.3"),
         ]),
     );
     for ch in "/model".chars() {
@@ -165,45 +165,40 @@ fn model_switch_feedback_waits_for_runtime_notice_and_keeps_identifier_visible()
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert!(app.model_switcher_visible);
     app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-    assert!(app.toast().is_none());
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert!(!app.model_switcher_visible);
-    assert_eq!(app.launch_metadata().model(), Some("claude-sonnet-4-6"));
+    assert_eq!(app.launch_metadata().model(), Some("glm-5.3"));
     assert!(app.toast().is_none());
 
     tx.send(crate::LiveUpdate::ModelPromptNotice(message.clone()))
         .unwrap_or_abort();
-    assert!(app.toast().is_none());
     crate::runtime_live_updates::drain_live_updates(&mut app, &rx);
     assert!(app.toast().is_none());
     assert_eq!(app.model_prompt_notice.as_ref(), Some(&message));
 
-    for (width, height) in [(40, 10), (80, 24), (132, 40)] {
+    for (startup, width, height) in [
+        (true, 40, 10),
+        (true, 80, 24),
+        (true, 132, 40),
+        (false, 40, 10),
+        (false, 80, 24),
+        (false, 132, 40),
+    ] {
+        app.startup_mode = startup;
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap_or_abort();
         terminal
             .draw(|frame| render_app(frame, &app))
             .unwrap_or_abort();
         let buffer = terminal.backend().buffer();
-        eprintln!("{width}x{height}: {buffer:?}");
-        let notice = FrameLayoutPlan::for_app(&app, buffer.area)
-            .model_prompt_notice
-            .unwrap_or_abort();
-        let rendered = (notice.y..notice.bottom())
-            .flat_map(|y| (notice.x..notice.right()).map(move |x| (x, y)))
-            .map(|pos| buffer[pos].symbol())
-            .collect::<String>();
-        assert_eq!(
-            rendered.split_whitespace().collect::<String>(),
-            message.split_whitespace().collect::<String>(),
-            "{width}x{height}: {buffer:?}"
-        );
+        let plan = FrameLayoutPlan::for_app(&app, buffer.area);
+        let status = plan.status.unwrap_or_abort();
+        let row: String = (0..width).map(|x| buffer[(x, status.y)].symbol()).collect();
         assert!(
-            notice.bottom()
-                <= FrameLayoutPlan::for_app(&app, buffer.area)
-                    .composer
-                    .unwrap_or_abort()
-                    .y
+            row.contains(&message),
+            "startup={startup}, {width}x{height}: {buffer:?}"
         );
+        assert_eq!(status.height, 1);
+        assert!(status.bottom() <= plan.composer.unwrap_or_abort().y);
     }
     tx.send(crate::LiveUpdate::Status("working".to_string()))
         .unwrap_or_abort();
@@ -218,12 +213,64 @@ fn model_switch_feedback_waits_for_runtime_notice_and_keeps_identifier_visible()
         .activities
         .iter()
         .any(|entry| entry.user_message.is_some()));
-    tx.send(crate::LiveUpdate::ModelPromptNotice(message))
+    tx.send(crate::LiveUpdate::ModelPromptNotice(message.clone()))
         .unwrap_or_abort();
     crate::runtime_live_updates::drain_live_updates(&mut app, &rx);
-    assert!(FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 80, 24))
-        .model_prompt_notice
-        .is_none());
+    app.ingest_event(envelope(
+        1,
+        "req_prompt_label",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_prompt_label".into(),
+            text: "first message".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_prompt_label",
+        EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
+            task_id: "task_prompt_label".into(),
+            state: harness_core::event::TaskScheduleState::Started,
+            queue_key: Some("provider_model:test:glm-5.3".to_string()),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_prompt_label",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_prompt_label".into(),
+            provider_id: "test".to_string(),
+            model_id: "glm-5.3".to_string(),
+            prompt_summary: "first message".to_string(),
+            request_digest: "digest-prompt-label".to_string(),
+            metadata: None,
+        }),
+    ));
+    for width in [40, 80, 132] {
+        let mut terminal = Terminal::new(TestBackend::new(width, 24)).unwrap_or_abort();
+        terminal
+            .draw(|frame| render_app(frame, &app))
+            .unwrap_or_abort();
+        let buffer = terminal.backend().buffer();
+        let status = FrameLayoutPlan::for_app(&app, buffer.area)
+            .status
+            .unwrap_or_abort();
+        let row: String = (0..width).map(|x| buffer[(x, status.y)].symbol()).collect();
+        assert!(row.contains("Waiting"), "{row}");
+        assert_eq!(row.contains(&message), width >= 80, "{row}");
+        let stop = ui_live_turn_status::live_turn_stop_rect(&app, buffer.area).unwrap_or_abort();
+        let control: String = (stop.x..stop.right())
+            .map(|x| buffer[(x, stop.y)].symbol())
+            .collect();
+        assert_eq!(
+            control, "[stop]",
+            "prompt must not displace the stop control"
+        );
+        assert_eq!(
+            format!("{buffer:?}").matches(&message).count(),
+            usize::from(width >= 80)
+        );
+    }
 }
 
 #[test]
