@@ -1785,10 +1785,7 @@ impl AppState {
     fn is_inline_child_view(&self) -> bool {
         self.replay_mode
             && !self.session_navigation_stack.is_empty()
-            && self
-                .session_path
-                .as_ref()
-                .is_some_and(|path| !path.is_dir())
+            && self.session_lineage.inline_child
     }
 
     fn ingest_event_internal(
