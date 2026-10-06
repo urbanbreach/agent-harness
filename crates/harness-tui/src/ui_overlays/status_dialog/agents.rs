@@ -1,4 +1,5 @@
 use super::*;
+use crate::app::permissions::PermissionModalSelection;
 use crate::ui::{dashboard_preview_frame, ui_overlays::permission_modal};
 
 pub(super) fn render_dashboard_roster(
@@ -197,23 +198,17 @@ pub(super) fn render_dashboard_peek(
             if app.permission_submission_pending(&permission.permission_id) {
                 rows.push(Line::from("Decision submitted · awaiting confirmation"));
             } else {
-                let selected = app
-                    .permission_modal_selection(&permission.permission_id)
-                    .number();
-                for (index, label) in [
-                    "Enable YOLO mode",
-                    "Remember this approval for this session",
-                    "Allow once",
-                    "Reject and add feedback",
-                ]
-                .into_iter()
-                .enumerate()
+                let selected = app.permission_modal_selection(&permission.permission_id);
+                for (index, option) in app
+                    .permission_modal_options(&permission.permission_id)
+                    .iter()
+                    .enumerate()
                 {
                     rows.push(dashboard_permission_option(
                         theme,
                         index + 1,
-                        label,
-                        selected,
+                        *option,
+                        selected == *option,
                     ));
                 }
                 if let Some(feedback) = app.permission_feedback(&permission.permission_id) {
@@ -251,11 +246,17 @@ pub(super) fn render_dashboard_peek(
 fn dashboard_permission_option(
     theme: &Theme,
     number: usize,
-    label: &str,
-    selected: usize,
+    option: PermissionModalSelection,
+    selected: bool,
 ) -> Line<'static> {
-    let marker = if selected == number { "❯" } else { " " };
-    let color = if selected == number {
+    let label = match option {
+        PermissionModalSelection::EnableYolo => "Enable YOLO mode",
+        PermissionModalSelection::AllowSession => "Remember this approval for this session",
+        PermissionModalSelection::AllowOnce => "Allow once",
+        PermissionModalSelection::Reject => "Reject and add feedback",
+    };
+    let marker = if selected { "❯" } else { " " };
+    let color = if selected {
         theme.text.accent
     } else {
         theme.text.primary

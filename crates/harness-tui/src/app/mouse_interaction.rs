@@ -46,33 +46,30 @@ fn permission_choice_hit_regions(
     }
 
     match app.permission_modal_stage(&permission.permission_id) {
-        PermissionModalStage::Decision => [
-            PermissionModalSelection::EnableYolo,
-            PermissionModalSelection::AllowSession,
-            PermissionModalSelection::AllowOnce,
-            PermissionModalSelection::Reject,
-        ]
-        .into_iter()
-        .enumerate()
-        .filter_map(|(index, selection)| {
-            let y = tray
-                .y
-                .saturating_add(u16::try_from(index).unwrap_or(u16::MAX));
-            (y < tray.bottom()).then_some(PermissionPromptHitRegion {
-                target: PermissionPointerTarget::Decision(selection),
-                area: Rect::new(
-                    tray.x,
-                    y,
-                    tray.width,
-                    if selection == PermissionModalSelection::Reject {
-                        tray.bottom().saturating_sub(y)
-                    } else {
-                        1
-                    },
-                ),
+        PermissionModalStage::Decision => app
+            .permission_modal_options(&permission.permission_id)
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(index, selection)| {
+                let y = tray
+                    .y
+                    .saturating_add(u16::try_from(index).unwrap_or(u16::MAX));
+                (y < tray.bottom()).then_some(PermissionPromptHitRegion {
+                    target: PermissionPointerTarget::Decision(selection),
+                    area: Rect::new(
+                        tray.x,
+                        y,
+                        tray.width,
+                        if selection == PermissionModalSelection::Reject {
+                            tray.bottom().saturating_sub(y)
+                        } else {
+                            1
+                        },
+                    ),
+                })
             })
-        })
-        .collect(),
+            .collect(),
         PermissionModalStage::YoloConfirm => {
             let mut x = tray.x;
             [

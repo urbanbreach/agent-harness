@@ -2,45 +2,23 @@
 pub(crate) enum PermissionModalSelection {
     #[default]
     EnableYolo,
-    /// Session-scoped grant for the current permission request (freeze option 2).
+    /// Session-scoped grant for the current permission request.
     AllowSession,
     AllowOnce,
     Reject,
 }
 
 impl PermissionModalSelection {
-    pub(crate) const fn number(self) -> usize {
+    pub(crate) const fn label(self) -> &'static str {
         match self {
-            Self::EnableYolo => 1,
-            Self::AllowSession => 2,
-            Self::AllowOnce => 3,
-            Self::Reject => 4,
+            Self::EnableYolo => "Yes, enable YOLO mode",
+            Self::AllowSession => "Yes, remember this approval for this session",
+            Self::AllowOnce => "Yes",
+            Self::Reject => "No, reject (type to add feedback)",
         }
     }
 
-    pub(super) const fn from_number(number: char) -> Option<Self> {
-        match number {
-            '1' => Some(Self::EnableYolo),
-            '2' => Some(Self::AllowSession),
-            '3' => Some(Self::AllowOnce),
-            '4' => Some(Self::Reject),
-            _ => None,
-        }
-    }
-
-    pub(super) fn cycle(self, forward: bool, enable_yolo: bool) -> Self {
-        let options = if enable_yolo {
-            // Permission order: yolo, session edits, yes, reject.
-            [
-                Self::EnableYolo,
-                Self::AllowSession,
-                Self::AllowOnce,
-                Self::Reject,
-            ]
-            .as_slice()
-        } else {
-            [Self::AllowOnce, Self::Reject].as_slice()
-        };
+    pub(super) fn cycle(self, forward: bool, options: &[Self]) -> Self {
         let current = options
             .iter()
             .position(|candidate| *candidate == self)

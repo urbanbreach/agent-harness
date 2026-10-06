@@ -106,7 +106,11 @@ pub(crate) fn permission_dock_measure(
         detail_rows
     };
     let option_rows = match app.permission_modal_stage(&permission.permission_id) {
-        PermissionModalStage::Decision => 4,
+        PermissionModalStage::Decision => u16::try_from(
+            app.permission_modal_options(&permission.permission_id)
+                .len(),
+        )
+        .unwrap_or(u16::MAX),
         PermissionModalStage::YoloConfirm => 2,
     };
     let editor_rows = app
