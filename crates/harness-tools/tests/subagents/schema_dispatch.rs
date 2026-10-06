@@ -18,11 +18,11 @@ async fn native_schema_and_lenient_output_dispatch_keep_aliases_and_cardinality_
     assert!(required.contains(&json!("prompt")));
     assert!(required.contains(&json!("description")));
     assert!(!required.contains(&json!("background")));
+    assert!(!required.contains(&json!("subagent_type")));
     assert_eq!(spawn["properties"]["background"]["default"], true);
     for hidden in [
         "task_id",
         "workspace",
-        "subagent_type",
         "capability_mode",
         "fork_context",
         "persona",
@@ -82,10 +82,10 @@ async fn native_schema_and_lenient_output_dispatch_keep_aliases_and_cardinality_
         .get("spawn_subagent")
         .ok_or("configured spawn")?
         .parameters_json_schema();
-    assert_eq!(
-        configured_schema["properties"]["subagent_type"]["enum"],
-        json!(["fixture-reviewer"])
-    );
+    assert!(configured_schema["properties"]["subagent_type"]["enum"]
+        .as_array()
+        .ok_or("agent names missing")?
+        .contains(&json!("fixture-reviewer")));
     assert!(configured_schema["properties"].get("model").is_none());
     settings.enabled = false;
     harness_tools::register_subagent_tools(

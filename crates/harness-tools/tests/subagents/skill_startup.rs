@@ -210,8 +210,8 @@ async fn native_skill_startup_shares_body_free_catalog_with_authorized_tool_load
         .first()
         .ok_or("child system prompt")?
         .content;
-    assert!(system.contains(&format!("Workspace Path: {}\n", execution.effective_cwd)));
-    assert!(!system.contains(&format!("Workspace Path: {}\n", project.display())));
+    assert!(system.contains(&format!("{}\n", execution.effective_cwd)));
+    assert!(!system.contains(&format!("{}\n", project.display())));
     assert!(matches!(
         execution.isolation,
         harness_core::subagent::ResolvedSubagentIsolation::Worktree { .. }

@@ -46,6 +46,19 @@ or queued kernel.
 stages. JavaScript also supports ordinary `Promise.all` and `Promise.allSettled`.
 Use the latter when one rejected tool call should not reject the whole result.
 
+The shared prompt prefers one eval cell for two or more independent tool calls
+with known arguments, even when direct tools are available. For workspace
+orientation, batch independent listings, session queries, and status checks;
+after discovering paths, batch independent file reads and searches. Use direct
+calls for isolated operations instead of wrapping each one in eval.
+
+Call specialized tools through `tool.<name>(args)` inside batches, check
+`hasError`, and display the relevant evidence. Keep large intermediate values in
+the kernel. Run known dependent steps in order within a cell. When deciding the
+next step requires the model's judgment, inspect the result before planning
+more calls; do not guess paths or arguments to fill a batch. This is prompt
+guidance; direct tool visibility still follows the routing configuration below.
+
 ### Tool visibility
 
 `eval.route_tools` optionally lists tool IDs or discovery-catalog IDs to remove
@@ -133,7 +146,7 @@ global `wait` and `output` helpers with the returned records.
 
 ```js
 var pool = await workpool(
-  {subagent_type: "general-purpose", prompt: "Inspect the assigned file"},
+  {subagent_type: "task", prompt: "Inspect the assigned file"},
   "file-review",
   {width: 2, mode: "fresh", tools: ["read"]}
 );

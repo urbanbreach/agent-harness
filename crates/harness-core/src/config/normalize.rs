@@ -353,64 +353,12 @@ fn permissions(
 }
 
 fn shipped_profiles(model: &str) -> BTreeMap<String, ProfileConfig> {
-    const READ: &str = "read glob grep list ast_grep_search webfetch websearch session_list session_read session_search session_info bash lsp skill";
-    ["default", "explore", "general", "librarian"]
-        .into_iter()
-        .map(|name| {
-            let mut tools: Vec<String> = READ.split_whitespace().map(str::to_owned).collect();
-            if name != "explore" {
-                tools.push("codesearch".into());
-            }
-            if matches!(name, "default" | "general") {
-                tools.extend(["edit", "write", "apply_patch", "eval"].map(str::to_owned));
-            }
-            if name == "default" {
-                tools.extend(
-                    [
-                        "todowrite",
-                        "todoread",
-                        "question",
-                        "spawn_subagent",
-                        "get_command_or_subagent_output",
-                        "wait_commands_or_subagents",
-                        "kill_command_or_subagent",
-                        "send_subagent_message",
-                    ]
-                    .map(str::to_owned),
-                );
-            }
-            if name == "general" {
-                tools.retain(|tool| tool != "skill");
-            }
-            (
-                name.into(),
-                ProfileConfig {
-                    model_ref: model.into(),
-                    description: match name {
-                        "explore" => "Read-only codebase exploration.",
-                        "librarian" => "Documentation and external research.",
-                        _ => "General-purpose implementation and research.",
-                    }
-                    .into(),
-                    mode: if name == "default" {
-                        AgentMode::Primary
-                    } else {
-                        AgentMode::Subagent
-                    },
-                    tools,
-                    permissions: (name != "default").then(|| ProfilePermissions {
-                        edit: Some(if name == "general" {
-                            PermissionMode::Allow
-                        } else {
-                            PermissionMode::Deny
-                        }),
-                        task: Some(PermissionMode::Deny),
-                        question: Some(PermissionMode::Deny),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-            )
-        })
-        .collect()
+    BTreeMap::from([("default".into(), ProfileConfig {
+        model_ref: model.into(),
+        description: "Harness coding assistant.".into(),
+        mode: AgentMode::Primary,
+        tools: "read glob grep list ast_grep_search webfetch websearch codesearch session_list session_read session_search session_info bash lsp skill edit write apply_patch eval todowrite todoread question spawn_subagent get_command_or_subagent_output wait_commands_or_subagents kill_command_or_subagent send_subagent_message"
+            .split_whitespace().map(str::to_owned).collect(),
+        ..Default::default()
+    })])
 }

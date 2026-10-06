@@ -42,8 +42,6 @@ mod cli_io;
 mod cli_labels;
 #[path = "../../src/defaults.rs"]
 mod defaults;
-#[path = "../../src/dynamic_prompt.rs"]
-mod dynamic_prompt;
 #[path = "../../src/generated_model_catalog.rs"]
 mod generated_model_catalog;
 #[path = "../../src/logging.rs"]

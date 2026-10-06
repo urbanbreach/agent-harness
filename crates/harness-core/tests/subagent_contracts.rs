@@ -33,7 +33,7 @@ fn spawn_wire_contract() -> serde_json::Result<()> {
         }
         let parsed = serde_json::from_value::<SpawnSubagentInput>(input)?;
         assert_eq!(parsed.background, expected_background);
-        assert_eq!(parsed.subagent_type, "general-purpose");
+        assert_eq!(parsed.subagent_type, "task");
         assert!(!parsed.subagent_type_specified);
     }
 
@@ -47,7 +47,7 @@ fn spawn_wire_contract() -> serde_json::Result<()> {
     let explicit = serde_json::from_value::<SpawnSubagentInput>(json!({
         "prompt": "p",
         "description": "d",
-        "subagent_type": "general-purpose",
+        "subagent_type": "task",
         "capability_mode": "read-only",
         "persona": "ignored",
         "workspace": "wire-only",
@@ -56,7 +56,7 @@ fn spawn_wire_contract() -> serde_json::Result<()> {
     assert!(explicit.subagent_type_specified);
     assert_eq!(explicit.workspace.as_deref(), Some("wire-only"));
     let serialized = serde_json::to_value(explicit)?;
-    assert_eq!(serialized["subagent_type"], "general-purpose");
+    assert_eq!(serialized["subagent_type"], "task");
     assert_eq!(serialized["task_id"], "injected");
     assert!(serialized.get("capability_mode").is_none());
     assert!(serialized.get("persona").is_none());

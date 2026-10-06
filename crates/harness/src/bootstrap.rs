@@ -1,5 +1,7 @@
 #[path = "bootstrap/secrets.rs"]
 mod secrets;
+#[path = "bootstrap/subagents.rs"]
+mod subagents;
 use harness::CliDeps;
 use harness_core::{
     agent::AgentProfile,
@@ -14,6 +16,7 @@ use harness_providers::{HttpProvider, Protocol, Provider, ProviderRouter};
 pub(crate) use secrets::secret_values;
 use std::{
     collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
     sync::Arc,
     time::Duration,
 };
@@ -82,13 +85,7 @@ pub(crate) fn build(
     config.validate().map_err(|e| e.to_string())?;
     let mut result = CoordinatorConfig::new(config.runtime.session_dir.clone());
     result.model_catalog = harness_core::config::configured_model_catalog(config).into();
-    result.subagents = config.subagents.resolve_with_lookup(
-        None,
-        &config.features,
-        &Default::default(),
-        &Default::default(),
-        &|name| deps.env_var_value(name),
-    );
+    subagents::configure(config, deps, &mut result)?;
     let mut rules = permission_rules(&config.permissions.defaults, &config.permissions.rules)?;
     if let Some(action) = config.permissions.fallback {
         rules.insert(
@@ -134,7 +131,10 @@ pub(crate) fn build(
     harness_tools::register_subagent_tools(
         &mut registry,
         &result.subagents,
-        &harness_core::config::SubagentDefinitionSnapshot::default(),
+        result
+            .subagent_definitions
+            .as_ref()
+            .ok_or("subagent definitions unavailable")?,
         result.subagent_model_catalog.as_ref(),
     );
     harness_tools::register_remote_search_tools(
@@ -161,11 +161,10 @@ pub(crate) fn build(
         result.agent_profiles = interactive_agent_profiles(config)?;
     }
     for (name, profile) in &mut result.agent_profiles {
-        if matches!(name.as_str(), "explore" | "librarian")
-            || config
-                .agents
-                .get(name)
-                .is_some_and(|p| p.mode == harness_core::config::AgentMode::Primary)
+        if config
+            .agents
+            .get(name)
+            .is_some_and(|p| p.mode == harness_core::config::AgentMode::Primary)
         {
             for tool in &mcp_tools {
                 if !profile.toolset.contains(tool) {
@@ -178,7 +177,6 @@ pub(crate) fn build(
         .then(|| CredentialStore::from_lookup(&|name| deps.env_var_value(name)))
         .flatten();
     result.secret_values = secret_values(config, deps, store.as_ref())?;
-    let workspace = deps.current_dir().map_err(|e| e.to_string())?;
     let instructions = config
         .instruction_files
         .iter()
@@ -186,6 +184,36 @@ pub(crate) fn build(
         .collect::<Vec<_>>()
         .join("\n\n");
     for (name, profile) in &mut result.agent_profiles {
+        let source = harness_core::system_prompt::PromptSource {
+            user_prompt_dir: {
+                let path = |key| {
+                    deps.env_var_value(key)
+                        .filter(|value| !value.is_empty())
+                        .map(PathBuf::from)
+                };
+                path("XDG_CONFIG_HOME")
+                    .or_else(|| path("HOME").map(|home| home.join(".config")))
+                    .map(|base| base.join("harness/prompts"))
+            },
+            configured: config
+                .agents
+                .get(name)
+                .and_then(|p| p.system_prompt.clone()),
+            suffix: if instructions.trim().is_empty() {
+                String::new()
+            } else {
+                format!("\n\nProject instructions:\n{instructions}")
+            },
+            ..Default::default()
+        };
+        profile.system_prompt = format!(
+            "{}{}",
+            source.configured.as_deref().unwrap_or_default(),
+            source.suffix
+        );
+        result
+            .agent_prompt_sources
+            .insert(name.clone(), Arc::new(source));
         if mock {
             profile.model_ref = "mock:default".into();
             continue;
@@ -200,22 +228,6 @@ pub(crate) fn build(
         )
         .map_err(|e| e.to_string())?;
         profile.model_ref = selection.primary.model_ref.clone();
-        let source = harness_core::model_resolution::PromptSource {
-            configured: config
-                .agents
-                .get(name)
-                .and_then(|p| p.system_prompt.clone()),
-            suffix: if instructions.trim().is_empty() {
-                String::new()
-            } else {
-                format!("\n\nProject instructions:\n{instructions}")
-            },
-        };
-        profile.system_prompt =
-            source.resolve(name, selection.primary.resolution.prompt_family, &workspace);
-        result
-            .agent_prompt_sources
-            .insert(name.clone(), Arc::new(source));
         if let Some(ProviderConfig::OpenAiCompatible(provider)) =
             config.providers.get(&selection.primary.provider)
         {

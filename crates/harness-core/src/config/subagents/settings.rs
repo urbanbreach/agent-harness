@@ -158,7 +158,7 @@ impl SubagentsConfig {
             })
             .or(self.max_depth)
             .or_else(|| remote.max_depth.map(i64::from))
-            .unwrap_or(1);
+            .unwrap_or(2);
         if !(1..=i64::from(u32::MAX)).contains(&depth) {
             warnings.push("subagents max_depth outside 1..u32::MAX; clamping".into());
         }

@@ -63,13 +63,10 @@
   // Active default model. Use provider/model, optionally provider/model/variant.
   "model": "openai-codex/gpt-6-astra",
 
-  // The generic default handles interactive turns. Named subagents remain
-  // available for bounded delegation through task(subagent_type=...).
+  // The default handles interactive turns. The bundled task, scout, reviewer,
+  // security-reviewer, and sonic agents are available through spawn_subagent.
   "agent": {
-    "default": { "variant": "high" },
-    "explore": {},
-    "general": {},
-    "librarian": {}
+    "default": { "variant": "high" }
   },
 
   // Harness-aligned allow-by-default. A scalar applies to all supported tool

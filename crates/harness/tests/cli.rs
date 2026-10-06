@@ -164,9 +164,6 @@ fn configured_http_prompt_runs_tools_under_coordinator_policy(
             }
         );
         let config = root.path().join("runtime.json");
-        let prompts = root.path().join(".agent-harness/prompt-families");
-        fs::create_dir_all(&prompts)?;
-        fs::write(prompts.join("default.md"), "Workspace family instructions.")?;
         fs::write(&config, json!({
             "provider":{"local":{"type":"openai_compatible", "baseURL":endpoint, "apiMode": if permission == "stored" {"auto"} else {"chat_completions"},
                 "apiKey":if permission == "allow" {"${HARNESS_TEST_KEY}"} else {""},
@@ -220,7 +217,7 @@ fn configured_http_prompt_runs_tools_under_coordinator_policy(
             permission == "allow"
         );
         assert_eq!(
-            system.contains("Workspace family instructions."),
+            system.contains("Harness's trusted coding assistant."),
             permission != "allow"
         );
         assert_eq!(requests[0]["model"], "fixture");

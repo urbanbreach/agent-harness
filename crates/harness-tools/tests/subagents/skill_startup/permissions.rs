@@ -41,9 +41,9 @@ async fn check_preload_permission(
     config.agent_profiles.insert("default".into(), parent);
     config.subagent_definitions = Some(SubagentDefinitionSnapshot {
         cli: std::collections::BTreeMap::from([(
-            "reviewer".into(),
+            "preload-reviewer".into(),
             SubagentDefinition {
-                name: "reviewer".into(),
+                name: "preload-reviewer".into(),
                 description: "Reviewer".into(),
                 tools: vec!["Skill".into()],
                 skills: vec!["REVIEW".into()],
@@ -66,7 +66,7 @@ async fn check_preload_permission(
         .await?;
     let mut events = coordinator.event_store().await?.subscribe(1)?;
     let spawn = coordinator.execute_agent_tool_call(EventActor::new(ActorKind::Worker, Some(parent)), None,
-        "spawn_subagent", json!({"prompt":"review","description":"Review","subagent_type":"reviewer","background":false}));
+        "spawn_subagent", json!({"prompt":"review","description":"Review","subagent_type":"preload-reviewer","background":false}));
     let approve = async {
         while let Some(event) = events.next().await {
             let EventV1::PermissionRequested(request) = event?.payload else {

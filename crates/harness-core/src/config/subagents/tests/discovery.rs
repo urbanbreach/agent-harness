@@ -21,8 +21,8 @@ fn trusted_preset_and_agent_discovery_keeps_source_precedence(
         )?;
     }
     std::fs::write(
-        user.join("agents/explore.md"),
-        "---\nname: explore\ndescription: User\n---\nUser body",
+        user.join("agents/scout.md"),
+        "---\nname: scout\ndescription: User\n---\nUser body",
     )?;
     std::fs::write(
         project.join(".agent-harness/roles/ignored.json"),
@@ -45,7 +45,7 @@ fn trusted_preset_and_agent_discovery_keeps_source_precedence(
     let snapshot = discover_subagent_definitions(&settings, &discovery);
     assert_eq!(
         snapshot
-            .definition("explore")
+            .definition("scout")
             .ok_or("builtin missing")?
             .source,
         SubagentDefinitionSource::Builtin
@@ -56,7 +56,7 @@ fn trusted_preset_and_agent_discovery_keeps_source_precedence(
     );
     assert!(!snapshot.roles.contains_key("ignored"));
     assert!(!snapshot.warnings.is_empty());
-    std::fs::write(project.join(".agent-harness/agents/explore.md"), "---\nname: explore\ndescription: Project\nmaxTurns: 5\nmcpInheritance:\n  named: [A]\n---\nProject body")?;
+    std::fs::write(project.join(".agent-harness/agents/scout.md"), "---\nname: scout\ndescription: Project\nmaxTurns: 5\nmcpInheritance:\n  named: [A]\n---\nProject body")?;
     settings.roles.insert(
         "research".into(),
         SubagentRole {
@@ -68,14 +68,14 @@ fn trusted_preset_and_agent_discovery_keeps_source_precedence(
     assert_eq!(snapshot.roles["research"].model.as_deref(), Some("inline"));
     assert_eq!(
         snapshot
-            .definition("explore")
+            .definition("scout")
             .ok_or("project missing")?
             .source,
         SubagentDefinitionSource::Project
     );
     assert_eq!(
         snapshot
-            .definition("explore")
+            .definition("scout")
             .ok_or("project missing")?
             .max_turns,
         NonZeroU32::new(5)

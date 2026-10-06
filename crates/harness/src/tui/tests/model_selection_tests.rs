@@ -74,7 +74,7 @@ fn interactive_launch_metadata_exposes_catalog_for_default_profile() {
             .iter()
             .map(|option| option.profile.as_str())
             .collect::<std::collections::BTreeSet<_>>(),
-        std::collections::BTreeSet::from(["default", "explore", "general", "librarian"])
+        std::collections::BTreeSet::from(["default"])
     );
     assert!(metadata
         .available_models()

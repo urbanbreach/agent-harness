@@ -15,6 +15,8 @@ use tokio_stream::StreamExt;
 
 #[path = "eval/runtime.rs"]
 mod runtime;
+#[path = "eval/visibility.rs"]
+mod visibility;
 
 fn signoff() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("HARNESS_EVAL_SIGNOFF").as_deref() != Ok("1") {

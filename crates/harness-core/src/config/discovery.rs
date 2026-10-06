@@ -166,7 +166,7 @@ pub fn load_resolved_config_with_lookup(
     Ok(Some(LoadedConfig { config, paths }))
 }
 
-pub(super) fn search_roots(directory: &Path) -> Vec<&Path> {
+pub(crate) fn search_roots(directory: &Path) -> Vec<&Path> {
     let mut roots: Vec<_> = directory.ancestors().collect();
     if let Some(at) = roots.iter().position(|root| root.join(".git").exists()) {
         roots.truncate(at + 1);

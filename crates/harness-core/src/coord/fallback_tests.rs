@@ -62,24 +62,15 @@ async fn provider_fallback_advances_once_and_persists_for_queued_and_resumed_tur
     let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
     config.provider = Arc::clone(&provider) as Arc<dyn Provider>;
     config.provider_retry.max_retries = 0;
-    let prompts = temp.path().join(".agent-harness/prompt-families");
-    std::fs::create_dir_all(&prompts)?;
-    for (family, text) in [
-        ("default", "Initial family."),
-        ("anthropic", "Fallback family."),
-        ("gpt-6", "Selected family."),
-    ] {
-        std::fs::write(prompts.join(format!("{family}.md")), text)?;
-    }
     config.agent_prompt_sources.insert(
         "default".into(),
-        Arc::new(crate::model_resolution::PromptSource {
+        Arc::new(crate::system_prompt::PromptSource {
             configured: None,
             suffix: "\n\nKeep instructions.".into(),
+            ..Default::default()
         }),
     );
-    let mut third = target("third");
-    third.resolution.prompt_family = crate::model_resolution::PromptFamily::Anthropic;
+    let third = target("third");
     config
         .agent_model_fallbacks
         .insert("default".into(), vec![target("second"), third]);
@@ -133,8 +124,16 @@ async fn provider_fallback_advances_once_and_persists_for_queued_and_resumed_tur
         .err()
         .ok_or("exhausted fallback unexpectedly completed")?;
     assert_eq!(failure.to_string(), "provider unavailable");
-    let mut selected = target("selected");
-    selected.resolution.prompt_family = crate::model_resolution::PromptFamily::Gpt6;
+    let mut selected = target("zai-glm-5-3");
+    selected.resolution =
+        crate::model_resolution::resolve_model(crate::model_resolution::ModelResolutionInput {
+            provider: "mock",
+            model: &selected.model,
+            metadata_family: None,
+            input_modalities: &[],
+            supports_tool_calls: None,
+            supports_reasoning_summaries: None,
+        });
     let selected = resumed
         .request_agent_turn_with_model_target(actor(), agent, "switch", selected)
         .await?;
@@ -146,25 +145,34 @@ async fn provider_fallback_advances_once_and_persists_for_queued_and_resumed_tur
             .iter()
             .map(|r| r.model_id.as_str())
             .collect::<Vec<_>>(),
-        ["default", "second", "third", "third", "third", "third", "selected"]
+        [
+            "default",
+            "second",
+            "third",
+            "third",
+            "third",
+            "third",
+            "zai-glm-5-3"
+        ]
     );
     assert!(requests[2..]
         .iter()
         .all(|r| r.variant.as_deref() == Some("selected")
             && r.reasoning_effort.as_deref() == Some("high")));
-    assert_eq!(requests[0].messages, requests[1].messages);
+    assert_eq!(requests[0].messages[1..], requests[1].messages[1..]);
     assert_eq!(requests[0].messages[1..], requests[2].messages[1..]);
-    for (request, family) in requests.iter().zip([
-        "Initial family.",
-        "Initial family.",
-        "Fallback family.",
-        "Fallback family.",
-        "Fallback family.",
-        "Fallback family.",
-        "Selected family.",
-    ]) {
-        assert!(request.messages[0].content.starts_with(family));
+    for request in &requests {
+        assert!(request.messages[0]
+            .content
+            .contains(&format!("Active model: mock:{}", request.model_id)));
         assert!(request.messages[0].content.ends_with("Keep instructions."));
+        assert_eq!(
+            request.messages[0]
+                .content
+                .contains("Use short act-inspect-verify loops."),
+            request.model_id == "zai-glm-5-3",
+            "model selection must replace the previous prompt"
+        );
     }
     let history = crate::store::read_events(&run.events_path)?;
     assert_eq!(

@@ -153,7 +153,7 @@ impl Tool for InventoryTool {
         self.id
     }
     fn parameters_json_schema(&self) -> Value {
-        json!({"type":"object"})
+        json!({"type":"object","properties":{"path":{"type":"string"}}})
     }
     fn capability(&self) -> ToolCapability {
         self.capability
@@ -175,6 +175,7 @@ async fn native_filters_use_registered_capabilities_aliases_and_mcp_server_metad
         ("write", ToolCapability::EditFs),
         ("edit", ToolCapability::EditFs),
         ("custom-edit", ToolCapability::EditFs),
+        ("read_file", ToolCapability::ReadFs),
         ("todowrite", ToolCapability::ReadFs),
         ("task", ToolCapability::SpawnAgent),
         ("get_task_output", ToolCapability::ReadFs),
@@ -196,9 +197,16 @@ async fn native_filters_use_registered_capabilities_aliases_and_mcp_server_metad
         .and_then(|defs| defs.cli.get_mut("native-fixture"))
         .ok_or("native definition absent")?;
     definition.capability_mode = Some(crate::config::SubagentCapabilityMode::ReadOnly);
-    definition.prompt_body = Some("Plan tool: ${{ tools.by_kind.plan }}\n${% if tools.by_kind.edit %}Unexpected editor${% endif %}".into());
+    definition.prompt_body = Some("Plan tool: ${{ tools.by_kind.plan }}\nRead tool: ${{ tools.by_kind.read }} path: ${{ params.read.path }}\n${% if tools.by_kind.edit %}Unexpected editor${% endif %}".into());
     definition.mcp_inheritance =
         crate::config::SubagentMcpInheritance::Mode(crate::config::SubagentMcpMode::None);
+    config.agent_prompt_sources.insert(
+        "native-fixture".into(),
+        Arc::new(crate::system_prompt::PromptSource {
+            configured: Some("A same-name main profile must not replace the child role.".into()),
+            ..Default::default()
+        }),
+    );
     let (handle, parent) = start(config, temp.path()).await?;
     let _ = join(launch(
         &handle,
@@ -209,8 +217,9 @@ async fn native_filters_use_registered_capabilities_aliases_and_mcp_server_metad
     .await?;
     let requests = provider.captured_requests().await;
     let system = &requests[0].messages[0].content;
-    assert!(system.ends_with("Plan tool: todowrite\n"));
-    assert!(!system.contains("<making_code_changes>"));
+    assert!(system.contains("Plan tool: todowrite\n"));
+    assert!(system.contains("Read tool: read_file path: path\n"));
+    assert!(!system.contains("Unexpected editor"));
     let tools: Vec<_> = requests
         .first()
         .ok_or("actual provider request absent")?

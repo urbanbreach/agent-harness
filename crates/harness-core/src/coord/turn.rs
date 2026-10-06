@@ -22,7 +22,9 @@ pub(super) struct Worker {
     pub(super) provider: Arc<dyn harness_providers::Provider>,
     pub(super) permits: Arc<tokio::sync::Semaphore>,
     pub(super) profile: Arc<AgentProfile>,
-    prompt_source: Option<Arc<crate::model_resolution::PromptSource>>,
+    prompt_source: Option<Arc<crate::system_prompt::PromptSource>>,
+    prompt_date: String,
+    prompt_limits: (usize, crate::config::SubagentLimitBehavior),
     workspace: PathBuf,
     pub(super) compaction: crate::config::CompactionSettings,
     pub(super) tools: Vec<harness_providers::ToolDef>,
@@ -330,11 +332,19 @@ impl Runtime {
             registry: Arc::clone(&self.config.tool_registry),
             permissions: (self.config.permission_policy.clone(), agent.policy.clone()),
             profile: Arc::clone(&agent.profile),
-            prompt_source: self
-                .config
-                .agent_prompt_sources
-                .get(&agent.profile.name)
-                .cloned(),
+            prompt_source: if native {
+                self.native_prompt_source(agent_id).map(Arc::new)
+            } else {
+                self.config
+                    .agent_prompt_sources
+                    .get(&agent.profile.name)
+                    .cloned()
+            },
+            prompt_date: self.clock.system_time_rfc3339().unwrap_or_default(),
+            prompt_limits: (
+                self.config.subagents.max_concurrent,
+                self.config.subagents.limit_behavior,
+            ),
             workspace,
             compaction: self.config.compaction.clone(),
             actor: actor.clone(),

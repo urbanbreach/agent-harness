@@ -34,7 +34,13 @@ impl Worker {
                 result: Err(error),
             };
         }
-        self.update_prompt(&mut messages);
+        if let Err(error) = self.update_prompt(&mut messages) {
+            return Completion::Turn {
+                id: self.turn.id,
+                messages,
+                result: Err(error),
+            };
+        }
         if let Some(manual) = self.turn.manual.take() {
             let outcome = self
                 .compact(
@@ -153,7 +159,7 @@ impl Worker {
                         self.turn.model = next.model_ref.clone();
                         self.turn.settings = (&next).into();
                         self.turn.target = Some(next);
-                        self.update_prompt(messages);
+                        self.update_prompt(messages)?;
                     }
                     result => break result?,
                 }
@@ -224,6 +230,7 @@ impl Worker {
                 &self.native_schema,
                 self.native,
             );
+            self.update_prompt(messages)?;
         }
     }
     async fn run_tools(

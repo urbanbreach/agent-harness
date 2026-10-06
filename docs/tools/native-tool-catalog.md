@@ -84,7 +84,7 @@ journal and retain only todo versions needed to resolve rewinds.
 ## Delegation and MCP
 
 `spawn_subagent` requires `prompt` and `description`, defaults to the
-`general-purpose` definition, and runs in the background unless `background` is
+`task` definition, and runs in the background unless `background` is
 false. Use the returned `subagent_id` with the output, wait, kill, and message
 tools. `resume_from` creates a new child from completed context; messaging can
 wake the existing identity. Child sessions have independent journals, artifacts,

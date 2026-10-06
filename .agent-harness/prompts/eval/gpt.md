@@ -1,0 +1,3 @@
+# Eval routing for GPT
+Before a tool step, identify calls whose arguments are already known and independent. Put two or more of those calls in one eval cell, including specialized native tools. Use `parallel(thunks)` or `Promise.allSettled` and inspect every result, including errors.
+Use direct calls for a single operation or when a result determines the next call. Execute edits and other side effects in order and inspect each result. Preserve failed items and retrieve truncated evidence before concluding. Detached cells notify when finished; continue independent work and do not rerun or repeatedly poll them.

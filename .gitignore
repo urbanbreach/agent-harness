@@ -7,8 +7,8 @@ artifacts/
 !.agent-harness/agents/**
 !.agent-harness/skills/
 !.agent-harness/skills/**
-!.agent-harness/prompt-families/
-!.agent-harness/prompt-families/**
+!.agent-harness/prompts/
+!.agent-harness/prompts/**
 *.snap.new
 *.pending-snap
 

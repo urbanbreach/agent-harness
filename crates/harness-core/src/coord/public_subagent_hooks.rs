@@ -50,7 +50,8 @@ pub(super) fn apply_native_schema_hints(tools: &mut Vec<ToolDef>, hints: &Value,
                 tool.tool_id.as_str(),
                 "task" | "get_task_output" | "wait_tasks" | "kill_task"
             )
-            || depth >= maximum && matches!(tool.tool_id.as_str(), "spawn_subagent" | "task"))
+            || (depth >= maximum || hints["allowed_types"].as_array().is_some_and(Vec::is_empty))
+                && matches!(tool.tool_id.as_str(), "spawn_subagent" | "task"))
     });
     for tool in tools {
         if !matches!(tool.tool_id.as_str(), "spawn_subagent" | "task") {

@@ -31,9 +31,9 @@ async fn workpools_bound_native_admission_and_preserve_kernel_tool_scope() -> Re
         )
         .await?;
         let code = if language == "js" {
-            "tool(async function lookup() { return (await tool.probe({slot:0})).text; }); var pool = await workpool({subagent_type:'general-purpose',prompt:'Call lookup once'}, 'jobs', {width:1,tools:['lookup','probe'],mode:'fresh'}); var pushed = await pool.push([{key:'a',input:'first'},{key:'b',input:'second'},{key:'c',input:'third'}]); await pool.close(); display(await wait(pushed.details.items,{mode:'settled',timeout:10})); display(await pool.inspect());"
+            "tool(async function lookup() { return (await tool.probe({slot:0})).text; }); var pool = await workpool({subagent_type:'task',prompt:'Call lookup once'}, 'jobs', {width:1,tools:['lookup','probe'],mode:'fresh'}); var pushed = await pool.push([{key:'a',input:'first'},{key:'b',input:'second'},{key:'c',input:'third'}]); await pool.close(); display(await wait(pushed.details.items,{mode:'settled',timeout:10})); display(await pool.inspect());"
         } else {
-            "@tool\ndef lookup():\n    return tool.probe(slot=0)['text']\npool = workpool({'subagent_type':'general-purpose','prompt':'Call lookup once'}, 'jobs', width=1, tools=['lookup','probe'], mode='fresh')\npushed = pool.push([{'key':'a','input':'first'},{'key':'b','input':'second'},{'key':'c','input':'third'}])\npool.close()\ndisplay(wait(pushed['details']['items'], mode='settled', timeout=10))\ndisplay(pool.inspect())"
+            "@tool\ndef lookup():\n    return tool.probe(slot=0)['text']\npool = workpool({'subagent_type':'task','prompt':'Call lookup once'}, 'jobs', width=1, tools=['lookup','probe'], mode='fresh')\npushed = pool.push([{'key':'a','input':'first'},{'key':'b','input':'second'},{'key':'c','input':'third'}])\npool.close()\ndisplay(wait(pushed['details']['items'], mode='settled', timeout=10))\ndisplay(pool.inspect())"
         };
         let run = session.good(language, code);
         tokio::pin!(run);
@@ -141,7 +141,7 @@ async fn workpools_bound_native_admission_and_preserve_kernel_tool_scope() -> Re
 #[tokio::test]
 #[ignore = "requires Node.js 24+; scripts/test-lanes.sh eval"]
 async fn closed_pool_delivers_one_aggregate_notification_to_model() -> Result {
-    let code = "var pool = await workpool('general-purpose','notify',{width:1}); var pushed = await pool.push(['first','second']); await pool.close(); await wait(pushed.details.items,{mode:'settled',timeout:10});";
+    let code = "var pool = await workpool('task','notify',{width:1}); var pushed = await pool.push(['first','second']); await pool.close(); await wait(pushed.details.items,{mode:'settled',timeout:10});";
     let first = vec![Stream::ToolCallComplete {
         tool_call_id: "pool-eval".into(), function_name: "eval".into(),
         arguments_json: json!({"language":"js","summary":"Run pooled work","code":code,"on_timeout":"error"}).to_string(),

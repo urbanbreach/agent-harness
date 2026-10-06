@@ -80,7 +80,7 @@ configured models. Invalid caches are ignored. Runtime
 selection does not fetch or write a catalog; the connect flow and explicit model
 commands perform refreshes. `HARNESS_DISABLE_MODELS_FETCH=1` selects embedded data.
 Catalog models keep their configured variants and image capabilities. A model
-switch or fallback selects that model's prompt family for the next request.
+switch or fallback rebuilds the shared prompt with that model's delegation policy.
 Project instructions, explicit system prompts and command-line rules persist
 across the switch and session resume.
 
