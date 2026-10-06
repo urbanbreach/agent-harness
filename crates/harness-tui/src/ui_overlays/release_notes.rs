@@ -333,6 +333,6 @@ mod tests {
 
         // assert
         assert!(debug.contains("Safety"));
-        assert!(!debug.contains("0.1.0 — current"));
+        assert!(!debug.contains(concat!(env!("CARGO_PKG_VERSION"), " — current")));
     }
 }

@@ -9,7 +9,7 @@ expression: "normalized_startup_snapshot(&app, width, height)"
 
 
    ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-   │  ██╗  ██╗   Harness 0.1.0                                                                                      │
+   │  ██╗  ██╗   Harness 0.0.1                                                                                      │
    │  ██║  ██║                                                                                                      │
    │  ██║  ██║   Changelog                                                                                          │
    │  ███████║   • Structural Markdown preserves nested styles, code indentation, tables and math.                  │

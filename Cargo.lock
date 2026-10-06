@@ -1451,7 +1451,7 @@ dependencies = [
 
 [[package]]
 name = "harness"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "async-trait",
  "blake3",
@@ -1487,7 +1487,7 @@ dependencies = [
 
 [[package]]
 name = "harness-core"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -1526,7 +1526,7 @@ dependencies = [
 
 [[package]]
 name = "harness-eval"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -1543,7 +1543,7 @@ dependencies = [
 
 [[package]]
 name = "harness-providers"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1563,7 +1563,7 @@ dependencies = [
 
 [[package]]
 name = "harness-testkit"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "harness-core",
  "image",
@@ -1575,7 +1575,7 @@ dependencies = [
 
 [[package]]
 name = "harness-tools"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -1613,7 +1613,7 @@ dependencies = [
 
 [[package]]
 name = "harness-tui"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
