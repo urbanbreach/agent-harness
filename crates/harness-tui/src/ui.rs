@@ -527,83 +527,49 @@ fn render_toast(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let Some(toast) = app.toast() else {
         return;
     };
-    if toast.variant == ToastVariant::Rewind {
-        if let Some(transcript) = FrameLayoutPlan::for_app(app, area).transcript {
-            let available = transcript.width.saturating_sub(4);
-            if available > 0 && transcript.height > 0 {
-                let text = format!(
-                    " {} ",
-                    crate::rewind_list::truncate(&toast.message, usize::from(available))
-                );
-                let width = u16::try_from(display_width(&text)).unwrap_or(u16::MAX);
-                let rect = Rect::new(
-                    transcript.right().saturating_sub(width + 1),
-                    transcript.bottom() - 1,
-                    width,
-                    1,
-                );
-                frame.render_widget(
-                    Paragraph::new(text).style(
-                        Style::default()
-                            .fg(theme.terminal_colors.prompt_accent)
-                            .bg(theme.surface.canvas)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    rect,
-                );
-            }
+    // One borderless line pinned bottom-right of the transcript, like Grok Build.
+    let anchor = FrameLayoutPlan::for_app(app, area)
+        .transcript
+        .unwrap_or(area);
+    let (glyph, accent) = match toast.variant {
+        ToastVariant::Error => (theme.live_shell.glyphs.error, theme.status.error),
+        ToastVariant::Info | ToastVariant::Mode | ToastVariant::Rewind => {
+            (theme.live_shell.glyphs.done, theme.text.accent)
         }
-        return;
-    }
-    if area.width <= 6 || area.height <= 4 {
-        return;
-    }
-
-    let max_width = area.width.saturating_sub(6).min(60);
-    if max_width < 8 {
-        return;
-    }
-
-    let text_width = u16::try_from(display_width(&toast.message)).unwrap_or(u16::MAX);
-    let width = text_width.saturating_add(4).min(max_width).max(8);
-    let lines = wrap_completion_text(&toast.message, usize::from(width.saturating_sub(4)));
-    let padding_y = theme.live_shell.rhythm.surface_margin_y;
-    let height = u16::try_from(lines.len())
-        .unwrap_or(u16::MAX)
-        .saturating_add(padding_y.saturating_mul(2))
-        .min(area.height.saturating_sub(2));
-    let x = area.right().saturating_sub(width + 2);
-    let popup = Rect::new(x, area.y.saturating_add(2), width, height);
-    let accent = match toast.variant {
-        ToastVariant::Info | ToastVariant::Rewind => theme.status.info,
-        ToastVariant::Error => theme.status.error,
-        ToastVariant::Mode => theme.text.accent,
     };
-    let surface = theme.surface.panel;
-    let fade_alpha = app.toast_fade_alpha().unwrap_or(1.0);
-    let accent = ui_transcript_style::blend_color(surface, accent, fade_alpha);
-    let text_color = ui_transcript_style::blend_color(surface, theme.text.primary, fade_alpha);
-    let block = Block::default()
-        .style(Style::default().bg(surface))
-        .borders(Borders::LEFT | Borders::RIGHT)
-        .border_style(Style::default().fg(accent).bg(surface));
-    frame.render_widget(Clear, popup);
-    frame.render_widget(block, popup);
-
-    let inner = Rect::new(
-        popup.x.saturating_add(2),
-        popup.y.saturating_add(padding_y),
-        popup.width.saturating_sub(4),
-        popup.height.saturating_sub(padding_y.saturating_mul(2)),
-    );
-    if inner.width == 0 || inner.height == 0 {
+    let prefix = format!(" {glyph} ");
+    let available = anchor
+        .width
+        .saturating_sub(4)
+        .saturating_sub(u16::try_from(display_width(&prefix)).unwrap_or(u16::MAX));
+    if available == 0 || anchor.height == 0 {
         return;
     }
-
+    let message = format!(
+        "{} ",
+        crate::rewind_list::truncate(&toast.message, usize::from(available))
+    );
+    let width = u16::try_from(display_width(&prefix) + display_width(&message)).unwrap_or(u16::MAX);
+    let rect = Rect::new(
+        anchor.right().saturating_sub(width + 1),
+        anchor.bottom() - 1,
+        width,
+        1,
+    );
+    let canvas = theme.surface.canvas;
+    let fade_alpha = app.toast_fade_alpha().unwrap_or(1.0);
+    let style = |fg| {
+        Style::default()
+            .fg(ui_transcript_style::blend_color(canvas, fg, fade_alpha))
+            .bg(canvas)
+            .add_modifier(Modifier::BOLD)
+    };
     frame.render_widget(
-        Paragraph::new(lines.into_iter().map(Line::from).collect::<Vec<_>>())
-            .style(Style::default().fg(text_color).bg(surface)),
-        inner,
+        Paragraph::new(Line::from(vec![
+            Span::styled(prefix, style(accent)),
+            Span::styled(message, style(theme.text.primary)),
+        ])),
+        rect,
     );
 }
 
