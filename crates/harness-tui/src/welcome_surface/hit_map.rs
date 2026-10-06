@@ -45,7 +45,7 @@ impl WelcomeHitMap {
                     .changelog_header_rect
                     .filter(|rect| contains(*rect, col, row))
                     .map(|_| WelcomeHit {
-                        region: WelcomeRegion::Menu,
+                        region: WelcomeRegion::ChangelogHeader,
                         item_index: Some(2),
                     })
             })

@@ -188,7 +188,10 @@ fn state_tracks_the_hovered_menu_item_independently_from_focus() {
     let mut state = WelcomeState::new(3, false);
 
     // act
-    let changed = state.set_hovered_action(Some(1));
+    let changed = state.set_hovered_hit(Some(WelcomeHit {
+        region: WelcomeRegion::Menu,
+        item_index: Some(1),
+    }));
 
     // assert
     assert!(changed);
@@ -200,10 +203,16 @@ fn state_tracks_the_hovered_menu_item_independently_from_focus() {
 fn state_clears_an_out_of_range_hover_target() {
     // arrange
     let mut state = WelcomeState::new(3, false);
-    state.set_hovered_action(Some(1));
+    state.set_hovered_hit(Some(WelcomeHit {
+        region: WelcomeRegion::Menu,
+        item_index: Some(1),
+    }));
 
     // act
-    let changed = state.set_hovered_action(Some(3));
+    let changed = state.set_hovered_hit(Some(WelcomeHit {
+        region: WelcomeRegion::Menu,
+        item_index: Some(3),
+    }));
 
     // assert
     assert!(changed);

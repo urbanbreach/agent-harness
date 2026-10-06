@@ -3,6 +3,7 @@ pub enum WelcomeRegion {
     Hero,
     Logo,
     Menu,
+    ChangelogHeader,
     Prompt,
     StatusBar,
     None,
