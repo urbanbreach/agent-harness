@@ -130,8 +130,7 @@ define_command_metadata! {
     ("switch_model", "Switch model", "Browse available provider/model options"),
     ("cycle_variant", "Cycle reasoning preset", "Cycle the configured model variant/reasoning preset"),
     ("toggles", "Toggles", "Toggle profiles, tools, hooks, MCP, YOLO"),
-    ("auth", "Auth", "Manage provider login, logout, and auth status"),
-    ("connect", "Connect", "Connect a provider"),
+    ("login", "Login", "Log in to a provider"),
     ("close_review_surface", "Session shell", "Return to the transcript-first session shell"),
     ("toggle_terminal_panel", "Toggle terminal panel", "Show or hide shell command output below the transcript"),
     ("toggle_follow", "Toggle follow", "Toggle follow mode"),
@@ -344,8 +343,7 @@ define_slash_commands! {
     ("mcps", "toggles", &[], false, false),
     ("toggles", "toggles", &[], false, false),
     ("yolo", "yolo_mode", &[], false, false),
-    ("auth", "auth", &["login"], true, false),
-    ("connect", "connect", &[], false, false),
+    ("login", "login", &[], false, false),
     ("help", "help", &[], false, false),
     ("feedback", "help", &[], false, false),
     ("shell", "close_review_surface", &["session-shell"], false, false),
@@ -396,7 +394,7 @@ define_palette_commands! {
     ("cycle_variant", "cycle_variant", "shift+tab", PaletteCommandSection::Agent),
     ("toggle_todos", "toggle_todos", "ctrl+t", PaletteCommandSection::Agent),
     ("toggles", "toggles", "toggles", PaletteCommandSection::Agent),
-    ("auth", "auth", "auth", PaletteCommandSection::System),
+    ("login", "login", "login", PaletteCommandSection::System),
     ("close_review_surface", "close_review_surface", "esc", PaletteCommandSection::Session),
     ("revert_workspace", "revert_workspace", "", PaletteCommandSection::Session),
     ("toggle_terminal_panel", "toggle_terminal_panel", "4", PaletteCommandSection::Session),
@@ -452,7 +450,9 @@ mod tests {
 
         // Then
         assert_eq!(metadata("help"), Some((false, false)));
-        assert_eq!(metadata("auth"), Some((true, false)));
+        assert_eq!(metadata("login"), Some((false, false)));
+        assert_eq!(metadata("auth"), None);
+        assert_eq!(metadata("connect"), None);
         assert_eq!(metadata("rename"), Some((true, true)));
         assert!(commands
             .iter()
@@ -470,8 +470,7 @@ mod tests {
                 "mcps",
                 "toggles",
                 "yolo",
-                "auth",
-                "connect",
+                "login",
                 "help",
                 "feedback",
                 "shell",

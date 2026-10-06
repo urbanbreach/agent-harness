@@ -1,4 +1,8 @@
-# Connect a provider
+# Log in to a provider
+
+Inside the TUI, use `/login` or choose `Login` from the command palette. Both
+open the provider dialog with browser and headless sign-in. Provider API-key
+methods remain available in the same dialog.
 
 Local HTTP fixtures verify requests, streaming, tool results, login callbacks,
 device polling, refresh and credential redaction. A live Codex prompt using an
@@ -77,7 +81,7 @@ provider definitions, model choices and instructions remain authoritative.
 Codex also reads missing, supported model entries from `HARNESS_MODELS_PATH` or
 the credential directory's `models-cache.json`. Cached entries never replace
 configured models. Invalid caches are ignored. Runtime
-selection does not fetch or write a catalog; the connect flow and explicit model
+selection does not fetch or write a catalog; the login flow and explicit model
 commands perform refreshes. `HARNESS_DISABLE_MODELS_FETCH=1` selects embedded data.
 Catalog models keep their configured variants and image capabilities. A model
 switch or fallback rebuilds the shared prompt with that model's delegation policy.

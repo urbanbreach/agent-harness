@@ -8,10 +8,10 @@ pub(crate) use super::session_history::{
     session_history_category_label, session_history_current_marker, session_history_display_title,
     session_history_footer_label,
 };
-use super::session_slash::{auth_slash_args_from_prompt, slash_command_match_rank};
+use super::session_slash::slash_command_match_rank;
 use super::{
-    auth_status_banner, set_pending_live_launch_metadata, set_pending_live_prompt_draft, AppState,
-    Focus, PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
+    set_pending_live_launch_metadata, set_pending_live_prompt_draft, AppState, Focus,
+    PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
     StartupLauncherAction, Tab, UiIntent,
 };
 use crate::keybindings::{self, Action};
@@ -275,9 +275,8 @@ impl AppState {
         }
         match command {
             "usage" | "extensions" => true,
-            "new" | "status" | "dashboard" | "toggles" | "auth" | "connect" | "help" | "exit"
-            | "mcps" | "timestamps" | "thinking" | "settings" | "view-plan" | "vim"
-            | "worktree" => true,
+            "new" | "status" | "dashboard" | "toggles" | "login" | "help" | "exit" | "mcps"
+            | "timestamps" | "thinking" | "settings" | "view-plan" | "vim" | "worktree" => true,
             "sessions" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
@@ -392,16 +391,7 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.open_toggles_menu();
             }
-            "auth" => {
-                let auth_args = auth_slash_args_from_prompt(&self.composer.prompt_buffer);
-                self.restore_slash_draft(preserved_draft);
-                self.status_banner = Some(auth_status_banner(&auth_args));
-                self.emit_ui_intent(UiIntent::OpenAuthManager {
-                    args: auth_args,
-                    stdin: None,
-                });
-            }
-            "connect" => {
+            "login" => {
                 self.restore_slash_draft(preserved_draft);
                 self.open_connect_dialog();
             }

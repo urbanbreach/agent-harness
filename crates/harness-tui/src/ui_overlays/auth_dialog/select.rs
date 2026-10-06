@@ -19,7 +19,7 @@ pub(super) fn render_provider_select(frame: &mut Frame, app: &AppState, theme: &
         frame,
         theme,
         area,
-        "Connect a provider",
+        "Log in to a provider",
         &dialog.filter_buffer,
     );
 
@@ -44,7 +44,7 @@ pub(super) fn render_method_select(frame: &mut Frame, app: &AppState, theme: &Th
         frame,
         theme,
         area,
-        "Select auth method",
+        "Choose a login method",
         &dialog.filter_buffer,
     );
 

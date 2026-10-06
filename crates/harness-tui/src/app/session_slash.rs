@@ -48,25 +48,6 @@ pub(super) fn slash_command_match_rank(
     description.find(query).map(|index| (3, index))
 }
 
-pub(super) fn auth_slash_args_from_prompt(prompt: &str) -> Vec<String> {
-    let trimmed = prompt.trim().trim_start_matches('/');
-    let mut parts = trimmed.split_whitespace();
-    match parts.next() {
-        Some("login") => std::iter::once("login".to_string())
-            .chain(parts.map(str::to_string))
-            .collect(),
-        Some("auth") => {
-            let args = parts.map(str::to_string).collect::<Vec<_>>();
-            if args.is_empty() {
-                vec!["list".to_string()]
-            } else {
-                args
-            }
-        }
-        _ => vec!["list".to_string()],
-    }
-}
-
 fn slash_subsequence_score(haystack: &str, needle: &str) -> Option<usize> {
     let mut total_gap = 0usize;
     let mut last_index = 0usize;

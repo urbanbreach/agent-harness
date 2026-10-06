@@ -67,7 +67,7 @@ fn catalog_providers_include_models_dev_api_key_entries() {
 }
 
 #[test]
-fn catalog_providers_overlay_openai_auth_methods() {
+fn login_commands_open_dialog_and_offer_browser_and_headless_sign_in() {
     let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
     let registry = AuthPluginRegistry::with_builtins();
 
@@ -86,6 +86,55 @@ fn catalog_providers_overlay_openai_auth_methods() {
         .methods
         .iter()
         .any(|method| matches!(method, AuthMethodSpec::ApiKey { .. })));
+
+    for startup in [true, false] {
+        for palette in [true, false] {
+            for method in ["browser", "device"] {
+                let intents = Arc::new(Mutex::new(Vec::new()));
+                let captured = Arc::clone(&intents);
+                let sink = Arc::new(move |intent| captured.lock().unwrap_or_abort().push(intent));
+                let mut app = if startup {
+                    AppState::new_startup(Vec::new(), Some(sink))
+                } else {
+                    AppState::new_live(None, false, Some(sink))
+                };
+                app.set_connect_dialog_providers(providers.clone());
+                if palette {
+                    app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+                }
+                for ch in if palette { "login" } else { "/login" }.chars() {
+                    app.handle_key(key(KeyCode::Char(ch)));
+                }
+                app.handle_key(key(KeyCode::Enter));
+                assert!(
+                    app.connect_dialog.visible,
+                    "login must open the provider dialog"
+                );
+                assert!(intents.lock().unwrap_or_abort().is_empty());
+                for ch in "openai".chars() {
+                    app.handle_key(key(KeyCode::Char(ch)));
+                }
+                app.handle_key(key(KeyCode::Enter));
+                if method == "device" {
+                    app.handle_key(key(KeyCode::Down));
+                }
+                app.handle_key(key(KeyCode::Enter));
+                assert_eq!(app.connect_dialog.step, ConnectDialogStep::Waiting);
+                assert_eq!(
+                    intents.lock().unwrap_or_abort().as_slice(),
+                    &[UiIntent::OpenAuthManager {
+                        args: vec![
+                            "login".into(),
+                            "openai".into(),
+                            "--method".into(),
+                            method.into()
+                        ],
+                        stdin: None,
+                    }]
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -99,7 +148,7 @@ fn connect_dialog_renders_provider_panel() {
 
     let rendered = render_plain(&app, 100, 30);
 
-    assert!(rendered.contains("Connect a provider"), "{rendered}");
+    assert!(rendered.contains("Log in to a provider"), "{rendered}");
     assert!(rendered.contains("esc"), "{rendered}");
     assert!(rendered.contains("Search"), "{rendered}");
     assert!(rendered.contains("Popular"), "{rendered}");
@@ -230,8 +279,9 @@ fn waiting_device_auth_app() -> AppState {
     let mut app = AppState::new_live(None, false, None);
     app.connect_dialog.visible = true;
     app.connect_dialog.step = ConnectDialogStep::Waiting;
-    app.connect_dialog.notice =
-        Some("Open https://auth.example.test/device\nEnter code TEST-CODE".to_string());
+    app.append_connect_dialog_authorization_detail(
+        "auth backend output: Open https://auth.example.test/device and enter TEST-CODE",
+    );
     app
 }
 
@@ -265,7 +315,7 @@ fn waiting_device_auth_c_copies_user_code() {
 }
 
 #[test]
-fn waiting_device_auth_c_copies_verification_url_when_code_is_absent() {
+fn waiting_browser_auth_c_copies_streamed_authorization_url() {
     // arrange
     let copied = Arc::new(Mutex::new(None));
     let captured = Arc::clone(&copied);
@@ -274,7 +324,15 @@ fn waiting_device_auth_c_copies_verification_url_when_code_is_absent() {
         Ok(())
     })));
     let mut app = waiting_device_auth_app();
-    app.connect_dialog.notice = Some("Open https://auth.example.test/device".to_string());
+    app.connect_dialog.notice = None;
+    app.append_connect_dialog_authorization_detail(
+        "auth backend output: Open this URL to sign in:",
+    );
+    app.handle_connect_dialog_key(key(KeyCode::Char('c')));
+    assert!(copied.lock().unwrap_or_abort().is_none());
+    app.append_connect_dialog_authorization_detail(
+        "auth backend output: https://auth.example.test/oauth/authorize?state=test-state",
+    );
 
     // act
     app.handle_connect_dialog_key(key(KeyCode::Char('c')));
@@ -283,7 +341,7 @@ fn waiting_device_auth_c_copies_verification_url_when_code_is_absent() {
     // assert
     assert_eq!(
         copied.lock().unwrap_or_abort().as_deref(),
-        Some("https://auth.example.test/device")
+        Some("https://auth.example.test/oauth/authorize?state=test-state")
     );
 }
 

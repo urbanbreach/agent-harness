@@ -69,7 +69,7 @@ Reference's additional features do not imply that Harness implements them.
 | Composer | Grapheme editing, selection, undo/redo, multiline, paste preview, history, stash, file and agent mentions | Composer tests, `production_composer_reachability_test`, P0-04 PTY fixtures |
 | Submission | Send, queue, interject, cancel-and-replace, queued-entry navigation, shell command mode | Prompt queue tests, live turn tests, CLI intent tests |
 | Commands | Palette and slash search, aliases, key remapping, leader chords, simple/Vim modes | `keybindings`, `help_browser_test`, slash completion fixtures |
-| Dialogs | Help, themes, model/preset selection, auth/connect, toggles, settings, status/usage/extensions | Modal chrome fixtures, model switcher tests, dashboard tests |
+| Dialogs | Help, themes, model/preset selection, login, toggles, settings, status/usage/extensions | Modal chrome fixtures, model switcher tests, dashboard tests |
 | Session tools | Resume/replay, rename/delete/pin, tree, fork/clone, import/export, rewind, worktree picker/new worktree | Session navigation, lineage, foreign import, CLI replay tests |
 | Permissions | Decision, rejection feedback, approval confirmation, parked focus, draft preservation, coordinator acknowledgement | Permission snapshots, interaction captures, PTY happy path |
 | Questions | Single/multiple selection, freeform answer, multiple questions, fullscreen, focus, dismiss/copy | `question_focus_visual_test`, tool interaction captures |

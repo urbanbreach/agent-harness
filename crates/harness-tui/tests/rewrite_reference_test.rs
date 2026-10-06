@@ -99,7 +99,7 @@ impl Recorder {
         Ok(())
     }
 
-    fn menus(&mut self) -> Result {
+    fn menus(&mut self, original: bool) -> Result {
         for command in [
             "help",
             "sessions",
@@ -121,6 +121,10 @@ impl Recorder {
             "rewind",
             "import",
         ] {
+            // Removed commands are covered by the current /login interaction test.
+            if !original && matches!(command, "auth" | "connect") {
+                continue;
+            }
             let mut journey = Journey::new(false);
             journey.text(&format!("/{command}"));
             self.frame(&format!("slash-{command}"), &mut journey)?;
@@ -350,7 +354,7 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
         r.composer()?;
         r.session()?;
         r.permissions()?;
-        r.menus()?;
+        r.menus(original)?;
         r.working_permissions()?;
         r.populated_dialogs(std::path::Path::new("."))?;
         r.mentions()?;
@@ -407,7 +411,26 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
         let expected = expected
             .lines()
             .map(serde_json::from_str::<Value>)
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+            .collect::<std::result::Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|frame| {
+                original
+                    || ![
+                        "slash-auth-",
+                        "dialog-auth-",
+                        "selected-auth-",
+                        "slash-connect-",
+                        "dialog-connect-",
+                        "selected-connect-",
+                    ]
+                    .iter()
+                    .any(|prefix| {
+                        frame["id"]
+                            .as_str()
+                            .is_some_and(|id| id.starts_with(prefix))
+                    })
+            })
+            .collect::<Vec<_>>();
         assert_eq!(
             expected.len(),
             r.frames.len(),

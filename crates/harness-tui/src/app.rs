@@ -104,7 +104,6 @@ use crate::{clipboard, ui};
 
 mod activity;
 pub mod auth_dialog;
-mod auth_display;
 mod child_inspection;
 mod child_links;
 mod child_markdown;
@@ -196,7 +195,6 @@ pub use self::activity::{
     RuntimeStateKind,
 };
 pub use self::auth_dialog::{ConnectDialogState, ConnectProviderOption};
-use self::auth_display::auth_status_banner;
 pub(crate) use self::composer::ComposerState;
 pub(crate) use self::help_browser::{HelpBrowserState, HelpMode, HelpRow};
 pub use self::lifecycle::{
@@ -330,7 +328,7 @@ fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
         && row < area.y.saturating_add(area.height)
 }
 
-const NO_PROVIDER_BANNER: &str = "No provider connected. Use /connect.";
+const NO_PROVIDER_BANNER: &str = "No provider connected. Use /login.";
 
 pub struct AppState {
     pub selected_event_index: usize,
@@ -1489,8 +1487,7 @@ impl AppState {
             }
         } else {
             self.status_banner = Some(if message.trim().is_empty() {
-                "auth backend failed; run `harness auth login` in a terminal or use /connect"
-                    .to_string()
+                "Login failed. Try again with /login.".to_string()
             } else {
                 message
             });

@@ -35,7 +35,11 @@ impl AppState {
         let Some(detail) = message.strip_prefix("auth backend output: ") else {
             return;
         };
-        if !detail.starts_with("Open ") && !detail.starts_with("Enter code ") {
+        if !detail.starts_with("Open ")
+            && !detail.starts_with("Enter code ")
+            && !detail.starts_with("https://")
+            && !detail.starts_with("http://")
+        {
             return;
         }
         self.connect_dialog.notice = Some(match self.connect_dialog.notice.take() {
@@ -50,7 +54,7 @@ impl AppState {
         }
         if success {
             self.connect_dialog.toast = Some(AuthToastState {
-                message: "Connected successfully".to_string(),
+                message: "Logged in successfully".to_string(),
                 is_success: true,
             });
             self.connect_dialog.error_message = None;
@@ -75,8 +79,7 @@ impl AppState {
             });
             self.connect_dialog.step = ConnectDialogStep::Error;
             self.connect_dialog.error_message = Some(if message.trim().is_empty() {
-                "Authentication failed. Try again or run `harness auth login` in a terminal."
-                    .to_string()
+                "Login failed. Try again with /login.".to_string()
             } else {
                 message.to_string()
             });
