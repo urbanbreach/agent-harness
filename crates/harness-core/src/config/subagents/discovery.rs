@@ -88,17 +88,11 @@ impl SubagentDefinitionSnapshot {
             .into_iter()
             .filter_map(|name| {
                 let definition = self.definition(&name)?;
-                if matches!(name.as_str(), "general-purpose" | "explore" | "plan")
-                    || matches!(
-                        definition.source,
-                        SubagentDefinitionSource::Builtin | SubagentDefinitionSource::Bundled
-                    )
-                    || allowed.is_some_and(|allowed| {
-                        !allowed
-                            .iter()
-                            .any(|entry| entry.eq_ignore_ascii_case(&name))
-                    })
-                {
+                if allowed.is_some_and(|allowed| {
+                    !allowed
+                        .iter()
+                        .any(|entry| entry.eq_ignore_ascii_case(&name))
+                }) {
                     return None;
                 }
                 Some(SubagentTypeDescriptor {

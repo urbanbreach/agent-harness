@@ -4,29 +4,73 @@ use harness_providers::{
 };
 
 impl Worker {
-    pub(super) fn update_prompt(&self, messages: &mut super::super::context::Context) {
+    pub(super) fn update_prompt(
+        &mut self,
+        messages: &mut super::super::context::Context,
+    ) -> Result<(), CoordinatorError> {
         let Some(source) = &self.prompt_source else {
-            return;
+            return Ok(());
         };
-        let family = self
-            .turn
-            .target
-            .as_ref()
-            .map_or(crate::model_resolution::PromptFamily::Default, |target| {
-                target.resolution.prompt_family
-            });
-        let text = source.resolve(&self.profile.name, family, &self.workspace);
+        let resolution = self.turn.target.as_ref().map_or_else(
+            || {
+                let model = crate::agent::AgentModelRef::parse(&self.turn.model);
+                crate::model_resolution::resolve_model(
+                    crate::model_resolution::ModelResolutionInput {
+                        provider: &model.provider_id,
+                        model: &model.model_id,
+                        metadata_family: None,
+                        input_modalities: &[],
+                        supports_tool_calls: None,
+                        supports_reasoning_summaries: None,
+                    },
+                )
+            },
+            |target| target.resolution.clone(),
+        );
+        let mut available = self.registry.prompt_definitions(
+            &self.profile,
+            self.tool_scope.as_deref(),
+            (&self.permissions.0, &self.permissions.1),
+        );
+        super::super::public_subagent_hooks::apply_native_schema_hints(
+            &mut available,
+            &self.native_schema,
+            self.native,
+        );
+        let rendered = source
+            .render(&crate::system_prompt::PromptContext {
+                workspace: &self.workspace,
+                model: &self.turn.model,
+                prompt_preset: &resolution.prompt_preset,
+                delegation_bias: resolution.delegation_bias,
+                tools: &available,
+                direct_tools: &self.tools,
+                current_date: &self.prompt_date,
+                max_concurrent: self.prompt_limits.0,
+                limit_behavior: self.prompt_limits.1,
+            })
+            .map_err(|error| CoordinatorError::Invalid(format!("system prompt: {error}")))?;
+        if let Some(eval) = self.tools.iter_mut().find(|tool| tool.tool_id == "eval")
+            && let Some(original) = available.iter().find(|tool| tool.tool_id == "eval")
+        {
+            eval.description = Some(format!(
+                "{}\n\n{}",
+                original.description.as_deref().unwrap_or_default(),
+                rendered.eval_guidance
+            ));
+        }
         if let Some(entry) = messages
             .entries
             .first_mut()
             .filter(|e| e.message.role == MessageRole::System)
         {
-            entry.message.content = text;
+            entry.message.content = rendered.system;
         } else {
-            let mut system = super::super::context::Context::new(&text);
+            let mut system = super::super::context::Context::new(&rendered.system);
             system.entries.append(&mut messages.entries);
             messages.entries = system.entries;
         }
+        Ok(())
     }
     fn request(&self, messages: &super::super::context::Context) -> CompletionRequest {
         let model = crate::agent::AgentModelRef::parse(&self.turn.model);

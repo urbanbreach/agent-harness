@@ -92,7 +92,7 @@ async fn new_identity_resume_retains_raw_history_read_state_and_source_without_r
     let data = result.structured_json.ok_or("resume data")?;
     let next = child_id(&data)?;
     assert_ne!(next, child);
-    assert_eq!(data["subagent_type"], "general-purpose");
+    assert_eq!(data["subagent_type"], "task");
     assert_eq!(
         std::fs::read_to_string(temp.path().join("note"))?,
         "after\n"

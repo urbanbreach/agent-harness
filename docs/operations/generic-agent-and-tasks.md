@@ -2,10 +2,11 @@
 
 Harness uses one interactive parent named `default`. Children resolve their
 definitions through the configured CLI, project, user, plugin, and bundled
-sources. The default child type is `general-purpose`. Title generation and
+sources. The bundled types are `task`, `scout`, `reviewer`, `security-reviewer`,
+and `sonic`; `task` is the default. Title generation and
 context compaction are internal operations, not selectable agents.
 
-See [subagent configuration](../configuration/config.md#generic-agent-and-subagents)
+See [subagent configuration](../configuration/config.md#public-subagents)
 for definition discovery, model selection, inheritance, and concurrency settings.
 
 ## Starting work
@@ -50,10 +51,21 @@ change, with an eight-second heartbeat while unchanged. The Tasks pane keeps
 updating while a child is open; stale attempts and updates after completion are
 ignored. These progress updates are transient and are not appended to history.
 
-Children receive the subagent base instructions followed by their definition's
-prompt body. Tool placeholders use the child's available tools, and the workspace
-path reflects its prepared directory or worktree. A same-identity wake keeps the
-rendered prompt, including after restart.
+Children receive the shared system prompt, subagent completion rules, and their
+definition's prompt body. Tool placeholders use the child's available tools, and
+the workspace path reflects its prepared directory or worktree. Live requests
+refresh model and tool guidance. A same-identity wake after restart retains the
+saved prompt without rediscovering its old definition.
+
+Eval guidance follows the child's selected model. Task and sonic agents can
+batch independent permitted tools through eval. Scouts, reviewers, and security
+reviewers keep their explicit tool lists without eval. When eval is unavailable,
+the child prompt instructs direct parallel calls instead. Parent permissions and
+per-spawn tool restrictions still apply; a parent's eval access never grants it
+to a child.
+The `read-only` and `read-write` capability modes exclude eval, which can execute
+local code. The `execute` and `all` modes permit it subject to the tool lists and
+permission policy.
 
 ## Permissions and skills
 

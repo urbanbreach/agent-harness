@@ -1,6 +1,4 @@
 use serde::{Deserialize, Serialize};
-mod prompts;
-pub use prompts::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Copy)]
 #[serde(rename_all = "snake_case")]
@@ -31,18 +29,13 @@ pub enum ModelFamilySource {
     DefaultFallback,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Copy)]
-#[serde(rename_all = "snake_case")]
-pub enum PromptFamily {
-    Reasoning,
-    Codex,
-    Gpt6,
-    Gpt,
-    Meta,
-    Anthropic,
-    Gemini,
-    Kimi,
-    Default,
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DelegationBias {
+    #[default]
+    Eager,
+    Restrained,
+    Gated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,7 +54,11 @@ pub struct ModelCapabilities {
 pub struct ModelResolution {
     pub family: ModelFamily,
     pub family_source: ModelFamilySource,
-    pub prompt_family: PromptFamily,
+    /// Editable Markdown preset selected for this model, independent of transport capabilities.
+    #[serde(default)]
+    pub prompt_preset: String,
+    #[serde(default)]
+    pub delegation_bias: DelegationBias,
     pub capabilities: ModelCapabilities,
 }
 impl Default for ModelResolution {
@@ -124,24 +121,15 @@ pub fn resolve_model(input: ModelResolutionInput<'_>) -> ModelResolution {
             Family::Unknown
         }
     });
-    let prompt_family = match family {
-        Family::GptAstra => PromptFamily::Gpt6,
-        Family::Codex => PromptFamily::Codex,
-        Family::OpenAiReasoning => PromptFamily::Reasoning,
-        Family::Gpt5 | Family::GptLegacy => PromptFamily::Gpt,
-        Family::ClaudeOpus | Family::Claude => PromptFamily::Anthropic,
-        Family::Gemini => PromptFamily::Gemini,
-        Family::Llama => PromptFamily::Meta,
-        Family::Kimi | Family::KimiThinking => PromptFamily::Kimi,
-        _ => PromptFamily::Default,
-    };
     let reasoning = matches!(
         family,
         Family::OpenAiReasoning | Family::GptAstra | Family::Gpt5 | Family::Codex
     );
     ModelResolution {
         family,
-        prompt_family,
+        prompt_preset: crate::system_prompt::models::resolve(input.model, input.metadata_family)
+            .into(),
+        delegation_bias: delegation_bias(input.model, &name),
         family_source: if input.metadata_family.is_some() {
             ModelFamilySource::Metadata
         } else if family == Family::Unknown {
@@ -169,4 +157,24 @@ pub fn resolve_model(input: ModelResolutionInput<'_>) -> ModelResolution {
             supports_reasoning_summaries: input.supports_reasoning_summaries.unwrap_or(reasoning),
         },
     }
+}
+
+fn delegation_bias(model: &str, family: &str) -> DelegationBias {
+    for name in [model.to_ascii_lowercase(), family.to_owned()] {
+        if name.contains("gpt-astra") {
+            return DelegationBias::Restrained;
+        }
+        let Some((_, revision)) = name.split_once("gpt-") else {
+            continue;
+        };
+        let mut parts = revision.split('-').next().unwrap_or_default().split('.');
+        let major = parts.next().and_then(|part| part.parse::<u32>().ok());
+        let minor = parts.next().and_then(|part| part.parse::<u32>().ok());
+        match (major, minor) {
+            (Some(6..), _) => return DelegationBias::Restrained,
+            (Some(5), Some(6)) => return DelegationBias::Gated,
+            _ => {}
+        }
+    }
+    DelegationBias::Eager
 }

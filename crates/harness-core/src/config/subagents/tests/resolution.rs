@@ -164,16 +164,16 @@ fn definition_gates_replace_only_omitted_type_and_keep_error_ordering(
         .insert("role-only".into(), SubagentRole::default());
     let mut settings = SubagentRuntimeConfig::default();
     settings.toggle.insert("role-only".into(), false);
-    let allowed = vec!["plan".into()];
+    let allowed = vec!["scout".into()];
     let mut context = parent_context(&definitions, &catalog, &[]);
     context.allowed_types = Some(&allowed);
     let omitted = SubagentDefinitionRequest::default();
     assert_eq!(
         resolve_subagent_definition(&settings, &omitted, &context)?.subagent_type,
-        "plan"
+        "scout"
     );
     let explicit = SubagentDefinitionRequest {
-        subagent_type: "general-purpose".into(),
+        subagent_type: "task".into(),
         type_specified: true,
         ..SubagentDefinitionRequest::default()
     };
@@ -190,7 +190,7 @@ fn definition_gates_replace_only_omitted_type_and_keep_error_ordering(
         resolve_subagent_definition(&settings, &missing, &context),
         Err(SubagentResolutionError::Unknown { .. })
     ));
-    settings.toggle.insert("general-purpose".into(), false);
+    settings.toggle.insert("task".into(), false);
     assert!(matches!(
         resolve_subagent_definition(&settings, &explicit, &context),
         Err(SubagentResolutionError::Disabled { .. })
@@ -219,6 +219,7 @@ fn resolved_runtime_intersects_capabilities_and_preserves_definition_metadata(
         ("read", Some(Kind::Read)),
         ("edit", Some(Kind::Edit)),
         ("bash", Some(Kind::Execute)),
+        ("eval", None),
         ("spawn_subagent", Some(Kind::Task)),
         (
             "get_command_or_subagent_output",
@@ -285,7 +286,10 @@ fn resolved_runtime_intersects_capabilities_and_preserves_definition_metadata(
     definitions
         .prompt_files
         .insert(PathBuf::from("/workspace/persona.md"), Ok("file".into()));
-    let mut settings = SubagentRuntimeConfig::default();
+    let mut settings = SubagentRuntimeConfig {
+        max_depth: 1,
+        ..Default::default()
+    };
     settings.models.insert("worker".into(), "configured".into());
     let servers = vec!["A".into(), "B".into()];
     let skills = vec!["review".into()];
@@ -333,19 +337,17 @@ fn resolved_runtime_intersects_capabilities_and_preserves_definition_metadata(
         ]
     );
     assert_eq!(resolved.warnings.len(), 1);
-    for builtin in ["explore", "plan"] {
+    for builtin in ["scout", "security-reviewer"] {
         let request = SubagentDefinitionRequest {
             subagent_type: builtin.into(),
             type_specified: true,
             ..SubagentDefinitionRequest::default()
         };
         let resolved = resolve_subagent_definition(&settings, &request, &context)?;
-        assert!(resolved.inherited_skills.is_empty());
         assert!(!resolved
             .tools
             .iter()
             .any(|tool| matches!(tool.kind, Some(Kind::Execute | Kind::Edit | Kind::Task))));
-        assert_eq!(resolved.permission_mode, SubagentPermissionMode::Plan);
     }
     let mut unrestricted = definitions.clone();
     unrestricted.roles.clear();
@@ -385,6 +387,11 @@ fn resolved_runtime_intersects_capabilities_and_preserves_definition_metadata(
                 .any(|tool| tool.kind == Some(Kind::Execute)),
             execute
         );
+        assert_eq!(
+            resolved.tools.iter().any(|tool| tool.id == "eval"),
+            execute,
+            "eval must respect the {mode:?} execution restriction"
+        );
     }
     let denied = vec!["bash".into(), "mcp:A:feedback".into()];
     let mut clamped = parent_context(&unrestricted, &catalog, &tools);
@@ -415,7 +422,7 @@ fn resolved_runtime_intersects_capabilities_and_preserves_definition_metadata(
 fn persona_failures_abort_but_role_prompts_degrade() -> Result<(), Box<dyn std::error::Error>> {
     let mut definitions = SubagentDefinitionSnapshot::default();
     definitions.roles.insert(
-        "general-purpose".into(),
+        "task".into(),
         SubagentRole {
             prompt_file: Some("missing.md".into()),
             model: Some("unknown".into()),
@@ -439,9 +446,7 @@ fn persona_failures_abort_but_role_prompts_degrade() -> Result<(), Box<dyn std::
     );
     let catalog = catalog(&["parent", "configured"]);
     let mut settings = SubagentRuntimeConfig::default();
-    settings
-        .models
-        .insert("general-purpose".into(), "configured".into());
+    settings.models.insert("task".into(), "configured".into());
     let context = parent_context(&definitions, &catalog, &[]);
     let resolved =
         resolve_subagent_definition(&settings, &SubagentDefinitionRequest::default(), &context)?;

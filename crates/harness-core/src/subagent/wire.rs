@@ -106,7 +106,7 @@ impl<'de> Deserialize<'de> for SpawnSubagentInput {
         let subagent_type = raw
             .subagent_type
             .filter(|value| is_not_sentinel(value))
-            .unwrap_or_else(|| "general-purpose".to_owned());
+            .unwrap_or_else(|| "task".to_owned());
         Ok(Self {
             prompt: raw.prompt,
             description: raw.description,

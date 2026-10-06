@@ -351,6 +351,10 @@ async fn model_switch_intents_emit_notices_only_after_successful_application() {
     let temp = tempfile::tempdir().unwrap_or_abort();
     let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
     config.agent_profiles = golden_path_profiles();
+    config.agent_profiles.insert(
+        "custom".into(),
+        harness_core::agent::AgentProfile::fallback("custom"),
+    );
     let coordinator = spawn_coordinator(
         config,
         Arc::new(FakeClock::new()),
@@ -371,10 +375,15 @@ async fn model_switch_intents_emit_notices_only_after_successful_application() {
     }));
     let (tx, rx) = mpsc::unbounded_channel();
     let (notices_tx, notices_rx) = live_update_channel();
-    for profile in ["default", "missing-profile"] {
+    for (profile, model) in [
+        ("default", "qa:gpt-6.1-sol"),
+        ("default", "qa:zai-glm-5-3"),
+        ("custom", "qa:gpt-6.1-sol"),
+        ("missing-profile", "qa:gpt-6.1-sol"),
+    ] {
         tx.send(UiIntent::SwitchModel {
             profile: profile.to_string(),
-            launch_metadata: LaunchMetadata::from_model_ref(profile, "qa:gpt-6-astra"),
+            launch_metadata: LaunchMetadata::from_model_ref(profile, model),
         })
         .unwrap_or_abort();
     }
@@ -390,23 +399,26 @@ async fn model_switch_intents_emit_notices_only_after_successful_application() {
             session_dir: None,
             workspace_root: temp.path().to_path_buf(),
             config_digest: "test".to_string(),
-            prompt_overrides: BTreeMap::new(),
+            prompt_overrides: BTreeMap::from([("custom".into(), "Custom instructions".into())]),
         },
     )
     .await;
     let notices: Vec<_> = notices_rx.try_iter().collect();
+    for (notice, expected) in notices.iter().zip([
+        "Selected prompt: gpt-6.1-sol",
+        "Selected prompt: glm-5.3",
+        "Selected prompt: configured override",
+    ]) {
+        assert!(matches!(notice, LiveUpdate::ModelPromptNotice(message) if message == expected));
+    }
     assert!(matches!(
-        notices.first(),
-        Some(LiveUpdate::ModelPromptNotice(_))
-    ));
-    assert!(matches!(
-        notices.get(1),
+        notices.get(3),
         Some(LiveUpdate::OperatorNotice {
             level: OperatorNoticeLevel::Error,
             ..
         })
     ));
-    assert_eq!(notices.len(), 2);
+    assert_eq!(notices.len(), 4);
     assert!(outcome.is_ok());
     coordinator.stop_run().await.unwrap_or_abort();
 }

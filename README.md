@@ -97,8 +97,8 @@ selection, fallback behavior, and limits.
 | View session branches | `harness sessions tree <run-id-or-path>` |
 | Find the source of a setting | `harness config explain model` |
 
-The parent agent can delegate through `task`. The named subagents are `explore`,
-`general`, and `librarian`. Each has its own tools and role permissions, subject
+The parent agent delegates through `spawn_subagent`. The bundled agents are
+`task`, `scout`, `reviewer`, `security-reviewer`, and `sonic`. Their tools are subject
 to shared project policy. See [agents and tasks](docs/operations/generic-agent-and-tasks.md).
 
 ## Set permissions

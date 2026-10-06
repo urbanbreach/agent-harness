@@ -313,9 +313,8 @@ async fn native_current_parent_fork_uses_actual_prefix_without_missing_tool_resu
         .first()
         .ok_or("child system prompt missing")?
         .content;
-    assert!(system.starts_with("You are a Harness subagent"));
-    assert!(system.ends_with("\n\ncurrent native definition"));
-    assert!(system.contains(&format!("Workspace Path: {}", temp.path().display())));
+    assert!(system.contains("current native definition"));
+    assert!(system.contains(&temp.path().display().to_string()));
     let results: Vec<_> = requests[2]
         .messages
         .iter()

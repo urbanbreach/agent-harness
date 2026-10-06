@@ -130,22 +130,18 @@ pub fn resolve_subagent_definition(
         return Err(SubagentResolutionError::HiddenModelSelection);
     }
     let mut name = if request.subagent_type.is_empty() {
-        "general-purpose".into()
+        "task".into()
     } else {
         request.subagent_type.clone()
     };
-    if !request.type_specified && !request.resume && name.eq_ignore_ascii_case("general-purpose") {
-        let general_enabled = config
-            .toggle
-            .get("general-purpose")
-            .copied()
-            .unwrap_or(true)
+    if !request.type_specified && !request.resume && name.eq_ignore_ascii_case("task") {
+        let task_enabled = config.toggle.get("task").copied().unwrap_or(true)
             && context.allowed_types.is_none_or(|allowed| {
                 allowed
                     .iter()
-                    .any(|entry| entry.eq_ignore_ascii_case("general-purpose"))
+                    .any(|entry| entry.eq_ignore_ascii_case("task"))
             });
-        if !general_enabled {
+        if !task_enabled {
             let mut enabled = context
                 .allowed_types
                 .into_iter()
@@ -153,7 +149,7 @@ pub fn resolve_subagent_definition(
                 .filter(|name| config.toggle.get(*name).copied().unwrap_or(true));
             if let Some(only) = enabled.next()
                 && enabled.next().is_none()
-                && !only.eq_ignore_ascii_case("general-purpose")
+                && !only.eq_ignore_ascii_case("task")
             {
                 name.clone_from(only);
             }
@@ -163,7 +159,7 @@ pub fn resolve_subagent_definition(
         Err(SubagentResolutionError::NotAllowed { allowed, .. })
             if !request.type_specified
                 && !request.resume
-                && name.eq_ignore_ascii_case("general-purpose")
+                && name.eq_ignore_ascii_case("task")
                 && allowed.len() == 1 =>
         {
             name.clone_from(&allowed[0]);

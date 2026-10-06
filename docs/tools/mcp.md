@@ -63,8 +63,10 @@ error for that turn.
 A server tool-list notification invalidates cached schemas. It does not start a
 new discovery request; the next approved `tools.list` call refreshes the catalog.
 
-Primary profiles, `explore`, and `librarian` receive the configured server operations
-during CLI setup. Other profiles must enable the operations they need. A profile
+Primary profiles receive the configured server operations during CLI setup.
+Native `task` and `sonic` children inherit permitted MCP operations; the bundled
+research and review specialists exclude MCP. Custom definitions control their own
+MCP inheritance. A profile
 with a server's `tool.call` operation can use its discovered tools. Enabling a tool
 does not grant permission to run it.
 

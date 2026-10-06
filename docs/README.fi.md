@@ -88,8 +88,9 @@ mallivalinnan, varamallit ja rajat.
 | Näytä istuntojen haarat | `harness sessions tree <run-id-or-path>` |
 | Selvitä asetuksen lähde | `harness config explain model` |
 
-Pääagentti delegoi työtä `task`-työkalulla. Nimetyt ala-agentit ovat `explore`,
-`general` ja `librarian`. Kullakin on omat työkalut ja roolikohtaiset oikeudet.
+Pääagentti delegoi työtä `spawn_subagent`-työkalulla. Valmiit ala-agentit ovat
+`task`, `scout`, `reviewer`, `security-reviewer` ja `sonic`. Kullakin on omat
+tehtävänsä ja työkalunsa.
 Projektin yhteiset oikeudet rajoittavat kaikkia ala-agentteja. Lue lisää
 [agenteista ja tehtävistä](operations/generic-agent-and-tasks.md).
 

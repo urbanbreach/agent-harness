@@ -203,7 +203,7 @@ pub struct SubagentDefinition {
     pub mcp_inheritance: SubagentMcpInheritance,
     pub mcp_servers: Vec<String>,
     pub inject_default_tools: bool,
-    /// Native declared tool IDs. Empty uses the general-purpose tool inventory.
+    /// Native declared tool IDs. Empty uses the inherited tool inventory.
     pub declared_tools: Vec<String>,
     pub tool_config: Option<SubagentDeclaredToolConfig>,
     /// Author allow/deny filters, separate from parent operator restrictions.
@@ -292,50 +292,28 @@ pub enum SubagentDefinitionSource {
 }
 
 pub fn builtin_subagent_definitions() -> Vec<SubagentDefinition> {
-    ["general-purpose", "explore", "plan"]
-        .into_iter()
-        .map(|name| {
-            let inspection = name != "general-purpose";
-            SubagentDefinition {
-                name: name.into(),
-                description: match name {
-                    "explore" => "Explore a codebase using read-only inspection.",
-                    "plan" => "Plan work using read-only inspection and a todo list.",
-                    _ => "General-purpose implementation and research.",
-                }
-                .into(),
-                prompt_body: Some(
-                    match name {
-                        "explore" => include_str!(
-                            "../../../../../.agent-harness/subagent-prompts/explore.md"
-                        ),
-                        "plan" => {
-                            include_str!("../../../../../.agent-harness/subagent-prompts/plan.md")
-                        }
-                        _ => include_str!(
-                            "../../../../../.agent-harness/subagent-prompts/general-purpose.md"
-                        ),
-                    }
-                    .into(),
-                ),
-                declared_tools: if inspection {
-                    let mut tools = vec!["read".into(), "list".into(), "grep".into()];
-                    if name == "plan" {
-                        tools.push("todowrite".into());
-                    }
-                    tools
-                } else {
-                    Vec::new()
-                },
-                inherit_skills: !inspection,
-                permission_mode: if inspection {
-                    SubagentPermissionMode::Plan
-                } else {
-                    SubagentPermissionMode::Default
-                },
-                source: SubagentDefinitionSource::Builtin,
-                ..SubagentDefinition::default()
-            }
-        })
-        .collect()
+    const TASK: &str = include_str!("../../../../../.agent-harness/prompts/agents/task.md");
+    [
+        ("task", "General-purpose subagent with full capabilities for delegated multi-step tasks", TASK, ""),
+        ("scout", "Fast read-only codebase research, code analysis, and broad pattern searches; returns compressed context for handoff", include_str!("../../../../../.agent-harness/prompts/agents/scout.md"), "read list grep glob websearch"),
+        ("reviewer", "Code review specialist for quality/security analysis", include_str!("../../../../../.agent-harness/prompts/agents/reviewer.md"), "read list grep glob bash lsp websearch ast_grep_search Task(scout) get_command_or_subagent_output wait_commands_or_subagents kill_command_or_subagent"),
+        ("security-reviewer", "Read-only security specialist for evidence-backed repository vulnerability discovery", include_str!("../../../../../.agent-harness/prompts/agents/security-reviewer.md"), "read list grep glob lsp ast_grep_search"),
+        ("sonic", "Low-reasoning agent for strictly mechanical updates or data collection only", TASK, ""),
+    ].into_iter().map(|(name, description, prompt, tools)| SubagentDefinition {
+        name: name.into(),
+        description: description.into(),
+        prompt_body: Some(if name == "sonic" {
+            format!("Only strictly mechanical updates or data collection. Follow the supplied design; return open design questions to the parent.\n\n{prompt}")
+        } else { prompt.into() }),
+        effort: matches!(name, "scout" | "sonic").then(|| "medium".into()),
+        tools: tools.split_whitespace().map(str::to_owned).collect(),
+        inject_default_tools: false,
+        mcp_inheritance: if tools.is_empty() {
+            SubagentMcpInheritance::default()
+        } else {
+            SubagentMcpInheritance::Mode(SubagentMcpMode::None)
+        },
+        source: SubagentDefinitionSource::Builtin,
+        ..SubagentDefinition::default()
+    }).collect()
 }

@@ -59,10 +59,7 @@ formatter entries:
   },
   "model": "openai-codex/gpt-5.4-mini",
   "agent": {
-    "default": { "variant": "high" },
-    "explore": {},
-    "general": {},
-    "librarian": {}
+    "default": { "variant": "high" }
   },
   "permission": "allow",
   "mcp": {
@@ -75,9 +72,9 @@ formatter entries:
 }
 ```
 
-Only set values you need to override. The generic parent and named subagents
-inherit their shipped prompts, permissions, and tools unless the corresponding
-`agent` entry overrides them. Keep larger model catalogs, tool lists, background-task knobs, and
+Only set values you need to override. `agent.default` configures the interactive
+parent. Native children use the bundled definitions and `subagents` settings below.
+Keep larger model catalogs, tool lists, background-task knobs, and
 compaction defaults out of day-to-day configs unless a project needs a deliberate
 override.
 
@@ -112,7 +109,7 @@ the table only tunes limits. CLI enablement overrides `HARNESS_SUBAGENTS`
 cannot disable this feature.
 
 Depth, ordinary child concurrency, sampling concurrency and queue policy resolve
-environment, config, remote, then defaults. The defaults are depth 1, concurrency
+environment, config, remote, then defaults. The defaults are depth 2, concurrency
 32, sampling equal to resolved concurrency (capped at 512), and `queue`.
 Use `HARNESS_SUBAGENTS_MAX_DEPTH`, `HARNESS_MAX_CONCURRENT_SUBAGENTS`,
 `HARNESS_SUBAGENT_SAMPLING_LIMIT`, and `HARNESS_SUBAGENT_LIMIT_BEHAVIOR` to override them.
@@ -126,10 +123,10 @@ Queue policy accepts case-insensitive `queue` or `fail`; invalid tiers fall thro
     "max_depth": 2,
     "max_concurrent": 16,
     "sampling_limit": 4,
-    "models": { "explore": "local:fast" },
-    "toggle": { "plan": false },
+    "models": { "scout": "local:fast" },
+    "toggle": { "security-reviewer": false },
     "roles": {
-      "explore": { "default_capability_mode": "read-only", "reasoning_effort": "low" }
+      "scout": { "default_capability_mode": "read-only", "reasoning_effort": "low" }
     },
     "personas": {
       "reviewer": { "instructions": "Review the assigned changes.", "model": "local:review" }
@@ -176,8 +173,19 @@ model. Capability modes intersect runtime, role and definition ceilings.
 Definition worktree isolation promotes resolved `none`, including explicit
 `none`. Definition `maxTurns` overrides the parent maximum. Definitions control
 MCP inheritance (`all`, `none`, `{"named":[...]}`, `{"except":[...]}`), skill
-inheritance and explicit skill preloads. Builtin `explore` and `plan` declare no
-shell tools and do not inherit parent skills. Every child loses ask-user,
+inheritance and explicit skill preloads. The bundled agents are:
+
+| Agent | Default behavior |
+| --- | --- |
+| `task` | General worker with inherited tools and MCP access. |
+| `scout` | Read/search/web research, medium effort, no edits, shell, eval, MCP, or spawning. |
+| `reviewer` | Code review with read/search/LSP, web search, and read-only shell instructions. No eval. May spawn only `scout`. |
+| `security-reviewer` | Local security review with read/search/LSP, no shell, eval, network, MCP, or spawning. |
+| `sonic` | Mechanical edits or data collection with task tools, medium effort. |
+
+All inherit the parent model unless pinned in `subagents.models`. `small_model`,
+when configured, supplies the default for `scout` and `sonic`; per-type pins win.
+Every child loses ask-user,
 feedback and workflow tools; parent operator allow/deny restrictions still apply.
 
 For runtime integration, `HarnessConfig.subagents.resolve_with_lookup` returns
@@ -196,18 +204,25 @@ presentation bound does not reject otherwise valid types.
 
 ## Model prompts
 
-`harness_core::model_resolution` selects a prompt family. It prefers catalog
-`metadata.family` and falls back to a documented heuristic/default family. The
-base prompt is composed through `crates/harness/src/dynamic_prompt.rs`, markdown
-agent assets, and bundled family prompt bodies for `reasoning`, `codex`, `gpt-6`, `gpt`,
-`meta`, `anthropic`, `gemini`, `kimi`, and `default`. Nonempty workspace files at
-`.agent-harness/prompt-families/{family}.md` can override those bundles. Missing,
-empty, or unreadable overrides use the same family's bundled prompt; empty or
-unreadable overrides produce a warning. Unrecognized model families use the
-default prompt. `doctor --json` reports the effective prompt source and any
-warning. Model metadata supplies the family, modalities, context and output limits,
-variants, and reasoning support. See the [prompt assets](../../.agent-harness/prompt-families/README.md)
-for routing and override rules.
+Harness selects a model Markdown template over the shared system prompt. Specific
+model versions take precedence over family defaults; catalog `metadata.family`
+supports aliases. `harness models --json` includes `resolution.prompt_preset`.
+The system prompt and eval tool description receive the selected eval guidance.
+
+Edit `.agent-harness/prompts/models/glm-5.3.md` or
+`.agent-harness/prompts/models/gpt-6.1-sol.md` to customize those models without
+rebuilding. Project files override `$XDG_CONFIG_HOME/harness/prompts` or
+`~/.config/harness/prompts`, followed by bundled defaults. Shared `system.md`,
+`personality.md`, `subagent.md`, and `eval/*.md` files use the same precedence.
+Templates reload on turns, tool iterations and model changes. Invalid selected
+files fail instead of silently falling back.
+
+Native children use their actual model with the root agent's prompt locations,
+then add their role and completion rules. A nonempty
+`agent.<name>.system_prompt` remains a literal system-body override. Project
+instructions and command rules remain appended. See the
+[editable prompt guide](../../.agent-harness/prompts/README.md) for filenames,
+inheritance, limits and model-specific behavior.
 
 The larger provider catalog lives in `configs/provider-catalog.reference.jsonc`.
 That file is a reference and validation fixture for provider and model metadata,
@@ -333,10 +348,10 @@ entries, doctor checks stored credential presence before environment or inline f
 | --- | --- | --- |
 | Runtime config file | `harness.json` / `harness.jsonc` | Shared defaults live under the matching XDG harness directory. |
 | TUI config file | `tui.json` / `tui.jsonc` | Runtime and TUI settings are intentionally split. |
-| Core runtime keys | `provider`, `model`, `small_model`, `agent`, `permission`, `mcp`, `skills`, `instructions`, plus Harness runtime extensions | `agent` contains the generic `default` parent and named subagents, never alternate primary roles or category routes. |
+| Core runtime keys | `provider`, `model`, `small_model`, `agent`, `permission`, `mcp`, `skills`, `instructions`, plus Harness runtime extensions | `agent` configures the `default` parent and custom profiles; `subagents` configures native child definitions. |
 | TUI settings | `keybinds`, `confirm_before_rewind` | Unsupported TUI-only fields fail validation. |
 | Permission naming | `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`, plus safety kinds `read`, `external_directory`, and `doom_loop` | Legacy `shell` / `network` remain compatibility-only. `external_directory` and `doom_loop` default to ask; `read` defaults to allow with `.env` pattern asks. |
-| Prompt assets | `.agent-harness/agents/{default,explore,general,librarian}.md` | `AGENTS.md` is auto-discovered separately as project context. |
+| Prompt assets | `.agent-harness/prompts/models/*.md`, shared templates and existing agent definitions | `AGENTS.md` is auto-discovered separately as project context. |
 
 Runtime and TUI config stay separate. Runtime config controls providers,
 models, the generic agent, permissions, MCP, skills, instructions, and compaction. TUI
@@ -622,31 +637,22 @@ catalog reference must be passed with `--config` or read as documentation.
 
 ## Prompt and instruction discovery
 
-The runtime config stays focused on provider/model/agent selection. Prompt prose
-and repository instructions still come from files:
+Main profiles use the shared prompt unless overridden by inline
+`agent.<name>.system_prompt` / `prompt` or discovered profile Markdown at
+`.agent-harness/agents/<name>.md`. Native children resolve their definitions
+through the separate discovery and override rules above. A same-name generic
+profile does not replace a native child's role.
 
-1. inline `agent.<name>.system_prompt` / `agent.<name>.prompt`
-2. discovered `.agent-harness/agents/<name>.md`
-3. markdown frontmatter `system_prompt` / `prompt` in `.agent-harness/agents/<name>.md`
+Project instructions are auto-discovered from `AGENTS.md`. Configured
+`instructions` entries precede discovered project instructions. They and CLI
+`--rules` are appended after the shared prompt and any child role instructions.
+An explicit CLI `--system-prompt-override` replaces the main prompt completely;
+`--rules` can still append instructions to it.
 
-Project instructions are still auto-discovered from `AGENTS.md`. If
-`instructions` is set in the runtime config, those entries are prepended ahead
-of the discovered `AGENTS.md` content.
-
-Provider requests keep the normal role boundary: the composed system prompt is
-sent before the live user message, and child-task delegation context is embedded
-inside the child user prompt before the task body. Within the composed Harness
-system prompt, V1 precedence is fixed and tested as:
-
-1. runtime agent prompt from config or `.agent-harness/agents/<name>.md`
-2. generated environment/model context
-3. task-delegation reminder
-4. configured `instructions` entries, followed by discovered `AGENTS.md`
-5. skill-tool guidance when the profile exposes `skill`
-
-When `task` loads skills for a child session, the child user prompt starts with
-delegation context, then loaded skill content, then optional command context, and
-finally the requested task body.
+The system prompt precedes the live user message. Skill metadata is supplied
+separately, and definition-listed skill bodies are loaded through startup
+permission checks before the child runs. Loading a skill does not expand the
+child's tool permissions.
 
 ## Skill discovery and V1 skill contract
 
@@ -782,7 +788,7 @@ The coordinator owns their scheduling, permission checks, cancellation, and
 append-only lifecycle history.
 
 `spawn_subagent` requires `prompt` and `description`. It defaults to the
-`general-purpose` definition and `background: true`. A background call returns a
+`task` definition and `background: true`. A background call returns a
 `subagent_id`; `background: false` waits for completion or the configured
 foreground timeout, after which the child continues in the background.
 `isolation: "worktree"` creates an isolated worktree. `cwd` selects an existing
@@ -870,7 +876,7 @@ Put broad rules before exceptions. The last matching rule wins:
     },
     "task": {
       "*": "deny",
-      "explore": "allow",
+      "scout": "allow",
       "review-*": "ask"
     }
   }

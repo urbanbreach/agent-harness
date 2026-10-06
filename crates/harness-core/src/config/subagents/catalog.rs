@@ -136,6 +136,6 @@ pub fn subagent_type_schema(types: &[SubagentTypeDescriptor]) -> Option<serde_js
         .collect();
     Some(serde_json::json!({
         "type": "string", "enum": listed.iter().map(|entry| &entry.name).collect::<Vec<_>>(),
-        "description": format!("Omit for a general-purpose subagent. Set it to hand the task to one of these agents:\n{}", lines.join("\n"))
+        "description": format!("Omit for the default task worker, or the sole permitted specialist. Use the most specific available agent:\n{}", lines.join("\n"))
     }))
 }

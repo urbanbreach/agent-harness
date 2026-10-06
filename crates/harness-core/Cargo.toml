@@ -19,7 +19,7 @@ hex = "0.4"
 humantime = "2"
 ignore = "0.4"
 indexmap = { version = "2", features = ["serde"] }
-minijinja = { version = "2.18", features = ["custom_syntax"] }
+minijinja = { version = "2.18", features = ["custom_syntax", "loader"] }
 num-traits = "0.2.19"
 regex = "1"
 semver = "1"

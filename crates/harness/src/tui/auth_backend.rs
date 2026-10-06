@@ -30,11 +30,11 @@ impl TuiAuthBackendContext {
                 .iter()
                 .flat_map(|config| &config.agents)
                 .filter_map(|(name, profile)| {
-                    harness_core::model_resolution::configured_prompt_override(
-                        name,
-                        profile.system_prompt.as_deref(),
-                    )
-                    .map(|prompt| (name.clone(), prompt.to_string()))
+                    profile
+                        .system_prompt
+                        .as_deref()
+                        .filter(|prompt| !prompt.trim().is_empty())
+                        .map(|prompt| (name.clone(), prompt.to_string()))
                 })
                 .collect(),
         }
@@ -42,23 +42,13 @@ impl TuiAuthBackendContext {
 
     pub(super) fn model_prompt_notice(&self, metadata: &LaunchMetadata) -> Option<LiveUpdate> {
         let target = super::launch_metadata::launch_metadata_model_target(metadata)?;
-        let status = harness_core::model_resolution::effective_prompt_status(
-            target.resolution.prompt_family,
-            self.prompt_overrides
-                .get(metadata.profile())
-                .map(String::as_str),
-            &self.workspace_root,
-        );
-        let label = if matches!(status.source, "configured_prompt" | "data_asset") {
-            "Using configured prompt for"
-        } else if status.family == "default" {
-            "Using default prompt for"
+        let prompt = if self.prompt_overrides.contains_key(metadata.profile()) {
+            "configured override"
         } else {
-            "Using optimized prompt for"
+            &target.resolution.prompt_preset
         };
         Some(LiveUpdate::ModelPromptNotice(format!(
-            "{label}: {}",
-            target.model
+            "Selected prompt: {prompt}"
         )))
     }
 }

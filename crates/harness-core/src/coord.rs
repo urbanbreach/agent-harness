@@ -121,7 +121,7 @@ pub struct CoordinatorConfig {
     pub skills: crate::config::SkillsConfig,
     pub skill_catalog_discovery: Option<Arc<dyn crate::config::SkillCatalogDiscovery>>,
     pub subagent_model_catalog: Option<crate::config::SubagentModelCatalog>,
-    pub agent_prompt_sources: BTreeMap<String, Arc<crate::model_resolution::PromptSource>>,
+    pub agent_prompt_sources: BTreeMap<String, Arc<crate::system_prompt::PromptSource>>,
     pub agent_model_targets: BTreeMap<String, ResolvedModelTarget>,
     pub agent_model_fallbacks: BTreeMap<String, Vec<ResolvedModelTarget>>,
     pub model_catalog: Arc<[crate::config::ResolvedModelCatalogEntry]>,

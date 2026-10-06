@@ -34,6 +34,8 @@ pub(super) fn child_tools(
                 ) || tool.mcp_server.is_some());
             (declared || injected)
                 && tool.kind.is_none_or(|kind| mode.allows(kind))
+                // Eval can execute local code even without calling a host tool.
+                && (tool.id != "eval" || mode.allows(Kind::Execute))
                 && tool.kind != Some(Kind::AskUser)
                 && tool.kind != Some(Kind::Feedback)
                 && tool.kind != Some(Kind::Workflow)

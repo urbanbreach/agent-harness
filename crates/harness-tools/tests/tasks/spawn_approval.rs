@@ -17,7 +17,7 @@ async fn spawn_approval_precedes_child_work_and_resume_rechecks_policy(
         },
         PermissionRule {
             permission: "task".into(),
-            pattern: "general-purpose".into(),
+            pattern: "task".into(),
             action: PermissionAction::Ask,
         },
     ])?;
@@ -74,7 +74,7 @@ async fn spawn_approval_precedes_child_work_and_resume_rechecks_policy(
         },
         PermissionRule {
             permission: "task".into(),
-            pattern: "general-purpose".into(),
+            pattern: "task".into(),
             action: PermissionAction::Deny,
         },
     ])?;

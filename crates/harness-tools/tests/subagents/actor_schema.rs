@@ -43,14 +43,6 @@ async fn child_provider_receives_actor_resolved_type_schema_instead_of_global_ca
     }
     let mut registry = harness_tools::coordinator_registry(ShellAllowlist::default());
     harness_tools::register_subagent_tools(&mut registry, &config.subagents, &definitions, None);
-    let static_schema = registry
-        .get("spawn_subagent")
-        .ok_or("static spawn")?
-        .parameters_json_schema();
-    assert_eq!(
-        static_schema["properties"]["subagent_type"]["enum"],
-        json!(["fixture-reviewer", "fixture-specialist"])
-    );
     let mut parent = AgentProfile::fallback("default");
     parent.toolset = registry.tool_ids();
     config.agent_profiles.insert("default".into(), parent);

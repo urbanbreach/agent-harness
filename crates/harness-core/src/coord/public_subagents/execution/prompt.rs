@@ -1,90 +1,87 @@
 use super::*;
-use minijinja::{syntax::SyntaxConfig, Environment};
-use serde_json::json;
+use crate::system_prompt::{PromptContext, PromptSource};
 
 impl Runtime {
+    pub(in crate::coord) fn native_prompt_source(&self, agent: &str) -> Option<PromptSource> {
+        let child = self.native_subagents.get(agent)?;
+        let resolved = child.resolved.as_ref()?;
+        let root = self.agents.get(&child.registration.root_agent)?;
+        Some(PromptSource {
+            user_prompt_dir: self
+                .config
+                .agent_prompt_sources
+                .get(&root.profile.name)
+                .and_then(|source| source.user_prompt_dir.clone()),
+            project_prompt_root: Some(root.cwd.clone()),
+            subagent: true,
+            agent_instructions: resolved.definition.prompt_body.clone().unwrap_or_default(),
+            role_instructions: resolved.role_prompt.clone().unwrap_or_default(),
+            persona_instructions: resolved.persona_instructions.clone().unwrap_or_default(),
+            isolated: resolved.isolation == SubagentIsolationMode::Worktree,
+            tool_kinds: resolved
+                .tools
+                .iter()
+                .filter_map(|tool| {
+                    tool.kind
+                        .map(|kind| (tool.id.clone(), kind_name(kind).into()))
+                })
+                .collect(),
+            suffix: self
+                .config
+                .agent_prompt_sources
+                .get(&root.profile.name)
+                .map(|source| source.suffix.clone())
+                .unwrap_or_default(),
+            ..Default::default()
+        })
+    }
+
     pub(super) fn native_system_prompt(
         &self,
         agent: &str,
         cwd: &Path,
     ) -> Result<Option<String>, CoordinatorError> {
-        let child = &self.native_subagents[agent];
-        if child.registration.source.as_deref() == Some(agent) {
+        let Some(source) = self.native_prompt_source(agent) else {
             return Ok(None);
-        }
-        let Some(resolved) = &child.resolved else {
-            return Err(native_invalid(
-                "subagent prompt definition is unavailable".into(),
-            ));
         };
         let state = &self.agents[agent];
-        let mut available = self.config.tool_registry.definitions(
+        let permissions = (&self.config.permission_policy, &state.policy);
+        let scope = self.tool_scope(Some(agent));
+        let mut available = self.config.tool_registry.prompt_definitions(
             &state.profile,
-            self.tool_scope(Some(agent)).as_deref(),
-            (&self.config.permission_policy, &state.policy),
+            scope.as_deref(),
+            permissions,
         );
-        crate::coord::public_subagent_hooks::apply_native_schema_hints(
-            &mut available,
-            &json!({"depth":self.native_depth(agent), "max_depth":self.config.subagents.max_depth}),
-            true,
-        );
-        let mut by_kind = BTreeMap::new();
-        let mut params = BTreeMap::new();
-        for tool in &resolved.tools {
-            let Some(kind) = tool.kind else { continue };
-            let Some(definition) = available.iter().find(|item| item.tool_id == tool.id) else {
-                continue;
-            };
-            let kind = kind_name(kind);
-            if by_kind.contains_key(kind) {
-                continue;
-            }
-            by_kind.insert(kind, tool.id.as_str());
-            let mut names = BTreeMap::new();
-            if let Some(properties) = definition.parameters["properties"].as_object() {
-                names.extend(properties.keys().map(|name| (name.clone(), name.clone())));
-                if kind == "execute" && properties.contains_key("run_in_background") {
-                    names.insert("is_background".into(), "run_in_background".into());
-                }
-            }
-            params.insert(kind, names);
+        let mut direct =
+            self.config
+                .tool_registry
+                .definitions(&state.profile, scope.as_deref(), permissions);
+        let hints = self.native_subagent_schema(agent)?;
+        for tools in [&mut available, &mut direct] {
+            crate::coord::public_subagent_hooks::apply_native_schema_hints(tools, &hints, true);
         }
-        let date = self.clock.system_time_rfc3339().unwrap_or_default();
-        let context = json!({
-            "tools": {"by_kind": by_kind}, "params": params,
-            "os_name": std::env::consts::OS,
-            "shell_path": std::env::var("SHELL").unwrap_or_default(),
-            "working_directory": cwd.to_string_lossy(),
-            "current_date": date.split('T').next().unwrap_or_default(),
-            "role_instructions": resolved.role_prompt.as_deref().unwrap_or_default(),
-            "persona_instructions": resolved.persona_instructions.as_deref().unwrap_or_default(),
-            "memory_enabled": by_kind.contains_key("memory_search") && by_kind.contains_key("memory_get"),
-            "is_windows": cfg!(windows), "has_unix_utilities": cfg!(unix),
-            "system_reminders_enabled": true,
-        });
-        let syntax = SyntaxConfig::builder()
-            .block_delimiters("${%", "%}")
-            .variable_delimiters("${{", "}}")
-            .comment_delimiters("${#", "#}")
-            .build()
-            .map_err(|error| native_invalid(error.to_string()))?;
-        let mut environment = Environment::new();
-        environment.set_syntax(syntax);
-        let mut prompt = environment
-            .render_str(
-                include_str!("../../../../../../.agent-harness/subagent-prompts/base.md"),
-                &context,
-            )
-            .map_err(|error| native_invalid(error.to_string()))?;
-        if let Some(body) = &resolved.definition.prompt_body {
-            prompt.push_str("\n\n");
-            prompt.push_str(
-                &environment
-                    .render_str(body, &context)
-                    .unwrap_or_else(|_| body.clone()),
-            );
-        }
-        Ok(Some(prompt))
+        source
+            .render(&PromptContext {
+                workspace: cwd,
+                model: &state.info.model_ref,
+                prompt_preset: state
+                    .target
+                    .as_ref()
+                    .map(|target| target.resolution.prompt_preset.as_str())
+                    .unwrap_or_default(),
+                delegation_bias: state
+                    .target
+                    .as_ref()
+                    .map(|target| target.resolution.delegation_bias)
+                    .unwrap_or_default(),
+                tools: &available,
+                direct_tools: &direct,
+                current_date: &self.clock.system_time_rfc3339().unwrap_or_default(),
+                max_concurrent: self.config.subagents.max_concurrent,
+                limit_behavior: self.config.subagents.limit_behavior,
+            })
+            .map(|rendered| Some(rendered.system))
+            .map_err(|error| native_invalid(format!("subagent prompt: {error}")))
     }
 }
 

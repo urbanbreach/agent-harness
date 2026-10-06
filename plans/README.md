@@ -48,6 +48,7 @@ terminal QA, and eight full-suite failures reproduced on the pristine baseline.
 | [036: Publish simulation evidence only after validation and secret scanning](036-publish-simulation-evidence-after-scan.md) | P1 | M | None | Complete ([#259](https://github.com/urbanbreach/agent-harness/issues/259)) |
 | [037: Align operator documentation with active permissions and provider behavior](037-align-operator-docs-with-runtime.md) | P2 | S | plan 029 | Complete ([#260](https://github.com/urbanbreach/agent-harness/issues/260)) |
 | [038: Eval integration and code-mode capabilities](038-eval-codemode.md) | P2 | L | None | Complete |
+| [039: Editable model prompts](039-model-prompts.md) | P2 | M | 038 | Complete |
 
 See the [2026-09-20 issue verification record](2026-09-20-issue-closeout.md) for independent review, attached commits and integrated checks.
 
