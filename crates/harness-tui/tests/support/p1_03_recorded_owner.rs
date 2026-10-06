@@ -102,7 +102,7 @@ fn capture_full_motion(
     // Controls are present on the first complete frame. Time samples below use
     // the real runtime clock; deterministic exact-time samples live in the render test.
     let required_markers = [
-        "0.1.0",
+        env!("CARGO_PKG_VERSION"),
         "New worktree",
         "Resume session",
         "Changelog",
@@ -259,7 +259,7 @@ fn capture_reduced_motion(
     );
 
     session.wait_for_all_markers(&[
-        "0.1.0",
+        env!("CARGO_PKG_VERSION"),
         "New worktree",
         "Resume session",
         "Changelog",
@@ -269,7 +269,7 @@ fn capture_reduced_motion(
     let text = session.text();
     // Identity and all actions coexist immediately, including at compact sizes.
     assert!(
-        text.contains("New worktree") && text.contains("0.1.0"),
+        text.contains("New worktree") && text.contains(env!("CARGO_PKG_VERSION")),
         "reduced motion must freeze on the complete frame\n{text}"
     );
     assert_brand(variant, &text, session.raw());

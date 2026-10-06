@@ -1,6 +1,6 @@
 [project]
 name = "agent-harness"
-version = "0.1.0"
+version = "0.0.1"
 description = "Event-sourced agent harness: CLI, coordinator, providers, native tools, Ratatui TUI"
 readme = "README.md"
 requires-python = ">=3.13"
