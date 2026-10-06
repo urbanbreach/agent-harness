@@ -54,6 +54,3 @@ crates/harness/harness.json
 /.omo/
 /ATTEMPT/
 **/__pycache__/
-
-# Generated Pages site output
-/public/
