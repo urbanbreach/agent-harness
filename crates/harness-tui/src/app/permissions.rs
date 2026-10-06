@@ -180,19 +180,50 @@ impl AppState {
         self.submitted_permission_is_active(permission_id)
     }
 
+    pub(crate) fn permission_modal_options(
+        &self,
+        permission_id: &str,
+    ) -> &'static [PermissionModalSelection] {
+        use PermissionModalSelection::{AllowOnce, AllowSession, EnableYolo, Reject};
+        let enable_yolo = !self.yolo_mode
+            && self
+                .projection
+                .pending_permissions
+                .get(permission_id)
+                .is_some_and(|pending| {
+                    // These requests require explicit approval even in YOLO mode.
+                    !matches!(
+                        pending.kind.as_str(),
+                        "external_directory" | "doom_loop" | "question"
+                    )
+                });
+        if enable_yolo {
+            &[EnableYolo, AllowSession, AllowOnce, Reject]
+        } else {
+            &[AllowSession, AllowOnce, Reject]
+        }
+    }
+
     pub(crate) fn permission_modal_selection(
         &self,
         permission_id: &str,
     ) -> PermissionModalSelection {
-        if self.permission_modal_is_active(permission_id) {
+        let options = self.permission_modal_options(permission_id);
+        if self.permission_modal_is_active(permission_id)
+            && options.contains(&self.permission_prompt.selection)
+        {
             self.permission_prompt.selection
         } else {
-            PermissionModalSelection::EnableYolo
+            options[0]
         }
     }
 
     pub(crate) fn permission_modal_stage(&self, permission_id: &str) -> PermissionModalStage {
-        if self.permission_modal_is_active(permission_id) {
+        if self.permission_modal_is_active(permission_id)
+            && self
+                .permission_modal_options(permission_id)
+                .contains(&PermissionModalSelection::EnableYolo)
+        {
             self.permission_prompt.stage
         } else {
             PermissionModalStage::Decision
@@ -329,17 +360,13 @@ impl AppState {
                 .unwrap_or(false)
     }
 
-    fn cycle_permission_modal_selection(
-        &mut self,
-        permission_id: &str,
-        forward: bool,
-        enable_yolo: bool,
-    ) {
+    fn cycle_permission_modal_selection(&mut self, permission_id: &str, forward: bool) {
         self.ensure_permission_modal_state(permission_id);
         let current = self.permission_modal_selection(permission_id);
         self.permission_prompt.permission_id = Some(permission_id.to_string());
         self.permission_prompt.stage = PermissionModalStage::Decision;
-        self.permission_prompt.selection = current.cycle(forward, enable_yolo);
+        self.permission_prompt.selection =
+            current.cycle(forward, self.permission_modal_options(permission_id));
     }
 
     fn cycle_permission_modal_confirm_selection(&mut self, permission_id: &str, forward: bool) {
@@ -351,6 +378,12 @@ impl AppState {
     }
 
     fn open_permission_enable_yolo_confirm(&mut self, permission_id: &str) {
+        if !self
+            .permission_modal_options(permission_id)
+            .contains(&PermissionModalSelection::EnableYolo)
+        {
+            return;
+        }
         self.ensure_permission_modal_state(permission_id);
         self.permission_prompt.permission_id = Some(permission_id.to_string());
         self.permission_prompt.stage = PermissionModalStage::YoloConfirm;
@@ -574,7 +607,7 @@ impl AppState {
         if let Some(forward) = question_row_walk(&key) {
             match self.permission_modal_stage(&permission.permission_id) {
                 PermissionModalStage::Decision => {
-                    self.cycle_permission_modal_selection(&permission.permission_id, forward, true)
+                    self.cycle_permission_modal_selection(&permission.permission_id, forward)
                 }
                 PermissionModalStage::YoloConfirm => self
                     .cycle_permission_modal_confirm_selection(&permission.permission_id, forward),
@@ -615,7 +648,10 @@ impl AppState {
             }
 
             if let KeyCode::Char(number) = key.code
-                && let Some(selection) = PermissionModalSelection::from_number(number)
+                && let Some(index) = "1234".find(number)
+                && let Some(&selection) = self
+                    .permission_modal_options(&permission.permission_id)
+                    .get(index)
             {
                 self.activate_permission_modal_selection(&permission.permission_id, selection);
                 return;
@@ -623,11 +659,11 @@ impl AppState {
 
             match key.code {
                 KeyCode::Left | KeyCode::Up | KeyCode::Char('h' | 'k') => {
-                    self.cycle_permission_modal_selection(&permission.permission_id, false, true);
+                    self.cycle_permission_modal_selection(&permission.permission_id, false);
                     return;
                 }
                 KeyCode::Right | KeyCode::Down | KeyCode::Char('l' | 'j') => {
-                    self.cycle_permission_modal_selection(&permission.permission_id, true, true);
+                    self.cycle_permission_modal_selection(&permission.permission_id, true);
                     return;
                 }
                 KeyCode::Enter => {

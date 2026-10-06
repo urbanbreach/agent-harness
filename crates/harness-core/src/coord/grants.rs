@@ -83,13 +83,13 @@ impl Runtime {
         })
     }
     pub fn external_granted(&self, work: &ToolWork, path: &Path) -> bool {
+        // Directory access is shared; each tool still passes its ordinary policy checks.
         let matcher = PermissionGrantMatcher::ExternalPath {
             path_prefix: path.to_string_lossy().into(),
             request_digest: work.permission_digest.clone(),
         };
         self.grants.iter().any(|g| {
             g.expires_at.is_none()
-                && g.tool.effective_tool_id == work.tool.id()
                 && g.kind == PermissionKind::ExternalDirectory
                 && g.matcher.matches(&matcher)
         })
@@ -160,10 +160,13 @@ impl Runtime {
                 .external_directory_allow_prefixes
                 .iter()
                 .map(|path| {
-                    let prefix = path
-                        .parent()
-                        .filter(|p| p.parent().is_some())
-                        .unwrap_or(path);
+                    let prefix = if path.is_dir() {
+                        path.as_path()
+                    } else {
+                        path.parent()
+                            .filter(|p| p.parent().is_some())
+                            .unwrap_or(path)
+                    };
                     if prefix.parent().is_none() {
                         return PermissionGrantMatcher::RequestDigest {
                             request_digest: permission_digest.clone(),

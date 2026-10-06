@@ -180,7 +180,9 @@ pub(super) fn yolo_mode_appends_composer_badge_suffix() {
     for app in [&app, &resumed] {
         for width in [40, 80, 120] {
             let mut terminal = Terminal::new(TestBackend::new(width, 30)).unwrap_or_abort();
-            terminal.draw(|frame| render_app(frame, app)).unwrap_or_abort();
+            terminal
+                .draw(|frame| render_app(frame, app))
+                .unwrap_or_abort();
             let debug = format!("{:?}", terminal.backend().buffer());
             assert!(debug.contains("YOLO"), "{debug}");
         }
@@ -233,47 +235,110 @@ pub(super) fn permission_modal_ctrl_o_opens_yolo_confirm() {
 }
 
 pub(super) fn permission_modal_allow_session_requests_session_grant() {
-    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let intent_sink = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent: UiIntent| {
-            intents.lock().unwrap_or_abort().push(intent);
-        })
-    };
-
-    let mut app = AppState::new_live(None, false, Some(intent_sink));
-    app.ingest_event(envelope(
-        1,
-        "req_modal_allow_session_1",
-        EventV1::PermissionRequested(PermissionRequestedEvent {
-            permission_id: "perm_modal_allow_session_1".to_string(),
-            kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_modal_allow_session_1".into()),
-            summary: "permission summary".to_string(),
-            request_digest: "digest-modal-allow-session".to_string(),
-            timeout_ms: 30_000,
-            default_decision: harness_core::event::PermissionDecision::Deny,
-        }),
-    ));
-
-    // Default selection is EnableYolo; cycle once to AllowSession (freeze option 2).
-    app.handle_key(key(KeyCode::Right));
-    assert_eq!(
-        app.permission_modal_selection("perm_modal_allow_session_1"),
-        PermissionModalSelection::AllowSession
-    );
-
-    app.handle_key(key(KeyCode::Enter));
-
-    assert_eq!(
-        intents.lock().unwrap_or_abort().as_slice(),
-        &[UiIntent::ResolvePermission {
-            permission_id: "perm_modal_allow_session_1".to_string(),
-            decision: PermissionDecision::Allow,
-            reason: None,
-            grant_scope: Some(harness_core::perm::PermissionGrantScope::Session),
-        }]
-    );
+    for (kind, yolo, offers_yolo) in [
+        ("edit_fs", false, true),
+        ("edit_fs", true, false),
+        ("external_directory", false, false),
+        ("external_directory", true, false),
+        ("doom_loop", false, false),
+    ] {
+        for input in ["arrows", "number", "mouse"] {
+            let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+            let sink_intents = Arc::clone(&intents);
+            let intent_sink = Arc::new(move |intent: UiIntent| {
+                sink_intents.lock().unwrap_or_abort().push(intent);
+            });
+            let mut app = AppState::new_live(None, false, Some(intent_sink));
+            app.set_yolo_mode(yolo);
+            let permission_id = "perm_modal_allow_session_1";
+            app.ingest_event(envelope(
+                1,
+                "req_modal_allow_session_1",
+                EventV1::PermissionRequested(PermissionRequestedEvent {
+                    permission_id: permission_id.to_string(),
+                    kind: kind.to_string(),
+                    tool_call_id: Some("tc_modal_allow_session_1".into()),
+                    summary: "permission summary".to_string(),
+                    request_digest: "digest-modal-allow-session".to_string(),
+                    timeout_ms: 30_000,
+                    default_decision: harness_core::event::PermissionDecision::Deny,
+                }),
+            ));
+            let frame_area = Rect::new(0, 0, 120, 40);
+            let screen = render_text(&app, frame_area.width, frame_area.height);
+            assert_eq!(
+                screen.contains("Yes, enable YOLO mode"),
+                offers_yolo,
+                "{kind}, yolo={yolo}"
+            );
+            if !offers_yolo {
+                app.handle_key(key_with_modifiers(
+                    KeyCode::Char('o'),
+                    KeyModifiers::CONTROL,
+                ));
+                assert_eq!(
+                    app.permission_modal_stage(permission_id),
+                    PermissionModalStage::Decision
+                );
+            }
+            match input {
+                "arrows" => {
+                    // Walk around the menu to cover wrapping after removing YOLO.
+                    app.handle_key(key(KeyCode::Left));
+                    app.handle_key(key(KeyCode::Right));
+                    if offers_yolo {
+                        app.handle_key(key(KeyCode::Right));
+                    }
+                    assert_eq!(
+                        app.permission_modal_selection(permission_id),
+                        PermissionModalSelection::AllowSession
+                    );
+                    app.handle_key(key(KeyCode::Enter));
+                }
+                "number" => app.handle_key(key(KeyCode::Char(if offers_yolo { '2' } else { '1' }))),
+                _ => {
+                    let option_area = app
+                        .permission_prompt_hit_regions_for_test(frame_area)
+                        .into_iter()
+                        .find_map(|(target, area)| {
+                            (target
+                                == PermissionPointerTarget::Decision(
+                                    PermissionModalSelection::AllowSession,
+                                ))
+                            .then_some(area)
+                        })
+                        .unwrap_or_abort();
+                    assert!(screen
+                        .lines()
+                        .nth(usize::from(option_area.y))
+                        .unwrap_or_abort()
+                        .contains("remember this approval"));
+                    for kind in [
+                        MouseEventKind::Down(MouseButton::Left),
+                        MouseEventKind::Up(MouseButton::Left),
+                    ] {
+                        app.handle_mouse(
+                            mouse_event(kind, option_area),
+                            frame_area,
+                            None,
+                            None,
+                            None,
+                        );
+                    }
+                }
+            }
+            assert_eq!(
+                intents.lock().unwrap_or_abort().as_slice(),
+                &[UiIntent::ResolvePermission {
+                    permission_id: permission_id.to_string(),
+                    decision: PermissionDecision::Allow,
+                    reason: None,
+                    grant_scope: Some(harness_core::perm::PermissionGrantScope::Session),
+                }],
+                "{kind}, yolo={yolo}, input={input}"
+            );
+        }
+    }
 }
 
 fn mouse_event(kind: MouseEventKind, area: Rect) -> MouseEvent {

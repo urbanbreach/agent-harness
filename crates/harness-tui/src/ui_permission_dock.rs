@@ -267,21 +267,11 @@ pub(super) fn render_inline_permission_dock(
     }
 
     let selection = app.permission_modal_selection(&permission.permission_id);
-    let options = [
-        (
-            "Yes, enable YOLO mode",
-            selection == PermissionModalSelection::EnableYolo,
-        ),
-        (
-            "Yes, remember this approval for this session",
-            selection == PermissionModalSelection::AllowSession,
-        ),
-        ("Yes", selection == PermissionModalSelection::AllowOnce),
-        (
-            "No, reject (type to add feedback)",
-            selection == PermissionModalSelection::Reject,
-        ),
-    ];
+    let options = app
+        .permission_modal_options(&permission.permission_id)
+        .iter()
+        .map(|option| (option.label(), selection == *option))
+        .collect::<Vec<_>>();
     let action_text = permission_prompt_numbered_options(theme, tray_surface, &options);
     render_permission_numbered_options(
         frame,
@@ -648,7 +638,12 @@ fn render_permission_feedback(
     let selected = app.permission_modal_selection(&permission.permission_id)
         == PermissionModalSelection::Reject;
     let focused = app.focus == Focus::Prompt;
-    let top = options.y.saturating_add(3);
+    let reject_number = u16::try_from(
+        app.permission_modal_options(&permission.permission_id)
+            .len(),
+    )
+    .unwrap_or(u16::MAX);
+    let top = options.y.saturating_add(reject_number.saturating_sub(1));
     let height = options.bottom().saturating_sub(top);
     let editing = selected && feedback.editing;
     if height == 0 || (!editing && feedback.preview_text().trim().is_empty()) {
@@ -713,7 +708,7 @@ fn render_permission_feedback(
         }
         let mut spans = if index == 0 {
             vec![
-                Span::styled("4 ", accent),
+                Span::styled(format!("{reject_number} "), accent),
                 Span::styled(
                     format!("({marker}) "),
                     if selected {

@@ -68,12 +68,14 @@ The matcher depends on the approved operation:
 | One unaliased workspace file | Later calls of that tool on the same resolved file, with different arguments |
 | Aliased paths, multiple targets, or a dynamic refactoring request | The exact request digest |
 | Bash | The same command or approved parsed command prefixes; every command in a list or pipeline must match |
-| Outside-workspace paths | The approved parent directory, checked by path components; never a bare root prefix |
+| Outside-workspace paths | The requested directory, or a requested file's parent directory, across tools; checked by path components, never a bare root prefix |
 | Repeated-call approval | Future repetition checks, subject to the acting role's deny rules |
 
 External approvals are separate from a tool's ordinary approval. A saved file or
-shell grant cannot approve a new outside directory. Grants bind the tool identity;
-they do not transfer to an unrelated tool. Expiring grants are not reused.
+shell grant cannot approve a new outside directory. Remembered directory access
+applies across tools within that directory. Each tool still passes its ordinary
+permission checks, and deny rules still win. File and shell grants remain tied
+to the approved tool. Expiring grants are not reused.
 
 A third consecutive identical tool request triggers `doom_loop`. Allowing once
 resets the streak. Remembering that approval suppresses later repetition asks;
