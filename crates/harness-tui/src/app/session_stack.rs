@@ -34,6 +34,7 @@ fn harness_lineage(run_dir: &Path) -> Option<Value> {
 pub(super) struct SessionLineage {
     parent_run_id: Option<String>,
     is_fork: bool,
+    pub(super) inline_child: bool,
     parent_child_session_ids: Vec<String>,
     parent_task: Option<ChildTaskInfo>,
 }
@@ -404,14 +405,21 @@ impl AppState {
             return;
         }
 
-        let snapshot =
-            match session_navigation_snapshot_from_path(&session_path, &self.launch_metadata) {
-                Ok(snapshot) => snapshot,
-                Err(err) => {
-                    self.set_status_banner(Some(format!("session navigation failed: {err}")));
-                    return;
-                }
-            };
+        // Live child updates use the parent's run and sequence IDs, even when
+        // the child also has a separately numbered history on disk.
+        let inline = self
+            .presentation_is_live()
+            .then(|| self.inline_child_session_snapshot(&session_id, session_path.clone()))
+            .flatten();
+        let snapshot = match inline.map(Ok).unwrap_or_else(|| {
+            session_navigation_snapshot_from_path(&session_path, &self.launch_metadata)
+        }) {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                self.set_status_banner(Some(format!("session navigation failed: {err}")));
+                return;
+            }
+        };
 
         if push_current && let Some(current_snapshot) = self.current_session_snapshot() {
             self.session_navigation_stack.push(current_snapshot);
@@ -506,7 +514,10 @@ impl AppState {
 
         Some(SessionNavigationSnapshot {
             session_path,
-            lineage: SessionLineage::default(),
+            lineage: SessionLineage {
+                inline_child: true,
+                ..SessionLineage::default()
+            },
             launch_metadata: infer_launch_metadata_from_events(&events, &self.launch_metadata),
             events,
             child_session_ids: Vec::new(),

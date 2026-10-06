@@ -202,15 +202,43 @@ fn eval_output_reveals_the_cell_text_and_settles_on_completion() -> Result<()> {
 fn eval_children_settle_and_eval_output_opens_after_the_response_commit() -> Result<()> {
     let fixture: Value = serde_json::from_str(FIXTURE)?;
     let area = Rect::new(0, 0, 120, 40);
-    for commit_first in [true, false] {
+    for (commit_first, saved_child) in [
+        (true, None),
+        (false, None),
+        (true, Some(true)),
+        (false, Some(false)),
+    ] {
         let mut state = Capture::new(&fixture)?;
+        let workspace = tempfile::tempdir()?;
+        if saved_child.is_some() {
+            state.app.session_path = Some(workspace.path().join("parent"));
+            state.event("native_subagent_registered", json!({
+                "payload_version":1, "child_id":"worker", "spawner":"parent", "root_agent":"parent",
+                "parent_tool":"spawn", "subagent_type":"build", "description":"Inspect tools",
+                "prompt":"Inspect tools", "background":false, "isolation":"none", "model":"model",
+                "system_prompt":"", "tools":[], "permission_rules":[],
+                "model_inherited":true, "messaging_granted":false
+            }))?;
+            state.app.apply_keybindings(BTreeMap::from([(
+                "session_child_first".into(),
+                "<leader>down".into(),
+            )]));
+        }
         state.app.set_frame_area(area);
         state.tools.insert("eval".into(), json!({
             "tool":"eval", "args":{"language":"js","summary":"Inspect command output","code":"await tool.bash({command: 'printf alpha'})"},
             "output":"Eval completed"
         }));
+        state.live(
+            "provider_tool_input_delta",
+            json!({
+                "request_id":"provider", "tool_call_id":"provider-eval", "tool_name":"eval",
+                "delta":state.tools["eval"]["args"].to_string()
+            }),
+        )?;
         state.intent("eval");
-        let parts = state.parts.clone();
+        let mut parts = state.parts.clone();
+        parts[0]["provider_tool_call_id"] = json!("provider-eval");
         for before_requests in [true, false] {
             if before_requests == commit_first {
                 state.action(&json!({"op":"provider-finish"}), &fixture)?;
@@ -228,6 +256,9 @@ fn eval_children_settle_and_eval_output_opens_after_the_response_commit() -> Res
                 }
             }
         }
+        if let Some(saved_before_open) = saved_child {
+            inspect_saved_child(&mut state, workspace.path(), saved_before_open)?;
+        }
         // The child call is coordinator-owned and absent from the provider's response.
         for id in ["command-a", "eval"] {
             state.action(&json!({"op":"finish", "id":id}), &fixture)?;
@@ -239,9 +270,18 @@ fn eval_children_settle_and_eval_output_opens_after_the_response_commit() -> Res
                 "prompt_summary":"Continue", "request_digest":"synthetic"
             }),
         )?;
+        for op in ["request", "start"] {
+            state.action(&json!({"op":op, "id":"command-b"}), &fixture)?;
+        }
         state.action(&json!({"op":"advance", "ms":1000}), &fixture)?;
 
         let settled = render(&mut state.app, area.width, area.height)?;
+        let text: String = settled.content.iter().map(|cell| cell.symbol()).collect();
+        assert!(
+            !text.contains("writing"),
+            "completed input stayed active: {text}"
+        );
+        assert_eq!(text.matches("Inspect command output").count(), 1, "{text}");
         assert!(!settled.content.chunks(120).any(|row| row
             .iter()
             .map(|cell| cell.symbol())
@@ -249,7 +289,7 @@ fn eval_children_settle_and_eval_output_opens_after_the_response_commit() -> Res
             .contains("Eval completed")));
         state.action(&json!({"op":"advance", "ms":330}), &fixture)?;
         let later = render(&mut state.app, area.width, area.height)?;
-        for label in ["Inspect command output", "printf alpha"] {
+        for label in ["Inspect command output", "printf alpha", "printf beta"] {
             let row = settled
                 .content
                 .chunks(120)
@@ -261,23 +301,59 @@ fn eval_children_settle_and_eval_output_opens_after_the_response_commit() -> Res
                 })
                 .ok_or_else(|| format!("missing {label}"))?;
             assert_eq!(
-                &settled.content[row * 120..(row + 1) * 120],
-                &later.content[row * 120..(row + 1) * 120],
-                "completed {label} must stop animating"
+                settled.content[row * 120..(row + 1) * 120]
+                    != later.content[row * 120..(row + 1) * 120],
+                label == "printf beta",
+                "only the executing tool should animate: {label}"
             );
         }
         state.app.focus = Focus::Details;
         assert!(state.app.select_transcript_tool("eval"));
-        state
-            .app
-            .handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
-        assert!(state.app.is_tool_output_expanded_for_test("eval"));
+        state.action(&json!({"op":"open", "id":"eval"}), &fixture)?;
         let opened = render(&mut state.app, area.width, area.height)?;
         assert!(opened.content.chunks(120).any(|row| row
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>()
             .contains("Eval completed")));
+    }
+    Ok(())
+}
+
+fn inspect_saved_child(
+    state: &mut Capture,
+    workspace: &Path,
+    saved_before_open: bool,
+) -> Result<()> {
+    let child_dir = workspace.join("worker");
+    // Exercise saving both before and during live inspection.
+    for before_open in [true, false] {
+        if before_open == saved_before_open {
+            fs::create_dir_all(&child_dir)?;
+            let child_history = state
+                .events
+                .iter()
+                .skip(1)
+                .enumerate()
+                .map(|(index, event)| {
+                    let mut event = event.clone();
+                    event.run_id = "worker".into();
+                    event.seq = index as u64 + 1;
+                    serde_json::to_string(&event)
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?
+                .join("\n");
+            fs::write(child_dir.join("events.jsonl"), format!("{child_history}\n"))?;
+        }
+        if before_open {
+            state
+                .app
+                .handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+            state
+                .app
+                .handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+            assert_eq!(state.app.session_path.as_deref(), Some(child_dir.as_path()));
+        }
     }
     Ok(())
 }
