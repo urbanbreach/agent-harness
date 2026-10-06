@@ -1,12 +1,22 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { registerHooks } = require('node:module');
+const { pathToFileURL } = require('node:url');
 const transform = require('./transform.cjs');
 const createMemory = require('./memory.cjs');
 const createCapture = require('./stdio.cjs');
 const send = process.send.bind(process);
 const pending = new Map(), contexts = new Map(), commands = [];
 let active = '', sequence = 0, commandWaiter, options, memory, capture, protectedNames, queuedBytes = 0;
+let managedPath;
+registerHooks({resolve(specifier, context, nextResolve) {
+  try { return nextResolve(specifier, context); }
+  catch (error) {
+    if (!managedPath || error.code !== 'ERR_MODULE_NOT_FOUND' || /^[./]|^[a-z]+:/i.test(specifier)) throw error;
+    return nextResolve(specifier, {...context, parentURL: pathToFileURL(path.join(managedPath, 'cell.mjs')).href});
+  }
+}});
 const limit = 32 * 1024 * 1024;
 const scriptOptions = {
   filename: path.join(process.cwd(), '.harness-eval-cell.js'),
@@ -64,6 +74,8 @@ const native = {
 };
 async function initialize(message) {
   options = message;
+  const pointer = path.join(options.localRoot, 'environments/js/current.json');
+  if (fs.existsSync(pointer)) managedPath = JSON.parse(fs.readFileSync(pointer, 'utf8'));
   memory = createMemory(options.memory);
   capture = createCapture(options.captureRoot);
   globalThis.__harness_ops = native;
@@ -86,9 +98,38 @@ async function run(request) {
   let result;
   try {
     __harness_begin({...options, cellId: active, preludes: request.preludes, tools: request.tools});
-    const source = transform.cell(request.code, protectedNames);
     const value = await __harness_run(async () => {
-      const value = await evaluate(source);
+      let code = request.code, filename = scriptOptions.filename;
+      if (/^\s*%(?:load|npm)\b/.test(code)) {
+        const command = code.trim();
+        if (command.includes('\n') || command.includes('\r')) throw new Error('%load and %npm install require their own cell');
+        if (command.startsWith('%load ')) {
+          let name = command.slice(6).trim();
+          if (name.startsWith('"')) name = JSON.parse(name);
+          else if (name.startsWith("'") && name.endsWith("'")) name = name.slice(1, -1);
+          if (typeof name !== 'string' || !name || /^[a-z]+:\/\//i.test(name)) throw new Error('%load requires a local path');
+          filename = path.resolve(name);
+          const descriptor = fs.openSync(filename, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0));
+          try {
+            const stat = fs.fstatSync(descriptor);
+            if (!stat.isFile() || stat.size > 8 * 1024 * 1024) throw new Error('%load requires a regular file of at most 8 MiB');
+            const buffer = Buffer.alloc(8 * 1024 * 1024 + 1);
+            let size = 0, count;
+            while (size < buffer.length && (count = fs.readSync(descriptor, buffer, size, buffer.length - size, null))) size += count;
+            if (size > 8 * 1024 * 1024) throw new Error('%load file exceeds 8 MiB');
+            code = new TextDecoder('utf-8', {fatal:true}).decode(buffer.subarray(0, size));
+          } finally { fs.closeSync(descriptor); }
+        } else {
+          const match = /^%npm (?:install|add) (.+)$/.exec(command);
+          if (!match) throw new Error('use %npm install <packages>');
+          const installed = await __harness_install(match[1]);
+          managedPath = installed.path;
+          print(installed.text);
+          return;
+        }
+      }
+      const source = transform.cell(code, protectedNames);
+      const value = await vm.runInThisContext(source, {...scriptOptions, filename});
       await __harness_drain();
       return JSON.stringify(value);
     });

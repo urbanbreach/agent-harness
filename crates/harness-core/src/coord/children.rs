@@ -44,6 +44,7 @@ impl Runtime {
             .get(agent)
             .ok_or_else(|| CoordinatorError::UnknownAgent(agent.into()))?;
         let reserved = self.native_notification_reservations(agent)
+            + self.eval_pool_notification_reservations(agent)
             + self
                 .detached_evals
                 .iter()

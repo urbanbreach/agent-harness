@@ -93,6 +93,9 @@ impl Session {
             return Err("eval session has closed".into());
         }
         let args = crate::normalize_request(args, &self.inner.options.languages)?;
+        if args["isolate"] == true && !self.inner.options.settings.sandbox.enabled {
+            return Err("isolated eval is disabled; enable eval.sandbox.enabled".into());
+        }
         let (events, receiver) = mpsc::channel(32);
         match args["action"].as_str().unwrap_or("run") {
             "list" => {

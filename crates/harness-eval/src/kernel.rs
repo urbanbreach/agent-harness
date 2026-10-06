@@ -38,9 +38,10 @@ impl Process {
                 "-u",
                 "-c",
                 &format!(
-                    "import sys\nsys.stdout.write('{{\"type\":\"status\",\"event\":{{\"op\":\"kernel-startup\",\"stage\":\"stdlib-imports\"}}}}\\n')\nsys.stdout.flush()\n{}\n{}\n{}",
+                    "import sys\nsys.stdout.write('{{\"type\":\"status\",\"event\":{{\"op\":\"kernel-startup\",\"stage\":\"stdlib-imports\"}}}}\\n')\nsys.stdout.flush()\n{}\n{}\n{}\n{}",
                     include_str!("python_memory.py"),
                     include_str!("python_io.py"),
+                    include_str!("python_tools.py"),
                     include_str!("python.py")
                 ),
             ]);
@@ -231,7 +232,7 @@ impl Process {
     }
 }
 
-fn interpreter(options: &SessionOptions, names: &[&str]) -> Result<std::path::PathBuf> {
+pub(crate) fn interpreter(options: &SessionOptions, names: &[&str]) -> Result<std::path::PathBuf> {
     let path = options
         .environment
         .get(std::ffi::OsStr::new("PATH"))

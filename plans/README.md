@@ -47,6 +47,7 @@ terminal QA, and eight full-suite failures reproduced on the pristine baseline.
 | [035: Yield Anthropic response events before the HTTP body ends](035-stream-anthropic-responses-incrementally.md) | P2 | M | plan 011; plan 016 | Complete ([#258](https://github.com/urbanbreach/agent-harness/issues/258)) |
 | [036: Publish simulation evidence only after validation and secret scanning](036-publish-simulation-evidence-after-scan.md) | P1 | M | None | Complete ([#259](https://github.com/urbanbreach/agent-harness/issues/259)) |
 | [037: Align operator documentation with active permissions and provider behavior](037-align-operator-docs-with-runtime.md) | P2 | S | plan 029 | Complete ([#260](https://github.com/urbanbreach/agent-harness/issues/260)) |
+| [038: Eval integration and code-mode capabilities](038-eval-codemode.md) | P2 | L | None | Complete |
 
 See the [2026-09-20 issue verification record](2026-09-20-issue-closeout.md) for independent review, attached commits and integrated checks.
 

@@ -1,6 +1,7 @@
 use super::{runtime::JobKind, *};
 use crate::tool::ToolCapability;
 mod completion;
+pub(super) mod workpool;
 
 impl CoordinatorHandle {
     /// Publish closures from an approved eval into only the defining agent's
@@ -190,6 +191,7 @@ fn describe_tool(tool: &dyn crate::tool::Tool) -> Result<Value, CoordinatorError
                             | "tool_schema"
                             | "tools"
                             | "workpool"
+                            | "wait"
                             | "write"
                     )
             }))

@@ -83,10 +83,13 @@ async fn monitor(
     predecessor: Option<Arc<Cell>>,
 ) -> Result<()> {
     let settings = &session.options.settings;
-    let budget = cell.args["timeout"]
+    let mut budget = cell.args["timeout"]
         .as_f64()
         .map(Duration::from_secs_f64)
         .unwrap_or_else(|| Duration::from_secs(settings.run_budget_seconds));
+    if cell.args["isolate"] == true {
+        budget = budget.min(Duration::from_secs(settings.sandbox.timeout_seconds));
+    }
     let hard_limit = Duration::from_secs(settings.hard_limit_seconds).max(budget);
     let detach_after = Duration::from_secs(
         settings
@@ -157,40 +160,50 @@ async fn drive(
         () = cell.cancel.cancelled() => return Err("queued eval cell cancelled".into()),
         slot = slot.lock() => slot,
     };
+    if cell.args["isolate"] == true {
+        started(cell, json!({"name":"QuickJS","isolated":true})).await;
+        return crate::sandbox::run(Arc::clone(session), Arc::clone(cell)).await;
+    }
     let kernel = prepare(&mut slot, session, cell).await?;
     session
         .controls
         .lock()
         .await
         .insert(cell.language.clone(), kernel.control.clone());
-    {
-        let mut state = cell.state.lock().await;
-        state.status = if state.detached {
-            "detached"
-        } else {
-            "running"
-        };
-        state.started_at = Some(epoch_ms());
-        state.running_since = Some(Instant::now());
-        state.queued.clear();
-        state.runtime = kernel.runtime.clone();
-    }
+    started(cell, kernel.runtime.clone()).await;
     let mut result = run(kernel, session, cell).await;
-    if cell.cancel.is_cancelled() {
-        let note = if result.is_ok() {
-            "[Kernel interrupted; existing variables are preserved.]\n"
-        } else {
-            "[Kernel reset after interruption; earlier variables are lost.]\n"
-        };
-        if let Err(error) = cell.state.lock().await.output.push(note, false) {
-            result = Err(error);
-        }
+    if cell.cancel.is_cancelled()
+        && let Err(error) = interruption_notice(cell, result.is_ok()).await
+    {
+        result = Err(error);
     }
     let recycle = finish_memory(kernel, session, cell, result.is_err()).await;
     if let Some(mut kernel) = slot.take_if(|_| result.is_err() || recycle) {
         kernel.stop().await;
     }
     result
+}
+
+async fn interruption_notice(cell: &Cell, preserved: bool) -> Result<()> {
+    let note = if preserved {
+        "[Kernel interrupted; existing variables are preserved.]\n"
+    } else {
+        "[Kernel reset after interruption; earlier variables are lost.]\n"
+    };
+    cell.state.lock().await.output.push(note, false)
+}
+
+async fn started(cell: &Cell, runtime: Value) {
+    let mut state = cell.state.lock().await;
+    state.status = if state.detached {
+        "detached"
+    } else {
+        "running"
+    };
+    state.started_at = Some(epoch_ms());
+    state.running_since = Some(Instant::now());
+    state.queued.clear();
+    state.runtime = runtime;
 }
 
 async fn prepare<'a>(

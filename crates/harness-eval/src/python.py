@@ -13,11 +13,14 @@ from pathlib import Path
 import queue
 import re
 import signal
+import stat
+import shlex
 import subprocess
 import sys
 import threading
 import time
 import tokenize
+import traceback
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
@@ -28,18 +31,25 @@ _input = _native.input
 _lock = threading.RLock()
 _scope = contextvars.ContextVar("eval_cell", default=None)
 _requests = queue.Queue(16)
+_commands = queue.Queue(32)
 _pending = {}
 _active = None
+_root_cell = None
+_contexts = {}
+_scopes = {}
+# User code is serialized; only a host wait releases the interpreter lease.
+_execution_lock = threading.Lock()
 _sequence = 0
-_cancel = threading.Event()
 _options = {}
+_registry = _KernelTools()
+_managed_path = None
 _contributed = set()
 _loop = asyncio.new_event_loop()
 
 
 def _emit(message):
     cell = _scope.get()
-    if message["type"] != "ready" and (not cell or cell != _active):
+    if message["type"] != "ready" and cell not in _contexts:
         return
     with _lock:
         _drain_native(cell)
@@ -72,20 +82,33 @@ def _read_protocol():
         kind = frame.get("type")
         if kind == "reply":
             with _lock:
-                reply = _pending.pop(frame.get("id"), None)
-            if reply is not None:
-                reply.put(frame)
+                pending = _pending.pop(frame.get("id"), None)
+            if pending is not None:
+                pending[1].put(frame)
         elif kind in ("cancel", "shutdown"):
-            if _active and (kind == "shutdown" or frame.get("id") == _active):
-                _cancel.set()
-                with _lock:
-                    replies = list(_pending.values())
-                    _pending.clear()
-                for reply in replies:
-                    reply.put({"error": "Python cell interrupted"})
+            with _lock:
+                cancelled = {cell for cell in _contexts if kind == "shutdown" or frame.get("id") in (cell, _root_cell)}
+                for cell in cancelled:
+                    _contexts[cell].set()
+                for call_id, (cell, reply) in list(_pending.items()):
+                    if cell in cancelled:
+                        del _pending[call_id]
+                        reply.put({"error": {"code": "kernel_tool_stale", "message": "Python cell interrupted"}})
+            if _active == _root_cell and _active in cancelled:
                 os.kill(os.getpid(), signal.SIGINT)
             if kind == "shutdown":
                 break
+        elif kind in ("describe", "invoke"):
+            with _lock:
+                _contexts[frame["id"]] = threading.Event()
+            try:
+                _commands.put_nowait(frame)
+            except queue.Full:
+                with _lock:
+                    _contexts.pop(frame["id"], None)
+                    _wire.write(json.dumps({"type": "result", "cellId": frame["id"], "ok": False,
+                        "error": {"code": "kernel_tool_failed", "message": "Kernel command queue is full"}}) + "\n")
+                    _wire.flush()
         else:
             _requests.put(frame)
     # A closed owner pipe must also retire CPU-bound code and its child processes.
@@ -95,17 +118,43 @@ def _read_protocol():
 
 
 def _call(operation, args):
-    global _sequence
-    if not _scope.get() or _scope.get() != _active or _cancel.is_set():
+    global _sequence, _active
+    cell = _scope.get()
+    if cell not in _contexts or _contexts[cell].is_set():
         raise RuntimeError("eval cell is no longer active")
+    scope = _scopes.get(cell)
+    if scope is not None:
+        if operation == "install":
+            _tool_error("kernel_tool_host_denied", "Kernel tools may not install packages")
+        if operation == "agent" or operation == "workpool" and args.get("op") == "create":
+            _tool_error("kernel_tool_recursion", f"Kernel tools may not invoke {operation}()")
+        name = args.get("name") if operation == "tool" else {"schema": "__schema__", "output": "__output__", "workpool": "workpool"}.get(operation)
+        if operation == "wait":
+            name = "wait_commands_or_subagents"
+        elif operation == "control":
+            name = {"status":"get_command_or_subagent_output", "output":"get_command_or_subagent_output", "cancel":"kill_command_or_subagent", "send":"send_subagent_message"}.get(args.get("op"))
+        policy = scope.get("tools") or {}
+        for rule in ("deny", "allow"):
+            values = policy.get(rule)
+            if name and rule in policy and (not isinstance(values, list) or not all(isinstance(v, str) for v in values) or (name in values) == (rule == "deny")):
+                _tool_error("kernel_tool_host_denied", f"Host tool is outside this kernel tool call's scope: {name} ({rule})")
     with _lock:
         _sequence += 1
         call_id = str(_sequence)
         reply = queue.Queue(1)
-        _pending[call_id] = reply
+        _pending[call_id] = (cell, reply)
     _emit({"type": "call", "id": call_id, "operation": operation, "args": args})
     try:
-        response = reply.get()
+        _active = None
+        _execution_lock.release()
+        try:
+            response = reply.get()
+        finally:
+            _execution_lock.acquire()
+            _active = cell
+        if _contexts[cell].is_set():
+            _tool_error("kernel_tool_stale", "Python cell interrupted")
+        _registry.refresh(response.get("tools", []))
         if "error" in response:
             fields = response["error"]
             error = RuntimeError(fields.get("message", "eval helper failed") if isinstance(fields, dict) else str(fields))
@@ -116,6 +165,31 @@ def _call(operation, args):
     finally:
         with _lock:
             _pending.pop(call_id, None)
+
+
+def _command_loop():
+    global _active
+    for command in iter(_commands.get, None):
+        cell = command["id"]
+        with _execution_lock:
+            _active = cell
+            token = _scope.set(cell)
+            _scopes[cell] = command.get("scope") or {}
+            try:
+                if _contexts[cell].is_set():
+                    _tool_error("kernel_tool_stale", "Kernel tool call cancelled")
+                value = _registry.describe(command["names"]) if command["type"] == "describe" else _registry.invoke(command["request"])
+                if _contexts[cell].is_set():
+                    _tool_error("kernel_tool_stale", "Kernel tool call cancelled")
+                _emit({"type": "result", "ok": True, "value": value})
+            except BaseException as error:
+                _emit({"type": "result", "ok": False, "error": {
+                    "code": getattr(error, "code", "kernel_tool_failed"), "message": str(error)}})
+            finally:
+                _scopes.pop(cell, None)
+                _contexts.pop(cell, None)
+                _scope.reset(token)
+                _active = None
 
 
 class _Stream(io.TextIOBase):
@@ -245,6 +319,17 @@ def write(name, content):
 
 
 class _Tools:
+    def __call__(self, fn=None, **metadata):
+        def define(fn):
+            return _registry.define(fn, **metadata)
+        return define if fn is None else define(fn)
+
+    def defined(self):
+        return [_registry.descriptor(e) for e in _registry.entries.values()]
+
+    def undefine(self, name):
+        return _registry.entries.pop(_registry.key(name), None) is not None
+
     def __getattr__(self, name):
         return self[name]
 
@@ -269,7 +354,33 @@ def completion(prompt, model="default", system=None, schema=None, **options):
 
 
 def agent(prompt, **options):
-    return _call("agent", {"prompt": prompt, **options})
+    result = _call("agent", {"prompt": prompt, **options})
+    return _Handle(result) if isinstance(result, dict) and "id" in result else result
+
+
+def wait(handles, *, mode="all", timeout=60):
+    return _call("wait", {"handles": list(handles) if isinstance(handles, (list, tuple)) else [handles], "mode": mode, "timeout": timeout})
+
+
+class _Handle(dict):
+    @property
+    def control(self):
+        return self
+
+    def status(self):
+        return _call("control", {"handle": self, "op": "status"})
+
+    def output(self):
+        return _call("control", {"handle": self, "op": "output"})
+
+    def send(self, text, delivery="queue"):
+        return _call("control", {"handle": self, "op": "send", "text": text, "delivery": delivery})
+
+    def cancel(self):
+        return _call("control", {"handle": self, "op": "cancel"})
+
+    def wait(self, **options):
+        return wait(self, **options)
 
 
 def output(*ids, **options):
@@ -296,8 +407,8 @@ class _Workpool:
         return _call("workpool", {"op": "cancel", "pool_id": self.pool_id})
 
 
-def workpool(agent, name, *, mode=None):
-    options = {} if mode is None else {"mode": mode}
+def workpool(agent, name, *, mode=None, width=None, tools=None):
+    options = {key:value for key,value in {"mode":mode,"width":width,"tools":tools}.items() if value is not None}
     result = _call("workpool", {"op": "create", "agent": agent, "name": name, **options})
     pool_id = result.get("details", {}).get("pool_id")
     if result.get("hasError") or not isinstance(pool_id, str):
@@ -305,18 +416,33 @@ def workpool(agent, name, *, mode=None):
     return _Workpool(pool_id)
 
 
+workpool.open = _Workpool
+
+
 def parallel(thunks):
+    global _active
     cell = _scope.get()
     def invoke(thunk):
-        token = _scope.set(cell)
-        try:
-            return thunk()
-        finally:
-            _scope.reset(token)
-    with ThreadPoolExecutor(max_workers=_options.get("parallelPoolWidth", 4)) as pool:
-        futures = [pool.submit(invoke, thunk) for thunk in thunks]
-        # Leaving the executor waits for every submitted function, even on error.
-        return [future.result() for future in futures]
+        global _active
+        with _execution_lock:
+            _active = cell
+            token = _scope.set(cell)
+            try:
+                return thunk()
+            finally:
+                _scope.reset(token)
+                _active = None
+    thunks = list(thunks)
+    _active = None
+    _execution_lock.release()
+    try:
+        with ThreadPoolExecutor(max_workers=_options.get("parallelPoolWidth", 4)) as pool:
+            futures = [pool.submit(invoke, thunk) for thunk in thunks]
+            # Leaving the executor waits for every submitted function, even on error.
+            return [future.result() for future in futures]
+    finally:
+        _execution_lock.acquire()
+        _active = cell
 
 
 def pipeline(items, *stages):
@@ -425,43 +551,92 @@ def _transform(source):
 
 
 _globals = {"__name__": "__main__", "__builtins__": builtins, **{name: globals()[name] for name in
-    ["display", "log", "phase", "env", "read", "write", "parallel", "pipeline", "tool", "tools", "completion", "agent", "output", "workpool", "tool_schema"]},
+    ["display", "log", "phase", "env", "read", "write", "parallel", "pipeline", "tool", "tools", "completion", "agent", "output", "workpool", "tool_schema", "wait"]},
     "__harness_shell": _shell, "__harness_magic": _magic}
 
 
-async def _evaluate(source):
-    tree = ast.parse(_transform(source), filename="<eval>", mode="exec")
+def _activate_packages(path):
+    global _managed_path
+    if _managed_path in sys.path:
+        sys.path.remove(_managed_path)
+    _managed_path = str(path)
+    sys.path.insert(1, _managed_path)
+    __import__("importlib").invalidate_caches()
+
+
+async def _evaluate(source, filename="<eval>"):
+    stripped = source.strip()
+    if stripped.startswith(("%load", "%pip")):
+        if len(stripped.splitlines()) != 1:
+            raise ValueError("%load and %pip install require their own cell")
+        parts = shlex.split(stripped)
+        if parts[0] == "%load" and len(parts) == 2:
+            path = _path(parts[1]).resolve()
+            if not path.is_file() or path.stat().st_size > 8 * 1024 * 1024:
+                raise ValueError("%load requires a regular local file of at most 8 MiB")
+            # Bound the read as well as the initial stat if the file is growing.
+            with open(path, "rb", opener=lambda path, flags: os.open(path, flags | getattr(os, "O_NONBLOCK", 0))) as script:
+                if not stat.S_ISREG(os.fstat(script.fileno()).st_mode):
+                    raise ValueError("%load requires a regular local file")
+                data = script.read(8 * 1024 * 1024 + 1)
+            if len(data) > 8 * 1024 * 1024:
+                raise ValueError("%load file exceeds 8 MiB")
+            old_path, old_file = sys.path[:], _globals.get("__file__")
+            had_file = "__file__" in _globals
+            sys.path.insert(0, str(path.parent))
+            _globals["__file__"] = str(path)
+            try:
+                return await _evaluate(data.decode("utf-8"), str(path))
+            finally:
+                sys.path[:] = old_path
+                if had_file:
+                    _globals["__file__"] = old_file
+                else:
+                    _globals.pop("__file__", None)
+        if parts[:2] == ["%pip", "install"] and len(parts) > 2:
+            result = _call("install", {"manager": "pip", "arguments": shlex.join(parts[2:])})
+            _activate_packages(result["path"])
+            print(result["text"])
+            return
+        raise ValueError("use %load <path> or %pip install <packages>")
+    tree = ast.parse(_transform(source), filename=filename, mode="exec")
     expression = tree.body.pop() if tree.body and isinstance(tree.body[-1], ast.Expr) else None
-    result = eval(compile(tree, "<eval>", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT), _globals)
+    result = eval(compile(tree, filename, "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT), _globals)
     if inspect.isawaitable(result):
         await result
     if expression is not None:
-        result = eval(compile(ast.Expression(expression.value), "<eval>", "eval", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT), _globals)
+        result = eval(compile(ast.Expression(expression.value), filename, "eval", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT), _globals)
         return await result if inspect.isawaitable(result) else result
 
 
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 threading.Thread(target=_read_protocol, daemon=True).start()
 threading.Thread(target=_poll_native, daemon=True).start()
+threading.Thread(target=_command_loop, daemon=True).start()
 for _request in iter(_requests.get, None):
     if _request.get("type") == "init":
         _wire.write(json.dumps({"type": "status", "event": {"op": "kernel-startup", "stage": "host-init"}}) + "\n")
         _wire.flush()
         _options = _request
+        _package_pointer = Path(_options["localRoot"]) / "environments" / "py" / "current.json"
+        if _package_pointer.exists():
+            _activate_packages(json.loads(_package_pointer.read_text()))
         _memory = _PythonMemory(_options.get("memory", {}), _globals)
         _emit({"type": "ready", "runtime": {"name": "Python", "version": sys.version.split()[0], "path": sys.executable}})
         continue
     if _request.get("type") != "run":
         continue
-    _active = _request["id"]
+    _execution_lock.acquire()
+    _active = _root_cell = _request["id"]
+    _contexts[_active] = threading.Event()
     with _lock:
         _native.clear()
     _scope.set(_active)
-    _cancel.clear()
     _start = time.monotonic()
     signal.signal(signal.SIGINT, signal.default_int_handler)
     sys.stdout, sys.stderr = _Stream("stdout"), _Stream("stderr")
     try:
+        _registry.refresh(_request.get("tools", []))
         _preludes = _request.get("preludes") or []
         _names = {name for prelude in _preludes for name in prelude["exports"]}
         for _name in _contributed - _names:
@@ -473,7 +648,7 @@ for _request in iter(_requests.get, None):
         _value = _loop.run_until_complete(_evaluate(_request["code"]))
         _result = {"type": "result", "ok": True, "valueRepr": repr(_value) if _value is not None else None}
     except BaseException as _error:
-        _result = {"type": "result", "ok": False, "error": {"message": f"{type(_error).__name__}: {_error}"}}
+        _result = {"type": "result", "ok": False, "error": {"message": traceback.format_exc()}}
     finally:
         signal.signal(signal.SIGINT, signal.SIG_IGN)
     _result["durationMs"] = int((time.monotonic() - _start) * 1000)
@@ -484,5 +659,7 @@ for _request in iter(_requests.get, None):
     except Exception as _error:
         _emit({"type": "text", "stream": "stderr", "data": f"[kernel memory measurement unavailable: {_error}]\n"})
     _emit(_result)
-    _active = None
+    _contexts.pop(_root_cell, None)
+    _active = _root_cell = None
     _scope.set(None)
+    _execution_lock.release()

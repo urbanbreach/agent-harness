@@ -191,6 +191,18 @@ pub(super) struct NativeSubagent {
 }
 
 impl NativeSubagent {
+    pub(in crate::coord) fn occupies_slot(&self) -> bool {
+        matches!(
+            self.phase,
+            NativePhase::Preparing | NativePhase::Running | NativePhase::Finalizing
+        )
+    }
+
+    pub(in crate::coord) fn pool_snapshot(&self) -> Value {
+        serde_json::json!({"id":self.registration.child_id,"status":self.updates.borrow().result.status,
+            "terminal":self.phase == NativePhase::Terminal,"output":self.updates.borrow().result.output})
+    }
+
     pub(super) fn preload_skills(&self) -> Vec<String> {
         self.resolved
             .as_ref()

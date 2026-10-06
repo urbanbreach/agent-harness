@@ -25,6 +25,7 @@ pub struct Settings {
     pub output_max_columns: usize,
     pub status_events: bool,
     pub memory: MemorySettings,
+    pub sandbox: SandboxSettings,
 }
 
 impl Default for Settings {
@@ -40,12 +41,18 @@ impl Default for Settings {
             output_max_columns: 768,
             status_events: true,
             memory: MemorySettings::default(),
+            sandbox: SandboxSettings::default(),
         }
     }
 }
 
 impl Settings {
     pub(crate) fn validate(&self) -> crate::Result<()> {
+        if !(1..=4096).contains(&self.sandbox.memory_limit_mb)
+            || !(1..=86400).contains(&self.sandbox.timeout_seconds)
+        {
+            return Err("invalid eval sandbox limits".into());
+        }
         if [
             self.cell_timeout_seconds,
             self.foreground_window_seconds,
@@ -75,6 +82,23 @@ impl Settings {
             return Err("invalid eval memory thresholds".into());
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SandboxSettings {
+    pub enabled: bool,
+    pub memory_limit_mb: usize,
+    pub timeout_seconds: u64,
+}
+impl Default for SandboxSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            memory_limit_mb: 64,
+            timeout_seconds: 300,
+        }
     }
 }
 

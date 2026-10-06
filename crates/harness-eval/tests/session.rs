@@ -15,7 +15,7 @@ fn session(settings: Settings) -> Result<(Session, tempfile::TempDir)> {
         cwd: root.path().into(),
         artifacts: root.path().join("artifacts"),
         local_dir: root.path().join("local"),
-        languages: vec!["js".into()],
+        languages: vec!["js".into(), "py".into()],
         session_env: BTreeMap::new(),
         settings,
     })?;
@@ -38,7 +38,11 @@ async fn event(events: &mut mpsc::Receiver<Value>, kind: &str) -> Result<Value> 
 }
 
 async fn run(session: &Session, id: &str, code: &str) -> Result<Value> {
-    let mut events = session.execute(id, json!({"language":"js","summary":"Verify native JavaScript","code":code,"on_timeout":"error"}), json!([]), false).await?;
+    run_language(session, "js", id, code).await
+}
+
+async fn run_language(session: &Session, language: &str, id: &str, code: &str) -> Result<Value> {
+    let mut events = session.execute(id, json!({"language":language,"summary":"Verify native kernel","code":code,"on_timeout":"error"}), json!([]), false).await?;
     Ok(event(&mut events, "result").await?["result"].clone())
 }
 
@@ -311,144 +315,6 @@ async fn memory_ceiling_recycles_idle_kernel_and_announces_lost_globals() -> Res
 }
 
 #[tokio::test]
-async fn kernel_tools_are_reentrant_scoped_and_fenced_by_revision() -> Result {
-    let (session, _root) = session(Settings::default())?;
-    let tools = json!([{"name":"probe","parameters":{"type":"object"}}, {"name":"read","parameters":{"type":"object"}}]);
-    let mut parent = session.execute("parent", json!({"language":"js","summary":"Define child tool while waiting","code":"tool(async function lookup(path) { return (await tool.read({path})).text; }, {description:'Read a path',schema:{type:'object',properties:{path:{type:'string'}},required:['path'],additionalProperties:false}}); await tool.probe({});","on_timeout":"error"}), tools.clone(), false).await?;
-    let waiting = event(&mut parent, "call").await?;
-    let described = session
-        .describe_kernel_tools(&["lookup".into(), "absent".into()])
-        .await?;
-    assert_eq!(described["results"][0]["ok"], true, "{described}");
-    assert_eq!(
-        described["results"][1]["error"]["code"],
-        "kernel_tool_missing"
-    );
-    let descriptor = &described["results"][0]["descriptor"];
-    let request = json!({"name":"lookup","kernel_generation":descriptor["kernel_generation"],"definition_revision":descriptor["definition_revision"],"args":{"path":"memo.txt"},"call_id":"child-read"});
-    let mut invoked = session
-        .invoke_kernel_tool(
-            request.clone(),
-            Some(json!({"tools":{"allow":["read"]}})),
-            tools.clone(),
-            tokio_util::sync::CancellationToken::new(),
-        )
-        .await?;
-    let nested = event(&mut invoked, "call").await?;
-    assert_ne!(nested["parent"], waiting["parent"]);
-    assert_eq!(nested["args"]["parameters"]["path"], "memo.txt");
-    session.send(json!({"type":"reply","id":waiting["id"],"result":{"content":[{"type":"text","text":"parent finished"}],"details":{}}})).await?;
-    assert_ne!(
-        event(&mut parent, "result").await?["result"]["details"]["isError"],
-        true
-    );
-    session.send(json!({"type":"reply","id":nested["id"],"result":{"content":[{"type":"text","text":"nested body"}],"details":{}}})).await?;
-    assert_eq!(
-        event(&mut invoked, "result").await?["result"],
-        "nested body"
-    );
-    let mut parent = session.execute("parent-again", json!({"language":"js","summary":"Wait while child tools run","code":"await tool.probe({});","on_timeout":"error"}), tools.clone(), false).await?;
-    event(&mut parent, "call").await?;
-    for scope in [
-        json!({"tools":{"deny":["read"]}}),
-        json!({"tools":{"allow":"malformed"}}),
-    ] {
-        let mut denied = session
-            .invoke_kernel_tool(
-                request.clone(),
-                Some(scope),
-                tools.clone(),
-                tokio_util::sync::CancellationToken::new(),
-            )
-            .await?;
-        let denial = event(&mut denied, "error").await?;
-        assert_eq!(
-            denial["error"]["code"], "kernel_tool_host_denied",
-            "{denial}"
-        );
-    }
-    let mut interrupted = session
-        .invoke_kernel_tool(
-            request.clone(),
-            None,
-            tools.clone(),
-            tokio_util::sync::CancellationToken::new(),
-        )
-        .await?;
-    event(&mut interrupted, "call").await?;
-    session
-        .send(json!({"type":"cancel","id":"parent-again"}))
-        .await?;
-    assert_eq!(
-        event(&mut parent, "result").await?["result"]["details"]["cells"][0]["status"],
-        "cancelled"
-    );
-    assert_eq!(
-        event(&mut interrupted, "error").await?["error"]["code"],
-        "kernel_tool_stale"
-    );
-    let cancelled = tokio_util::sync::CancellationToken::new();
-    cancelled.cancel();
-    let rejected = session
-        .invoke_kernel_tool(request.clone(), None, tools.clone(), cancelled)
-        .await;
-    assert!(
-        rejected.is_err(),
-        "a pre-cancelled invocation must never enter the kernel"
-    );
-    run(&session, "recursive-definitions", "tool(async function recursive_agent() { return await agent('nested'); }); tool(async function recursive_pool() { return await workpool({category:'default',prompt:'nested'},'nested'); });").await?;
-    let descriptors = session
-        .describe_kernel_tools(&["recursive_agent".into(), "recursive_pool".into()])
-        .await?;
-    for descriptor in descriptors["results"]
-        .as_array()
-        .ok_or("missing descriptors")?
-    {
-        let mut invocation = descriptor["descriptor"].clone();
-        invocation["args"] = json!({});
-        invocation["call_id"] = "recursion-check".into();
-        let mut events = session
-            .invoke_kernel_tool(
-                invocation,
-                None,
-                tools.clone(),
-                tokio_util::sync::CancellationToken::new(),
-            )
-            .await?;
-        assert_eq!(
-            event(&mut events, "error").await?["error"]["code"],
-            "kernel_tool_recursion"
-        );
-    }
-    let invalid = run(&session, "invalid-definition", "[() => 1, function bad(x=1){}, function* generator(){}].map(fn => {try {tool(fn); return 'accepted'} catch(error) {return error.code}})").await?;
-    assert_eq!(
-        invalid["content"][0]["text"],
-        "[\"invalid_tool_definition\",\"invalid_tool_definition\",\"invalid_tool_definition\"]"
-    );
-    let revised = run(
-        &session,
-        "redefine",
-        "tool(function lookup(path) {return path});",
-    )
-    .await?;
-    assert_ne!(revised["details"]["isError"], true, "{revised}");
-    let mut stale = session
-        .invoke_kernel_tool(
-            request,
-            None,
-            tools,
-            tokio_util::sync::CancellationToken::new(),
-        )
-        .await?;
-    assert_eq!(
-        event(&mut stale, "error").await?["error"]["code"],
-        "kernel_tool_stale"
-    );
-    session.close().await?;
-    Ok(())
-}
-
-#[tokio::test]
 async fn execution_metadata_bounds_details_without_losing_call_counts() -> Result {
     let (session, _root) = session(Settings::default())?;
     let catalog = (0..70)
@@ -496,3 +362,6 @@ async fn execution_metadata_bounds_details_without_losing_call_counts() -> Resul
     session.close().await?;
     Ok(())
 }
+
+#[path = "session/codemode.rs"]
+mod codemode;

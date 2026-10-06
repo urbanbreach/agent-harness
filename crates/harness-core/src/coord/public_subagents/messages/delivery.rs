@@ -160,6 +160,11 @@ impl Runtime {
         target: &str,
         receipt: &NativeMessageReceipt,
     ) -> Result<(), CoordinatorError> {
+        if self.is_eval_pool_child(target) {
+            return Err(native_invalid(
+                "workpool children cannot be restarted; push a new item instead".into(),
+            ));
+        }
         let FinalizedStateResult::Available { state } =
             self.resolve_agent_finalized_state(target)?
         else {

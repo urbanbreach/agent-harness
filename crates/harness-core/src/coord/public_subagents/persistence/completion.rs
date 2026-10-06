@@ -225,9 +225,15 @@ impl Runtime {
         child.updates.send_replace(snapshot);
         let parent = self.native_subagents[agent].registration.root_agent.clone();
         self.reparent_commands(agent, Some(&parent));
+        if self.eval_pool_completed_child(agent)?
+            && let Some(child) = self.native_subagents.get_mut(agent)
+        {
+            child.consumed = true;
+        }
         self.native_terminal_publication(agent, &terminal)?;
         self.route_native_survivors(agent)?;
         self.evict_native_completed();
-        self.pump_native_subagents()
+        self.pump_native_subagents()?;
+        self.publish_eval_pool_notifications()
     }
 }

@@ -190,6 +190,7 @@ pub struct KernelPrelude {
 #[derive(Default)]
 pub struct ToolRegistry {
     tools: BTreeMap<String, Arc<dyn Tool>>,
+    eval_routes: std::collections::BTreeSet<String>,
     descriptions: BTreeMap<(String, String), String>,
     catalogs: BTreeMap<String, ToolCatalog>,
     scoped: RwLock<BTreeMap<String, BTreeMap<String, Arc<dyn Tool>>>>,
@@ -272,6 +273,10 @@ impl ToolRegistry {
     pub fn register_catalog(&mut self, permission_anchor: String, catalog: ToolCatalog) {
         self.catalogs.insert(permission_anchor, catalog);
     }
+    /// Route advertised tools through eval without changing execution authorization.
+    pub fn route_through_eval(&mut self, tools: impl IntoIterator<Item = String>) {
+        self.eval_routes = tools.into_iter().collect();
+    }
     pub(crate) fn allows(&self, profile: &crate::agent::AgentProfile, id: &str) -> bool {
         profile.toolset.iter().any(|allowed| {
             allowed == id
@@ -321,7 +326,34 @@ impl ToolRegistry {
             .get(&(tool.into(), profile.into()))
             .map(String::as_str)
     }
+    fn is_eval_routed(&self, tool: &str) -> bool {
+        self.eval_routes.iter().any(|id| {
+            id == tool
+                || self.catalogs.get(id).is_some_and(|catalog| {
+                    catalog.read().is_ok_and(|tools| tools.contains_key(tool))
+                })
+        })
+    }
     pub(crate) fn definitions(
+        &self,
+        profile: &crate::agent::AgentProfile,
+        agent: Option<&str>,
+        permissions: (
+            &crate::perm::PermissionPolicy,
+            &crate::perm::PermissionPolicy,
+        ),
+    ) -> Vec<harness_providers::ToolDef> {
+        let mut tools = self.prompt_definitions(profile, agent, permissions);
+        if tools.iter().any(|tool| tool.tool_id == "eval") {
+            tools.retain(|tool| {
+                matches!(tool.tool_id.as_str(), "eval" | "question")
+                    || !self.is_eval_routed(&tool.tool_id)
+            });
+        }
+        tools
+    }
+
+    pub(crate) fn prompt_definitions(
         &self,
         profile: &crate::agent::AgentProfile,
         agent: Option<&str>,
@@ -353,15 +385,15 @@ impl ToolRegistry {
                     .cloned(),
             );
         }
+        tools.retain(|tool| {
+            tool.permission_requests(&serde_json::json!({}))
+                .iter()
+                .all(|(name, _)| {
+                    !permissions.0.always_denies(name) && !permissions.1.always_denies(name)
+                })
+        });
         tools
             .into_iter()
-            .filter(|tool| {
-                tool.permission_requests(&serde_json::json!({}))
-                    .iter()
-                    .all(|(name, _)| {
-                        !permissions.0.always_denies(name) && !permissions.1.always_denies(name)
-                    })
-            })
             .map(|tool| harness_providers::ToolDef {
                 tool_id: tool.id().into(),
                 function_name: harness_providers::tool_function_name(tool.id()),

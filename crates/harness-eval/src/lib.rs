@@ -12,14 +12,16 @@ mod kernel_tools;
 mod memory;
 mod metadata;
 mod output;
+mod packages;
 mod request;
 mod retention;
+mod sandbox;
 mod session;
 mod settings;
 pub use kernel_tools::KernelToolError;
 pub use request::normalize_request;
 pub use session::Session;
-pub use settings::{MemorySettings, SessionOptions, Settings};
+pub use settings::{MemorySettings, SandboxSettings, SessionOptions, Settings};
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 type Result<T> = std::result::Result<T, Error>;

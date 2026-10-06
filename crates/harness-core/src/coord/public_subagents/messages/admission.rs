@@ -31,9 +31,10 @@ impl Runtime {
         &mut self,
         actor: EventActor,
         tool: String,
-        input: SendSubagentMessageInput,
+        mut input: SendSubagentMessageInput,
     ) -> Result<Admission, CoordinatorError> {
         self.authenticated_native_tool(&actor, &tool, false)?;
+        input.subagent_id = self.eval_handle_id(&input.subagent_id)?;
         if !self.config.subagents.messaging_enabled {
             return Ok(Admission::Immediate(SendSubagentMessageResult::Unsupported));
         }

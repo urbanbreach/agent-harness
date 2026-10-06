@@ -1,6 +1,7 @@
 use crate::{cell::Cell, session::Inner, Result};
 use serde_json::{json, Value};
 use std::time::Instant;
+mod handles;
 
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
@@ -89,26 +90,37 @@ pub(crate) async fn dispatch(session: &Inner, cell: &Cell, event: &Value) -> Res
         Some("agent") => agent(session, cell, args).await,
         Some("output") => output(session, cell, args).await,
         Some("workpool") => workpool(session, cell, args).await,
+        Some("install") => crate::packages::install(session, cell, args).await,
+        Some("wait") => handles::wait(session, cell, args).await,
+        Some("control") => handles::control(session, cell, args).await,
         _ => Err("unknown eval helper operation".into()),
     }
 }
 
 async fn workpool(session: &Inner, cell: &Cell, args: &Value) -> Result<Value> {
-    if !cell
+    let catalog = cell
         .tools
         .lock()
         .await
         .as_array()
         .into_iter()
         .flatten()
-        .any(|tool| tool["name"] == "workpool")
+        .filter_map(|tool| tool["name"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    if !catalog
+        .iter()
+        .any(|name| name == "workpool" || name == "spawn_subagent")
     {
         return Err(failure(
             "workpool_unavailable",
             "No active host workpool tool",
         ));
     }
-    let result = tool(session, cell, "workpool", args.clone()).await?;
+    let result = if catalog.iter().any(|name| name == "workpool") {
+        tool(session, cell, "workpool", args.clone()).await?
+    } else {
+        session.call(cell, "workpool", args.clone()).await?
+    };
     if args["op"] == "create" {
         let details = &result["details"];
         if let Some(error) = details.get("error") {

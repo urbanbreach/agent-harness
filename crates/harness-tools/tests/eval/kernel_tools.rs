@@ -1,8 +1,12 @@
 use super::*;
 
 #[tokio::test]
-#[ignore = "requires Node.js 24+; scripts/test-lanes.sh eval"]
+#[ignore = "requires Node.js 24+ and Python; scripts/test-lanes.sh eval"]
 async fn child_agents_invoke_kernel_tools_without_leaking_them_to_siblings() -> Result {
+    for (language, code) in [
+        ("js", "tool(async function lookup(path) { return (await tool.read({path})).text; }); await agent('Read memo.txt with lookup', {tools:['lookup','read']})"),
+        ("py", "@tool\nasync def lookup(path: str):\n    return tool.read(path=path)['text']\nagent('Read memo.txt with lookup', tools=['lookup','read'])"),
+    ] {
     let provider = MockProvider::script([
         vec![
             Stream::ToolCallComplete {
@@ -22,7 +26,7 @@ async fn child_agents_invoke_kernel_tools_without_leaking_them_to_siblings() -> 
         session._root.path().join("memo.txt"),
         "kernel tool reached coordinator read",
     )?;
-    let result = session.good("js", "tool(async function lookup(path) { return (await tool.read({path})).text; }); await agent('Read memo.txt with lookup', {tools:['lookup','read']})").await?;
+    let result = session.good(language, code).await?;
     assert!(
         result.display_text.contains("kernel child done"),
         "{}",
@@ -57,5 +61,6 @@ async fn child_agents_invoke_kernel_tools_without_leaking_them_to_siblings() -> 
         Err(error) if error.contains("unknown tool")
     ));
     session.handle.stop_run().await?;
+    }
     Ok(())
 }
