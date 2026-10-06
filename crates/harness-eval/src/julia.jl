@@ -159,12 +159,17 @@ function Base.getproperty(pool::HarnessWorkpool, name::Symbol)
     name in (:close, :inspect, :cancel) || error("unknown workpool operation")
     () -> harness_call("workpool", Dict("op"=>string(name), "pool_id"=>id))
 end
-function workpool(agent, name; mode=nothing)
+function workpool(agent, name; mode=nothing, width=nothing, tools=nothing)
     args = Dict{String,Any}("op"=>"create", "agent"=>agent, "name"=>name)
     mode === nothing || (args["mode"] = mode)
+    width === nothing || (args["width"] = width)
+    tools === nothing || (args["tools"] = tools)
     result = harness_call("workpool", args)
     id = get(get(result, "details", Dict()), "pool_id", nothing)
     get(result, "hasError", false) || !(id isa String) ? error(get(result, "text", "workpool creation failed")) : HarnessWorkpool(id)
+end
+function wait(handles; mode="all", timeout=60)
+    harness_call("wait", Dict("handles" => handles isa AbstractVector ? handles : [handles], "mode" => mode, "timeout" => timeout))
 end
 
 text(value) = harness_emit("text"; stream="stdout", data=string(value))

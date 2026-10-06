@@ -650,12 +650,39 @@
           "minimum": 1,
           "type": "integer"
         },
+        "route_tools": {
+          "default": [],
+          "description": "Tool IDs or discovery catalog IDs advertised through eval when it is allowed.",
+          "items": {
+            "maxLength": 256,
+            "minLength": 1,
+            "not": {
+              "enum": [
+                "eval",
+                "question"
+              ]
+            },
+            "pattern": "^\\S+$",
+            "type": "string"
+          },
+          "maxItems": 256,
+          "type": "array",
+          "uniqueItems": true
+        },
         "run_budget_seconds": {
           "default": 300,
           "format": "uint64",
           "maximum": 86400,
           "minimum": 1,
           "type": "integer"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/EvalSandboxConfig",
+          "default": {
+            "enabled": false,
+            "memory_limit_mb": 64,
+            "timeout_seconds": 300
+          }
         },
         "status_events": {
           "default": true,
@@ -700,6 +727,30 @@
           "format": "uint",
           "maximum": 1048576,
           "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "EvalSandboxConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "memory_limit_mb": {
+          "default": 64,
+          "format": "uint",
+          "maximum": 4096,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "timeout_seconds": {
+          "default": 300,
+          "format": "uint64",
+          "maximum": 86400,
+          "minimum": 1,
           "type": "integer"
         }
       },
@@ -4947,7 +4998,13 @@
         "output_head_bytes": 20480,
         "output_max_columns": 768,
         "parallel_pool_width": 4,
+        "route_tools": [],
         "run_budget_seconds": 300,
+        "sandbox": {
+          "enabled": false,
+          "memory_limit_mb": 64,
+          "timeout_seconds": 300
+        },
         "status_events": true
       }
     },

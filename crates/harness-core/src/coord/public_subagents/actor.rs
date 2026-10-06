@@ -169,9 +169,10 @@ impl Runtime {
 
     pub(in crate::coord) fn native_notification_reservations(&self, agent: &str) -> usize {
         self.native_subagents
-            .values()
-            .filter(|child| {
-                child.registration.spawner == agent
+            .iter()
+            .filter(|(id, child)| {
+                !self.is_eval_pool_child(id)
+                    && child.registration.spawner == agent
                     && child.registration.background
                     && child.registration.parent_request.is_some()
                     && child.phase != NativePhase::Terminal

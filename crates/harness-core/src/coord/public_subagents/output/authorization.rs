@@ -1,6 +1,26 @@
 use super::*;
 
 impl Runtime {
+    /// Eval handle records refer to the initial execution; raw native IDs retain
+    /// their existing messaging/restart behavior. Validate in the owning actor.
+    pub(in crate::coord) fn eval_handle_id(&self, value: &str) -> Result<String, CoordinatorError> {
+        let Some(reference) = value.strip_prefix("eval:") else {
+            return Ok(value.into());
+        };
+        let id = reference
+            .strip_suffix(":0")
+            .ok_or_else(|| CoordinatorError::Invalid("stale task handle epoch".into()))?;
+        let child = self.native_subagents.get(id).ok_or_else(|| {
+            CoordinatorError::Invalid("stale task handle: child is no longer available".into())
+        })?;
+        if child.registration.source.as_deref() == Some(id) {
+            return Err(CoordinatorError::Invalid(
+                "stale task handle: child execution was restarted".into(),
+            ));
+        }
+        Ok(id.into())
+    }
+
     pub(in crate::coord::public_subagents) fn native_reachable(
         &self,
         actor: &EventActor,

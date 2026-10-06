@@ -46,6 +46,7 @@ impl Runtime {
             return Ok(());
         };
         let detached_eval = self.detached_evals.remove(&id);
+        self.finish_eval_pool_submission(&id)?;
         if job.cancellation.is_cancelled() {
             result = Err(CoordinatorError::Cancelled(
                 job.reason.take().unwrap_or_else(|| "task cancelled".into()),

@@ -86,6 +86,13 @@ async fn eval_shares_capacity_preserve_order_permissions_and_cancellation(
         release: [Semaphore::new(0), Semaphore::new(0)],
     });
     let mut registry = harness_tools::coordinator_registry(ShellAllowlist::default());
+    harness_tools::register_eval_tool(
+        &mut registry,
+        harness_core::config::EvalConfig {
+            route_tools: vec!["probe".into()],
+            ..Default::default()
+        },
+    );
     registry.register(Arc::clone(&probe) as Arc<dyn Tool>);
     let mut config = CoordinatorConfig::new(root.path().join("sessions"));
     config.tool_registry = Arc::new(registry);
@@ -280,7 +287,12 @@ fn model_target() -> ResolvedModelTarget {
         text_verbosity: None,
         reasoning_summary: None,
         thinking: None,
-        limits: ResolvedModelLimits::default(),
+        limits: ResolvedModelLimits::from_values(
+            Some(100_000),
+            Some(98_000),
+            Some(4096),
+            harness_core::config::ModelLimitProvenance::explicit("eval fixture"),
+        ),
         resolution: harness_core::model_resolution::resolve_model(
             harness_core::model_resolution::ModelResolutionInput {
                 provider: "mock",

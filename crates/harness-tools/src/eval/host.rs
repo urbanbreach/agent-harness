@@ -44,6 +44,7 @@ impl Host {
         let mut settings = serde_json::to_value(config).map_err(failure)?;
         if let Some(settings) = settings.as_object_mut() {
             settings.remove("languages");
+            settings.remove("route_tools");
         }
         let session = Session::new(SessionOptions {
             environment,

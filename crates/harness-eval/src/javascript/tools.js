@@ -1,5 +1,6 @@
 globalThis.__harness_create_registry = native => {
   const entries = new Map();
+  const revisions = new Map();
   let generation = 1, hostNames = [];
   const key = name => String(name).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64).replaceAll("-", "_");
   const fail = (code, message, fields = {}) => { throw Object.assign(new Error(message), { name: "KernelToolError", code, ...fields }); };
@@ -39,7 +40,9 @@ globalThis.__harness_create_registry = native => {
       if (properties.length !== params.length || params.some(name => !properties.includes(name))) fail("invalid_tool_definition", "schema properties must match the function parameters");
       const previous = entries.get(key(name));
       if (previous && previous.name !== name) fail("tool_name_collision", `Kernel tool name collides: ${name}`);
-      const entry = { name, params, fn, description, schema, revision: (previous?.revision ?? 0) + 1 };
+      const revision = (revisions.get(key(name)) ?? 0) + 1;
+      revisions.set(key(name), revision);
+      const entry = { name, params, fn, description, schema, revision };
       entries.set(key(name), entry);
       return descriptor(entry);
     },
@@ -49,6 +52,8 @@ globalThis.__harness_create_registry = native => {
         return entry ? { name, ok: true, descriptor: descriptor(entry) } : { name, ok: false, error: { code: "kernel_tool_missing", message: `Kernel tool is not defined: ${name}` } };
       }) };
     },
+    defined() { return [...entries.values()].map(descriptor); },
+    undefine(name) { return entries.delete(key(name)); },
     async invoke(request) {
       if (request.kernel_generation !== generation) fail("kernel_tool_stale", "Kernel tool descriptor generation is stale");
       const entry = entries.get(key(request.name));

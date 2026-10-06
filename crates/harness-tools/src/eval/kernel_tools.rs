@@ -103,7 +103,7 @@ impl Tool for KernelTool {
             }
         }
         allowed.push("__schema__".into());
-        let request = json!({"name":self.name,"kernel_generation":self.descriptor["kernel_generation"],"definition_revision":self.descriptor["definition_revision"],"args":args,"call_id":ctx.tool_call_id});
+        let request = json!({"name":self.name,"language":self.descriptor["language"],"kernel_generation":self.descriptor["kernel_generation"],"definition_revision":self.descriptor["definition_revision"],"args":args,"call_id":ctx.tool_call_id});
         let mut events = self
             .session
             .invoke_kernel_tool(

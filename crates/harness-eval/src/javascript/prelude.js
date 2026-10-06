@@ -20,7 +20,8 @@
     if (!cellId || !running.has(cellId)) return Promise.reject(new Error("eval cell is no longer active"));
     const scope = scopes.get(cellId), policy = scope?.tools;
     if (scope && (operation === "agent" || operation === "workpool" && args.op === "create")) return Promise.reject(Object.assign(new Error(`Kernel tools may not invoke ${operation}()`), { name: "KernelToolError", code: "kernel_tool_recursion" }));
-    const name = operation === "tool" ? args.name : ({ agent: "__agent__", output: "__output__", schema: "__schema__", workpool: "workpool" })[operation];
+    if (scope && operation === "install") return Promise.reject(new Error('Kernel tools may not install packages'));
+    const name = operation === "tool" ? args.name : operation === "wait" ? "wait_commands_or_subagents" : operation === "control" ? ({status:"get_command_or_subagent_output",output:"get_command_or_subagent_output",cancel:"kill_command_or_subagent",send:"send_subagent_message"})[args.op] : ({ agent: "__agent__", output: "__output__", schema: "__schema__", workpool: "workpool" })[operation];
     const valid = value => Array.isArray(value) && value.every(name => typeof name === "string");
     let reason;
     if (name && policy && typeof policy === "object") {
@@ -174,8 +175,29 @@
   const namespace = new Proxy((fn, metadata) => registry.define(fn, metadata), {
     get(_target, name) {
       if (name === "then" || typeof name !== "string") return undefined;
+      if (name === "defined") return () => registry.defined();
+      if (name === "undefine") return name => registry.undefine(name);
       return parameters => call("tool", { name, parameters: parameters ?? {} });
     },
+  });
+  const wait = (handles, options = {}) => call('wait', {handles: Array.isArray(handles) ? handles : [handles], ...options});
+  const handleControls = handle => {
+    if (!handle || typeof handle !== 'object' || typeof handle.id !== 'string') return handle;
+    const control = Object.freeze({
+      status: () => call('control', {handle, op:'status'}),
+      output: () => call('control', {handle, op:'output'}),
+      send: (text, delivery='queue') => call('control', {handle, op:'send', text, delivery}),
+      cancel: () => call('control', {handle, op:'cancel'}),
+      wait: options => wait(handle, options),
+    });
+    Object.defineProperty(handle, 'control', {value:control});
+    return handle;
+  };
+  const poolHandle = pool_id => Object.freeze({ pool_id,
+    push: items => call("workpool", { op: "push", pool_id, items }),
+    close: () => call("workpool", { op: "close", pool_id }),
+    inspect: () => call("workpool", { op: "inspect", pool_id }),
+    cancel: () => call("workpool", { op: "cancel", pool_id }),
   });
   Object.assign(globalThis, {
     print: (...values) => outputText(`${values.map(format).join(" ")}\n`),
@@ -203,24 +225,21 @@
       return results;
     },
     tool_schema: name => call("schema", name == null ? {} : { name: String(name) }),
+    __harness_install: args => call("install", {manager: "npm", arguments:args}),
     completion: (prompt, opts) => call("completion", { prompt, opts }),
-    agent: (prompt, ...values) => call("agent", { prompt: String(prompt), ...options("agent", values, ["agent", "model", "label", "schema", "isolated", "apply", "merge"]) }),
+    agent: (prompt, ...values) => call("agent", { prompt: String(prompt), ...options("agent", values, ["agent", "model", "label", "schema", "isolated", "apply", "merge"]) }).then(handleControls),
+    wait,
     output: (...args) => {
       const options = args.length && typeof args.at(-1) === "object" && !Array.isArray(args.at(-1)) ? args.pop() : {};
       const ids = args.flat().map(value => typeof value === "object" ? value.id ?? value.handle : value).map(value => String(value).replace(/^agent:\/\//, ""));
       return call("output", { ids, ...options });
     },
     workpool: async (agent, name, options = {}) => {
-      if (options === null || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => key !== "mode")) throw new TypeError("workpool() options only accept mode");
+      if (options === null || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["mode", "width", "tools"].includes(key))) throw new TypeError("workpool() options accept mode, width and tools");
       const created = await call("workpool", { op: "create", agent, name, ...options });
       const pool_id = created.details?.pool_id;
       if (created.hasError || typeof pool_id !== "string") throw new Error(created.text || "workpool creation failed");
-      return Object.freeze({ pool_id,
-        push: items => call("workpool", { op: "push", pool_id, items }),
-        close: () => call("workpool", { op: "close", pool_id }),
-        inspect: () => call("workpool", { op: "inspect", pool_id }),
-        cancel: () => call("workpool", { op: "cancel", pool_id }),
-      });
+      return poolHandle(pool_id);
     },
     __harness_begin(options) {
       active = options.cellId;
@@ -263,6 +282,7 @@
         .sort((a, b) => b.bytes - a.bytes).slice(0, 5);
     },
   });
+  globalThis.workpool.open = poolHandle;
   console.log = console.info = globalThis.print;
   console.error = console.warn = (...values) => outputText(`${values.map(format).join(" ")}\n`, "stderr");
   for (const stream of ["stdout", "stderr"]) process[stream].write = (chunk, encoding, callback) => {

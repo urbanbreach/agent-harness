@@ -19,6 +19,10 @@ async fn eval_mcp_discovery_updates_the_same_cells_schema_and_tool_namespace(
     harness_tools::register_eval_tool(
         &mut registry,
         harness_core::config::EvalConfig {
+            route_tools: vec![
+                "mcp.fixture.tools.list".into(),
+                "mcp.fixture.tool.call".into(),
+            ],
             ..Default::default()
         },
     );
@@ -44,6 +48,18 @@ async fn eval_mcp_discovery_updates_the_same_cells_schema_and_tool_namespace(
     config.tool_registry = Arc::new(registry);
     config.permission_policy = PermissionPolicy::allow_all();
     config.secret_values = vec!["opaque-mcp-fixture".into()];
+    let provider = Arc::new(MockProvider::script([
+        vec![
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: "routed-mcp".into(),
+                function_name: "eval".into(),
+                arguments_json: json!({"language":"js","summary":"Read a discovered tool through eval","code":"display(await tool['mcp.fixture.echo']({value:42}))"}).to_string(),
+            },
+            ProviderStreamEvent::Done { usage: None },
+        ],
+        vec![ProviderStreamEvent::TextDelta("done".into()), ProviderStreamEvent::Done { usage: None }],
+    ]));
+    config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
     let coordinator = spawn_coordinator(
         config,
         Arc::new(FakeClock::new()),
@@ -64,6 +80,43 @@ async fn eval_mcp_discovery_updates_the_same_cells_schema_and_tool_namespace(
         assert!(!result.is_error(), "{}", result.display_text);
         assert!(result.display_text.contains("parameters") && result.display_text.contains("answer [REDACTED]"));
     }
+    let mut events = coordinator.subscribe_new_events().await?;
+    let turn = coordinator
+        .request_agent_turn(
+            EventActor::new(ActorKind::User, None),
+            agent,
+            "Read the discovered tool",
+        )
+        .await?;
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while let Some(event) = events.next().await {
+            match event?.payload {
+                EventV1::TaskCompleted(event) if event.task_id.as_str() == turn => {
+                    return Ok::<_, Box<dyn std::error::Error>>(())
+                }
+                EventV1::TaskCancelled(event) if event.task_id.as_str() == turn => {
+                    return Err("routed MCP turn failed".into())
+                }
+                _ => {}
+            }
+        }
+        Err("MCP turn did not settle".into())
+    })
+    .await??;
+    let requests = provider.captured_requests().await;
+    assert_eq!(requests.len(), 2);
+    for request in &requests {
+        let tools = request.tools.as_ref().ok_or("missing tool definitions")?;
+        assert!(tools.iter().any(|tool| tool.tool_id == "eval"));
+        assert!(!tools.iter().any(|tool| matches!(
+            tool.tool_id.as_str(),
+            "mcp.fixture.echo" | "mcp.fixture.tools.list" | "mcp.fixture.tool.call"
+        )));
+    }
+    assert!(requests[1]
+        .messages
+        .iter()
+        .any(|message| message.content.contains("answer [REDACTED]")));
     coordinator.stop_run().await?;
     server.abort();
     let _ = server.await;

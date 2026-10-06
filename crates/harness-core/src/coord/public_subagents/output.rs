@@ -115,6 +115,7 @@ impl CoordinatorHandle {
             let waiter = tool.clone();
             let child = self
                 .call(move |s| {
+                    let id = s.eval_handle_id(&id)?;
                     let reachable = s.native_reachable(&owner, &id);
                     if !reachable {
                         return Ok(None);
@@ -268,6 +269,9 @@ impl CoordinatorHandle {
         let tool = tool.to_owned();
         self.call(move |s| {
             for id in ids {
+                let Ok(id) = s.eval_handle_id(&id) else {
+                    continue;
+                };
                 if !s.native_reachable(&actor, &id) {
                     continue;
                 }
@@ -304,6 +308,8 @@ impl CoordinatorHandle {
             return Ok(KillCommandOrSubagentValue::Result(result));
         }
         self.call(move |s| {
+            let mut input = input;
+            input.task_id = s.eval_handle_id(&input.task_id)?;
             if !s.native_reachable(&actor, &input.task_id) {
                 return Ok(KillCommandOrSubagentValue::TaskNotFound(format!(
                     "Task {} not found",

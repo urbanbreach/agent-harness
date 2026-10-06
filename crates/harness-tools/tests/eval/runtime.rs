@@ -11,6 +11,8 @@ mod kernel_tools;
 mod performance;
 #[path = "visual.rs"]
 mod visual;
+#[path = "workpools.rs"]
+mod workpools;
 
 struct Session {
     _root: tempfile::TempDir,
@@ -46,6 +48,13 @@ impl Session {
             registry.register(tool);
         }
         let mut config = CoordinatorConfig::new(root.path().join("sessions"));
+        config.subagents.messaging_enabled = true;
+        harness_tools::register_subagent_tools(
+            &mut registry,
+            &config.subagents,
+            &Default::default(),
+            None,
+        );
         let mut profile = AgentProfile::fallback("default");
         profile.model_ref = "mock:eval".into();
         profile.toolset = registry.tool_ids();
@@ -290,10 +299,21 @@ async fn display_images_spill_output_and_redact_durable_results() -> Result {
 #[tokio::test]
 #[ignore = "requires local eval runtimes; scripts/test-lanes.sh eval"]
 async fn completion_and_agent_helpers_use_the_native_provider_and_task_boundaries() -> Result {
-    let provider = MockProvider::script((0..5).map(|_| {
+    let provider = MockProvider::script((0..8).map(|_| {
         vec![
             Stream::TextDelta("{\"answer\":42}".into()),
-            Stream::Done { usage: None },
+            Stream::DoneWithMetadata {
+                usage: Some(harness_providers::CompletionUsage {
+                    prompt_tokens: 12,
+                    completion_tokens: 3,
+                    total_tokens: 15,
+                }),
+                metadata: Some(harness_providers::ProviderStreamFinishedMetadata {
+                    settled_reasoning: Some(Vec::new()),
+                    usage_complete: Some(true),
+                    ..Default::default()
+                }),
+            },
         ]
     }));
     let session = Session::new(settings(), provider, None).await?;
@@ -319,7 +339,7 @@ async fn completion_and_agent_helpers_use_the_native_provider_and_task_boundarie
     let background = session
         .good(
             "js",
-            "var child = await agent('answer', {handle:true, tools:[]}); display(child)",
+            "var child = await agent('answer', {handle:true, tools:[]}); display(child); display(await child.control.wait({timeout:10})); display(await child.control.status()); display(await child.control.output()); try { await wait([{id:child.id,run_epoch:1}],{timeout:0}); throw new Error('stale epoch accepted'); } catch(e) { if(e.code !== 'stale_task_handle') throw e; }",
         )
         .await?;
     assert!(
@@ -327,6 +347,10 @@ async fn completion_and_agent_helpers_use_the_native_provider_and_task_boundarie
         "{}",
         background.display_text
     );
+    assert!(background.display_text.contains("42"));
+    session.good("js", "await child.control.send('answer again'); for (const op of ['status','output','cancel']) { let rejected = false; try { await child.control[op](); } catch(e) { rejected = String(e).includes('stale task handle'); } if(!rejected) throw Error('old handle reached restarted child: '+op); } display(await wait(child.id,{timeout:10}));").await?;
+    let python = session.good("py", "child = agent('answer', handle=True, tools=[])\ndisplay(child.control.wait(timeout=10))\ndisplay(child.control.status())\ndisplay(child.control.output())").await?;
+    assert!(python.display_text.contains("42"));
     let output = session
         .good("js", "display(await output(child.id))")
         .await?;

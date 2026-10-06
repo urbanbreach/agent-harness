@@ -48,6 +48,9 @@ pub fn config_json_schema() -> Value {
     eval["languages"]["items"] = json!({"type":"string","enum":["js","py","rb","jl"]});
     eval["languages"]["minItems"] = json!(1);
     eval["languages"]["uniqueItems"] = json!(true);
+    eval["route_tools"]["maxItems"] = json!(256);
+    eval["route_tools"]["uniqueItems"] = json!(true);
+    eval["route_tools"]["items"] = json!({"type":"string","minLength":1,"maxLength":256,"pattern":"^\\S+$","not":{"enum":["eval","question"]}});
     for field in [
         "cell_timeout_seconds",
         "foreground_window_seconds",
@@ -63,6 +66,10 @@ pub fn config_json_schema() -> Value {
     }
     eval["output_head_bytes"]["maximum"] = json!(51200);
     eval["output_max_columns"]["maximum"] = json!(16384);
+    for (field, maximum) in [("memory_limit_mb", 4096), ("timeout_seconds", 86400)] {
+        defs["EvalSandboxConfig"]["properties"][field]["minimum"] = json!(1);
+        defs["EvalSandboxConfig"]["properties"][field]["maximum"] = json!(maximum);
+    }
     if let Some(properties) = defs["EvalMemoryConfig"]["properties"].as_object_mut() {
         for value in properties.values_mut() {
             value["maximum"] = json!(1_048_576);

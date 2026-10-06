@@ -24,6 +24,10 @@ impl Runtime {
             if child.phase != NativePhase::Queued {
                 continue;
             }
+            if !self.eval_pool_has_capacity(&id) {
+                self.native_subagent_queue.push_back(id);
+                continue;
+            }
             let root = child.registration.root_agent.clone();
             let active = self
                 .native_subagents

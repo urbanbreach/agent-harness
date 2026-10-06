@@ -1,0 +1,616 @@
+{
+  "baseline_commit": "5a6b3ff74f17e39c5bd426a73b3ec6456f8487f0",
+  "candidate_diff_sha256": "8323d1f2aff12db4016cb4cf7cec6b881be50f4116d14a092d4dd9430b143317",
+  "candidate_scope": "Frozen prompt/routing candidate before Python tools, packages, isolation, pools, and handle controls",
+  "suites": {
+    "live": {
+      "model": "openai-codex/gpt-6-sol",
+      "reasoning_effort": "low",
+      "max_turns": 10,
+      "order": "ABBA per task",
+      "binaries": {
+        "baseline": {
+          "sha256": "62a580e617ff143b690bbd3a169013d214ad8f3e66da1a1a2b6ee5491ff6aa7c",
+          "prompt_sha256": "4423ce20388216931ba4fbe92611973492910d79eb49e8ae227cfbc4e026f7f0"
+        },
+        "candidate": {
+          "sha256": "79be8132db51674b5d09499ba692be65a7ce37562a764906aa917b11148785c3",
+          "prompt_sha256": "d7785852aa47a8659f9e72a3f68e56debd5764d7ef8a1b3f78944c41a9d0d661"
+        }
+      },
+      "runs": [
+        {
+          "task": "research",
+          "arm": "baseline",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 11.196,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 7081,
+            "completion_tokens": 191,
+            "total_tokens": 7272
+          },
+          "cache_read_tokens": 2816,
+          "tools": {
+            "glob": 2,
+            "read": 6
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "research",
+          "arm": "candidate",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 17.947,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 12208,
+            "completion_tokens": 183,
+            "total_tokens": 12391
+          },
+          "cache_read_tokens": 4224,
+          "tools": {
+            "eval": 2,
+            "glob": 1
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "research",
+          "arm": "candidate",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 10.789,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 10996,
+            "completion_tokens": 169,
+            "total_tokens": 11165
+          },
+          "cache_read_tokens": 3200,
+          "tools": {
+            "glob": 2,
+            "eval": 1
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "research",
+          "arm": "baseline",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 11.492,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 7081,
+            "completion_tokens": 181,
+            "total_tokens": 7262
+          },
+          "cache_read_tokens": 2816,
+          "tools": {
+            "glob": 2,
+            "read": 6
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "filter",
+          "arm": "baseline",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 18.107,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 120611,
+            "completion_tokens": 325,
+            "total_tokens": 120936
+          },
+          "cache_read_tokens": 59520,
+          "tools": {
+            "glob": 1,
+            "read": 6,
+            "eval": 1
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "filter",
+          "arm": "candidate",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 27.176,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 185582,
+            "completion_tokens": 331,
+            "total_tokens": 185913
+          },
+          "cache_read_tokens": 93440,
+          "tools": {
+            "glob": 1,
+            "eval": 2
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "filter",
+          "arm": "candidate",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 28.407,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 188003,
+            "completion_tokens": 368,
+            "total_tokens": 188371
+          },
+          "cache_read_tokens": 92800,
+          "tools": {
+            "eval": 3
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "filter",
+          "arm": "baseline",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 14.144,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 120045,
+            "completion_tokens": 299,
+            "total_tokens": 120344
+          },
+          "cache_read_tokens": 59520,
+          "tools": {
+            "glob": 1,
+            "read": 6,
+            "bash": 1
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "edit",
+          "arm": "baseline",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 22.605,
+          "provider_requests": 6,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 12641,
+            "completion_tokens": 511,
+            "total_tokens": 13152
+          },
+          "cache_read_tokens": 5120,
+          "tools": {
+            "glob": 4,
+            "grep": 1,
+            "read": 2,
+            "edit": 1,
+            "bash": 2
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "edit",
+          "arm": "candidate",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 18.426,
+          "provider_requests": 6,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 13373,
+            "completion_tokens": 373,
+            "total_tokens": 13746
+          },
+          "cache_read_tokens": 9472,
+          "tools": {
+            "glob": 4,
+            "grep": 1,
+            "read": 2,
+            "edit": 1,
+            "bash": 1
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "edit",
+          "arm": "candidate",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 21.875,
+          "provider_requests": 6,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 13231,
+            "completion_tokens": 345,
+            "total_tokens": 13576
+          },
+          "cache_read_tokens": 7424,
+          "tools": {
+            "glob": 3,
+            "grep": 1,
+            "read": 2,
+            "edit": 1,
+            "bash": 1
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "edit",
+          "arm": "baseline",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 24.229,
+          "provider_requests": 7,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 15297,
+            "completion_tokens": 491,
+            "total_tokens": 15788
+          },
+          "cache_read_tokens": 10752,
+          "tools": {
+            "glob": 4,
+            "grep": 1,
+            "read": 2,
+            "edit": 1,
+            "bash": 2
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        }
+      ]
+    },
+    "live-filtered": {
+      "model": "openai-codex/gpt-6-sol",
+      "reasoning_effort": "low",
+      "max_turns": 10,
+      "order": "ABBA per task",
+      "binaries": {
+        "baseline": {
+          "sha256": "62a580e617ff143b690bbd3a169013d214ad8f3e66da1a1a2b6ee5491ff6aa7c",
+          "prompt_sha256": "4423ce20388216931ba4fbe92611973492910d79eb49e8ae227cfbc4e026f7f0"
+        },
+        "candidate": {
+          "sha256": "79be8132db51674b5d09499ba692be65a7ce37562a764906aa917b11148785c3",
+          "prompt_sha256": "5dd48aa9f0b7c95534a018408e769b865ae1588821c72fb02b27d5823cb947c4"
+        }
+      },
+      "runs": [
+        {
+          "task": "research",
+          "arm": "baseline",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 22.61,
+          "provider_requests": 3,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 5390,
+            "completion_tokens": 149,
+            "total_tokens": 5539
+          },
+          "cache_read_tokens": 2944,
+          "tools": {
+            "glob": 1,
+            "read": 6
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "research",
+          "arm": "candidate",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 15.269,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 9269,
+            "completion_tokens": 195,
+            "total_tokens": 9464
+          },
+          "cache_read_tokens": 3840,
+          "tools": {
+            "eval": 1,
+            "glob": 1,
+            "read": 6
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "research",
+          "arm": "candidate",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 10.857,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 9604,
+            "completion_tokens": 156,
+            "total_tokens": 9760
+          },
+          "cache_read_tokens": 3328,
+          "tools": {
+            "glob": 2,
+            "eval": 1
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "research",
+          "arm": "baseline",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 11.329,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 7081,
+            "completion_tokens": 170,
+            "total_tokens": 7251
+          },
+          "cache_read_tokens": 4352,
+          "tools": {
+            "glob": 2,
+            "read": 6
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "filter",
+          "arm": "baseline",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 20.552,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 120363,
+            "completion_tokens": 311,
+            "total_tokens": 120674
+          },
+          "cache_read_tokens": 4352,
+          "tools": {
+            "glob": 1,
+            "read": 6,
+            "eval": 1
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "filter",
+          "arm": "candidate",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 15.613,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 110025,
+            "completion_tokens": 387,
+            "total_tokens": 110412
+          },
+          "cache_read_tokens": 55552,
+          "tools": {
+            "eval": 3
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "filter",
+          "arm": "candidate",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 28.832,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 110043,
+            "completion_tokens": 381,
+            "total_tokens": 110424
+          },
+          "cache_read_tokens": 53888,
+          "tools": {
+            "eval": 3
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "filter",
+          "arm": "baseline",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 13.757,
+          "provider_requests": 4,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 10457,
+            "completion_tokens": 327,
+            "total_tokens": 10784
+          },
+          "cache_read_tokens": 2944,
+          "tools": {
+            "glob": 1,
+            "read": 6,
+            "bash": 1
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "edit",
+          "arm": "baseline",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 20.987,
+          "provider_requests": 6,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 12051,
+            "completion_tokens": 365,
+            "total_tokens": 12416
+          },
+          "cache_read_tokens": 10240,
+          "tools": {
+            "glob": 1,
+            "read": 2,
+            "edit": 1,
+            "bash": 2
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "edit",
+          "arm": "candidate",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 24.56,
+          "provider_requests": 6,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 16689,
+            "completion_tokens": 350,
+            "total_tokens": 17039
+          },
+          "cache_read_tokens": 9984,
+          "tools": {
+            "eval": 1,
+            "read": 2,
+            "glob": 2,
+            "edit": 1,
+            "bash": 1
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "edit",
+          "arm": "candidate",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 26.604,
+          "provider_requests": 6,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 16678,
+            "completion_tokens": 346,
+            "total_tokens": 17024
+          },
+          "cache_read_tokens": 10496,
+          "tools": {
+            "eval": 1,
+            "read": 2,
+            "glob": 2,
+            "edit": 1,
+            "bash": 1
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        },
+        {
+          "task": "edit",
+          "arm": "baseline",
+          "correct": true,
+          "exit_code": 0,
+          "elapsed_seconds": 25.526,
+          "provider_requests": 6,
+          "usage_complete": true,
+          "usage": {
+            "prompt_tokens": 12790,
+            "completion_tokens": 391,
+            "total_tokens": 13181
+          },
+          "cache_read_tokens": 7040,
+          "tools": {
+            "glob": 4,
+            "bash": 2,
+            "read": 2,
+            "edit": 1
+          },
+          "task_failed": 0,
+          "run_failed": 0
+        }
+      ]
+    }
+  },
+  "verification": {
+    "workspace": {
+      "passed": 1976,
+      "skipped": 22,
+      "nextest_run": "b21abb6a-0717-4640-bc88-b2a7a5e8a3bd"
+    },
+    "eval_lane": {
+      "engine_passed": 9,
+      "coordinator_mcp_passed": 11,
+      "languages": [
+        "js",
+        "py",
+        "rb",
+        "jl"
+      ],
+      "node": "24.0.0",
+      "runs": [
+        "ad48c040-aa42-4a6a-b298-1d08bbadedc9",
+        "734d3d7f-9899-44f4-89c5-b2d674da52c9"
+      ]
+    },
+    "conformance": {
+      "cases": 54,
+      "differences_from_previous_node_baseline": 0,
+      "run": "c6519edc-655e-408a-b763-aa86f0b9eed2"
+    },
+    "terminal": {
+      "captures": 12,
+      "widths": [
+        40,
+        80,
+        120
+      ],
+      "failures": 0,
+      "process_group_alive_after_cleanup": false
+    },
+    "format": true,
+    "check": true,
+    "clippy": true,
+    "static_suite_gates": true,
+    "preexisting_branding_findings": 5,
+    "final_cli_sha256": "0c0ee3f4ddceb942e88953d0f70b700ab0f56769fab6809611a5590e0df84a3c",
+    "generated_schema_matches": true,
+    "branding_findings_reproduced_on_baseline": true
+  }
+}

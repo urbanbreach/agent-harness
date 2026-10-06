@@ -198,12 +198,15 @@ def output(*ids, **options)
   names = ids.flatten.map { |value| value.is_a?(Hash) ? value["id"] || value[:id] || value["handle"] || value[:handle] : value }
   HarnessEval.call("output", {ids: names.map { |name| name.to_s.delete_prefix("agent://") }}.merge(options))
 end
-def workpool(agent, name, mode: nil)
-  options = mode.nil? ? {} : {mode: mode}
+def workpool(agent, name, mode: nil, width: nil, tools: nil)
+  options = {mode: mode, width: width, tools: tools}.compact
   result = HarnessEval.call("workpool", {op: "create", agent: agent, name: name}.merge(options))
   id = result.dig("details", "pool_id")
   raise result.fetch("text", "workpool creation failed") if result["hasError"] || !id.is_a?(String)
   HarnessEval::Workpool.new(id)
+end
+def wait(handles, mode: "all", timeout: 60)
+  HarnessEval.call("wait", {handles: handles.is_a?(Array) ? handles : [handles], mode: mode, timeout: timeout})
 end
 
 def text(value) = HarnessEval.emit(type: "text", stream: "stdout", data: value.to_s)

@@ -13,6 +13,7 @@ struct Args {
     timeout: Option<f64>,
     on_timeout: Option<String>,
     reset: Option<bool>,
+    isolate: Option<bool>,
     cell_id: Option<String>,
 }
 
@@ -53,6 +54,9 @@ pub fn normalize_request(mut input: Value, languages: &[String]) -> Result<Value
                 || args.timeout.is_some()
                 || args.on_timeout.is_some()
                 || args.reset.is_some())
+        || args.isolate == Some(true)
+            && (control || args.language.as_deref() != Some("js") || args.reset == Some(true))
+        || control && args.isolate.is_some()
         || (!control || args.action.as_deref() == Some("list")) && args.cell_id.is_some()
     {
         return Err("invalid eval control or deadline arguments".into());

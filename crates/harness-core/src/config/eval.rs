@@ -4,6 +4,8 @@ use super::*;
 #[serde(default, deny_unknown_fields)]
 pub struct EvalConfig {
     pub languages: Vec<String>,
+    /// Tool IDs or discovery catalog IDs advertised through eval when it is allowed.
+    pub route_tools: Vec<String>,
     pub cell_timeout_seconds: u64,
     pub foreground_window_seconds: u64,
     pub run_budget_seconds: u64,
@@ -14,12 +16,14 @@ pub struct EvalConfig {
     pub output_max_columns: usize,
     pub status_events: bool,
     pub memory: EvalMemoryConfig,
+    pub sandbox: EvalSandboxConfig,
 }
 
 impl Default for EvalConfig {
     fn default() -> Self {
         Self {
             languages: vec!["js".into(), "py".into()],
+            route_tools: Vec::new(),
             cell_timeout_seconds: 30,
             foreground_window_seconds: 60,
             run_budget_seconds: 300,
@@ -30,6 +34,24 @@ impl Default for EvalConfig {
             output_max_columns: 768,
             status_events: true,
             memory: EvalMemoryConfig::default(),
+            sandbox: EvalSandboxConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct EvalSandboxConfig {
+    pub enabled: bool,
+    pub memory_limit_mb: usize,
+    pub timeout_seconds: u64,
+}
+impl Default for EvalSandboxConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            memory_limit_mb: 64,
+            timeout_seconds: 300,
         }
     }
 }
@@ -57,6 +79,31 @@ impl Default for EvalMemoryConfig {
 
 impl EvalConfig {
     pub fn validate(&self) -> Result<(), ConfigError> {
+        if !(1..=4096).contains(&self.sandbox.memory_limit_mb)
+            || !(1..=86400).contains(&self.sandbox.timeout_seconds)
+        {
+            return Err(ConfigError(
+                "eval.sandbox requires memory_limit_mb 1-4096 and timeout_seconds 1-86400".into(),
+            ));
+        }
+        if self.route_tools.len() > 256
+            || self
+                .route_tools
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != self.route_tools.len()
+            || self.route_tools.iter().any(|name| {
+                name.is_empty()
+                    || name.len() > 256
+                    || name.chars().any(char::is_whitespace)
+                    || matches!(name.as_str(), "eval" | "question")
+            })
+        {
+            return Err(ConfigError(
+                "eval.route_tools must contain at most 256 unique tool or catalog IDs; eval and question must stay direct".into(),
+            ));
+        }
         if self.languages.is_empty()
             || self
                 .languages

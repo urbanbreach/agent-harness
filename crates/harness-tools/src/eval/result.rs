@@ -147,6 +147,20 @@ pub(super) async fn dispatch(
                 Ok(json!({"content":content,"details":details}))
             }).map_err(|e| e.to_string())
         }
+        Some("workpool") => {
+            let args = &event["args"];
+            if args["op"] == "create" {
+                let grant = if args.get("tools").is_some() {
+                    json!({"tools":args["tools"]})
+                } else {
+                    args["agent"].clone()
+                };
+                kernel_tools::publish(ctx, session, &grant).await?;
+            }
+            ctx.coordinator.eval_workpool(ctx.tool_call_id.to_string(), args.clone(), cancellation).await
+                .map(|details| json!({"content":[{"type":"text","text":details.to_string()}],"details":details}))
+                .map_err(|error| error.to_string())
+        }
         Some("completion") => ctx
             .coordinator
             .eval_completion(

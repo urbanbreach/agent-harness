@@ -30,6 +30,7 @@ impl Runtime {
             return Err(CoordinatorError::Stopping);
         }
         let id = native_id(input.task_id.as_deref())?;
+        self.check_eval_pool_child(&id, &parent)?;
         if self.native_subagents.contains_key(&id) || self.agents.contains_key(&id) {
             return Err(CoordinatorError::Native {
                 code: "spawn_rejected".into(),

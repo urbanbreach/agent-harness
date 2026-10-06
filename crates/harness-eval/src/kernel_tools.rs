@@ -27,7 +27,7 @@ impl KernelToolError {
     fn unavailable() -> Self {
         Self {
             code: "tools_unavailable".into(),
-            message: "Kernel tools require a live JavaScript worker context".into(),
+            message: "Kernel tools require a live JavaScript or Python worker context".into(),
             details: None,
         }
     }
@@ -40,29 +40,57 @@ impl Session {
     }
 
     pub async fn describe_kernel_tools(&self, names: &[String]) -> Result<Value> {
-        let control = self
+        let controls = self
             .inner
             .controls
             .lock()
             .await
-            .get("js")
-            .cloned()
-            .ok_or_else(KernelToolError::unavailable)?;
-        let id = format!(
-            "describe-{}",
-            self.inner.sequence.fetch_add(1, Ordering::Relaxed)
-        );
-        let mut events = control
-            .request(json!({"type":"describe","id":id,"names":names}))
-            .await?;
-        let event = match tokio::time::timeout(Duration::from_secs(10), events.recv()).await {
-            Ok(event) => event.ok_or_else(KernelToolError::unavailable)?,
-            Err(error) => {
-                control.interrupt(&id).await?;
-                return Err(error.into());
+            .iter()
+            .filter(|(language, _)| matches!(language.as_str(), "js" | "py"))
+            .map(|(_, control)| control.clone())
+            .collect::<Vec<_>>();
+        if controls.is_empty() {
+            return Err(KernelToolError::unavailable().into());
+        }
+        let mut results = names.iter().map(|name| json!({"name":name,"ok":false,"error":{"code":"kernel_tool_missing","message":format!("Kernel tool is not defined: {name}")}})).collect::<Vec<_>>();
+        for control in controls {
+            let id = format!(
+                "describe-{}",
+                self.inner.sequence.fetch_add(1, Ordering::Relaxed)
+            );
+            let mut events = control
+                .request(json!({"type":"describe","id":id,"names":names}))
+                .await?;
+            let event = match tokio::time::timeout(Duration::from_secs(10), events.recv()).await {
+                Ok(event) => event.ok_or_else(KernelToolError::unavailable)?,
+                Err(error) => {
+                    control.interrupt(&id).await?;
+                    return Err(error.into());
+                }
+            };
+            let described = response(event)?;
+            for (result, entry) in results
+                .iter_mut()
+                .zip(described["results"].as_array().into_iter().flatten())
+            {
+                if entry["ok"] != true {
+                    continue;
+                }
+                if result["ok"] == true {
+                    return Err(KernelToolError {
+                        code: "tool_name_collision".into(),
+                        message: format!(
+                            "Kernel tool {} is defined in multiple languages; use distinct names",
+                            entry["name"]
+                        ),
+                        details: None,
+                    }
+                    .into());
+                }
+                *result = entry.clone();
             }
-        };
-        response(event)
+        }
+        Ok(json!({"results":results}))
     }
 
     /// Invoke a saved descriptor, including while its defining cell awaits a host
@@ -84,12 +112,16 @@ impl Session {
         {
             return Err("invalid kernel tool invocation descriptor".into());
         }
+        let language = request["language"].as_str().unwrap_or("js");
+        if !matches!(language, "js" | "py") {
+            return Err(KernelToolError::unavailable().into());
+        }
         let control = self
             .inner
             .controls
             .lock()
             .await
-            .get("js")
+            .get(language)
             .cloned()
             .ok_or_else(KernelToolError::unavailable)?;
         let sequence = self.inner.sequence.fetch_add(1, Ordering::Relaxed);
@@ -97,7 +129,7 @@ impl Session {
         let (sender, receiver) = mpsc::channel(32);
         let cell = Cell::new(
             id.clone(),
-            json!({"language":"js","summary":request["name"],"code":""}),
+            json!({"language":language,"summary":request["name"],"code":""}),
             tools,
             sender,
             &self.inner.options,
