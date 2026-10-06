@@ -268,18 +268,6 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
     if let Some(tasks) = plan.tasks {
         ui_tasks_pane::render(frame, app, tasks, theme);
     }
-    if let (Some(message), Some(notice_area)) = (&app.model_prompt_notice, plan.model_prompt_notice)
-    {
-        let lines = wrap_completion_text(message, usize::from(notice_area.width));
-        frame.render_widget(
-            Paragraph::new(lines.into_iter().map(Line::from).collect::<Vec<_>>()).style(
-                Style::default()
-                    .fg(theme.text.secondary)
-                    .bg(theme.surface.canvas),
-            ),
-            notice_area,
-        );
-    }
     render_footer(frame, app, &plan, theme);
     // Permission input owns the dock; review surfaces must not conceal it.
     if !app
