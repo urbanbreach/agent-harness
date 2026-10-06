@@ -326,8 +326,9 @@ final localhost callback URL into the terminal if the remote loopback callback i
 not reachable from the desktop browser. GitHub Copilot supports device-code login
 for V1. Use
 `harness auth logout <provider>` to delete only the stored credential file;
-config and environment fallbacks are not edited. The TUI exposes the same auth
-entry point through `/auth` (`/login`) and the `Auth` command-palette row.
+config and environment fallbacks are not edited. In the TUI, `/login` and the `Login` command-palette row open the provider
+dialog. Choose OpenAI, then browser or headless sign-in. `/auth` and `/connect`
+are removed.
 
 Codex OAuth follows the ChatGPT PKCE/device-code reference flow and decorates the
 existing OpenAI-compatible transport with the Codex endpoint, bearer token, and

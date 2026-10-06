@@ -160,11 +160,22 @@ impl ConnectDialogState {
     }
 
     pub fn authorization_url(&self) -> Option<&str> {
-        self.authorization_detail("Open ")
+        self.notice.as_deref()?.lines().find_map(|line| {
+            let url = line
+                .strip_prefix("Open ")
+                .unwrap_or(line)
+                .split_whitespace()
+                .next()?;
+            (url.starts_with("https://") || url.starts_with("http://")).then_some(url)
+        })
     }
 
     pub fn authorization_code(&self) -> Option<&str> {
-        self.authorization_detail("Enter code ")
+        self.authorization_detail("Enter code ").or_else(|| {
+            self.authorization_detail("Open ")?
+                .split_once(" and enter ")
+                .map(|(_, code)| code)
+        })
     }
 
     fn authorization_detail(&self, prefix: &str) -> Option<&str> {

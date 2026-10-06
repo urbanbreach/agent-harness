@@ -60,9 +60,8 @@ fn dispatch_target_label(entry: &PaletteCommandEntry) -> &'static str {
         | PaletteDispatch::OpenForkSelector
         | PaletteDispatch::OpenModelSwitcher
         | PaletteDispatch::OpenTogglesMenu
-        | PaletteDispatch::OpenAuth
         | PaletteDispatch::OpenEventLog
-        | PaletteDispatch::OpenConnectDialog => "dialog",
+        | PaletteDispatch::OpenLoginDialog => "dialog",
         PaletteDispatch::NewSession
         | PaletteDispatch::NewWorktreeSession
         | PaletteDispatch::CompactSession => "intent",
@@ -147,7 +146,6 @@ pub fn is_available(app: &AppState, entry: &PaletteCommandEntry) -> bool {
         "model.multiline" => !app.startup_shell_visible(),
         "tools.hooks" | "tools.plugins" | "tools.marketplace" => !app.startup_shell_visible(),
         "variant.cycle" => !app.startup_shell_visible() && !app.replay_mode,
-        "provider.connect" => !app.startup_shell_visible(),
         "app.exit" => !app.startup_shell_visible(),
 
         "harness.toggle_terminal_panel" => !app.startup_shell_visible(),
@@ -429,18 +427,10 @@ pub fn dispatch_palette_command(app: &mut AppState, value: &str) {
         PaletteDispatch::OpenTogglesMenu => {
             app.open_toggles_menu();
         }
-        PaletteDispatch::OpenAuth => {
-            let auth_args = vec!["login".to_string()];
-            app.status_banner = Some(crate::app::auth_status_banner(&auth_args));
-            app.emit_ui_intent(crate::app::UiIntent::OpenAuthManager {
-                args: auth_args,
-                stdin: None,
-            });
-        }
         PaletteDispatch::OpenEventLog => {
             app.status_banner = Some("event log surface has been removed".to_string());
         }
-        PaletteDispatch::OpenConnectDialog => {
+        PaletteDispatch::OpenLoginDialog => {
             app.open_connect_dialog();
         }
         PaletteDispatch::NewSession => {

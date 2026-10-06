@@ -209,11 +209,7 @@ pub(super) fn render_result_panel(
         frame,
         theme,
         area,
-        if success {
-            "Connected"
-        } else {
-            "Connection failed"
-        },
+        if success { "Logged in" } else { "Login failed" },
     );
 
     let message = if success {
@@ -222,7 +218,7 @@ pub(super) fn render_result_panel(
             .as_ref()
             .map(|toast| toast.message.as_str())
             .or(dialog.error_message.as_deref())
-            .unwrap_or("Connected successfully")
+            .unwrap_or("Logged in successfully")
     } else {
         dialog
             .error_message

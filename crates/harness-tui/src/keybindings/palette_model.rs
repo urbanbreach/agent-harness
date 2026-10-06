@@ -78,9 +78,8 @@ pub enum PaletteDispatch {
     OpenForkSelector,
     OpenModelSwitcher,
     OpenTogglesMenu,
-    OpenAuth,
     OpenEventLog,
-    OpenConnectDialog,
+    OpenLoginDialog,
     /// Emit a UiIntent.
     NewSession,
     NewWorktreeSession,
@@ -108,6 +107,7 @@ impl PaletteCommandEntry {
             "context.memory" => "/memory",
             "worktree.switch" => "/worktree",
             "model.list" => "/model",
+            "provider.login" => "/login",
             "model.yolo" => "/yolo",
             "model.multiline" => "/multiline",
             "tools.hooks" => "/hooks",
@@ -416,12 +416,12 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     // === Workspace ===
     // === Provider ===
     PaletteCommandEntry {
-        id: "provider.connect",
+        id: "provider.login",
         category: PaletteCategory::Provider,
-        title: DynamicTitle::Static("Connect provider"),
-        description: "Connect a provider",
+        title: DynamicTitle::Static("Login"),
+        description: "Log in to a provider",
         suggested: SuggestedRule::WhenDisconnected,
-        dispatch: PaletteDispatch::OpenConnectDialog,
+        dispatch: PaletteDispatch::OpenLoginDialog,
     },
     // === Prompt ===
     PaletteCommandEntry {

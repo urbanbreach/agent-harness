@@ -546,9 +546,9 @@ impl AppState {
             && self.launch_metadata.provider() == "local"
             && self.launch_metadata.configured_profile().is_some()
         {
-            self.status_banner = Some("Connect a provider to send prompts".to_string());
+            self.status_banner = Some("Log in to a provider to send prompts".to_string());
             self.show_toast(
-                "Connect a provider to send prompts".to_string(),
+                "Log in to a provider to send prompts".to_string(),
                 ToastVariant::Error,
             );
             return;

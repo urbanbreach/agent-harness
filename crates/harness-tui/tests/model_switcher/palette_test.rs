@@ -317,7 +317,7 @@ fn model_switcher_opens_no_provider_connect_state() {
         .draw(|frame| harness_tui::ui::render_app(frame, &app))
         .unwrap_or_abort();
     let rendered = format!("{:?}", terminal.backend().buffer());
-    assert!(rendered.contains("Connect a provider"), "{rendered}");
+    assert!(rendered.contains("Log in to a provider"), "{rendered}");
 }
 
 #[test]
@@ -409,7 +409,7 @@ fn no_provider_prompt_submission_blocks_with_connect_guidance() {
     assert!(intents.lock().unwrap_or_abort().is_empty());
     assert_eq!(
         app.status_banner.as_deref(),
-        Some("Connect a provider to send prompts")
+        Some("Log in to a provider to send prompts")
     );
 }
 
