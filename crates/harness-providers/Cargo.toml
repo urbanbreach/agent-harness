@@ -22,7 +22,18 @@ schemars.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
+tokio-util.workspace = true
 tracing = "0.1"
+getrandom = "0.4"
+humantime = "2"
+jiff = "0.2"
+regex = "1"
+sha2 = "0.11"
+unicode-normalization = "0.1"
+unicode-segmentation = "1.12"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.4", features = ["process"] }
 
 [dev-dependencies]
 tempfile.workspace = true

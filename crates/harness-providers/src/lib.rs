@@ -12,6 +12,7 @@ mod wire;
 pub use wire::Protocol;
 mod http;
 pub use http::HttpProvider;
+pub mod anthropic_subscription;
 mod subscription;
 pub use subscription::{codex_model_allowed, ProviderAuthProfile};
 pub type ProviderEventStream =
@@ -29,6 +30,50 @@ pub trait Provider: Send + Sync {
         generic_request_budget_semantics(request, pending_prompt_index)
     }
     async fn stream_completion(&self, request: CompletionRequest) -> ProviderEventStream;
+    /// Streams with an abort signal. An aborted stream settles and ends with `Aborted`;
+    /// by default it ends at once.
+    async fn stream_completion_abortable(
+        &self,
+        request: CompletionRequest,
+        abort: tokio_util::sync::CancellationToken,
+    ) -> ProviderEventStream {
+        end_on_abort(self.stream_completion(request).await, abort)
+    }
+    fn session_event(&self, _event: &ProviderSessionEvent) {}
+    /// True when the backend keeps and compacts this request's conversation itself, so the
+    /// harness stands its automatic compaction and input-budget stop down for it.
+    fn manages_context(&self, _request: &CompletionRequest) -> bool {
+        false
+    }
+    /// Providers signed in after startup. A router routes to them from the next request.
+    fn add_providers(
+        &self,
+        _providers: std::collections::BTreeMap<String, std::sync::Arc<dyn Provider>>,
+    ) {
+    }
+}
+
+/// Ends `stream` with `Aborted { usage: None }` as soon as `abort` fires.
+pub fn end_on_abort(
+    mut stream: ProviderEventStream,
+    abort: tokio_util::sync::CancellationToken,
+) -> ProviderEventStream {
+    use tokio_stream::StreamExt;
+    Box::pin(async_stream::stream! {
+        loop {
+            tokio::select! {
+                biased;
+                () = abort.cancelled() => {
+                    yield ProviderStreamEvent::Aborted { usage: None };
+                    return;
+                }
+                event = stream.next() => match event {
+                    Some(event) => yield event,
+                    None => return,
+                },
+            }
+        }
+    })
 }
 
 #[async_trait::async_trait]

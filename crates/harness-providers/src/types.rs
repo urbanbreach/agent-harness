@@ -105,6 +105,8 @@ pub struct ProviderRequestContext {
     pub initiator: ProviderRequestInitiator,
     pub has_media: bool,
     pub cache_retention: CacheRetention,
+    /// A coordinator main turn, not an auxiliary request (compaction, evaluation).
+    pub main_turn: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -166,6 +168,29 @@ pub struct ProviderStreamFinishedMetadata {
     /// False when a normalized protocol had to fill a missing usage count.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage_complete: Option<bool>,
+    /// What a pooled, session-keeping backend reports beyond the response itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_report: Option<Box<ProviderSessionReport>>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProviderSessionReport {
+    /// The pooled account that served the request, labeled for display, when the pool has several.
+    pub account: Option<String>,
+    /// Compactions the backend ran on its own session during the request.
+    pub native_compactions: Vec<ProviderNativeCompaction>,
+}
+
+/// A backend-run compaction of its own session (Claude Code's `compact_boundary`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProviderNativeCompaction {
+    pub provider_session_id: String,
+    pub boundary_id: String,
+    pub trigger: String,
+    pub pre_tokens: Option<u64>,
+    pub post_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -199,4 +224,35 @@ pub enum ProviderStreamEvent {
         remediation: Option<String>,
         retry_after_ms: Option<u64>,
     },
+    /// A user-visible note about the request, such as an account switch.
+    Notice(String),
+    /// The request was aborted and the backend settled; usage covers what it billed.
+    Aborted {
+        usage: Option<CompletionUsage>,
+    },
+}
+
+/// Session lifecycle facts the coordinator owns, for providers that keep per-session state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProviderSessionEvent {
+    /// A main request for the session is about to go to this provider and model.
+    Routed {
+        session_id: String,
+        provider_id: ProviderId,
+        model_id: ModelId,
+    },
+    /// The user picked this provider and model for the session's next turns.
+    ModelSelected {
+        session_id: String,
+        provider_id: ProviderId,
+        model_id: ModelId,
+    },
+    /// The user changed the reasoning level for the session's next turns.
+    ReasoningSelected { session_id: String },
+    /// The session's history was replaced by a compaction summary.
+    Compacted { session_id: String },
+    /// The session's history was rewound to an earlier point.
+    Rewound { session_id: String },
+    /// The session stopped; no further requests follow.
+    Closed { session_id: String, reason: String },
 }
