@@ -131,6 +131,8 @@ pub struct SessionProjection {
     pub(crate) activities: VecDeque<ActivityEntry>,
     pub(crate) active_context_usage: Option<ActiveContextUsage>,
     latest_request_budget: Option<(u64, Option<RequestBudgetSnapshot>)>,
+    /// The provider and pooled account that served the latest finished request.
+    latest_account: Option<(String, String)>,
     pub(crate) compaction_status: Option<CompactionStatus>,
     pub(crate) compaction_usage_metrics: CompactionUsageMetrics,
     pub(crate) memory_caps: MemoryCaps,
@@ -217,6 +219,7 @@ impl SessionProjection {
         self.activities.clear();
         self.active_context_usage = None;
         self.latest_request_budget = None;
+        self.latest_account = None;
         self.compaction_status = None;
         self.compaction_usage_metrics = CompactionUsageMetrics::default();
         self.orchestration_tasks.clear();
@@ -248,6 +251,13 @@ impl SessionProjection {
 
     pub(crate) fn terminal_elapsed_ms(&self, request_id: &str) -> Option<u64> {
         self.terminal_elapsed_ms.get(request_id).copied()
+    }
+
+    pub(crate) fn latest_account(&self, provider_id: &str) -> Option<&str> {
+        self.latest_account
+            .as_ref()
+            .filter(|(provider, _)| provider == provider_id)
+            .map(|(_, account)| account.as_str())
     }
 
     pub(crate) fn latest_request_budget(&self) -> Option<Option<RequestBudgetSnapshot>> {

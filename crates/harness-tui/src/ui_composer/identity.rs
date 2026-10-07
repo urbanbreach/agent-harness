@@ -1,5 +1,8 @@
 use super::*;
 
+/// The widest account label the badge carries (senpi's footer budget).
+const ACCOUNT_LABEL_MAX_COLUMNS: usize = 24;
+
 pub(crate) fn composer_model_badge(
     app: &AppState,
     extra_identity: &[String],
@@ -19,6 +22,12 @@ pub(crate) fn composer_model_badge(
             .any(|part| part.eq_ignore_ascii_case(reasoning) || part.contains(reasoning))
     {
         identity.push(reasoning.to_string());
+    }
+    if let Some(account) = app.current_account_label() {
+        identity.push(format!(
+            "@{}",
+            truncate_plain_text(account, ACCOUNT_LABEL_MAX_COLUMNS)
+        ));
     }
     identity.extend(extra_identity.iter().cloned());
 

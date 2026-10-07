@@ -99,6 +99,34 @@ pub fn catalog_providers(
     catalog: &ProviderCatalog,
     registry: &AuthPluginRegistry,
 ) -> Vec<ConnectProviderOption> {
+    let mut providers = catalog_entries(catalog, registry);
+    // Claude Pro/Max runs through Claude Code, so it has no catalog entry of its own.
+    if let Some(plugin) = registry.get(&ProviderId::anthropic_subscription()) {
+        let at = providers
+            .iter()
+            .position(|p| p.id.as_str() == "anthropic")
+            .map_or(0, |i| i + 1);
+        providers.insert(
+            at,
+            ConnectProviderOption {
+                id: ProviderId::anthropic_subscription(),
+                label: plugin.label().to_string(),
+                description: plugin.description().to_string(),
+                methods: plugin.auth_methods().to_vec(),
+                models: harness_core::config::anthropic_subscription_models()
+                    .values()
+                    .map(|m| m.display_name.clone())
+                    .collect(),
+            },
+        );
+    }
+    providers
+}
+
+fn catalog_entries(
+    catalog: &ProviderCatalog,
+    registry: &AuthPluginRegistry,
+) -> Vec<ConnectProviderOption> {
     catalog
         .sorted_by_priority()
         .into_iter()
@@ -157,6 +185,22 @@ impl ConnectDialogState {
         if !providers.is_empty() {
             self.providers = providers;
         }
+    }
+
+    /// The subscription login reads pasted input while it waits.
+    pub fn accepts_waiting_input(&self) -> bool {
+        self.selected_provider
+            .and_then(|index| self.providers.get(index))
+            .is_some_and(|provider| provider.id == ProviderId::anthropic_subscription())
+    }
+
+    /// The login's account-name question, once the sign-in itself has finished.
+    pub fn naming_prompt(&self) -> Option<&str> {
+        self.notice
+            .as_deref()?
+            .lines()
+            .last()
+            .filter(|line| line.starts_with("Name for this account"))
     }
 
     pub fn authorization_url(&self) -> Option<&str> {

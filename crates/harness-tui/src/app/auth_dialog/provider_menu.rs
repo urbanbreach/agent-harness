@@ -2,13 +2,14 @@ use harness_core::auth::ProviderId;
 
 use super::{auth_method_label, ConnectDialogState, ConnectProviderOption};
 
-const PROVIDER_PRIORITY: [&str; 7] = [
+const PROVIDER_PRIORITY: [&str; 8] = [
     "opencode",
     "opencode-go",
     "openai",
     "codex",
     "github-copilot",
     "anthropic",
+    "anthropic-subscription",
     "google",
 ];
 

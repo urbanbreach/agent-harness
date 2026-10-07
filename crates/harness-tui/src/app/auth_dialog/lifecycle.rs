@@ -39,6 +39,10 @@ impl AppState {
             && !detail.starts_with("Enter code ")
             && !detail.starts_with("https://")
             && !detail.starts_with("http://")
+            && !detail.starts_with("Complete login in your browser")
+            && !detail.starts_with("Paste the code")
+            && !detail.starts_with("Name for this account")
+            && !detail.starts_with("Claude Code is not installed")
         {
             return;
         }

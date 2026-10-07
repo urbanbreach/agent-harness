@@ -418,3 +418,74 @@ fn waiting_device_auth_drag_copies_painted_code() {
         Some("TEST-CODE")
     );
 }
+
+/// The Claude subscription login waits for a pasted code: `c` copies the link only while the
+/// field is empty, the field is drawn, an empty Enter is ignored, and Esc cancels the login.
+#[test]
+fn subscription_login_copies_until_typing_and_escape_cancels() {
+    let copies = Arc::new(Mutex::new(Vec::new()));
+    let captured = Arc::clone(&copies);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        captured.lock().unwrap_or_abort().push(text.to_string());
+        Ok(())
+    })));
+    let intents = Arc::new(Mutex::new(Vec::new()));
+    let sink_intents = Arc::clone(&intents);
+    let sink = Arc::new(move |intent| sink_intents.lock().unwrap_or_abort().push(intent));
+    let mut app = AppState::new_live(None, false, Some(sink));
+    let providers = catalog_providers(
+        &ProviderCatalog::from_embedded().unwrap_or_abort(),
+        &AuthPluginRegistry::with_builtins(),
+    );
+    let index = providers
+        .iter()
+        .position(|provider| provider.id == ProviderId::anthropic_subscription())
+        .unwrap_or_abort();
+    app.set_connect_dialog_providers(providers);
+    app.connect_dialog.selected_provider = Some(index);
+    app.connect_dialog.selected_method = Some(1);
+    app.connect_dialog.visible = true;
+    app.connect_dialog.step = ConnectDialogStep::Waiting;
+    let url = "https://claude.ai/oauth/authorize?code=true&state=test-state";
+    for line in ["Open this URL to sign in:", url] {
+        app.append_connect_dialog_authorization_detail(&format!("auth backend output: {line}"));
+    }
+
+    app.handle_connect_dialog_key(key(KeyCode::Char('c')));
+    app.handle_connect_dialog_key(key(KeyCode::Enter));
+    app.handle_connect_dialog_paste("code-from-anthropic#test-state");
+    app.handle_connect_dialog_key(key(KeyCode::Char('c')));
+    let screen = render_plain(&app, 120, 40);
+    app.handle_connect_dialog_key(key(KeyCode::Enter));
+    // After the exchange the login asks which account to save; an empty Enter keeps its default.
+    app.append_connect_dialog_authorization_detail(
+        "auth backend output: Name for this account (existing: default; press Enter to add account-2)",
+    );
+    let naming = render_plain(&app, 120, 40);
+    app.handle_connect_dialog_key(key(KeyCode::Enter));
+    app.handle_connect_dialog_key(key(KeyCode::Esc));
+    crate::clipboard::set_copy_override(None);
+
+    assert_eq!(copies.lock().unwrap_or_abort().as_slice(), [url]);
+    assert!(
+        screen.contains("Code: code-from-anthropic#test-statec"),
+        "{screen}"
+    );
+    assert!(
+        naming.contains("Name for this account") && naming.contains("Name: "),
+        "{naming}"
+    );
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        [
+            UiIntent::AuthBackendInput {
+                line: Some("code-from-anthropic#test-statec".into())
+            },
+            UiIntent::AuthBackendInput {
+                line: Some(String::new())
+            },
+            UiIntent::AuthBackendInput { line: None },
+        ]
+    );
+    assert!(!app.connect_dialog.visible);
+}

@@ -311,10 +311,13 @@ pub(super) fn cache_read_write_tokens_render_as_separate_status_labels() {
             metadata: Some(ProviderRequestFinishedMetadata {
                 cache_read_tokens: Some(41),
                 cache_write_tokens: Some(17),
+                account: Some("Work (work)".into()),
                 ..ProviderRequestFinishedMetadata::default()
             }),
         }),
     ));
+    // senpi's footer `provider@account`: the pooled account that served the request.
+    assert_eq!(app.current_account_label(), Some("Work (work)"));
 
     assert!(
         app.next_turn_identity().is_some(),

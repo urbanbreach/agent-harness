@@ -167,6 +167,11 @@ pub enum UiIntent {
         args: Vec<String>,
         stdin: Option<String>,
     },
+    /// A line typed into a running login (a pasted code or redirect URL, an account name);
+    /// `None` cancels the login.
+    AuthBackendInput {
+        line: Option<String>,
+    },
     InterruptSession {
         task_ids: Vec<String>,
         reason: InterruptReason,

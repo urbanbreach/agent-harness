@@ -342,6 +342,10 @@ impl AppState {
                 self.handle_new_worktree_dialog_paste(text);
                 return;
             }
+            Some(OverlayKind::AuthDialog) => {
+                self.handle_connect_dialog_paste(text);
+                return;
+            }
             Some(OverlayKind::StatusDialog) if self.status_dashboard_is_active() => {}
             None
             | Some(
