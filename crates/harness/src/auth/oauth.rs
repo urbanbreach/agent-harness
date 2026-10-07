@@ -1,9 +1,167 @@
 use super::{CliIo, Method};
 use harness_core::auth::{
-    codex::*, copilot::*, CredentialStore, ProviderId, ReqwestAuthHttpClient,
+    anthropic::{
+        login_anthropic_browser, login_anthropic_copy_code, AnthropicLoginInteraction,
+        AnthropicOAuthClient, AnthropicOAuthError,
+    },
+    anthropic_subscription::{account_name_prompt, commit_login, existing_accounts},
+    codex::*,
+    copilot::*,
+    CredentialStore, ProviderId, ReqwestAuthHttpClient,
 };
 use std::{sync::Arc, time::Duration};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
+
+/// Where a running login reads pasted input: the TUI's channel, the terminal, or piped stdin.
+pub(super) struct LoginInput {
+    pub(super) lines: tokio::sync::mpsc::UnboundedReceiver<String>,
+    pub(super) callback_host: String,
+    pub(super) environment: std::collections::BTreeMap<String, String>,
+    /// The TUI closes its input channel to cancel; a terminal's or pipe's end is not a cancel.
+    pub(super) closed_cancels: bool,
+}
+
+pub(super) fn input_lines(
+    io: &mut CliIo<'_>,
+    deps: &crate::CliDeps,
+) -> tokio::sync::mpsc::UnboundedReceiver<String> {
+    use std::io::{BufRead, Read};
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    if let Some(input) = deps.interactive_input() {
+        std::thread::spawn(move || {
+            while let Some(line) = input.lock().ok().and_then(|receiver| receiver.recv().ok()) {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+    } else if io.stdin_is_terminal {
+        // A login that finishes through the browser leaves this read pending until exit.
+        std::thread::spawn(move || {
+            for line in std::io::stdin().lock().lines().map_while(Result::ok) {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+    } else {
+        let mut text = String::new();
+        let _ = io.stdin.take(65_536).read_to_string(&mut text);
+        for line in text.lines() {
+            let _ = tx.send(line.to_owned());
+        }
+    }
+    rx
+}
+
+struct CliAnthropicInteraction {
+    output: tokio::sync::mpsc::UnboundedSender<String>,
+    lines: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<String>>,
+    /// Copy-code needs the paste; the browser flow can also finish through its callback.
+    paste_required: bool,
+    closed_cancels: bool,
+}
+
+#[async_trait::async_trait]
+impl AnthropicLoginInteraction for CliAnthropicInteraction {
+    fn auth_url(&self, url: &str, instructions: &str) {
+        let _ = self
+            .output
+            .send(format!("Open this URL to sign in:\n{url}\n{instructions}"));
+        if !self.paste_required
+            && let Err(error) = harness_core::browser_oidc::launch_browser(url)
+        {
+            let _ = self.output.send(error);
+        }
+    }
+    fn progress(&self, message: &str) {
+        let _ = self.output.send(message.to_owned());
+    }
+    async fn manual_code(
+        &self,
+        message: &str,
+        placeholder: &str,
+    ) -> Result<String, AnthropicOAuthError> {
+        let _ = self.output.send(format!("{message} ({placeholder})"));
+        match self.lines.lock().await.recv().await {
+            Some(line) => Ok(line),
+            None if self.paste_required || self.closed_cancels => {
+                Err(AnthropicOAuthError("Login cancelled".into()))
+            }
+            None => std::future::pending().await,
+        }
+    }
+}
+
+use harness_providers::anthropic_subscription::executable::{
+    describe_claude_code_executable, INSTALL_GUIDANCE,
+};
+
+async fn anthropic_subscription(
+    method: Method,
+    store: &CredentialStore,
+    io: &mut CliIo<'_>,
+    input: LoginInput,
+    http: Arc<ReqwestAuthHttpClient>,
+) -> Result<(), String> {
+    let (output, mut printed) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let interaction = CliAnthropicInteraction {
+        output,
+        lines: tokio::sync::Mutex::new(input.lines),
+        paste_required: !matches!(method, Method::Browser),
+        closed_cancels: input.closed_cancels,
+    };
+    let client = AnthropicOAuthClient::new(http);
+    let flow = async {
+        match method {
+            Method::Browser => {
+                login_anthropic_browser(&client, &interaction, &input.callback_host).await
+            }
+            _ => login_anthropic_copy_code(&client, &interaction).await,
+        }
+    };
+    tokio::pin!(flow);
+    let credential = loop {
+        tokio::select! {
+            Some(line) = printed.recv() => {
+                writeln!(io.stdout, "{line}").and_then(|()| io.stdout.flush()).map_err(|e| e.to_string())?;
+            }
+            result = &mut flow => break result,
+        }
+    };
+    while let Ok(line) = printed.try_recv() {
+        writeln!(io.stdout, "{line}").map_err(|e| e.to_string())?;
+    }
+    let credential = credential.map_err(|e| e.to_string())?;
+    let name = match account_name_prompt(&existing_accounts(store)?) {
+        None => "default".to_owned(),
+        Some((message, default)) => {
+            writeln!(io.stdout, "{message}")
+                .and_then(|()| io.stdout.flush())
+                .map_err(|e| e.to_string())?;
+            let answer = tokio::time::timeout(Duration::from_secs(300), async {
+                interaction.lines.lock().await.recv().await
+            })
+            .await
+            .ok()
+            .flatten()
+            .map(|answer| answer.trim().to_owned())
+            .filter(|answer| !answer.is_empty());
+            answer.unwrap_or(default)
+        }
+    };
+    commit_login(store, credential, &name)?;
+    writeln!(io.stdout, "Anthropic Subscription account saved: {name}")
+        .map_err(|e| e.to_string())?;
+    if describe_claude_code_executable(&|name| input.environment.get(name).cloned()).is_err() {
+        writeln!(
+            io.stdout,
+            "Claude Code is not installed, and this provider runs every turn through it. {INSTALL_GUIDANCE}"
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
 
 pub(super) async fn login(
     id: &ProviderId,
@@ -11,10 +169,13 @@ pub(super) async fn login(
     enterprise: Option<&str>,
     store: &CredentialStore,
     io: &mut CliIo<'_>,
+    input: LoginInput,
 ) -> Result<(), String> {
     let http = Arc::new(ReqwestAuthHttpClient::new().map_err(|e| e.to_string())?);
     tokio::time::timeout(Duration::from_secs(900), async {
-        if id == &ProviderId::codex() {
+        if id == &ProviderId::anthropic_subscription() {
+            anthropic_subscription(method, store, io, input, http).await
+        } else if id == &ProviderId::codex() {
             let client = CodexOAuthClient::new(http);
             match method {
                 Method::Browser => browser(&client, store, io).await,
@@ -187,6 +348,34 @@ async fn browser(
                 continue
             }
             result => return result.map(|_| ()).map_err(|e| e.to_string()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The browser flow may finish through its callback, so a closed pipe leaves the paste wait
+    /// pending; the TUI closes its channel to cancel, which must end the login and free the port.
+    #[tokio::test]
+    async fn a_closed_tui_channel_cancels_even_the_browser_flow() {
+        for (closed_cancels, cancelled) in [(true, true), (false, false)] {
+            let (output, _printed) = tokio::sync::mpsc::unbounded_channel();
+            let (lines_tx, lines) = tokio::sync::mpsc::unbounded_channel::<String>();
+            drop(lines_tx);
+            let interaction = CliAnthropicInteraction {
+                output,
+                lines: tokio::sync::Mutex::new(lines),
+                paste_required: false,
+                closed_cancels,
+            };
+            let waited = tokio::time::timeout(
+                Duration::from_millis(200),
+                interaction.manual_code("Paste", "code"),
+            )
+            .await;
+            assert_eq!(matches!(waited, Ok(Err(_))), cancelled);
         }
     }
 }

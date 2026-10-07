@@ -12,6 +12,8 @@ pub struct CliDeps {
     provider: Option<Arc<dyn Provider>>,
     cancellation: Option<tokio_util::sync::CancellationToken>,
     clock_factory: Option<Arc<dyn Fn(bool) -> Arc<dyn Clock + Send + Sync> + Send + Sync>>,
+    /// Lines an interactive surface (the TUI) feeds a running login, such as a pasted code.
+    interactive_input: Option<Arc<std::sync::Mutex<std::sync::mpsc::Receiver<String>>>>,
 }
 impl CliDeps {
     pub fn real() -> Self {
@@ -39,6 +41,15 @@ impl CliDeps {
     pub fn with_cancellation(mut self, cancellation: tokio_util::sync::CancellationToken) -> Self {
         self.cancellation = Some(cancellation);
         self
+    }
+    pub fn with_interactive_input(mut self, input: std::sync::mpsc::Receiver<String>) -> Self {
+        self.interactive_input = Some(Arc::new(std::sync::Mutex::new(input)));
+        self
+    }
+    pub(crate) fn interactive_input(
+        &self,
+    ) -> Option<Arc<std::sync::Mutex<std::sync::mpsc::Receiver<String>>>> {
+        self.interactive_input.clone()
     }
     pub(crate) fn cancellation(&self) -> Option<tokio_util::sync::CancellationToken> {
         self.cancellation.clone()
@@ -83,6 +94,18 @@ impl CliDeps {
             .filter_map(|name| self.env_var_value(&name))
             .filter(|value| !value.is_empty())
             .collect()
+    }
+    /// The process environment with this context's overrides applied.
+    pub fn environment_snapshot(&self) -> std::collections::BTreeMap<String, String> {
+        let mut environment: std::collections::BTreeMap<String, String> =
+            std::env::vars().collect();
+        for (name, value) in &self.environment {
+            match value {
+                Some(value) => environment.insert(name.clone(), value.clone()),
+                None => environment.remove(name),
+            };
+        }
+        environment
     }
     pub(crate) fn env_var_is_set(&self, name: &str) -> bool {
         self.env_var_value(name).is_some()

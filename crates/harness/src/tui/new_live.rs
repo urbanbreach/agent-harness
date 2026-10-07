@@ -167,6 +167,7 @@ pub(super) async fn run_new_live_session(
         run_id_override,
         launch_metadata.clone(),
         coordinator_config_warmup,
+        Arc::clone(&launch_selection),
         live_update_tx,
         intent_rx,
         shutdown_rx,
@@ -288,6 +289,7 @@ async fn run_new_live_runtime(
     run_id_override: String,
     launch_metadata: LaunchMetadata,
     coordinator_config_warmup: LiveCoordinatorConfigWarmup,
+    launch_selection: LaunchSelection,
     live_update_tx: LiveUpdateSender,
     intent_rx: mpsc::UnboundedReceiver<UiIntent>,
     shutdown_rx: oneshot::Receiver<()>,
@@ -303,6 +305,7 @@ async fn run_new_live_runtime(
         run_id_override,
         launch_metadata,
         coordinator_config_warmup,
+        launch_selection,
         live_update_tx,
         intent_rx,
     )
@@ -386,6 +389,7 @@ async fn bootstrap_new_live_runtime(
     run_id_override: String,
     launch_metadata: LaunchMetadata,
     coordinator_config_warmup: LiveCoordinatorConfigWarmup,
+    launch_selection: LaunchSelection,
     live_update_tx: LiveUpdateSender,
     intent_rx: mpsc::UnboundedReceiver<UiIntent>,
 ) -> Result<NewLiveRuntime, String> {
@@ -472,7 +476,8 @@ async fn bootstrap_new_live_runtime(
 
     let intent_coordinator = coordinator.clone();
     let intent_live_agent_target = Arc::clone(&live_agent_target);
-    let auth_backend = TuiAuthBackendContext::from_settings(settings);
+    let auth_backend = TuiAuthBackendContext::from_settings(settings)
+        .with_login_refresh(coordinator_config_warmup, launch_selection);
     let ui_intent_task = tokio::spawn(async move {
         handle_ui_intents(
             intent_coordinator,

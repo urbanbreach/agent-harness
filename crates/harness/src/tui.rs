@@ -428,7 +428,10 @@ async fn run_interactive_mode(
                 Arc::clone(&launch_selection),
                 persist_model_selection,
                 Some(prompt_history_path_for_session_dir(&settings.session_dir)),
-                TuiAuthBackendContext::from_settings(settings),
+                TuiAuthBackendContext::from_settings(settings).with_login_refresh(
+                    coordinator_config_warmup.clone(),
+                    Arc::clone(&launch_selection),
+                ),
                 settings
                     .config
                     .as_ref()
@@ -530,7 +533,10 @@ async fn run_direct_continue_mode(
                 Arc::clone(&launch_selection),
                 persist_model_selection,
                 Some(prompt_history_path_for_session_dir(&settings.session_dir)),
-                TuiAuthBackendContext::from_settings(settings),
+                TuiAuthBackendContext::from_settings(settings).with_login_refresh(
+                    coordinator_config_warmup.clone(),
+                    Arc::clone(&launch_selection),
+                ),
                 settings
                     .config
                     .as_ref()
@@ -632,13 +638,15 @@ async fn run_startup_launcher(
             return;
         }
 
+        if let UiIntent::AuthBackendInput { line } = intent {
+            auth_backend::send_tui_auth_backend_input(line);
+            return;
+        }
         if let UiIntent::OpenAuthManager { args, stdin } = intent {
             spawn_tui_auth_backend_task(
                 args,
                 stdin,
-                startup_auth_backend.config_path.clone(),
-                startup_auth_backend.session_dir.clone(),
-                startup_auth_backend.workspace_root.clone(),
+                startup_auth_backend.clone(),
                 auth_update_tx.clone(),
             );
             return;
@@ -803,7 +811,10 @@ async fn run_continue_session_bootstrap(
 
     let intent_coordinator = coordinator.clone();
     let intent_live_agent_target = Arc::clone(&live_agent_target);
-    let auth_backend = TuiAuthBackendContext::from_settings(settings);
+    let auth_backend = TuiAuthBackendContext::from_settings(settings).with_login_refresh(
+        coordinator_config_warmup.clone(),
+        Arc::clone(&launch_selection),
+    );
     if let Some(notice) = auth_backend.model_prompt_notice(&continue_metadata) {
         let _ = intent_live_update_tx.send(notice);
     }

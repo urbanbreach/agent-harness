@@ -10,6 +10,8 @@ use std::{
     io::{BufRead, Read},
     path::{Path, PathBuf},
 };
+mod claude_account;
+pub use claude_account::*;
 mod oauth;
 
 #[derive(Args)]
@@ -26,6 +28,12 @@ enum AuthAction {
     Login(Login),
     Logout {
         provider: String,
+    },
+    /// Anthropic Subscription accounts: list, add, remove, pin, unpin, rename, clear-name.
+    #[command(name = "claude-account")]
+    ClaudeAccount {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
 }
 #[derive(Args)]
@@ -60,7 +68,8 @@ fn method(value: &str) -> Result<Method, String> {
         "device" | "headless" | "chatgpt pro/plus (headless)" | "login with github copilot" => {
             Ok(Method::Device)
         }
-        "browser" | "chatgpt pro/plus (browser)" => Ok(Method::Browser),
+        "browser" | "chatgpt pro/plus (browser)" | "browser login (default)" => Ok(Method::Browser),
+        "copy-code" | "copy_code" | "copy code login (headless)" => Ok(Method::Device),
         _ => Err("expected browser, device, or api-key".into()),
     }
 }
@@ -113,10 +122,11 @@ pub fn execute_auth_backend_args_with_io(
 }
 pub(crate) fn execute(
     command: AuthCommand,
-    config: Option<&Path>,
+    config_path: Option<&Path>,
     io: &mut CliIo<'_>,
     deps: &CliDeps,
 ) -> Result<(), String> {
+    let config = config_path;
     let store = CredentialStore::from_lookup(&|name| deps.env_var_value(name))
         .ok_or("set HARNESS_DATA_HOME, XDG_DATA_HOME, or HOME for credential storage")?;
     let config = load_resolved_config_with_lookup(config, &deps.config_load_context(), &|name| {
@@ -141,6 +151,42 @@ pub(crate) fn execute(
         .ok_or_else(|| "invalid auth provider ID".to_owned())
     };
     match command.command {
+        AuthAction::ClaudeAccount { args } => {
+            let settings = config
+                .as_ref()
+                .and_then(|config| {
+                    config.providers.values().find_map(|p| match p {
+                        harness_core::config::ProviderConfig::AnthropicSubscription(p) => {
+                            Some(p.settings())
+                        }
+                        _ => None,
+                    })
+                })
+                .unwrap_or_default()
+                .with_env(&|name| deps.env_var_value(name));
+            if args.first().map(String::as_str) == Some("add") {
+                return execute(
+                    AuthCommand {
+                        command: AuthAction::Login(Login {
+                            provider: Some("anthropic-subscription".into()),
+                            provider_option: None,
+                            method: None,
+                            api_key_stdin: false,
+                            mock_token: None,
+                            mock_refresh_token: None,
+                            expires_at: None,
+                            account_id: None,
+                            enterprise_url: None,
+                        }),
+                    },
+                    config_path,
+                    io,
+                    deps,
+                );
+            }
+            let message = claude_account(&args, &store, &settings, deps)?;
+            writeln!(io.stdout, "{message}").map_err(|e| e.to_string())?;
+        }
         AuthAction::Logout { provider } => {
             let id = resolve(&provider)?;
             let removed = store.delete(&id).map_err(|e| e.to_string())?;
@@ -156,7 +202,11 @@ pub(crate) fn execute(
             .map_err(|e| e.to_string())?;
         }
         AuthAction::List { json } => {
-            let mut ids = BTreeSet::from([ProviderId::codex(), ProviderId::github_copilot()]);
+            let mut ids = BTreeSet::from([
+                ProviderId::codex(),
+                ProviderId::github_copilot(),
+                ProviderId::anthropic_subscription(),
+            ]);
             for name in config.iter().flat_map(|config| config.providers.keys()) {
                 ids.insert(resolve(name)?);
             }
@@ -206,6 +256,8 @@ pub(crate) fn execute(
                 Method::Browser
             } else if id == ProviderId::github_copilot() {
                 Method::Device
+            } else if id == ProviderId::anthropic_subscription() {
+                Method::Browser
             } else {
                 Method::ApiKey
             });
@@ -259,6 +311,15 @@ pub(crate) fn execute(
                 writeln!(io.stdout, "stored api_key credential for {id}")
                     .map_err(|e| e.to_string())?;
             } else {
+                let lines = if id == ProviderId::anthropic_subscription() {
+                    oauth::input_lines(io, deps)
+                } else {
+                    tokio::sync::mpsc::unbounded_channel().1
+                };
+                let callback_host = deps
+                    .env_var_value("HARNESS_OAUTH_CALLBACK_HOST")
+                    .filter(|host| !host.is_empty())
+                    .unwrap_or_else(|| "127.0.0.1".into());
                 crate::cli_io::with_output_worker(io, |io| {
                     let runtime = tokio::runtime::Builder::new_current_thread()
                         .enable_all()
@@ -270,6 +331,12 @@ pub(crate) fn execute(
                         login.enterprise_url.as_deref(),
                         &store,
                         io,
+                        oauth::LoginInput {
+                            lines,
+                            callback_host,
+                            environment: deps.environment_snapshot(),
+                            closed_cancels: deps.interactive_input().is_some(),
+                        },
                     ))
                 })?;
                 writeln!(io.stdout, "stored oauth credential for {id}")

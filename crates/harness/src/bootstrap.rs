@@ -1,3 +1,5 @@
+#[path = "bootstrap/providers.rs"]
+mod providers;
 #[path = "bootstrap/secrets.rs"]
 mod secrets;
 #[path = "bootstrap/subagents.rs"]
@@ -12,7 +14,8 @@ use harness_core::{
     coord::CoordinatorConfig,
     perm::{PermissionPolicy, PermissionRule, PermissionRuleset},
 };
-use harness_providers::{HttpProvider, Protocol, Provider, ProviderRouter};
+use harness_providers::Provider;
+pub(crate) use providers::provider_map;
 pub(crate) use secrets::secret_values;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -73,17 +76,17 @@ pub(crate) fn interactive_agent_profiles(
 pub(crate) fn build_interactive_coordinator_config(
     config: &HarnessConfig,
 ) -> Result<CoordinatorConfig, String> {
-    let mut result = build(config, &CliDeps::real(), false)?;
-    result.interactive = true;
-    Ok(result)
+    build(config, &CliDeps::real(), false, true)
 }
 pub(crate) fn build(
     config: &HarnessConfig,
     deps: &CliDeps,
     mock: bool,
+    interactive: bool,
 ) -> Result<CoordinatorConfig, String> {
     config.validate().map_err(|e| e.to_string())?;
     let mut result = CoordinatorConfig::new(config.runtime.session_dir.clone());
+    result.interactive = interactive;
     result.model_catalog = harness_core::config::configured_model_catalog(config).into();
     subagents::configure(config, deps, &mut result)?;
     let mut rules = permission_rules(&config.permissions.defaults, &config.permissions.rules)?;
@@ -246,7 +249,12 @@ pub(crate) fn build(
             if mock {
                 Arc::new(harness_providers::mock::MockProvider::default())
             } else {
-                providers(config, deps, &result.secret_registry)?
+                let providers = provider_map(config, deps, &result.secret_registry)?;
+                // A terminal session can sign a provider in later; a one-shot run cannot.
+                if providers.is_empty() && !interactive {
+                    return Err(interactive_config_guidance());
+                }
+                Arc::new(harness_providers::ProviderRouter::new(providers))
             }
         }
     };
@@ -254,110 +262,6 @@ pub(crate) fn build(
         .to_hex()
         .to_string();
     Ok(result)
-}
-
-fn providers(
-    config: &HarnessConfig,
-    deps: &CliDeps,
-    secrets: &Arc<harness_core::redact::SecretRegistry>,
-) -> Result<Arc<dyn Provider>, String> {
-    let store = CredentialStore::from_lookup(&|name| deps.env_var_value(name));
-    let mut providers = BTreeMap::<String, Arc<dyn Provider>>::new();
-    for (name, definition) in &config.providers {
-        if config.disabled_providers.contains(name)
-            || !config.enabled_providers.is_empty() && !config.enabled_providers.contains(name)
-        {
-            continue;
-        }
-        let (base, protocol, key, env, timeout, headers) = match definition {
-            ProviderConfig::OpenAiCompatible(p) => (
-                &p.base_url,
-                if p.api_mode != OpenAiApiMode::ChatCompletions {
-                    Protocol::Responses
-                } else {
-                    Protocol::Chat
-                },
-                &p.api_key,
-                &p.api_key_env,
-                p.timeout_ms,
-                &p.headers,
-            ),
-            ProviderConfig::Anthropic(p) => (
-                &p.base_url,
-                Protocol::Anthropic,
-                &p.api_key,
-                &p.api_key_env,
-                p.timeout_ms,
-                &p.headers,
-            ),
-        };
-        let suffix = match protocol {
-            Protocol::Chat => "/chat/completions",
-            Protocol::Responses => "/responses",
-            Protocol::Anthropic => "/messages",
-        };
-        let mut endpoint = reqwest::Url::parse(base).map_err(|_| "invalid provider URL")?;
-        let path = endpoint.path().trim_end_matches('/');
-        let path = if path.ends_with(suffix) {
-            path.to_owned()
-        } else {
-            format!("{path}{suffix}")
-        };
-        endpoint.set_path(&path);
-        let mut provider =
-            HttpProvider::new(endpoint.as_str(), protocol, Duration::from_millis(timeout))?;
-        if matches!(definition, ProviderConfig::OpenAiCompatible(p) if p.api_mode == OpenAiApiMode::Auto)
-        {
-            provider = provider.with_chat_fallback();
-        }
-        let mut extra_headers = reqwest::header::HeaderMap::new();
-        for (key, value) in headers {
-            extra_headers.insert(
-                reqwest::header::HeaderName::try_from(key)
-                    .map_err(|_| "invalid provider header name")?,
-                reqwest::header::HeaderValue::try_from(value)
-                    .map_err(|_| "invalid provider header value")?,
-            );
-        }
-        provider = provider.with_headers(extra_headers);
-        let auth = definition
-            .credential_provider(name)
-            .ok_or("invalid provider ID")?;
-        if auth == ProviderId::codex() {
-            provider = provider.with_auth_profile(harness_providers::ProviderAuthProfile::Codex);
-        } else if auth == ProviderId::github_copilot() {
-            provider =
-                provider.with_auth_profile(harness_providers::ProviderAuthProfile::GithubCopilot);
-        }
-        let stored = store
-            .as_ref()
-            .is_some_and(|store| store.credential_path(&auth).exists());
-        if stored || !key.is_empty() || !env.is_empty() {
-            let deps = deps.clone();
-            let mut manager = ProviderCredentialManager::new(
-                store.clone(),
-                auth.clone(),
-                env.clone(),
-                key,
-                move |name| deps.env_var_value(name),
-            )
-            .with_secret_registry(Arc::clone(secrets))
-            .map_err(|e| e.to_string())?;
-            if auth == ProviderId::codex() {
-                let http =
-                    harness_core::auth::ReqwestAuthHttpClient::new().map_err(|e| e.to_string())?;
-                manager = manager.with_refresher(Arc::new(
-                    harness_core::auth::codex::CodexOAuthClient::new(Arc::new(http)),
-                ));
-            }
-            provider = provider.with_credentials(Arc::new(manager));
-        }
-        providers.insert(name.clone(), Arc::new(provider));
-    }
-    if providers.is_empty() {
-        return Err(interactive_config_guidance());
-    }
-    Ok(Arc::new(ProviderRouter::new(providers)))
 }
 
 fn permission_rules(
