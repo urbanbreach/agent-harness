@@ -7,6 +7,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 pub(crate) const BUILTIN_CODEX_PROVIDER_ID: &str = "openai-codex";
 pub(crate) const BUILTIN_COPILOT_PROVIDER_ID: &str = "github-copilot";
+pub(crate) const BUILTIN_ANTHROPIC_SUBSCRIPTION_PROVIDER_ID: &str = "anthropic-subscription";
 pub(crate) struct RuntimeCatalogResolution {
     pub(crate) config: HarnessConfig,
     pub(crate) config_digest: String,
@@ -43,6 +44,14 @@ pub(crate) fn resolve_runtime_catalog(
         let (env, key) = match provider {
             ProviderConfig::OpenAiCompatible(p) => (&p.api_key_env, &p.api_key),
             ProviderConfig::Anthropic(p) => (&p.api_key_env, &p.api_key),
+            ProviderConfig::AnthropicSubscription(p) => {
+                if p.enabled != Some(false)
+                    && (p.enabled == Some(true) || subscription_available(store, lookup)?)
+                {
+                    connected.push(name.clone());
+                }
+                continue;
+            }
         };
         let id = provider.credential_provider(name);
         let subscription = id
@@ -73,6 +82,8 @@ pub(crate) fn resolve_runtime_catalog(
             .ok_or("selected provider missing")?;
         let preferred = if provider.credential_provider(id) == Some(ProviderId::codex()) {
             &["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.5"][..]
+        } else if provider.credential_provider(id) == Some(ProviderId::anthropic_subscription()) {
+            &["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1"][..]
         } else {
             &["gpt-5.4-mini", "gpt-5.5", "claude-sonnet-4.5"][..]
         };
@@ -157,6 +168,23 @@ fn add_connected_providers(
     let mut connected = Vec::new();
     let codex = stored(store, &ProviderId::codex())?;
     let copilot = stored(store, &ProviderId::github_copilot())?;
+    let subscription = subscription_available(store, lookup)?;
+    if subscription
+        && !config
+            .providers
+            .values()
+            .any(|p| matches!(p, ProviderConfig::AnthropicSubscription(_)))
+    {
+        config.providers.insert(
+            BUILTIN_ANTHROPIC_SUBSCRIPTION_PROVIDER_ID.into(),
+            ProviderConfig::AnthropicSubscription(AnthropicSubscriptionProviderConfig {
+                name: Some("Anthropic Subscription".into()),
+                models: anthropic_subscription_models(),
+                ..Default::default()
+            }),
+        );
+        connected.push(BUILTIN_ANTHROPIC_SUBSCRIPTION_PROVIDER_ID.into());
+    }
     if !explicit || codex || copilot {
         let catalog = ProviderCatalog::from_embedded().map_err(|e| e.to_string())?;
         if codex && !config.providers.contains_key(BUILTIN_CODEX_PROVIDER_ID) {
@@ -208,6 +236,29 @@ fn add_connected_providers(
         }
     }
     Ok(connected)
+}
+/// A pooled login or `CLAUDE_CODE_OAUTH_TOKEN*` makes the subscription lane usable; a host
+/// `claude` login alone needs the explicit `enabled: true` opt-in.
+fn subscription_available(
+    store: Option<&CredentialStore>,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Result<bool, String> {
+    let env_token = std::iter::once("CLAUDE_CODE_OAUTH_TOKEN".to_owned())
+        .chain((2..=16).map(|n| format!("CLAUDE_CODE_OAUTH_TOKEN_{n}")))
+        .any(|name| lookup(&name).is_some_and(|v| !v.is_empty()));
+    if env_token {
+        return Ok(true);
+    }
+    Ok(store
+        .map(|store| store.load(&ProviderId::anthropic_subscription()))
+        .transpose()
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .is_some_and(|credential| {
+            harness_core::auth::anthropic_subscription::is_usable_pool(
+                &harness_core::auth::anthropic_subscription::pool_from_credential(&credential),
+            )
+        }))
 }
 fn stored(store: Option<&CredentialStore>, id: &ProviderId) -> Result<bool, String> {
     store

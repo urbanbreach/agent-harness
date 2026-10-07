@@ -166,7 +166,7 @@ fn execute_prompt(
         return Err("resuming a prompt cannot change its agent profile".into());
     }
     command.options.prepare(&mut config, &profile)?;
-    let mut coordinator_config = crate::bootstrap::build(&config, &deps, command.mock)?;
+    let mut coordinator_config = crate::bootstrap::build(&config, &deps, command.mock, false)?;
     command.options.apply(&mut coordinator_config, &profile)?;
     let target = command
         .options

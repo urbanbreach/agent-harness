@@ -113,6 +113,9 @@ async fn configured_opaque_tui_target_preserves_reasoning_summary_capability_in_
             workspace_root: temp_dir.path().to_path_buf(),
             config_digest: "test-digest".to_string(),
             prompt_overrides: BTreeMap::new(),
+            claude_code_providers: Default::default(),
+            providers: None,
+            launch_selection: None,
         },
     ));
 
@@ -239,6 +242,9 @@ async fn selected_tui_variant_target_reaches_provider_start_runtime_context() {
             workspace_root: temp_dir.path().to_path_buf(),
             config_digest: "test-digest".to_string(),
             prompt_overrides: BTreeMap::new(),
+            claude_code_providers: Default::default(),
+            providers: None,
+            launch_selection: None,
         },
     ));
 
@@ -311,6 +317,9 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
             workspace_root: temp_dir.path().to_path_buf(),
             config_digest: "test-digest".to_string(),
             prompt_overrides: BTreeMap::new(),
+            claude_code_providers: Default::default(),
+            providers: None,
+            launch_selection: None,
         },
     ));
 
@@ -400,6 +409,9 @@ async fn model_switch_intents_emit_notices_only_after_successful_application() {
             workspace_root: temp.path().to_path_buf(),
             config_digest: "test".to_string(),
             prompt_overrides: BTreeMap::from([("custom".into(), "Custom instructions".into())]),
+            claude_code_providers: Default::default(),
+            providers: None,
+            launch_selection: None,
         },
     )
     .await;
@@ -601,6 +613,9 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
             workspace_root: temp_dir.path().to_path_buf(),
             config_digest: "test-digest".to_string(),
             prompt_overrides: BTreeMap::new(),
+            claude_code_providers: Default::default(),
+            providers: None,
+            launch_selection: None,
         },
     ));
 

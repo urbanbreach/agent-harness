@@ -16,6 +16,12 @@ pub(super) struct TuiAuthBackendContext {
     pub(super) workspace_root: PathBuf,
     pub(super) config_digest: String,
     pub(super) prompt_overrides: std::collections::BTreeMap<String, String>,
+    /// Providers that run every turn through the installed Claude Code.
+    pub(super) claude_code_providers: std::collections::BTreeSet<String>,
+    /// The config every live session clones; a login adds its provider to the shared router.
+    pub(super) providers: Option<super::coordinator_warmup::LiveCoordinatorConfigWarmup>,
+    /// What the next session starts with; a login refreshes its model catalog.
+    pub(super) launch_selection: Option<super::workflow::LaunchSelection>,
 }
 
 impl TuiAuthBackendContext {
@@ -37,11 +43,54 @@ impl TuiAuthBackendContext {
                         .map(|prompt| (name.clone(), prompt.to_string()))
                 })
                 .collect(),
+            claude_code_providers: settings
+                .config
+                .iter()
+                .flat_map(|config| &config.providers)
+                .filter(|(_, provider)| {
+                    matches!(
+                        provider,
+                        harness_core::config::ProviderConfig::AnthropicSubscription(_)
+                    )
+                })
+                .map(|(name, _)| name.clone())
+                .chain([crate::runtime_catalog::BUILTIN_ANTHROPIC_SUBSCRIPTION_PROVIDER_ID.into()])
+                .collect(),
+            providers: None,
+            launch_selection: None,
         }
+    }
+
+    pub(super) fn with_login_refresh(
+        mut self,
+        providers: super::coordinator_warmup::LiveCoordinatorConfigWarmup,
+        launch_selection: super::workflow::LaunchSelection,
+    ) -> Self {
+        self.providers = Some(providers);
+        self.launch_selection = Some(launch_selection);
+        self
     }
 
     pub(super) fn model_prompt_notice(&self, metadata: &LaunchMetadata) -> Option<LiveUpdate> {
         let target = super::launch_metadata::launch_metadata_model_target(metadata)?;
+        if self.claude_code_providers.contains(&target.provider) {
+            let environment: std::collections::BTreeMap<String, String> =
+                std::env::vars().collect();
+            if harness_providers::anthropic_subscription::executable::describe_claude_code_executable(
+                &|name| environment.get(name).cloned(),
+            )
+            .is_err()
+            {
+                return Some(LiveUpdate::OperatorNotice {
+                    message: format!(
+                        "Claude Code is not installed; {} needs it for every turn. {}",
+                        target.provider,
+                        harness_providers::anthropic_subscription::executable::INSTALL_GUIDANCE
+                    ),
+                    level: OperatorNoticeLevel::Error,
+                });
+            }
+        }
         let prompt = if self.prompt_overrides.contains_key(metadata.profile()) {
             "configured override"
         } else {
@@ -53,44 +102,102 @@ impl TuiAuthBackendContext {
     }
 }
 
+/// The newest login's input channel, tagged with the login that owns it: a login that
+/// outlives its dialog must never clear or receive a newer login's input.
+type LoginInput = Option<(u64, std::sync::mpsc::Sender<String>)>;
+static AUTH_BACKEND_INPUT: std::sync::Mutex<LoginInput> = std::sync::Mutex::new(None);
+static AUTH_BACKEND_LOGINS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A line for the running login, or `None` to cancel it (the channel closes).
+pub(super) fn send_tui_auth_backend_input(line: Option<String>) {
+    let Ok(mut slot) = AUTH_BACKEND_INPUT.lock() else {
+        return;
+    };
+    match line {
+        Some(line) => {
+            if let Some((_, input)) = slot.as_ref() {
+                let _ = input.send(line);
+            }
+        }
+        None => *slot = None,
+    }
+}
+
 pub(super) fn spawn_tui_auth_backend_task(
     args: Vec<String>,
     stdin: Option<String>,
-    config_path: Option<PathBuf>,
-    session_dir: Option<PathBuf>,
-    workspace_root: PathBuf,
+    context: TuiAuthBackendContext,
     live_update_tx: LiveUpdateSender,
 ) {
+    let TuiAuthBackendContext {
+        config_path,
+        session_dir,
+        workspace_root,
+        providers,
+        launch_selection,
+        ..
+    } = context;
+    let runtime = tokio::runtime::Handle::try_current().ok();
     let normalized_args = normalize_tui_auth_args(args.clone());
     let display = display_tui_auth_args(&normalized_args);
     let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
         message: format!("auth backend running: harness auth {display}"),
         level: OperatorNoticeLevel::Info,
     });
+    let (input, lines) = std::sync::mpsc::channel();
+    let login = AUTH_BACKEND_LOGINS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let interactive = normalized_args.first().map(String::as_str) == Some("login");
+    if interactive && let Ok(mut slot) = AUTH_BACKEND_INPUT.lock() {
+        *slot = Some((login, input));
+    }
     std::thread::spawn(move || {
-        let (message, level, success) = run_tui_auth_backend_once(
+        let mut deps = harness::CliDeps::real().with_current_dir(workspace_root.clone());
+        if interactive {
+            deps = deps.with_interactive_input(lines);
+        }
+        let (message, level, success) = run_tui_auth_backend_streaming_with_deps(
             args,
             config_path.clone(),
             session_dir.clone(),
-            workspace_root.clone(),
-            stdin.unwrap_or_default(),
+            &stdin.unwrap_or_default(),
+            &deps,
             Some(live_update_tx.clone()),
         );
+        if let Ok(mut slot) = AUTH_BACKEND_INPUT.lock()
+            && slot.as_ref().is_some_and(|(owner, _)| *owner == login)
+        {
+            *slot = None;
+        }
         let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
             message: message.clone(),
             level,
         });
         let _ = live_update_tx.send(LiveUpdate::AuthBackendResult { success, message });
         if success {
-            match refreshed_launch_metadata_after_auth(
+            match refreshed_settings_after_auth(
                 normalized_args.first().map(String::as_str),
                 config_path,
                 session_dir,
                 workspace_root,
             ) {
-                Ok(Some(launch_metadata)) => {
+                Ok(Some(settings)) => {
+                    if let Some(selection) = &launch_selection {
+                        super::workflow::record_launch_selection(
+                            selection,
+                            &settings.launch_metadata,
+                        );
+                    }
+                    if let (Some(providers), Some(runtime)) = (&providers, &runtime)
+                        && let Err(err) =
+                            runtime.block_on(providers.add_signed_in_providers(&settings))
+                    {
+                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                            message: format!("signed-in provider unavailable until restart: {err}"),
+                            level: OperatorNoticeLevel::Error,
+                        });
+                    }
                     let _ = live_update_tx.send(LiveUpdate::AuthProviderCatalogRefreshed {
-                        launch_metadata: Box::new(launch_metadata),
+                        launch_metadata: Box::new(settings.launch_metadata),
                     });
                     let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
                         message: "provider catalog refreshed; choose a model with /model"
@@ -110,16 +217,16 @@ pub(super) fn spawn_tui_auth_backend_task(
     });
 }
 
-pub(super) fn refreshed_launch_metadata_after_auth(
+pub(super) fn refreshed_settings_after_auth(
     command: Option<&str>,
     config_path: Option<PathBuf>,
     session_dir: Option<PathBuf>,
     workspace_root: PathBuf,
-) -> Result<Option<LaunchMetadata>, String> {
+) -> Result<Option<LiveSettings>, String> {
     if command != Some("login") {
         return Ok(None);
     }
-    let settings = resolve_live_settings(
+    resolve_live_settings(
         &TuiCommand {
             replay: None,
             continue_session: None,
@@ -138,27 +245,8 @@ pub(super) fn refreshed_launch_metadata_after_auth(
         session_dir,
         workspace_root.clone(),
         &harness_core::config::ConfigLoadContext::from_env().with_current_dir(workspace_root),
-    )?;
-    Ok(Some(settings.launch_metadata))
-}
-
-pub(super) fn run_tui_auth_backend_once(
-    args: Vec<String>,
-    config_path: Option<PathBuf>,
-    session_dir: Option<PathBuf>,
-    workspace_root: PathBuf,
-    stdin: String,
-    live_update_tx: Option<LiveUpdateSender>,
-) -> (String, OperatorNoticeLevel, bool) {
-    let deps = harness::CliDeps::real().with_current_dir(workspace_root);
-    run_tui_auth_backend_streaming_with_deps(
-        args,
-        config_path,
-        session_dir,
-        &stdin,
-        &deps,
-        live_update_tx,
     )
+    .map(Some)
 }
 
 #[cfg(test)]

@@ -33,7 +33,10 @@ pub(super) fn persist_launch_selection_for_exit(
     }
 }
 
-fn record_launch_selection(selection: &LaunchSelection, launch_metadata: &LaunchMetadata) {
+pub(super) fn record_launch_selection(
+    selection: &LaunchSelection,
+    launch_metadata: &LaunchMetadata,
+) {
     let launch_metadata = launch_metadata.clone().without_mode_label();
     *recover_mutex_lock(selection) = launch_metadata.clone();
 }
@@ -130,6 +133,7 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::SetYoloMode { .. })
         | Some(UiIntent::ResolvePermission { .. })
         | Some(UiIntent::OpenAuthManager { .. })
+        | Some(UiIntent::AuthBackendInput { .. })
         | Some(UiIntent::CancelCompaction { .. })
         | Some(UiIntent::CompactSession { .. })
         | Some(UiIntent::BackgroundForegroundSubagents)
@@ -200,6 +204,7 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         | UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::OpenAuthManager { .. }
+        | UiIntent::AuthBackendInput { .. }
         | UiIntent::CancelCompaction { .. }
         | UiIntent::CompactSession { .. }
         | UiIntent::BackgroundForegroundSubagents
@@ -228,6 +233,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
             | UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
             | UiIntent::OpenAuthManager { .. }
+            | UiIntent::AuthBackendInput { .. }
             | UiIntent::CancelCompaction { .. }
             | UiIntent::CompactSession { .. }
             | UiIntent::BackgroundForegroundSubagents

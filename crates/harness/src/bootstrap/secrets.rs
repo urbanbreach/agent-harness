@@ -12,6 +12,8 @@ pub(crate) fn secret_values(
                 (&p.api_key, &p.api_key_env, &p.headers, &p.base_url)
             }
             ProviderConfig::Anthropic(p) => (&p.api_key, &p.api_key_env, &p.headers, &p.base_url),
+            // Its tokens live in the credential store and `CLAUDE_CODE_OAUTH_TOKEN*`, both covered.
+            ProviderConfig::AnthropicSubscription(_) => continue,
         };
         values.push(key.clone());
         values.extend(env.iter().filter_map(|name| deps.env_var_value(name)));

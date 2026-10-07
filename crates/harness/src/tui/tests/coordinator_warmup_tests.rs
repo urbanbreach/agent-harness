@@ -83,5 +83,29 @@ fn live_coordinator_config_warmup_reuses_interactive_config() {
         assert!(first.agent_profiles.contains_key("default"));
         assert!(second.tool_registry.get("read").is_some());
         assert!(first.yolo_on_start && second.yolo_on_start);
+
+        // A provider signed in after a session started serves that session's next request.
+        let request = harness_providers::CompletionRequest {
+            provider_id: Some("later".into()),
+            model_id: "gpt-5.4-mini".into(),
+            messages: vec![harness_providers::CompletionMessage::text(
+                harness_providers::MessageRole::User,
+                "hi",
+            )],
+            ..Default::default()
+        };
+        assert!(first
+            .provider
+            .request_budget_semantics(&request, 0)
+            .is_err());
+        let mut signed_in = settings.clone();
+        let config = signed_in.config.as_mut().unwrap_or_abort();
+        let provider = config.providers["default"].clone();
+        config.providers.insert("later".into(), provider);
+        warmup
+            .add_signed_in_providers(&signed_in)
+            .await
+            .unwrap_or_abort();
+        assert!(first.provider.request_budget_semantics(&request, 0).is_ok());
     });
 }

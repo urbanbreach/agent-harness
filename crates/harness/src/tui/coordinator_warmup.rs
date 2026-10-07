@@ -98,4 +98,25 @@ impl LiveCoordinatorConfigWarmup {
         profile_log::profile_handoff("warmup.rebuild_fallback");
         interactive_coordinator_config(settings)
     }
+
+    /// Every live session clones this config, so its router serves a provider signed in mid-run.
+    pub(super) async fn add_signed_in_providers(
+        &self,
+        settings: &LiveSettings,
+    ) -> Result<(), String> {
+        let Some(config) = settings.config.as_ref() else {
+            return Ok(());
+        };
+        if matches!(
+            *self.state.lock().await,
+            LiveCoordinatorConfigWarmupState::Disabled
+        ) {
+            return Ok(());
+        }
+        let current = self.coordinator_config(settings, false).await?;
+        let providers =
+            bootstrap::provider_map(config, &harness::CliDeps::real(), &current.secret_registry)?;
+        current.provider.add_providers(providers);
+        Ok(())
+    }
 }

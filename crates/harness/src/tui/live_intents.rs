@@ -288,13 +288,14 @@ pub(super) async fn handle_ui_intents(
                     demote_foreground_child_notice(&coordinator, handle_id).await;
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
+            UiIntent::AuthBackendInput { line } => {
+                super::auth_backend::send_tui_auth_backend_input(line)
+            }
             UiIntent::OpenAuthManager { args, stdin } => {
                 spawn_tui_auth_backend_task(
                     args,
                     stdin,
-                    auth_backend.config_path.clone(),
-                    auth_backend.session_dir.clone(),
-                    auth_backend.workspace_root.clone(),
+                    auth_backend.clone(),
                     live_update_tx.clone(),
                 );
             }
@@ -327,8 +328,13 @@ pub(super) async fn handle_ui_intents(
                 profile,
                 launch_metadata,
             } => {
-                let result =
-                    switch_live_model(&coordinator, live_agent_target.as_ref(), profile).await;
+                let result = select_live_model(
+                    &coordinator,
+                    live_agent_target.as_ref(),
+                    profile,
+                    &launch_metadata,
+                )
+                .await;
                 notify_model_switch(result, &auth_backend, &launch_metadata, &live_update_tx);
             }
             UiIntent::NewSession
@@ -529,6 +535,43 @@ fn notify_model_switch(
     };
     if let Some(notice) = notice {
         let _ = live_update_tx.send(notice);
+    }
+}
+
+async fn select_live_model(
+    coordinator: &CoordinatorHandle,
+    live_agent_target: Option<&LiveAgentTargetState>,
+    profile: String,
+    launch_metadata: &harness_tui::app::LaunchMetadata,
+) -> Result<(), String> {
+    switch_live_model(coordinator, live_agent_target, profile).await?;
+    announce_selection(coordinator, live_agent_target, launch_metadata).await;
+    Ok(())
+}
+
+/// Senpi's `model_select` and `thinking_level_select` fire at the pick, not at the next turn.
+async fn announce_selection(
+    coordinator: &CoordinatorHandle,
+    live_agent_target: Option<&LiveAgentTargetState>,
+    launch_metadata: &harness_tui::app::LaunchMetadata,
+) {
+    let Some(agent) = live_agent_target.and_then(|target| {
+        target
+            .lock()
+            .ok()
+            .and_then(|target| target.agent_id.clone())
+    }) else {
+        return;
+    };
+    let selection = match launch_metadata_model_target(launch_metadata) {
+        Some(target) => Some((target.model_ref.clone(), (&target).into())),
+        None => launch_metadata_model_ref(launch_metadata)
+            .map(|model_ref| (model_ref, launch_metadata_model_settings(launch_metadata))),
+    };
+    if let Some((model_ref, settings)) = selection {
+        let _ = coordinator
+            .announce_model_selection(agent, model_ref, settings)
+            .await;
     }
 }
 
