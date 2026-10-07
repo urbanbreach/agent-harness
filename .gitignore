@@ -27,6 +27,9 @@ receipts/
 .codex/skills/.system/**
 !.codex/prompts/
 !.codex/prompts/**
+plans/
+.impeccable/
+.senpi/
 
 # Local IDE workspace state
 .cate/
