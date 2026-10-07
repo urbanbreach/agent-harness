@@ -31,11 +31,55 @@ impl AppState {
     }
 
     fn handle_connect_dialog_waiting(&mut self, key: KeyEvent) {
+        if self.connect_dialog.accepts_waiting_input() {
+            let empty = self.connect_dialog.input_buffer.trim().is_empty();
+            let naming = self.connect_dialog.naming_prompt().is_some();
+            match key.code {
+                // Claude Code's rule: `c` copies the link until something has been typed.
+                KeyCode::Char('c') if empty && !naming && key.modifiers.is_empty() => {
+                    self.copy_connect_authorization();
+                }
+                // An empty name keeps the offered default; an empty code is no code.
+                KeyCode::Enter if empty && !naming => {}
+                KeyCode::Enter => {
+                    let line = std::mem::take(&mut self.connect_dialog.input_buffer);
+                    self.connect_dialog.input_cursor = 0;
+                    self.emit_ui_intent(UiIntent::AuthBackendInput {
+                        line: Some(line.trim().to_string()),
+                    });
+                }
+                KeyCode::Esc => {
+                    self.emit_ui_intent(UiIntent::AuthBackendInput { line: None });
+                    self.close_connect_dialog();
+                }
+                _ => self.handle_connect_dialog_input(key),
+            }
+            return;
+        }
         match key.code {
             KeyCode::Char('c') => self.copy_connect_authorization(),
             KeyCode::Esc => self.close_connect_dialog(),
             _ => {}
         }
+    }
+
+    /// Bracketed paste into the dialog's text field.
+    pub(in crate::app) fn handle_connect_dialog_paste(&mut self, text: &str) {
+        let accepts = matches!(
+            self.connect_dialog.step,
+            ConnectDialogStep::CustomProviderId
+                | ConnectDialogStep::ApiKeyInput
+                | ConnectDialogStep::EnterpriseUrl
+        ) || self.connect_dialog.step == ConnectDialogStep::Waiting
+            && self.connect_dialog.accepts_waiting_input();
+        if !accepts {
+            return;
+        }
+        let text: String = text.chars().filter(|c| !c.is_control()).collect();
+        self.connect_dialog
+            .input_buffer
+            .insert_str(self.connect_dialog.input_cursor, &text);
+        self.connect_dialog.input_cursor += text.len();
     }
 
     pub(in crate::app) fn open_connect_authorization_url(&mut self) {

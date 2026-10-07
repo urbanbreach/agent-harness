@@ -10,7 +10,7 @@ use ratatui::{
 };
 
 use super::common::{
-    horizontal_inset, panel_area, render_panel, render_prompt_header, split_hint,
+    horizontal_inset, panel_area, render_panel, render_prompt_header, split_hint, wrap_text,
     PROMPT_HEADER_HEIGHT,
 };
 use super::prompt_panel::PromptPanel;
@@ -81,6 +81,18 @@ pub(super) fn render_enterprise_url_prompt(
     .render(frame, theme, root);
 }
 
+/// The tail of `text` that fits `width` columns, so the cursor end of a long paste stays visible.
+fn take_width_suffix(text: &str, width: usize) -> &str {
+    let mut used = 0;
+    for (index, c) in text.char_indices().rev() {
+        used += unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+        if used > width {
+            return &text[index + c.len_utf8()..];
+        }
+    }
+    text
+}
+
 pub(super) fn render_waiting_panel(frame: &mut Frame, app: &AppState, theme: &Theme, root: Rect) {
     let dialog = &app.connect_dialog;
     let provider_label = dialog
@@ -117,6 +129,25 @@ pub(super) fn render_waiting_panel(frame: &mut Frame, app: &AppState, theme: &Th
         2,
     );
     let mut lines = Vec::new();
+    if let Some(question) = dialog.naming_prompt() {
+        for line in wrap_text(question, body.width) {
+            lines.push(Line::from(Span::styled(
+                line,
+                Style::default().fg(theme.text.primary),
+            )));
+        }
+        let typed = take_width_suffix(
+            &dialog.input_buffer,
+            usize::from(body.width).saturating_sub(8),
+        );
+        lines.push(Line::from(vec![
+            Span::styled("Name: ", Style::default().fg(theme.text.tertiary)),
+            Span::styled(format!("{typed}▏"), Style::default().fg(theme.text.primary)),
+        ]));
+        lines.push(Line::from(split_hint("enter save · esc cancel", theme)));
+        frame.render_widget(Paragraph::new(lines), body);
+        return;
+    }
     if let Some(url) = dialog.authorization_url() {
         lines.push(Line::from(Span::styled(
             url.to_string(),
@@ -141,7 +172,39 @@ pub(super) fn render_waiting_panel(frame: &mut Frame, app: &AppState, theme: &Th
         format!("Waiting for {provider_label} authorization..."),
         Style::default().fg(theme.text.tertiary),
     )));
-    lines.push(Line::from(split_hint("c copy", theme)));
+    if dialog.accepts_waiting_input() {
+        let typed = take_width_suffix(
+            &dialog.input_buffer,
+            usize::from(body.width).saturating_sub(8),
+        );
+        lines.push(Line::from(vec![
+            Span::styled("Code: ", Style::default().fg(theme.text.tertiary)),
+            Span::styled(format!("{typed}▏"), Style::default().fg(theme.text.primary)),
+        ]));
+        // A browser on another machine cannot reach this machine's callback: paste its redirect URL.
+        let browser = dialog
+            .selected_provider
+            .and_then(|index| dialog.providers.get(index))
+            .and_then(|provider| dialog.selected_method.and_then(|m| provider.methods.get(m)))
+            .is_some_and(|method| {
+                matches!(
+                    method,
+                    harness_core::auth::plugin::AuthMethodSpec::OAuthAuto { .. }
+                )
+            });
+        lines.push(Line::from(if !dialog.input_buffer.trim().is_empty() {
+            split_hint("enter submit · esc cancel", theme)
+        } else if browser {
+            split_hint(
+                "c copy link · browser elsewhere? paste its redirect URL, then enter",
+                theme,
+            )
+        } else {
+            split_hint("c copy link · paste the code, then enter", theme)
+        }));
+    } else {
+        lines.push(Line::from(split_hint("c copy", theme)));
+    }
     if let Some(toast) = &dialog.toast {
         lines.push(Line::from(Span::styled(
             toast.message.as_str(),

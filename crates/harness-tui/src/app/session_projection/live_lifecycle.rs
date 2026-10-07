@@ -180,11 +180,18 @@ impl SessionProjection {
                 if entry.transcript_text.is_empty() && entry.tool_calls.is_empty() {
                     entry.finish_thinking_mono(event.mono_ms);
                 }
+                let failed = provider_error_detail.is_some();
                 if let Some(error_detail) = provider_error_detail {
                     entry.status = ActivityStatus::Error;
                     entry.error_message = Some(error_detail);
                 } else if should_mark_done {
                     entry.status = ActivityStatus::Done;
+                }
+                if !failed && let Some(metadata) = data.metadata.as_ref() {
+                    self.latest_account = metadata
+                        .account
+                        .clone()
+                        .map(|account| (entry.provider_id.clone(), account));
                 }
                 if let Some(usage) = data.usage.as_ref() {
                     entry.usage = Some(ActivityUsage {

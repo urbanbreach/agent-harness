@@ -275,8 +275,9 @@ impl AppState {
         }
         match command {
             "usage" | "extensions" => true,
-            "new" | "status" | "dashboard" | "toggles" | "login" | "help" | "exit" | "mcps"
-            | "timestamps" | "thinking" | "settings" | "view-plan" | "vim" | "worktree" => true,
+            "new" | "status" | "dashboard" | "toggles" | "login" | "claude-account" | "help"
+            | "exit" | "mcps" | "timestamps" | "thinking" | "settings" | "view-plan" | "vim"
+            | "worktree" => true,
             "sessions" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
@@ -394,6 +395,29 @@ impl AppState {
             "login" => {
                 self.restore_slash_draft(preserved_draft);
                 self.open_connect_dialog();
+            }
+            "claude-account" => {
+                let args = self
+                    .active_slash_parts_full()
+                    .and_then(|(_, args)| args)
+                    .map(|args| {
+                        args.split_whitespace()
+                            .map(str::to_string)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                self.restore_slash_draft(preserved_draft);
+                if args.first().map(String::as_str) == Some("add") {
+                    self.open_connect_dialog();
+                    self.connect_dialog.filter_buffer = "anthropic subscription".into();
+                } else {
+                    let mut command = vec!["claude-account".to_string()];
+                    command.extend(args);
+                    self.emit_ui_intent(UiIntent::OpenAuthManager {
+                        args: command,
+                        stdin: None,
+                    });
+                }
             }
             "help" | "feedback" => {
                 self.restore_slash_draft(preserved_draft);

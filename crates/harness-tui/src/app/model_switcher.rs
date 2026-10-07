@@ -131,6 +131,11 @@ impl AppState {
         }
     }
 
+    /// senpi's footer `provider@account`: the pooled account that served the active provider.
+    pub(crate) fn current_account_label(&self) -> Option<&str> {
+        self.projection.latest_account(self.active_provider())
+    }
+
     fn current_model_id(&self) -> &str {
         self.launch_metadata
             .model()
