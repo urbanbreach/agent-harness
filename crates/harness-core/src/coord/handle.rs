@@ -136,6 +136,17 @@ impl CoordinatorHandle {
         self.call(move |s| s.spawn_agent(actor, &profile, parent))
             .await
     }
+    /// The user picked a model or reasoning level for `agent` ahead of its next turn.
+    pub async fn announce_model_selection(
+        &self,
+        agent: impl Into<String>,
+        model_ref: String,
+        settings: AgentModelSettings,
+    ) -> Result<(), CoordinatorError> {
+        let agent = agent.into();
+        self.call(move |s| s.announce_model_selection(&agent, model_ref, settings))
+            .await
+    }
     pub async fn agent_runtime_info(
         &self,
         agent: impl Into<String>,

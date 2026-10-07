@@ -13,6 +13,18 @@ pub enum CredentialStoreError {
     Io(#[from] io::Error),
     #[error("credential storage: {0}")]
     Invalid(&'static str),
+    /// Another writer held the store past the lock budget.
+    #[error("Credential store is busy: lock {path} was held for {waited_ms}ms. Another harness process may be refreshing credentials; close unused sessions if contention persists.")]
+    Busy { path: String, waited_ms: u128 },
+}
+
+/// Bounded lock wait; contention never blocks a request indefinitely.
+pub const CREDENTIAL_LOCK_RETRY_BUDGET: std::time::Duration =
+    std::time::Duration::from_millis(5_500);
+
+/// An exclusive hold on the credential directory; released on drop.
+pub struct CredentialStoreLock {
+    _file: Option<File>,
 }
 #[derive(Debug, Clone)]
 pub struct CredentialStore {
@@ -152,6 +164,71 @@ impl CredentialStore {
         }
         crate::store::write_private_atomic(&path, &bytes)?;
         Ok(())
+    }
+    /// Locked read-modify-write; `Ok(None)` from `update` leaves the store unchanged and
+    /// returns the current credential.
+    pub fn modify(
+        &self,
+        provider: &ProviderId,
+        update: impl FnOnce(Option<StoredCredential>) -> Result<Option<StoredCredential>, String>,
+    ) -> Result<Option<StoredCredential>, CredentialStoreError> {
+        let _lock = self.lock_bounded(CREDENTIAL_LOCK_RETRY_BUDGET)?;
+        self.modify_locked(provider, update)
+    }
+    /// `modify` for a caller that already holds [`Self::lock_bounded`].
+    pub fn modify_locked(
+        &self,
+        provider: &ProviderId,
+        update: impl FnOnce(Option<StoredCredential>) -> Result<Option<StoredCredential>, String>,
+    ) -> Result<Option<StoredCredential>, CredentialStoreError> {
+        let current = self.load(provider)?;
+        match update(current.clone())
+            .map_err(|_| CredentialStoreError::Invalid("credential update was rejected"))?
+        {
+            Some(next) => {
+                self.write(&next)?;
+                Ok(Some(next))
+            }
+            None => Ok(current),
+        }
+    }
+    /// Takes the store lock, retrying with backoff for at most `budget`.
+    pub fn lock_bounded(
+        &self,
+        budget: std::time::Duration,
+    ) -> Result<CredentialStoreLock, CredentialStoreError> {
+        let path = self.data_dir.join("credentials");
+        validate_path(&path)?;
+        #[cfg(not(unix))]
+        {
+            let _ = budget;
+            return Err(CredentialStoreError::Invalid(
+                "private credential storage is unavailable on this platform",
+            ));
+        }
+        #[cfg(unix)]
+        {
+            crate::store::create_private_dir(&path)?;
+            let file = File::open(&path)?;
+            let started = std::time::Instant::now();
+            let mut delay = std::time::Duration::from_millis(100);
+            loop {
+                match file.try_lock() {
+                    Ok(()) => return Ok(CredentialStoreLock { _file: Some(file) }),
+                    Err(std::fs::TryLockError::WouldBlock) if started.elapsed() < budget => {
+                        std::thread::sleep(delay.min(budget.saturating_sub(started.elapsed())));
+                        delay = (delay * 2).min(std::time::Duration::from_secs(1));
+                    }
+                    Err(std::fs::TryLockError::WouldBlock) => {
+                        return Err(CredentialStoreError::Busy {
+                            path: path.display().to_string(),
+                            waited_ms: started.elapsed().as_millis(),
+                        });
+                    }
+                    Err(std::fs::TryLockError::Error(e)) => return Err(e.into()),
+                }
+            }
+        }
     }
     fn lock(&self, create: bool) -> Result<Option<File>, CredentialStoreError> {
         let path = self.data_dir.join("credentials");

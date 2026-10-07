@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fmt, time::SystemTime};
+pub mod anthropic;
+pub mod anthropic_subscription;
 pub mod codex;
 pub mod copilot;
 mod manager;
@@ -25,6 +27,9 @@ impl ProviderId {
     }
     pub fn github_copilot() -> Self {
         Self("github-copilot".into())
+    }
+    pub fn anthropic_subscription() -> Self {
+        Self("anthropic-subscription".into())
     }
     pub fn parse(value: &str) -> Option<Self> {
         let value = value.trim();
@@ -88,6 +93,13 @@ pub struct StoredCredential {
     pub updated_at: String,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, String>,
+    /// Pooled account slots behind managed sentinel tokens (anthropic-subscription).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accounts: Vec<harness_providers::anthropic_subscription::AccountSlot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub slot_state: BTreeMap<String, harness_providers::anthropic_subscription::SlotState>,
 }
 impl fmt::Debug for StoredCredential {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -118,6 +130,9 @@ impl StoredCredential {
             scopes: Vec::new(),
             updated_at: updated_at.into(),
             metadata: BTreeMap::new(),
+            accounts: Vec::new(),
+            pinned: None,
+            slot_state: BTreeMap::new(),
         }
     }
     pub fn api_key(
@@ -146,6 +161,11 @@ impl StoredCredential {
         [&self.access_token, &self.refresh_token, &self.api_key]
             .into_iter()
             .filter_map(|v| v.as_ref())
+            .chain(
+                self.accounts
+                    .iter()
+                    .flat_map(|slot| [&slot.access, &slot.refresh]),
+            )
             .filter(|v| !v.is_empty())
             .cloned()
             .collect()

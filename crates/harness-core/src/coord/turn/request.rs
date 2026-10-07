@@ -133,6 +133,7 @@ impl Worker {
                     ProviderRequestInitiator::Agent
                 },
                 cache_retention: self.profile.cache_retention,
+                main_turn: true,
                 has_media: messages
                     .entries
                     .iter()
@@ -217,6 +218,10 @@ impl Worker {
         loop {
             let request = self.request(messages);
             let budget = self.request_budget(&request)?;
+            // senpi's compaction lane policy: when the backend compacts its own resident session,
+            // automatic compaction and the input-budget stop stand down; manual compaction and
+            // overflow recovery (the provider decides which overflows are ours) still run.
+            let native_context = self.provider.manages_context(&request);
             if self.native {
                 let id = self.turn.id.clone();
                 let owner = self.actor.agent_id.clone().unwrap_or_default();
@@ -241,6 +246,7 @@ impl Worker {
                     .await?;
             }
             if automatic
+                && !native_context
                 && !prepared
                 && self
                     .compaction_threshold(&budget)
@@ -255,7 +261,7 @@ impl Worker {
                     continue;
                 }
             }
-            if budget.requires_compaction == Some(true) {
+            if budget.requires_compaction == Some(true) && !native_context {
                 return Err(CoordinatorError::Invalid("context exceeds its input budget; compact the conversation or shorten the prompt".into()));
             }
             let permit = tokio::select! {

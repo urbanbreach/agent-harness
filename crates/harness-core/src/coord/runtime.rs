@@ -52,6 +52,8 @@ pub(super) struct Runtime {
     pub compacting: BTreeMap<String, (u64, CancellationToken)>,
     pub edits: BTreeMap<String, super::edits::PendingEdit>,
     pub snapshots: BTreeMap<String, super::workspace::Snapshot>,
+    /// The last model and settings announced per agent, so each pick reaches providers once.
+    pub selections: BTreeMap<String, (String, AgentModelSettings)>,
 }
 pub(super) struct Agent {
     pub info: AgentRuntimeInfo,
@@ -217,6 +219,7 @@ impl Runtime {
             edits: BTreeMap::new(),
             snapshots: BTreeMap::new(),
             compacting: BTreeMap::new(),
+            selections: BTreeMap::new(),
         }
     }
     pub async fn run(mut self, mut rx: mpsc::Receiver<Command>, shutdown: CancellationToken) {

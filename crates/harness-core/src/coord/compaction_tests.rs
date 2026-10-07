@@ -213,10 +213,16 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
         "suppressed",
         "retry_disabled",
         "second_overflow",
+        "native_context",
     ] {
         let temp = tempfile::tempdir()?;
-        let overflow = !matches!(mode, "threshold" | "retention_budget");
+        // A backend that compacts its own session (senpi's lane policy) stands harness
+        // auto-compaction and the input-budget stop down.
+        let native = mode == "native_context";
+        let large = mode == "retention_budget" || native;
+        let overflow = !matches!(mode, "threshold" | "retention_budget" | "native_context");
         let enabled = !matches!(mode, "disabled" | "suppressed" | "retry_disabled");
+        let compacts = enabled && !native;
         let mut script = vec![answer("old answer ".repeat(1000)), answer("latest answer")];
         if overflow {
             script.push(vec![Stream::categorized_error(
@@ -224,7 +230,7 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
                 ContextWindowExceeded,
             )]);
         }
-        if enabled {
+        if compacts {
             script.push(answer(SUMMARY));
         }
         script.push(if mode == "second_overflow" {
@@ -237,12 +243,12 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
         });
         let provider = Arc::new(MockProvider::script(script));
         let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
-        config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
-        config.compaction.keep_recent_tokens = if mode == "retention_budget" {
-            20_000
+        config.provider = if native {
+            Arc::new(NativeContext(Arc::clone(&provider)))
         } else {
-            1
+            Arc::clone(&provider) as Arc<dyn harness_providers::Provider>
         };
+        config.compaction.keep_recent_tokens = if large { 20_000 } else { 1 };
         config.compaction.fallback_input_tokens = 8_000;
         config.compaction.reserve_tokens = 0;
         config.compaction.threshold_tokens =
@@ -273,7 +279,7 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
             .request_agent_turn(
                 EventActor::new(ActorKind::User, None),
                 agent.clone(),
-                if mode == "retention_budget" {
+                if large {
                     "new prompt ".repeat(1200)
                 } else {
                     "continue".into()
@@ -306,19 +312,19 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
                 .iter()
                 .filter(|e| matches!(e.payload, EventV1::SessionCompaction(_)))
                 .count(),
-            usize::from(enabled),
+            usize::from(compacts),
             "{mode}"
         );
         assert_eq!(
             provider.call_count(),
-            if enabled {
+            if compacts {
                 4 + usize::from(overflow)
             } else {
                 3
             },
             "{mode}"
         );
-        if enabled {
+        if compacts {
             let requests = provider.captured_requests().await;
             let final_request = requests.last().ok_or("missing continuation")?;
             assert!(
@@ -345,6 +351,20 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
         }
     }
     Ok(())
+}
+
+struct NativeContext(Arc<MockProvider>);
+#[async_trait::async_trait]
+impl harness_providers::Provider for NativeContext {
+    async fn stream_completion(
+        &self,
+        request: harness_providers::CompletionRequest,
+    ) -> harness_providers::ProviderEventStream {
+        self.0.stream_completion(request).await
+    }
+    fn manages_context(&self, _: &harness_providers::CompletionRequest) -> bool {
+        true
+    }
 }
 
 struct SummaryGate {

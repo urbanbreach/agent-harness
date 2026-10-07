@@ -76,6 +76,7 @@ impl AuthPluginRegistry {
         let mut registry = Self::new();
         registry.register(Arc::new(CodexAuthPlugin::new()));
         registry.register(Arc::new(CopilotAuthPlugin::new()));
+        registry.register(Arc::new(AnthropicSubscriptionAuthPlugin::new()));
         registry
     }
 }
@@ -180,6 +181,45 @@ impl AuthPlugin for CopilotAuthPlugin {
     }
     fn description(&self) -> &'static str {
         "Device login"
+    }
+    fn auth_methods(&self) -> &[AuthMethodSpec] {
+        &self.methods
+    }
+}
+pub struct AnthropicSubscriptionAuthPlugin {
+    provider: ProviderId,
+    methods: Vec<AuthMethodSpec>,
+}
+impl AnthropicSubscriptionAuthPlugin {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+impl Default for AnthropicSubscriptionAuthPlugin {
+    fn default() -> Self {
+        Self {
+            provider: ProviderId::anthropic_subscription(),
+            methods: vec![
+                AuthMethodSpec::OAuthAuto {
+                    label: "Browser login (default)".into(),
+                    port: super::anthropic::PREFERRED_CALLBACK_PORT,
+                },
+                AuthMethodSpec::OAuthCode {
+                    label: "Copy code login (headless)".into(),
+                },
+            ],
+        }
+    }
+}
+impl AuthPlugin for AnthropicSubscriptionAuthPlugin {
+    fn provider_id(&self) -> &ProviderId {
+        &self.provider
+    }
+    fn label(&self) -> &'static str {
+        "Anthropic Subscription (Claude Pro/Max)"
+    }
+    fn description(&self) -> &'static str {
+        "Claude Pro/Max through Claude Code"
     }
     fn auth_methods(&self) -> &[AuthMethodSpec] {
         &self.methods

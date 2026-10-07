@@ -106,6 +106,7 @@ impl Worker {
                 cancel,
                 false,
                 &mut false,
+                &mut None,
             )
             .await?;
             drop(permit);

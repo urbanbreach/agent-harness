@@ -4016,6 +4016,113 @@
             "type"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Claude Pro/Max through the Claude Code binary (`anthropicSubscriptionProvider`).",
+          "properties": {
+            "appendSystemPrompt": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "enabled": {
+              "default": null,
+              "description": "Explicit opt-in for the host `claude` login (ambient lane).",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "models": {
+              "additionalProperties": {
+                "$ref": "#/$defs/ModelConfig"
+              },
+              "default": {},
+              "type": "object"
+            },
+            "name": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "pinnedAccount": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "resumeMode": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SubscriptionResumeMode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "settingSources": {
+              "default": null,
+              "items": {
+                "$ref": "#/$defs/SubscriptionSettingSource"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "strictMcpConfig": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "systemPromptFile": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "systemPromptMode": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SubscriptionSystemPromptMode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "tokenInjection": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SubscriptionTokenInjection"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "type": {
+              "const": "anthropic_subscription",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -4787,6 +4894,37 @@
         }
       },
       "type": "object"
+    },
+    "SubscriptionResumeMode": {
+      "enum": [
+        "auto",
+        "off"
+      ],
+      "type": "string"
+    },
+    "SubscriptionSettingSource": {
+      "enum": [
+        "user",
+        "project",
+        "local"
+      ],
+      "type": "string"
+    },
+    "SubscriptionSystemPromptMode": {
+      "enum": [
+        "preset-append",
+        "full",
+        "override"
+      ],
+      "type": "string"
+    },
+    "SubscriptionTokenInjection": {
+      "enum": [
+        "oauth-slots",
+        "config-dir",
+        "ambient"
+      ],
+      "type": "string"
     },
     "ToolFailureMode": {
       "enum": [

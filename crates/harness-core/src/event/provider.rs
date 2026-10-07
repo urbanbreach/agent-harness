@@ -46,6 +46,10 @@ pub struct ProviderRequestFinishedMetadata {
     pub thinking: Option<ProviderThinkingMetadata>,
     pub provider_error_category: Option<ProviderErrorCategory>,
     pub provider_error_remediation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub native_compactions: Vec<harness_providers::ProviderNativeCompaction>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderRequestStartedEvent {
