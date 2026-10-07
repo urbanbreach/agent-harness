@@ -42,7 +42,13 @@ impl Tool for CountTool {
 struct PendingProvider {
     entered: Arc<tokio::sync::Notify>,
     dropped: Arc<AtomicUsize>,
+    sessions: Arc<std::sync::Mutex<Vec<harness_providers::ProviderSessionEvent>>>,
 }
+const ABORTED_USAGE: harness_providers::CompletionUsage = harness_providers::CompletionUsage {
+    prompt_tokens: 7,
+    completion_tokens: 3,
+    total_tokens: 10,
+};
 struct PendingStream(Arc<AtomicUsize>);
 impl tokio_stream::Stream for PendingStream {
     type Item = Stream;
@@ -67,6 +73,25 @@ impl harness_providers::Provider for PendingProvider {
         self.entered.notify_one();
         Box::pin(PendingStream(Arc::clone(&self.dropped)))
     }
+    /// Settles an abort the way a stateful backend does: after it fires, with billed usage.
+    async fn stream_completion_abortable(
+        &self,
+        request: harness_providers::CompletionRequest,
+        abort: tokio_util::sync::CancellationToken,
+    ) -> harness_providers::ProviderEventStream {
+        let settled = tokio_stream::iter([abort]).then(|abort| async move {
+            abort.cancelled().await;
+            Stream::Aborted {
+                usage: Some(ABORTED_USAGE),
+            }
+        });
+        Box::pin(self.stream_completion(request).await.merge(settled))
+    }
+    fn session_event(&self, event: &harness_providers::ProviderSessionEvent) {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            sessions.push(event.clone());
+        }
+    }
 }
 #[tokio::test]
 async fn cancellation_removes_queued_turns_and_drops_the_active_provider_stream(
@@ -74,10 +99,12 @@ async fn cancellation_removes_queued_turns_and_drops_the_active_provider_stream(
     let temp = tempfile::tempdir()?;
     let entered = Arc::new(tokio::sync::Notify::new());
     let dropped = Arc::new(AtomicUsize::new(0));
+    let sessions = Arc::default();
     let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
     config.provider = Arc::new(PendingProvider {
         entered: Arc::clone(&entered),
         dropped: Arc::clone(&dropped),
+        sessions: Arc::clone(&sessions),
     });
     let coordinator = spawn_coordinator(
         config,
@@ -146,6 +173,90 @@ async fn cancellation_removes_queued_turns_and_drops_the_active_provider_stream(
         events.last().map(|e| &e.payload),
         Some(EventV1::RunFinished(_))
     ));
+    // The abort settled before the stream dropped, so the cancelled request keeps its billed usage.
+    assert!(events.iter().any(|e| matches!(
+        &e.payload,
+        EventV1::ProviderRequestFinished(f)
+            if f.finish_reason == "cancelled" && f.usage == Some(ABORTED_USAGE)
+    )));
+    let sessions = sessions.lock().map(|s| s.clone()).unwrap_or_default();
+    assert!(
+        matches!(
+            &sessions[..],
+            [
+                harness_providers::ProviderSessionEvent::Routed { session_id: routed, .. },
+                harness_providers::ProviderSessionEvent::Closed { session_id: closed, .. },
+            ] if routed == closed
+        ),
+        "{sessions:?}"
+    );
+    Ok(())
+}
+
+/// Senpi's `model_select` and `thinking_level_select`: each pick reaches providers once, at the pick.
+#[tokio::test]
+async fn model_and_reasoning_picks_are_announced_to_providers(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use harness_providers::ProviderSessionEvent as Session;
+    let temp = tempfile::tempdir()?;
+    let sessions = Arc::default();
+    let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
+    config.provider = Arc::new(PendingProvider {
+        entered: Arc::default(),
+        dropped: Arc::default(),
+        sessions: Arc::clone(&sessions),
+    });
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = coordinator.start_run("select", temp.path()).await?;
+    let agent = coordinator
+        .spawn_agent_idle(
+            EventActor::new(ActorKind::Supervisor, None),
+            "default",
+            None,
+        )
+        .await?;
+    let initial = coordinator
+        .agent_runtime_info(agent.clone())
+        .await?
+        .model_ref;
+    let high = crate::agent::AgentModelSettings {
+        reasoning_effort: Some("high".into()),
+        ..Default::default()
+    };
+    for (model, settings) in [
+        ("other:model", Default::default()),
+        ("other:model", high.clone()),
+        ("other:model", high),
+        (initial.as_str(), Default::default()),
+    ] {
+        coordinator
+            .announce_model_selection(agent.clone(), model.into(), settings)
+            .await?;
+    }
+    let session = run.run_id.to_string();
+    let initial = crate::agent::AgentModelRef::parse(&initial);
+    assert_eq!(
+        sessions.lock().map(|s| s.clone()).unwrap_or_default(),
+        [
+            Session::ModelSelected {
+                session_id: session.clone(),
+                provider_id: "other".into(),
+                model_id: "model".into(),
+            },
+            Session::ReasoningSelected {
+                session_id: session.clone(),
+            },
+            Session::ModelSelected {
+                session_id: session,
+                provider_id: initial.provider_id,
+                model_id: initial.model_id,
+            },
+        ]
+    );
     Ok(())
 }
 

@@ -131,6 +131,7 @@ pub fn resolve_configured_model_metadata(
             match backend {
                 ProviderConfig::OpenAiCompatible(_) => "OpenAI",
                 ProviderConfig::Anthropic(_) => "Anthropic",
+                ProviderConfig::AnthropicSubscription(_) => "Anthropic Subscription",
             }
             .into(),
         ),

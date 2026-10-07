@@ -318,6 +318,14 @@ impl Runtime {
             .as_ref()
             .map_or(Ok(()), |store| store.close_writer())
             .map_err(CoordinatorError::from);
+        for session_id in self.provider_sessions() {
+            self.config
+                .provider
+                .session_event(&harness_providers::ProviderSessionEvent::Closed {
+                    session_id,
+                    reason: "run_stopped".into(),
+                });
+        }
         self.info = None;
         self.metadata = None;
         self.store = None;
@@ -330,6 +338,7 @@ impl Runtime {
         self.edits.clear();
         self.snapshots.clear();
         self.compacting.clear();
+        self.selections.clear();
         self.tool_state = Default::default();
         self.subagent_history = Default::default();
         self.projection_owner = None;
@@ -337,6 +346,58 @@ impl Runtime {
         self.stopped_sessions.clear();
         self.killed_agents.clear();
         let _ = reply.send(result.and(closed).and(cleanup));
+    }
+
+    /// The provider session ids of this run's agents: the run id for roots, the agent id otherwise.
+    pub(super) fn provider_sessions(&self) -> std::collections::BTreeSet<String> {
+        let run_id = self.info.as_ref().map(|info| info.run_id.to_string());
+        self.agents
+            .values()
+            .filter_map(|agent| match &agent.info.parent_agent_id {
+                Some(_) => Some(agent.info.agent_id.clone()),
+                None => run_id.clone(),
+            })
+            .collect()
+    }
+
+    /// Tells providers about a model or reasoning pick before the next turn uses it.
+    pub(super) fn announce_model_selection(
+        &mut self,
+        agent_id: &str,
+        model_ref: String,
+        settings: AgentModelSettings,
+    ) -> Result<(), CoordinatorError> {
+        let agent = self
+            .agents
+            .get(agent_id)
+            .ok_or_else(|| CoordinatorError::UnknownAgent(agent_id.into()))?;
+        let session_id = match agent.info.parent_agent_id {
+            Some(_) => agent_id.to_owned(),
+            None => self.info()?.run_id.to_string(),
+        };
+        let (previous_model, previous_settings) = self
+            .selections
+            .get(agent_id)
+            .cloned()
+            .unwrap_or_else(|| (agent.info.model_ref.clone(), agent.settings.clone()));
+        let event = if previous_model != model_ref {
+            let model = crate::agent::AgentModelRef::parse(&model_ref);
+            Some(harness_providers::ProviderSessionEvent::ModelSelected {
+                session_id,
+                provider_id: model.provider_id,
+                model_id: model.model_id,
+            })
+        } else {
+            (previous_settings != settings).then_some(
+                harness_providers::ProviderSessionEvent::ReasoningSelected { session_id },
+            )
+        };
+        self.selections
+            .insert(agent_id.to_owned(), (model_ref, settings));
+        if let Some(event) = event {
+            self.config.provider.session_event(&event);
+        }
+        Ok(())
     }
 
     pub fn start_hooks(&mut self) -> Result<(), CoordinatorError> {

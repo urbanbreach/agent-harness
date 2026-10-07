@@ -8,6 +8,116 @@ pub enum ProviderConfig {
     OpenAiCompatible(OpenAiCompatibleProviderConfig),
     #[serde(rename = "anthropic_messages")]
     Anthropic(AnthropicProviderConfig),
+    /// Claude Pro/Max through the Claude Code binary (`anthropicSubscriptionProvider`).
+    #[serde(rename = "anthropic_subscription")]
+    AnthropicSubscription(AnthropicSubscriptionProviderConfig),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub enum SubscriptionSystemPromptMode {
+    PresetAppend,
+    Full,
+    Override,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub enum SubscriptionResumeMode {
+    Auto,
+    Off,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub enum SubscriptionTokenInjection {
+    OauthSlots,
+    ConfigDir,
+    Ambient,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum SubscriptionSettingSource {
+    User,
+    Project,
+    Local,
+}
+
+/// Settings of the `anthropic-subscription` lane; unset fields keep senpi's defaults.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct AnthropicSubscriptionProviderConfig {
+    pub name: Option<String>,
+    /// Explicit opt-in for the host `claude` login (ambient lane).
+    pub enabled: Option<bool>,
+    #[serde(rename = "appendSystemPrompt", alias = "append_system_prompt")]
+    pub append_system_prompt: Option<bool>,
+    #[serde(rename = "systemPromptMode", alias = "system_prompt_mode")]
+    pub system_prompt_mode: Option<SubscriptionSystemPromptMode>,
+    #[serde(rename = "systemPromptFile", alias = "system_prompt_file")]
+    pub system_prompt_file: Option<String>,
+    #[serde(rename = "resumeMode", alias = "resume_mode")]
+    pub resume_mode: Option<SubscriptionResumeMode>,
+    #[serde(rename = "settingSources", alias = "setting_sources")]
+    pub setting_sources: Option<Vec<SubscriptionSettingSource>>,
+    #[serde(rename = "strictMcpConfig", alias = "strict_mcp_config")]
+    pub strict_mcp_config: Option<bool>,
+    #[serde(rename = "pinnedAccount", alias = "pinned_account")]
+    pub pinned_account: Option<String>,
+    #[serde(rename = "tokenInjection", alias = "token_injection")]
+    pub token_injection: Option<SubscriptionTokenInjection>,
+    pub models: BTreeMap<String, ModelConfig>,
+}
+
+impl AnthropicSubscriptionProviderConfig {
+    pub fn settings(
+        &self,
+    ) -> harness_providers::anthropic_subscription::AnthropicSubscriptionSettings {
+        use harness_providers::anthropic_subscription::{
+            ResumeMode, SystemPromptMode, TokenInjection,
+        };
+        harness_providers::anthropic_subscription::AnthropicSubscriptionSettings {
+            enabled: self.enabled,
+            append_system_prompt: self.append_system_prompt,
+            system_prompt_mode: self.system_prompt_mode.map(|mode| match mode {
+                SubscriptionSystemPromptMode::PresetAppend => SystemPromptMode::PresetAppend,
+                SubscriptionSystemPromptMode::Full => SystemPromptMode::Full,
+                SubscriptionSystemPromptMode::Override => SystemPromptMode::Override,
+            }),
+            system_prompt_file: self.system_prompt_file.clone().filter(|f| !f.is_empty()),
+            resume_mode: self.resume_mode.map(|mode| match mode {
+                SubscriptionResumeMode::Auto => ResumeMode::Auto,
+                SubscriptionResumeMode::Off => ResumeMode::Off,
+            }),
+            setting_sources: self.setting_sources.as_ref().map(|sources| {
+                sources
+                    .iter()
+                    .map(|s| {
+                        match s {
+                            SubscriptionSettingSource::User => "user",
+                            SubscriptionSettingSource::Project => "project",
+                            SubscriptionSettingSource::Local => "local",
+                        }
+                        .to_owned()
+                    })
+                    .collect()
+            }),
+            strict_mcp_config: self.strict_mcp_config,
+            pinned_account: self.pinned_account.clone().filter(|p| !p.is_empty()),
+            token_injection: self.token_injection.map(|lane| match lane {
+                SubscriptionTokenInjection::OauthSlots => TokenInjection::OauthSlots,
+                SubscriptionTokenInjection::ConfigDir => TokenInjection::ConfigDir,
+                SubscriptionTokenInjection::Ambient => TokenInjection::Ambient,
+            }),
+            system_prompt_mode_from_env: false,
+        }
+    }
+}
+
+/// The models the lane serves: senpi's `anthropic` model table (see `configs/anthropic-subscription-models.json`).
+pub fn anthropic_subscription_models() -> BTreeMap<String, ModelConfig> {
+    serde_json::from_str(include_str!(
+        "../../../../configs/anthropic-subscription-models.json"
+    ))
+    .unwrap_or_default()
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -122,6 +232,10 @@ impl std::fmt::Debug for ProviderConfig {
                 .debug_struct("Anthropic")
                 .field("models", &provider.models.keys())
                 .finish_non_exhaustive(),
+            Self::AnthropicSubscription(provider) => f
+                .debug_struct("AnthropicSubscription")
+                .field("models", &provider.models.keys())
+                .finish_non_exhaustive(),
         }
     }
 }
@@ -133,7 +247,9 @@ impl ProviderConfig {
         {
             return Some(id.clone());
         }
-        if name == "openai-codex" {
+        if matches!(self, Self::AnthropicSubscription(_)) {
+            Some(AuthProviderId::anthropic_subscription())
+        } else if name == "openai-codex" {
             Some(AuthProviderId::codex())
         } else {
             AuthProviderId::parse(name)
@@ -143,15 +259,23 @@ impl ProviderConfig {
         match self {
             Self::OpenAiCompatible(p) => &p.models,
             Self::Anthropic(p) => &p.models,
+            Self::AnthropicSubscription(p) => &p.models,
         }
     }
     pub fn name(&self) -> Option<&str> {
         match self {
             Self::OpenAiCompatible(p) => p.name.as_deref(),
             Self::Anthropic(p) => p.name.as_deref(),
+            Self::AnthropicSubscription(p) => p.name.as_deref(),
         }
     }
     pub(super) fn normalize(&mut self) -> Result<(), ConfigError> {
+        if let Self::AnthropicSubscription(p) = self {
+            if p.models.is_empty() {
+                p.models = anthropic_subscription_models();
+            }
+            return self.validate_model_limits();
+        }
         let (base_url, timeout) = match self {
             Self::OpenAiCompatible(p) => {
                 let options = &mut p.options;
@@ -202,12 +326,16 @@ impl ProviderConfig {
                 p.headers.append(&mut options.headers);
                 (&p.base_url, p.timeout_ms)
             }
+            Self::AnthropicSubscription(_) => return Ok(()),
         };
         if timeout == 0 || !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
             return Err(ConfigError(
                 "providers require an HTTP(S) endpoint and a positive timeout".into(),
             ));
         }
+        self.validate_model_limits()
+    }
+    fn validate_model_limits(&self) -> Result<(), ConfigError> {
         for model in self.models().values() {
             let limits = ResolvedModelLimits::from_values(
                 model.limit.context.or(model.metadata.context_window_tokens),

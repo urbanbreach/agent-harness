@@ -1,7 +1,7 @@
 use super::{runtime::digest, *};
 use harness_providers::{
-    AssistantToolCall, CompletionRequest, CompletionUsage, Provider, ProviderStreamEvent as Stream,
-    ProviderStreamFinishedMetadata,
+    AssistantToolCall, CompletionRequest, CompletionUsage, Provider, ProviderEventStream,
+    ProviderSessionEvent, ProviderStreamEvent as Stream, ProviderStreamFinishedMetadata,
 };
 use std::collections::HashSet;
 use tokio_stream::StreamExt;
@@ -96,8 +96,25 @@ pub(super) async fn complete(
     logical_request.messages = messages;
     logical_request.attachments = attachments;
     logical_request.tools = None;
+    if let Some(session_id) = request.context.session_id.clone() {
+        provider.session_event(&ProviderSessionEvent::Routed {
+            session_id,
+            provider_id: provider_id.clone(),
+            model_id: model_id.clone(),
+        });
+    }
+    let mut aborted_usage = None;
     let response = read(
-        handle, provider, actor, task, &id, request, cancel, true, progress,
+        handle,
+        provider,
+        actor,
+        task,
+        &id,
+        request,
+        cancel,
+        true,
+        progress,
+        &mut aborted_usage,
     )
     .await;
     let response = response.map(|mut response| {
@@ -111,7 +128,10 @@ pub(super) async fn complete(
             if !s.running.contains_key(&task) {
                 return Err(CoordinatorError::UnknownTask(task));
             }
-            let usage = response.as_ref().ok().and_then(|r| r.usage.clone());
+            let usage = match &response {
+                Ok(response) => response.usage.clone(),
+                Err(_) => aborted_usage,
+            };
             let metadata = response.as_ref().ok().and_then(|r| r.metadata.as_ref());
             let finish_reason = match &response {
                 Ok(_) => metadata
@@ -139,6 +159,13 @@ pub(super) async fn complete(
                 provider_stop_reason: Some(finish_reason.clone()),
                 provider_error_category,
                 provider_error_remediation,
+                account: metadata
+                    .and_then(|m| m.session_report.as_ref())
+                    .and_then(|r| r.account.clone()),
+                native_compactions: metadata
+                    .and_then(|m| m.session_report.as_ref())
+                    .map(|r| r.native_compactions.clone())
+                    .unwrap_or_default(),
                 ..Default::default()
             };
             s.emit_hooked(
@@ -209,6 +236,7 @@ pub(super) async fn read(
     cancel: &CancellationToken,
     emit_live: bool,
     progress: &mut bool,
+    aborted_usage: &mut Option<CompletionUsage>,
 ) -> Result<Response, CoordinatorError> {
     let redactor = handle.call(|s| Ok(Arc::clone(&s.redactor))).await?;
     let mut display = LiveOutput::default();
@@ -221,7 +249,7 @@ pub(super) async fn read(
     let mut stream = tokio::select! {
         biased;
         () = cancel.cancelled() => return Err(CoordinatorError::Cancelled(task.into())),
-        stream = provider.stream_completion(request) => stream,
+        stream = provider.stream_completion_abortable(request, cancel.child_token()) => stream,
     };
     let mut response = Response::default();
     let mut completed = HashSet::new();
@@ -230,7 +258,10 @@ pub(super) async fn read(
     loop {
         let event = tokio::select! {
             biased;
-            () = cancel.cancelled() => return Err(CoordinatorError::Cancelled(task.into())),
+            () = cancel.cancelled() => {
+                *aborted_usage = settle_abort(&mut stream).await;
+                return Err(CoordinatorError::Cancelled(task.into()));
+            }
             event = stream.next() => event.ok_or_else(|| CoordinatorError::Invalid("provider stream ended before completion".into()))?,
         };
         let live = match event {
@@ -337,6 +368,18 @@ pub(super) async fn read(
                     retry_after_ms,
                 })
             }
+            Stream::Notice(message) => {
+                // Shown even for requests that stream nothing live (compaction summaries).
+                let (actor, task) = (actor.clone(), task.to_owned());
+                handle
+                    .call(move |s| s.live(actor, task, LiveEventV1::RuntimeWarning { message }))
+                    .await?;
+                None
+            }
+            Stream::Aborted { usage } => {
+                *aborted_usage = usage;
+                return Err(CoordinatorError::Cancelled(task.into()));
+            }
         };
         if bytes > 4 * 1024 * 1024 || unfinished.len() > 128 {
             return Err(CoordinatorError::Invalid(
@@ -374,68 +417,28 @@ pub(super) async fn read(
     Ok(response)
 }
 
-#[derive(Default)]
-struct LiveOutput {
-    pending: BTreeMap<(u8, String), (LiveEventV1, String, bool)>,
-}
-impl LiveOutput {
-    fn push(
-        &mut self,
-        mut payload: LiveEventV1,
-        redactor: &dyn crate::redact::Redactor,
-    ) -> Option<LiveEventV1> {
-        let (key, delta) = match &mut payload {
-            LiveEventV1::ProviderTextDelta { delta, .. } => ((0, String::new()), delta),
-            LiveEventV1::ProviderReasoningDelta { delta, .. } => ((1, String::new()), delta),
-            LiveEventV1::ProviderToolInputDelta {
-                tool_call_id,
-                delta,
-                ..
-            } => ((2, tool_call_id.to_string()), delta),
-            _ => return Some(payload),
-        };
-        let delta = std::mem::take(delta);
-        let tool_name = match &payload {
-            LiveEventV1::ProviderToolInputDelta { tool_name, .. } => tool_name.clone(),
-            _ => None,
-        };
-        let (template, pending, held) =
-            self.pending
-                .entry(key)
-                .or_insert((payload, String::new(), false));
-        if let LiveEventV1::ProviderToolInputDelta {
-            tool_name: current, ..
-        } = template
-            && tool_name.is_some()
-        {
-            current.clone_from(&tool_name);
+/// Upper bound on a provider's abort handshake (interrupt, then its own settle grace).
+const ABORT_SETTLE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Reads a cancelled stream until the provider settles, for the usage it billed.
+async fn settle_abort(stream: &mut ProviderEventStream) -> Option<CompletionUsage> {
+    let settled = async {
+        while let Some(event) = stream.next().await {
+            match event {
+                Stream::Aborted { usage }
+                | Stream::Done { usage }
+                | Stream::DoneWithMetadata { usage, .. } => return usage,
+                Stream::Error { .. } => return None,
+                _ => {}
+            }
         }
-        pending.push_str(&delta);
-        if *held {
-            return None;
-        }
-        let prefix = redactor.streaming_prefix(pending);
-        let safe: String = pending.drain(..prefix).collect();
-        // ponytail: defer a suspicious tail over 4 KiB instead of rescanning it per delta.
-        // The response-wide 4 MiB budget also bounds all retained tails together.
-        *held = pending.len() > 4096;
-        (!safe.is_empty() || tool_name.is_some()).then(|| with_delta(template.clone(), safe))
-    }
-    fn finish(self, redactor: &dyn crate::redact::Redactor) -> Vec<LiveEventV1> {
-        self.pending
-            .into_values()
-            .filter_map(|(payload, pending, _)| {
-                (!pending.is_empty()).then(|| with_delta(payload, redactor.redact_text(&pending)))
-            })
-            .collect()
-    }
+        None
+    };
+    tokio::time::timeout(ABORT_SETTLE, settled)
+        .await
+        .ok()
+        .flatten()
 }
-fn with_delta(mut payload: LiveEventV1, text: String) -> LiveEventV1 {
-    match &mut payload {
-        LiveEventV1::ProviderTextDelta { delta, .. }
-        | LiveEventV1::ProviderReasoningDelta { delta, .. }
-        | LiveEventV1::ProviderToolInputDelta { delta, .. } => *delta = text,
-        _ => {}
-    }
-    payload
-}
+
+mod live_output;
+use live_output::LiveOutput;

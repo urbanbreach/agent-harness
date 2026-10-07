@@ -291,6 +291,10 @@ impl Worker {
                 Ok((message, tokens_after))
             })
             .await?;
+        self.provider
+            .session_event(&harness_providers::ProviderSessionEvent::Compacted {
+                session_id: self.session.clone(),
+            });
         let preview = applied.0.content.chars().take(512).collect();
         context.entries.splice(
             plan.start..plan.cut,

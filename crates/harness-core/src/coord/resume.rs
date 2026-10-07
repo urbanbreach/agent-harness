@@ -256,6 +256,11 @@ impl Runtime {
             )?;
             self.restore_children(&events);
             self.subagent_history = crate::subagent::SubagentHistory::from_events(&events);
+            for session_id in self.provider_sessions() {
+                self.config.provider.session_event(
+                    &harness_providers::ProviderSessionEvent::Rewound { session_id },
+                );
+            }
             Ok(point)
         })();
         let _ = reply.send(result);
