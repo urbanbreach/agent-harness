@@ -1,0 +1,175 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  INSTA_UPDATE: "no"
+  TZ: UTC
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+  TERM: xterm-256color
+  HARNESS_DETERMINISTIC: "1"
+  HARNESS_DISABLE_ANIMATIONS: "1"
+  HARNESS_SEED: "42"
+  NEXTEST_PROFILE: ci
+  XDG_CONFIG_HOME: /tmp/harness-empty-config
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+jobs:
+  quality-gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install gate dependency
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
+      - run: python3 scripts/check-test-suite-gates.py
+      - run: python3 scripts/check-forbidden-branding.py
+
+  fmt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-rust
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-rust
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  build-harness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-rust
+      - run: cargo build -p harness --locked
+      - run: cargo build --release -p harness --locked
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: harness-linux
+          path: |
+            target/debug/harness
+            target/release/harness
+          retention-days: 7
+          if-no-files-found: error
+
+  nextest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          tests: "true"
+      - run: cargo nextest run --profile ci --workspace --all-features
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: nextest-junit
+          path: target/nextest/ci/
+          retention-days: 7
+
+  pty-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [harness-testkit, harness-tui]
+    env:
+      HARNESS_VISUAL_ARTIFACT_DIR: target/pty-visual-artifacts
+      HARNESS_TUI_PTY_SIGNOFF: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          tests: "true"
+      # Build here: artifact download does not preserve the executable mode.
+      - run: cargo build -p harness --locked
+      - name: PTY tests
+        run: env RUST_TEST_THREADS=1 cargo nextest run --profile ci -p ${{ matrix.package }} --test pty_e2e --test-threads 1 --ignore-default-filter
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: pty-${{ matrix.package }}
+          path: |
+            target/pty-visual-artifacts/
+            target/nextest/ci/
+          retention-days: 7
+
+  binary-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          tests: "true"
+      - run: cargo build -p harness --locked
+      - run: env HARNESS_BINARY_SIGNOFF=1 cargo nextest run --profile ci -p harness --test binary_smoke --ignore-default-filter
+      # Core's full target requires Landlock filesystem ABI 5 and reflink support;
+      # hosted runner kernels/filesystems do not guarantee either. See testing.md.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: binary-smoke-junit
+          path: target/nextest/ci/
+          retention-days: 7
+
+  coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          tests: "true"
+          coverage: "true"
+      - run: scripts/coverage-ratchet.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: coverage
+          path: |
+            target/coverage/
+            target/nextest/ci/
+            docs/testing/test-suite-coverage-baseline.txt
+          retention-days: 7
+
+  secret-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+      # Use the free CLI, not the action that requires a license for organizations.
+      - name: Install Gitleaks 8.30.1
+        run: |
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/gitleaks.tar.gz" \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          printf '%s  %s\n' 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb \
+            "$RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+      - name: Scan Git history without exposing secret values
+        run: '"$RUNNER_TEMP/gitleaks" git --redact --no-banner .'

@@ -54,6 +54,8 @@ Artifacts:
   The run also writes <artifact-root>/summary.txt and <artifact-root>/env.txt.
 
 Required environment:
+  Builds use the stock linker; no Clang or Wild installation is required.
+  See docs/testing/build-performance.md for opt-in direct Cargo commands.
   signoff-live and stress-live require:
     HARNESS_LIVE_PROXY=1
     HARNESS_LIVE_PROXY_CONFIG=<path>

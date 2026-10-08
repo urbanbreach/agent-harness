@@ -35,10 +35,10 @@ Measured on 2026-09-23 at commit `4f966051d3ceb1209f8feb7cf4afbd5c61666f63`.
 
 ## Selected settings
 
-Builds and tests use Wild 0.10.0 by default on x86-64 GNU/Linux, with
-`debug = "line-tables-only"` for local development. Nextest remains the test runner.
-Wild was fastest for executable and test recompilation at every debug level.
-For a TUI library edit, its advantage over mold was small.
+Builds and tests use the stock Rust toolchain linker by default. Local development
+uses `debug = "line-tables-only"`; nextest remains the test runner. Wild 0.10.0
+is an opt-in for x86-64 GNU/Linux. In the measurements below it was fastest for
+executable and test recompilation; its advantage over mold for a TUI edit was small.
 
 The dev profile now uses line tables, inherited by the test profile. This retains
 file/line backtraces but omits local-variable debugging. Full debug information
@@ -51,23 +51,19 @@ cargo build -p harness
 cargo nextest run --profile ci --workspace --all-features
 ```
 
-`.cargo/config.toml` selects Wild on x86-64 GNU/Linux and requires `clang`
-and `wild` on PATH. Other targets retain their toolchain defaults.
-This machine has the verified upstream Wild 0.10.0 binary
-installed at `~/.local/bin/wild`. For another machine, install the
-[upstream release](https://github.com/wild-linker/wild/releases/tag/0.10.0),
-or build the pinned version with `cargo install --locked --version 0.10.0 wild-linker`.
-CI installs the pinned Wild release with a SHA-256 check before compilation.
-All Rust test jobs use nextest, including the explicit PTY and binary-smoke jobs.
-
-To temporarily use the bundled LLD on this target:
+Default builds, installs, and CI need no Clang or Wild installation. To opt in,
+install Clang and [Wild 0.10.0](https://github.com/wild-linker/wild/releases/tag/0.10.0)
+on `PATH`, or build Wild with `cargo install --locked --version 0.10.0 wild-linker`.
+Then pass the checked-in configuration fragment explicitly:
 
 ```bash
-RUSTFLAGS='-C linker=cc' cargo nextest run --profile ci --workspace --all-features
+cargo --config .cargo/wild.toml build -p harness
+cargo --config .cargo/wild.toml nextest run --profile ci --workspace --all-features
 ```
 
-`RUSTFLAGS` replaces the configured Wild flags. Switching linkers causes an
-initial rebuild.
+The fragment applies only to x86-64 GNU/Linux. Omit `--config` to return to the
+stock linker. Switching linkers causes an initial rebuild. The lane runner and
+CI use the stock linker; all Rust test jobs use nextest, including PTY and binary smoke.
 
 Release optimization, incremental compilation, and Cargo's default job count
 are unchanged. Release optimization and CI caching were not benchmarked here.
@@ -159,9 +155,7 @@ of release optimization settings.
 The direct Wild configuration also passed all 21 selected tests without the
 benchmark linker wrapper.
 
-After making Wild the default, ordinary `cargo nextest run` passed the same 21
-tests. Small executable probes confirmed both the default Wild linker and the
-documented bundled-LLD fallback. CI YAML, linker setup in every compiling job,
-nextest installation in each test job, shell syntax, and the release download,
-checksum, and installation were checked locally. The CI package-install step
-and GitLab pipeline were not executed locally.
+The historical measurements above used Wild as the default and verified a
+bundled-LLD override. Those observations predate the opt-in configuration.
+Current CI uses the stock linker and GitHub Actions; local checks do not execute
+the hosted workflows.

@@ -1,0 +1,10 @@
+# Test-only fixtures intentionally contain credential-shaped sample values.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Reviewed test fixtures, not credentials"
+paths = [
+  '''(^|/)tests/''',
+  '''(^|/)(tests|[^/]+_tests|[^/]+_test)\.rs$''',
+]

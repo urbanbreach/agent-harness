@@ -115,7 +115,7 @@ def sample(binary):
                 raise RuntimeError(f"CLI status {process.returncode}; fixture errors {failures}; {errors}")
             if output != b"word " * fragments + b"\n":
                 raise RuntimeError("streamed output was lost or repeated")
-            journal = next((root / ".agent-harness/sessions").glob("*/events.jsonl"))
+            journal = next((root / "data/harness/sessions").glob("*/*/events.jsonl"))
             events = [json.loads(line)["payload"]["event_type"] for line in journal.read_text().splitlines()]
             if events[-1] != "run_finished" or any(event in ["provider_stream_delta", "provider_reasoning_delta"] for event in events):
                 raise RuntimeError("streaming produced an invalid durable history")

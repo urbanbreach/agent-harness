@@ -15,7 +15,7 @@ failure-output = "immediate-final"
 success-output = "never"
 status-level = "slow"
 final-status-level = "slow"
-# GitLab collects this as a JUnit report.
+# CI uploads this as a JUnit artifact.
 junit = { path = "junit.xml" }
 
 [profile.perf]
@@ -44,11 +44,19 @@ slow-timeout = { period = "10s", terminate-after = 6 }
 filter = 'package(harness-eval) & test(perf_native_eval)'
 slow-timeout = { period = "30s", terminate-after = 3 }
 
-# These fixed multi-frame captures complete within the existing deadline alone.
-# Reserve the runner budget rather than extending their deadline under load.
+# This fixed multi-frame capture completes within the existing deadline alone.
+# Reserve the runner budget rather than extending its deadline under load.
 [[profile.default.overrides]]
-filter = 'package(harness-tui) & (test(native_tool_viewer_capture_uses_the_enter_handler) | test(recorded_terminal_journeys_match_reference_cells_and_intents))'
+filter = 'package(harness-tui) & test(native_tool_viewer_capture_uses_the_enter_handler)'
 threads-required = "num-test-threads"
+
+# The reference journeys render every recorded frame at four sizes and compare
+# them against three digest-bound oracles; about 14s on a fast desktop in debug
+# builds, and slower on hosted runners and in record mode.
+[[profile.default.overrides]]
+filter = 'package(harness-tui) & test(recorded_terminal_journeys_match_reference_cells_and_intents)'
+threads-required = "num-test-threads"
+slow-timeout = { period = "30s", terminate-after = 3 }
 
 # The recorded happy path is a three-scenario PTY composite. It can hit a
 # transient harness/TUI stall; give it enough outer time so the internal

@@ -36,6 +36,26 @@ excludes performance, binary, live, PTY, and native visual targets. An explicit
 `--test` alone does not override that filter; opt-in commands need
 `--ignore-default-filter`.
 
+## GitHub Actions
+
+`.github/workflows/ci.yml` runs on pushes, pull requests, and manual dispatches
+using Ubuntu 24.04. It runs both quality gates, workspace formatting and Clippy
+with warnings denied, locked development/release builds, deterministic nextest,
+serial testkit/TUI PTY lanes, CLI binary smoke, and the coverage ratchet. Rust
+comes from `rust-toolchain.toml`; Node.js 24 and Python 3.12 support eval and
+subprocess fixtures. Gate scripts also require ripgrep. No Clang or Wild install
+is needed. JUnit reports, PTY visuals, coverage, and binaries are retained for
+seven days, including test artifacts on failure. The six-hour performance lane
+is in `perf.yml`, scheduled weekly or launched manually, not on each push.
+
+Secret scanning uses the free, checksum-pinned Gitleaks CLI with redacted output,
+not its licensed organization action. It extends the default rules via
+`.gitleaks.toml`, excludes test-only paths, and records reviewed historical
+fixture fingerprints in `.gitleaksignore`. Production-source and documentation
+paths are not broadly exempted. The previous template-based SAST job was dropped:
+GitHub CodeQL has no Rust analysis equivalent. Clippy is a code-quality gate,
+not a substitute for security analysis.
+
 ## Lanes
 
 ```bash
@@ -80,6 +100,20 @@ This sets `HARNESS_BINARY_SIGNOFF=1` and runs the `binary_smoke` targets from
 MCP stdio, Git worktrees, reflinks, formatting, structural edits, filesystem
 confinement, executable replacement and a real language server. Missing native
 prerequisites fail the lane. Without the opt-in variable, tests return errors.
+
+CI runs the two CLI smoke cases with:
+
+```bash
+HARNESS_BINARY_SIGNOFF=1 cargo nextest run --profile ci -p harness --test binary_smoke --ignore-default-filter
+```
+
+These tests are not ignored; `--run-ignored only` would select none. The full
+`harness-core` binary target stays in local native signoff, not hosted CI. Its
+Landlock check requires filesystem ABI 5 ([Linux 6.10 or newer](https://docs.kernel.org/6.10/userspace-api/landlock.html)), which Ubuntu
+24.04 hosted runner kernels do not guarantee; its reflink check also needs a
+supporting filesystem. A runner label is not proof of either capability. Native
+`harness-tools` signoff additionally requires the ast-grep CLI on `PATH`; the
+deterministic suite does not run those environment-gated structural-edit checks.
 
 ## Performance and sustained runs
 

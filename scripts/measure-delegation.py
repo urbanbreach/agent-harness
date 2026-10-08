@@ -102,7 +102,7 @@ def measure(binary, count, cancel):
             if not cancel:
                 assert output == b'delegation complete\n', output
                 assert len(children) == count
-            journals = list((root / '.agent-harness/sessions').glob('*/events.jsonl'))
+            journals = list((root / 'data/harness/sessions').glob('*/*/events.jsonl'))
             root_journal, = [p for p in journals
                              if not json.loads((p.parent / 'meta.json').read_text()).get('harness_lineage')]
             events = [json.loads(line)['payload']['event_type'] for line in root_journal.read_text().splitlines()]
