@@ -1,57 +1,4 @@
 {
- "claude-fable-5": {
-  "limit": {
-   "context": 1000000,
-   "output": 128000
-  },
-  "metadata": {
-   "contextWindowTokens": 1000000,
-   "family": "claude-fable",
-   "supportsToolCalls": true
-  },
-  "modalities": {
-   "input": [
-    "text",
-    "image"
-   ],
-   "output": [
-    "text"
-   ]
-  },
-  "name": "Claude Fable 5",
-  "variants": {
-   "high": {
-    "metadata": {
-     "reasoningEffort": "high"
-    },
-    "name": "High"
-   },
-   "low": {
-    "metadata": {
-     "reasoningEffort": "low"
-    },
-    "name": "Low"
-   },
-   "max": {
-    "metadata": {
-     "reasoningEffort": "max"
-    },
-    "name": "Max"
-   },
-   "medium": {
-    "metadata": {
-     "reasoningEffort": "medium"
-    },
-    "name": "Medium"
-   },
-   "xhigh": {
-    "metadata": {
-     "reasoningEffort": "xhigh"
-    },
-    "name": "Extra high"
-   }
-  }
- },
  "claude-fable-5-1": {
   "limit": {
    "context": 1000000,
@@ -105,13 +52,13 @@
    }
   }
  },
- "claude-haiku-4-5": {
+ "claude-haiku-5-5": {
   "limit": {
-   "context": 200000,
-   "output": 64000
+   "context": 1000000,
+   "output": 128000
   },
   "metadata": {
-   "contextWindowTokens": 200000,
+   "contextWindowTokens": 1000000,
    "family": "claude-haiku",
    "supportsToolCalls": true
   },
@@ -124,7 +71,7 @@
     "text"
    ]
   },
-  "name": "Claude Haiku 4.5 (latest)",
+  "name": "Claude Haiku 5.5",
   "variants": {
    "high": {
     "metadata": {
@@ -138,134 +85,23 @@
     },
     "name": "Low"
    },
-   "medium": {
+   "max": {
     "metadata": {
-     "reasoningEffort": "medium"
+     "reasoningEffort": "max"
     },
-    "name": "Medium"
-   }
-  }
- },
- "claude-haiku-4-5-20251001": {
-  "limit": {
-   "context": 200000,
-   "output": 64000
-  },
-  "metadata": {
-   "contextWindowTokens": 200000,
-   "family": "claude-haiku",
-   "supportsToolCalls": true
-  },
-  "modalities": {
-   "input": [
-    "text",
-    "image"
-   ],
-   "output": [
-    "text"
-   ]
-  },
-  "name": "Claude Haiku 4.5",
-  "variants": {
-   "high": {
-    "metadata": {
-     "reasoningEffort": "high"
-    },
-    "name": "High"
-   },
-   "low": {
-    "metadata": {
-     "reasoningEffort": "low"
-    },
-    "name": "Low"
+    "name": "Max"
    },
    "medium": {
     "metadata": {
      "reasoningEffort": "medium"
     },
     "name": "Medium"
-   }
-  }
- },
- "claude-opus-4-5": {
-  "limit": {
-   "context": 200000,
-   "output": 64000
-  },
-  "metadata": {
-   "contextWindowTokens": 200000,
-   "family": "claude-opus",
-   "supportsToolCalls": true
-  },
-  "modalities": {
-   "input": [
-    "text",
-    "image"
-   ],
-   "output": [
-    "text"
-   ]
-  },
-  "name": "Claude Opus 4.5 (latest)",
-  "variants": {
-   "high": {
-    "metadata": {
-     "reasoningEffort": "high"
-    },
-    "name": "High"
    },
-   "low": {
+   "xhigh": {
     "metadata": {
-     "reasoningEffort": "low"
+     "reasoningEffort": "xhigh"
     },
-    "name": "Low"
-   },
-   "medium": {
-    "metadata": {
-     "reasoningEffort": "medium"
-    },
-    "name": "Medium"
-   }
-  }
- },
- "claude-opus-4-5-20251101": {
-  "limit": {
-   "context": 200000,
-   "output": 64000
-  },
-  "metadata": {
-   "contextWindowTokens": 200000,
-   "family": "claude-opus",
-   "supportsToolCalls": true
-  },
-  "modalities": {
-   "input": [
-    "text",
-    "image"
-   ],
-   "output": [
-    "text"
-   ]
-  },
-  "name": "Claude Opus 4.5",
-  "variants": {
-   "high": {
-    "metadata": {
-     "reasoningEffort": "high"
-    },
-    "name": "High"
-   },
-   "low": {
-    "metadata": {
-     "reasoningEffort": "low"
-    },
-    "name": "Low"
-   },
-   "medium": {
-    "metadata": {
-     "reasoningEffort": "medium"
-    },
-    "name": "Medium"
+    "name": "Extra high"
    }
   }
  },
@@ -525,88 +361,6 @@
      "reasoningEffort": "xhigh"
     },
     "name": "Extra high"
-   }
-  }
- },
- "claude-sonnet-4-5": {
-  "limit": {
-   "context": 1000000,
-   "output": 64000
-  },
-  "metadata": {
-   "contextWindowTokens": 1000000,
-   "family": "claude-sonnet",
-   "supportsToolCalls": true
-  },
-  "modalities": {
-   "input": [
-    "text",
-    "image"
-   ],
-   "output": [
-    "text"
-   ]
-  },
-  "name": "Claude Sonnet 4.5 (latest)",
-  "variants": {
-   "high": {
-    "metadata": {
-     "reasoningEffort": "high"
-    },
-    "name": "High"
-   },
-   "low": {
-    "metadata": {
-     "reasoningEffort": "low"
-    },
-    "name": "Low"
-   },
-   "medium": {
-    "metadata": {
-     "reasoningEffort": "medium"
-    },
-    "name": "Medium"
-   }
-  }
- },
- "claude-sonnet-4-5-20250929": {
-  "limit": {
-   "context": 1000000,
-   "output": 64000
-  },
-  "metadata": {
-   "contextWindowTokens": 1000000,
-   "family": "claude-sonnet",
-   "supportsToolCalls": true
-  },
-  "modalities": {
-   "input": [
-    "text",
-    "image"
-   ],
-   "output": [
-    "text"
-   ]
-  },
-  "name": "Claude Sonnet 4.5",
-  "variants": {
-   "high": {
-    "metadata": {
-     "reasoningEffort": "high"
-    },
-    "name": "High"
-   },
-   "low": {
-    "metadata": {
-     "reasoningEffort": "low"
-    },
-    "name": "Low"
-   },
-   "medium": {
-    "metadata": {
-     "reasoningEffort": "medium"
-    },
-    "name": "Medium"
    }
   }
  },
