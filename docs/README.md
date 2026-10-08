@@ -33,6 +33,7 @@ The [Finnish README](README.fi.md) covers the same setup.
 | [Terminal design](../DESIGN.md) | Layout, color, input, motion, and accessibility |
 | [Testing](testing/testing.md) | Test commands, suite ownership, and evidence requirements |
 | [Performance budgets](testing/budgets.md) | Measured limits and release-mode checks |
+| [Releasing](operations/releasing.md) | Cutting a release, the release workflow, assets, and recovery |
 | [Structural edit safety](tools/ast-grep-replace-safety-gate.md) | Validation before AST replacements change files |
 | [README media](assets/README.md) | How to regenerate the animation and still image |
 

@@ -167,3 +167,7 @@ bash scripts/harness-qa-dogfood.sh --self-test
   (`.github/workflows/ci.yml`). The performance workflow runs weekly or on demand.
 - Default builds use the stock Rust linker. Wild is opt-in via
   `cargo --config .cargo/wild.toml`; see `docs/testing/build-performance.md`.
+- Releases: add user-facing changes under `## [Unreleased]` in `CHANGELOG.md`;
+  `scripts/release.sh <version>` stamps it, tags `v<version>` and pushes. The tag runs
+  `.github/workflows/release.yml` (full CI, static musl x86_64/aarch64 binaries via
+  cargo-zigbuild, mimalloc on musl, GitHub Release). See `docs/operations/releasing.md`.

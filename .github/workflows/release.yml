@@ -1,0 +1,189 @@
+name: Release
+
+# scripts/release.sh pushes a vX.Y.Z tag, which starts this workflow. To retry a
+# failed release, run it manually with the same tag and dry run turned off.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release, for example v0.1.0
+        required: true
+        type: string
+      dry_run:
+        description: Build and verify only; do not publish
+        type: boolean
+        default: true
+
+permissions: {}
+
+# Never cancel a release in flight: a cancelled run can leave a tag without a release.
+concurrency:
+  group: publish-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Check tag, version and release notes
+        id: meta
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::$TAG is not a vX.Y.Z tag"
+            exit 1
+          fi
+          version="${TAG#v}"
+          cargo_version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)"
+          if [[ "$cargo_version" != "$version" ]]; then
+            echo "::error::Cargo.toml says $cargo_version but the tag is $TAG"
+            exit 1
+          fi
+          scripts/release-notes.sh "$version" > release-notes.md
+          prerelease=false
+          if [[ "$version" == *-* ]]; then prerelease=true; fi
+          {
+            echo "tag=$TAG"
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
+  ci:
+    needs: metadata
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.metadata.outputs.tag }}
+
+  build:
+    needs: [metadata, ci]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      BIN: target/${{ matrix.target }}/release/harness
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.metadata.outputs.tag }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      # Zig supplies the musl C toolchain for the crates that compile C code.
+      - name: Install toolchain
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+          python3 -m pip install cargo-zigbuild==0.23.4 ziglang==0.17.0
+      - name: Build static binary
+        run: cargo zigbuild --release --locked -p harness --target ${{ matrix.target }}
+      - name: Smoke test
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          file "$BIN"
+          file "$BIN" | grep -q 'statically linked'
+          test "$("$BIN" --version)" = "harness $VERSION"
+          bin="$PWD/$BIN"
+          work="$(mktemp -d)"
+          mkdir "$work/project"
+          git -C "$work/project" init -q
+          (cd "$work/project" && HARNESS_DATA_HOME="$work/data" "$bin" --mock run hello) | grep -qx 'Hello world'
+          test ! -e "$work/project/.agent-harness"
+          # Run on a musl distribution too, with nothing else installed.
+          docker run --rm -v "$bin:/usr/local/bin/harness:ro" alpine:3.22 harness --version
+      - name: Package
+        run: scripts/package-release.sh ${{ matrix.target }} "$BIN" dist
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [metadata, build]
+    if: github.event_name == 'push' || !inputs.dry_run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.metadata.outputs.tag }}
+      PRERELEASE: ${{ needs.metadata.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.metadata.outputs.tag }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*-linux-musl
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+      - name: Checksums
+        run: |
+          cp scripts/install.sh dist/install.sh
+          cd dist
+          sha256sum harness-*.tar.gz install.sh > SHA256SUMS
+          sha256sum -c SHA256SUMS
+          set -- harness-*.tar.gz
+          test "$#" -eq 2
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/harness-*.tar.gz
+      - name: Publish GitHub Release
+        run: |
+          state="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null || echo missing)"
+          case "$state" in
+            false) echo "::error::$TAG is already published; refusing to change a public release"; exit 1 ;;
+            true) gh release delete "$TAG" --yes ;;
+          esac
+          flags=()
+          if [[ "$PRERELEASE" == true ]]; then flags+=(--prerelease); fi
+          # Upload everything to a draft, check it, then publish.
+          gh release create "$TAG" --verify-tag --draft --title "Harness $TAG" \
+            --notes-file release-notes.md "${flags[@]}" dist/*
+          expected="$(find dist -maxdepth 1 -type f -printf '%f\n' | sort)"
+          actual="$(gh release view "$TAG" --json assets --jq '.assets[].name' | sort)"
+          if [[ "$expected" != "$actual" ]]; then
+            echo "::error::release assets do not match the built files"
+            exit 1
+          fi
+          if [[ "$PRERELEASE" == true ]]; then
+            gh release edit "$TAG" --draft=false
+          else
+            gh release edit "$TAG" --draft=false --latest
+          fi
