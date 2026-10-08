@@ -31,28 +31,11 @@ fn scan_catalog(
     directory: &Path,
     cached: &mut std::collections::BTreeMap<String, index::Cached>,
 ) -> Result<Vec<SessionInspectionEntry>, String> {
-    let entries = match std::fs::read_dir(directory) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error.to_string()),
-    };
     let mut result = Vec::new();
-    for entry in entries {
-        let entry = entry.map_err(|e| e.to_string())?;
-        if !entry.file_type().map_err(|e| e.to_string())?.is_dir() {
-            continue;
-        }
-        let run_dir = entry.path();
-        let path = run_dir.join("events.jsonl");
-        if !path.is_file() {
-            continue;
-        }
-        if result.len() >= 10_000 {
-            return Err("session catalog exceeds 10,000 entries".into());
-        }
-        let row = entry
+    for run_dir in session_directories(directory)? {
+        let row = run_dir
             .file_name()
-            .to_str()
+            .and_then(|name| name.to_str())
             .and_then(|name| cached.remove(name))
             .filter(|row| {
                 index::Fingerprint::read(&run_dir).ok().as_ref() == Some(&row.fingerprint)
@@ -71,6 +54,30 @@ fn scan_catalog(
             .cmp(&a.sort_unix_ms)
             .then_with(|| a.catalog.run_id.cmp(&b.catalog.run_id))
     });
+    Ok(result)
+}
+
+pub(crate) fn session_directories(directory: &Path) -> Result<Vec<PathBuf>, String> {
+    let entries = match std::fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut result = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if !entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+            continue;
+        }
+        let run_dir = entry.path();
+        if !run_dir.join("events.jsonl").is_file() {
+            continue;
+        }
+        if result.len() >= 10_000 {
+            return Err("session catalog exceeds 10,000 entries".into());
+        }
+        result.push(run_dir);
+    }
     Ok(result)
 }
 
