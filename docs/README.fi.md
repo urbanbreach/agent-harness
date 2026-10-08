@@ -32,7 +32,29 @@ palveluntarjoajaan.
 
 ## Aloita
 
-Harness toimii vain Linuxissa. macOS:ää ja Windowsia ei tueta eikä testata.
+Harness toimii vain Linuxissa (x86_64 ja aarch64). macOS:ää ja Windowsia ei
+tueta eikä testata.
+
+Asenna uusin julkaisu:
+
+```bash
+curl -fsSL https://github.com/urbanbreach/agent-harness/releases/latest/download/install.sh | sh
+
+# Kokeile ilman tunnuksia tai verkkoyhteyttä.
+harness tui --mock
+```
+
+Skripti lataa prosessorillesi sopivan staattisen binäärin, tarkistaa sen
+julkaisun `SHA256SUMS`-tiedostoa vasten ja asentaa sen hakemistoon
+`~/.local/bin`. `HARNESS_VERSION=v0.1.0` valitsee tietyn julkaisun ja
+`HARNESS_INSTALL_DIR` toisen asennushakemiston. Poista asennus poistamalla
+`harness`-tiedosto.
+
+Kirjoita `hello` ja paina Enter. Saat valmiiksi määritellyn testivastauksen.
+`Ctrl+p` avaa komentovalikon. Testipalveluntarjoaja vastaa vain testikehotteisiin.
+Omia koodaustehtäviä varten tarvitset oikean palveluntarjoajan.
+
+### Käännä lähdekoodista
 
 Tarvitset Gitin ja vakaan Rust-työkaluketjun, jonka
 [`rust-toolchain.toml`](../rust-toolchain.toml) valitsee. Muita linkkereitä tai
@@ -41,19 +63,6 @@ työkaluja ei tarvita.
 ```bash
 git clone https://github.com/urbanbreach/agent-harness.git
 cd agent-harness
-cargo build -p harness --locked
-
-# Kokeile ilman tunnuksia tai verkkoyhteyttä.
-./target/debug/harness tui --mock
-```
-
-Kirjoita `hello` ja paina Enter. Saat valmiiksi määritellyn testivastauksen.
-`Ctrl+p` avaa komentovalikon. Testipalveluntarjoaja vastaa vain testikehotteisiin.
-Omia koodaustehtäviä varten tarvitset oikean palveluntarjoajan.
-
-Asenna komento, jos haluat käyttää sitä muissa projekteissa:
-
-```bash
 cargo install --path crates/harness --locked
 ```
 

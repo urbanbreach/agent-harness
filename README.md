@@ -30,7 +30,34 @@ without repeating its tool calls or contacting a provider.
 
 ## Get started
 
-Harness supports Linux only. macOS and Windows are not supported or tested.
+Harness supports Linux only, on x86_64 and aarch64. macOS and Windows are not
+supported or tested.
+
+Install the latest release:
+
+```bash
+curl -fsSL https://github.com/urbanbreach/agent-harness/releases/latest/download/install.sh | sh
+
+# Try the terminal UI without credentials or network access.
+harness tui --mock
+```
+
+The script downloads the static binary for your CPU, checks it against the
+release's `SHA256SUMS`, and installs it to `~/.local/bin`. Set
+`HARNESS_VERSION=v0.1.0` to pick a release or `HARNESS_INSTALL_DIR` to install
+somewhere else. To uninstall, delete the `harness` file. Release archives are
+also on the [releases page](https://github.com/urbanbreach/agent-harness/releases).
+
+Type `hello` and press Enter to receive the scripted reply. Press `Ctrl+p` for
+the command palette. The mock provider accepts fixture prompts, so use a live
+provider for your own coding tasks.
+
+JavaScript `eval` requires [Node.js 24 or newer](https://nodejs.org/en/download)
+on `PATH`. Install the current Node.js LTS release and check `node --version`.
+Harness includes its eval scripts and parser; no npm install is needed to use
+eval. Python eval also needs `python3` or `python`.
+
+### Build from source
 
 Build with Git and the stable Rust toolchain selected by
 [`rust-toolchain.toml`](rust-toolchain.toml). The default build needs no other
@@ -39,32 +66,14 @@ linker or tools:
 ```bash
 git clone https://github.com/urbanbreach/agent-harness.git
 cd agent-harness
-cargo build --release -p harness --locked
-
-# Try the terminal UI without credentials or network access.
-./target/release/harness tui --mock
-```
-
-Use the release build for interactive sessions. Unoptimized development builds
-spend substantially more CPU rendering active tools and streaming text.
-
-JavaScript `eval` requires [Node.js 24 or newer](https://nodejs.org/en/download)
-on `PATH`. Install the current Node.js LTS release and check `node --version`.
-Harness includes its eval scripts and parser; no npm install is needed to use
-eval. Python eval also needs `python3` or `python`.
-
-Type `hello` and press Enter to receive the scripted reply. Press `Ctrl+p` for
-the command palette. The mock provider accepts fixture prompts, so use a live
-provider for your own coding tasks.
-
-To use `harness` outside this checkout, install the binary:
-
-```bash
 cargo install --path crates/harness --locked
 ```
 
-Builds use the stock Rust linker. Linking with Wild is faster and opt-in; see the
-[build settings](docs/testing/build-performance.md).
+Use release builds for interactive sessions. Unoptimized development builds
+spend substantially more CPU rendering active tools and streaming text.
+Linking with Wild is faster and opt-in; see the
+[build settings](docs/testing/build-performance.md). Maintainers cut releases
+with `scripts/release.sh`; see [releasing](docs/operations/releasing.md).
 
 ## Connect a provider
 

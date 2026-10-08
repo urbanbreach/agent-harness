@@ -2,11 +2,19 @@ name: CI
 
 on:
   push:
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
+  # The release workflow reruns the full suite on the tagged commit.
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to check out
+        type: string
+        required: true
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ inputs.ref || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -32,6 +40,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
@@ -45,6 +55,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup-rust
       - run: cargo fmt --all -- --check
 
@@ -53,6 +65,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup-rust
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
@@ -61,6 +75,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup-rust
       - run: cargo build -p harness --locked
       - run: cargo build --release -p harness --locked
@@ -78,6 +94,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup-rust
         with:
           tests: "true"
@@ -101,6 +119,8 @@ jobs:
       HARNESS_TUI_PTY_SIGNOFF: "1"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup-rust
         with:
           tests: "true"
@@ -122,6 +142,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup-rust
         with:
           tests: "true"
@@ -141,6 +163,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup-rust
         with:
           tests: "true"
@@ -162,6 +186,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
       # Use the free CLI, not the action that requires a license for organizations.
       - name: Install Gitleaks 8.30.1
