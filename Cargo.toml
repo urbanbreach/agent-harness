@@ -126,6 +126,8 @@ too_many_arguments = "allow"
 print_stdout = "allow"
 # allow: print_stderr — CLI crate uses eprintln! for user-facing output; replacing with a writer abstraction is a separate effort
 print_stderr = "allow"
+# allow: assert_is_empty — new in Rust 1.99 with 150 hits; its `assert_eq!(x, [] as [T; 0])` rewrite reads worse than `assert!(x.is_empty())`
+assert_is_empty = "allow"
 # allow: exhaustive_structs — internal workspace; #[non_exhaustive] adds noise without benefit
 exhaustive_structs = "allow"
 # allow: exhaustive_enums — internal workspace; #[non_exhaustive] adds noise without benefit
