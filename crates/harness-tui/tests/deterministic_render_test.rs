@@ -305,13 +305,30 @@ fn question_permission_prompt_renders_without_pty() -> Result<(), Box<dyn std::e
     Ok(())
 }
 
+/// Releases bump the right-aligned version badge; keep snapshots version-independent.
+fn without_version(rendered: &str) -> String {
+    let version = format!("HARNESS {}", env!("CARGO_PKG_VERSION"));
+    let mut normalized = rendered
+        .lines()
+        .map(|line| match line.split_once(&version) {
+            Some((head, tail)) => format!("{} HARNESS <version>{tail}", head.trim_end()),
+            None => line.to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if rendered.ends_with('\n') {
+        normalized.push('\n');
+    }
+    normalized
+}
+
 #[test]
 fn replay_shell_is_read_only_without_pty() {
     let mut app = AppState::new_replay(PathBuf::from("/tmp/replay_run"), replay_events());
 
     let rendered = render_text(&app, 100, 24);
 
-    insta::assert_snapshot!(rendered.as_str());
+    insta::assert_snapshot!(without_version(&rendered));
 
     // assert
     // assert
@@ -341,7 +358,7 @@ fn replay_failure_state_renders_without_pty() {
     // act
     let rendered = render_text(&app, 180, 24);
 
-    insta::assert_snapshot!(rendered.as_str());
+    insta::assert_snapshot!(without_version(&rendered));
 
     // assert
     assert!(rendered.contains("Replay · read-only"));

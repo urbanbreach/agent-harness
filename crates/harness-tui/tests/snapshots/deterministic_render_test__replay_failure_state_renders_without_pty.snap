@@ -24,4 +24,4 @@ Replay · read-only · run run_fixture · 2 ev
   ▎ Replay is read-only · run failed · inspect transcript · session shell preserved · provider stream ended before final message                                                    
     ctrl+x shortcuts  ·  tab focus  ·  ctrl+q quit                                                                                                                                  
                                                                                                                                                                                     
-                                                                                                                                           HARNESS 0.0.1
+ HARNESS <version>
