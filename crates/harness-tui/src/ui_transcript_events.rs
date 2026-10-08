@@ -20,6 +20,10 @@ pub(super) fn turn_event_matches_activity(
         harness_core::event::EventV1::AssistantMessageFinished(data) => {
             provider_event_matches_activity(event, data.request_id.as_str(), request_id)
         }
+        harness_core::event::EventV1::UserMessageSubmitted(data) => {
+            data.request_id.as_str() != request_id
+                && event.correlation_id.as_deref() == Some(request_id)
+        }
         harness_core::event::EventV1::TaskCompleted(_)
         | harness_core::event::EventV1::ToolCallRequested(_) => {
             event.correlation_id.as_deref() == Some(request_id)

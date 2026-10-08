@@ -1,5 +1,6 @@
 use super::*;
 use crate::UnwrapOrAbort;
+use harness_core::event::AssistantMessageFinishedEvent;
 use harness_providers::CompletionUsage;
 
 #[test]
@@ -203,73 +204,154 @@ pub(super) fn provider_request_finished_without_usage_leaves_active_context_usag
 }
 
 pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task_completes() {
-    let mut app = AppState::new_live(None, false, None);
-
-    app.ingest_event(envelope(
-        1,
-        "req_turn_task",
-        EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_turn_task".to_string().into(),
-            state: TaskScheduleState::Started,
-            queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
-            metadata: None,
-        }),
-    ));
-    app.ingest_event(envelope(
-        2,
-        "req_turn_task",
-        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "provider_req_turn_task".into(),
-            provider_id: "default".to_string(),
-            model_id: "gpt-5.4-mini".to_string(),
-            prompt_summary: "Investigate the harness".to_string(),
-            request_digest: "digest-turn-task".to_string(),
-            metadata: None,
-        }),
-    ));
-    app.ingest_event(envelope(
-        3,
-        "req_turn_task",
-        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "provider_req_turn_task".into(),
-            delta: "Looking into the turn loop".to_string(),
-        }),
-    ));
-    app.ingest_event(envelope(
-        4,
-        "req_turn_task",
-        EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
-            request_id: "provider_req_turn_task".into(),
-            finish_reason: "done".to_string(),
-            output_digest: Some("digest-turn-task-finished".to_string()),
-            usage: None,
-            metadata: None,
-        }),
-    ));
-
-    let activity = app.activities.back().unwrap_or_abort();
-    assert_eq!(activity.status, ActivityStatus::Streaming);
-    assert!(app.active_turn_in_progress());
-
-    app.ingest_event(envelope(
-        5,
-        "req_turn_task",
-        EventV1::TaskCompleted(TaskCompletedEvent {
-            task_id: "task_turn_task".to_string().into(),
-            result_summary: "Final answer".to_string(),
-            result_digest: "digest-turn-task-result".to_string(),
-            metadata: Some(TaskCompletionMetadata {
-                lineage: None,
-                task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
-                timing: None,
-                hook_executions: Vec::new(),
+    use harness_core::event::{LiveEventEnvelope, LiveEventV1, RuntimeEvent};
+    for finish_reason in ["done", "stream_guard"] {
+        let mut app = AppState::new_live(None, false, None);
+        app.ingest_event(envelope(
+            1,
+            "req_turn_task",
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_turn_task".into(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("provider_model:default:gpt-5.4-mini".into()),
+                metadata: None,
             }),
-        }),
-    ));
-
-    let activity = app.activities.back().unwrap_or_abort();
-    assert_eq!(activity.status, ActivityStatus::Done);
-    assert!(!app.active_turn_in_progress());
+        ));
+        app.ingest_event(envelope(
+            2,
+            "req_turn_task",
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "provider_req_turn_task".into(),
+                provider_id: "default".into(),
+                model_id: "gpt-5.4-mini".into(),
+                prompt_summary: "Investigate the harness".into(),
+                request_digest: "digest-turn-task".into(),
+                metadata: None,
+            }),
+        ));
+        for payload in [
+            LiveEventV1::ProviderTextDelta {
+                request_id: "provider_req_turn_task".into(),
+                delta: "Uncommitted answer".into(),
+            },
+            LiveEventV1::ProviderReasoningDelta {
+                request_id: "provider_req_turn_task".into(),
+                delta: "Uncommitted reasoning".into(),
+            },
+        ] {
+            app.ingest_runtime_event(RuntimeEvent::Live(Box::new(LiveEventEnvelope {
+                event_id: format!("live-{payload:?}"),
+                run_id: "run_app_tests".into(),
+                mono_ms: 3,
+                ts: None,
+                actor: EventActor::new(ActorKind::Worker, Some("app-tests".into())),
+                correlation_id: Some("req_turn_task".into()),
+                causation_id: None,
+                stream_key: None,
+                payload,
+            })));
+        }
+        let activity = app.activities.back().unwrap_or_abort();
+        assert_eq!(activity.transcript_text, "Uncommitted answer");
+        assert!(app
+            .projection
+            .uncommitted_reasoning_first_seq(activity)
+            .is_some());
+        app.ingest_event(envelope(
+            3,
+            "req_turn_task",
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "provider_req_turn_task".into(),
+                finish_reason: finish_reason.into(),
+                output_digest: None,
+                usage: None,
+                metadata: None,
+            }),
+        ));
+        let activity = app.activities.back().unwrap_or_abort();
+        assert_eq!(activity.status, ActivityStatus::Streaming);
+        assert!(app.active_turn_in_progress());
+        if finish_reason == "stream_guard" {
+            assert!(activity.transcript_text.is_empty());
+            assert!(activity.thinking_text.is_empty());
+            assert_eq!(app.projection.uncommitted_text_first_seq(activity), None);
+            assert_eq!(
+                app.projection.uncommitted_reasoning_first_seq(activity),
+                None
+            );
+        } else {
+            assert_eq!(activity.transcript_text, "Uncommitted answer");
+            assert_eq!(activity.thinking_text, "Uncommitted reasoning");
+        }
+        let final_request = if finish_reason == "stream_guard" {
+            app.ingest_event(envelope(
+                4,
+                "req_turn_task",
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "provider_retry".into(),
+                    provider_id: "default".into(),
+                    model_id: "gpt-5.4-mini".into(),
+                    prompt_summary: "Continue without repetition".into(),
+                    request_digest: "digest-retry".into(),
+                    metadata: None,
+                }),
+            ));
+            app.ingest_event(envelope(
+                5,
+                "req_turn_task",
+                EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                    request_id: "provider_retry".into(),
+                    finish_reason: "stop".into(),
+                    output_digest: None,
+                    usage: None,
+                    metadata: None,
+                }),
+            ));
+            "provider_retry"
+        } else {
+            "provider_req_turn_task"
+        };
+        app.ingest_event(envelope(
+            if finish_reason == "stream_guard" {
+                6
+            } else {
+                4
+            },
+            "req_turn_task",
+            EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
+                request_id: final_request.into(),
+                tool_call_count: 0,
+                parts: vec![harness_core::session::AssistantPart::Text {
+                    text: "Final answer".into(),
+                }],
+                provenance: None,
+                assistant_message: None,
+            }),
+        ));
+        app.ingest_event(envelope(
+            if finish_reason == "stream_guard" {
+                7
+            } else {
+                5
+            },
+            "req_turn_task",
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task_turn_task".into(),
+                result_summary: "Final answer".into(),
+                result_digest: "digest-turn-task-result".into(),
+                metadata: Some(TaskCompletionMetadata {
+                    lineage: None,
+                    task_scope: Some(TaskTerminalScope::AgentTurn),
+                    timing: None,
+                    hook_executions: Vec::new(),
+                }),
+            }),
+        ));
+        let activity = app.activities.back().unwrap_or_abort();
+        assert_eq!(activity.status, ActivityStatus::Done);
+        assert_eq!(activity.transcript_text, "Final answer");
+        assert!(!app.active_turn_in_progress());
+    }
 }
 
 pub(super) fn cache_read_write_tokens_render_as_separate_status_labels() {

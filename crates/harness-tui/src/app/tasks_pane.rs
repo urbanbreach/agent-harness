@@ -324,7 +324,7 @@ impl AppState {
             } else {
                 self.emit_ui_intent(UiIntent::InterruptSession {
                     task_ids: vec![row.id],
-                    reason: InterruptReason::User,
+                    reason: InterruptReason::Task,
                 });
             }
         } else if !kill && row.child {

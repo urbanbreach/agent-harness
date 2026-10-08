@@ -61,20 +61,21 @@ fn p0_04_real_pty_records_multiline_composer_shortcuts() {
         "plain Enter submitted before Shift+Enter\n{draft}"
     );
 
-    // When: Shift+Enter submits the multiline draft while the active turn streams.
+    // When: Shift+Enter submits the multiline draft while the active turn streams, which
+    // steers that turn.
     helper.send(modified_enter(2).as_bytes());
-    helper.wait_for_raw(scenario::QUEUED_MARKER);
-    let queued = helper.screen();
+    helper.wait_for_raw(scenario::STEERED_MARKER);
+    let steered = helper.screen();
     assert!(
-        queued.contains("first") && queued.contains("second"),
-        "queued draft missing\n{queued}"
+        steered.contains("first") && steered.contains("second"),
+        "steered draft missing\n{steered}"
     );
 
-    // When: Ctrl+Alt+Enter interjects a draft, then Ctrl+Enter replaces the active turn.
-    helper.send(b"interject draft");
-    helper.wait_for("interject draft");
+    // When: Ctrl+Alt+Enter queues a follow-up, then Ctrl+Enter replaces the active turn.
+    helper.send(b"follow-up draft");
+    helper.wait_for("follow-up draft");
     helper.send(modified_enter(7).as_bytes());
-    helper.wait_for_raw(scenario::INTERJECT_MARKER);
+    helper.wait_for_raw(scenario::FOLLOW_UP_MARKER);
     helper.send(b"replacement draft");
     helper.wait_for("replacement draft");
     helper.send(modified_enter(5).as_bytes());
@@ -82,9 +83,9 @@ fn p0_04_real_pty_records_multiline_composer_shortcuts() {
     helper.wait_for_raw(scenario::REPLACE_MARKER);
     let replaced = helper.screen();
     assert_eq!(
-        replaced.matches("interject draft").count(),
+        replaced.matches("follow-up draft").count(),
         1,
-        "interject draft duplicated\n{replaced}"
+        "follow-up draft duplicated\n{replaced}"
     );
     assert_eq!(
         replaced.matches("replacement draft").count(),

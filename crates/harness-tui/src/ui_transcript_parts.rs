@@ -75,6 +75,24 @@ pub(super) fn build_assistant_parts(
             }
             builder.flush();
             match &event.payload {
+                EventV1::UserMessageSubmitted(data) => {
+                    builder.settle_last();
+                    let timestamp = event
+                        .ts
+                        .as_deref()
+                        .filter(|_| app.transcript_timestamps_visible());
+                    builder.parts.push((
+                        event.seq,
+                        TranscriptAssistantPart::User(TranscriptUserMessageSection {
+                            text: data.text.clone(),
+                            queued: false,
+                            wall_clock: timestamp.map(crate::time_format::wall_clock_12h),
+                            expanded_wall_clock: timestamp
+                                .map(crate::time_format::wall_clock_hover_detail),
+                            wall_clock_hovered: false,
+                        }),
+                    ));
+                }
                 EventV1::AssistantMessageFinished(data) => {
                     builder.committed(event.seq, &data.parts)
                 }

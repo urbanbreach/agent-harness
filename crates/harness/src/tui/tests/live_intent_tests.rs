@@ -651,6 +651,10 @@ fn live_ui_router_forwards_runtime_intents_without_switching_workflow() {
         "test-digest".to_string(),
     );
     let intents = [
+        UiIntent::SteerPrompt {
+            text: "router sentinel".into(),
+            launch_metadata: LaunchMetadata::default(),
+        },
         UiIntent::CompactSession {
             custom_instructions: None,
         },
@@ -705,4 +709,198 @@ fn live_ui_router_records_model_switch_without_switching_workflow() {
     assert_eq!(recorded.provider(), "anthropic");
     assert_eq!(recorded.model(), Some("claude-3.7"));
     assert_eq!(recorded.mode_label(), None);
+}
+
+#[tokio::test]
+async fn steering_intent_reaches_running_turn_next_provider_request(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use harness_core::tool::{
+        Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult,
+    };
+    use harness_providers::{
+        mock::MockProvider, CompletionRequest, MessageRole, Provider, ProviderEventStream,
+        ProviderStreamEvent,
+    };
+    use tokio_stream::StreamExt;
+
+    struct GatedProvider {
+        provider: MockProvider,
+        entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+    }
+    #[async_trait::async_trait]
+    impl Provider for GatedProvider {
+        async fn stream_completion(&self, request: CompletionRequest) -> ProviderEventStream {
+            let stream = self.provider.stream_completion(request).await;
+            if self.provider.call_count() == 1 {
+                self.entered.notify_one();
+                self.release.notified().await;
+            }
+            stream
+        }
+    }
+    struct Step;
+    #[async_trait::async_trait]
+    impl Tool for Step {
+        fn id(&self) -> &'static str {
+            "steering_step"
+        }
+        fn parameters_json_schema(&self) -> serde_json::Value {
+            serde_json::json!({"type":"object"})
+        }
+        fn capability(&self) -> ToolCapability {
+            ToolCapability::ReadFs
+        }
+        async fn call(
+            &self,
+            _: ToolContext,
+            _: serde_json::Value,
+        ) -> Result<ToolResult, ToolError> {
+            Ok(ToolResult::text("step completed"))
+        }
+    }
+
+    let temp = tempfile::tempdir()?;
+    let provider = Arc::new(GatedProvider {
+        provider: MockProvider::script([
+            vec![
+                ProviderStreamEvent::ToolCallComplete {
+                    tool_call_id: "step-call".into(),
+                    function_name: "steering_step".into(),
+                    arguments_json: "{}".into(),
+                },
+                ProviderStreamEvent::Done { usage: None },
+            ],
+            vec![
+                ProviderStreamEvent::TextDelta("adjusted".into()),
+                ProviderStreamEvent::Done { usage: None },
+            ],
+            vec![
+                ProviderStreamEvent::TextDelta("idle handled".into()),
+                ProviderStreamEvent::Done { usage: None },
+            ],
+        ]),
+        entered: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+    });
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(Step));
+    let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
+    config.provider = Arc::clone(&provider) as Arc<dyn Provider>;
+    config.tool_registry = Arc::new(registry);
+    config.permission_policy = harness_core::perm::PermissionPolicy::allow_all();
+    let mut profile = harness_core::agent::AgentProfile::fallback("default");
+    profile.toolset = vec!["steering_step".into()];
+    config.agent_profiles.insert("default".into(), profile);
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = coordinator.start_run("tui-steering", temp.path()).await?;
+    let agent = coordinator
+        .spawn_agent_idle(supervisor_actor(), "default", None)
+        .await?;
+    let turn = coordinator
+        .request_agent_turn(user_actor(), agent.clone(), "initial sentinel")
+        .await?;
+    tokio::time::timeout(Duration::from_secs(2), provider.entered.notified()).await?;
+    let target = Arc::new(Mutex::new(LiveAgentTarget {
+        agent_id: Some(agent),
+        profile: "default".into(),
+        last_request_id: Some(turn.clone()),
+    }));
+    let auth = TuiAuthBackendContext {
+        config_path: None,
+        session_dir: Some(temp.path().join("sessions")),
+        workspace_root: temp.path().to_path_buf(),
+        config_digest: "test".into(),
+        prompt_overrides: BTreeMap::new(),
+        claude_code_providers: Default::default(),
+        providers: None,
+        launch_selection: None,
+    };
+    let send = |text: &str| {
+        let (tx, rx) = mpsc::unbounded_channel();
+        tx.send(UiIntent::SteerPrompt {
+            text: text.into(),
+            launch_metadata: LaunchMetadata::default(),
+        })
+        .map_err(|_| "intent channel closed")?;
+        drop(tx);
+        Ok::<_, &str>(rx)
+    };
+    let (updates, _rx) = live_update_channel();
+    handle_ui_intents(
+        coordinator.clone(),
+        send("steering sentinel")?,
+        user_actor(),
+        Some(Arc::clone(&target)),
+        updates,
+        auth.clone(),
+    )
+    .await?;
+    assert_eq!(
+        target
+            .lock()
+            .map_err(|_| "target lock poisoned")?
+            .last_request_id
+            .as_deref(),
+        Some(turn.as_str())
+    );
+    provider.release.notify_one();
+    let mut events = coordinator.event_store().await?.subscribe(1)?;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while let Some(event) = events.next().await {
+            if matches!(event?.payload, EventV1::TaskCompleted(data) if data.task_id.as_str() == turn) {
+                return Ok::<_, harness_core::store::EventStoreError>(());
+            }
+        }
+        Err(harness_core::store::EventStoreError::Invalid("turn did not complete"))
+    }).await??;
+    let requests = provider.provider.captured_requests().await;
+    assert_eq!(requests.len(), 2);
+    let recorded = harness_core::store::read_events(&run.events_path)?;
+    let next_provider_id = requests[1].context.request_id.as_deref();
+    let next_request = recorded
+        .iter()
+        .find(|event| {
+            matches!(&event.payload, EventV1::ProviderRequestStarted(data)
+            if Some(data.request_id.as_str()) == next_provider_id)
+        })
+        .ok_or("next provider request not recorded")?;
+    assert_eq!(next_request.correlation_id.as_deref(), Some(turn.as_str()));
+    let last = requests[1]
+        .messages
+        .last()
+        .ok_or("missing steering input")?;
+    assert_eq!(
+        (last.role, last.content.as_str()),
+        (MessageRole::User, "steering sentinel")
+    );
+    assert!(requests[1]
+        .messages
+        .iter()
+        .any(|message| message.content == "step completed"));
+
+    let (updates, _rx) = live_update_channel();
+    handle_ui_intents(
+        coordinator.clone(),
+        send("idle sentinel")?,
+        user_actor(),
+        Some(Arc::clone(&target)),
+        updates,
+        auth,
+    )
+    .await?;
+    assert_ne!(
+        target
+            .lock()
+            .map_err(|_| "target lock poisoned")?
+            .last_request_id
+            .as_deref(),
+        Some(turn.as_str())
+    );
+    coordinator.stop_run().await?;
+    Ok(())
 }

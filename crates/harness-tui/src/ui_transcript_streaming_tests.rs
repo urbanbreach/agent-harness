@@ -234,3 +234,180 @@ fn answer_phase_collapses_reasoning_expanded_while_running() {
     // Then: finished reasoning returns to its default collapsed state.
     assert!(!app.reasoning_expanded(request_id));
 }
+
+#[test]
+fn steering_user_row_stays_in_turn_output_order_after_settlement(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use harness_core::event::{
+        ActorKind, AssistantMessageFinishedEvent, EventActor, LiveEventEnvelope, LiveEventV1,
+        RuntimeEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskScheduleState,
+        TaskScheduledEvent, TaskTerminalScope,
+    };
+    let live_text = |app: &mut AppState, id: &str, mono_ms, text: &str| {
+        app.ingest_runtime_event(RuntimeEvent::Live(Box::new(LiveEventEnvelope {
+            event_id: format!("live-{mono_ms}"),
+            run_id: "run_streaming_unit".into(),
+            mono_ms,
+            ts: None,
+            actor: EventActor::new(ActorKind::Worker, None),
+            correlation_id: Some("running".into()),
+            causation_id: None,
+            stream_key: None,
+            payload: LiveEventV1::ProviderTextDelta {
+                request_id: id.into(),
+                delta: text.into(),
+            },
+        })));
+    };
+    let commit = |app: &mut AppState, seq, id: &str, text: &str| {
+        app.ingest_event(event(
+            seq,
+            "running",
+            EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
+                request_id: id.into(),
+                tool_call_count: 0,
+                parts: vec![harness_core::session::AssistantPart::Text { text: text.into() }],
+                provenance: None,
+                assistant_message: None,
+            }),
+        ));
+    };
+    let mut app = AppState::new_live(None, false, None);
+    app.set_reduced_motion(true);
+    start_turn(&mut app, 1, "running", "original prompt");
+    app.ingest_event(event(
+        3,
+        "running",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "running".into(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:model-stream".into()),
+            metadata: None,
+        }),
+    ));
+    live_text(&mut app, "running", 4, "before steering");
+    commit(&mut app, 4, "running", "before steering");
+    app.handle_paste("steering sentinel");
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert!(app
+        .activities
+        .iter()
+        .all(|activity| activity.status != ActivityStatus::Queued));
+    app.ingest_event(event(
+        5,
+        "running",
+        EventV1::UserMessageSubmitted(harness_core::event::UserMessageSubmittedEvent {
+            request_id: "steer_message".into(),
+            text: "steering sentinel".into(),
+        }),
+    ));
+    // Delivery must merge the echo immediately, before any canonical settlement.
+    assert_eq!(app.activities.len(), 1);
+    assert_eq!(app.activities[0].status, ActivityStatus::Streaming);
+    assert_eq!(app.queued_prompt_count, 0);
+    app.ingest_event(event(
+        6,
+        "running",
+        EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
+            request_id: "next_request".into(),
+            provider_id: "mock".into(),
+            model_id: "model-stream".into(),
+            prompt_summary: "continue".into(),
+            request_digest: "next-digest".into(),
+            metadata: None,
+        }),
+    ));
+    live_text(&mut app, "next_request", 7, "after steering");
+    for settled in [false, true] {
+        if settled {
+            commit(&mut app, 7, "next_request", "after steering");
+            app.ingest_event(event(
+                8,
+                "running",
+                EventV1::ProviderRequestFinished(
+                    harness_core::event::ProviderRequestFinishedEvent {
+                        request_id: "next_request".into(),
+                        finish_reason: "stop".into(),
+                        output_digest: None,
+                        usage: None,
+                        metadata: None,
+                    },
+                ),
+            ));
+            app.ingest_event(event(
+                9,
+                "running",
+                EventV1::TaskCompleted(TaskCompletedEvent {
+                    task_id: "running".into(),
+                    result_summary: "after steering".into(),
+                    result_digest: "turn-result".into(),
+                    metadata: Some(TaskCompletionMetadata {
+                        task_scope: Some(TaskTerminalScope::AgentTurn),
+                        ..Default::default()
+                    }),
+                }),
+            ));
+        }
+        assert_eq!(app.activities.len(), 1);
+        assert_eq!(app.queued_prompt_count, 0);
+        let sections = build_transcript_sections(&app);
+        let turn = sections.first().ok_or("missing turn")?;
+        assert_eq!(turn.request_id, "running");
+        assert_eq!(
+            turn.user_message
+                .as_ref()
+                .ok_or("missing original prompt")?
+                .text,
+            "original prompt"
+        );
+        let theme = Theme::default();
+        let surfaces = super::ui_transcript_render::build_transcript_render_surfaces(
+            turn,
+            &theme,
+            100,
+            theme.surface.canvas,
+        );
+        let rows = surfaces
+            .iter()
+            .filter_map(|surface| surface.source_text.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rows,
+            [
+                "original prompt",
+                "before steering",
+                "steering sentinel",
+                "after steering"
+            ]
+        );
+        assert_eq!(
+            surfaces
+                .iter()
+                .filter(|surface| surface.kind == TranscriptRenderSurfaceKind::User)
+                .count(),
+            2
+        );
+        assert!(!surfaces
+            .iter()
+            .flat_map(|surface| &surface.lines)
+            .flat_map(|line| &line.spans)
+            .any(|span| span.content.contains("QUEUED")));
+    }
+    app.ingest_event(event(
+        10,
+        "late_message",
+        EventV1::UserMessageSubmitted(harness_core::event::UserMessageSubmittedEvent {
+            request_id: "late_message".into(),
+            text: "late sentinel".into(),
+        }),
+    ));
+    assert_eq!(app.activities.len(), 2);
+    assert_eq!(
+        app.activities.back().ok_or("missing late turn")?.request_id,
+        "late_message"
+    );
+    Ok(())
+}

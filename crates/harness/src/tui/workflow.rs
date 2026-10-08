@@ -124,7 +124,7 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         Some(UiIntent::ContinueSession { run_id, run_dir }) => {
             InteractiveWorkflow::Continue { run_id, run_dir }
         }
-        Some(UiIntent::SubmitPrompt { text, .. }) => {
+        Some(UiIntent::SubmitPrompt { text, .. } | UiIntent::SteerPrompt { text, .. }) => {
             set_pending_live_prompt_auto_submit(Some(text));
             InteractiveWorkflow::NewSession
         }
@@ -203,6 +203,7 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         UiIntent::SetYoloMode { .. }
         | UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
+        | UiIntent::SteerPrompt { .. }
         | UiIntent::OpenAuthManager { .. }
         | UiIntent::AuthBackendInput { .. }
         | UiIntent::CancelCompaction { .. }
@@ -232,6 +233,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
         UiIntent::SetYoloMode { .. }
             | UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
+            | UiIntent::SteerPrompt { .. }
             | UiIntent::OpenAuthManager { .. }
             | UiIntent::AuthBackendInput { .. }
             | UiIntent::CancelCompaction { .. }

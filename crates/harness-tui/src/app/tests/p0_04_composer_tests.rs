@@ -111,32 +111,222 @@ fn multiline_alt_enter_submits_once() {
 }
 
 #[test]
-fn active_turn_interject_submits_without_interrupting() {
-    // Given: an active turn and a valid draft.
+fn active_turn_submit_steers_and_follow_up_queues() -> Result<(), Box<dyn std::error::Error>> {
+    let alt_i = KeyEvent::new(KeyCode::Char('i'), KeyModifiers::ALT);
+    let ctrl_alt_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL | KeyModifiers::ALT);
+    for (multiline, key, steers) in [
+        (
+            false,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            true,
+        ),
+        (true, KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT), true),
+        (false, alt_i, false),
+        (false, ctrl_alt_enter, false),
+        (true, ctrl_alt_enter, false),
+    ] {
+        let (mut app, intents) = capturing_live_app();
+        active_turn(&mut app);
+        app.composer.multiline_mode = multiline;
+        app.handle_paste("draft sentinel");
+        app.handle_key(key);
+
+        let intents = intents.lock().map_err(|_| "intent lock poisoned")?;
+        let (expected, echo) = if steers {
+            (
+                matches!(intents.as_slice(), [UiIntent::SteerPrompt { text, .. }] if text == "draft sentinel"),
+                ActivityStatus::Done,
+            )
+        } else {
+            (
+                matches!(intents.as_slice(), [UiIntent::SubmitPrompt { text, .. }] if text == "draft sentinel"),
+                ActivityStatus::Queued,
+            )
+        };
+        assert!(expected, "{multiline} {key:?}: {intents:?}");
+        assert_eq!(app.activities.back().ok_or("missing echo")?.status, echo);
+        assert_eq!(
+            app.runtime_state_activity()
+                .ok_or("missing running turn")?
+                .request_id,
+            "req_active"
+        );
+        assert_eq!(
+            app.activities
+                .iter()
+                .filter(|activity| activity.status == ActivityStatus::Streaming)
+                .count(),
+            1
+        );
+        assert!(app.composer.prompt_buffer.is_empty());
+    }
+    Ok(())
+}
+
+#[test]
+fn idle_submit_and_tagged_or_attached_drafts_submit_normally(
+) -> Result<(), Box<dyn std::error::Error>> {
+    for key in [
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        KeyEvent::new(KeyCode::Char('i'), KeyModifiers::ALT),
+    ] {
+        let (mut idle, intents) = capturing_live_app();
+        idle.handle_paste("idle sentinel");
+        idle.handle_key(key);
+        assert!(
+            matches!(intents.lock().map_err(|_| "intent lock poisoned")?.as_slice(),
+            [UiIntent::SubmitPrompt { text, .. }] if text == "idle sentinel")
+        );
+    }
+
+    for query in ["@main", "@expl", "@guide"] {
+        let (mut app, intents) = capturing_live_app();
+        active_turn(&mut app);
+        app.set_file_mention_collaborators_for_test(
+            PathBuf::from("/virtual/workspace"),
+            vec!["main.rs".into()],
+            123,
+        );
+        app.set_launch_metadata(
+            LaunchMetadata::from_model_ref("build", "mock:model-1")
+                .with_available_models(vec![
+                    ModelOption::from_model_ref("build", "mock:model-1"),
+                    ModelOption::from_model_ref("explore", "mock:model-1"),
+                ])
+                .with_switchable_profiles(vec!["build".into()])
+                .with_mcp_resources(vec![McpResourceOption {
+                    name: "Docs Guide".into(),
+                    uri: "mcp://docs/guide".into(),
+                    mime: "text/markdown".into(),
+                    description: None,
+                }]),
+        );
+        for ch in query.chars() {
+            app.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+        }
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let intents = intents.lock().map_err(|_| "intent lock poisoned")?;
+        let [UiIntent::SubmitPrompt {
+            selected_file_tags,
+            selected_agent_tags,
+            selected_resource_tags,
+            ..
+        }] = intents.as_slice()
+        else {
+            return Err(
+                format!("tagged draft did not submit normally: {query}: {intents:?}").into(),
+            );
+        };
+        assert_eq!(
+            selected_file_tags.len() + selected_agent_tags.len() + selected_resource_tags.len(),
+            1
+        );
+        assert_eq!(
+            app.activities.back().ok_or("missing echo")?.status,
+            ActivityStatus::Queued
+        );
+    }
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("attached.txt");
+    std::fs::write(&path, "attachment sentinel")?;
+    let ingestor = crate::attachment_lifecycle::AttachmentIngestor::new(
+        crate::attachment_lifecycle::AttachmentPolicy::new(temp.path())?,
+    );
+    let attachment = ingestor.ingest_file(
+        &path,
+        &crate::attachment_lifecycle::CancellationToken::new(),
+    )?;
     let (mut app, intents) = capturing_live_app();
     active_turn(&mut app);
-    app.handle_paste("interject this");
-
-    // When: Ctrl+Alt+Enter is pressed.
-    app.handle_key(KeyEvent::new(
-        KeyCode::Enter,
-        KeyModifiers::CONTROL | KeyModifiers::ALT,
-    ));
-
-    // Then: one submission is emitted and no interrupt is emitted.
-    let intents = intents.lock().unwrap_or_abort();
-    assert_eq!(
-        intent_count(&intents, |intent| {
-            matches!(intent, UiIntent::SubmitPrompt { .. })
-        }),
-        1
+    app.handle_paste("attachment prompt");
+    app.composer_attach(crate::composer_atoms::AttachmentId::new(1), attachment)?;
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(
+        matches!(intents.lock().map_err(|_| "intent lock poisoned")?.as_slice(),
+        [UiIntent::SubmitPrompt { attachments, .. }] if attachments.len() == 1)
     );
+    Ok(())
+}
+
+#[test]
+fn interrupt_returns_queued_input_to_the_editor_ahead_of_the_draft(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (mut app, _intents) = capturing_live_app();
+    active_turn(&mut app);
+    app.handle_paste("steer me");
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.handle_paste("current draft");
+    let (tx, rx) = crate::live_update_channel();
+    tx.send(crate::LiveUpdate::RestoreQueuedInput(vec![
+        "queued follow-up".into(),
+        "steer me".into(),
+    ]))
+    .map_err(|_| "live update channel closed")?;
+    crate::runtime_live_updates::drain_live_updates(&mut app, &rx);
+
     assert_eq!(
-        intent_count(&intents, |intent| {
-            matches!(intent, UiIntent::InterruptSession { .. })
-        }),
-        0
+        app.composer.prompt_buffer,
+        "queued follow-up\n\nsteer me\n\ncurrent draft"
     );
+    assert!(app.activities.iter().all(|activity| activity
+        .user_message
+        .as_ref()
+        .is_none_or(|message| message.text != "steer me")));
+    assert!(app.toast().is_some());
+    Ok(())
+}
+
+#[test]
+fn coordinator_turn_stays_steerable_after_its_request_finishes_for_tools(
+) -> Result<(), Box<dyn std::error::Error>> {
+    // The coordinator queues agent turns under the agent's id, which owns the task.
+    let (mut app, intents) = capturing_live_app();
+    for (seq, payload) in [
+        EventV1::RunStarted(harness_core::event::RunStartedEvent {
+            run_name: "tool turn".into(),
+            workspace_root: "/workspace".into(),
+        }),
+        EventV1::UserMessageSubmitted(harness_core::event::UserMessageSubmittedEvent {
+            request_id: "turn-5".into(),
+            text: "run a tool".into(),
+        }),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "turn-5".into(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("app-tests".into()),
+            metadata: None,
+        }),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "provider-1".into(),
+            provider_id: "mock".into(),
+            model_id: "p0-04-model".into(),
+            prompt_summary: "run a tool".into(),
+            request_digest: "digest-tool-turn".into(),
+            metadata: None,
+        }),
+        EventV1::ProviderRequestFinished(harness_core::event::ProviderRequestFinishedEvent {
+            request_id: "provider-1".into(),
+            finish_reason: "tool_use".into(),
+            output_digest: None,
+            usage: None,
+            metadata: None,
+        }),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        app.ingest_event(envelope(seq as u64 + 1, "turn-5", payload));
+    }
+    assert!(app.active_turn_in_progress());
+
+    app.handle_paste("steer during tools");
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(
+        matches!(intents.lock().map_err(|_| "intent lock poisoned")?.as_slice(),
+        [UiIntent::SteerPrompt { text, .. }] if text == "steer during tools")
+    );
+    Ok(())
 }
 
 #[test]
@@ -265,9 +455,9 @@ fn multiline_getter_badge_and_queue_state_are_visible() {
         "multiline footer missing newline action\n{rendered}"
     );
     assert!(
-        rendered.contains("Alt+Enter:send"),
-        "multiline footer missing send action\n{rendered}"
+        rendered.contains("Alt+Enter:steer"),
+        "multiline footer missing steer action\n{rendered}"
     );
-    assert!(rendered.contains("Alt+i:interject"));
+    assert!(rendered.contains("Alt+i:follow-up"), "{rendered}");
     assert!(rendered.contains("Alt+r:replace"));
 }

@@ -155,6 +155,40 @@ async fn request_selected_turn(
     result.map_err(|error| error.to_string())
 }
 
+/// Steers the agent's running turn, or submits a normal prompt when the coordinator
+/// reports the agent idle. Returns the turn the text joined or started.
+async fn steer_or_submit(
+    coordinator: &CoordinatorHandle,
+    user_actor: &EventActor,
+    agent_id: String,
+    text: String,
+    launch_metadata: &harness_tui::app::LaunchMetadata,
+) -> Result<String, String> {
+    let outcome = coordinator
+        .steer_agent_turn(user_actor.clone(), agent_id.clone(), text.clone())
+        .await
+        .map_err(|error| error.to_string())?;
+    match outcome {
+        harness_core::coord::SteerOutcome::Steering { turn_id, .. } => Ok(turn_id),
+        harness_core::coord::SteerOutcome::Idle => {
+            request_selected_turn(
+                coordinator,
+                user_actor,
+                agent_id,
+                text,
+                harness_core::file_tag::SelectedPromptTags {
+                    files: Vec::new(),
+                    agents: Vec::new(),
+                    resources: Vec::new(),
+                },
+                prompt_attachment_metadata(&[])?,
+                launch_metadata,
+            )
+            .await
+        }
+    }
+}
+
 pub(super) async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
     mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
@@ -256,6 +290,28 @@ pub(super) async fn handle_ui_intents(
                     .map_err(|_| "live agent target lock poisoned".to_string())?;
                 target.last_request_id = Some(request_id);
             }
+            UiIntent::SteerPrompt {
+                text,
+                launch_metadata,
+            } => {
+                let Some(target_state) = live_agent_target.as_ref() else {
+                    continue;
+                };
+                let agent_id = target_state
+                    .lock()
+                    .ok()
+                    .and_then(|target| target.agent_id.clone());
+                let Some(agent_id) = agent_id else {
+                    continue;
+                };
+                let turn_id =
+                    steer_or_submit(&coordinator, &user_actor, agent_id, text, &launch_metadata)
+                        .await?;
+                let mut target = target_state
+                    .lock()
+                    .map_err(|_| "live agent target lock poisoned".to_string())?;
+                target.last_request_id = Some(turn_id);
+            }
             UiIntent::CompactSession {
                 custom_instructions,
             } => {
@@ -300,7 +356,14 @@ pub(super) async fn handle_ui_intents(
                 );
             }
             UiIntent::InterruptSession { task_ids, reason } => {
-                interrupt_tasks(&coordinator, &live_update_tx, task_ids, reason).await;
+                interrupt_tasks(
+                    &coordinator,
+                    &live_update_tx,
+                    live_agent_target.as_ref(),
+                    task_ids,
+                    reason,
+                )
+                .await;
             }
             UiIntent::CancelSubagent { session_id } => {
                 cancel_child(&coordinator, &user_actor, &live_update_tx, session_id).await;
@@ -504,9 +567,33 @@ fn delete_session_notice(run_id: &str, run_dir: &std::path::Path) -> (String, Op
 async fn interrupt_tasks(
     coordinator: &CoordinatorHandle,
     live_update_tx: &LiveUpdateSender,
+    live_agent_target: Option<&LiveAgentTargetState>,
     task_ids: Vec<String>,
     reason: harness_tui::app::InterruptReason,
 ) {
+    // Like OMP and Senpi, a user interrupt returns queued steering and follow-ups to the
+    // editor before the turn stops, so none of them starts a turn on its own.
+    if reason == harness_tui::app::InterruptReason::User
+        && let Some(agent) = live_agent_target.and_then(|target| {
+            target
+                .lock()
+                .ok()
+                .and_then(|target| target.agent_id.clone())
+        })
+    {
+        match coordinator.withdraw_queued_input(agent).await {
+            Ok(texts) if !texts.is_empty() => {
+                let _ = live_update_tx.send(LiveUpdate::RestoreQueuedInput(texts));
+            }
+            Ok(_) => {}
+            Err(err) => {
+                let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                    message: format!("could not return queued messages: {err}"),
+                    level: OperatorNoticeLevel::Error,
+                });
+            }
+        }
+    }
     for task_id in task_ids {
         if let Err(err) = coordinator
             .cancel_task(task_id, reason.coordinator_reason())

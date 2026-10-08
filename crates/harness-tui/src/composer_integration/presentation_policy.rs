@@ -27,11 +27,12 @@ impl ComposerSurface {
 }
 
 pub(crate) const fn compact_draft_hint_priority(active_turn: bool) -> &'static [Action] {
-    use Action::{DismissModal, Help, InsertNewline, SubmitPrompt, VariantCycle};
+    use Action::{DismissModal, Help, InsertNewline, InterjectPrompt, SubmitPrompt, VariantCycle};
 
     if active_turn {
         &[
             SubmitPrompt,
+            InterjectPrompt,
             InsertNewline,
             VariantCycle,
             DismissModal,

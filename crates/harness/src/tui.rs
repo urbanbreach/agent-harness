@@ -660,6 +660,7 @@ async fn run_startup_launcher(
                 | UiIntent::ReplaySession { .. }
                 | UiIntent::ContinueSession { .. }
                 | UiIntent::SubmitPrompt { .. }
+                | UiIntent::SteerPrompt { .. }
                 | UiIntent::CancelCompaction { .. }
                 | UiIntent::CompactSession { .. }
                 | UiIntent::InterruptSession { .. }

@@ -130,6 +130,9 @@ impl ResolvedTranscriptVisualEntryDraft {
     ) -> Self {
         let part = &turn.assistant_parts[index];
         let (role, source, foldable, expanded) = match part {
+            TranscriptAssistantPart::User(message) => {
+                ("user", Some(message.text.as_str()), false, false)
+            }
             TranscriptAssistantPart::Reasoning(reasoning) => (
                 "reasoning",
                 Some(reasoning.text.as_str()),

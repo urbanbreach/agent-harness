@@ -512,6 +512,12 @@ fn build_assistant_part_render_surface(
         diff_hunk_offsets,
         tool_rail_motion,
     ) = match part {
+        TranscriptAssistantPart::User(message) => {
+            let mut draft = build_user_render_surface(turn, message, theme, width);
+            draft.placement = TranscriptBlockPlacement::Flow;
+            draft.show_outer_rail = false;
+            return draft;
+        }
         TranscriptAssistantPart::Reasoning(reasoning) => {
             let content_start = lines.len();
             let reasoning_active = turn.reasoning_active(part_index);
