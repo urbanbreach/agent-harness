@@ -8,6 +8,16 @@ The performance follow-up preserves the audit's durability and canonical-project
 constraints. Its results include fresh baseline comparisons, scoped checks, manual
 terminal QA, and eight full-suite failures reproduced on the pristine baseline.
 
+## Proposed implementation plans
+
+| Plan | Priority | Effort | Depends on | Status |
+|---|---|---|---|---|
+| [040: Add Claude through its native runtime](040-claude-native-provider.md) | P2 | L | Native authority/history spike before integration | TODO |
+
+Plan 040 recommends native Claude login and SDK transport. It requires a working
+coordinator tool/lifecycle boundary before adding login and model discovery, and
+keeps subscription availability separate from catalog metadata.
+
 ## Completed implementation plans
 
 | Plan | Priority | Effort | Depends on | Status |
