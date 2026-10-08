@@ -37,6 +37,11 @@ flate2 = "1"
 ignore = "0.4"
 tempfile.workspace = true
 
+# musl's allocator is slow under contention and roughly doubles resident memory
+# with many subagents; static release builds use mimalloc instead.
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = { version = "0.1", default-features = false }
+
 [dev-dependencies]
 jsonschema.workspace = true
 ratatui.workspace = true
