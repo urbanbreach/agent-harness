@@ -175,6 +175,12 @@ impl HarnessConfig {
                 "invalid runtime concurrency, timeout, session path, or retry limits".into(),
             ));
         }
+        let loop_guard = &runtime.behavior.loop_guard;
+        if loop_guard.enabled && !(2..=100).contains(&loop_guard.threshold) {
+            return Err(ConfigError(
+                "runtime.behavior.loop_guard.threshold must be between 2 and 100".into(),
+            ));
+        }
         for (name, profile) in &self.agents {
             if profile.max_iters == Some(0)
                 || profile

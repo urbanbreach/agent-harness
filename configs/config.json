@@ -276,6 +276,59 @@
       },
       "type": "object"
     },
+    "BehaviorSettings": {
+      "additionalProperties": false,
+      "description": "Runtime guidance the coordinator adds to an agent's context while it works.",
+      "properties": {
+        "command_notifications": {
+          "$ref": "#/$defs/CommandNotificationSettings",
+          "default": {
+            "enabled": true,
+            "wake_idle": true
+          }
+        },
+        "directory_instructions": {
+          "$ref": "#/$defs/DirectoryInstructionSettings",
+          "default": {
+            "enabled": true,
+            "max_bytes": 32768
+          }
+        },
+        "loop_guard": {
+          "$ref": "#/$defs/LoopGuardSettings",
+          "default": {
+            "enabled": true,
+            "exempt_tools": [
+              "wait_commands_or_subagents",
+              "get_command_or_subagent_output",
+              "question"
+            ],
+            "threshold": 4
+          }
+        },
+        "output_contract": {
+          "$ref": "#/$defs/OutputContractSettings",
+          "default": {
+            "max_retries": 2
+          }
+        },
+        "stream_guard": {
+          "$ref": "#/$defs/StreamGuardSettings",
+          "default": {
+            "enabled": true,
+            "max_retries": 2
+          }
+        },
+        "todo_continuation": {
+          "$ref": "#/$defs/TodoContinuationSettings",
+          "default": {
+            "enabled": true,
+            "max_reminders": 3
+          }
+        }
+      },
+      "type": "object"
+    },
     "CacheRetention": {
       "enum": [
         "none",
@@ -283,6 +336,22 @@
         "long"
       ],
       "type": "string"
+    },
+    "CommandNotificationSettings": {
+      "additionalProperties": false,
+      "description": "Tell an agent when a background shell command it started finishes.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "wake_idle": {
+          "default": true,
+          "description": "Start a turn for an idle agent when one of its background commands finishes.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
     },
     "CompactionSettings": {
       "additionalProperties": false,
@@ -564,6 +633,24 @@
         "seed": {
           "default": 0,
           "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "DirectoryInstructionSettings": {
+      "additionalProperties": false,
+      "description": "Add AGENTS.md files from directories the agent reads or edits.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "max_bytes": {
+          "default": 32768,
+          "description": "Bytes of one instruction file added to context; longer files are truncated.",
+          "format": "uint32",
           "minimum": 0,
           "type": "integer"
         }
@@ -1005,6 +1092,37 @@
         "level": {
           "default": "info",
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "LoopGuardSettings": {
+      "additionalProperties": false,
+      "description": "Detect an agent repeating the same tool calls.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "exempt_tools": {
+          "default": [
+            "wait_commands_or_subagents",
+            "get_command_or_subagent_output",
+            "question"
+          ],
+          "description": "Tools whose repeated identical calls are expected, such as waits.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "threshold": {
+          "default": 4,
+          "description": "Consecutive identical calls (or repeated call cycles) that trigger a reminder.\nTwice this many stops the turn. Must be between 2 and 100 while enabled.",
+          "format": "uint32",
+          "maximum": 100,
+          "minimum": 2,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -2163,6 +2281,20 @@
             "integer",
             "null"
           ]
+        }
+      },
+      "type": "object"
+    },
+    "OutputContractSettings": {
+      "additionalProperties": false,
+      "description": "Hold a subagent to the output schema its caller requested.",
+      "properties": {
+        "max_retries": {
+          "default": 2,
+          "description": "Corrective reminders before a non-conforming result is returned as invalid.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -4356,6 +4488,40 @@
             "staleTimeoutMs": 30000
           }
         },
+        "behavior": {
+          "$ref": "#/$defs/BehaviorSettings",
+          "default": {
+            "command_notifications": {
+              "enabled": true,
+              "wake_idle": true
+            },
+            "directory_instructions": {
+              "enabled": true,
+              "max_bytes": 32768
+            },
+            "loop_guard": {
+              "enabled": true,
+              "exempt_tools": [
+                "wait_commands_or_subagents",
+                "get_command_or_subagent_output",
+                "question"
+              ],
+              "threshold": 4
+            },
+            "output_contract": {
+              "max_retries": 2
+            },
+            "stream_guard": {
+              "enabled": true,
+              "max_retries": 2
+            },
+            "todo_continuation": {
+              "enabled": true,
+              "max_reminders": 3
+            }
+          },
+          "description": "Coordinator-side guards that keep agents working, out of loops, and informed."
+        },
         "compaction": {
           "$ref": "#/$defs/CompactionSettings",
           "default": {
@@ -4668,6 +4834,24 @@
       },
       "type": "object"
     },
+    "StreamGuardSettings": {
+      "additionalProperties": false,
+      "description": "Stop a streamed response that degenerates into repetition and retry with a correction.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "max_retries": {
+          "default": 2,
+          "description": "Corrected retries per turn before the turn fails.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "SubagentFeaturesConfig": {
       "additionalProperties": false,
       "properties": {
@@ -4925,6 +5109,24 @@
         "ambient"
       ],
       "type": "string"
+    },
+    "TodoContinuationSettings": {
+      "additionalProperties": false,
+      "description": "Remind an agent that ends its turn while its todo list still has open items.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "max_reminders": {
+          "default": 3,
+          "description": "Reminders per turn; a reminder is only repeated after the agent made tool calls.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
     },
     "ToolFailureMode": {
       "enum": [
@@ -5751,6 +5953,36 @@
           "modelConcurrency": 2,
           "providerConcurrency": 4,
           "staleTimeoutMs": 30000
+        },
+        "behavior": {
+          "command_notifications": {
+            "enabled": true,
+            "wake_idle": true
+          },
+          "directory_instructions": {
+            "enabled": true,
+            "max_bytes": 32768
+          },
+          "loop_guard": {
+            "enabled": true,
+            "exempt_tools": [
+              "wait_commands_or_subagents",
+              "get_command_or_subagent_output",
+              "question"
+            ],
+            "threshold": 4
+          },
+          "output_contract": {
+            "max_retries": 2
+          },
+          "stream_guard": {
+            "enabled": true,
+            "max_retries": 2
+          },
+          "todo_continuation": {
+            "enabled": true,
+            "max_reminders": 3
+          }
         },
         "compaction": {
           "auto_retry_overflow": true,
