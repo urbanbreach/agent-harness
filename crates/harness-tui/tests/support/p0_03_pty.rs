@@ -44,7 +44,9 @@ pub(crate) fn run_helper() {
         let stage = Arc::clone(&stage);
         let next_seq = Arc::clone(&next_seq);
         Arc::new(move |intent| {
-            let UiIntent::SubmitPrompt { text, .. } = intent else {
+            // The fixture turn is running, so Enter steers it; either submission advances.
+            let (UiIntent::SubmitPrompt { text, .. } | UiIntent::SteerPrompt { text, .. }) = intent
+            else {
                 return;
             };
             match (stage.load(Ordering::Acquire), text.as_str()) {

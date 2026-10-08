@@ -562,6 +562,13 @@ impl SessionProjection {
             }
             EventV1::ProviderRequestFinished(data) => {
                 self.finish_live_reasoning(data.request_id.as_str(), event.mono_ms);
+                // Guarded requests never receive an assistant commit to replace live output.
+                if data.finish_reason == "stream_guard"
+                    && let Some(state) = self.transient_assistants.remove(data.request_id.as_str())
+                    && let Some(seq) = state.reasoning_first_seq
+                {
+                    self.reasoning_timings.remove(&seq);
+                }
             }
             _ => {}
         }
@@ -816,7 +823,9 @@ impl SessionProjection {
         };
         let correlated_request = || event.correlation_id.as_deref().and_then(request_index);
         match &event.payload {
-            EventV1::UserMessageSubmitted(data) => request_index(data.request_id.as_str()),
+            EventV1::UserMessageSubmitted(data) => {
+                correlated_request().or_else(|| request_index(data.request_id.as_str()))
+            }
             EventV1::ProviderRequestStarted(data) => event
                 .correlation_id
                 .as_deref()
@@ -1375,6 +1384,19 @@ impl SessionProjection {
             .collect()
     }
 
+    pub(super) fn has_running_turn_task_excluding(
+        &self,
+        excluded_request_ids: &BTreeSet<&str>,
+    ) -> bool {
+        self.orchestration_tasks.values().any(|row| {
+            row.state == OrchestrationTaskState::Running
+                && Self::task_row_is_turn_level(row)
+                && row
+                    .effective_child_request_id()
+                    .is_none_or(|request_id| !excluded_request_ids.contains(request_id))
+        })
+    }
+
     pub(super) fn active_turn_task_ids_for_request(&self, request_id: &str) -> Vec<&str> {
         self.orchestration_tasks
             .values()
@@ -1497,10 +1519,12 @@ impl SessionProjection {
             .map(|(_, id)| id.to_string())
     }
 
+    /// Agent turns are queued under their agent's id; older journals keyed them by model.
     fn task_row_is_turn_level(row: &OrchestrationTaskRow) -> bool {
-        row.queue_key
-            .as_deref()
-            .is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
+        row.queue_key.as_deref().is_some_and(|queue_key| {
+            queue_key.starts_with("provider_model:")
+                || row.owner_agent_id.as_deref() == Some(queue_key)
+        })
     }
 
     pub(crate) fn subagent_request_projection(

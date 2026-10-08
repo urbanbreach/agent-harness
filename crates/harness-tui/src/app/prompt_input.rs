@@ -256,10 +256,47 @@ impl AppState {
     pub(in crate::app) fn apply_pending_live_prompt(&mut self, pending_prompt: PendingLivePrompt) {
         if pending_prompt.auto_submit {
             self.replace_prompt_input(pending_prompt.text);
-            self.dispatch_submitted_prompt();
+            self.dispatch_submitted_prompt(false);
         } else {
             self.replace_prompt_input(pending_prompt.text);
         }
+    }
+
+    /// Puts input queued for an interrupted turn back into the editor ahead of any draft,
+    /// as OMP and Senpi do, and drops the rows that showed it as sent or queued.
+    pub fn restore_queued_input(&mut self, texts: Vec<String>) {
+        if texts.is_empty() {
+            return;
+        }
+        self.activities.retain(|activity| {
+            let never_started = activity.request_id.is_empty()
+                || (matches!(
+                    activity.status,
+                    ActivityStatus::Queued | ActivityStatus::Error
+                ) && activity.transcript_text.is_empty()
+                    && activity.tool_calls.is_empty());
+            !(never_started
+                && activity
+                    .user_message
+                    .as_ref()
+                    .is_some_and(|message| texts.contains(&message.text)))
+        });
+        self.bump_transcript_render_epoch();
+        let count = texts.len();
+        let mut restored = texts.join("\n\n");
+        if !self.composer.prompt_buffer.trim().is_empty() {
+            restored.push_str("\n\n");
+            restored.push_str(&self.composer.prompt_buffer);
+        }
+        self.replace_prompt_input(restored);
+        self.show_toast(
+            if count == 1 {
+                "Restored the queued message to the editor".to_string()
+            } else {
+                format!("Restored {count} queued messages to the editor")
+            },
+            ToastVariant::Info,
+        );
     }
 
     pub(in crate::app) fn insert_prompt_char(&mut self, c: char) {
@@ -519,8 +556,11 @@ impl AppState {
         }
     }
 
-    fn record_submitted_prompt_locally(&mut self, text: String) {
-        let status = if self.active_turn_in_progress() {
+    fn record_submitted_prompt_locally(&mut self, text: String, steering: bool) {
+        // A steering echo is a user row, not another running or queued turn.
+        let status = if steering {
+            ActivityStatus::Done
+        } else if self.active_turn_in_progress() {
             ActivityStatus::Queued
         } else {
             ActivityStatus::Streaming
@@ -531,7 +571,7 @@ impl AppState {
         }
         self.clear_prompt_input();
         self.echo_submitted_prompt(text.clone(), status);
-        if status == ActivityStatus::Streaming {
+        if status == ActivityStatus::Streaming && !steering {
             self.begin_live_turn_timing(None);
         }
     }
@@ -545,7 +585,7 @@ impl AppState {
         }
     }
 
-    fn dispatch_submitted_prompt(&mut self) {
+    fn dispatch_submitted_prompt(&mut self, follow_up: bool) {
         if self.launch_metadata.model().is_none()
             && self.launch_metadata.provider() == "local"
             && self.launch_metadata.configured_profile().is_some()
@@ -568,7 +608,23 @@ impl AppState {
         let selected_file_tags = self.selected_file_tags();
         let selected_agent_tags = self.selected_agent_tags();
         let selected_resource_tags = self.selected_resource_tags();
-        self.record_submitted_prompt_locally(text.clone());
+        // Like OMP and Senpi, submitting while a turn runs (tools included) steers it, and
+        // the follow-up action queues the draft for after the turn. Steering carries plain
+        // text only, so tagged or attached drafts queue instead.
+        let steering = !follow_up
+            && self.active_turn_in_progress()
+            && selected_file_tags.is_empty()
+            && selected_agent_tags.is_empty()
+            && selected_resource_tags.is_empty()
+            && submission.attachments.is_empty();
+        self.record_submitted_prompt_locally(text.clone(), steering);
+        if steering {
+            self.emit_ui_intent(UiIntent::SteerPrompt {
+                text,
+                launch_metadata: self.launch_metadata.clone(),
+            });
+            return;
+        }
         self.emit_ui_intent(UiIntent::SubmitPrompt {
             text,
             selected_file_tags,
@@ -580,6 +636,15 @@ impl AppState {
     }
 
     pub(in crate::app) fn submit_prompt(&mut self) {
+        self.submit_prompt_with(false);
+    }
+
+    /// Queues the draft as a follow-up that runs after the active turn.
+    pub(in crate::app) fn submit_follow_up_prompt(&mut self) {
+        self.submit_prompt_with(true);
+    }
+
+    fn submit_prompt_with(&mut self, follow_up: bool) {
         if !self.replay_mode && !self.composer_disabled() && self.apply_backslash_continuation() {
             return;
         }
@@ -605,13 +670,13 @@ impl AppState {
             set_pending_live_prompt_auto_submit(Some(text.clone()));
             self.startup_mode = false;
             self.focus = Focus::Prompt;
-            self.record_submitted_prompt_locally(text);
+            self.record_submitted_prompt_locally(text, false);
             self.emit_ui_intent(UiIntent::NewSession);
             self.should_quit = true;
             return;
         }
 
-        self.dispatch_submitted_prompt();
+        self.dispatch_submitted_prompt(follow_up);
     }
 
     fn apply_backslash_continuation(&mut self) -> bool {

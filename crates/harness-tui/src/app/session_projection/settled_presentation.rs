@@ -97,36 +97,14 @@ impl SessionProjection {
                 .as_ref()
                 .map_or_else(|| message.message_id.clone(), ToString::to_string);
             let activity_index = match message.role {
-                ProjectedMessageRole::User => {
-                    let text = message
-                        .parts
-                        .iter()
-                        .filter_map(|part| match part {
-                            ProjectedPart::Text(text) => Some(text.text.as_str()),
-                            _ => None,
-                        })
-                        .collect::<String>();
-                    let index = settled_activities.len();
-                    settled_activities.push_back(new_streaming_activity_entry(
-                        NewStreamingActivityEntryArgs {
-                            request_id: request_id.clone(),
-                            profile_label: profile_label(transcript, message.agent_id.as_deref()),
-                            model_id: String::new(),
-                            provider_id: String::new(),
-                            user_message: Some(UserMessageSubmittedEvent {
-                                request_id: request_id.as_str().into(),
-                                text,
-                            }),
-                            user_timestamp: None,
-                            request_data: None,
-                            transcript_text: String::new(),
-                            first_seq: message.provenance.first_seq,
-                            first_mono_ms: message.provenance.first_seq,
-                        },
-                    ));
-                    activity_by_request.insert(request_id.clone(), index);
-                    Some(index)
-                }
+                ProjectedMessageRole::User => settle_user_message(
+                    &mut settled_activities,
+                    &mut activity_by_request,
+                    events,
+                    transcript,
+                    message,
+                    &request_id,
+                ),
                 ProjectedMessageRole::Assistant => {
                     let index = activity_by_request
                         .get(&request_id)
@@ -341,6 +319,58 @@ impl SessionProjection {
             }
         }
     }
+}
+
+/// Opens the activity for a user message, or folds steering sent into a running turn
+/// into that turn's activity and returns `None` so the caller leaves it unchanged.
+fn settle_user_message(
+    settled_activities: &mut VecDeque<ActivityEntry>,
+    activity_by_request: &mut BTreeMap<String, usize>,
+    events: &[EventEnvelopeV1],
+    transcript: &harness_core::transcript_projection::TranscriptProjection,
+    message: &harness_core::transcript_projection::ProjectedMessage,
+    request_id: &str,
+) -> Option<usize> {
+    let steering = events
+        .binary_search_by_key(&message.provenance.first_seq, |event| event.seq)
+        .ok()
+        .and_then(|index| events[index].correlation_id.as_deref())
+        .filter(|turn_id| *turn_id != request_id)
+        .and_then(|turn_id| activity_by_request.get(turn_id))
+        .copied();
+    if let Some(index) = steering {
+        let activity = &mut settled_activities[index];
+        activity.last_seq = activity.last_seq.max(message.provenance.last_seq);
+        return None;
+    }
+    let text = message
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            ProjectedPart::Text(text) => Some(text.text.as_str()),
+            _ => None,
+        })
+        .collect::<String>();
+    let index = settled_activities.len();
+    settled_activities.push_back(new_streaming_activity_entry(
+        NewStreamingActivityEntryArgs {
+            request_id: request_id.to_owned(),
+            profile_label: profile_label(transcript, message.agent_id.as_deref()),
+            model_id: String::new(),
+            provider_id: String::new(),
+            user_message: Some(UserMessageSubmittedEvent {
+                request_id: request_id.into(),
+                text,
+            }),
+            user_timestamp: None,
+            request_data: None,
+            transcript_text: String::new(),
+            first_seq: message.provenance.first_seq,
+            first_mono_ms: message.provenance.first_seq,
+        },
+    ));
+    activity_by_request.insert(request_id.to_owned(), index);
+    Some(index)
 }
 
 fn apply_run_status(

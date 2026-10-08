@@ -45,6 +45,20 @@ impl SessionProjection {
         if background_notification_for_request(self.events(), data.request_id.as_str()).is_some() {
             return;
         }
+        if let Some(turn_id) = event
+            .correlation_id
+            .as_deref()
+            .filter(|turn_id| *turn_id != data.request_id.as_str())
+            && let Some(index) = self.activity_index_for_request(turn_id)
+        {
+            self.remove_duplicate_local_prompt_echo(&data.text, index);
+            if let Some(index) = self.activity_index_for_request(turn_id)
+                && let Some(entry) = self.activities.get_mut(index)
+            {
+                mark_activity_event(entry, event.seq, event.mono_ms);
+            }
+            return;
+        }
         if let Some(index) = self.activity_index_for_user_message(data, event.seq) {
             let status =
                 if self.has_other_streaming_activity_in_request_scope(data.request_id.as_str()) {

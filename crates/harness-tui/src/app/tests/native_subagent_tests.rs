@@ -75,6 +75,7 @@ fn registration() -> NativeSubagentRegistration {
         permission_rules: Default::default(),
         max_iters: None,
         allowed_types: None,
+        output_schema: None,
         model_inherited: true,
         messaging_granted: false,
     }

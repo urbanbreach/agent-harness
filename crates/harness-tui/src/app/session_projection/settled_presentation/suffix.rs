@@ -147,7 +147,14 @@ impl SessionProjection {
 fn suffix_event_owner(event: &EventEnvelopeV1) -> Option<(&str, Option<&str>, Option<&str>)> {
     let provider = match &event.payload {
         EventV1::UserMessageSubmitted(data) => {
-            return Some((data.request_id.as_str(), None, None));
+            return Some((
+                event
+                    .correlation_id
+                    .as_deref()
+                    .unwrap_or(data.request_id.as_str()),
+                None,
+                None,
+            ));
         }
         EventV1::PromptAttachmentsSubmitted(data) => {
             return Some((data.request_id.as_str(), None, None));

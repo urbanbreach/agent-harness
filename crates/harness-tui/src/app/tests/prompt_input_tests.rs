@@ -594,7 +594,7 @@ pub(super) fn empty_enter_does_not_promote_during_nonblocking_background_poll() 
     assert!(intents.lock().unwrap_or_abort().is_empty());
 }
 
-pub(super) fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent() {
+pub(super) fn follow_up_while_turn_streams_echoes_as_queued_and_emits_intent() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
         let intents = Arc::clone(&intents);
@@ -627,7 +627,7 @@ pub(super) fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent
     ));
     app.replace_prompt_input("next prompt".to_string());
 
-    app.submit_prompt();
+    app.submit_follow_up_prompt();
 
     assert!(app.composer.prompt_buffer.is_empty());
     assert!(

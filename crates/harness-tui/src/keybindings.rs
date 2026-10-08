@@ -40,9 +40,9 @@ pub enum Action {
     ToggleTodos,
     /// Toggle follow mode
     ToggleFollow,
-    /// Submit the prompt
+    /// Submit the prompt; while a turn runs, plain text steers that turn
     SubmitPrompt,
-    /// Submit the current prompt while preserving the active turn
+    /// Queue the draft as a follow-up that runs after the active turn
     InterjectPrompt,
     /// Cancel the active turn and submit the current prompt immediately
     CancelAndReplacePrompt,

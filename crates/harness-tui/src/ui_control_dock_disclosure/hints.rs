@@ -69,10 +69,10 @@ pub(super) fn shortcut_row(
         push(preferred_binding(app, Action::Help, "Ctrl+x"), ":shortcuts");
     } else if turn && app.composer.composer_multiline_mode() && !primary_only {
         push("Enter".into(), ":newline");
-        push("Alt+Enter".into(), ":send");
+        push("Alt+Enter".into(), ":steer");
         push(
             preferred_binding(app, Action::InterjectPrompt, "Alt+i"),
-            ":interject",
+            ":follow-up",
         );
         push(
             preferred_binding(app, Action::CancelAndReplacePrompt, "Alt+r"),
@@ -81,8 +81,14 @@ pub(super) fn shortcut_row(
     } else {
         push(
             preferred_binding(app, Action::SubmitPrompt, "Enter"),
-            if turn { ":queue" } else { ":send" },
+            if turn { ":steer" } else { ":send" },
         );
+        if !primary_only && turn && !app.composer.prompt_buffer.is_empty() {
+            push(
+                preferred_binding(app, Action::InterjectPrompt, "Alt+i"),
+                ":follow-up",
+            );
+        }
         if primary_only || !app.composer.prompt_buffer.is_empty() && (turn || compact) {
             push(
                 preferred_binding(app, Action::InsertNewline, "Alt+Enter"),

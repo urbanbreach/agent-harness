@@ -102,14 +102,19 @@ pub enum SessionMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterruptReason {
+    /// The user stopped the turn; queued input returns to the editor.
     User,
+    /// The draft replaces the turn and runs next; queued input keeps its place.
+    Replace,
+    /// The user stopped one task from the tasks pane; queued input keeps its place.
+    Task,
     SendNow,
 }
 
 impl InterruptReason {
     pub const fn coordinator_reason(self) -> &'static str {
         match self {
-            Self::User => "interrupted",
+            Self::User | Self::Replace | Self::Task => "interrupted",
             Self::SendNow => "send_now",
         }
     }
@@ -151,6 +156,12 @@ pub enum UiIntent {
         selected_agent_tags: Vec<harness_core::file_tag::SelectedAgentTag>,
         selected_resource_tags: Vec<harness_core::file_tag::SelectedResourceTag>,
         attachments: Vec<crate::composer_integration::SubmissionAttachment>,
+        launch_metadata: LaunchMetadata,
+    },
+    /// Sends plain text into the running turn. The coordinator decides whether a turn is
+    /// running; when none is, the text is submitted as a normal prompt with this metadata.
+    SteerPrompt {
+        text: String,
         launch_metadata: LaunchMetadata,
     },
     CompactSession {
@@ -866,12 +877,17 @@ impl AppState {
         self.delegated_child_request_ids_for_parent_view(self.current_session_id())
     }
 
+    /// Like OMP's and Senpi's session run state, a turn stays in progress until its task
+    /// ends, including while its tools run after the model response finished.
     pub(crate) fn active_turn_in_progress(&self) -> bool {
         let hidden_child_request_ids = self.hidden_delegated_child_request_ids_in_current_view();
         self.activities
             .iter()
             .filter(|activity| !hidden_child_request_ids.contains(activity.request_id.as_str()))
             .any(|activity| activity.status == ActivityStatus::Streaming)
+            || self
+                .projection
+                .has_running_turn_task_excluding(&hidden_child_request_ids)
     }
 
     fn has_active_interrupt_task(&self) -> bool {

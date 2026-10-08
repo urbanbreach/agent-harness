@@ -234,6 +234,7 @@ fn apply_update(
         LiveUpdate::PluginLifecycleSummary(summary) => {
             app.set_plugin_lifecycle_summary(Some(summary));
         }
+        LiveUpdate::RestoreQueuedInput(texts) => app.restore_queued_input(texts),
     }
     true
 }

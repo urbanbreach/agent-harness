@@ -697,7 +697,7 @@ impl AppState {
                 return;
             }
             Action::InterjectPrompt => {
-                self.submit_prompt();
+                self.submit_follow_up_prompt();
                 return;
             }
             Action::CancelAndReplacePrompt => {
@@ -716,7 +716,7 @@ impl AppState {
                         && self.launch_metadata.provider() == "local"
                         && self.launch_metadata.configured_profile().is_some())
                 {
-                    self.submit_prompt();
+                    self.submit_follow_up_prompt();
                     return;
                 }
 
@@ -724,10 +724,11 @@ impl AppState {
                 if !task_ids.is_empty() {
                     self.emit_ui_intent(UiIntent::InterruptSession {
                         task_ids,
-                        reason: InterruptReason::User,
+                        reason: InterruptReason::Replace,
                     });
                 }
-                self.submit_prompt();
+                // The replacement starts once the cancelled turn ends; it never steers it.
+                self.submit_follow_up_prompt();
                 return;
             }
             Action::InsertNewline => {

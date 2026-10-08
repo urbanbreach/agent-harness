@@ -11,17 +11,17 @@ use std::sync::Arc;
 pub(crate) const SCENARIO_ENV: &str = "HARNESS_TUI_P0_04_SCENARIO";
 pub(crate) const READY_MARKER: &str = "P0-04 active streaming";
 pub(crate) const SUBMITTED_MARKER: &str = "P0-04 submitted";
-pub(crate) const QUEUED_MARKER: &str = "P0-04 submitted queued";
-pub(crate) const INTERJECT_MARKER: &str = "P0-04 interject submitted queued";
+pub(crate) const STEERED_MARKER: &str = "P0-04 submitted steering";
+pub(crate) const FOLLOW_UP_MARKER: &str = "P0-04 follow-up queued";
 pub(crate) const REPLACE_INTERRUPT_MARKER: &str = "P0-04 replacement interrupted";
 pub(crate) const REPLACE_MARKER: &str = "P0-04 replacement submitted queued";
 pub(crate) const EMPTY_MARKER: &str = "P0-04 empty submitted";
 pub(crate) const PHANTOM_MARKER: &str = "P0-04 phantom";
 pub(crate) const ORDERED_BURST_MARKER: &str = "P0-04 ordered input burst submitted";
-pub(crate) const HELPER_CONTRACT: &str = "P0-04 helper command: HARNESS_TUI_P0_04_SCENARIO=1 HARNESS_DETERMINISTIC=1 HARNESS_DISABLE_ANIMATIONS=1 HARNESS_SEED=42 cargo test -p harness-tui --test p0_04_pty_recorded -- --exact p0_04_pty_helper --nocapture; toggle multiline with Alt+M; type first, Enter, second, then send with Alt+Enter; interject with Alt+I; cancel and replace with Ctrl+Enter; enhanced terminals may also use the modified Enter bindings; exit with the command palette.";
+pub(crate) const HELPER_CONTRACT: &str = "P0-04 helper command: HARNESS_TUI_P0_04_SCENARIO=1 HARNESS_DETERMINISTIC=1 HARNESS_DISABLE_ANIMATIONS=1 HARNESS_SEED=42 cargo test -p harness-tui --test p0_04_pty_recorded -- --exact p0_04_pty_helper --nocapture; toggle multiline with Alt+M; type first, Enter, second, then steer the running turn with Alt+Enter; queue a follow-up with Alt+I; cancel and replace with Ctrl+Enter; enhanced terminals may also use the modified Enter bindings; exit with the command palette.";
 
 const FIRST_DRAFT: &str = "first\nsecond";
-const INTERJECT_DRAFT: &str = "interject draft";
+const FOLLOW_UP_DRAFT: &str = "follow-up draft";
 const REPLACEMENT_DRAFT: &str = "replacement draft";
 
 pub(crate) fn ordered_input_burst() -> String {
@@ -43,9 +43,13 @@ pub(crate) fn run_helper() {
     let on_ui_intent: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(move |intent| {
         let marker = match intent {
             UiIntent::InterruptSession { .. } => Some(REPLACE_INTERRUPT_MARKER),
+            UiIntent::SteerPrompt { ref text, .. } => match text.as_str() {
+                FIRST_DRAFT => Some(STEERED_MARKER),
+                text if text == ordered_input_burst() => Some(ORDERED_BURST_MARKER),
+                _ => Some(SUBMITTED_MARKER),
+            },
             UiIntent::SubmitPrompt { ref text, .. } => match text.as_str() {
-                FIRST_DRAFT => Some(QUEUED_MARKER),
-                INTERJECT_DRAFT => Some(INTERJECT_MARKER),
+                FOLLOW_UP_DRAFT => Some(FOLLOW_UP_MARKER),
                 REPLACEMENT_DRAFT => Some(REPLACE_MARKER),
                 text if text == ordered_input_burst() => Some(ORDERED_BURST_MARKER),
                 _ => Some(SUBMITTED_MARKER),

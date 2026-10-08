@@ -375,7 +375,11 @@ pub(super) fn composer_submits_queued_followup_while_streaming() {
         ),
     ));
 
-    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    // Enter would steer the streaming turn; the follow-up key queues the draft after it.
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('i'),
+        crossterm::event::KeyModifiers::ALT,
+    ));
 
     let intents = intents.lock().unwrap_or_abort();
     assert_eq!(

@@ -29,6 +29,14 @@ Score 12: >20 files (3), >5 descendant directories (2), >70% Rust (2), crate man
 - Keep replay and completed-session surfaces read-only; mutations cross the coordinator boundary as `UiIntent`.
 - Co-locate focused unit tests; use `tests/` for package-level behavior and real-surface contracts.
 
+## Composer steering
+
+Alt+i and Ctrl+Alt+Enter send a plain-text draft into the running agent turn before
+its next provider request. The same action submits normally when idle or when the
+draft includes file, agent, or resource tags or attachments. Enter still queues a
+separate prompt while a turn runs. Steering rows stay inside the running activity
+in output order; a message that misses its turn starts a turn of its own.
+
 ## ANTI-PATTERNS
 
 - Do not perform coordinator work from renderers or view models; repeated projection/render calls must be pure.

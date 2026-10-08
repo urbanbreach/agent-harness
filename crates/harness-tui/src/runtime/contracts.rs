@@ -56,6 +56,8 @@ pub enum LiveUpdate {
     AuthProviderCatalogRefreshed {
         launch_metadata: Box<LaunchMetadata>,
     },
+    /// Input the user queued for a turn they interrupted, returned to the editor.
+    RestoreQueuedInput(Vec<String>),
     PluginLifecycleSummary(harness_core::integrations::PluginLifecycleSummary),
 }
 

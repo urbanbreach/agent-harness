@@ -695,6 +695,7 @@ pub(super) struct TranscriptCompactionSection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum TranscriptAssistantPart {
+    User(TranscriptUserMessageSection),
     Reasoning(TranscriptLabeledTextSection),
     Body(TranscriptBodyBlock),
     ToolCall(Box<TranscriptToolCallSection>),
@@ -706,7 +707,11 @@ impl TranscriptAssistantPart {
     pub(super) fn tool_call(&self) -> Option<&TranscriptToolCallSection> {
         match self {
             Self::ToolCall(tool_call) => Some(tool_call),
-            Self::Reasoning(_) | Self::Body(_) | Self::Error(_) | Self::Compaction(_) => None,
+            Self::User(_)
+            | Self::Reasoning(_)
+            | Self::Body(_)
+            | Self::Error(_)
+            | Self::Compaction(_) => None,
         }
     }
 }

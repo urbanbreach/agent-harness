@@ -184,8 +184,8 @@ pub(super) fn render_footer(
 
     let mut footer_hints = app.footer_hints_view_model();
     let active_turn = footer_hints.hints.iter().any(|hint| {
-        hint.action == crate::keybindings::Action::SubmitPrompt && hint.label == ":queue"
-    }) || app.has_live_turn_activity()
+        hint.action == crate::keybindings::Action::SubmitPrompt && hint.label == ":steer"
+    }) || app.active_turn_in_progress()
         || matches!(
             app.runtime_state_view().kind,
             crate::app::RuntimeStateKind::Sending | crate::app::RuntimeStateKind::Streaming
@@ -227,11 +227,11 @@ pub(super) fn render_footer(
                 },
                 crate::view_model::FooterHint {
                     action: crate::keybindings::Action::SubmitPrompt,
-                    label: ":send",
+                    label: ":steer",
                 },
                 crate::view_model::FooterHint {
                     action: crate::keybindings::Action::InterjectPrompt,
-                    label: ":interject",
+                    label: ":follow-up",
                 },
                 crate::view_model::FooterHint {
                     action: crate::keybindings::Action::CancelAndReplacePrompt,
@@ -245,7 +245,8 @@ pub(super) fn render_footer(
                 .map(|action| crate::view_model::FooterHint {
                     action,
                     label: match action {
-                        crate::keybindings::Action::SubmitPrompt if active_turn => ":queue",
+                        crate::keybindings::Action::SubmitPrompt if active_turn => ":steer",
+                        crate::keybindings::Action::InterjectPrompt => ":follow-up",
                         crate::keybindings::Action::SubmitPrompt => ":send",
                         crate::keybindings::Action::InsertNewline => ":newline",
                         crate::keybindings::Action::VariantCycle => ":mode",
@@ -389,10 +390,12 @@ pub(super) fn composer_footer_binding(
             crate::keybindings::Action::CancelAndReplacePrompt => Some("Alt+r"),
             _ => None,
         }
-    } else if action == crate::keybindings::Action::InsertNewline {
-        Some("Alt+Enter")
     } else {
-        None
+        match action {
+            crate::keybindings::Action::InsertNewline => Some("Alt+Enter"),
+            crate::keybindings::Action::InterjectPrompt => Some("Alt+i"),
+            _ => None,
+        }
     };
     if let Some(preferred) = preferred {
         app.keymap
