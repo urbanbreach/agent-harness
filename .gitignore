@@ -1,59 +1,52 @@
+# Build output
 target/
 target.bak/
-/sessions/
-artifacts/
-.agent-harness/*
-!.agent-harness/agents/
-!.agent-harness/agents/**
-!.agent-harness/skills/
-!.agent-harness/skills/**
-!.agent-harness/prompts/
-!.agent-harness/prompts/**
 *.snap.new
 *.pending-snap
+**/__pycache__/
 
-# Local scratch / research material
-inspirations/
-.omx/
-.senpi/
-.ruff_cache
-logo-drafts/
-receipts/
-.codex/*
-!.codex/agents/
-!.codex/agents/**
-!.codex/skills/
-!.codex/skills/**
-.codex/skills/.system/**
-!.codex/prompts/
-!.codex/prompts/**
-plans/
-.impeccable/
-.senpi/
-
-# Local IDE workspace state
-.cate/
-.agent-harness/
-!/.agent-harness/
-.gnhf/
-
-# Local environment secrets / credentials
-.env
-*.env
-
-# Test probe directories (created by integration/e2e tests)
+# Test evidence and probe directories created by integration/e2e tests
+artifacts/
 .harness-*-probe*/
 .harness-foreign-probe*/
 
-# Local scratch / probe artifacts
-/check_home.sh
-/harness.json
-/src/
-crates/harness/harness.json
+# Harness runtime state. The root .agent-harness/ keeps only authored resources.
+.agent-harness/
+!/.agent-harness/
+/.agent-harness/*
+!/.agent-harness/agents/
+!/.agent-harness/prompts/
+!/.agent-harness/skills/
 
-# Local runtime configuration, agent evidence, and task scratch
+# Local runtime configuration
+/harness.json
 /harness.jsonc
 /tui.jsonc
-/.omo/
+crates/harness/harness.json
+
+# Local environment secrets and credentials
+.env
+*.env
+
+# Local research material and scratch files
+inspirations/
+logo-drafts/
+plans/
+receipts/
 /ATTEMPT/
-**/__pycache__/
+/check_home.sh
+/src/
+
+# Local tool and editor state
+.cate/
+.gnhf/
+.impeccable/
+.omo/
+.omx/
+.ruff_cache/
+.senpi/
+.codex/*
+!.codex/agents/
+!.codex/skills/
+.codex/skills/.system/
+!.codex/prompts/
