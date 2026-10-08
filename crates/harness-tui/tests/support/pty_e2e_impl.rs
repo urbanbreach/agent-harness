@@ -1133,7 +1133,10 @@ fn spawn_reader_thread(mut reader: Box<dyn Read + Send>) -> Receiver<Vec<u8>> {
 
 fn configure_deterministic_env(command: &mut CommandBuilder, animations_enabled: bool) {
     command.env("HARNESS_DETERMINISTIC", "1");
-    if !animations_enabled {
+    if animations_enabled {
+        // CI exports this for the whole job; animated scenarios must not inherit it.
+        command.env_remove("HARNESS_DISABLE_ANIMATIONS");
+    } else {
         command.env("HARNESS_DISABLE_ANIMATIONS", "1");
     }
     command.env("HARNESS_SEED", "42");
