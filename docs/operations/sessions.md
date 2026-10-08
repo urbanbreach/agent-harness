@@ -57,6 +57,72 @@ match. Changed entries are read again. Missing, corrupt and unsupported caches
 fall back to journals; ordinary readers never create or repair a cache. Direct
 inspection, replay, recovery and continuation still validate the selected history.
 
+## Behavior census
+
+```bash
+harness sessions census
+harness sessions census --json --since 2026-10-01 --model codex --limit 100
+```
+
+Census scans every session directory, including scenario fixtures and child
+journals, using the same directory discovery as `sessions list`. It reads each
+journal once and does not use or rebuild the catalog index. No provider, tool,
+hook, or network work runs. Missing storage returns an empty report without
+creating a directory. The catalog limits of 10,000 directories and 64 MiB per
+journal also apply. Invalid, oversized, or identity-mismatched journals are
+listed only in `unavailable_session_ids`; their contents and error text are not
+printed, and their metrics are excluded.
+
+`--since` accepts an RFC3339 timestamp or `YYYY-MM-DD` (midnight UTC). It selects
+sessions with at least one recorded event at or after the cutoff, not individual
+events within a session. Sessions without usable timestamps do not match.
+`--model` matches model ids from provider requests, case-insensitively. Both
+filters select whole sessions. `--limit` keeps the newest matching sessions by
+recorded event time, breaking ties by run id. With no limit, all matching sessions
+are included.
+
+The default output has session, model, and total tables. JSON uses schema version
+`harness-sessions-census-v1` with `session_count`, `sessions` (run id, model ids,
+metrics), `models` (model id to metrics), `totals`, and
+`unavailable_session_ids`. Model ids are exactly those recorded in provider
+requests; the empty model key holds unattributed events. Output contains counts,
+ids, model names, and tool names only. Prompts, arguments, reminder text, and tool
+results are never printed.
+
+Metrics are journal observations, not judgments about correctness:
+
+- `turns` counts distinct provider/reminder/terminal turn ids. A turn using several
+  models counts once in its session and once for each participating model. Event
+  counts belong to the active request model; terminal metrics belong to the last
+  model. `provider_fallbacks` counts provider or model switches following an error
+  in the same turn, attributed to the replacement model.
+- `tool_calls_by_tool` counts requested calls, including failed calls and nested
+  eval host calls. `eval_calls` counts calls named `eval`; `direct_tool_calls`
+  counts all other requested calls. `eval_share` is `eval_calls / tool_calls`,
+  or zero with no calls. It is not the share of nested operations performed inside
+  an eval cell.
+- Repetition compares the stored tool id and argument digest in request order
+  within each turn. Non-tool events do not interrupt a run; turn boundaries do.
+  `longest_identical_tool_run` is a maximum, and `identical_tool_runs_ge_3` counts
+  each run once, including runs longer than three.
+- `open_todo_turns` folds `TodoProjection` through each agent-turn terminal event
+  and counts pending or in-progress items. Interrupted turns without a terminal
+  event do not count.
+- `unverified_edit_turns` counts terminal turns with a successful `edit`, `write`,
+  `apply_patch`, or `ast_grep_replace` after the latest successful `bash`, `eval`,
+  or `lsp` check request. A check requested before an edit is not verification,
+  even if it finishes later. Tool names are a heuristic; census does not inspect
+  command text or prove that a check tested the changed file.
+- `runtime_reminders_by_kind` counts durable runtime reminders. `compactions`
+  counts committed session compactions and provider-native compactions.
+  `provider_errors` counts provider requests finishing with `error`.
+  `turn_failures_by_kind` classifies failed turn terminals reporting an iteration
+  limit, loop guard, or stream guard. `subagent_spawns` counts agent spawn events
+  with a parent.
+
+Totals sum the selected journals. Parent and child journals can contain copies
+of the same child activity; census does not deduplicate across journals.
+
 ## Branch, recover and import
 
 ```bash

@@ -2,6 +2,8 @@ use crate::{replay::SessionInspectionEntry, CliDeps, CliIo};
 use harness_core::{proj::RunStatus, redact::redact_in_place};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
+#[path = "census.rs"]
+mod census;
 mod operations;
 
 #[derive(clap::Args)]
@@ -97,6 +99,8 @@ pub(crate) struct SessionsCommand {
 #[derive(clap::Subcommand)]
 enum Action {
     List(List),
+    /// Measure saved agent behavior without changing history.
+    Census(census::CensusCommand),
     RebuildIndex,
     Search {
         query: String,
@@ -214,6 +218,9 @@ pub(crate) fn execute(
     let redactor = crate::inspect::redactor(&configured.config, deps)?;
     let resolve = |session: &str| crate::recovery::resolve_session_run_dir(session, &root, &cwd);
     let mut report = match command.action {
+        Action::Census(census) => {
+            return census::execute(&root, census, command.json, &redactor, io);
+        }
         Action::List(list) => list_sessions(&root, list)?,
         Action::RebuildIndex => crate::replay::rebuild_session_catalog_index(&root, &redactor)?,
         Action::Search { query, mut list } => {
