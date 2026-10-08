@@ -121,7 +121,9 @@ pub fn map_tool_args(tool_name: &str, args: &Map<String, Value>) -> Map<String, 
         // The harness `bash` timeout is already in milliseconds, like Claude Code's.
         "bash" => {
             put("command", get("command"));
+            put("description", get("description"));
             put("timeout", get("timeout"));
+            put("run_in_background", get("run_in_background"));
         }
         // The harness `grep` has no ignore-case flag; an inline `(?i)` carries `-i`.
         "grep" => {
@@ -389,6 +391,19 @@ mod tests {
                 "nested": {"type": "object", "properties": {"k": {"type": "boolean"}}, "required": ["k"]},
                 "mode": {"anyOf": [{"type": "string", "const": "a"}, {"type": "string", "const": "b"}], "description": "how"},
             }, "required": ["any_sn", "int"]})
+        );
+    }
+
+    #[test]
+    fn claude_code_bash_inputs_keep_background_launch_and_drop_unknown_keys() {
+        let args = json!({
+            "command": "sleep 2", "description": "wait", "timeout": 5000,
+            "run_in_background": true, "dangerouslyDisableSandbox": true,
+        });
+        let args = args.as_object().cloned().unwrap_or_default();
+        assert_eq!(
+            Value::Object(map_tool_args("Bash", &args)),
+            json!({"command": "sleep 2", "description": "wait", "timeout": 5000, "run_in_background": true})
         );
     }
 }
