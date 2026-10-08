@@ -1,4 +1,4 @@
-//! Per-turn continuity observability (senpi `session-observability.ts`).
+//! Per-turn continuity observability.
 //!
 //! A decision is staged
 //! per attempt and emitted only when the attempt is retained, so every completed turn yields

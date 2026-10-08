@@ -22,6 +22,7 @@ pub(crate) struct CliHarnessOutput {
     pub(crate) stderr: Vec<u8>,
     pub(crate) session_capture: Option<CliHarnessSessionCapture>,
     pub(crate) workspace: Option<TestWorkspace>,
+    _data_home: tempfile::TempDir,
 }
 
 impl CliHarnessOutput {
@@ -160,7 +161,9 @@ impl CliHarness {
         let mut stderr = Vec::new();
         let mut io = harness::CliIo::new(&mut stdin, &mut stdout, &mut stderr)
             .with_stdin_terminal(stdin_is_terminal);
-        let mut deps = harness::CliDeps::real();
+        let data_home = tempfile::tempdir().unwrap_or_abort();
+        let mut deps = harness::CliDeps::real()
+            .with_env("HARNESS_DATA_HOME", data_home.path().to_string_lossy());
         let capture_session_dir = self.capture_session_dir.clone();
         if let Some(current_dir) = self.current_dir {
             deps = deps.with_current_dir(current_dir);
@@ -187,6 +190,7 @@ impl CliHarness {
             stderr,
             session_capture,
             workspace: self.workspace,
+            _data_home: data_home,
         }
     }
 }

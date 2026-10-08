@@ -61,6 +61,9 @@ pub(crate) fn run_helper() {
     });
 
     run_tui_with_options(TuiOptions {
+        storage_data_dir: harness_core::storage_paths::data_dir_from_lookup(&|key| {
+            std::env::var(key).ok()
+        }),
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
             historical_events: events,

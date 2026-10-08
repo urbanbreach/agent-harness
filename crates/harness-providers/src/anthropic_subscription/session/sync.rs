@@ -1,4 +1,4 @@
-//! Sent-stream digests and the session config fingerprint (senpi `session-sync.ts`).
+//! Sent-stream digests and the session config fingerprint.
 use crate::anthropic_subscription::{
     options::TokenInjection,
     prompt::{hex, Content, LaneContext, LaneMessage},

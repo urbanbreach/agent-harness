@@ -1,5 +1,5 @@
 //! The `anthropic-subscription` credential: a managed sentinel whose real token material lives
-//! in pooled account slots (senpi `accounts.ts`, `account-management.ts`, `oauth-login.ts`).
+//! in pooled account slots.
 use super::anthropic::{AnthropicOAuthClient, AnthropicOAuthCredential};
 use super::{
     CredentialStore, CredentialStoreError, ProviderId, StoredCredential, StoredCredentialKind,

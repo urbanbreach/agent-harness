@@ -9,8 +9,8 @@ that are unavailable, followed by changes to internal prototype APIs.
 |---|---|
 | HTTP server | Unavailable in V1; no hosted API/server mode ships here. |
 | web share | Unavailable in V1; local support export is the V1 path. |
-| plugin host | Typed extension manifest descriptors ship for V1; runtime plugin hosting remains post-V1. |
-| background autoupdate | Unavailable; operators can apply a validated local update with the [update command](operators.md). |
+| plugin host | Unavailable; use configured MCP tools, skills, and lifecycle hooks. |
+| binary updates | No `update` command or background autoupdate ships here. |
 | enterprise | Explicitly post-V1. |
 | desktop/mobile/PWA | Outside V1. |
 | browser/media automation | Outside V1. |
@@ -22,6 +22,20 @@ that are unavailable, followed by changes to internal prototype APIs.
 
 Move local-coding workflows onto the Harness CLI/TUI, event store, provider config, markdown skills, and native tool registry. Keep unsupported upstream product areas inactive in config. Check the [config reference](../configuration/config.md) before carrying over
 compatibility keys. Some accepted keys have no runtime effect.
+
+## Removed command families
+
+The `cron`, `team`, `prompt-queue`, `plugin`, and `update` command families and
+their backing producers have been removed. Cron receipts did not execute
+scheduled payloads, team mailboxes did not start workers, and the file-backed
+prompt queue did not submit turns. Plugin descriptors did not provide an
+executable plugin host. Their schemas and command examples are no longer shipped.
+
+Live TUI follow-up queues, steering input, and interrupted-input restoration
+remain supported. Durable event variants and replay projections for historical
+cron, team, plugin, and update records remain readable; inspecting those records
+does not recreate producers or perform their old operations. Existing data files
+are not deleted or migrated by this removal.
 
 ## Evidence rule
 
@@ -51,7 +65,7 @@ revision and explain retired APIs; they are not a map of the replacement backend
 - Unobserved TUI media queues, contextual-tip state, performance samples, and shadow lifecycle transitions are removed. Actual transcript rendering, terminal titles/notifications, input bounds, and `lifecycle_choreography::LifecycleState` remain.
 - The unused file-backed ACP echo transport (`integrations::acp_file`) is removed; stdio ACP and its connection lifecycle remain.
 - Unconnected `jujutsu::jj_*` workflow wrappers and `JujutsuWorkflowResult` are removed; Jujutsu detection and diagnostic commands remain.
-- The test-only plugin execution framework (`PluginExecutionSurface`, its sample plugins, and execution/cancellation methods and events) is removed. Descriptor install, activation permissions, persistence, and transactional upgrade/rollback remain unchanged.
+- The test-only plugin execution framework (`PluginExecutionSurface`, its sample plugins, and execution/cancellation methods and events) was removed in that earlier cleanup. The descriptor lifecycle was retired with the command families listed above.
 
 The earlier cleanup also removed the arrange/act/assert comment convention gate.
 Current backend gates check size, formatting, isolation and explicit native/live

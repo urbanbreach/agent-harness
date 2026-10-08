@@ -67,7 +67,11 @@ async fn patches_validate_structure_and_context_and_record_each_completed_file(
         fs::read_to_string(root.join("a.txt"))?,
         "ONE\r\nkeep\r\ntwo\r\n"
     );
-    let attribution = harness_core::edit_attribution::EditAttributionJournal::open(&root)?;
+    let runtime_dir =
+        harness_core::storage_paths::ProjectPaths::new(&temp.path().join("sessions/data"), &root)?
+            .runtime_dir();
+    let attribution =
+        harness_core::edit_attribution::EditAttributionJournal::open(&root, &runtime_dir)?;
     assert_eq!(attribution.blame("a.txt")?.agent_lines, 3);
     assert!(!attribution.diff("old.txt")?.drifted);
     fs::write(root.join("a.txt"), "ONE\r\nexternal\r\ntwo\r\n")?;

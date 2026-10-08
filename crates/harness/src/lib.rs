@@ -17,16 +17,13 @@ mod inspect;
 mod logging;
 mod models;
 mod operations;
-mod plugin;
 mod prompt;
-mod queue;
 mod recovery;
 mod replay;
 mod runtime_catalog;
 mod scenarios;
 mod sessions;
 pub mod tui;
-mod update;
 mod workspace;
 mod worktrees;
 pub use cli_io::CliIo;
@@ -66,9 +63,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Run a prompt with the configured agent and tools.
     Prompt(Box<prompt::PromptCommand>),
     /// Run a prompt, combining arguments, piped input and an optional prompt file.
     Run(Box<prompt::RunCommand>),
+    /// Replay a saved session without executing providers or tools.
     Replay(replay::ReplayCommand),
     /// List, search, inspect and manage saved sessions.
     Sessions(sessions::SessionsCommand),
@@ -80,7 +79,9 @@ enum Commands {
     Trace(archives::TraceCommand),
     /// Package workspace files, with optional redacted session diagnostics.
     Wrap(archives::WrapCommand),
+    /// Open the interactive terminal interface.
     Tui(tui::TuiCommand),
+    /// Manage provider credentials and authentication.
     Auth(auth::AuthCommand),
     /// Check local configuration without contacting providers or creating files.
     Doctor(inspect::DoctorCommand),
@@ -101,20 +102,10 @@ enum Commands {
     CodeGraph(workspace::CodeGraphCommand),
     /// Inspect recorded agent edits and external changes.
     Attribution(workspace::AttributionCommand),
-    /// Record due schedules at a supplied civil time.
-    Cron(operations::CronCommand),
-    /// Manage local teams and their durable mailboxes.
-    Team(operations::TeamCommand),
     /// Launch a local stdio peer and report its transport exchange.
     Agent(operations::AgentCommand),
     /// List and remove managed session worktrees.
     Worktree(worktrees::WorktreeCommand),
-    /// Inspect and update the durable session-local prompt queue.
-    PromptQueue(queue::PromptQueueCommand),
-    /// Manage local plugin packages and discover extension descriptors.
-    Plugin(plugin::PluginCommand),
-    /// Check a local update manifest, download, replace or restart the executable.
-    Update(update::UpdateCommand),
     /// Generate shell completions.
     Completions {
         #[arg(value_enum)]
@@ -217,13 +208,8 @@ where
         Commands::Attribution(command) => {
             workspace::attribution(command, cli.config.as_deref(), io, &deps)
         }
-        Commands::Cron(command) => operations::cron(command, io, &deps),
-        Commands::Team(command) => operations::team(command, io, &deps),
         Commands::Agent(command) => operations::agent(command, cli.config.as_deref(), io, &deps),
         Commands::Worktree(command) => worktrees::execute(command, io, &deps),
-        Commands::PromptQueue(command) => queue::execute(command, io, &deps),
-        Commands::Plugin(command) => plugin::execute(command, io, &deps),
-        Commands::Update(command) => update::execute(command, io, &deps),
         Commands::Completions { shell } => {
             let mut script = Vec::new();
             clap_complete::generate(shell, &mut Cli::command(), "harness", &mut script);

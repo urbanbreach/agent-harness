@@ -69,6 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     );
     let intent_connection = Arc::clone(&connection);
     let result = run_tui_with_options(TuiOptions {
+        storage_data_dir: None,
         mode: TuiMode::Live {
             run_dir: std::env::current_dir()?,
             historical_events: Vec::new(),

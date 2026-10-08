@@ -120,12 +120,11 @@ fn execute_prompt(
             return Err("--session-id with --resume requires --fork-session".into());
         }
     }
-    let sessions = root.join(session_dir.unwrap_or_else(|| {
-        loaded.as_ref().map_or_else(
-            || PathBuf::from(crate::defaults::DEFAULT_SESSION_DIR),
-            |config| config.runtime.session_dir.clone(),
-        )
-    }));
+    let sessions = deps.session_directory(&session_dir.unwrap_or_else(|| {
+        loaded
+            .as_ref()
+            .map_or_else(PathBuf::new, |config| config.runtime.session_dir.clone())
+    }))?;
     let mut resume = command
         .resume
         .as_deref()
@@ -166,6 +165,7 @@ fn execute_prompt(
         return Err("resuming a prompt cannot change its agent profile".into());
     }
     command.options.prepare(&mut config, &profile)?;
+    config.apply_session_dir_override(Some(sessions.clone()));
     let mut coordinator_config = crate::bootstrap::build(&config, &deps, command.mock, false)?;
     command.options.apply(&mut coordinator_config, &profile)?;
     let target = command

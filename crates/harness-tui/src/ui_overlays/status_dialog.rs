@@ -249,17 +249,6 @@ fn render_dashboard_summary(frame: &mut Frame, app: &AppState, theme: &Theme, ar
         app.crash_recovery_first_report().is_some(),
         app.crash_recovery_resolved_action().is_some(),
         app.crash_recovery_first_report_line().is_some(),
-        app.team_registry_summary().is_some(),
-        app.team_last_create().is_some(),
-        app.team_first_line().is_some(),
-        app.team_last_send().is_some(),
-        app.team_last_message_line().is_some(),
-        app.team_last_add_member().is_some(),
-        app.team_last_cancel().is_some(),
-        app.cron_schedule_summary().is_some(),
-        app.cron_last_register().is_some(),
-        app.cron_first_schedule_line().is_some(),
-        app.cron_last_remove().is_some(),
         app.workspace_hub_availability().is_some(),
         app.graph_query_batch_summary().is_some(),
         app.graph_query_last_result().is_some(),
@@ -275,10 +264,6 @@ fn render_dashboard_summary(frame: &mut Frame, app: &AppState, theme: &Theme, ar
         app.sleep_wake_last_observation().is_some(),
         app.sleep_wake_last_decision().is_some(),
         app.sleep_wake_availability().is_some(),
-        app.binary_update_summary().is_some(),
-        app.binary_update_policy().is_some(),
-        app.binary_update_check().is_some(),
-        app.binary_version_info().is_some(),
         app.foreign_discover_summary().is_some(),
         app.foreign_import_first_candidate().is_some(),
         app.foreign_import_last_outcome().is_some(),
@@ -306,13 +291,6 @@ fn render_dashboard_summary(frame: &mut Frame, app: &AppState, theme: &Theme, ar
     let operator_line = format!(
         "operator dashboard: {bound} bound of {} probes",
         probes.len()
-    );
-    let plugins = app.plugin_lifecycle_summary();
-    let plugin_line = format!(
-        "Plugins: {} installed ({} enabled, {} disabled)",
-        plugins.map_or(0, |value| value.installed),
-        plugins.map_or(0, |value| value.enabled),
-        plugins.map_or(0, |value| value.disabled),
     );
     let edits = app
         .events()
@@ -346,7 +324,7 @@ fn render_dashboard_summary(frame: &mut Frame, app: &AppState, theme: &Theme, ar
         });
     let width = usize::from(area.width);
     let lines = [
-        truncate_plain_text(&format!("Operator · {mcp} · {plugin_line}"), width),
+        truncate_plain_text(&format!("Operator · {mcp}"), width),
         truncate_plain_text(&format!("{edit_line} · {operator_line}"), width),
         status_summary_pair(&crash_line, &fallback_line, width),
     ];

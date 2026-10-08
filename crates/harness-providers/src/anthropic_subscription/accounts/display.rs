@@ -1,4 +1,4 @@
-//! Account display names (senpi `auth/pool/slots.ts`): untrusted presentation input.
+//! Account display names: untrusted presentation input.
 use super::AccountSlot;
 use regex::Regex;
 use std::sync::LazyLock;

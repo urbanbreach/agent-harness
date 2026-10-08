@@ -1,4 +1,4 @@
-//! Cold-seed budget (senpi `cold-seed-budget.ts`).
+//! Cold-seed budget.
 //!
 //! A cold-seed (flatten/bootstrap) re-sends the
 //! history as ONE user message, which Claude Code cannot compact, so an over-budget re-send is

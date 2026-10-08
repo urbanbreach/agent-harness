@@ -85,6 +85,10 @@ async fn prompt_resume_and_fork_restore_history_and_export_only_committed_events
                     }
                     .into(),
                 )
+                .with_env(
+                    "HARNESS_DATA_HOME",
+                    workspace.path().join("data").to_string_lossy(),
+                )
                 .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),
         );
         assert_eq!(result.code, 0, "{}", String::from_utf8_lossy(&stderr));
@@ -239,6 +243,10 @@ async fn prompt_options_select_model_tools_and_policy_before_execution(
         &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
         CliDeps::real()
             .with_current_dir(root.path().into())
+            .with_env(
+                "HARNESS_DATA_HOME",
+                root.path().join("data").to_string_lossy(),
+            )
             .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),
     );
     assert_eq!(result.code, 0, "{}", String::from_utf8_lossy(&stderr));
@@ -307,6 +315,10 @@ async fn prompt_resolves_subagent_enablement_and_messaging_before_provider_dispa
             &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
             CliDeps::real()
                 .with_current_dir(root.path().into())
+                .with_env(
+                    "HARNESS_DATA_HOME",
+                    root.path().join("data").to_string_lossy(),
+                )
                 .without_env("HARNESS_SUBAGENTS")
                 .without_env("HARNESS_ACTIVE_AGENT_MESSAGES")
                 .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),

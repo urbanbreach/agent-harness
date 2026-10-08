@@ -11,6 +11,9 @@ pub(crate) fn run_helper() {
 
     let (_update_tx, update_rx) = harness_tui::live_update_channel();
     run_tui_with_options(TuiOptions {
+        storage_data_dir: harness_core::storage_paths::data_dir_from_lookup(&|key| {
+            std::env::var(key).ok()
+        }),
         mode: TuiMode::Startup {
             session_history_entries: Vec::new(),
             prompt_history_path: None,

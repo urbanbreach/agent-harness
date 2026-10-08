@@ -27,8 +27,11 @@ fn graph_queries_are_read_only_and_rebuilt_indexes_replace_stale_symbols(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use harness_core::code_graph::*;
     let temp = tempfile::tempdir()?;
-    assert!(detect_persistent_graph(temp.path()).is_unavailable());
-    assert!(query_persistent_graph(temp.path(), &GraphQuery::symbol_def("alpha")).is_unavailable());
+    let runtime = tempfile::tempdir()?;
+    assert!(detect_persistent_graph(runtime.path()).is_unavailable());
+    assert!(
+        query_persistent_graph(runtime.path(), &GraphQuery::symbol_def("alpha")).is_unavailable()
+    );
     assert_eq!(std::fs::read_dir(temp.path())?.count(), 0);
     std::fs::write(
         temp.path().join("lib.rs"),
@@ -43,11 +46,12 @@ fn graph_queries_are_read_only_and_rebuilt_indexes_replace_stale_symbols(
         temp.path().join("ignored-source/other.rs"),
         "fn ignored_vendor() {}",
     )?;
-    let (path, index) = build_persistent_graph_index(temp.path())?;
+    let (path, index) = build_persistent_graph_index(temp.path(), runtime.path())?;
     assert_eq!(index.symbols.len(), 2);
-    assert!(detect_persistent_graph(temp.path()).is_available());
+    assert!(!temp.path().join(".agent-harness").exists());
+    assert!(detect_persistent_graph(runtime.path()).is_available());
     let batch = query_persistent_graph_batch(
-        temp.path(),
+        runtime.path(),
         &[
             GraphQuery::symbol_def("beta"),
             GraphQuery::with_kind("beta", GraphQueryKind::Callers),
@@ -68,13 +72,14 @@ fn graph_queries_are_read_only_and_rebuilt_indexes_replace_stale_symbols(
         ("beta", GraphQueryKind::References, 2),
     ] {
         assert_eq!(
-            query_persistent_graph(temp.path(), &GraphQuery::with_kind(symbol, kind)).hit_count(),
+            query_persistent_graph(runtime.path(), &GraphQuery::with_kind(symbol, kind))
+                .hit_count(),
             count
         );
     }
     let before = std::fs::read(&path)?;
     assert_eq!(
-        load_simple_graph_index(temp.path())?
+        load_simple_graph_index(runtime.path())?
             .ok_or("index missing")?
             .symbols
             .len(),
@@ -82,34 +87,36 @@ fn graph_queries_are_read_only_and_rebuilt_indexes_replace_stale_symbols(
     );
     assert_eq!(std::fs::read(&path)?, before);
     std::fs::write(temp.path().join("other.rs"), "fn gamma() {}\n")?;
-    build_persistent_graph_index(temp.path())?;
+    build_persistent_graph_index(temp.path(), runtime.path())?;
     assert_eq!(
-        query_persistent_graph(temp.path(), &GraphQuery::symbol_def("beta")).hit_count(),
+        query_persistent_graph(runtime.path(), &GraphQuery::symbol_def("beta")).hit_count(),
         0
     );
     #[cfg(unix)]
     {
         std::fs::write(temp.path().join("literal\\name.rs"), "fn backslash() {}\n")?;
-        build_persistent_graph_index(temp.path())?;
+        build_persistent_graph_index(temp.path(), runtime.path())?;
         assert!(
-            matches!(query_persistent_graph(temp.path(), &GraphQuery::symbol_def("backslash")), GraphQueryResult::Hit {hits, ..} if hits[0].path == "literal\\name.rs")
+            matches!(query_persistent_graph(runtime.path(), &GraphQuery::symbol_def("backslash")), GraphQueryResult::Hit {hits, ..} if hits[0].path == "literal\\name.rs")
         );
         let before = std::fs::read(&path)?;
         let unsafe_path = temp.path().join("bad\n.rs");
         std::fs::write(&unsafe_path, "fn rogue() {}")?;
-        assert!(build_persistent_graph_index(temp.path()).is_err());
+        assert!(build_persistent_graph_index(temp.path(), runtime.path()).is_err());
         assert_eq!(std::fs::read(&path)?, before);
         std::fs::remove_file(unsafe_path)?;
     }
     std::fs::write(&path, "{incomplete")?;
-    assert!(query_persistent_graph(temp.path(), &GraphQuery::symbol_def("gamma")).is_unavailable());
+    assert!(
+        query_persistent_graph(runtime.path(), &GraphQuery::symbol_def("gamma")).is_unavailable()
+    );
     assert_eq!(std::fs::read_to_string(&path)?, "{incomplete");
     Ok(())
 }
 
 #[cfg(unix)]
 #[test]
-fn jujutsu_discovery_is_read_only_and_command_receipts_remove_credentials(
+fn jujutsu_discovery_is_read_only_and_command_results_remove_credentials(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use harness_core::jujutsu::*;
     use std::os::unix::fs::PermissionsExt;
@@ -133,9 +140,7 @@ fn jujutsu_discovery_is_read_only_and_command_receipts_remove_credentials(
     let walk = run_jujutsu_diagnostic_walk_with_probe(&probe);
     assert!(walk.outcomes.iter().all(JujutsuCommandOutcome::is_ok));
     assert!(temp.path().join("executed").exists());
-    let receipt = temp.path().join(JUJUTSU_DIAGNOSTIC_RECEIPT_REL);
-    write_jujutsu_diagnostic_receipt(&receipt, &walk)?;
-    assert!(!std::fs::read_to_string(receipt)?.contains("hidden-key"));
+    assert!(!serde_json::to_string(&walk)?.contains("hidden-key"));
     assert!(probe_jujutsu_with(temp.path(), |_| None)
         .cli
         .is_unavailable());

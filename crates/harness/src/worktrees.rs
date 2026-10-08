@@ -38,7 +38,8 @@ pub(crate) fn execute(
     deps: &CliDeps,
 ) -> Result<(), String> {
     let root = crate::workspace::workspace_root(command.workspace, deps)?;
-    let mut entries = list_session_worktrees(&root, None).map_err(|e| e.to_string())?;
+    let data_dir = deps.data_directory()?;
+    let mut entries = list_session_worktrees(&root, None, &data_dir).map_err(|e| e.to_string())?;
     let (mut report, failed) = match command.action {
         Action::List { all } => {
             let count = entries.iter().filter(|entry| entry.harness_managed).count();
@@ -53,12 +54,12 @@ pub(crate) fn execute(
                 .iter()
                 .find(|entry| entry.harness_managed && entry.slug.as_deref() == Some(&slug))
                 .ok_or("managed worktree slug was not found")?;
-            (remove(&root, entry, &options)?, false)
+            (remove(&root, entry, &options, &data_dir)?, false)
         }
         Action::Cleanup(options) => {
             let (mut removed, mut failed) = (Vec::new(), Vec::new());
             for entry in entries.iter().filter(|entry| entry.harness_managed) {
-                match remove(&root, entry, &options) {
+                match remove(&root, entry, &options, &data_dir) {
                     Ok(report) => removed.push(report),
                     Err(error) => {
                         failed.push(json!({"slug":entry.slug,"path":entry.path,"error":error}))
@@ -84,9 +85,15 @@ pub(crate) fn execute(
         Ok(())
     }
 }
-fn remove(root: &Path, entry: &ListedWorktree, options: &Removal) -> Result<Value, String> {
+fn remove(
+    root: &Path,
+    entry: &ListedWorktree,
+    options: &Removal,
+    data_dir: &Path,
+) -> Result<Value, String> {
     remove_session_worktree(RemoveWorktreeOptions {
         repository_root: root,
+        data_dir,
         path: &entry.path,
         worktree_parent: None,
         delete_branch: !options.keep_branch,

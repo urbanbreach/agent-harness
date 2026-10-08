@@ -1,4 +1,4 @@
-//! Claude Code executable resolution (senpi `executable*.ts`, `availability.ts`).
+//! Claude Code executable resolution.
 //!
 //! The harness never ships or downloads Claude Code; it runs the copy installed on this
 //! machine: `CLAUDE_CODE_EXECUTABLE`, then `claude` on PATH, then the installer's default

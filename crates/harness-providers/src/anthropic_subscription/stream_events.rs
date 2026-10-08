@@ -1,4 +1,4 @@
-//! SDK `stream_event` -> harness stream events (senpi `stream-events.ts`, `stream-protocol.ts`).
+//! SDK `stream_event` -> harness stream events.
 use super::tools::{map_sdk_tool_name_to_host, map_tool_args};
 use crate::{CompletionUsage, ProviderStreamEvent as Event, ProviderStreamFinishedMetadata};
 use regex::Regex;

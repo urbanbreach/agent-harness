@@ -32,8 +32,11 @@ palveluntarjoajaan.
 
 ## Aloita
 
+Harness toimii vain Linuxissa. macOS:ää ja Windowsia ei tueta eikä testata.
+
 Tarvitset Gitin ja vakaan Rust-työkaluketjun, jonka
-[`rust-toolchain.toml`](../rust-toolchain.toml) valitsee.
+[`rust-toolchain.toml`](../rust-toolchain.toml) valitsee. Muita linkkereitä tai
+työkaluja ei tarvita.
 
 ```bash
 git clone https://github.com/urbanbreach/agent-harness.git
@@ -125,6 +128,27 @@ tiedostoon `tui.jsonc`. `harness config sources` näyttää latausjärjestyksen.
 `harness config show --effective` näyttää yhdistetyt asetukset ja peittää salaiset
 arvot. [Asetusviite](configuration/config.md) listaa tuetut avaimet.
 
+## Missä data on
+
+Istunnot ja muu ajonaikainen data ovat projektin ulkopuolella:
+`$HARNESS_DATA_HOME/harness`, jos muuttuja on asetettu, muuten
+`$XDG_DATA_HOME/harness` tai `~/.local/share/harness`. Jokainen projekti saa
+polkunsa mukaan nimetyt kansiot. Projektin `/home/me/code/app` istunnot ovat
+kansiossa `sessions/--home-me-code-app--/`, muisti, koodi-indeksi,
+muokkausten jäljitys ja suunnitelmat kansiossa `projects/--home-me-code-app--/`
+ja hallitut työpuut kansiossa `worktrees/--home-me-code-app--/`.
+
+Projektin oma `.agent-harness/` sisältää vain itse kirjoittamasi agentit,
+taidot ja kehotteet sekä muistetut käyttöluvat.
+
+Aiemmat versiot tallensivat istunnot hakemistoon
+`<projekti>/.agent-harness/sessions`. Niitä ei siirretä automaattisesti, mutta
+ne aukeavat `--session-dir`-valitsimella:
+
+```bash
+harness sessions list --session-dir .agent-harness/sessions
+```
+
 ## Tarkastele ja jaa istunto
 
 ```bash
@@ -139,7 +163,7 @@ Lue [istunnoista](architecture/sessions-and-replay.md) ja
 
 ## Kehitä
 
-Työtila koostuu kuudesta Rust-cratesta. [Arkkitehtuuriohje](architecture/architecture.md)
+Työtila koostuu seitsemästä Rust-cratesta. [Arkkitehtuuriohje](architecture/architecture.md)
 kuvaa vastuut ja [käyttöliittymän suunnitteluohje](../DESIGN.md) päätteessä toimivat
 komponentit.
 
@@ -151,3 +175,7 @@ scripts/test-lanes.sh quality-gates
 
 Käytä Rust-testeihin nextestiä. [Testausohje](testing/testing.md) kuvaa muut
 testiryhmät. Aloita asennusongelmissa [vianmäärityksestä](operations/troubleshooting.md).
+
+## Lisenssi
+
+Harness julkaistaan [MIT-lisenssillä](../LICENSE).

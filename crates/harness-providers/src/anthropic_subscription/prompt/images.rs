@@ -1,4 +1,4 @@
-//! Cold-seed history image replay (senpi `cold-seed-images.ts`).
+//! Cold-seed history image replay.
 use super::*;
 
 // ---- cold-seed image replay (#2490) ----

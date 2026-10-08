@@ -1,5 +1,4 @@
-//! Anthropic OAuth flow (Claude Pro/Max), ported from senpi `auth/oauth/anthropic.ts`
-//! and its loopback callback listener.
+//! Anthropic OAuth flow (Claude Pro/Max) and its loopback callback listener.
 use super::codex::{AuthHttpClient, AuthHttpMethod, AuthHttpRequest};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use sha2::{Digest, Sha256};

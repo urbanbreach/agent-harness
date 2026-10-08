@@ -139,14 +139,14 @@ impl AppState {
 
     /// Open the selected plan file content into the overlay preview (Enter).
     pub fn plan_view_open_selected(&mut self) {
-        let Some((workspace, entry)) = self.selected_plan() else {
+        let Some(entry) = self.selected_plan() else {
             return;
         };
         if !self.plan_exists(&entry) {
             self.plan_view_preview = None;
             return;
         }
-        match fs::read_to_string(workspace.join(&entry.path)) {
+        match fs::read_to_string(&entry.path) {
             Ok(mut body) => {
                 if let Some((end, _)) = body.char_indices().nth(4_000) {
                     body.truncate(end);
@@ -165,12 +165,12 @@ impl AppState {
     }
 
     pub fn plan_view_copy_selected_path(&mut self) {
-        let Some((workspace, entry)) = self.selected_plan() else {
+        let Some(entry) = self.selected_plan() else {
             return;
         };
-        let path_text = workspace.join(&entry.path).display().to_string();
+        let path_text = &entry.path;
         self.status_banner = Some(format!("plan path: {path_text}"));
-        match crate::clipboard::copy(&path_text) {
+        match crate::clipboard::copy(path_text) {
             Ok(()) => self.show_toast(format!("copied plan path: {path_text}"), ToastVariant::Info),
             Err(err) => self.show_toast(
                 format!("plan path copy failed: {err} (path: {path_text})"),
@@ -181,13 +181,13 @@ impl AppState {
 
     /// Copy the full selected file, falling back to its open preview on a read error.
     pub fn plan_view_copy_selected_body(&mut self) {
-        let Some((workspace, entry)) = self.selected_plan() else {
+        let Some(entry) = self.selected_plan() else {
             return;
         };
         if !self.plan_exists(&entry) {
             return;
         }
-        let body = match fs::read_to_string(workspace.join(&entry.path))
+        let body = match fs::read_to_string(&entry.path)
             .or_else(|err| self.plan_view_preview.clone().ok_or(err))
         {
             Ok(body) => body,
@@ -222,17 +222,13 @@ impl AppState {
             self.status_banner = Some("plan deletion is unavailable during replay".to_string());
             return;
         }
-        let Some((workspace, entry)) = self.selected_plan() else {
+        let Some(entry) = self.selected_plan() else {
             return;
         };
         if !self.plan_exists(&entry) {
             return;
         }
-        let relative = Path::new(&entry.path);
-        if let Err(err) = self
-            .plan_validate_path(&entry.path)
-            .and_then(|()| validate_plan_path_components(&workspace, relative))
-        {
+        if let Err(err) = self.plan_validate_path(&entry.path) {
             self.status_banner = Some(format!("plan deletion rejected: {err}"));
             self.show_toast(
                 format!("plan deletion rejected for `{}`: {err}", entry.slug),
@@ -240,7 +236,7 @@ impl AppState {
             );
             return;
         }
-        match fs::remove_file(workspace.join(relative)) {
+        match fs::remove_file(&entry.path) {
             Ok(()) => {
                 self.plan_view_preview = None;
                 self.plan_entries = self.plan_view_entries();
@@ -257,15 +253,16 @@ impl AppState {
         }
     }
 
-    fn selected_plan(&mut self) -> Option<(PathBuf, PlanProjectionEntry)> {
-        let workspace = self.plan_workspace();
-        self.plan_entries = project_plan_list(&workspace, self.run_id());
+    // Projection paths already include the runtime directory, even when it is relative.
+    fn selected_plan(&mut self) -> Option<PlanProjectionEntry> {
+        let runtime = self.project_runtime_dir()?;
+        self.plan_entries = project_plan_list(&runtime, self.run_id());
         match self.plan_entries.get(self.plan_view_selected).cloned() {
-            Some(entry) => Some((workspace, entry)),
+            Some(entry) => Some(entry),
             None => {
                 self.show_toast(
                     if self.plan_entries.is_empty() {
-                        "no plan files yet — write a plan under .omo/plans/"
+                        "no plan files yet in the project runtime plans directory"
                     } else {
                         "no plan selected"
                     }
@@ -334,58 +331,53 @@ impl AppState {
         PlanViewSummary::from_entries(&self.plan_entries, self.plan_view_preview.is_some())
     }
 
-    fn plan_workspace(&self) -> PathBuf {
-        self.file_mention_workspace_root
-            .clone()
-            .or_else(|| (self.file_mention_workspace_root_provider)())
-            .unwrap_or_else(|| PathBuf::from("."))
+    /// Inject the same user-level storage root used by the coordinator and CLI.
+    pub fn set_storage_data_dir(&mut self, data_dir: PathBuf) {
+        self.storage_data_dir = Some(data_dir);
+        self.plan_entries.clear();
+        self.plan_view_preview = None;
+    }
+
+    pub(super) fn project_runtime_dir(&self) -> Option<PathBuf> {
+        let root = self.file_mention_workspace_root_opt()?;
+        harness_core::storage_paths::ProjectPaths::new(self.storage_data_dir.as_deref()?, &root)
+            .ok()
+            .map(|paths| paths.runtime_dir())
     }
 
     fn plan_view_entries(&self) -> Vec<PlanProjectionEntry> {
-        project_plan_list(&self.plan_workspace(), self.run_id())
+        self.project_runtime_dir()
+            .map_or_else(Vec::new, |root| project_plan_list(&root, self.run_id()))
     }
 
-    /// Validate that a plan path is confined to `.agent-harness/plans/*.md`.
-    ///
-    /// Rejects path traversal, absolute paths, non-`.md` extensions, and paths
-    /// outside the plans directory.
+    /// Accept only direct markdown children of the configured runtime plans directory.
     pub fn plan_validate_path(&self, path: &str) -> Result<(), String> {
+        let runtime = self
+            .project_runtime_dir()
+            .ok_or("project storage is unavailable")?;
+        let directory = runtime.join(PLAN_DIR);
         let path = Path::new(path);
-        if path.is_absolute() {
-            return Err("plan path must be relative to the workspace".to_string());
-        }
-
-        let mut components = path.components();
-        let Some(Component::Normal(root)) = components.next() else {
-            return Err("plan path must be under `.agent-harness/plans/`".to_string());
-        };
-        let Some(Component::Normal(plans)) = components.next() else {
-            return Err("plan path must be under `.agent-harness/plans/`".to_string());
-        };
-        let Some(Component::Normal(filename)) = components.next() else {
-            return Err("plan path must name a markdown file".to_string());
-        };
-        if components.next().is_some()
-            || root != OsStr::new(".agent-harness")
-            || plans != OsStr::new("plans")
+        let filename = path
+            .strip_prefix(&directory)
+            .map_err(|_| "plan path is outside the project plans directory")?;
+        let mut components = filename.components();
+        if !matches!(components.next(), Some(Component::Normal(_)))
+            || components.next().is_some()
+            || filename.file_stem().is_none_or(|stem| stem.is_empty())
+            || filename.extension() != Some(OsStr::new("md"))
+            || directory.join(filename) != path
         {
-            return Err("plan path must be confined to `.agent-harness/plans/`".to_string());
+            return Err("plan path must name a direct markdown file".into());
         }
-
-        let filename = filename
-            .to_str()
-            .ok_or_else(|| "plan filename must be valid UTF-8".to_string())?;
-        let filename_path = Path::new(filename);
-        let Some(stem) = filename_path.file_stem() else {
-            return Err("plan filename must not be empty".to_string());
-        };
-        if stem.is_empty() || filename_path.extension() != Some(OsStr::new("md")) {
-            return Err("plan path must end with a non-empty `.md` filename".to_string());
-        }
-
-        let canonical = Path::new(PLAN_DIR).join(filename);
-        if path != canonical {
-            return Err("plan path must use its canonical relative form".to_string());
+        for component in path.ancestors().filter(|part| !part.as_os_str().is_empty()) {
+            match fs::symlink_metadata(component) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    return Err("plan path contains a symlink component".into());
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.to_string()),
+            }
         }
         Ok(())
     }
@@ -394,34 +386,4 @@ impl AppState {
     pub fn plan_is_replay_mutation_blocked(&self) -> bool {
         self.replay_mode
     }
-}
-
-/// Reject symlink components before creating or replacing the active plan.
-/// The coordinator applies the same boundary to agent edits; keeping the TUI
-/// writer fail-closed prevents a presentation-layer write from bypassing it.
-fn validate_plan_path_components(workspace: &Path, relative: &Path) -> Result<(), String> {
-    let mut current = workspace.to_path_buf();
-    for component in relative.components() {
-        let Component::Normal(segment) = component else {
-            return Err("plan path contains an invalid component".to_string());
-        };
-        current.push(segment);
-        match fs::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(format!(
-                    "plan path contains symlink component `{}`",
-                    current.display()
-                ));
-            }
-            Ok(_) => {}
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(err) => {
-                return Err(format!(
-                    "cannot verify plan path component `{}`: {err}",
-                    current.display()
-                ));
-            }
-        }
-    }
-    Ok(())
 }

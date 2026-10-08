@@ -222,10 +222,6 @@ pub(super) fn status_dashboard_renders_empty_sections_from_app_state() {
         "expected MCP section (empty or listed):\n{rendered}"
     );
     assert!(
-        rendered.contains("No Plugins") || rendered.contains("Plugins:"),
-        "expected plugins section:\n{rendered}"
-    );
-    assert!(
         rendered.contains("Edit attribution: none yet") || rendered.contains("Edit attribution:"),
         "expected edit attribution section:\n{rendered}"
     );
@@ -265,11 +261,6 @@ pub(super) fn status_dashboard_renders_populated_sections_from_app_state() {
             }),
         ));
     }
-    app.set_plugin_lifecycle_summary(Some(harness_core::integrations::PluginLifecycleSummary {
-        installed: 2,
-        enabled: 1,
-        disabled: 1,
-    }));
     app.set_status_banner(Some(
         "previous crash detected — recovery action available".to_string(),
     ));
@@ -284,10 +275,6 @@ pub(super) fn status_dashboard_renders_populated_sections_from_app_state() {
     assert!(
         rendered.contains("Status"),
         "dashboard header missing:\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Plugins: 2 installed (1 enabled, 1 disabled)"),
-        "expected populated plugins line:\n{rendered}"
     );
     assert!(
         rendered.contains("operator dashboard:")
@@ -307,20 +294,20 @@ pub(super) fn status_dashboard_renders_populated_sections_from_app_state() {
 
     // Empty strings and unavailable probes are still bound; absence is not.
     assert!(rendered.contains("Edit attribution: 2 edits"), "{rendered}");
-    let bound = rendered
+    let counts = rendered
         .split_once("operator dashboard: ")
         .expect("dashboard count")
         .1
-        .split_whitespace()
-        .next()
-        .expect("bound count")
-        .parse::<usize>()
-        .expect("numeric bound count");
-    let expected = format!("operator dashboard: {bound} bound of 68 probes");
+        .split_once(" probes")
+        .expect("probe counts")
+        .0;
+    let (bound, total) = counts.split_once(" bound of ").expect("bound and total");
+    let bound = bound.parse::<usize>().expect("numeric bound count");
+    let expected = format!("operator dashboard: {bound} bound of {total} probes");
     app.set_auto_fallback_last_banner(Some(String::new()));
     assert!(render_text(&app, 100, 40).contains(&expected));
     app.set_auto_fallback_last_banner(None);
-    let one_less = format!("operator dashboard: {} bound of 68 probes", bound - 1);
+    let one_less = format!("operator dashboard: {} bound of {total} probes", bound - 1);
     assert!(render_text(&app, 100, 40).contains(&one_less));
     app.set_landlock_support(Some(harness_core::sandbox::LandlockSupport::Unavailable {
         reason: "fixture has no Landlock".into(),

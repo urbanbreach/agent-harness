@@ -4572,11 +4572,13 @@
           }
         },
         "sessionDir": {
-          "default": ".agent-harness/sessions",
+          "default": "",
+          "description": "Empty selects `<data>/sessions/<canonical-project-key>`; relative overrides use the workspace directory.",
           "type": "string"
         },
         "session_dir": {
-          "default": ".agent-harness/sessions",
+          "default": "",
+          "description": "Empty selects `<data>/sessions/<canonical-project-key>`; relative overrides use the workspace directory.",
           "type": "string"
         },
         "yolo": {
@@ -6010,7 +6012,7 @@
           "max_delay_ms": 30000,
           "max_retries": 2
         },
-        "session_dir": ".agent-harness/sessions",
+        "session_dir": "",
         "yolo": false
       }
     },

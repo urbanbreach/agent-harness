@@ -30,10 +30,10 @@ compaction and forks. Operator and tool contracts are documented here:
 | Child roles, permissions, continuation and background results | [Tasks](../operations/generic-agent-and-tasks.md) |
 | Rule order, sensitive reads, external paths and remembered approval | [Permissions](../permissions/permissions.md) |
 | Native files, shell, MCP, LSP and remote tools | [Tool catalog](../tools/native-tool-catalog.md) |
-| Memory, code index, attribution, cron, teams, queues and worktrees | [Workspace data](../operations/workspace-data.md) |
+| Memory, code index, attribution, in-session input queues and worktrees | [Workspace data](../operations/workspace-data.md) |
 | Lifecycle commands and vetoes | [Hooks](../operations/hooks.md) |
 | Configuration inspection and schemas | [Inspection](../operations/inspection.md) |
-| Binary updates and stdio peer diagnostics | [Operators](../operations/operators.md) |
+| Stdio peer diagnostics | [Operators](../operations/operators.md) |
 
 The rewrite retains existing working behavior. It does not add previously inert
 workers for memory, cron, teams or plugin execution. Whole-workspace shell snapshots

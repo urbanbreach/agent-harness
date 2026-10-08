@@ -59,6 +59,36 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
     helper.writer.flush().unwrap_or_abort();
     helper.wait_for(DRAFT_TEXT);
 
+    // The plan lives outside the checkout, at the same data root a coordinator discovers.
+    send_key(helper.writer.as_mut(), 0x10).unwrap_or_abort();
+    helper.wait_for("Commands");
+    send_bytes(helper.writer.as_mut(), b"view plan").unwrap_or_abort();
+    helper.wait_for("View Plan");
+    send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
+    helper.wait_for("../data/harness/projects/");
+    helper.wait_for("saved");
+    let plan_list = helper.screen_text();
+    assert!(
+        plan_list.contains("1 total · 1 existing · 0 missing"),
+        "{plan_list}"
+    );
+    send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
+    helper.wait_for("Plan preview");
+    helper.wait_for("Preview body from user-level project storage.");
+    let plan_preview = helper.screen_text();
+    assert!(
+        plan_preview.contains("External fixture plan"),
+        "{plan_preview}"
+    );
+    println!(
+        "--- external-plan-path ---\n{plan_list}\n--- external-plan-preview ---\n{plan_preview}"
+    );
+    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
+    helper.wait_until_absent("Plan preview");
+    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
+    helper.wait_until_absent("Plans");
+    helper.wait_for(DRAFT_TEXT);
+
     helper
         .master
         .resize(pty_size(MINIMUM_COLS, MINIMUM_ROWS))
@@ -177,8 +207,8 @@ pub(crate) fn pty_permission_overlay_resolves_and_preserves_draft() {
         "PTY permission dock must show edit target or summary\n{permission_screen}"
     );
     assert!(
-        permission_screen.contains(PERMISSION_DRAFT),
-        "PTY permission dock must preserve composer draft\n{permission_screen}"
+        !permission_screen.contains(PERMISSION_DRAFT),
+        "permission decisions temporarily replace the composer\n{permission_screen}"
     );
     assert!(
         permission_screen.contains('●') || permission_screen.contains("(●)"),
@@ -188,7 +218,8 @@ pub(crate) fn pty_permission_overlay_resolves_and_preserves_draft() {
     send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
     helper.wait_for("Cancel");
     send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
-    helper.wait_until_absent("Allow Edit");
+    helper.wait_until_absent("Enable YOLO mode");
+    helper.wait_for(PERMISSION_DRAFT);
     let after_resolve = helper.screen_text();
     assert!(
         !after_resolve.contains("Allow Edit"),
@@ -212,7 +243,7 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     send_key(helper.writer.as_mut(), 0x18).unwrap_or_abort();
     send_key(helper.writer.as_mut(), b's').unwrap_or_abort();
     helper.wait_for("Status · Harness dashboard");
-    helper.wait_for("No MCP Servers");
+    helper.wait_for("No recorded output yet");
     let leader_status = helper.screen_text();
     assert!(
         leader_status.contains("Status · Harness dashboard") && !leader_status.contains("Commands"),
@@ -220,11 +251,8 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     );
     assert_no_sidebar_copy(&leader_status, "status dialog via Ctrl+x s");
     assert!(
-        leader_status.contains("MCP")
-            || leader_status.contains("LSP")
-            || leader_status.contains("No MCP")
-            || leader_status.contains("Plugins"),
-        "PTY status dialog must show operator status content\n{leader_status}"
+        leader_status.contains("0 agents · 0 working") && leader_status.contains("Write a reply…"),
+        "PTY dashboard must show the empty agent overview and reply surface\n{leader_status}"
     );
     assert_dashboard_full_surface(&leader_status, PRIMARY_COLS, PRIMARY_ROWS);
 
@@ -234,7 +262,7 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
         .unwrap_or_abort();
     helper.parser = Parser::new(MINIMUM_ROWS, MINIMUM_COLS, 0);
     helper.wait_for("Status · Harness dashboard");
-    helper.wait_for("No MCP Servers");
+    helper.wait_for("0 agents · 0 working");
     let compact_status = helper.screen_text();
     assert_dashboard_full_surface(&compact_status, MINIMUM_COLS, MINIMUM_ROWS);
 
@@ -248,7 +276,7 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     helper.wait_for("Open status");
     send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
     helper.wait_for("Status · Harness dashboard");
-    helper.wait_for("No MCP Servers");
+    helper.wait_for("0 agents · 0 working");
     let palette_status = helper.screen_text();
     assert_no_sidebar_copy(&palette_status, "status dialog via palette");
     assert_dashboard_full_surface(&palette_status, MINIMUM_COLS, MINIMUM_ROWS);
@@ -330,10 +358,13 @@ pub(crate) fn pty_compaction_stream_animates_resizes_and_cancels() {
             .count(),
         1
     );
-    assert!(streamed.contains("(esc to cancel) Latest summary chunk"));
+    assert!(
+        streamed.contains("(ctrl+c to cancel) Latest summary chunk"),
+        "{streamed}"
+    );
     helper.master.resize(pty_size(48, 24)).unwrap_or_abort();
     helper.parser = Parser::new(24, 48, 0);
-    helper.wait_for("(esc to cancel)");
+    helper.wait_for("(ctrl+c to cancel)");
     let narrow = helper.screen_text();
     assert_eq!(
         narrow
@@ -346,7 +377,7 @@ pub(crate) fn pty_compaction_stream_animates_resizes_and_cancels() {
         narrow.contains("最新"),
         "stream must retain the newest trailing columns\n{narrow}"
     );
-    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
+    send_key(helper.writer.as_mut(), 0x03).unwrap_or_abort();
     helper.wait_until_absent("Compacting");
     println!("--- compaction stream ---\n{streamed}\n--- compaction at 48 columns ---\n{narrow}");
     exit_via_palette(&mut helper);
@@ -370,6 +401,9 @@ pub(crate) fn pty_helper_compaction() {
         .send(compaction_update(Some("")))
         .unwrap_or_abort();
     run_tui_with_options(TuiOptions {
+        storage_data_dir: harness_core::storage_paths::data_dir_from_lookup(&|key| {
+            std::env::var(key).ok()
+        }),
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
             historical_events: Vec::new(),
@@ -459,6 +493,9 @@ pub(crate) fn pty_helper_type_first_startup() {
     let run_dir = tempfile::tempdir().unwrap_or_abort();
     let (_keepalive, update_rx) = live_update_channel();
     run_tui_with_options(TuiOptions {
+        storage_data_dir: harness_core::storage_paths::data_dir_from_lookup(&|key| {
+            std::env::var(key).ok()
+        }),
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
             historical_events: Vec::new(),
@@ -483,9 +520,18 @@ pub(crate) fn pty_helper_scroll_follow() {
     }
 
     let run_dir = tempfile::tempdir().unwrap_or_abort();
-    let config = super::capture_events::scenario("responding").unwrap_or_abort();
+    let mut config = super::capture_events::scenario("responding").unwrap_or_abort();
+    // This journey needs scrollback, not merely a short response that fits onscreen.
+    for event in &mut config.events {
+        if let EventV1::ProviderStreamDelta(delta) = &mut event.payload {
+            delta.delta = format!("{}\n", delta.delta).repeat(8);
+        }
+    }
     let (_keepalive, update_rx) = live_update_channel();
     run_tui_with_options(TuiOptions {
+        storage_data_dir: harness_core::storage_paths::data_dir_from_lookup(&|key| {
+            std::env::var(key).ok()
+        }),
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
             historical_events: config.events,
@@ -522,19 +568,21 @@ pub(crate) fn pty_helper_permission_overlay() {
                 "tool_call_pty_overlay",
             )),
         ))));
-        thread::sleep(Duration::from_millis(500));
-        let _ = inject_tx.send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(
-            Box::new(permission_requested_event(
-                2,
-                "perm_pty_overlay",
-                "tool_call_pty_overlay",
-            )),
-        ))));
     });
 
     let resolve_tx = update_tx.clone();
     let on_ui_intent: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(move |intent| {
-        if let UiIntent::ResolvePermission {
+        if let UiIntent::SetYoloMode { enabled } = intent {
+            let _ = resolve_tx.send(LiveUpdate::YoloModeChanged { enabled });
+            let _ = resolve_tx.send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(
+                Box::new(permission_resolved_event(
+                    3,
+                    "perm_pty_overlay",
+                    harness_core::event::PermissionDecision::Allow,
+                    None,
+                )),
+            ))));
+        } else if let UiIntent::ResolvePermission {
             permission_id,
             decision,
             reason,
@@ -561,6 +609,9 @@ pub(crate) fn pty_helper_permission_overlay() {
     });
 
     run_tui_with_options(TuiOptions {
+        storage_data_dir: harness_core::storage_paths::data_dir_from_lookup(&|key| {
+            std::env::var(key).ok()
+        }),
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
             historical_events: vec![permission_seed_tool_call_event()],
@@ -600,6 +651,9 @@ pub(crate) fn pty_helper_connect_auth() {
     });
 
     run_tui_with_options(TuiOptions {
+        storage_data_dir: harness_core::storage_paths::data_dir_from_lookup(&|key| {
+            std::env::var(key).ok()
+        }),
         mode: TuiMode::Startup {
             session_history_entries: Vec::new(),
             prompt_history_path: None,
@@ -633,6 +687,7 @@ pub(crate) fn pty_helper_waiting_for_response() {
 }
 
 struct SpawnedHelper {
+    _workspace: tempfile::TempDir,
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send>,
     writer: Box<dyn Write + Send>,
@@ -901,6 +956,29 @@ fn spawn_helper_with_motion(
     command.arg("--nocapture");
     command.env(HELPER_SCENARIO_ENV, scenario);
     configure_deterministic_env(&mut command, animations_enabled);
+    let workspace = tempfile::tempdir().unwrap_or_abort();
+    let project = workspace.path().join("p");
+    std::fs::create_dir(&project).unwrap_or_abort();
+    command.cwd(&project);
+    command.env("HOME", workspace.path());
+    command.env("XDG_CONFIG_HOME", workspace.path().join("config"));
+    command.env("HARNESS_DATA_HOME", "../data");
+    command.env("XDG_DATA_HOME", workspace.path().join("data"));
+    command.env("XDG_CACHE_HOME", workspace.path().join("cache"));
+    if scenario == TYPE_FIRST_STARTUP_SCENARIO {
+        let runtime = harness_core::storage_paths::ProjectPaths::new(
+            &workspace.path().join("data/harness"),
+            &project,
+        )
+        .unwrap_or_abort()
+        .runtime_dir();
+        std::fs::create_dir_all(runtime.join(harness_core::plan::PLAN_DIR)).unwrap_or_abort();
+        std::fs::write(
+            runtime.join("plans/fixture.md"),
+            "# External fixture plan\nPreview body from user-level project storage.\n",
+        )
+        .unwrap_or_abort();
+    }
 
     let child = pair.slave.spawn_command(command).unwrap_or_abort();
     drop(pair.slave);
@@ -910,6 +988,7 @@ fn spawn_helper_with_motion(
     let output_rx = spawn_reader_thread(reader);
 
     SpawnedHelper {
+        _workspace: workspace,
         master: pair.master,
         child,
         writer,

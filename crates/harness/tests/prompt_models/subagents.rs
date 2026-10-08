@@ -110,6 +110,10 @@ print('batch complete');"#
             &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
             CliDeps::real()
                 .with_current_dir(root.path().into())
+                .with_env(
+                    "HARNESS_DATA_HOME",
+                    root.path().join("data").to_string_lossy(),
+                )
                 .without_env("HOME")
                 .with_env(
                     "XDG_CONFIG_HOME",

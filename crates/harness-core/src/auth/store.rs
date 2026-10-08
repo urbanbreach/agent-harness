@@ -48,19 +48,7 @@ impl CredentialStore {
         Self::from_lookup(&|key| std::env::var(key).ok())
     }
     pub fn from_lookup(lookup: &dyn Fn(&str) -> Option<String>) -> Option<Self> {
-        let get = |key| {
-            lookup(key)
-                .filter(|v| !v.trim().is_empty())
-                .map(PathBuf::from)
-        };
-        if let Some(path) = get("HARNESS_DATA_HOME") {
-            return Some(Self::new(path.join("harness")));
-        }
-        #[cfg(windows)]
-        let path = get("LOCALAPPDATA").or_else(|| get("APPDATA"));
-        #[cfg(not(windows))]
-        let path = get("XDG_DATA_HOME").or_else(|| get("HOME").map(|p| p.join(".local/share")));
-        path.map(|p| Self::new(p.join("harness")))
+        crate::storage_paths::data_dir_from_lookup(lookup).map(Self::new)
     }
     pub fn data_dir(&self) -> &Path {
         &self.data_dir

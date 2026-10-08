@@ -438,6 +438,7 @@ async fn run_interactive_mode(
                     .map(|config| config.ui.keybindings.clone()),
                 cmd.no_alt_screen,
                 settings.yolo,
+                settings.data_dir.clone(),
             )
             .await
         },
@@ -543,6 +544,7 @@ async fn run_direct_continue_mode(
                     .map(|config| config.ui.keybindings.clone()),
                 cmd.no_alt_screen,
                 settings.yolo,
+                settings.data_dir.clone(),
             )
             .await
         },
@@ -604,6 +606,7 @@ async fn run_startup_launcher(
     keybindings: Option<BTreeMap<String, String>>,
     skip_alternate_screen: bool,
     yolo: bool,
+    data_dir: PathBuf,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("startup_launcher.begin");
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
@@ -685,6 +688,7 @@ async fn run_startup_launcher(
             exit_on_finish,
             on_ui_intent: Some(on_ui_intent),
             keybindings,
+            storage_data_dir: Some(data_dir),
             toggles: None,
             preserve_terminal_on_exit: true,
             skip_alternate_screen,
@@ -891,8 +895,9 @@ async fn run_continue_session_bootstrap(
     let session_history_entries =
         load_live_session_history_entries(&run.run_dir, &settings.session_dir)?;
 
+    let data_dir = settings.data_dir.clone();
     let tui_result = tokio::task::spawn_blocking(move || {
-        run_tui_with_options(continue_live_tui_options(
+        let mut options = continue_live_tui_options(
             run.run_dir,
             historical_events,
             session_history_entries,
@@ -904,7 +909,9 @@ async fn run_continue_session_bootstrap(
             keybindings,
             toggles,
             no_alt_screen,
-        ))
+        );
+        options.storage_data_dir = Some(data_dir);
+        run_tui_with_options(options)
     })
     .await
     .map_err(|err| format!("TUI task failed: {err}"))?;
@@ -970,6 +977,7 @@ async fn run_live_mode(
     };
 
     let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
+    coordinator_config.data_dir.clone_from(&settings.data_dir);
     coordinator_config.permission_policy = default_permission_policy();
     coordinator_config.tool_registry =
         Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
@@ -1052,9 +1060,10 @@ async fn run_live_mode(
     let session_history_entries =
         load_live_session_history_entries(&run_dir, &settings.session_dir)?;
 
+    let data_dir = settings.data_dir.clone();
     let tui_result = tokio::task::spawn_blocking(move || {
         profile_handoff("new_live.live_tui_begin");
-        run_tui_with_options(new_live_tui_options(
+        let mut options = new_live_tui_options(
             run_dir,
             session_history_entries,
             live_update_rx,
@@ -1065,7 +1074,9 @@ async fn run_live_mode(
             keybindings,
             toggles,
             no_alt_screen,
-        ))
+        );
+        options.storage_data_dir = Some(data_dir);
+        run_tui_with_options(options)
     })
     .await
     .map_err(|err| format!("TUI task failed: {err}"))?;

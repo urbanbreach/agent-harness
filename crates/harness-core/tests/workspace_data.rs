@@ -51,8 +51,9 @@ fn durable_attribution_keeps_other_writers_and_reverts_to_the_recorded_agent_byt
 ) -> Result<(), Box<dyn std::error::Error>> {
     use harness_core::edit_attribution::*;
     let temp = tempfile::tempdir()?;
-    let mut journal = EditAttributionJournal::open(temp.path())?;
-    let mut second = EditAttributionJournal::open(temp.path())?;
+    let runtime = tempfile::tempdir()?;
+    let mut journal = EditAttributionJournal::open(temp.path(), runtime.path())?;
+    let mut second = EditAttributionJournal::open(temp.path(), runtime.path())?;
     assert_eq!(fs::read_dir(temp.path())?.count(), 0);
     journal.record_agent_tool_edit("source", b"one\ntwo\n", None)?;
     second.observe_external("other", b"external", None)?;
@@ -68,9 +69,10 @@ fn durable_attribution_keeps_other_writers_and_reverts_to_the_recorded_agent_byt
     let result = journal.revert_path("source")?;
     assert_eq!(result.bytes_written, 8);
     assert_eq!(fs::read(temp.path().join("source"))?, b"one\ntwo\n");
-    let mut reopened = EditAttributionJournal::open(temp.path())?;
+    let mut reopened = EditAttributionJournal::open(temp.path(), runtime.path())?;
     assert!(!reopened.query("source")?.drifted);
     let bytes = fs::read(reopened.journal_path())?;
+    assert!(!temp.path().join(".agent-harness").exists());
     assert!(reopened
         .record_agent_tool_edit("../escape", b"x", None)
         .is_err());
@@ -103,7 +105,7 @@ fn durable_attribution_keeps_other_writers_and_reverts_to_the_recorded_agent_byt
             .join("\n");
         fs::write(reopened.journal_path(), body)?;
         assert!(
-            EditAttributionJournal::open(temp.path()).is_err(),
+            EditAttributionJournal::open(temp.path(), runtime.path()).is_err(),
             "invalid attribution source or snapshot digest accepted"
         );
     }
@@ -132,7 +134,8 @@ fn durable_attribution_keeps_other_writers_and_reverts_to_the_recorded_agent_byt
 fn memory_updates_are_atomic_redacted_and_preserve_other_writers(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    let store = DurableMemoryStore::for_workspace(temp.path());
+    let runtime = tempfile::tempdir()?;
+    let store = DurableMemoryStore::for_runtime(runtime.path());
     assert!(store.search("")?.is_empty());
     store.flush_existing()?;
     assert_eq!(fs::read_dir(temp.path())?.count(), 0);
@@ -153,6 +156,7 @@ fn memory_updates_are_atomic_redacted_and_preserve_other_writers(
         writer.join().map_err(|_| "memory worker failed")??;
     }
     assert_eq!(store.search("PARALLEL")?.len(), 2);
+    assert_eq!(fs::read_dir(temp.path())?.count(), 0);
     let original = store.put_scoped(
         " session ",
         r#"{"api_key":"private-value","note":"retain"}"#,
@@ -185,7 +189,10 @@ fn plan_projection_never_creates_paths_or_follows_symlinks(
     let active = project_plan_list(temp.path(), Some("../Live//Run"));
     assert_eq!(active.len(), 1);
     assert!(!active[0].exists);
-    assert_eq!(active[0].path, ".agent-harness/plans/Live-Run.md");
+    assert_eq!(
+        active[0].path,
+        temp.path().join("plans/Live-Run.md").to_string_lossy()
+    );
     assert_eq!(fs::read_dir(temp.path())?.count(), 0);
     let directory = temp.path().join(PLAN_DIR);
     fs::create_dir_all(&directory)?;
@@ -204,5 +211,13 @@ fn plan_projection_never_creates_paths_or_follows_symlinks(
         ),
         ("Live-Run", true, Some(8))
     );
+    #[cfg(unix)]
+    {
+        let linked = temp.path().join("linked-runtime");
+        std::os::unix::fs::symlink(temp.path(), &linked)?;
+        let linked_entries = project_plan_list(&linked, Some("Live-Run"));
+        assert_eq!(linked_entries.len(), 1);
+        assert!(!linked_entries[0].exists);
+    }
     Ok(())
 }

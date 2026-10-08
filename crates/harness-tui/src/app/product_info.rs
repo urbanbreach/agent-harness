@@ -21,40 +21,11 @@ impl ProductInfo {
 }
 
 impl AppState {
-    pub(in crate::app) fn open_product_info(&mut self, usage: bool) {
-        let mut rows = Vec::new();
-        if usage {
-            rows = self.recorded_usage_rows();
-        } else if self.replay_mode {
-            rows.push((
-                "Recorded session".into(),
-                "Live extension configuration and connection state are unavailable during replay."
-                    .into(),
-            ));
-        } else {
-            if let Some(config) = harness_core::config::registered_integrations_config() {
-                for (name, server) in config.mcp.servers {
-                    let state = mcp_connection_description(&name, server.enabled());
-                    rows.push((format!("MCP · {name}"), state));
-                }
-            }
-            if let Some(summary) = self.extension_manifest_summary.as_ref() {
-                rows.push(("Extension manifest".into(), summary.one_line()));
-            }
-            if let Some(summary) = self.extension_discover_summary {
-                rows.push(("Discovery".into(), summary.one_line()));
-            }
-            if rows.is_empty() {
-                rows.push((
-                    "No configured extensions".into(),
-                    "Use the MCP configuration controls to manage configured servers.".into(),
-                ));
-            }
-            rows.push(("Management".into(), "Press m for the existing MCP controls. Extension installation and marketplace browsing are unavailable in this TUI.".into()));
-        }
+    pub(in crate::app) fn open_product_info(&mut self) {
+        let rows = self.recorded_usage_rows();
         self.product_info = ProductInfo {
             visible: true,
-            title: if usage { "Usage" } else { "Extensions" },
+            title: "Usage",
             rows,
             selected: 0,
             query: String::new(),
@@ -146,10 +117,6 @@ impl AppState {
                 self.product_info.selected =
                     (self.product_info.selected + 8).min(count.saturating_sub(1))
             }
-            KeyCode::Char('m') if self.product_info.title == "Extensions" && !self.replay_mode => {
-                self.product_info.visible = false;
-                self.open_toggles_menu();
-            }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 if let Some((label, text)) =
                     self.product_info.matches().get(self.product_info.selected)
@@ -177,18 +144,5 @@ impl AppState {
             }
             _ => {}
         }
-    }
-}
-
-fn mcp_connection_description(name: &str, enabled: bool) -> String {
-    if !enabled {
-        return "Disabled".into();
-    }
-    match harness_core::config::registered_mcp_server_connection_state(name) {
-        Some(harness_core::config::McpServerConnectionState::Connected) => "Connected".into(),
-        Some(harness_core::config::McpServerConnectionState::Failed(error)) => {
-            format!("Failed: {error}")
-        }
-        None => "Connection state unavailable".into(),
     }
 }

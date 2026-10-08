@@ -231,9 +231,6 @@ fn apply_update(
         LiveUpdate::AuthProviderCatalogRefreshed { launch_metadata } => {
             app.apply_auth_provider_catalog_refresh(*launch_metadata);
         }
-        LiveUpdate::PluginLifecycleSummary(summary) => {
-            app.set_plugin_lifecycle_summary(Some(summary));
-        }
         LiveUpdate::RestoreQueuedInput(texts) => app.restore_queued_input(texts),
     }
     true

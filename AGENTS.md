@@ -16,6 +16,7 @@ provider, native-tool, terminal UI, and deterministic test-support crates.
 
 ```text
 agent-harness/
+├── .github/workflows/       # GitHub Actions CI (Linux runners)
 ├── crates/
 │   ├── harness/             # CLI adapter and command orchestration
 │   ├── harness-core/        # coordinator, durable events, config, projections
@@ -72,6 +73,14 @@ Reference centrality was not measured; `Refs` records only that limitation.
   public boundaries; opt-in PTY/live/native evidence remains deterministic.
 - Workspace lint policy denies unsafe code, unused must-use values, non-ASCII
   identifiers, unwrap/expect/panic/todo, and selected sharp Clippy patterns.
+- Runtime data lives outside the project, resolved by `harness_core::storage_paths`:
+  sessions in `<data>/sessions/<key>/`, memory, code index, edit attribution and plans
+  in `<data>/projects/<key>/`, worktrees in `<data>/worktrees/<key>/`. `<data>` is
+  `$HARNESS_DATA_HOME/harness`, `$XDG_DATA_HOME/harness`, or `~/.local/share/harness`;
+  `<key>` wraps the canonical project path in `--`, with `/`, `\` and `:` turned into
+  `-`. The project's `.agent-harness/` keeps only authored agents, skills, prompts and
+  remembered permission grants. Library code takes injected paths; tests use temporary
+  data roots.
 
 ## Tests
 
@@ -117,8 +126,9 @@ When running tests, use nextest instead of cargo test.
   conservative unknown or structured unavailable outcomes.
 - Do not let rendering mutate application state or allow lower-priority layers to
   consume input owned by an overlay.
-- Do not create startup probe artifacts such as `harness.json`, `.agent-harness/plans`,
-  `.harness-cow-probe`, `.harness-sessions-probe`, `.harness-foreign-probe-root`, or `.jj`.
+- Do not create startup probe artifacts such as `harness.json`, plan files inside the
+  project, `.harness-cow-probe`, `.harness-sessions-probe`, `.harness-foreign-probe-root`,
+  or `.jj`.
 
 ## UNIQUE STYLES
 
@@ -141,6 +151,7 @@ scripts/test-lanes.sh fast
 scripts/test-lanes.sh integration
 scripts/test-lanes.sh all-deterministic
 python3 scripts/check-test-suite-gates.py
+HARNESS_BINARY_SIGNOFF=1 cargo nextest run --profile ci -p harness --test binary_smoke --ignore-default-filter
 bash scripts/harness-qa-dogfood.sh --self-test
 ```
 
@@ -152,3 +163,7 @@ bash scripts/harness-qa-dogfood.sh --self-test
   live, PTY, and native binaries, and serializes process-global-state tests.
 - Performance contracts use release-mode tests; Linux PTY signoff requires
   `HARNESS_TUI_PTY_SIGNOFF=1`.
+- Harness supports Linux only; CI runs on GitHub Actions Ubuntu runners
+  (`.github/workflows/ci.yml`). The performance workflow runs weekly or on demand.
+- Default builds use the stock Rust linker. Wild is opt-in via
+  `cargo --config .cargo/wild.toml`; see `docs/testing/build-performance.md`.

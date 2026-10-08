@@ -25,13 +25,31 @@ location.
 
 ## Storage
 
+Generated data uses a user-level data directory: `$HARNESS_DATA_HOME/harness`,
+then `$XDG_DATA_HOME/harness`, then `$HOME/.local/share/harness`, ignoring empty
+values.
+
+`<project-key>` encodes the canonical absolute project path: strip one leading
+slash or backslash, replace slashes, backslashes and colons with dashes, and wrap
+the result in `--`. For example, `/work/app` becomes `--work-app--`. Symlink aliases
+therefore share a bucket. The data root is separate from configuration discovery.
+
 | Data | Location |
 | --- | --- |
 | Runtime config | XDG or project `harness.json` and `harness.jsonc` files |
 | Keyboard config | XDG or project `tui.json` and `tui.jsonc` files |
-| Project prompts and skills | `.agent-harness/agents` and `.agent-harness/skills` |
-| Events and artifacts | The configured session directory and its per-run directories |
-| Stored credentials | `credentials/<authProvider>.json` under the platform data directory |
+| Authored project agents, skills and prompts | `.agent-harness/agents`, `.agent-harness/skills` and `.agent-harness/prompts` |
+| Workspace permission grants | Project `.agent-harness/permission-grants.json` |
+| Events and artifacts | `<data-dir>/sessions/<project-key>/<run-id>`, unless session storage is explicitly overridden |
+| Memory, code index and edit attribution | `<data-dir>/projects/<project-key>` |
+| Managed Git worktrees | `<data-dir>/worktrees/<project-key>` |
+| Stored credentials | `<data-dir>/credentials/<authProvider>.json` |
+
+An empty `runtime.session_dir` selects managed storage automatically. A nonempty
+config value or `--session-dir` overrides session storage only. Relative overrides
+still resolve against the selected project. Authored project files and workspace
+grants are not relocated. Old project-local sessions are not migrated; read them
+with `--session-dir <project>/.agent-harness/sessions`.
 
 Use `harness config sources` to find active configuration files. Credential files
 use restrictive permissions. Logout removes stored credentials, but leaves

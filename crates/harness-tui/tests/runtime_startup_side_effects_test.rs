@@ -50,6 +50,7 @@ fn production_tui_startup_does_not_write_synthetic_probe_artifacts() {
     // act
     let (_tx, rx) = live_update_channel();
     let _ = run_tui_with_options(TuiOptions {
+        storage_data_dir: Some(workspace_root.join("data")),
         mode: TuiMode::Startup {
             session_history_entries: Vec::new(),
             prompt_history_path: None,
@@ -83,6 +84,7 @@ fn production_tui_live_init_does_not_write_synthetic_probe_artifacts() {
     // act
     let (_tx, rx) = live_update_channel();
     let _ = run_tui_with_options(TuiOptions {
+        storage_data_dir: Some(workspace_root.join("data")),
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
             historical_events: Vec::new(),
@@ -172,6 +174,7 @@ fn production_tui_startup_preserves_existing_files_and_symlinks() {
     // act
     let (_tx, rx) = live_update_channel();
     let _ = run_tui_with_options(TuiOptions {
+        storage_data_dir: Some(workspace_root.join("data")),
         mode: TuiMode::Startup {
             session_history_entries: Vec::new(),
             prompt_history_path: None,
@@ -228,6 +231,7 @@ fn production_tui_live_init_preserves_existing_workspace_files() {
     // act
     let (_tx, rx) = live_update_channel();
     let _ = run_tui_with_options(TuiOptions {
+        storage_data_dir: Some(workspace_root.join("data")),
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
             historical_events: Vec::new(),

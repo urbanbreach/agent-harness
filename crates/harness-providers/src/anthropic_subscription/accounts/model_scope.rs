@@ -1,7 +1,7 @@
-//! Model-scoped rate-limit blocks (senpi `credential-pool/model-scope.ts`).
+//! Model-scoped rate-limit blocks.
 use super::*;
 
-// ---- model scope (senpi#2555) ----
+// ---- model scope ----
 
 static FAMILY_KEY: LazyLock<Option<Regex>> =
     LazyLock::new(|| Regex::new(r"^(?:opus|sonnet|haiku|fable|mythos)$").ok());

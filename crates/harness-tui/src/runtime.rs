@@ -72,6 +72,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         options.on_ui_intent,
         bindings.as_ref(),
     );
+    if let Some(data_dir) = options.storage_data_dir {
+        app.set_storage_data_dir(data_dir);
+    }
     if let Some(toggles) = options.toggles {
         app.set_toggles_config(toggles);
     }
@@ -425,6 +428,7 @@ impl Runtime {
 pub fn run_tui() -> Result<()> {
     let (_sender, receiver) = live_update_channel();
     run_tui_with_options(TuiOptions {
+        storage_data_dir: None,
         mode: TuiMode::Live {
             run_dir: PathBuf::from("."),
             historical_events: Vec::new(),

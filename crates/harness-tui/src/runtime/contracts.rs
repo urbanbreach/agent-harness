@@ -58,7 +58,6 @@ pub enum LiveUpdate {
     },
     /// Input the user queued for a turn they interrupted, returned to the editor.
     RestoreQueuedInput(Vec<String>),
-    PluginLifecycleSummary(harness_core::integrations::PluginLifecycleSummary),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,6 +87,7 @@ pub enum TuiMode {
 }
 
 pub struct TuiOptions {
+    pub storage_data_dir: Option<PathBuf>,
     pub mode: TuiMode,
     pub exit_on_finish: bool,
     pub on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,

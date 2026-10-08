@@ -477,11 +477,7 @@ fn dashboard_tail_pins_prompt_and_secondary_editors_keep_recorded_content() {
             assert!(!rendered.contains("**Recorded"), "{rendered}");
         }
         app.close_status_dashboard();
-        for (command, title) in [
-            ("settings", "Settings"),
-            ("usage", "Usage"),
-            ("extensions", "Extensions"),
-        ] {
+        for (command, title) in [("settings", "Settings"), ("usage", "Usage")] {
             app.execute_slash_command(command, None);
             let rendered = capture(&app, area, command);
             assert!(rendered.contains(title), "{rendered}");

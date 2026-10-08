@@ -51,6 +51,18 @@ pub(super) struct Contract {
 }
 
 impl Contract {
+    pub(super) fn refresh_binding() -> Result {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let bytes = fs::read(root.join(FIXTURE))?;
+        fs::write(
+            root.join(IDENTITY),
+            serde_json::to_vec_pretty(&json!({
+                "binding": binding()?, "fixture_sha256": sha256(&bytes),
+            }))?,
+        )?;
+        Ok(())
+    }
+
     pub(super) fn load() -> Result<Self> {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let bytes = fs::read(root.join(FIXTURE))?;

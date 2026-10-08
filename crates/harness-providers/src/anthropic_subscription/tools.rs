@@ -1,4 +1,4 @@
-//! Tool exposure (senpi `tools.ts`, `custom-tools.ts`, `custom-tools-schema.ts`).
+//! Tool exposure.
 //!
 //! Claude Code plans; the harness executes. `read`, `bash`, `grep` and `glob` are served as
 //! Claude Code's built-ins; every other tool (including `write`/`edit`, whose built-in

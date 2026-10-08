@@ -1540,7 +1540,6 @@ dependencies = [
  "reqwest",
  "rustix",
  "schemars",
- "semver",
  "serde",
  "serde_json",
  "serde_urlencoded",

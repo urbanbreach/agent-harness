@@ -1,0 +1,13 @@
+{
+  "binding": {
+    "contract": "Enter steers; Alt+i queues (9b4028dc, 2026-10-08)",
+    "original_base": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
+    "original_fixture_sha256": "ae9cf00461889a0a8b254242f33e484ad1ebca401c4768f9cd33f801f38c16cf",
+    "footer": ["Enter:queue", "Enter:steer"],
+    "queue_input": [
+      {"key": "Enter", "modifiers": 0},
+      {"key": "Char('i')", "modifiers": 4}
+    ]
+  },
+  "fixture_sha256": "a67f082381b60138f37120085c38844fc406f372c5c215620245d1de26709449"
+}

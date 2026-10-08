@@ -8,8 +8,9 @@ const MAX_EDGES: usize = 64_000;
 
 pub fn build_persistent_graph_index(
     root: &Path,
+    runtime_dir: &Path,
 ) -> Result<(PathBuf, SimpleGraphIndex), CodeGraphError> {
-    let path = root.join(GRAPH_INDEX_REL);
+    let path = runtime_dir.join(GRAPH_INDEX_FILE);
     validate_path(&path)?;
     if !root.is_dir() {
         return Err(CodeGraphError::Invalid("workspace is not a directory"));
@@ -68,8 +69,10 @@ pub fn build_persistent_graph_index(
     crate::store::write_private_atomic(&path, &bytes)?;
     Ok((path, index))
 }
-pub fn load_simple_graph_index(root: &Path) -> Result<Option<SimpleGraphIndex>, CodeGraphError> {
-    let path = root.join(GRAPH_INDEX_REL);
+pub fn load_simple_graph_index(
+    runtime_dir: &Path,
+) -> Result<Option<SimpleGraphIndex>, CodeGraphError> {
+    let path = runtime_dir.join(GRAPH_INDEX_FILE);
     validate_path(&path)?;
     let text = match read_text(&path, MAX_BYTES) {
         Ok(text) => text,

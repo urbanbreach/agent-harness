@@ -1,4 +1,4 @@
-//! Usage-limit reset times (senpi `credential-pool/reset-time.ts`).
+//! Usage-limit reset times.
 //!
 //! When a spent account's usage limit resets, read from the failure text: a JSON reset
 //! field or reset prose. Milliseconds from

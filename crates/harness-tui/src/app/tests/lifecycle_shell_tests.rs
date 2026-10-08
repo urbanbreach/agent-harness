@@ -1,10 +1,9 @@
 use super::*;
 use crate::UnwrapOrAbort;
 
-pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
+pub(super) fn seed_operator_host_probes_sets_jujutsu() {
     // Given: live app with no operator host probes bound yet
     let mut app = AppState::new_live(None, false, None);
-    assert!(app.binary_update_summary().is_none());
     assert!(app.jujutsu_probe().is_none());
 
     // When: seed with an explicit workspace root (no PATH dependence on jj)
@@ -16,7 +15,6 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("create seed workspace");
     app.seed_operator_host_probes(Some(root.as_path()));
-    assert_binary_probes(&app);
     assert_attribution_probes(&app);
     assert_settings_values(&app);
     assert_settings_definitions();
@@ -25,52 +23,10 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
     assert_crash_probes(&app);
     assert_acp_probes(&app);
     assert_fallback_probes(&app);
-    assert_plugin_probes(&app);
-    assert_extension_probes(&app);
-    super::lifecycle_shell_part3_test::seed_operator_host_probes_sets_binary_update_and_jujutsu_continuation(&mut app);
+    super::lifecycle_shell_part3_test::seed_operator_host_probes_sets_jujutsu_continuation(
+        &mut app,
+    );
     let _ = std::fs::remove_dir_all(&root);
-}
-
-fn assert_binary_probes(app: &AppState) {
-    let bin_ver = app
-        .binary_version_info()
-        .expect("binary version info bound");
-    assert!(
-        bin_ver.one_line().contains("harness") || bin_ver.one_line().contains("binary:"),
-        "expected binary version: {}",
-        bin_ver.one_line()
-    );
-
-    // Then: binary update multi-policy offline checks are bound honestly
-    let binary = app
-        .binary_update_summary()
-        .expect("binary update summary bound");
-    assert!(
-        binary.total >= 5 && binary.checks_unavailable >= 5,
-        "expected multi-channel binary update checks: {binary:?}"
-    );
-    assert!(!binary.update_available);
-    assert!(binary.all_unavailable());
-    assert!(binary.one_line().contains("update_available=false"));
-    let binary_policy = app
-        .binary_update_policy()
-        .expect("binary update policy bound");
-    assert_eq!(
-        binary_policy.channel.as_deref(),
-        Some("offline"),
-        "expected offline channel policy: {binary_policy:?}"
-    );
-    let binary_check = app
-        .binary_update_check()
-        .expect("binary update last check bound");
-    assert!(binary_check.is_unavailable());
-    assert!(
-        binary_check.one_line().contains("unavailable")
-            || binary_check.one_line().contains("offline")
-            || binary_check.one_line().contains("not"),
-        "expected unavailable last check: {}",
-        binary_check.one_line()
-    );
 }
 
 fn assert_attribution_probes(app: &AppState) {
@@ -403,113 +359,6 @@ fn assert_fallback_probes(app: &AppState) {
     );
 }
 
-fn assert_plugin_probes(app: &AppState) {
-    let plugins = app
-        .plugin_lifecycle_summary()
-        .expect("plugin lifecycle summary bound");
-    assert!(
-        plugins.installed >= 2 && plugins.enabled >= 1 && plugins.disabled >= 1,
-        "expected multi-plugin lifecycle installed/enabled/disabled: {plugins:?}"
-    );
-    let plugin_install = app
-        .plugin_last_install()
-        .expect("plugin last install bound");
-    assert!(
-        plugin_install.one_line().contains("plugin install: ok"),
-        "expected successful probe install: {}",
-        plugin_install.one_line()
-    );
-    assert!(
-        plugin_install.one_line().contains("harness.probe.plugin"),
-        "expected probe plugin id (primary or secondary): {}",
-        plugin_install.one_line()
-    );
-    let plugin_activate = app
-        .plugin_last_activate()
-        .expect("plugin last activate bound");
-    assert!(
-        plugin_activate.one_line().contains("plugin activate: ok"),
-        "expected successful probe activate: {}",
-        plugin_activate.one_line()
-    );
-    let plugin_deactivate = app
-        .plugin_last_deactivate()
-        .expect("plugin last deactivate bound");
-    assert!(
-        plugin_deactivate
-            .one_line()
-            .contains("plugin deactivate: ok"),
-        "expected successful probe deactivate: {}",
-        plugin_deactivate.one_line()
-    );
-    let plugin_remove = app.plugin_last_remove().expect("plugin last remove bound");
-    assert!(
-        plugin_remove.one_line().contains("plugin remove: failed"),
-        "missing-remove-probe should fail closed: {}",
-        plugin_remove.one_line()
-    );
-    let plugin_first = app.plugin_first_line().expect("plugin first line bound");
-    assert!(
-        plugin_first.contains("harness.probe.plugin"),
-        "expected first plugin line: {plugin_first}"
-    );
-    assert!(
-        plugin_first.contains("enablement=enabled") || plugin_first.contains("enablement=disabled"),
-        "expected enablement state on multi-plugin first line: {plugin_first}"
-    );
-    assert!(
-        plugin_deactivate
-            .one_line()
-            .contains("harness.probe.plugin.secondary")
-            || plugin_deactivate.one_line().contains("secondary"),
-        "expected secondary deactivate last: {}",
-        plugin_deactivate.one_line()
-    );
-}
-
-fn assert_extension_probes(app: &AppState) {
-    // Then: multi-descriptor discover + primary probe loaded (descriptor-only; no code load)
-    let discover = app
-        .extension_discover_summary()
-        .expect("extension discover summary bound");
-    assert!(
-        discover.discovered >= 3,
-        "expected multi-descriptor discover (primary+alt+tools[+plugin]): discovered={}",
-        discover.discovered
-    );
-    assert!(!discover.loads_external_code);
-    let summary = app
-        .extension_manifest_summary()
-        .expect("extension manifest summary bound");
-    assert_eq!(summary.extension_id, "harness.probe.extension");
-    assert!(
-        summary.one_line().contains("harness.probe.extension")
-            || summary.one_line().contains("extension descriptor:"),
-        "expected probe descriptor one_line: {}",
-        summary.one_line()
-    );
-    assert!(
-        summary.capabilities >= 1 && summary.enabled_capabilities >= 1,
-        "expected primary probe capability counts: caps={} enabled={}",
-        summary.capabilities,
-        summary.enabled_capabilities
-    );
-    assert!(
-        summary.tools >= 1,
-        "expected primary probe tool count: tools={}",
-        summary.tools
-    );
-    assert!(!summary.loads_external_code);
-    let load = app
-        .extension_last_load()
-        .expect("extension last load bound");
-    assert!(
-        load.one_line().contains("ok") && load.one_line().contains("harness.probe.extension"),
-        "expected Loaded primary probe load: {}",
-        load.one_line()
-    );
-}
-
 pub(super) fn seed_operator_host_probes_binds_crash_scan_and_foreign_discover() {
     // Given: isolated sessions root with one clean run and one previous-crash run
     let root = std::env::temp_dir().join(format!(
@@ -641,8 +490,7 @@ fn assert_foreign_discovery_probes(app: &AppState) {
         import_last.one_line()
     );
 
-    // Then: binary + jujutsu + sandbox still seeded
-    assert!(app.binary_update_summary().is_some());
+    // Then: jujutsu and sandbox are still seeded
     assert!(app.jujutsu_probe().is_some());
     let sandbox = app
         .sandbox_fs_plan_summary()

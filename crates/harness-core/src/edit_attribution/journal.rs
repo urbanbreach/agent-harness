@@ -1,6 +1,6 @@
 use super::*;
 use std::io::Write;
-pub const EDIT_ATTRIBUTION_JOURNAL_REL: &str = ".agent-harness/edit-attribution.jsonl";
+pub const EDIT_ATTRIBUTION_JOURNAL_FILE: &str = "edit-attribution.jsonl";
 
 #[derive(Debug, thiserror::Error)]
 pub enum EditAttributionError {
@@ -57,8 +57,12 @@ pub struct EditAttributionJournal {
     state: records::State,
 }
 impl EditAttributionJournal {
-    pub fn open(root: impl Into<PathBuf>) -> Result<Self, EditAttributionError> {
-        let mut journal = Self::empty(root);
+    /// Load project attribution without writing to the workspace or creating storage.
+    pub fn open(
+        root: impl Into<PathBuf>,
+        runtime_dir: &Path,
+    ) -> Result<Self, EditAttributionError> {
+        let mut journal = Self::empty(root, runtime_dir);
         crate::store::validate_private_path(&journal.workspace_root).map_err(|source| {
             EditAttributionError::Read {
                 path: journal.workspace_root.display().to_string(),
@@ -68,10 +72,10 @@ impl EditAttributionJournal {
         journal.state = records::load(&journal.journal_path)?;
         Ok(journal)
     }
-    pub fn empty(root: impl Into<PathBuf>) -> Self {
+    pub fn empty(root: impl Into<PathBuf>, runtime_dir: &Path) -> Self {
         let workspace_root = root.into();
         Self {
-            journal_path: workspace_root.join(EDIT_ATTRIBUTION_JOURNAL_REL),
+            journal_path: runtime_dir.join(EDIT_ATTRIBUTION_JOURNAL_FILE),
             workspace_root,
             state: records::State::default(),
         }

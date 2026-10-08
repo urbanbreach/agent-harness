@@ -39,7 +39,8 @@ pub(crate) fn dashboard(
     .map_err(|e| e.to_string())?;
     let configured = loaded.is_some();
     let config = loaded.map(|c| c.config).unwrap_or_default();
-    let root = cwd.join(directory.unwrap_or_else(|| config.runtime.session_dir.clone()));
+    let root =
+        deps.session_directory(&directory.unwrap_or_else(|| config.runtime.session_dir.clone()))?;
     let redactor = crate::inspect::redactor(&config, deps)?;
     let mut rows = crate::replay::inspect_session_catalog(&root)?;
     rows.retain(SessionInspectionEntry::is_visible_in_operator_history);
@@ -214,7 +215,9 @@ pub(crate) fn execute(
 ) -> Result<(), String> {
     let cwd = deps.current_dir().map_err(|e| e.to_string())?;
     let configured = crate::inspect::configured(config, deps)?;
-    let root = cwd.join(directory.unwrap_or_else(|| configured.config.runtime.session_dir.clone()));
+    let root = deps.session_directory(
+        &directory.unwrap_or_else(|| configured.config.runtime.session_dir.clone()),
+    )?;
     let redactor = crate::inspect::redactor(&configured.config, deps)?;
     let resolve = |session: &str| crate::recovery::resolve_session_run_dir(session, &root, &cwd);
     let mut report = match command.action {
@@ -244,7 +247,9 @@ pub(crate) fn execute(
         Action::Replay { session } => crate::replay::report(
             &crate::recovery::resolve_session_run_dir(&session, &root, &cwd)?,
         )?,
-        Action::Rewind(command) => operations::rewind(&resolve(&command.session)?, &cwd, command)?,
+        Action::Rewind(command) => {
+            operations::rewind(&resolve(&command.session)?, &cwd, command, deps)?
+        }
         Action::Export(command) => {
             let path = resolve(&command.session)?;
             let bytes = crate::exports::checked_json(

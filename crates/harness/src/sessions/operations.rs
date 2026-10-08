@@ -2,7 +2,12 @@ use super::*;
 use harness_core::{crash_recovery::*, session_lineage::*};
 use std::collections::BTreeMap;
 
-pub(super) fn rewind(path: &Path, cwd: &Path, command: Rewind) -> Result<Value, String> {
+pub(super) fn rewind(
+    path: &Path,
+    cwd: &Path,
+    command: Rewind,
+    deps: &CliDeps,
+) -> Result<Value, String> {
     use harness_core::coord::{
         plan_saved_session_rewind, spawn_coordinator, CoordinatorConfig, FileSnapshotEntry,
     };
@@ -30,6 +35,12 @@ pub(super) fn rewind(path: &Path, cwd: &Path, command: Rewind) -> Result<Value, 
             .and_then(|s| s.to_str())
             .ok_or("invalid session id")?
             .to_owned();
+        let mut config = CoordinatorConfig::new(root);
+        if let Some(data_dir) =
+            harness_core::storage_paths::data_dir_from_lookup(&|name| deps.env_var_value(name))
+        {
+            config.data_dir = data_dir;
+        }
         std::thread::Builder::new()
             .name("harness-snapshot-restore".into())
             .spawn(move || {
@@ -39,7 +50,7 @@ pub(super) fn rewind(path: &Path, cwd: &Path, command: Rewind) -> Result<Value, 
                     .map_err(|e| e.to_string())?;
                 runtime.block_on(async {
                     let coordinator = spawn_coordinator(
-                        CoordinatorConfig::new(root),
+                        config,
                         std::sync::Arc::new(harness_core::clock::RealClock::new()),
                         std::sync::Arc::new(harness_core::redact::DefaultRedactor::default()),
                     );

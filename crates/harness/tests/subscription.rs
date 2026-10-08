@@ -75,10 +75,13 @@ fn subscription_prompts_use_their_wire_contract_and_redact_credentials(
             assert_eq!(body["reasoning"]["effort"], reasoning_effort);
         }
         check_wire(profile, &headers, &body);
-        let session = std::fs::read_dir(root.path().join(".agent-harness/sessions"))?
-            .next()
-            .ok_or("session missing")??
-            .path();
+        let session = std::fs::read_dir(
+            harness_core::storage_paths::ProjectPaths::new(&data.join("harness"), root.path())?
+                .sessions_dir(),
+        )?
+        .next()
+        .ok_or("session missing")??
+        .path();
         assert!(!std::fs::read_to_string(session.join("events.jsonl"))?
             .contains("private-subscription-token"));
     }

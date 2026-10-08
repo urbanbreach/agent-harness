@@ -4,22 +4,23 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const PLAN_DIR: &str = ".agent-harness/plans";
-pub fn plan_file_relative_path(run_id: &str) -> PathBuf {
+pub const PLAN_DIR: &str = "plans";
+/// Resolve a run plan beneath the caller-provided project runtime directory.
+pub fn plan_file_path(runtime_dir: &Path, run_id: &str) -> PathBuf {
     let slug = run_id
         .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("-");
-    Path::new(PLAN_DIR).join(format!(
+    runtime_dir.join(PLAN_DIR).join(format!(
         "{}.md",
         if slug.is_empty() { "plan" } else { &slug }
     ))
 }
-pub fn plan_file_display_path(run_id: &str) -> String {
-    plan_file_relative_path(run_id)
+pub fn plan_file_display_path(runtime_dir: &Path, run_id: &str) -> String {
+    plan_file_path(runtime_dir, run_id)
         .to_string_lossy()
-        .replace('\\', "/")
+        .into_owned()
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanProjectionEntry {
@@ -44,11 +45,10 @@ impl PlanProjectionEntry {
 }
 pub fn project_plan_list(root: &Path, active_run_id: Option<&str>) -> Vec<PlanProjectionEntry> {
     let directory = root.join(PLAN_DIR);
-    let active = active_run_id.map(plan_file_display_path);
+    let active = active_run_id.map(|run| plan_file_display_path(root, run));
     let mut entries = Vec::new();
-    if [root.join(".agent-harness"), directory.clone()]
-        .iter()
-        .all(|p| fs::symlink_metadata(p).is_ok_and(|m| m.is_dir()))
+    if crate::store::validate_private_path(&directory).is_ok()
+        && fs::symlink_metadata(&directory).is_ok_and(|m| m.is_dir())
     {
         for entry in fs::read_dir(&directory).into_iter().flatten().flatten() {
             if !entry.file_type().is_ok_and(|t| t.is_file()) {
@@ -61,7 +61,7 @@ pub fn project_plan_list(root: &Path, active_run_id: Option<&str>) -> Vec<PlanPr
             let Some(slug) = name.strip_suffix(".md") else {
                 continue;
             };
-            let path = format!("{PLAN_DIR}/{name}");
+            let path = directory.join(name).to_string_lossy().into_owned();
             entries.push(PlanProjectionEntry {
                 is_active: active.as_ref() == Some(&path),
                 path,

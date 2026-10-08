@@ -1,10 +1,6 @@
 use super::*;
 
-pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuation(
-    app: &mut AppState,
-) {
-    assert_team_probes(app);
-    assert_cron_probes(app);
+pub(super) fn seed_operator_host_probes_sets_jujutsu_continuation(app: &mut AppState) {
     assert_demote_probes(app);
     assert_remote_availability_probes(app);
     assert_sleep_probes(app);
@@ -13,91 +9,6 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
     assert_cow_probes(app);
     assert_graph_probes(app);
     assert_sandbox_probes(app);
-}
-
-fn assert_team_probes(app: &AppState) {
-    // Team, demote, and cron fixtures remain separate from unsupported remote integrations.
-    let teams = app
-        .team_registry_summary()
-        .expect("team registry summary bound");
-    assert!(
-        teams.teams >= 2 && teams.active >= 1 && teams.cancelled >= 1,
-        "expected multi-team registry with active+cancelled: {teams:?}"
-    );
-    assert!(teams.members >= 2, "expected multi-member teams: {teams:?}");
-    assert!(
-        teams.mailbox_messages >= 1,
-        "expected multi-message mailbox: {teams:?}"
-    );
-    let team_create = app.team_last_create().expect("team last create bound");
-    assert!(
-        team_create.one_line().contains("ok") || team_create.one_line().contains("(probe)"),
-        "expected probe team create: {}",
-        team_create.one_line()
-    );
-    let team_first = app.team_first_line().expect("team first bound");
-    assert!(
-        team_first.contains("(probe)") && team_first.contains("cancelled"),
-        "expected cancelled probe team first after cancel success: {team_first}"
-    );
-    let team_send = app.team_last_send().expect("team last send bound");
-    assert!(
-        team_send.one_line().contains("ok") || team_send.one_line().contains("probe"),
-        "expected probe team send: {}",
-        team_send.one_line()
-    );
-    let team_msg = app
-        .team_last_message_line()
-        .expect("team last message bound");
-    assert!(
-        team_msg.contains("probe") || team_msg.contains("mailbox"),
-        "expected probe mailbox message: {team_msg}"
-    );
-    let team_add = app
-        .team_last_add_member()
-        .expect("team last add-member bound");
-    assert!(
-        team_add.one_line().contains("ok") || team_add.one_line().contains("probe-agent"),
-        "expected probe team add-member: {}",
-        team_add.one_line()
-    );
-    let team_cancel = app.team_last_cancel().expect("team last cancel bound");
-    assert!(
-        team_cancel.one_line().contains("team cancel: ok"),
-        "expected successful cancel of probe team: {}",
-        team_cancel.one_line()
-    );
-}
-
-fn assert_cron_probes(app: &AppState) {
-    let cron = app
-        .cron_schedule_summary()
-        .expect("cron schedule summary bound");
-    assert!(
-        cron.registered >= 4 && cron.with_label >= 3,
-        "expected multi-schedule cron registry after remove: {cron:?}"
-    );
-    assert!(!cron.executor_available);
-    let cron_reg = app.cron_last_register().expect("cron last register bound");
-    assert!(
-        cron_reg.one_line().contains("ok") && cron_reg.one_line().contains("(probe-5)"),
-        "expected last multi-register outcome for probe-5: {}",
-        cron_reg.one_line()
-    );
-    let cron_remove = app.cron_last_remove().expect("cron last remove bound");
-    assert!(
-        cron_remove.one_line().contains("cron remove: ok")
-            && cron_remove.one_line().contains("(probe)"),
-        "expected successful remove of first probe schedule: {}",
-        cron_remove.one_line()
-    );
-    let cron_first = app
-        .cron_first_schedule_line()
-        .expect("cron first schedule bound");
-    assert!(
-        cron_first.contains("(probe-2)") && cron_first.contains("executes=false"),
-        "expected remaining probe-2 first schedule: {cron_first}"
-    );
 }
 
 fn assert_demote_probes(app: &AppState) {

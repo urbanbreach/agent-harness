@@ -1,4 +1,4 @@
-//! Loopback callback listener (senpi `anthropic-callback-listener.ts`) and result pages.
+//! Loopback callback listener and result pages.
 use super::*;
 
 pub struct CallbackCode {

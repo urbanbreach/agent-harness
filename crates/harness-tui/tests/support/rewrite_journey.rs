@@ -45,6 +45,7 @@ impl Journey {
         // Match the fixed workspace label used by the original evidence mode.
         // Workspace-dependent dialogs in this journey exercise unavailable states.
         app.set_file_mention_workspace_root_for_test("/workspace/agent-harness".into());
+        app.set_storage_data_dir("../data".into());
         app.set_reduced_motion_for_evidence(true);
         app.restart_motion_epoch_for_evidence();
         Self {

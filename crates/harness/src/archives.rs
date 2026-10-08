@@ -45,7 +45,9 @@ pub(crate) fn trace(
     let cwd = deps.current_dir().map_err(|e| e.to_string())?;
     let configured = crate::inspect::configured(config, deps)?;
     let redactor = crate::inspect::redactor(&configured.config, deps)?;
-    let root = cwd.join(directory.unwrap_or_else(|| configured.config.runtime.session_dir.clone()));
+    let root = deps.session_directory(
+        &directory.unwrap_or_else(|| configured.config.runtime.session_dir.clone()),
+    )?;
     let source = crate::recovery::resolve_session_run_dir(&command.session, &root, &cwd)?;
     let id = source
         .file_name()
@@ -90,11 +92,9 @@ pub(crate) fn wrap(
         .map_err(|e| e.to_string())?;
     let configured = crate::inspect::configured(config, deps)?;
     let redactor = crate::inspect::redactor(&configured.config, deps)?;
-    let sessions = harness_core::tool::resolve_file_path(
-        &cwd,
+    let sessions = deps.session_directory(
         &directory.unwrap_or_else(|| configured.config.runtime.session_dir.clone()),
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
     if sessions == cwd || command.with_sessions && !sessions.starts_with(&cwd) {
         return Err("workspace packaging requires a separate session directory; --with-sessions requires it inside the workspace".into());
     }

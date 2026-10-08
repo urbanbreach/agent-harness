@@ -31,11 +31,11 @@ Score 12: >20 files (3), >5 descendant directories (2), >70% Rust (2), crate man
 
 ## Composer steering
 
-Alt+i and Ctrl+Alt+Enter send a plain-text draft into the running agent turn before
-its next provider request. The same action submits normally when idle or when the
-draft includes file, agent, or resource tags or attachments. Enter still queues a
-separate prompt while a turn runs. Steering rows stay inside the running activity
-in output order; a message that misses its turn starts a turn of its own.
+Plain Enter steers a running turn when the draft is plain text. Alt+i and
+Ctrl+Alt+Enter queue a separate follow-up after the active turn. Both actions
+submit normally when idle; tagged or attached drafts fall back to queueing
+during an active turn. Steering rows stay inside the running activity in output
+order; a message that misses its turn starts a turn of its own.
 
 ## ANTI-PATTERNS
 

@@ -187,7 +187,9 @@ impl Runtime {
                 "snapshot contains a credential".into(),
             ));
         }
-        crate::edit_attribution::EditAttributionJournal::empty(root)
+        let runtime_dir =
+            crate::storage_paths::ProjectPaths::new(&self.config.data_dir, root)?.runtime_dir();
+        crate::edit_attribution::EditAttributionJournal::empty(root, &runtime_dir)
             .record_agent_tool_edit(path, &bytes, None)
             .map_err(|e| CoordinatorError::Invalid(e.to_string()))?;
         Ok(())

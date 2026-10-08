@@ -4,7 +4,8 @@ use harness::UnwrapOrAbort;
 fn isolated_config_context(
     current_dir: std::path::PathBuf,
 ) -> harness_core::config::ConfigLoadContext {
-    [
+    let data_dir = current_dir.join("data/harness");
+    let mut context = [
         "HOME",
         "XDG_CONFIG_HOME",
         "HARNESS_CONFIG",
@@ -15,7 +16,9 @@ fn isolated_config_context(
     .fold(
         harness_core::config::ConfigLoadContext::from_env().with_current_dir(current_dir),
         |context, name| context.apply_env_var(name, None),
-    )
+    );
+    context.discovery.data_dir = Some(data_dir);
+    context
 }
 
 #[test]

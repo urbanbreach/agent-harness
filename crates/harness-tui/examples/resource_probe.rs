@@ -88,6 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     });
     run_tui_with_options(TuiOptions {
+        storage_data_dir: None,
         mode,
         exit_on_finish: false,
         on_ui_intent: None,
@@ -112,6 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::fs::write(parent, "fixture\n")?;
         }
         run_tui_with_options(TuiOptions {
+            storage_data_dir: None,
             mode: TuiMode::Replay {
                 run_dir: std::env::current_dir()?,
                 events: Vec::new(),

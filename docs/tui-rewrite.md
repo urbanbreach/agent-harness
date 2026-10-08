@@ -89,6 +89,58 @@ intents. It covers populated plans, memory, settings, model selection, stash,
 resume/replay, permission submissions, file/subagent mention selection and
 submission, and queued-entry navigation with exact draft restoration.
 
+The original fixture remains frozen. Intentional Enter-steering changes from
+`9b4028dc` are carried by `tests/support/current_composer_contract.rs` and its
+digest-bound `tui-current-composer-20261008` patch fixture, alongside the separate
+current-settings oracle. The patch names all 37 affected footer labels and four
+queue gestures; the queue journeys now press Alt+i and retain their cells,
+navigation, draft restoration, and emitted-intent coverage. Build-version tokens
+expect `CARGO_PKG_VERSION` rather than forcing a new recording for each release.
+Candidate cells and styles still compare exactly; there is no wildcard matching.
+
+For a reviewed visual cutover after integrating release slices, record only the
+separate current-surface overrides and refresh the settings-registry binding:
+
+```sh
+HARNESS_TUI_RECORD_CURRENT_REFERENCE=1 cargo nextest run -p harness-tui --test rewrite_reference_test -E 'test(recorded_terminal_journeys_match_reference_cells_and_intents)'
+```
+
+`.config/nextest.toml` gives this test a 90-second deadline, which covers record
+mode as well as normal comparison runs.
+
+Review every generated frame ID and complete-cell diff in
+`tui-current-surfaces-20261008.frames.json` and its identity before landing them.
+The recorder refuses changes to inputs or coordinator intents, retains every
+journey, and never writes `tui-reference.cells.jsonl`. Normal runs compare all
+fields exactly against the approved fixtures. An empty override list means no
+additional visual divergence beyond the existing settings/composer contracts.
+Build-version paint is stored canonically and still expects current metadata.
+
+The reference journey reserves `/tmp/harness-tui-reference` and removes it on
+exit. A directory left by a killed run (missing or dead `owner.pid`) is removed
+before the next run; a live owner makes the run fail instead. Its `project`
+workspace and sibling `data` root give external plan paths a fixed project key
+without changing product path rendering. Do not run two copies of this journey
+simultaneously. The approved surface overrides
+cover the removed dashboard plugin/probe text and the populated plan list
+path. Plan preview content, populated/filtered memory, and worktree git errors
+must continue matching the original cells, not become accepted overrides. Cell
+encoding groups equal cells before serializing them, and composer transforms
+expand only frames containing a reviewed patch or version token. These avoid
+redundant JSON allocations without changing the exact comparison contract.
+
+The PTY helper runs in a temporary cwd with isolated HOME, HARNESS_DATA_HOME, and
+XDG directories. Runtime options use the same storage resolver as the CLI. Its
+smoke journey reads a real plan from sibling user-level storage: the list shows
+the stored runtime-qualified path (truncated to the available width), and Enter
+opens its content in Plan preview. Plan actions use that path directly rather
+than joining the runtime directory a second time for relative storage roots.
+Its current contracts use Ctrl+c to cancel compaction, restore the draft after
+the permission surface closes (the draft is hidden while a decision owns input),
+acknowledge coordinator-owned YOLO changes, and inspect the full agent dashboard
+rather than the retired MCP status summary. Scroll-follow evidence supplies
+enough CJK response rows to exceed the viewport before detaching.
+
 Reachability was checked separately from rendering:
 
 - Child/parent/sibling session navigation already has public integration coverage
