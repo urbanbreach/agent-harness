@@ -6,6 +6,16 @@ impl Runtime {
         let child = self.native_subagents.get(agent)?;
         let resolved = child.resolved.as_ref()?;
         let root = self.agents.get(&child.registration.root_agent)?;
+        let mut suffix = self
+            .config
+            .agent_prompt_sources
+            .get(&root.profile.name)
+            .map(|source| source.suffix.clone())
+            .unwrap_or_default();
+        if let Some(schema) = &child.registration.output_schema {
+            suffix.push_str("\n\n");
+            suffix.push_str(&crate::subagent::output_contract::instructions(schema));
+        }
         Some(PromptSource {
             user_prompt_dir: self
                 .config
@@ -26,12 +36,7 @@ impl Runtime {
                         .map(|kind| (tool.id.clone(), kind_name(kind).into()))
                 })
                 .collect(),
-            suffix: self
-                .config
-                .agent_prompt_sources
-                .get(&root.profile.name)
-                .map(|source| source.suffix.clone())
-                .unwrap_or_default(),
+            suffix,
             ..Default::default()
         })
     }
@@ -69,16 +74,12 @@ impl Runtime {
                     .as_ref()
                     .map(|target| target.resolution.prompt_preset.as_str())
                     .unwrap_or_default(),
-                delegation_bias: state
-                    .target
-                    .as_ref()
-                    .map(|target| target.resolution.delegation_bias)
-                    .unwrap_or_default(),
                 tools: &available,
                 direct_tools: &direct,
                 current_date: &self.clock.system_time_rfc3339().unwrap_or_default(),
                 max_concurrent: self.config.subagents.max_concurrent,
                 limit_behavior: self.config.subagents.limit_behavior,
+                behavior: &self.config.behavior,
             })
             .map(|rendered| Some(rendered.system))
             .map_err(|error| native_invalid(format!("subagent prompt: {error}")))

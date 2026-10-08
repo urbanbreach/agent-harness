@@ -46,12 +46,15 @@ mod handle;
 pub use edits::EditReceipt;
 #[cfg(test)]
 mod grant_tests;
+#[cfg(test)]
+mod guidance_tests;
 mod history;
 #[cfg(test)]
 mod history_tests;
 mod hooks;
 #[cfg(all(test, unix))]
 mod hooks_tests;
+mod instructions;
 mod lifecycle;
 #[cfg(test)]
 mod media_tests;
@@ -67,12 +70,15 @@ mod public_subagents;
 #[cfg(test)]
 mod question_tests;
 mod questions;
+mod reminders;
 #[cfg(test)]
 mod replay_order_tests;
 mod resume;
 mod runtime;
+mod steering;
 mod streaming;
 mod subagents;
+pub use steering::SteerOutcome;
 #[cfg(test)]
 mod subagents_tests;
 #[cfg(test)]
@@ -127,6 +133,10 @@ pub struct CoordinatorConfig {
     pub model_catalog: Arc<[crate::config::ResolvedModelCatalogEntry]>,
     pub provider_retry: crate::config::ProviderRetryRuntimeConfig,
     pub compaction: crate::config::CompactionSettings,
+    /// Runtime guidance; `new` starts with every guard off so embedders opt in.
+    pub behavior: crate::config::BehaviorSettings,
+    /// Instruction files already in the startup prompt, excluded from directory instructions.
+    pub instruction_paths: Vec<PathBuf>,
     pub config_digest: String,
     pub secret_values: Vec<String>,
     pub secret_registry: Arc<crate::redact::SecretRegistry>,
@@ -162,6 +172,8 @@ impl CoordinatorConfig {
             model_catalog: Arc::from([]),
             provider_retry: Default::default(),
             compaction: Default::default(),
+            behavior: crate::config::BehaviorSettings::off(),
+            instruction_paths: Vec::new(),
             config_digest: String::new(),
             secret_values: Vec::new(),
             secret_registry: Arc::new(crate::redact::SecretRegistry::default()),
@@ -188,6 +200,16 @@ pub struct AgentRuntimeInfo {
     pub toolset: Vec<String>,
     pub parent_agent_id: Option<String>,
 }
+/// A guarded request and its settled billing, retained even when the worker retries.
+#[derive(Debug, thiserror::Error)]
+#[error("{reason}")]
+pub struct StreamGuardFailure {
+    pub reason: String,
+    pub request_id: String,
+    pub usage: Option<harness_providers::CompletionUsage>,
+    pub usage_complete: bool,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CoordinatorError {
     #[error("{code}: {message}")]
@@ -216,6 +238,9 @@ pub enum CoordinatorError {
     Cancelled(String),
     #[error("compaction cancelled for {agent_id}")]
     CompactionCancelled { agent_id: String },
+    /// The stream guard stopped a degenerate response; the worker may retry with a correction.
+    #[error("response stopped by the stream guard: {0}")]
+    StreamGuard(StreamGuardFailure),
     #[error("{message}")]
     Provider {
         message: String,

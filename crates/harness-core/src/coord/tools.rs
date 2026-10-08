@@ -286,6 +286,7 @@ impl Runtime {
                 self.finished(Completion::Tool {
                     id: id.clone(),
                     result: Err(CoordinatorError::PermissionDenied(tool_id)),
+                    instructions: Vec::new(),
                 })?;
             }
             PermissionAction::Ask
@@ -303,6 +304,7 @@ impl Runtime {
         let id = work.id.clone();
         let task = self.jobs.spawn(async move {
             let token = work.context.cancellation.clone();
+            let handle = work.context.coordinator.clone();
             let result = async {
                 // A parent waiting for a child must not hold the child's I/O capacity.
                 let permit = if work.tool.capability() == ToolCapability::SpawnAgent || work.tool.id() == "question" { None } else {
@@ -323,7 +325,24 @@ impl Runtime {
                 drop(permit);
                 result
             }.await;
-            Completion::Tool { id: work.id, result }
+            let instructions = if result.as_ref().is_ok_and(|output| !output.is_error()) {
+                let id = work.id.clone();
+                let discovery = handle.call(move |s| {
+                    Ok(s.running.get(&id).and_then(|job| s.directory_instruction_discovery(job)))
+                }).await.ok().flatten();
+                if let Some(discovery) = discovery {
+                    tokio::select! {
+                        biased;
+                        () = token.cancelled() => Vec::new(),
+                        instructions = tokio::task::spawn_blocking(move || discovery.read()) => instructions.unwrap_or_default(),
+                    }
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            };
+            Completion::Tool { id: work.id, result, instructions }
         });
         if let Some(job) = self.running.get_mut(&id) {
             job.join_id = Some(task.id());
@@ -389,6 +408,7 @@ impl Runtime {
                 PendingWork::Tool(_) => self.finished(Completion::Tool {
                     id: pending.id,
                     result: Err(denied()),
+                    instructions: Vec::new(),
                 })?,
                 PendingWork::Question { reply, .. } => {
                     let _ = reply.send(answers.filter(|_| allowed).ok_or_else(denied));

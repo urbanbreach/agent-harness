@@ -32,6 +32,9 @@ pub struct SpawnSubagentInput {
     pub prompt: String,
     /// Short task description.
     pub description: String,
+    /// JSON Schema for the child's final JSON object. Invalid answers receive bounded corrections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<serde_json::Map<String, serde_json::Value>>,
     /// Requested subagent type. Omission and sentinel strings use the default.
     #[schemars(skip)]
     pub subagent_type: String,
@@ -74,6 +77,8 @@ struct SpawnSubagentInputDe {
     prompt: String,
     description: String,
     #[serde(default)]
+    output_schema: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(default)]
     subagent_type: Option<String>,
     #[serde(
         default = "default_true",
@@ -110,6 +115,7 @@ impl<'de> Deserialize<'de> for SpawnSubagentInput {
         Ok(Self {
             prompt: raw.prompt,
             description: raw.description,
+            output_schema: raw.output_schema,
             subagent_type,
             subagent_type_specified,
             background: raw.background,
@@ -134,6 +140,8 @@ impl Serialize for SpawnSubagentInput {
             prompt: &'a str,
             description: &'a str,
             #[serde(skip_serializing_if = "Option::is_none")]
+            output_schema: Option<&'a serde_json::Map<String, serde_json::Value>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             subagent_type: Option<&'a str>,
             background: bool,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -154,6 +162,7 @@ impl Serialize for SpawnSubagentInput {
         Wire {
             prompt: &self.prompt,
             description: &self.description,
+            output_schema: self.output_schema.as_ref(),
             subagent_type: self
                 .subagent_type_specified
                 .then_some(self.subagent_type.as_str()),
@@ -202,6 +211,10 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SpawnSubagentOutput {
     pub output: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured_output: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub output_errors: Vec<String>,
     pub subagent_id: String,
     pub subagent_type: String,
     pub tool_calls: u32,
@@ -257,6 +270,10 @@ where
 /// One command or subagent result.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct GetCommandOrSubagentOutputResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured_output: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub output_errors: Vec<String>,
     pub task_id: String,
     pub command: String,
     pub status: String,
@@ -284,7 +301,7 @@ pub struct GetCommandOrSubagentOutputResults {
 /// Result variants returned by `get_command_or_subagent_output`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum GetCommandOrSubagentOutputValue {
-    Result(GetCommandOrSubagentOutputResult),
+    Result(Box<GetCommandOrSubagentOutputResult>),
     TaskNotFound(String),
     MultiResult(GetCommandOrSubagentOutputResults),
 }

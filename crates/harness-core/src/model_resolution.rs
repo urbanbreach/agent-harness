@@ -29,15 +29,6 @@ pub enum ModelFamilySource {
     DefaultFallback,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DelegationBias {
-    #[default]
-    Eager,
-    Restrained,
-    Gated,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelCapabilities {
     pub variants: Vec<String>,
@@ -57,8 +48,6 @@ pub struct ModelResolution {
     /// Editable Markdown preset selected for this model, independent of transport capabilities.
     #[serde(default)]
     pub prompt_preset: String,
-    #[serde(default)]
-    pub delegation_bias: DelegationBias,
     pub capabilities: ModelCapabilities,
 }
 impl Default for ModelResolution {
@@ -129,7 +118,6 @@ pub fn resolve_model(input: ModelResolutionInput<'_>) -> ModelResolution {
         family,
         prompt_preset: crate::system_prompt::models::resolve(input.model, input.metadata_family)
             .into(),
-        delegation_bias: delegation_bias(input.model, &name),
         family_source: if input.metadata_family.is_some() {
             ModelFamilySource::Metadata
         } else if family == Family::Unknown {
@@ -157,24 +145,4 @@ pub fn resolve_model(input: ModelResolutionInput<'_>) -> ModelResolution {
             supports_reasoning_summaries: input.supports_reasoning_summaries.unwrap_or(reasoning),
         },
     }
-}
-
-fn delegation_bias(model: &str, family: &str) -> DelegationBias {
-    for name in [model.to_ascii_lowercase(), family.to_owned()] {
-        if name.contains("gpt-astra") {
-            return DelegationBias::Restrained;
-        }
-        let Some((_, revision)) = name.split_once("gpt-") else {
-            continue;
-        };
-        let mut parts = revision.split('-').next().unwrap_or_default().split('.');
-        let major = parts.next().and_then(|part| part.parse::<u32>().ok());
-        let minor = parts.next().and_then(|part| part.parse::<u32>().ok());
-        match (major, minor) {
-            (Some(6..), _) => return DelegationBias::Restrained,
-            (Some(5), Some(6)) => return DelegationBias::Gated,
-            _ => {}
-        }
-    }
-    DelegationBias::Eager
 }

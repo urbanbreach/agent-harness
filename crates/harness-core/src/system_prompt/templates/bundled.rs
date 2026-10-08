@@ -5,9 +5,11 @@ macro_rules! bundled {
 }
 
 pub(super) const FILES: &[(&str, &str)] = bundled![
-    "system.md",
-    "personality.md",
     "subagent.md",
+    "partials/delegation.md",
+    "partials/environment.md",
+    "partials/test-discipline.md",
+    "partials/tools.md",
     "models/claude-fable-5.1.md",
     "models/claude-fable-5.md",
     "models/claude-opus-4.5.md",

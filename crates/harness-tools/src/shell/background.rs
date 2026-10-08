@@ -82,6 +82,10 @@ pub(super) async fn run(
     }
     let snapshot = subscription.snapshot;
     if block_until_ms > 0 && snapshot.is_terminal() {
+        coordinator
+            .observe_command_result(actor, id)
+            .await
+            .map_err(|error| ToolError::Execution(error.to_string()))?;
         let result = &snapshot.result;
         return Ok(ToolResult::structured(
             format!(

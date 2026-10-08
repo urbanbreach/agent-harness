@@ -345,6 +345,11 @@ impl Runtime {
         self.raw_tool_results.clear();
         self.stopped_sessions.clear();
         self.killed_agents.clear();
+        self.todos = Default::default();
+        self.pending_reminders.clear();
+        self.steering.clear();
+        self.instructions_seen.clear();
+        self.command_notices.clear();
         let _ = reply.send(result.and(closed).and(cleanup));
     }
 

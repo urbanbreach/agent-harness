@@ -29,6 +29,7 @@ pub(super) async fn complete(
     budget: crate::RequestBudget,
     cancel: &CancellationToken,
     retry: ProviderRequestRetryMetadata,
+    stream_guard_enabled: bool,
     progress: &mut bool,
 ) -> Result<(String, Response), CoordinatorError> {
     let (provider_id, model_id) = (
@@ -113,6 +114,7 @@ pub(super) async fn complete(
         request,
         cancel,
         true,
+        stream_guard_enabled,
         progress,
         &mut aborted_usage,
     )
@@ -138,6 +140,7 @@ pub(super) async fn complete(
                     .and_then(|m| m.provider_stop_reason.clone())
                     .unwrap_or_else(|| "stop".into()),
                 Err(CoordinatorError::Cancelled(_)) => "cancelled".into(),
+                Err(CoordinatorError::StreamGuard(_)) => "stream_guard".into(),
                 Err(_) => "error".into(),
             };
             let response_id = metadata.and_then(|m| m.provider_response_id.clone());
@@ -235,6 +238,7 @@ pub(super) async fn read(
     request: CompletionRequest,
     cancel: &CancellationToken,
     emit_live: bool,
+    stream_guard_enabled: bool,
     progress: &mut bool,
     aborted_usage: &mut Option<CompletionUsage>,
 ) -> Result<Response, CoordinatorError> {
@@ -246,24 +250,48 @@ pub(super) async fn read(
         .flatten()
         .map(|tool| (tool.function_name.clone(), tool.tool_id.clone()))
         .collect();
+    let request_abort = cancel.child_token();
     let mut stream = tokio::select! {
         biased;
         () = cancel.cancelled() => return Err(CoordinatorError::Cancelled(task.into())),
-        stream = provider.stream_completion_abortable(request, cancel.child_token()) => stream,
+        stream = provider.stream_completion_abortable(request, request_abort.clone()) => stream,
     };
     let mut response = Response::default();
     let mut completed = HashSet::new();
     let mut unfinished = HashSet::new();
     let mut bytes = 0usize;
+    let mut guard = stream_guard_enabled.then(guard::StreamGuard::default);
     loop {
         let event = tokio::select! {
             biased;
             () = cancel.cancelled() => {
-                *aborted_usage = settle_abort(&mut stream).await;
+                *aborted_usage = settle_abort(&mut stream).await.0;
                 return Err(CoordinatorError::Cancelled(task.into()));
             }
             event = stream.next() => event.ok_or_else(|| CoordinatorError::Invalid("provider stream ended before completion".into()))?,
         };
+        if let Some(reason) = guard.as_mut().and_then(|guard| guard.observe(&event)) {
+            request_abort.cancel();
+            let (usage, usage_complete) = match event {
+                Stream::Done { usage } => {
+                    let complete = usage.is_some();
+                    (usage, complete)
+                }
+                Stream::DoneWithMetadata { usage, metadata } => {
+                    let complete = usage.is_some()
+                        && metadata.as_ref().and_then(|m| m.usage_complete) == Some(true);
+                    (usage, complete)
+                }
+                _ => settle_abort(&mut stream).await,
+            };
+            *aborted_usage = usage.clone();
+            return Err(CoordinatorError::StreamGuard(super::StreamGuardFailure {
+                reason,
+                request_id: request_id.into(),
+                usage,
+                usage_complete,
+            }));
+        }
         let live = match event {
             Stream::Start | Stream::Started { .. } => None,
             Stream::TextDelta(delta) => {
@@ -421,24 +449,32 @@ pub(super) async fn read(
 const ABORT_SETTLE: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Reads a cancelled stream until the provider settles, for the usage it billed.
-async fn settle_abort(stream: &mut ProviderEventStream) -> Option<CompletionUsage> {
+async fn settle_abort(stream: &mut ProviderEventStream) -> (Option<CompletionUsage>, bool) {
     let settled = async {
         while let Some(event) = stream.next().await {
             match event {
-                Stream::Aborted { usage }
-                | Stream::Done { usage }
-                | Stream::DoneWithMetadata { usage, .. } => return usage,
-                Stream::Error { .. } => return None,
+                Stream::Aborted { usage } | Stream::Done { usage } => {
+                    let complete = usage.is_some();
+                    return (usage, complete);
+                }
+                Stream::DoneWithMetadata { usage, metadata } => {
+                    let complete = usage.is_some()
+                        && metadata.as_ref().and_then(|m| m.usage_complete) == Some(true);
+                    return (usage, complete);
+                }
+                Stream::Error { .. } => return (None, false),
                 _ => {}
             }
         }
-        None
+        (None, false)
     };
     tokio::time::timeout(ABORT_SETTLE, settled)
         .await
-        .ok()
-        .flatten()
+        .unwrap_or_default()
 }
 
+mod guard;
 mod live_output;
+#[cfg(test)]
+mod tests;
 use live_output::LiveOutput;

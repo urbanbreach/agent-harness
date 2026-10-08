@@ -30,13 +30,17 @@ impl Runtime {
         result
     }
     fn finish_completion(&mut self, completion: Completion) -> Result<(), CoordinatorError> {
-        let (id, messages, mut result) = match completion {
+        let (id, messages, mut result, instructions) = match completion {
             Completion::Turn {
                 id,
                 messages,
                 result,
-            } => (id, Some(messages), result.map(ToolResult::text)),
-            Completion::Tool { id, result } => (id, None, result),
+            } => (id, Some(messages), result.map(ToolResult::text), Vec::new()),
+            Completion::Tool {
+                id,
+                result,
+                instructions,
+            } => (id, None, result, instructions),
             Completion::Command { id, result } => return self.finish_command(id, result),
             Completion::SubagentPrepared { id, result } => {
                 return self.finish_native_subagent_preparation(id, result)
@@ -138,6 +142,9 @@ impl Runtime {
         } else {
             Ok(())
         };
+        if success && written.is_ok() {
+            self.queue_directory_instructions(&job, instructions);
+        }
         let (agent, reply) = match job.kind {
             JobKind::Turn { agent } => (Some(agent), None),
             JobKind::Tool { reply, .. } => (None, reply),
@@ -199,6 +206,9 @@ impl Runtime {
         if let Some(agent) = agent {
             self.raw_tool_results
                 .retain(|_, (owner, _)| owner != &agent);
+            // Late steering is queued before the agent goes idle and before a finished
+            // child publishes its result, so the child stays open for it.
+            self.requeue_steering(&agent)?;
             if let Some(state) = self.agents.get_mut(&agent) {
                 state.messages = if self.children.contains_key(&agent)
                     && !self.native_subagents.contains_key(&agent)

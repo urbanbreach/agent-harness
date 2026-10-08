@@ -94,6 +94,8 @@ pub struct NativeSubagentRegistration {
     pub fork_context: bool,
     pub description: String,
     pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<serde_json::Map<String, Value>>,
     pub background: bool,
     pub isolation: SubagentIsolationMode,
     pub source: Option<String>,
@@ -152,6 +154,7 @@ enum NativePhase {
 
 pub(super) struct NativeSubagent {
     registration: NativeSubagentRegistration,
+    output_contract: Option<Arc<jsonschema::Validator>>,
     resolved: Option<ResolvedSubagentDefinition>,
     phase: NativePhase,
     request: Option<String>,
@@ -310,6 +313,18 @@ fn native_timestamp(clock: &(dyn Clock + Send + Sync)) -> String {
 }
 
 impl CoordinatorHandle {
+    pub(super) async fn native_output_contract(
+        &self,
+        agent: String,
+    ) -> Result<Option<Arc<jsonschema::Validator>>, CoordinatorError> {
+        self.call(move |s| {
+            Ok(s.native_subagents
+                .get(&agent)
+                .and_then(|child| child.output_contract.clone()))
+        })
+        .await
+    }
+
     pub async fn spawn_subagent(
         &self,
         actor: EventActor,
@@ -424,5 +439,14 @@ impl CoordinatorHandle {
         self.call(move |s| s.detach_native_spawn_waiter(&id, &waiter))
             .await?;
         result
+    }
+}
+
+impl Runtime {
+    pub(in crate::coord) fn native_command_parent(&self, agent: &str) -> Option<&str> {
+        self.native_subagents.get(agent).and_then(|child| {
+            matches!(child.phase, NativePhase::Finalizing | NativePhase::Terminal)
+                .then_some(child.registration.root_agent.as_str())
+        })
     }
 }

@@ -1,6 +1,7 @@
 use super::{runtime::*, *};
 use harness_providers::MessageRole;
 use std::mem;
+mod guidance;
 mod request;
 mod skills;
 mod worker;
@@ -41,6 +42,8 @@ pub(super) struct Worker {
     pub(super) turn: Turn,
     fallbacks: std::collections::VecDeque<ResolvedModelTarget>,
     retry: crate::config::ProviderRetryRuntimeConfig,
+    pub(super) behavior: crate::config::BehaviorSettings,
+    pub(super) guidance: guidance::Guidance,
 }
 impl Runtime {
     pub fn queue_turn(
@@ -63,6 +66,11 @@ impl Runtime {
         }
         let user_initiated = actor.kind == ActorKind::User;
         prompt.validate(self.redactor.as_ref())?;
+        if !prompt.reminder_wake
+            && let Some(backlog) = self.command_notices.get_mut(agent_id)
+        {
+            backlog.wake_attempted = false;
+        }
         let agent = self
             .agents
             .get(agent_id)
@@ -101,7 +109,7 @@ impl Runtime {
         let _ = self.persist_attachments(&actor, None, &prompt.attachments)?;
         // Completion wakes resolve their digest when admitted to the worker.
         // A queued wake may be consumed by a tool result before it starts.
-        let submitted_seq = if prompt.child_completion.is_some() {
+        let submitted_seq = if prompt.child_completion.is_some() || prompt.reminder_wake {
             0
         } else {
             self.emit(
@@ -206,8 +214,39 @@ impl Runtime {
         }
         self.start_next(agent_id)
     }
+    /// Removes the agent's queued plain user prompts (no tags, attachments, or wake role) and
+    /// returns `(seq, id, text)` for each, leaving every other queued turn in order.
+    pub(super) fn take_queued_plain_prompts(
+        &mut self,
+        agent_id: &str,
+    ) -> Vec<(u64, String, String)> {
+        let Some(agent) = self.agents.get_mut(agent_id) else {
+            return Vec::new();
+        };
+        let mut taken = Vec::new();
+        for turn in std::mem::take(&mut agent.queue) {
+            let tags = &turn.prompt.tags;
+            let plain = turn.user_initiated
+                && turn.manual.is_none()
+                && !turn.prompt.reminder_wake
+                && turn.prompt.child_completion.is_none()
+                && turn.prompt.attachments.is_empty()
+                && tags.files.is_empty()
+                && tags.agents.is_empty()
+                && tags.resources.is_empty();
+            if plain {
+                taken.push((turn.seq, turn.id, turn.prompt.text));
+            } else {
+                agent.queue.push_back(turn);
+            }
+        }
+        taken
+    }
     pub fn start_next(&mut self, agent_id: &str) -> Result<(), CoordinatorError> {
         if self.stopping.is_some() || self.rewind.is_some() || self.fault.is_some() {
+            return Ok(());
+        }
+        if self.queue_command_wake(agent_id)? {
             return Ok(());
         }
         let handle = self.handle()?;
@@ -353,6 +392,8 @@ impl Runtime {
             turn,
             fallbacks,
             retry: self.config.provider_retry.clone(),
+            behavior: self.config.behavior.clone(),
+            guidance: guidance::Guidance::default(),
         };
         let id = worker.turn.id.clone();
         self.record_selection(agent_id)?;

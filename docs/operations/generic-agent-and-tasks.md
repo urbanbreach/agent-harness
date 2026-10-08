@@ -67,6 +67,28 @@ The `read-only` and `read-write` capability modes exclude eval, which can execut
 local code. The `execute` and `all` modes permit it subject to the tool lists and
 permission policy.
 
+## Final answer schemas
+
+`spawn_subagent` and its `task` alias accept an optional `output_schema` JSON
+object. The child receives that schema in its assignment and system prompt.
+The coordinator validates its final JSON object, accepting plain JSON, a
+`json` code fence, or the first balanced object in the answer. An invalid answer
+receives a correction for the first problem, clipped to 512 characters, up to
+`runtime.behavior.output_contract.max_retries` times. Exhausting that budget
+still completes the turn.
+
+Spawn and polling results retain the text answer and add `structured_output`
+when valid, or `output_errors` when invalid. These fields are absent while a
+new child attempt is running. When the parent can poll, background reminders
+clip the answer to 16,000 bytes and leave out a structured result over 8,000
+bytes, with a polling hint; explicit polling retains the full object. The schema
+persists with the child registration across restart.
+
+Admission rejects schemas that the redaction policy would change. Schemas are
+limited to 4,096 nodes after reference expansion and 64 nesting levels. Only
+local JSON-pointer `$ref` references are supported; dynamic references and
+nested resource `$id` declarations are rejected before compilation.
+
 ## Permissions and skills
 
 The caller needs `spawn_subagent` in its toolset and the shared `task` permission

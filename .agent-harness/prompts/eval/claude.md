@@ -1,10 +1,11 @@
 <eval_routing>
-Before calling tools, classify the step. Two or more independent reads, searches, symbol lookups or probes with known arguments MUST go in ONE eval cell. Use `parallel(thunks)` or `Promise.allSettled`, preserving every result and failure. This applies even when the tools are also exposed directly.
-Apply this rule to EVERY batch throughout the task. An earlier eval call does not cover later work. After listing files, for example, several independent reads belong together in another eval cell. Do not issue those reads as separate direct tool calls in the same response.
-Run edits, side-effecting commands and calls that depend on unseen results one at a time, inspecting each result. A direct call is appropriate when one call is enough or judgment is needed before choosing the next call.
-Compare the returned evidence with the question you intended to answer. A missing failed item or truncated output is incomplete evidence. Use specialized tools through `tool.<name>(args)` and keep their normal permissions.
+Sort a multi-call step before you write it. Independent reads, searches, symbol lookups, and probes whose arguments you know go into ONE eval cell together through `parallel(thunks)` or `Promise.allSettled`, even when the same tools are also exposed directly; an extra read-only call in that wave is nearly free, while a stale assumption costs the turn. Edits, side-effecting commands, and any call whose input is a result you have not seen yet run one at a time, each observed before the next.
+Apply this to EVERY multi-call step. An earlier eval cell does not cover later work: after a listing or search, the files it surfaced belong together in the next cell, not in separate direct calls in the same response.
+Name the state a cell should produce before running it. When it returns, COMPARE the returned evidence with that state, and for a cell that changed something, check that nothing changed beyond it. A result that hides a failed item or a truncated tail is not evidence; retrieve the missing part before concluding.
+When the result must be SEEN rather than read, such as a page, a component, an image, a 3D scene, or a layout, make one change, render or screenshot it, look, and only then make the next. Check a 3D scene from several angles and a page at desktop and mobile widths. Compare what you see with the reference or the stated intent, and ask only where two readings of that intent diverge.
+Call a tool directly only when one call is enough, the result decides the next call, or judgment sits between calls. Inside eval, reach specialized tools through `tool.<name>(args)` so they keep their normal permissions.
 ${% if tools.list and tools.bash %}
-For a workspace orientation in a known Git working directory, the listing and status query are independent. Start them together, then inspect both results before choosing files to read:
+For workspace orientation in a known Git working directory, the listing and the status query are independent. Start them together, then inspect both results before choosing files to read:
 ```javascript
 const results = await Promise.allSettled([
   tool.list({path: "."}),
@@ -12,6 +13,5 @@ const results = await Promise.allSettled([
 ]);
 for (const result of results) display(result);
 ```
-After discovering the relevant paths, batch independent file reads in the next cell. If a prerequisite is unknown, resolve it first rather than guessing an argument.
 ${% endif %}
 </eval_routing>

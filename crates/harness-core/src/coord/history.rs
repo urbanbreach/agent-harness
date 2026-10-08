@@ -17,14 +17,14 @@ pub(super) fn messages(
 ) -> Result<Context, CoordinatorError> {
     let events = crate::conversation_rewind::active_events(events);
     let mut turns: Vec<Vec<Entry>> = Vec::new();
-    let mut users = HashMap::new();
+    let mut users: HashMap<String, usize> = HashMap::new();
     let mut providers = HashMap::new();
     let mut tools = HashMap::new();
     let mut started = HashSet::new();
     let mut cancelled = HashSet::new();
     let mut legacy_text: HashMap<String, String> = HashMap::new();
     let mut summaries = Vec::new();
-    let mut request_seqs = Vec::new();
+    let mut request_seqs: Vec<(String, u64)> = Vec::new();
     let mut contexts = HashMap::new();
     for event in events.iter().filter(|e| {
         e.actor
@@ -34,16 +34,40 @@ pub(super) fn messages(
     }) {
         match &event.payload {
             EventV1::UserMessageSubmitted(e) => {
+                // Messages delivered into a running turn correlate to that turn, not themselves.
+                let running = event
+                    .correlation_id
+                    .as_deref()
+                    .filter(|turn| *turn != e.request_id.as_str())
+                    .and_then(|turn| users.get(turn))
+                    .copied();
+                if let Some(index) = running {
+                    let turn = request_seqs[index].0.clone();
+                    turns[index].push(user_entry(&e.text, event.seq, turn));
+                    continue;
+                }
                 users.insert(e.request_id.to_string(), turns.len());
                 request_seqs.push((e.request_id.to_string(), event.seq));
-                turns.push(vec![Entry {
-                    message: CompletionMessage::text(MessageRole::User, &e.text),
-                    seq: event.seq,
-                    turn: Some(e.request_id.to_string()),
-                    attachments: Vec::new(),
-                    settled_reasoning: Vec::new(),
-                    raw_tool_result: None,
-                }]);
+                turns.push(vec![user_entry(
+                    &e.text,
+                    event.seq,
+                    e.request_id.to_string(),
+                )]);
+            }
+            EventV1::RuntimeReminder(e) => {
+                if let Some(index) = users.get(e.request_id.as_str()).copied() {
+                    let turn = request_seqs[index].0.clone();
+                    turns[index].push(user_entry(&e.text, event.seq, turn));
+                } else {
+                    // A reminder opens a wake turn that has no submitted user message.
+                    users.insert(e.request_id.to_string(), turns.len());
+                    request_seqs.push((e.request_id.to_string(), event.seq));
+                    turns.push(vec![user_entry(
+                        &e.text,
+                        event.seq,
+                        e.request_id.to_string(),
+                    )]);
+                }
             }
             EventV1::PromptAttachmentsSubmitted(e) => {
                 if let Some(turn) = users
@@ -223,6 +247,16 @@ pub(super) fn messages(
     }
     super::prompt::restore_content(&mut output, run_dir, &contexts)?;
     Ok(output)
+}
+fn user_entry(text: &str, seq: u64, turn: String) -> Entry {
+    Entry {
+        message: CompletionMessage::text(MessageRole::User, text),
+        seq,
+        turn: Some(turn),
+        attachments: Vec::new(),
+        settled_reasoning: Vec::new(),
+        raw_tool_result: None,
+    }
 }
 fn canonical_arguments(summary: &str) -> String {
     serde_json::from_str::<serde_json::Value>(summary)

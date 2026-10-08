@@ -55,6 +55,11 @@ impl CoordinatorHandle {
         .await?;
         response.await.map_err(|_| CoordinatorError::Closed)?
     }
+    /// Compact context with a model handoff plus coordinator-retained user requests and todos.
+    /// Request retention keeps the first and eleven most recent messages, bounded to 2000
+    /// characters each and 12 KiB of request text total. Worker wake messages and cancelled,
+    /// never-started turns are excluded. Session todos are included only for root agents.
+    /// The combined summary is redacted and persisted.
     pub async fn compact_agent_context(
         &self,
         agent: impl Into<String>,
@@ -257,7 +262,9 @@ impl Worker {
                 if token.is_cancelled() {
                     return Err(CoordinatorError::Cancelled(task));
                 }
-                let summary = s.redactor.redact_text(&payload.summary);
+                let mut summary = payload.summary;
+                s.append_compaction_state(&payload.agent_id, &mut summary)?;
+                let summary = s.redactor.redact_text(&summary);
                 let message = CompletionMessage::text(
                     MessageRole::User,
                     format!("Conversation summary:\n{summary}"),
@@ -337,5 +344,116 @@ impl Worker {
             tokens_after: applied.1,
             summary_preview: preview,
         })
+    }
+}
+impl Runtime {
+    /// Keep the first request and up to eleven recent requests, with at most 2000
+    /// characters each and 12 KiB of request text total, plus root agents' current todo statuses.
+    /// The combined summary is redacted before either persistence or live context use.
+    fn append_compaction_state(
+        &self,
+        agent: &str,
+        summary: &mut String,
+    ) -> Result<(), CoordinatorError> {
+        const MAX_REQUESTS: usize = 12;
+        const MAX_REQUEST_CHARS: usize = 2000;
+        const MAX_REQUEST_BYTES: usize = 12 * 1024;
+        let events = crate::store::read_events(&self.info()?.events_path)?;
+        let events = crate::conversation_rewind::active_events(&events);
+        let primary = events.iter().find_map(|event| match &event.payload {
+            EventV1::AgentSpawned(spawn) if spawn.parent_agent_id.is_none() => {
+                Some(spawn.agent_id.as_str())
+            }
+            _ => None,
+        }) == Some(agent);
+        let belongs_to_agent = |event: &EventEnvelopeV1| {
+            event
+                .actor
+                .agent_id
+                .as_deref()
+                .map_or(primary, |id| id == agent)
+        };
+        let mut user_turns = std::collections::HashMap::new();
+        let mut started = std::collections::HashSet::new();
+        let mut cancelled = std::collections::HashSet::new();
+        let mut latest_turn = None;
+        for event in events.iter().filter(|event| belongs_to_agent(event)) {
+            match &event.payload {
+                EventV1::UserMessageSubmitted(request) => {
+                    let turn = event
+                        .correlation_id
+                        .as_deref()
+                        .and_then(|id| user_turns.get(id))
+                        .copied()
+                        .unwrap_or(request.request_id.as_str());
+                    user_turns.insert(request.request_id.as_str(), turn);
+                    latest_turn = Some(turn);
+                }
+                EventV1::ProviderRequestStarted(request) => {
+                    if let Some(turn) = request
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.turn_id.as_deref())
+                        .or(event.correlation_id.as_deref())
+                        .and_then(|id| user_turns.get(id))
+                        .copied()
+                        .or(latest_turn)
+                    {
+                        started.insert(turn);
+                    }
+                }
+                EventV1::TaskCancelled(task)
+                    if task.task_scope != Some(TaskTerminalScope::ToolCall) =>
+                {
+                    cancelled.insert(task.task_id.as_str());
+                }
+                _ => {}
+            }
+        }
+        let mut requests = events.iter().filter_map(|event| {
+            if !belongs_to_agent(event) || event.actor.kind != ActorKind::User {
+                return None;
+            }
+            match &event.payload {
+                EventV1::UserMessageSubmitted(request) => {
+                    let turn = user_turns[request.request_id.as_str()];
+                    (!cancelled.contains(turn) || started.contains(turn))
+                        .then_some(request.text.as_str())
+                }
+                _ => None,
+            }
+        });
+        summary.push_str("\n\n## User Requests (verbatim)");
+        if let Some(first) = requests.next() {
+            let mut recent: Vec<_> = requests.rev().take(MAX_REQUESTS - 1).collect();
+            recent.reverse();
+            let count = recent.len() + 1;
+            let mut bytes_left = MAX_REQUEST_BYTES;
+            for (index, request) in std::iter::once(first).chain(recent).enumerate() {
+                let char_end = request
+                    .char_indices()
+                    .nth(MAX_REQUEST_CHARS)
+                    .map_or(request.len(), |(offset, _)| offset);
+                let end = request.floor_char_boundary(char_end.min(bytes_left / (count - index)));
+                summary.push_str("\n\n");
+                summary.push_str(&request[..end]);
+                if end < request.len() {
+                    summary.push_str("\n[truncated]");
+                }
+                bytes_left -= end;
+            }
+        }
+        let todos = self.root_todo_items(agent);
+        if !todos.is_empty() {
+            summary.push_str("\n\n## Current Todo List\n");
+            for item in todos {
+                summary.push_str("- [");
+                summary.push_str(&item.status);
+                summary.push_str("] ");
+                summary.push_str(&item.content);
+                summary.push('\n');
+            }
+        }
+        Ok(())
     }
 }

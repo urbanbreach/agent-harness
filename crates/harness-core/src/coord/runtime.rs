@@ -1,6 +1,8 @@
 mod activity;
+mod jobs;
 use super::context::Context;
 use super::{handle::system, *};
+pub(super) use jobs::{Completion, Job, JobKind};
 use std::collections::VecDeque;
 use tokio::{
     sync::Semaphore,
@@ -54,6 +56,15 @@ pub(super) struct Runtime {
     pub snapshots: BTreeMap<String, super::workspace::Snapshot>,
     /// The last model and settings announced per agent, so each pick reaches providers once.
     pub selections: BTreeMap<String, (String, AgentModelSettings)>,
+    /// The session todo list, kept current as events are appended and restored on resume.
+    pub todos: crate::proj::TodoProjection,
+    /// Coordinator guidance waiting for an agent's running turn, drained before each request.
+    pub pending_reminders: BTreeMap<String, Vec<super::reminders::PendingReminder>>,
+    pub command_notices: BTreeMap<String, super::commands::CommandNoticeBacklog>,
+    /// User messages sent into an agent's running turn, drained before each request.
+    pub steering: BTreeMap<String, VecDeque<super::reminders::Steering>>,
+    /// Directory instruction files already added to each agent's context since its last compaction.
+    pub instructions_seen: BTreeMap<String, std::collections::BTreeSet<PathBuf>>,
 }
 pub(super) struct Agent {
     pub info: AgentRuntimeInfo,
@@ -84,49 +95,6 @@ pub(super) struct Agent {
     pub skill_preloads: Option<Vec<(String, String)>>,
 }
 
-pub(super) struct Job {
-    pub join_id: Option<Id>,
-    pub actor: EventActor,
-    pub kind: JobKind,
-    pub parent: Option<String>,
-    pub cancellation: CancellationToken,
-    pub reason: Option<String>,
-    pub hooks: Vec<HookExecutionMetadata>,
-}
-pub(super) enum JobKind {
-    SubagentPreparation {
-        agent: String,
-    },
-    Command,
-    Turn {
-        agent: String,
-    },
-    Tool {
-        tool_id: String,
-        reply: Option<Reply<ToolResult>>,
-        capability: crate::tool::ToolCapability,
-        paths: Vec<PathBuf>,
-    },
-}
-pub(super) enum Completion {
-    SubagentPrepared {
-        id: String,
-        result: Result<super::public_subagents::PreparedSubagent, CoordinatorError>,
-    },
-    Command {
-        id: String,
-        result: Result<super::commands::CommandExit, CoordinatorError>,
-    },
-    Turn {
-        id: String,
-        messages: Context,
-        result: Result<String, CoordinatorError>,
-    },
-    Tool {
-        id: String,
-        result: Result<ToolResult, CoordinatorError>,
-    },
-}
 impl Runtime {
     pub fn new(
         mut config: CoordinatorConfig,
@@ -220,6 +188,11 @@ impl Runtime {
             snapshots: BTreeMap::new(),
             compacting: BTreeMap::new(),
             selections: BTreeMap::new(),
+            todos: Default::default(),
+            pending_reminders: BTreeMap::new(),
+            command_notices: BTreeMap::new(),
+            steering: BTreeMap::new(),
+            instructions_seen: BTreeMap::new(),
         }
     }
     pub async fn run(mut self, mut rx: mpsc::Receiver<Command>, shutdown: CancellationToken) {
@@ -345,6 +318,8 @@ impl Runtime {
             {
                 agent.observe_activity(event);
             }
+            self.todos.apply(event);
+            self.apply_guidance_state(event);
         });
         match appended {
             Ok(event) => {
@@ -463,6 +438,7 @@ impl Runtime {
             JobKind::Tool { .. } => Completion::Tool {
                 id: id.clone(),
                 result: Err(failure),
+                instructions: Vec::new(),
             },
             JobKind::Command => Completion::Command {
                 id: id.clone(),

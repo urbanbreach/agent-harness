@@ -18,6 +18,7 @@ use tokio_stream::StreamExt;
 
 mod messages;
 mod native_resume;
+mod output_contract;
 mod workspace;
 
 struct NativeTool(&'static str);

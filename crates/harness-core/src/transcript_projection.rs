@@ -29,10 +29,40 @@ pub fn project_transcript(
     }
     let mut output = TranscriptProjection::default();
     let mut index = TranscriptIndex::default();
-    for event in crate::conversation_rewind::active_events(events).iter() {
-        apply(&mut output, &mut index, event);
-    }
+    rebuild(&mut output, &mut index, events);
     Ok(output)
+}
+
+/// Applies the active (unrewound) events, leaving out input the user took back into the
+/// editor: the agent never saw it.
+pub(crate) fn rebuild(
+    output: &mut TranscriptProjection,
+    index: &mut TranscriptIndex,
+    events: &[EventEnvelopeV1],
+) {
+    let active = crate::conversation_rewind::active_events(events);
+    let withdrawn: std::collections::HashSet<&str> = active
+        .iter()
+        .filter(|event| withdraws_input(event))
+        .filter_map(|event| match &event.payload {
+            EventV1::TaskCancelled(data) => Some(data.task_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    for event in active.iter().filter(|event| {
+        withdrawn.is_empty()
+            || !event
+                .correlation_id
+                .as_deref()
+                .is_some_and(|id| withdrawn.contains(id))
+    }) {
+        apply(output, index, event);
+    }
+}
+
+/// Whether the event takes queued input back into the editor, which hides it retroactively.
+pub(crate) fn withdraws_input(event: &EventEnvelopeV1) -> bool {
+    matches!(&event.payload, EventV1::TaskCancelled(data) if data.reason == RETURNED_TO_EDITOR_REASON)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

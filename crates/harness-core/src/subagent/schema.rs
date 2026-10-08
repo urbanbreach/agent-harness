@@ -16,6 +16,13 @@ pub fn spawn_subagent_schema(
     let mut schema: Value = schemars::schema_for!(SpawnSubagentInput).into();
     let types = definitions.selectable_types(&settings.toggle, allowed_types);
     if let Some(properties) = schema.get_mut("properties").and_then(Value::as_object_mut) {
+        properties.insert(
+            "output_schema".into(),
+            serde_json::json!({
+                "type": "object",
+                "description": "JSON Schema for the child final JSON object. Invalid answers receive bounded corrections."
+            }),
+        );
         if let Some(type_schema) = subagent_type_schema(&types) {
             properties.insert("subagent_type".into(), type_schema);
         }

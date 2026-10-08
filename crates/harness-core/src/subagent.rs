@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 mod history;
 mod lifecycle;
 mod output;
+pub(crate) mod output_contract;
 mod schema;
 mod state;
 mod wire;

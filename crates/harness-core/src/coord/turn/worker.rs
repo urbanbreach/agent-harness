@@ -85,6 +85,27 @@ impl Worker {
                 self.turn.seq = seq;
                 text = wake_text;
             }
+            if self.turn.prompt.reminder_wake {
+                let parent = self.actor.agent_id.clone().unwrap_or_default();
+                let request = self.turn.id.clone();
+                let reminders = self
+                    .handle
+                    .call(move |runtime| {
+                        runtime.check_task(&request)?;
+                        runtime.drain_pending_reminders(&parent, &request)
+                    })
+                    .await?;
+                if reminders.is_empty() {
+                    return Ok(String::new());
+                }
+                for (seq, text) in reminders {
+                    messages.push(
+                        CompletionMessage::text(MessageRole::User, text),
+                        seq,
+                        Some(&self.turn.id),
+                    );
+                }
+            }
             let parent = self.actor.agent_id.clone().unwrap_or_default();
             let request = self.turn.id.clone();
             let completions = self
@@ -101,13 +122,15 @@ impl Worker {
                     Some(&self.turn.id),
                 );
             }
-            messages.push(
-                CompletionMessage::text(MessageRole::User, text),
-                self.turn.seq,
-                Some(&self.turn.id),
-            );
-            if let Some(entry) = messages.entries.last_mut() {
-                entry.attachments = mem::take(&mut self.turn.prompt.attachments);
+            if !self.turn.prompt.reminder_wake {
+                messages.push(
+                    CompletionMessage::text(MessageRole::User, text),
+                    self.turn.seq,
+                    Some(&self.turn.id),
+                );
+                if let Some(entry) = messages.entries.last_mut() {
+                    entry.attachments = mem::take(&mut self.turn.prompt.attachments);
+                }
             }
             self.converse(&mut messages, &mut dispatched).await
         }
@@ -128,20 +151,11 @@ impl Worker {
     ) -> Result<String, CoordinatorError> {
         let mut iteration = 0;
         loop {
-            for (seq, text) in self
-                .handle
-                .drain_subagent_messages(self.actor.clone(), self.turn.id.clone())
-                .await?
-            {
-                messages.push(
-                    CompletionMessage::text(MessageRole::User, text),
-                    seq,
-                    Some(&self.turn.id),
-                );
-            }
+            // A cancelled turn leaves waiting steering to be queued as its own turn.
             if self.cancellation.is_cancelled() {
                 return Err(CoordinatorError::Cancelled(self.turn.id.clone()));
             }
+            self.take_turn_inputs(messages, *dispatched).await?;
             if self
                 .profile
                 .max_iters
@@ -160,6 +174,20 @@ impl Worker {
                         self.turn.settings = (&next).into();
                         self.turn.target = Some(next);
                         self.update_prompt(messages)?;
+                    }
+                    Err(CoordinatorError::StreamGuard(failure)) => {
+                        messages
+                            .usage
+                            .push(crate::subagent::FinalizedProviderUsage {
+                                request_id: failure.request_id.clone(),
+                                attempt_id: self.turn.id.clone(),
+                                model_ref: self.turn.model.clone(),
+                                usage: failure.usage.clone(),
+                                thinking: None,
+                                usage_complete: failure.usage_complete,
+                                settled_reasoning: None,
+                            });
+                        self.retry_after_stream_guard(failure, messages).await?;
                     }
                     result => break result?,
                 }
@@ -216,10 +244,14 @@ impl Worker {
                 }
             }
             if calls.is_empty() {
+                if self.continue_after_stop(&response.text, messages).await? {
+                    continue;
+                }
                 return Ok(response.text);
             }
-            self.run_tools(&request_id, response.event_seq, calls, messages)
+            self.run_tools(&request_id, response.event_seq, calls.clone(), messages)
                 .await?;
+            self.after_tools(&calls, messages).await?;
             self.tools = self.registry.definitions(
                 &self.profile,
                 self.tool_scope.as_deref(),

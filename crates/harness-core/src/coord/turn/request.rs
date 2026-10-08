@@ -42,22 +42,23 @@ impl Worker {
                 workspace: &self.workspace,
                 model: &self.turn.model,
                 prompt_preset: &resolution.prompt_preset,
-                delegation_bias: resolution.delegation_bias,
                 tools: &available,
                 direct_tools: &self.tools,
                 current_date: &self.prompt_date,
                 max_concurrent: self.prompt_limits.0,
                 limit_behavior: self.prompt_limits.1,
+                behavior: &self.behavior,
             })
             .map_err(|error| CoordinatorError::Invalid(format!("system prompt: {error}")))?;
         if let Some(eval) = self.tools.iter_mut().find(|tool| tool.tool_id == "eval")
             && let Some(original) = available.iter().find(|tool| tool.tool_id == "eval")
         {
-            eval.description = Some(format!(
-                "{}\n\n{}",
-                original.description.as_deref().unwrap_or_default(),
-                rendered.eval_guidance
-            ));
+            let base = original.description.as_deref().unwrap_or_default();
+            eval.description = Some(if rendered.eval_tool_guidance.is_empty() {
+                base.to_owned()
+            } else {
+                format!("{base}\n\n{}", rendered.eval_tool_guidance)
+            });
         }
         if let Some(entry) = messages
             .entries
@@ -282,6 +283,7 @@ impl Worker {
                 budget,
                 &self.cancellation,
                 retry,
+                self.behavior.stream_guard.enabled,
                 &mut progress,
             )
             .await;
@@ -310,6 +312,9 @@ impl Worker {
             let Err(error) = result else {
                 return result;
             };
+            if matches!(error, CoordinatorError::StreamGuard(_)) {
+                return Err(error);
+            }
             if let Some((category, delay_ms)) = self.retry_delay(&error, retry.attempt, progress) {
                 if let CoordinatorError::Provider {
                     category, message, ..

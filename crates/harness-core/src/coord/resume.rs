@@ -113,7 +113,10 @@ impl Runtime {
             if let Some(id) = recorded_id(&event.payload) {
                 self.counter = self.counter.max(id_number(id));
             }
+            self.todos.apply(event);
+            self.apply_guidance_state(event);
         }
+        self.rebuild_instruction_state(&events);
         let info = RunInfo {
             run_id: id.into(),
             run_name: name.clone().into(),
@@ -143,6 +146,7 @@ impl Runtime {
                 }
             }
         }
+        self.restore_command_notices();
         self.subagent_history = crate::subagent::SubagentHistory::from_events(&events);
         self.grants = grants;
         self.fault = None;
@@ -247,6 +251,7 @@ impl Runtime {
                 ),
             )?;
             let events = crate::store::read_events(&self.info()?.events_path)?;
+            self.rebuild_instruction_state(&events);
             self.agents = self.restore_agents(
                 &events,
                 &self.info()?.run_dir,

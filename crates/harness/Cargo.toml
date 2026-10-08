@@ -27,6 +27,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
 tokio-util.workspace = true
 tokio-stream.workspace = true
 blake3 = "1"
+humantime = "2"
 uuid = { version = "1", features = ["v5"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
@@ -37,7 +38,7 @@ ignore = "0.4"
 tempfile.workspace = true
 
 [dev-dependencies]
-jsonschema = { version = "0.58", default-features = false }
+jsonschema.workspace = true
 ratatui.workspace = true
 harness-testkit = { path = "../harness-testkit" }
 portable-pty = "0.9"

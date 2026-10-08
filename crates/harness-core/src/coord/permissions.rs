@@ -32,6 +32,7 @@ impl Runtime {
                     return self.finished(Completion::Tool {
                         id: work.id,
                         result: Err(CoordinatorError::PermissionDenied("doom_loop".into())),
+                        instructions: Vec::new(),
                     });
                 }
                 if action == PermissionAction::Ask
@@ -115,6 +116,7 @@ impl Runtime {
             self.finished(Completion::Tool {
                 id: work.id,
                 result: Err(error),
+                instructions: Vec::new(),
             })?;
             return Err(CoordinatorError::Invalid(message));
         }

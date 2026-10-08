@@ -26,6 +26,9 @@ async fn wait_for(
 #[path = "notifications/provider.rs"]
 mod provider;
 use provider::NotificationGate;
+#[cfg(unix)]
+#[path = "notifications/commands.rs"]
+mod commands;
 
 #[tokio::test]
 async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notification(

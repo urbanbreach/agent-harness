@@ -144,6 +144,12 @@ impl Runtime {
             self.commands.insert(
                 id.clone(),
                 CommandRun {
+                    output_tail: self
+                        .config
+                        .behavior
+                        .command_notifications
+                        .enabled
+                        .then(String::new),
                     snapshot: snapshot.clone(),
                     updates,
                     finished: None,
@@ -191,9 +197,7 @@ impl Runtime {
     /// Surviving native commands move to the parent's session, not its prompt.
     pub(in crate::coord) fn reparent_commands(&mut self, child: &str, parent: Option<&str>) {
         for (id, command) in &mut self.commands {
-            if command.snapshot.is_terminal()
-                || command.snapshot.owner_agent_id.as_deref() != Some(child)
-            {
+            if command.snapshot.owner_agent_id.as_deref() != Some(child) {
                 continue;
             }
             command.snapshot.owner_agent_id = parent.map(str::to_owned);
@@ -344,6 +348,7 @@ impl Runtime {
             file.sync_data()?;
         }
         // Terminal waiters observe only a durably accepted terminal transition.
+        let completed_id = id.clone();
         self.emit_applied(job.actor, Some(id.clone()), payload, move |runtime, _| {
             if let Some(command) = runtime.commands.get_mut(&id) {
                 command.snapshot = snapshot;
@@ -351,6 +356,7 @@ impl Runtime {
                 command.updates.send_replace(command.snapshot.clone());
             }
         })?;
+        self.notify_command_completed(&completed_id)?;
         // The pinned native terminal retains at most 100 completed snapshots.
         while self
             .commands

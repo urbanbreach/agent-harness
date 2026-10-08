@@ -43,8 +43,13 @@ impl Runtime {
             .agents
             .get(agent)
             .ok_or_else(|| CoordinatorError::UnknownAgent(agent.into()))?;
+        // Steering accepted for the running turn may become queued turns when it ends.
         let reserved = self.native_notification_reservations(agent)
             + self.eval_pool_notification_reservations(agent)
+            + self
+                .steering
+                .get(agent)
+                .map_or(0, std::collections::VecDeque::len)
             + self
                 .detached_evals
                 .iter()
