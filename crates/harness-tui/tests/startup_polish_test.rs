@@ -174,14 +174,20 @@ fn startup_welcome_requests_slow_motion_only_until_first_input() {
 }
 
 fn normalized_startup_snapshot(app: &AppState, width: u16, height: u16) -> String {
+    // Releases bump the banner version; keep the snapshots version-independent.
+    let version = format!("Harness {}", env!("CARGO_PKG_VERSION"));
     let rendered = startup_text(app, width, height);
     rendered
         .lines()
         .map(|line| {
             if line.contains("git:") {
-                "  <cwd-breadcrumb>"
+                "  <cwd-breadcrumb>".to_owned()
+            } else if let Some((head, tail)) = line.split_once(&version) {
+                format!("{head}Harness <version> {}", tail.trim_start())
+                    .trim_end()
+                    .to_owned()
             } else {
-                line.trim_end()
+                line.trim_end().to_owned()
             }
         })
         .collect::<Vec<_>>()
