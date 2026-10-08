@@ -119,7 +119,7 @@ async fn monitor(
                 }
                 if !state.detached && !cell.cancel.is_cancelled() && can_detach
                     && (foreground_time >= detach_after || cell.created.elapsed() >= foreground || cell.steer.is_cancelled()) {
-                    let claimed = session.detached.fetch_update(Ordering::AcqRel, Ordering::Acquire,
+                    let claimed = session.detached.try_update(Ordering::AcqRel, Ordering::Acquire,
                         |count| (count < settings.max_detached_cells).then_some(count + 1));
                     if claimed.is_ok() {
                         state.detached = true;
