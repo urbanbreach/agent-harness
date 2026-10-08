@@ -162,10 +162,9 @@ fn latest_session(
                 )
                 .map_err(|e| e.to_string())?
             };
-            root.join(loaded.map_or_else(
-                || PathBuf::from(crate::defaults::DEFAULT_SESSION_DIR),
-                |loaded| loaded.config.runtime.session_dir,
-            ))
+            deps.session_directory(
+                &loaded.map_or_else(PathBuf::new, |loaded| loaded.config.runtime.session_dir),
+            )?
         }
     };
     crate::replay::inspect_session_catalog(&directory)?

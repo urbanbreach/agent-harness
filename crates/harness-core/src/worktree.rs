@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-pub const DEFAULT_WORKTREE_RELATIVE_BASE: &str = ".agent-harness/worktrees";
+pub const DEFAULT_WORKTREE_RELATIVE_BASE: &str = "";
 pub const WORKTREE_BRANCH_PREFIX: &str = "harness/wt-";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreatedWorktree {
@@ -27,7 +27,9 @@ pub struct ListedWorktree {
 #[derive(Debug, Clone)]
 pub struct CreateWorktreeOptions<'a> {
     pub repository_root: &'a Path,
+    /// An explicit base, resolved against the repository; empty selects managed storage.
     pub worktree_parent: Option<&'a Path>,
+    pub data_dir: &'a Path,
     pub slug: Option<&'a str>,
     pub start_point: Option<&'a str>,
 }
@@ -36,6 +38,7 @@ pub struct RemoveWorktreeOptions<'a> {
     pub repository_root: &'a Path,
     pub path: &'a Path,
     pub worktree_parent: Option<&'a Path>,
+    pub data_dir: &'a Path,
     pub delete_branch: bool,
     pub force: bool,
 }
@@ -78,7 +81,7 @@ pub fn create_session_worktree(
             )
         });
     let branch = format!("{WORKTREE_BRANCH_PREFIX}{slug}");
-    let parent = parent_path(&repository_root, options.worktree_parent);
+    let parent = parent_path(&repository_root, options.worktree_parent, options.data_dir)?;
     let path = parent.join(&slug);
     if fs::symlink_metadata(&path).is_ok() {
         return Err(WorktreeError::PathCollision {
@@ -107,7 +110,14 @@ pub fn create_session_worktree(
     let revision = std::str::from_utf8(&revision)
         .map_err(|_| invalid_output())?
         .trim();
-    fs::create_dir_all(&parent)?;
+    if options
+        .worktree_parent
+        .is_none_or(|path| path.as_os_str().is_empty())
+    {
+        crate::store::create_private_dir(&parent)?;
+    } else {
+        fs::create_dir_all(&parent)?;
+    }
     match fs::create_dir(&path) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -138,9 +148,10 @@ pub fn create_session_worktree(
 pub fn list_session_worktrees(
     root: &Path,
     worktree_parent: Option<&Path>,
+    data_dir: &Path,
 ) -> Result<Vec<ListedWorktree>, WorktreeError> {
     let root = repository_root(root)?;
-    let parent = parent_path(&root, worktree_parent);
+    let parent = parent_path(&root, worktree_parent, data_dir)?;
     let parent = parent.canonicalize().unwrap_or(parent);
     let data = output(command(&root).args(["worktree", "list", "--porcelain", "-z"]))?;
     let mut entries = Vec::new();
@@ -185,7 +196,7 @@ pub fn remove_session_worktree(options: RemoveWorktreeOptions<'_>) -> Result<(),
         .map_err(|_| WorktreeError::NotFound {
             path: options.path.display().to_string(),
         })?;
-    let listed = list_session_worktrees(&root, options.worktree_parent)?;
+    let listed = list_session_worktrees(&root, options.worktree_parent, options.data_dir)?;
     if listed
         .first()
         .is_some_and(|e| e.path.canonicalize().ok().as_ref() == Some(&target))
@@ -220,8 +231,8 @@ pub fn remove_session_worktree(options: RemoveWorktreeOptions<'_>) -> Result<(),
     }
     Ok(())
 }
-pub fn default_worktree_parent(root: &Path) -> PathBuf {
-    root.join(DEFAULT_WORKTREE_RELATIVE_BASE)
+pub fn default_worktree_parent(root: &Path, data_dir: &Path) -> std::io::Result<PathBuf> {
+    Ok(crate::storage_paths::ProjectPaths::new(data_dir, root)?.worktrees_dir())
 }
 pub fn sanitize_slug(raw: &str) -> String {
     raw.split(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
@@ -234,8 +245,11 @@ pub fn sanitize_slug(raw: &str) -> String {
         .collect::<String>()
         .to_ascii_lowercase()
 }
-fn parent_path(root: &Path, parent: Option<&Path>) -> PathBuf {
-    parent.map_or_else(|| default_worktree_parent(root), |path| root.join(path))
+fn parent_path(root: &Path, parent: Option<&Path>, data_dir: &Path) -> std::io::Result<PathBuf> {
+    match parent.filter(|path| !path.as_os_str().is_empty()) {
+        Some(path) => Ok(root.join(path)),
+        None => default_worktree_parent(root, data_dir),
+    }
 }
 fn repository_root(root: &Path) -> Result<PathBuf, WorktreeError> {
     let data = output(command(root).args(["rev-parse", "--show-toplevel"])).map_err(|_| {

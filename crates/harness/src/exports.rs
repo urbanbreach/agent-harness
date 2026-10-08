@@ -26,7 +26,9 @@ pub(crate) fn markdown(
 ) -> Result<(), String> {
     let cwd = deps.current_dir().map_err(|e| e.to_string())?;
     let configured = crate::inspect::configured(config, deps)?;
-    let root = cwd.join(directory.unwrap_or_else(|| configured.config.runtime.session_dir.clone()));
+    let root = deps.session_directory(
+        &directory.unwrap_or_else(|| configured.config.runtime.session_dir.clone()),
+    )?;
     let path = crate::recovery::resolve_session_run_dir(&command.session, &root, &cwd)?;
     let redactor = crate::inspect::redactor(&configured.config, deps)?;
     let events = crate::replay::read_bounded_history(&path)?;

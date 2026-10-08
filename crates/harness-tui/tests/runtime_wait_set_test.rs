@@ -119,6 +119,9 @@ fn p0_05_disconnect_pty_helper() {
 
     // When: the shipped TUI consumes the source through its native runtime wait set.
     run_tui_with_options(TuiOptions {
+        storage_data_dir: harness_core::storage_paths::data_dir_from_lookup(&|key| {
+            std::env::var(key).ok()
+        }),
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
             historical_events: disconnect_fixture_events(),

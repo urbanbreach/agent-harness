@@ -45,7 +45,8 @@ pub(super) fn execute(
         || deps
             .env_var_value("HARNESS_DETERMINISTIC")
             .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "yes"));
-    let sessions = root.join(sessions.unwrap_or_else(|| config.runtime.session_dir.clone()));
+    let sessions =
+        deps.session_directory(&sessions.unwrap_or_else(|| config.runtime.session_dir.clone()))?;
     store::create_private_dir(&sessions).map_err(|e| e.to_string())?;
     // Generated fixtures may be replaced, but concurrent scenario writers must not reset one another.
     let lock =
@@ -63,6 +64,11 @@ pub(super) fn execute(
         PermissionDecision::Allow
     };
     let mut setup = CoordinatorConfig::new(sessions);
+    if let Some(data_dir) =
+        harness_core::storage_paths::data_dir_from_lookup(&|name| deps.env_var_value(name))
+    {
+        setup.data_dir = data_dir;
+    }
     setup.run_id_override = id;
     setup.formatter = Arc::new(config.formatter.clone());
     setup.hook_runtime_config = harness_core::config::HookRuntimeConfig {

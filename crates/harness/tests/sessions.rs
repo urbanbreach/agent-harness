@@ -151,6 +151,7 @@ fn check_configured_location(root: &Path) -> Result<(), Box<dyn std::error::Erro
             &mut CliIo::new(&mut input, &mut output, &mut errors),
             CliDeps::real()
                 .with_current_dir(root.into())
+                .with_env("HARNESS_DATA_HOME", root.join("data").to_string_lossy())
                 .without_env("HOME")
                 .without_env("XDG_CONFIG_HOME")
                 .without_env("HARNESS_CONFIG")

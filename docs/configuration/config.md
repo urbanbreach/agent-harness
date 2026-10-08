@@ -157,6 +157,8 @@ from the current parent directory to the worktree root. It checks
 `.agent-harness/agents`, `.harness/agents`, and the compatibility layout
 `.claude/agents`. User roots, bundled roots and plugin directories are
 explicit discovery inputs.
+These read-only discovery inputs are separate from the removed plugin package
+registry and CLI. They do not install, activate, or execute a package.
 
 Inline roles/personas override trusted project `.toml` files, then user files,
 then bundled files. Untrusted project role/persona files are skipped. A role
@@ -379,10 +381,44 @@ for those settings instead of mixing them into runtime config.
 | `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback metadata; runtime profile resolution selects the primary target in V1. |
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. Supports scalar `allow`/`ask`/`deny` or per-tool pattern maps. Catch-all deny hides tools from the model; last matching pattern wins. |
 | `provider` | Provider definitions keyed by provider id. |
-| `runtime` | Runtime settings including startup approval mode, provider-context compaction settings, provider retry policy, and [behavior guidance](#runtime-behavior-guidance). |
+| `runtime` | Runtime settings including [session storage](#session-storage), startup approval mode, provider-context compaction settings, provider retry policy, and [behavior guidance](#runtime-behavior-guidance). |
 | `server` | Upstream server configuration; accepted only when empty because server commands are outside this runtime config. |
 | `small_model` | Optional smaller model reference for coordinator-owned internal operations such as title generation. |
 | `skills` | Shared skill discovery roots and permission overrides for skill loading. |
+
+## Session storage
+
+`runtime.session_dir` defaults to an empty string, which means automatic managed
+storage at `<data-dir>/sessions/<project-key>`. Leave it empty or omit it to use
+that default. `--session-dir DIR` takes precedence over a configured directory.
+A nonempty relative override resolves against the selected project directory
+(`--cwd`), preserving existing semantics; it is not relative to the config file.
+An absolute override is used as supplied.
+
+```jsonc
+{
+  "runtime": {
+    "session_dir": ""
+  }
+}
+```
+
+`<data-dir>` resolves to `$HARNESS_DATA_HOME/harness`, otherwise
+`$XDG_DATA_HOME/harness`, otherwise `$HOME/.local/share/harness`. Empty values are
+ignored. The project key uses the canonical absolute path: strip one
+leading slash or backslash, replace slashes, backslashes and colons with dashes,
+and wrap the result in `--`. For example, `/work/app` becomes `--work-app--`.
+
+Runtime data uses `<data-dir>/projects/<project-key>` and managed worktrees use
+`<data-dir>/worktrees/<project-key>`, independently of the session override.
+Authored project agents, skills, prompts and configuration stay in their existing
+locations, as do `.agent-harness/permission-grants.json` workspace grants. Data
+directory selection does not change the [config discovery order](#discovery-and-precedence).
+
+There is no migration of existing `.agent-harness/sessions` histories. Use
+`--session-dir <project>/.agent-harness/sessions` to access them explicitly.
+See [saved sessions](../operations/sessions.md) and the
+[storage layout](../architecture/sessions-and-replay.md#storage-layout).
 
 ## Variable substitution
 
@@ -514,22 +550,6 @@ resolve relative to the file that declares them.
 Explicit JSON agent fields take precedence over markdown frontmatter. Empty or
 default fields can fall back to frontmatter. Project markdown overrides a shipped
 agent with the same name.
-
-## Extension manifest descriptors
-
-Typed extension manifests are not a runtime config key in V1. The descriptor
-schema lives at
-[`configs/extension-manifest.v1.schema.json`](../../configs/extension-manifest.v1.schema.json)
-and is validated by `harness-core::extension_manifest::ExtensionManifestV1`.
-The parser reads descriptors only. parsing a manifest records stable extension ids,
-capability ids, disablement defaults, optional tool/hook/command/prompt/MCP
-bundle/diagnostic/provider-decorator descriptors, public permission names for
-tool descriptors, and static replay metadata. It does not discover manifests
-from config, register tools, execute commands, launch MCP servers, invoke
-provider decorators, load external code, or mutate sessions. Future executable
-extension behavior must be configured through a new host design and still route
-through coordinator permissions, artifact/redaction paths, and replay-safe
-metadata.
 
 ## TUI top-level keys
 
@@ -927,7 +947,7 @@ values, config loading rejects the file instead of silently choosing one.
 ## Validation behavior
 
 - Unsupported top-level areas are limited to active unsupported product features and unknown keys.
-- Unsupported compatibility top-level areas that would trigger product side effects (`server`, `command`, `autoshare`) are rejected when active; inactive forms such as empty maps/lists are accepted. Compatibility-only keys (`plugin`, `share`, `autoupdate`, `enterprise`) are accepted in any form but have no effect.
+- Removed command families have no runtime configuration keys. Top-level `plugin` and `autoupdate` keys are rejected as unknown fields.
 - Unsupported TUI fields are rejected explicitly.
 - `{env:VAR}` resolves to an empty string when `VAR` is unset.
 - `{file:path}` is supported for string references and resolves relative to the config file when the config comes from disk.

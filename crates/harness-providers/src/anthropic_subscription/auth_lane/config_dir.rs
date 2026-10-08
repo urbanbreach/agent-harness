@@ -1,4 +1,4 @@
-//! Per-account `CLAUDE_CONFIG_DIR` credentials (senpi `config-dir-credentials.ts`).
+//! Per-account `CLAUDE_CONFIG_DIR` credentials.
 use super::*;
 
 const CLI_OAUTH_SCOPES: [&str; 6] = [

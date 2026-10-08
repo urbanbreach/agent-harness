@@ -12,7 +12,7 @@ use harness_tui::app::{LaunchMetadata, TogglesConfig};
 use crate::bootstrap;
 use crate::cli_config::load_optional_config_with_digest_context;
 use crate::cli_io::load_events_from_run_dir;
-use crate::defaults::{DEFAULT_MOCK_PROFILE, DEFAULT_SESSION_DIR};
+use crate::defaults::DEFAULT_MOCK_PROFILE;
 use crate::scenarios::{
     create_workspace, default_permission_policy, golden_path_profiles, golden_path_provider,
     ScenarioName,
@@ -33,6 +33,7 @@ pub(super) struct LiveSettings {
     pub(super) config: Option<HarnessConfig>,
     pub(super) config_path: Option<PathBuf>,
     pub(super) session_dir: PathBuf,
+    pub(super) data_dir: PathBuf,
     pub(super) workspace_root: PathBuf,
     pub(super) shell_allowlist: ShellAllowlist,
     pub(super) deterministic: bool,
@@ -208,7 +209,7 @@ fn resolve_live_settings_with_deps(
     deps: LiveSettingsDeps<'_>,
 ) -> Result<LiveSettings, String> {
     let mut shell_allowlist = ShellAllowlist::default();
-    let mut config_session_dir = PathBuf::from(DEFAULT_SESSION_DIR);
+    let mut config_session_dir = PathBuf::new();
     let mut config_deterministic = false;
     let mut config_seed = 0;
     let mut config_digest = "none".to_string();
@@ -261,6 +262,17 @@ fn resolve_live_settings_with_deps(
         .clone()
         .or(global_session_dir)
         .unwrap_or(config_session_dir);
+    let session_dir = harness_core::storage_paths::resolve_session_dir(
+        &workspace_root,
+        &session_dir,
+        config_context.discovery.data_dir.as_deref(),
+    )
+    .map_err(|error| error.to_string())?;
+    let data_dir = config_context
+        .discovery
+        .data_dir
+        .clone()
+        .unwrap_or_else(|| session_dir.join("data"));
     let deterministic = cmd.deterministic || Determinism::enabled(config_deterministic);
     let default_profile = config_default_profile;
     let launch_mode_label = if live_config.is_some() {
@@ -305,6 +317,7 @@ fn resolve_live_settings_with_deps(
         config: live_config,
         config_path,
         session_dir,
+        data_dir,
         workspace_root,
         shell_allowlist,
         deterministic,
@@ -354,6 +367,7 @@ pub(super) fn launch_metadata_for_mode(
 
 pub(super) fn demo_coordinator_config(settings: &LiveSettings) -> CoordinatorConfig {
     let mut coordinator_config = CoordinatorConfig::new(settings.session_dir.clone());
+    coordinator_config.data_dir.clone_from(&settings.data_dir);
     coordinator_config.yolo_on_start = settings.yolo;
     coordinator_config.permission_policy = default_permission_policy();
     coordinator_config.tool_registry =
@@ -372,7 +386,9 @@ pub(super) fn interactive_coordinator_config(
         .ok_or_else(bootstrap::interactive_config_guidance)?;
     config.apply_session_dir_override(Some(settings.session_dir.clone()));
     config.runtime.yolo = settings.yolo;
-    bootstrap::build_interactive_coordinator_config(&config)
+    let mut coordinator_config = bootstrap::build_interactive_coordinator_config(&config)?;
+    coordinator_config.data_dir.clone_from(&settings.data_dir);
+    Ok(coordinator_config)
 }
 
 pub(super) fn prepare_new_live_workspace(

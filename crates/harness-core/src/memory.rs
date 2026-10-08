@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
-pub const MEMORY_RELATIVE_DIR: &str = ".agent-harness/memory";
+pub const MEMORY_DIR: &str = "memory";
 pub const MEMORY_ENTRIES_FILE: &str = "entries.json";
 const MAX_BYTES: usize = 4 * 1024 * 1024;
 
@@ -99,11 +99,9 @@ impl DurableMemoryStore {
     pub fn open(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
     }
-    pub fn default_path_for_workspace(root: &Path) -> PathBuf {
-        root.join(MEMORY_RELATIVE_DIR).join(MEMORY_ENTRIES_FILE)
-    }
-    pub fn for_workspace(root: &Path) -> Self {
-        Self::open(Self::default_path_for_workspace(root))
+    /// Open memory under `ProjectPaths::runtime_dir()` without creating storage.
+    pub fn for_runtime(runtime_dir: &Path) -> Self {
+        Self::open(runtime_dir.join(MEMORY_DIR).join(MEMORY_ENTRIES_FILE))
     }
     pub fn path(&self) -> &Path {
         &self.path

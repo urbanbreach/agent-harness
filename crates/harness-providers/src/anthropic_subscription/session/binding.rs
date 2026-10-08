@@ -1,7 +1,7 @@
-//! Restart bindings (senpi `session-binding*.ts`, `session-commit-boundary.ts`).
+//! Restart bindings.
 //!
-//! Also `session-registry-wiring.ts`. senpi anchors a strict private sidecar to a ledger marker
-//! and to the committed assistant; the harness request carries the whole history, so the
+//! A strict private sidecar is anchored to a ledger marker and to the committed
+//! assistant; the harness request carries the whole history, so the
 //! sidecar is validated against it: the sent-prefix digest, the semantic hash of the assistant
 //! right after that prefix, and an append-only tail (only user and tool messages follow it).
 use super::continuity::BindingSnapshot;

@@ -1,5 +1,4 @@
-//! Auth lanes and account failover (senpi `auth-lane.ts`, `auth-environment.ts`,
-//! `auth-attempt.ts`, `config-dir-credentials.ts`, `failover.ts`).
+//! Auth lanes and account failover.
 use super::accounts::display::account_label;
 use super::accounts::{
     active_model_block_until, assert_valid_account_name, clear_expired_blocks, env_slot_token,
@@ -80,7 +79,7 @@ pub struct AuthLaneInput {
     pub create_attempt: AttemptFactory,
     /// The turn's abort signal; an aborted attempt is never a verdict on its account.
     pub cancel: CancellationToken,
-    /// What the lane tells the user (senpi `account-events.ts`).
+    /// What the lane tells the user.
     pub report: Arc<std::sync::Mutex<LaneReport>>,
 }
 

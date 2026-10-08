@@ -88,17 +88,21 @@ impl Recorder {
     }
 
     pub(super) fn populated_dialogs(&mut self, root: &Path) -> Result {
-        fs::create_dir_all(root.join(".agent-harness/plans"))?;
+        let data_dir = root.join("../data");
+        let runtime_dir =
+            harness_core::storage_paths::ProjectPaths::new(&data_dir, root)?.runtime_dir();
+        fs::create_dir_all(runtime_dir.join("plans"))?;
         fs::write(
-            root.join(".agent-harness/plans/fixture.md"),
+            runtime_dir.join("plans/fixture.md"),
             "# Fixture plan\n\n- Preserve the draft.\n- Verify terminal cleanup.\n",
         )?;
-        DurableMemoryStore::for_workspace(root)
+        DurableMemoryStore::for_runtime(&runtime_dir)
             .put("terminal", "Use graphemes and display cells.")?;
         fs::write(root.join("settings.json"), "{\"hashline_edit\":false}\n")?;
         for command in ["view-plan", "settings"] {
             let mut j = Journey::new(false);
             j.app.set_file_mention_workspace_root_for_test(root.into());
+            j.app.set_storage_data_dir(data_dir.clone());
             j.app.bind_settings_project_config(
                 root.join("settings.json"),
                 false,
@@ -130,6 +134,7 @@ impl Recorder {
         }
         let mut j = Journey::new(false);
         j.app.set_file_mention_workspace_root_for_test(root.into());
+        j.app.set_storage_data_dir(data_dir);
         j.app.open_memory_browser();
         self.frame("memory-populated", &mut j)?;
         j.key(K::Char('/'), M::NONE);

@@ -110,6 +110,27 @@ impl CliDeps {
     pub(crate) fn env_var_is_set(&self, name: &str) -> bool {
         self.env_var_value(name).is_some()
     }
+    pub(crate) fn session_directory(
+        &self,
+        configured: &std::path::Path,
+    ) -> Result<PathBuf, String> {
+        let root = self.current_dir().map_err(|error| error.to_string())?;
+        let data_dir =
+            harness_core::storage_paths::data_dir_from_lookup(&|name| self.env_var_value(name));
+        harness_core::storage_paths::resolve_session_dir(&root, configured, data_dir.as_deref())
+            .map_err(|error| error.to_string())
+    }
+    pub(crate) fn data_directory(&self) -> Result<PathBuf, String> {
+        harness_core::storage_paths::data_dir_from_lookup(&|name| self.env_var_value(name))
+            .ok_or_else(|| "cannot resolve harness data directory; set HARNESS_DATA_HOME or provide --session-dir".to_string())
+    }
+    pub(crate) fn project_paths(
+        &self,
+        project: &std::path::Path,
+    ) -> Result<harness_core::storage_paths::ProjectPaths, String> {
+        harness_core::storage_paths::ProjectPaths::new(&self.data_directory()?, project)
+            .map_err(|error| error.to_string())
+    }
     pub(crate) fn config_load_context(&self) -> ConfigLoadContext {
         let mut context = ConfigLoadContext::from_env();
         if let Some(directory) = &self.directory {
@@ -118,6 +139,8 @@ impl CliDeps {
         for (name, value) in &self.environment {
             context = context.apply_env_var(name, value.clone());
         }
+        context.discovery.data_dir =
+            harness_core::storage_paths::data_dir_from_lookup(&|name| self.env_var_value(name));
         context
     }
     pub fn provider_override(&self) -> Option<Arc<dyn Provider>> {

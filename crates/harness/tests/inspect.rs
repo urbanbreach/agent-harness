@@ -16,6 +16,10 @@ fn inspection_is_offline_redacted_and_reports_unknown_model_limits(
     }).to_string())?;
     let deps = CliDeps::real()
         .with_current_dir(root.path().into())
+        .with_env(
+            "HARNESS_DATA_HOME",
+            root.path().join("data").to_string_lossy(),
+        )
         .with_env("INSPECTION_KEY", "opaque-inspection-token");
     for args in [
         vec!["doctor", "--json"],
@@ -118,7 +122,12 @@ fn catalog_generation_filters_models_and_preserves_output_after_invalid_input(
                 "catalog.json",
             ],
             &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
-            CliDeps::real().with_current_dir(root.path().into()),
+            CliDeps::real()
+                .with_current_dir(root.path().into())
+                .with_env(
+                    "HARNESS_DATA_HOME",
+                    root.path().join("data").to_string_lossy(),
+                ),
         );
         assert_eq!(
             result.code == 0,
@@ -163,6 +172,10 @@ fn config_commands_explain_layer_precedence_without_writes_or_secret_output(
     )?;
     let deps = CliDeps::real()
         .with_current_dir(project.clone())
+        .with_env(
+            "HARNESS_DATA_HOME",
+            root.path().join("data").to_string_lossy(),
+        )
         .with_env(
             "XDG_CONFIG_HOME",
             root.path().join("xdg").to_str().ok_or("xdg path")?,

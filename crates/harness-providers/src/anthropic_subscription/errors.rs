@@ -1,5 +1,4 @@
-//! Failure shapes, classification and operator guidance (senpi `errors.ts`, `refusal.ts`,
-//! `guidance.ts`, `stream-guidance.ts`).
+//! Failure shapes, classification and operator guidance.
 use super::accounts::{iso, rate_limit_model_family, AllAccountsBlockedError};
 use super::executable::{ClaudeCodeRun, ExecutableSource};
 use regex::Regex;

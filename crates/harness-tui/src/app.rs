@@ -7,9 +7,6 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use harness_core::auto_fallback::{AutoFallbackOutcome, AutoFallbackSummary};
-use harness_core::binary_update::{
-    BinaryUpdateCheck, BinaryUpdatePolicy, BinaryUpdateSummary, BinaryVersionInfo,
-};
 use harness_core::browser_oidc::BrowserOidcAvailability;
 use harness_core::code_graph::{
     GraphQuery, GraphQueryBatchSummary, GraphQueryResult, PersistentGraphAvailability,
@@ -19,9 +16,6 @@ use harness_core::cow_worktree::{CowCloneOutcomeSummary, CowCloneResult, CowWork
 use harness_core::crash_recovery::{
     CrashRecoveryAction, CrashRecoveryScanSummary, PreviousCrashReport,
 };
-use harness_core::cron_schedule::{
-    CronRegisterOutcome, CronRemoveOutcome, CronSchedule, CronScheduleSummary,
-};
 use harness_core::edit_attribution::EditAttributionSummary;
 use harness_core::event::{
     ActorKind, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
@@ -30,17 +24,12 @@ use harness_core::event::{
     ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus, UserMessageSubmittedEvent,
     SCHEMA_VERSION,
 };
-use harness_core::extension_manifest::{
-    ExtensionDiscoverSummary, ExtensionLoadOutcome, ExtensionManifestSummary,
-};
 use harness_core::foreground_demote::{DemoteOutcomeSummary, DemoteToBackgroundResult};
 use harness_core::foreign_session::{
     ForeignDiscoverSummary, ForeignImportOutcome, ForeignSessionCandidate,
 };
 use harness_core::integrations::{
     AcpBindOutcome, AcpConnectOutcome, AcpConnectionState, AcpConnectionSummary, AcpSessionInfo,
-    PluginActivateOutcome, PluginDeactivateOutcome, PluginInstallOutcome, PluginLifecycleSummary,
-    PluginRemoveOutcome,
 };
 use harness_core::jujutsu::{
     JujutsuAvailability, JujutsuCommandOutcome, JujutsuProbe, JujutsuWorkspaceStatus,
@@ -55,10 +44,6 @@ use harness_core::session::{canonical_provider_fragment_for_event, CanonicalProv
 use harness_core::sleep_wake_auth::{
     SleepWakeCredentialPolicy, SleepWakeHostEvent, SleepWakeObservation,
     SleepWakeObservationSummary, SleepWakeRefreshDecision,
-};
-use harness_core::team_registry::{
-    TeamAddMemberOutcome, TeamCancelOutcome, TeamCreateOutcome, TeamRegistrySummary,
-    TeamSendOutcome,
 };
 use harness_core::workspace::WorkspaceEnvironment;
 use harness_core::workspace_hub::WorkspaceHubAvailability;
@@ -331,6 +316,7 @@ fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
 const NO_PROVIDER_BANNER: &str = "No provider connected. Use /login.";
 
 pub struct AppState {
+    storage_data_dir: Option<PathBuf>,
     pub selected_event_index: usize,
     pub focus: Focus,
     pub active_tab: Tab,
@@ -416,18 +402,6 @@ pub struct AppState {
     pub(crate) settings_compaction_structured_summary_contract: bool,
     pub(crate) settings_compaction_estimated_token_triggers: bool,
     pub(crate) settings_deterministic_enabled: bool,
-    /// Optional operator-facing plugin lifecycle counts for the status dialog.
-    pub(crate) plugin_lifecycle_summary: Option<PluginLifecycleSummary>,
-    /// Last plugin install attempt (diagnostics; does not load package code).
-    pub(crate) plugin_last_install: Option<PluginInstallOutcome>,
-    /// Last plugin activate attempt (permission-before-execution; no code load).
-    pub(crate) plugin_last_activate: Option<PluginActivateOutcome>,
-    /// Last plugin deactivate attempt (diagnostics; no package code load).
-    pub(crate) plugin_last_deactivate: Option<PluginDeactivateOutcome>,
-    /// Last plugin remove attempt (diagnostics; no package code load).
-    pub(crate) plugin_last_remove: Option<PluginRemoveOutcome>,
-    /// First installed plugin one-line (if any).
-    pub(crate) plugin_first_line: Option<String>,
     /// Optional operator-facing multi-run crash scan counts for the status dialog.
     pub(crate) crash_recovery_scan_summary: Option<CrashRecoveryScanSummary>,
     pub(crate) crash_recovery_first_report: Option<PreviousCrashReport>,
@@ -440,28 +414,6 @@ pub struct AppState {
     pub(crate) edit_attribution_first_line: Option<String>,
     /// Last attributed edit one-line (session-local; not VCS blame).
     pub(crate) edit_attribution_last_line: Option<String>,
-    /// Optional operator-facing multi-agent team registry counts for the status dialog.
-    pub(crate) team_registry_summary: Option<TeamRegistrySummary>,
-    /// Last team create outcome (diagnostics; not Team Mode product).
-    pub(crate) team_last_create: Option<TeamCreateOutcome>,
-    /// First registered team one-line (if any).
-    pub(crate) team_first_line: Option<String>,
-    /// Last team mailbox send outcome (diagnostics; not process IPC).
-    pub(crate) team_last_send: Option<TeamSendOutcome>,
-    /// Last team mailbox message one-line (if any).
-    pub(crate) team_last_message_line: Option<String>,
-    /// Last team add-member attempt (diagnostics; not Team Mode product).
-    pub(crate) team_last_add_member: Option<TeamAddMemberOutcome>,
-    /// Last team cancel attempt (diagnostics; not Team Mode product).
-    pub(crate) team_last_cancel: Option<TeamCancelOutcome>,
-    /// Optional operator-facing cron schedule registry counts for the status dialog.
-    pub(crate) cron_schedule_summary: Option<CronScheduleSummary>,
-    /// Last cron schedule registration outcome (diagnostics; not timer execution).
-    pub(crate) cron_last_register: Option<CronRegisterOutcome>,
-    /// First registered cron schedule one-line (if any).
-    pub(crate) cron_first_schedule_line: Option<String>,
-    /// Last cron remove outcome (diagnostics; fail-closed missing ok).
-    pub(crate) cron_last_remove: Option<CronRemoveOutcome>,
     /// Optional operator-facing demote-outcome counts for the status dialog.
     pub(crate) demote_outcome_summary: Option<DemoteOutcomeSummary>,
     /// Last foreground→background demote attempt (diagnostics; not shell demote product).
@@ -476,12 +428,6 @@ pub struct AppState {
     pub(crate) auto_fallback_last_banner: Option<String>,
     /// Resolved model-ref chain label (primary → fallback…); diagnostics only.
     pub(crate) auto_fallback_chain_label: Option<String>,
-    /// Optional operator-facing extension descriptor counts for the status dialog.
-    pub(crate) extension_manifest_summary: Option<ExtensionManifestSummary>,
-    /// Extension descriptor discovery counts (diagnostics; not code load).
-    pub(crate) extension_discover_summary: Option<ExtensionDiscoverSummary>,
-    /// Last extension.manifest.json load attempt (fail-closed diagnostics).
-    pub(crate) extension_last_load: Option<ExtensionLoadOutcome>,
     /// Remote workspace hub availability (always unavailable in MVP).
     pub(crate) workspace_hub_availability: Option<WorkspaceHubAvailability>,
     /// Optional operator-facing graph-query batch counts for the status dialog.
@@ -512,14 +458,6 @@ pub struct AppState {
     pub(crate) sleep_wake_credential_policy: Option<SleepWakeCredentialPolicy>,
     /// Sleep/wake credential refresh availability alias (Unavailable MVP).
     pub(crate) sleep_wake_availability: Option<SleepWakeCredentialPolicy>,
-    /// Optional operator-facing binary-update check counts for the status dialog.
-    pub(crate) binary_update_summary: Option<BinaryUpdateSummary>,
-    /// Operator update policy echo (channel/min-version; diagnostics only).
-    pub(crate) binary_update_policy: Option<BinaryUpdatePolicy>,
-    /// Last offline update check (structured unavailable; never claims success).
-    pub(crate) binary_update_check: Option<BinaryUpdateCheck>,
-    /// Current binary package version (compile-time; always available).
-    pub(crate) binary_version_info: Option<BinaryVersionInfo>,
     /// Optional operator-facing settings-registry composition counts for the status dialog.
     pub(crate) settings_registry_summary: Option<SettingsRegistrySummary>,
     /// Optional operator-facing foreign-session discover counts for the status dialog.
@@ -667,6 +605,7 @@ impl Default for AppState {
             quit_confirmation_shortcut: None,
             quit_confirmation_expires_at: None,
             replay_mode: false,
+            storage_data_dir: None,
             session_path: None,
             session_lineage: SessionLineage::default(),
             status_banner: None,
@@ -740,12 +679,6 @@ impl Default for AppState {
             settings_compaction_structured_summary_contract: true,
             settings_compaction_estimated_token_triggers: true,
             settings_deterministic_enabled: false,
-            plugin_lifecycle_summary: None,
-            plugin_last_install: None,
-            plugin_last_activate: None,
-            plugin_last_deactivate: None,
-            plugin_last_remove: None,
-            plugin_first_line: None,
             crash_recovery_scan_summary: None,
             crash_recovery_first_report: None,
             crash_recovery_resolved_action: None,
@@ -753,17 +686,6 @@ impl Default for AppState {
             edit_attribution_summary: None,
             edit_attribution_first_line: None,
             edit_attribution_last_line: None,
-            team_registry_summary: None,
-            team_last_create: None,
-            team_first_line: None,
-            team_last_send: None,
-            team_last_message_line: None,
-            team_last_add_member: None,
-            team_last_cancel: None,
-            cron_schedule_summary: None,
-            cron_last_register: None,
-            cron_first_schedule_line: None,
-            cron_last_remove: None,
             demote_outcome_summary: None,
             demote_last_result: None,
             demote_last_task_result: None,
@@ -771,9 +693,6 @@ impl Default for AppState {
             auto_fallback_last_outcome: None,
             auto_fallback_last_banner: None,
             auto_fallback_chain_label: None,
-            extension_manifest_summary: None,
-            extension_discover_summary: None,
-            extension_last_load: None,
             workspace_hub_availability: None,
             graph_query_batch_summary: None,
             graph_query_last_result: None,
@@ -790,10 +709,6 @@ impl Default for AppState {
             sleep_wake_last_decision: None,
             sleep_wake_credential_policy: None,
             sleep_wake_availability: None,
-            binary_update_summary: None,
-            binary_update_policy: None,
-            binary_update_check: None,
-            binary_version_info: None,
             settings_registry_summary: None,
             foreign_discover_summary: None,
             foreign_import_first_candidate: None,
@@ -2081,54 +1996,6 @@ impl AppState {
         self.status_banner = status;
     }
 
-    pub fn set_plugin_lifecycle_summary(&mut self, summary: Option<PluginLifecycleSummary>) {
-        self.plugin_lifecycle_summary = summary;
-    }
-
-    pub fn plugin_lifecycle_summary(&self) -> Option<PluginLifecycleSummary> {
-        self.plugin_lifecycle_summary
-    }
-
-    pub fn set_plugin_last_install(&mut self, outcome: Option<PluginInstallOutcome>) {
-        self.plugin_last_install = outcome;
-    }
-
-    pub fn plugin_last_install(&self) -> Option<&PluginInstallOutcome> {
-        self.plugin_last_install.as_ref()
-    }
-
-    pub fn set_plugin_last_activate(&mut self, outcome: Option<PluginActivateOutcome>) {
-        self.plugin_last_activate = outcome;
-    }
-
-    pub fn plugin_last_activate(&self) -> Option<&PluginActivateOutcome> {
-        self.plugin_last_activate.as_ref()
-    }
-
-    pub fn set_plugin_last_deactivate(&mut self, outcome: Option<PluginDeactivateOutcome>) {
-        self.plugin_last_deactivate = outcome;
-    }
-
-    pub fn plugin_last_deactivate(&self) -> Option<&PluginDeactivateOutcome> {
-        self.plugin_last_deactivate.as_ref()
-    }
-
-    pub fn set_plugin_last_remove(&mut self, outcome: Option<PluginRemoveOutcome>) {
-        self.plugin_last_remove = outcome;
-    }
-
-    pub fn plugin_last_remove(&self) -> Option<&PluginRemoveOutcome> {
-        self.plugin_last_remove.as_ref()
-    }
-
-    pub fn set_plugin_first_line(&mut self, line: Option<String>) {
-        self.plugin_first_line = line;
-    }
-
-    pub fn plugin_first_line(&self) -> Option<&str> {
-        self.plugin_first_line.as_deref()
-    }
-
     pub fn set_crash_recovery_scan_summary(&mut self, summary: Option<CrashRecoveryScanSummary>) {
         self.crash_recovery_scan_summary = summary;
     }
@@ -2253,94 +2120,6 @@ impl AppState {
         self.edit_attribution_last_line = last_line;
     }
 
-    pub fn set_team_registry_summary(&mut self, summary: Option<TeamRegistrySummary>) {
-        self.team_registry_summary = summary;
-    }
-
-    pub fn team_registry_summary(&self) -> Option<TeamRegistrySummary> {
-        self.team_registry_summary
-    }
-
-    pub fn set_team_last_create(&mut self, outcome: Option<TeamCreateOutcome>) {
-        self.team_last_create = outcome;
-    }
-
-    pub fn team_last_create(&self) -> Option<&TeamCreateOutcome> {
-        self.team_last_create.as_ref()
-    }
-
-    pub fn set_team_first_line(&mut self, line: Option<String>) {
-        self.team_first_line = line;
-    }
-
-    pub fn team_first_line(&self) -> Option<&str> {
-        self.team_first_line.as_deref()
-    }
-
-    pub fn set_team_last_send(&mut self, outcome: Option<TeamSendOutcome>) {
-        self.team_last_send = outcome;
-    }
-
-    pub fn team_last_send(&self) -> Option<&TeamSendOutcome> {
-        self.team_last_send.as_ref()
-    }
-
-    pub fn set_team_last_message_line(&mut self, line: Option<String>) {
-        self.team_last_message_line = line;
-    }
-
-    pub fn team_last_message_line(&self) -> Option<&str> {
-        self.team_last_message_line.as_deref()
-    }
-
-    pub fn set_team_last_add_member(&mut self, outcome: Option<TeamAddMemberOutcome>) {
-        self.team_last_add_member = outcome;
-    }
-
-    pub fn team_last_add_member(&self) -> Option<&TeamAddMemberOutcome> {
-        self.team_last_add_member.as_ref()
-    }
-
-    pub fn set_team_last_cancel(&mut self, outcome: Option<TeamCancelOutcome>) {
-        self.team_last_cancel = outcome;
-    }
-
-    pub fn team_last_cancel(&self) -> Option<&TeamCancelOutcome> {
-        self.team_last_cancel.as_ref()
-    }
-
-    pub fn set_cron_schedule_summary(&mut self, summary: Option<CronScheduleSummary>) {
-        self.cron_schedule_summary = summary;
-    }
-
-    pub fn cron_schedule_summary(&self) -> Option<CronScheduleSummary> {
-        self.cron_schedule_summary
-    }
-
-    pub fn set_cron_last_register(&mut self, outcome: Option<CronRegisterOutcome>) {
-        self.cron_last_register = outcome;
-    }
-
-    pub fn cron_last_register(&self) -> Option<&CronRegisterOutcome> {
-        self.cron_last_register.as_ref()
-    }
-
-    pub fn set_cron_first_schedule_line(&mut self, line: Option<String>) {
-        self.cron_first_schedule_line = line;
-    }
-
-    pub fn cron_first_schedule_line(&self) -> Option<&str> {
-        self.cron_first_schedule_line.as_deref()
-    }
-
-    pub fn set_cron_last_remove(&mut self, outcome: Option<CronRemoveOutcome>) {
-        self.cron_last_remove = outcome;
-    }
-
-    pub fn cron_last_remove(&self) -> Option<&CronRemoveOutcome> {
-        self.cron_last_remove.as_ref()
-    }
-
     pub fn set_demote_outcome_summary(&mut self, summary: Option<DemoteOutcomeSummary>) {
         self.demote_outcome_summary = summary;
     }
@@ -2395,30 +2174,6 @@ impl AppState {
 
     pub fn auto_fallback_chain_label(&self) -> Option<&str> {
         self.auto_fallback_chain_label.as_deref()
-    }
-
-    pub fn set_extension_manifest_summary(&mut self, summary: Option<ExtensionManifestSummary>) {
-        self.extension_manifest_summary = summary;
-    }
-
-    pub fn extension_manifest_summary(&self) -> Option<&ExtensionManifestSummary> {
-        self.extension_manifest_summary.as_ref()
-    }
-
-    pub fn set_extension_discover_summary(&mut self, summary: Option<ExtensionDiscoverSummary>) {
-        self.extension_discover_summary = summary;
-    }
-
-    pub fn extension_discover_summary(&self) -> Option<ExtensionDiscoverSummary> {
-        self.extension_discover_summary
-    }
-
-    pub fn set_extension_last_load(&mut self, outcome: Option<ExtensionLoadOutcome>) {
-        self.extension_last_load = outcome;
-    }
-
-    pub fn extension_last_load(&self) -> Option<&ExtensionLoadOutcome> {
-        self.extension_last_load.as_ref()
     }
 
     pub fn set_workspace_hub_availability(
@@ -2595,38 +2350,6 @@ impl AppState {
         decision
     }
 
-    pub fn set_binary_update_summary(&mut self, summary: Option<BinaryUpdateSummary>) {
-        self.binary_update_summary = summary;
-    }
-
-    pub fn binary_update_summary(&self) -> Option<BinaryUpdateSummary> {
-        self.binary_update_summary
-    }
-
-    pub fn set_binary_update_policy(&mut self, policy: Option<BinaryUpdatePolicy>) {
-        self.binary_update_policy = policy;
-    }
-
-    pub fn binary_update_policy(&self) -> Option<&BinaryUpdatePolicy> {
-        self.binary_update_policy.as_ref()
-    }
-
-    pub fn set_binary_update_check(&mut self, check: Option<BinaryUpdateCheck>) {
-        self.binary_update_check = check;
-    }
-
-    pub fn binary_update_check(&self) -> Option<&BinaryUpdateCheck> {
-        self.binary_update_check.as_ref()
-    }
-
-    pub fn set_binary_version_info(&mut self, info: Option<BinaryVersionInfo>) {
-        self.binary_version_info = info;
-    }
-
-    pub fn binary_version_info(&self) -> Option<&BinaryVersionInfo> {
-        self.binary_version_info.as_ref()
-    }
-
     pub fn set_settings_registry_summary(&mut self, summary: Option<SettingsRegistrySummary>) {
         self.settings_registry_summary = summary;
     }
@@ -2776,7 +2499,7 @@ impl AppState {
 
     /// Seed operator-facing host/session probes for the status dialog (diagnostics only).
     ///
-    /// Binds offline binary-update counts, optional jujutsu CLI/workspace probe, optional
+    /// Binds optional jujutsu CLI/workspace probe, optional
     /// sandbox FS plan (plan-only, not enforcement), optional crash-scan summary, and optional
     /// foreign-discover summary. Does not claim product install, jj workflows, OS sandbox
     /// confinement, recovery UX, or import ownership.
@@ -2801,8 +2524,6 @@ impl AppState {
         foreign_scan_root: Option<&std::path::Path>,
     ) {
         self.seed_platform_probes(workspace_root);
-        self.seed_team_probes(workspace_root);
-        self.seed_cron_probes(workspace_root);
         self.seed_demote_probes();
         let probe_root = workspace_root
             .map(std::path::Path::to_path_buf)
@@ -2816,14 +2537,6 @@ impl AppState {
 
     #[cfg(test)]
     fn seed_platform_probes(&mut self, workspace_root: Option<&std::path::Path>) {
-        let binary_update =
-            harness_core::binary_update::run_offline_multi_channel_update_checks(None);
-        self.set_binary_version_info(Some(binary_update.version.clone()));
-        self.set_binary_update_policy(Some(binary_update.policy.clone()));
-        if let Some(last) = binary_update.checks.last() {
-            self.set_binary_update_check(Some(last.clone()));
-        }
-        self.set_binary_update_summary(Some(binary_update.summary));
         self.set_settings_registry_summary(Some(
             harness_core::config::summarize_settings_registry(),
         ));
@@ -2917,144 +2630,6 @@ impl AppState {
             self.set_auto_fallback_last_banner(Some(banner));
             self.set_auto_fallback_chain_label(Some(walk.chain_label));
         }
-    }
-
-    #[cfg(test)]
-    fn seed_team_probes(&mut self, workspace_root: Option<&std::path::Path>) {
-        let durable_ok = workspace_root
-            .map(|root| root.to_path_buf())
-            .or_else(|| self.file_mention_workspace_root.clone())
-            .and_then(|root| {
-                harness_core::team_mailbox_journal::run_durable_multi_agent_team_product(&root).ok()
-            })
-            .map(|product| {
-                self.set_team_last_create(Some(product.last_create));
-                self.set_team_last_add_member(Some(product.last_add_member));
-                self.set_team_last_send(Some(product.last_send));
-                self.set_team_last_cancel(Some(product.last_cancel));
-                self.set_team_registry_summary(Some(product.summary));
-                if let Some(line) = product.first_line {
-                    self.set_team_first_line(Some(line));
-                }
-                if let Some(line) = product.last_message_line {
-                    self.set_team_last_message_line(Some(line));
-                }
-                true
-            })
-            .unwrap_or(false);
-        if !durable_ok {
-            let mut team_registry = harness_core::team_registry::TeamRegistry::new();
-            let outcome =
-                harness_core::team_registry::create_team_outcome(&mut team_registry, "(probe)");
-            self.set_team_last_create(Some(outcome));
-            let _ = harness_core::team_registry::create_team_outcome(
-                &mut team_registry,
-                "(probe-active)",
-            );
-            let teams_snapshot = team_registry.list_teams();
-            if let Some(first) = teams_snapshot.first() {
-                let add = harness_core::team_registry::add_team_member_outcome(
-                    &mut team_registry,
-                    &first.team_id,
-                    "probe-agent",
-                    "operator",
-                );
-                self.set_team_last_add_member(Some(add));
-                let _ = harness_core::team_registry::add_team_member_outcome(
-                    &mut team_registry,
-                    &first.team_id,
-                    "probe-worker",
-                    "worker",
-                );
-                let send = harness_core::team_registry::send_team_message_outcome(
-                    &mut team_registry,
-                    &first.team_id,
-                    "probe-agent",
-                    None,
-                    "(probe mailbox)",
-                );
-                self.set_team_last_send(Some(send));
-                if let Some(line) = team_registry
-                    .peek_inbox(&first.team_id, "probe-agent")
-                    .ok()
-                    .and_then(|msgs| msgs.last().map(|last| last.one_line()))
-                {
-                    self.set_team_last_message_line(Some(line));
-                }
-                let cancel = harness_core::team_registry::cancel_team_outcome(
-                    &mut team_registry,
-                    &first.team_id,
-                );
-                self.set_team_last_cancel(Some(cancel));
-            }
-            if let Some(first) = team_registry.list_teams().first() {
-                self.set_team_first_line(Some(first.one_line()));
-            }
-            self.set_team_registry_summary(Some(team_registry.summary()));
-        }
-    }
-
-    #[cfg(test)]
-    fn seed_cron_probes(&mut self, workspace_root: Option<&std::path::Path>) {
-        let mut cron_registry = harness_core::cron_schedule::CronScheduleRegistry::new();
-        let probe = harness_core::cron_schedule::CronSchedule {
-            id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe)"),
-            expression: "0 * * * *".to_string(),
-            label: Some("probe".to_string()),
-            payload_hint: "(probe)".to_string(),
-        };
-        let probe_id = probe.id.clone();
-        let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe);
-        let probe2 = harness_core::cron_schedule::CronSchedule {
-            id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-2)"),
-            expression: "30 * * * *".to_string(),
-            label: Some("probe-2".to_string()),
-            payload_hint: "(probe-2)".to_string(),
-        };
-        let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe2);
-        let probe3 = harness_core::cron_schedule::CronSchedule {
-            id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-3)"),
-            expression: "15 */2 * * *".to_string(),
-            label: Some("probe-3".to_string()),
-            payload_hint: "(probe-3)".to_string(),
-        };
-        let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe3);
-        let probe4 = harness_core::cron_schedule::CronSchedule {
-            id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-4)"),
-            expression: "45 1 * * *".to_string(),
-            label: Some("probe-4".to_string()),
-            payload_hint: "(probe-4)".to_string(),
-        };
-        let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe4);
-        let probe5 = harness_core::cron_schedule::CronSchedule {
-            id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-5)"),
-            expression: "5 3 * * 1".to_string(),
-            label: None,
-            payload_hint: "(probe-5-unlabeled)".to_string(),
-        };
-        let last_register =
-            harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe5);
-        self.set_cron_last_register(Some(last_register));
-        let remove_outcome =
-            harness_core::cron_schedule::remove_cron_schedule(&mut cron_registry, &probe_id);
-        self.set_cron_last_remove(Some(remove_outcome));
-        let journal_dir = self
-            .session_path
-            .clone()
-            .map(|p| p.join("cron-journal"))
-            .or_else(|| {
-                workspace_root.map(|root| root.join(".agent-harness").join("cron-journal"))
-            });
-        if let Some(dir) = journal_dir {
-            let mut executor = harness_core::cron_execute::CronExecutor::with_journal_dir(dir);
-            if let Ok(now) = harness_core::cron_execute::CronCivilTime::new(30, 12, 1, 1, 3) {
-                let _ = executor.fire_due(&cron_registry, now);
-            }
-        }
-        if let Some(first) = cron_registry.list().first() {
-            self.set_cron_first_schedule_line(Some(first.one_line()));
-        }
-        self.set_cron_schedule_summary(Some(cron_registry.summary()));
     }
 
     #[cfg(test)]
@@ -3156,15 +2731,17 @@ impl AppState {
     #[cfg(test)]
     fn seed_workspace_probes(&mut self, root: PathBuf) {
         self.file_mention_workspace_root = Some(root.clone());
-        let plans_dir = root.join(harness_core::plan::PLAN_DIR);
+        self.set_storage_data_dir(root.join("data"));
+        let Some(runtime_dir) = self.project_runtime_dir() else {
+            return;
+        };
+        let plans_dir = runtime_dir.join(harness_core::plan::PLAN_DIR);
         let _ = std::fs::create_dir_all(&plans_dir);
         let plan_primary = plans_dir.join("harness-probe-plan.md");
         let plan_alt = plans_dir.join("harness-probe-plan-alt.md");
         let plan_extra = plans_dir.join("harness-probe-plan-extra.md");
         let plan_ops = plans_dir.join("harness-probe-plan-ops.md");
-        let plan_active = root.join(harness_core::plan::plan_file_relative_path(
-            "harness-probe-run",
-        ));
+        let plan_active = harness_core::plan::plan_file_path(&runtime_dir, "harness-probe-run");
         if !plan_primary.is_file() {
             let _ = std::fs::write(
                 &plan_primary,
@@ -3331,7 +2908,7 @@ impl AppState {
             deterministic_enabled,
         );
         let _ = harness_core::jujutsu::ensure_jujutsu_repo_marker(&root);
-        let (jj_walk, _jj_receipt) = harness_core::jujutsu::run_jujutsu_product_with_receipt(&root);
+        let jj_walk = harness_core::jujutsu::run_jujutsu_diagnostic_walk(&root);
         self.set_jujutsu_cli(Some(jj_walk.probe.cli.clone()));
         self.set_jujutsu_workspace(Some(jj_walk.probe.workspace.clone()));
         self.set_jujutsu_last_command(Some(jj_walk.last_command));
@@ -3391,6 +2968,7 @@ impl AppState {
         {
             let probe = harness_core::code_graph::probe_persistent_graph_product(
                 &root,
+                &runtime_dir,
                 &["(probe)", "(probe-alt)", "(probe-module)"],
             );
             self.set_graph_query_batch_summary(Some(probe.summary()));
@@ -3399,29 +2977,13 @@ impl AppState {
             }
             let last = probe.batch.results.last().cloned().unwrap_or_else(|| {
                 harness_core::code_graph::query_persistent_graph(
-                    &root,
+                    &runtime_dir,
                     &harness_core::code_graph::GraphQuery::symbol_def("(probe)"),
                 )
             });
             self.set_graph_query_last_result(Some(last));
             self.set_persistent_graph_availability(Some(probe.availability));
         }
-        let plugins = harness_core::integrations::run_multi_plugin_lifecycle_product(&root);
-        self.set_plugin_last_install(Some(plugins.last_install));
-        self.set_plugin_last_activate(Some(plugins.last_activate));
-        self.set_plugin_last_deactivate(Some(plugins.last_deactivate));
-        self.set_plugin_last_remove(Some(plugins.last_remove));
-        if let Some(first) = plugins.first_line {
-            self.set_plugin_first_line(Some(first));
-        }
-        self.set_plugin_lifecycle_summary(Some(plugins.summary));
-
-        let extensions = harness_core::integrations::run_multi_descriptor_discover_product(&root);
-        self.set_extension_discover_summary(Some(extensions.discover));
-        if let Some(summary) = extensions.primary {
-            self.set_extension_manifest_summary(Some(summary));
-        }
-        self.set_extension_last_load(Some(extensions.last_load));
     }
 
     #[cfg(test)]
@@ -3607,15 +3169,21 @@ impl AppState {
         {
             return;
         }
-        if let Some(root) = self.file_mention_workspace_root_opt() {
+        if let (Some(root), Some(runtime_dir)) = (
+            self.file_mention_workspace_root_opt(),
+            self.project_runtime_dir(),
+        ) {
             if let Ok(product) =
-                harness_core::edit_attribution::run_multi_path_edit_attribution_product(&root)
+                harness_core::edit_attribution::run_multi_path_edit_attribution_product(
+                    &root,
+                    &runtime_dir,
+                )
             {
                 self.set_edit_attribution_summary(Some(product.summary));
                 self.set_edit_attribution_first_line(product.first_line);
                 self.set_edit_attribution_last_line(product.last_line);
             } else if let Ok(journal) =
-                harness_core::edit_attribution::EditAttributionJournal::open(&root)
+                harness_core::edit_attribution::EditAttributionJournal::open(&root, &runtime_dir)
             {
                 let summary = journal.summary();
                 if summary.total > 0 {

@@ -64,7 +64,12 @@ impl Runtime {
             let parent = child
                 .foreground_attached
                 .then(|| child.registration.parent_tool.clone());
-            let run_dir = self.info()?.run_dir.clone();
+            let worktrees_dir = crate::storage_paths::ProjectPaths::new(
+                &self.config.data_dir,
+                &self.info()?.workspace_root,
+            )?
+            .worktrees_dir()
+            .join(self.info()?.run_id.as_str());
             let workspace_root = self.info()?.workspace_root.clone();
             let actor = EventActor::new(ActorKind::Worker, Some(id.clone()));
             let completion_id = preparation.clone();
@@ -75,7 +80,7 @@ impl Runtime {
                     &worker_id,
                     &cwd,
                     &workspace_root,
-                    &run_dir,
+                    &worktrees_dir,
                     requested,
                     source,
                     snapshot,

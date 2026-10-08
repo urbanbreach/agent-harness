@@ -1,4 +1,4 @@
-//! Ultrawork directive dedupe (senpi `prompt-directive-dedupe.ts`).
+//! Ultrawork directive dedupe.
 use super::*;
 
 // ---- ultrawork directive dedupe ----

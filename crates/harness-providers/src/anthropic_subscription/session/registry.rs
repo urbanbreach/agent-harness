@@ -1,7 +1,6 @@
-//! Resident Claude Code sessions (senpi `session-registry*.ts` and the turn pump).
+//! Resident Claude Code sessions and the turn pump.
 //!
-//! Also `session-reaper.ts`, `session-turn-claim.ts`, `session-turn-types.ts` and
-//! `bounded-queue.ts`: one streaming query
+//! One streaming query
 //! per harness session, a strict per-turn state machine, replay-claimed turn attribution, and
 //! idle reaping.
 use super::observability::record_pending_close_cause;

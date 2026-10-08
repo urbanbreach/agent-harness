@@ -1,4 +1,4 @@
-//! The turn pump (senpi `session-registry-pump.ts`, `session-turn-claim.ts`).
+//! The turn pump.
 use super::*;
 
 // ---- the pump ----

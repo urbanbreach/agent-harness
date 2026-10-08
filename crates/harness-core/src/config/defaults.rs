@@ -20,7 +20,7 @@ defaults! {
     BackgroundTaskSettings { default_concurrency: 4, provider_concurrency: 4, model_concurrency: 2, stale_timeout_ms: 30_000, message_staleness_timeout_ms: 10_000 }
     RuntimePermissionsConfig { ask_timeout_ms: 30_000 }
     PromptRuntimeConfig { wait_timeout_ms: 30_000 }
-    PathsConfig { session_dir: ".agent-harness/sessions".into() }
+    PathsConfig { session_dir: PathBuf::new() }
     RuntimeConfig {
         yolo: false, background_tasks: BackgroundTaskSettings::default(), session_dir: PathsConfig::default().session_dir,
         permissions: RuntimePermissionsConfig::default(), prompt: PromptRuntimeConfig::default(), deterministic: DeterministicConfig::default(),

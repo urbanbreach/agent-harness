@@ -60,6 +60,10 @@ async fn model_fallback_rebuilds_the_model_prompt_and_keeps_explicit_instruction
                 &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
                 CliDeps::real()
                     .with_current_dir(root.path().into())
+                    .with_env(
+                        "HARNESS_DATA_HOME",
+                        root.path().join("data").to_string_lossy(),
+                    )
                     .without_env("HOME")
                     .without_env("XDG_CONFIG_HOME")
                     .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),
@@ -163,6 +167,10 @@ async fn editable_model_prompts_obey_precedence_reload_and_reject_bad_files(
     ]));
     let deps = CliDeps::real()
         .with_current_dir(workspace.clone())
+        .with_env(
+            "HARNESS_DATA_HOME",
+            root.path().join("data").to_string_lossy(),
+        )
         .without_env("HOME")
         .with_env(
             "XDG_CONFIG_HOME",

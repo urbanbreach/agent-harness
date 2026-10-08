@@ -122,7 +122,6 @@ macro_rules! define_palette_commands {
 
 define_command_metadata! {
     ("slash_usage", "Usage", "Browse recorded token usage and context budget"),
-    ("slash_extensions", "Extensions", "Browse configured extensions and MCP connections"),
     ("palette", "Command palette", "Browse and run available commands"),
     ("new_session", "New session", "Start a fresh live session"),
     ("resume_session", "Continue session", "Continue a prior session when resumable"),
@@ -364,7 +363,6 @@ define_slash_commands! {
     ("worktree", "open_worktree_picker", &[], false, false),
     ("dashboard", "open_status_dialog", &["status"], false, false),
     ("usage", "slash_usage", &[], false, false),
-    ("extensions", "slash_extensions", &[], false, false),
     ("import", "slash_import", &["import-session"], false, false),
 }
 
@@ -492,7 +490,6 @@ mod tests {
                 "worktree",
                 "dashboard",
                 "usage",
-                "extensions",
                 "import",
             ]
         );

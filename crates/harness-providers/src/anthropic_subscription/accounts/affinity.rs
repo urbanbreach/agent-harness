@@ -1,4 +1,4 @@
-//! HRW account affinity (senpi `affinity.ts`).
+//! HRW account affinity.
 use super::*;
 
 // ---- affinity ----

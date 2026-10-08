@@ -1,6 +1,47 @@
 use super::*;
 use crate::keybindings::palette_model::{PaletteDispatch, PALETTE_COMMAND_ENTRIES};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+struct PlanViewFixture {
+    workspace: tempfile::TempDir,
+    _storage: tempfile::TempDir,
+    data_dir: PathBuf,
+    plans: PathBuf,
+}
+
+impl PlanViewFixture {
+    fn new(relative_data_dir: bool) -> Self {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let storage = tempfile::tempdir_in(".").expect("external storage");
+        let data_dir = if relative_data_dir {
+            Path::new(".")
+                .join(storage.path().file_name().expect("storage directory name"))
+                .join("data")
+        } else {
+            storage
+                .path()
+                .canonicalize()
+                .expect("storage path")
+                .join("data")
+        };
+        let plans = harness_core::storage_paths::ProjectPaths::new(&data_dir, workspace.path())
+            .expect("project paths")
+            .runtime_dir()
+            .join("plans");
+        fs::create_dir_all(&plans).expect("plans dir");
+        assert!(!plans
+            .canonicalize()
+            .expect("plans path")
+            .starts_with(workspace.path().canonicalize().expect("workspace path")));
+        Self {
+            workspace,
+            _storage: storage,
+            data_dir,
+            plans,
+        }
+    }
+}
 
 pub(super) fn session_feedback_maps_to_help_action() {
     let entry = PALETTE_COMMAND_ENTRIES
@@ -11,60 +52,58 @@ pub(super) fn session_feedback_maps_to_help_action() {
 }
 
 pub(super) fn plan_view_enter_opens_existing_plan_preview() {
-    let dir = std::env::temp_dir().join(format!(
-        "harness-tui-plan-{}-{}",
-        "preview",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    let plans = dir.join(".agent-harness/plans");
-    fs::create_dir_all(&plans).expect("plans dir");
-    fs::write(plans.join("demo.md"), "# Demo plan\n\n- step one\n").expect("write plan");
+    for relative_data_dir in [false, true] {
+        let fixture = PlanViewFixture::new(relative_data_dir);
+        let plan_path = fixture.plans.join("demo.md");
+        fs::write(&plan_path, "# Demo plan\n\n- step one\n").expect("write plan");
 
-    let mut app = AppState::new_live(None, false, None);
-    app.file_mention_workspace_root = Some(dir.clone());
-    app.execute_action(Action::OpenViewPlan);
-    assert!(app.plan_view_is_visible());
-    assert!(app.plan_view_preview().is_none());
+        let mut app = AppState::new_live(None, false, None);
+        app.file_mention_workspace_root = Some(fixture.workspace.path().to_path_buf());
+        app.set_storage_data_dir(fixture.data_dir.clone());
+        app.execute_action(Action::OpenViewPlan);
+        assert!(app.plan_view_is_visible());
+        assert!(app.plan_view_preview().is_none());
 
-    let rows = app.plan_view_rows();
-    let demo_index = rows
-        .iter()
-        .position(|row| row.slug == "demo" && row.exists)
-        .expect("demo plan row");
-    app.plan_view_selected = demo_index;
-    app.handle_key(key(KeyCode::Enter));
+        let rows = app.plan_view_rows();
+        let demo_index = rows
+            .iter()
+            .position(|row| row.slug == "demo" && row.exists)
+            .expect("demo plan row");
+        assert_eq!(rows[demo_index].path, plan_path.display().to_string());
+        app.plan_view_selected = demo_index;
+        app.handle_key(key(KeyCode::Enter));
 
-    let preview = app.plan_view_preview().expect("preview");
-    assert!(preview.contains("Demo plan"));
-    assert!(preview.contains("step one"));
+        let preview = app.plan_view_preview().expect("preview");
+        assert!(preview.contains("Demo plan"));
+        assert!(preview.contains("step one"));
 
-    app.handle_key(key(KeyCode::Esc));
-    assert!(app.plan_view_is_visible());
-    assert!(app.plan_view_preview().is_none());
+        app.handle_key(key(KeyCode::Esc));
+        assert!(app.plan_view_is_visible());
+        assert!(app.plan_view_preview().is_none());
 
-    let copied = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
-    let copied_hook = std::sync::Arc::clone(&copied);
-    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
-        *copied_hook.lock().expect("copy lock") = Some(text.to_string());
-        Ok(())
-    })));
-    app.handle_key(key(KeyCode::Char('y')));
-    crate::clipboard::set_copy_override(None);
-    let banner = app.status_banner.as_deref().expect("path banner");
-    assert!(banner.contains("plan path:"));
-    assert!(banner.contains("demo.md"));
-    let copied_path = copied
-        .lock()
-        .expect("copy lock")
-        .clone()
-        .expect("clipboard copy invoked");
-    assert!(
-        copied_path.contains("demo.md"),
-        "expected plan path clipboard payload, got {copied_path}"
-    );
-
-    let _ = fs::remove_dir_all(&dir);
+        let copied = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let copied_hook = std::sync::Arc::clone(&copied);
+        crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+            *copied_hook.lock().expect("copy lock") = Some(text.to_string());
+            Ok(())
+        })));
+        app.handle_key(key(KeyCode::Char('y')));
+        crate::clipboard::set_copy_override(None);
+        assert_eq!(
+            app.status_banner.as_deref(),
+            Some(format!("plan path: {}", plan_path.display()).as_str())
+        );
+        let copied_path = copied
+            .lock()
+            .expect("copy lock")
+            .clone()
+            .expect("clipboard copy invoked");
+        assert_eq!(copied_path, plan_path.display().to_string());
+        assert_eq!(
+            fs::read_to_string(copied_path).expect("copied path resolves to the plan"),
+            "# Demo plan\n\n- step one\n"
+        );
+    }
 }
 
 pub(super) fn plan_view_y_key_reports_clipboard_failure_without_dropping_path_banner() {
@@ -74,12 +113,17 @@ pub(super) fn plan_view_y_key_reports_clipboard_failure_without_dropping_path_ba
         std::process::id()
     ));
     let _ = fs::remove_dir_all(&dir);
-    let plans = dir.join(".agent-harness/plans");
+    fs::create_dir_all(&dir).expect("workspace");
+    let plans = harness_core::storage_paths::ProjectPaths::new(&dir.join("data"), &dir)
+        .expect("project paths")
+        .runtime_dir()
+        .join("plans");
     fs::create_dir_all(&plans).expect("plans dir");
     fs::write(plans.join("demo.md"), "# Demo plan\n").expect("write plan");
 
     let mut app = AppState::new_live(None, false, None);
     app.file_mention_workspace_root = Some(dir.clone());
+    app.set_storage_data_dir(dir.join("data"));
     app.execute_action(Action::OpenViewPlan);
     let demo_index = app
         .plan_view_rows()
@@ -115,6 +159,7 @@ pub(super) fn plan_view_empty_state_enter_toasts_guidance() {
 
     let mut app = AppState::new_live(None, false, None);
     app.file_mention_workspace_root = Some(dir.clone());
+    app.set_storage_data_dir(dir.join("data"));
     app.execute_action(Action::OpenViewPlan);
     assert!(app.plan_view_rows().is_empty());
 
@@ -133,12 +178,17 @@ pub(super) fn plan_view_summary_counts_existing_and_preview() {
         std::process::id()
     ));
     let _ = fs::remove_dir_all(&dir);
-    let plans = dir.join(".agent-harness/plans");
+    fs::create_dir_all(&dir).expect("workspace");
+    let plans = harness_core::storage_paths::ProjectPaths::new(&dir.join("data"), &dir)
+        .expect("project paths")
+        .runtime_dir()
+        .join("plans");
     fs::create_dir_all(&plans).expect("plans dir");
     fs::write(plans.join("demo.md"), "# Demo plan\nstep one\n").expect("write plan");
 
     let mut app = AppState::new_live(None, false, None);
     app.file_mention_workspace_root = Some(dir.clone());
+    app.set_storage_data_dir(dir.join("data"));
     app.execute_action(Action::OpenViewPlan);
 
     let summary = app.plan_view_summary();
@@ -171,48 +221,41 @@ pub(super) fn plan_view_summary_counts_existing_and_preview() {
 }
 
 pub(super) fn plan_view_c_key_copies_plan_body() {
-    let dir = std::env::temp_dir().join(format!(
-        "harness-tui-plan-{}-{}",
-        "copy-body",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    let plans = dir.join(".agent-harness/plans");
-    fs::create_dir_all(&plans).expect("plans dir");
-    let body = "# Demo plan\n\nBody for clipboard copy.\n";
-    fs::write(plans.join("demo.md"), body).expect("write plan");
+    for relative_data_dir in [false, true] {
+        let fixture = PlanViewFixture::new(relative_data_dir);
+        let body = "# Demo plan\n\nBody for clipboard copy.\n";
+        fs::write(fixture.plans.join("demo.md"), body).expect("write plan");
 
-    let mut app = AppState::new_live(None, false, None);
-    app.file_mention_workspace_root = Some(dir.clone());
-    app.execute_action(Action::OpenViewPlan);
-    let demo_index = app
-        .plan_view_rows()
-        .iter()
-        .position(|row| row.slug == "demo" && row.exists)
-        .expect("demo plan row");
-    app.plan_view_selected = demo_index;
+        let mut app = AppState::new_live(None, false, None);
+        app.file_mention_workspace_root = Some(fixture.workspace.path().to_path_buf());
+        app.set_storage_data_dir(fixture.data_dir.clone());
+        app.execute_action(Action::OpenViewPlan);
+        let demo_index = app
+            .plan_view_rows()
+            .iter()
+            .position(|row| row.slug == "demo" && row.exists)
+            .expect("demo plan row");
+        app.plan_view_selected = demo_index;
 
-    let captured = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
-    let captured_for_copy = std::sync::Arc::clone(&captured);
-    crate::clipboard::set_copy_override(Some(Box::new(move |text: &str| {
-        *captured_for_copy.lock().expect("lock") = Some(text.to_string());
-        Ok(())
-    })));
-    app.handle_key(key(KeyCode::Char('c')));
-    crate::clipboard::set_copy_override(None);
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let captured_for_copy = std::sync::Arc::clone(&captured);
+        crate::clipboard::set_copy_override(Some(Box::new(move |text: &str| {
+            *captured_for_copy.lock().expect("lock") = Some(text.to_string());
+            Ok(())
+        })));
+        app.handle_key(key(KeyCode::Char('c')));
+        crate::clipboard::set_copy_override(None);
 
-    let banner = app.status_banner.as_deref().expect("body banner");
-    assert!(banner.contains("plan body:"));
-    assert!(banner.contains("demo"));
-    let copied = captured
-        .lock()
-        .expect("lock")
-        .clone()
-        .expect("clipboard body");
-    assert!(copied.contains("# Demo plan"));
-    assert!(copied.contains("Body for clipboard copy."));
-
-    let _ = fs::remove_dir_all(&dir);
+        let banner = app.status_banner.as_deref().expect("body banner");
+        assert!(banner.contains("plan body:"));
+        assert!(banner.contains("demo"));
+        let copied = captured
+            .lock()
+            .expect("lock")
+            .clone()
+            .expect("clipboard body");
+        assert_eq!(copied, body);
+    }
 }
 
 pub(super) fn plan_view_c_key_reports_clipboard_failure_for_body() {
@@ -222,12 +265,17 @@ pub(super) fn plan_view_c_key_reports_clipboard_failure_for_body() {
         std::process::id()
     ));
     let _ = fs::remove_dir_all(&dir);
-    let plans = dir.join(".agent-harness/plans");
+    fs::create_dir_all(&dir).expect("workspace");
+    let plans = harness_core::storage_paths::ProjectPaths::new(&dir.join("data"), &dir)
+        .expect("project paths")
+        .runtime_dir()
+        .join("plans");
     fs::create_dir_all(&plans).expect("plans dir");
     fs::write(plans.join("demo.md"), "# Demo plan\n").expect("write plan");
 
     let mut app = AppState::new_live(None, false, None);
     app.file_mention_workspace_root = Some(dir.clone());
+    app.set_storage_data_dir(dir.join("data"));
     app.execute_action(Action::OpenViewPlan);
     let demo_index = app
         .plan_view_rows()
@@ -253,43 +301,37 @@ pub(super) fn plan_view_c_key_reports_clipboard_failure_for_body() {
 }
 
 pub(super) fn plan_view_d_key_deletes_selected_plan() {
-    let dir = std::env::temp_dir().join(format!(
-        "harness-tui-plan-{}-{}",
-        "delete",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    let plans = dir.join(".agent-harness/plans");
-    fs::create_dir_all(&plans).expect("plans dir");
-    let plan_path = plans.join("demo.md");
-    fs::write(&plan_path, "# Demo plan\n").expect("write plan");
+    for relative_data_dir in [false, true] {
+        let fixture = PlanViewFixture::new(relative_data_dir);
+        let plan_path = fixture.plans.join("demo.md");
+        fs::write(&plan_path, "# Demo plan\n").expect("write plan");
 
-    let mut app = AppState::new_live(None, false, None);
-    app.file_mention_workspace_root = Some(dir.clone());
-    app.execute_action(Action::OpenViewPlan);
-    let demo_index = app
-        .plan_view_rows()
-        .iter()
-        .position(|row| row.slug == "demo" && row.exists)
-        .expect("demo plan row");
-    app.plan_view_selected = demo_index;
-    assert!(plan_path.is_file());
-
-    app.handle_key(key(KeyCode::Char('d')));
-
-    assert!(!plan_path.is_file(), "plan file should be deleted");
-    let banner = app.status_banner.as_deref().expect("delete banner");
-    assert!(banner.contains("plan deleted:"));
-    assert!(banner.contains("demo"));
-    assert!(
-        app.plan_view_rows()
+        let mut app = AppState::new_live(None, false, None);
+        app.file_mention_workspace_root = Some(fixture.workspace.path().to_path_buf());
+        app.set_storage_data_dir(fixture.data_dir.clone());
+        app.execute_action(Action::OpenViewPlan);
+        let demo_index = app
+            .plan_view_rows()
             .iter()
-            .all(|row| row.slug != "demo" || !row.exists),
-        "demo should not remain as existing plan"
-    );
-    assert!(app.plan_view_preview().is_none());
+            .position(|row| row.slug == "demo" && row.exists)
+            .expect("demo plan row");
+        app.plan_view_selected = demo_index;
+        assert!(plan_path.is_file());
 
-    let _ = fs::remove_dir_all(&dir);
+        app.handle_key(key(KeyCode::Char('d')));
+
+        assert!(!plan_path.is_file(), "plan file should be deleted");
+        let banner = app.status_banner.as_deref().expect("delete banner");
+        assert!(banner.contains("plan deleted:"));
+        assert!(banner.contains("demo"));
+        assert!(
+            app.plan_view_rows()
+                .iter()
+                .all(|row| row.slug != "demo" || !row.exists),
+            "demo should not remain as existing plan"
+        );
+        assert!(app.plan_view_preview().is_none());
+    }
 }
 
 pub(super) fn plan_view_d_key_toasts_when_no_plans() {
@@ -303,6 +345,7 @@ pub(super) fn plan_view_d_key_toasts_when_no_plans() {
 
     let mut app = AppState::new_live(None, false, None);
     app.file_mention_workspace_root = Some(dir.clone());
+    app.set_storage_data_dir(dir.join("data"));
     app.execute_action(Action::OpenViewPlan);
     assert!(app.plan_view_rows().is_empty() || app.plan_view_rows().iter().all(|r| !r.exists));
 
@@ -320,7 +363,11 @@ pub(super) fn plan_view_multi_plan_open_select_activate_product_path() {
         std::process::id()
     ));
     let _ = fs::remove_dir_all(&dir);
-    let plans = dir.join(".agent-harness/plans");
+    fs::create_dir_all(&dir).expect("workspace");
+    let plans = harness_core::storage_paths::ProjectPaths::new(&dir.join("data"), &dir)
+        .expect("project paths")
+        .runtime_dir()
+        .join("plans");
     fs::create_dir_all(&plans).expect("plans dir");
     fs::write(
         plans.join("primary.md"),
@@ -336,6 +383,7 @@ pub(super) fn plan_view_multi_plan_open_select_activate_product_path() {
     .expect("active");
 
     let mut app = AppState::new_live(None, false, None);
+    app.set_storage_data_dir(dir.join("data"));
     let reads = Arc::new(AtomicUsize::new(0));
     let counted = Arc::clone(&reads);
     let workspace = dir.clone();
@@ -450,7 +498,11 @@ pub(super) fn plan_view_rows_and_summary_surface_byte_len() {
         std::process::id()
     ));
     let _ = fs::remove_dir_all(&dir);
-    let plans = dir.join(".agent-harness/plans");
+    fs::create_dir_all(&dir).expect("workspace");
+    let plans = harness_core::storage_paths::ProjectPaths::new(&dir.join("data"), &dir)
+        .expect("project paths")
+        .runtime_dir()
+        .join("plans");
     fs::create_dir_all(&plans).expect("plans dir");
     let body = "# Demo plan\n\nBody for byte length.\n";
     fs::write(plans.join("demo.md"), body).expect("write plan");
@@ -458,6 +510,7 @@ pub(super) fn plan_view_rows_and_summary_surface_byte_len() {
 
     let mut app = AppState::new_live(None, false, None);
     app.file_mention_workspace_root = Some(dir.clone());
+    app.set_storage_data_dir(dir.join("data"));
     app.execute_action(Action::OpenViewPlan);
 
     let row = app

@@ -47,9 +47,12 @@ pub(super) async fn run_new_worktree_live_session(
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("new_worktree_live.begin");
     let worktree_settings = if let Some(path) = worktree_path {
-        let entries =
-            harness_core::worktree::list_session_worktrees(&settings.workspace_root, None)
-                .map_err(|error| error.to_string())?;
+        let entries = harness_core::worktree::list_session_worktrees(
+            &settings.workspace_root,
+            None,
+            &settings.data_dir,
+        )
+        .map_err(|error| error.to_string())?;
         let path = path.canonicalize().map_err(|error| error.to_string())?;
         if !entries
             .iter()
@@ -95,6 +98,7 @@ fn prepare_worktree_live_settings(
 
     let created = create_session_worktree(CreateWorktreeOptions {
         repository_root: &environment.workspace_root,
+        data_dir: &settings.data_dir,
         worktree_parent: None,
         slug: name,
         start_point: None,
@@ -231,9 +235,10 @@ pub(super) async fn run_new_live_session(
         );
     }
 
+    let data_dir = settings.data_dir.clone();
     let tui_result = tokio::task::spawn_blocking(move || {
         profile_handoff("new_live.live_tui_begin");
-        run_tui_with_options(new_live_tui_options(
+        let mut options = new_live_tui_options(
             run_dir,
             Vec::new(),
             live_update_rx,
@@ -244,7 +249,9 @@ pub(super) async fn run_new_live_session(
             keybindings,
             toggles,
             no_alt_screen,
-        ))
+        );
+        options.storage_data_dir = Some(data_dir);
+        run_tui_with_options(options)
     })
     .await;
     profile_handoff("new_live.live_tui_end");
@@ -297,7 +304,6 @@ async fn run_new_live_runtime(
     let _ = live_update_tx.send(LiveUpdate::Status("starting new session".to_string()));
     let bootstrap_error_tx = live_update_tx.clone();
     let session_history_update_tx = live_update_tx.clone();
-    let plugin_summary_tx = live_update_tx.clone();
 
     match bootstrap_new_live_runtime(
         &settings,
@@ -312,9 +318,6 @@ async fn run_new_live_runtime(
     .await
     {
         Ok(runtime) => {
-            if let Ok(summary) = runtime.coordinator.plugin_lifecycle_summary().await {
-                let _ = plugin_summary_tx.send(LiveUpdate::PluginLifecycleSummary(summary));
-            }
             let session_history_task = spawn_session_history_refresh(
                 settings.session_dir.clone(),
                 session_history_update_tx,

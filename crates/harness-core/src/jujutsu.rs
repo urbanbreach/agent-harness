@@ -1,4 +1,4 @@
-//! Read-only discovery, explicit diagnostic commands, and private receipts.
+//! Read-only discovery and explicit diagnostic commands.
 use crate::redact::{DefaultRedactor, Redactor};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -290,16 +290,7 @@ pub fn ensure_jujutsu_repo_marker(root: &Path) -> io::Result<PathBuf> {
     fs::create_dir_all(&path)?;
     Ok(path)
 }
-pub const JUJUTSU_DIAGNOSTIC_RECEIPT_REL: &str = ".agent-harness/jujutsu-diagnostic.receipt.json";
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct JujutsuDiagnosticReceipt {
-    pub schema: String,
-    pub ready: bool,
-    pub probe_one_line: String,
-    pub outcomes: Vec<JujutsuCommandOutcome>,
-    pub last_command: JujutsuCommandOutcome,
-    pub receipt_path: String,
-}
+
 pub fn run_jujutsu_diagnostic_walk(root: &Path) -> JujutsuDiagnosticWalk {
     run_jujutsu_diagnostic_walk_with_probe(&probe_jujutsu(root))
 }
@@ -321,36 +312,4 @@ pub fn run_jujutsu_diagnostic_walk_with_probe(probe: &JujutsuProbe) -> JujutsuDi
         outcomes,
         last_command,
     }
-}
-pub fn write_jujutsu_diagnostic_receipt(
-    path: &Path,
-    walk: &JujutsuDiagnosticWalk,
-) -> io::Result<JujutsuDiagnosticReceipt> {
-    let receipt = JujutsuDiagnosticReceipt {
-        schema: "harness-jujutsu-diagnostic-receipt-v1".into(),
-        ready: walk.probe.is_ready(),
-        probe_one_line: preview(&walk.probe.one_line()),
-        outcomes: walk.outcomes.clone(),
-        last_command: walk.last_command.clone(),
-        receipt_path: path.display().to_string(),
-    };
-    let value = crate::redact::redact_value(
-        &DefaultRedactor::default(),
-        &serde_json::to_value(&receipt)?,
-    );
-    let receipt = serde_json::from_value(value).map_err(io::Error::other)?;
-    let _lock = crate::store::lock_private_parent(path)?;
-    crate::store::write_private_atomic(path, &serde_json::to_vec(&receipt)?)?;
-    Ok(receipt)
-}
-pub fn run_jujutsu_product_with_receipt(root: &Path) -> (JujutsuDiagnosticWalk, PathBuf) {
-    let mut walk = run_jujutsu_diagnostic_walk(root);
-    let path = root.join(JUJUTSU_DIAGNOSTIC_RECEIPT_REL);
-    if write_jujutsu_diagnostic_receipt(&path, &walk).is_err() {
-        walk.last_command = JujutsuCommandOutcome::Unavailable {
-            command: "jj diagnostic receipt".into(),
-            reason: "cannot write private diagnostic receipt".into(),
-        };
-    }
-    (walk, path)
 }

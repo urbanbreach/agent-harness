@@ -1,5 +1,4 @@
-//! Account slots, HRW affinity and model-scoped rate-limit blocks
-//! (senpi `accounts.ts`, `affinity.ts`, `credential-pool/model-scope.ts`).
+//! Account slots, HRW affinity and model-scoped rate-limit blocks.
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

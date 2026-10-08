@@ -1,4 +1,4 @@
-//! The provider (senpi `stream.ts`, `index.ts`, `tool-watch.ts`).
+//! The provider.
 use super::auth_lane::{
     now_ms, one_shot_attempt, query_with_auth_lane, AuthLaneInput, LaneReport, OptionsBuilder,
 };
@@ -387,7 +387,7 @@ impl Provider for AnthropicSubscriptionProvider {
                     }
                 }
                 // Only an overflow of the harness's own re-send is the harness's to compact away;
-                // inside a resident session Claude Code owns the context (senpi `ownsCompaction`).
+                // inside a resident session Claude Code owns the context.
                 if resident && !shape.cold_seed && is_context_overflow(&message) {
                     yield Event::categorized_error(format!("{message}\n{NATIVE_OVERFLOW_GUIDANCE}"), Category::Other);
                     return;

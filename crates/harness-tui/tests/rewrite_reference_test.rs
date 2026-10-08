@@ -1,5 +1,5 @@
 //! Whole-frame behavioral oracle captured before replacing the TUI, with YOLO labels updated.
-//! Only the pinned original source may record expectations. Candidate runs compare.
+//! The original is pinned; reviewed current-surface fixtures remain separate.
 use std::{fs, path::PathBuf, process::Command};
 
 use crossterm::event::{KeyCode as K, KeyModifiers as M};
@@ -15,8 +15,12 @@ use ratatui::{
 };
 use serde_json::{json, Value};
 
+#[path = "support/current_composer_contract.rs"]
+mod current_composer;
 #[path = "support/current_settings_contract.rs"]
 mod current_settings;
+#[path = "support/current_surface_contract.rs"]
+mod current_surface;
 #[path = "support/rewrite_journey.rs"]
 mod journey;
 #[path = "support/rewrite_plan_geometry.rs"]
@@ -121,8 +125,8 @@ impl Recorder {
             "rewind",
             "import",
         ] {
-            // Removed commands are covered by the current /login interaction test.
-            if !original && matches!(command, "auth" | "connect") {
+            // Removed commands have no current terminal surface.
+            if !original && matches!(command, "auth" | "connect" | "extensions") {
                 continue;
             }
             let mut journey = Journey::new(false);
@@ -194,7 +198,7 @@ impl Recorder {
         Ok(())
     }
 
-    fn session(&mut self) -> Result {
+    fn session(&mut self, original: bool) -> Result {
         let mut j = Journey::new(false);
         self.frame("empty-live", &mut j)?;
         j.start("turn", "Inspect the terminal fixture")?;
@@ -211,7 +215,11 @@ impl Recorder {
         )?;
         self.frame("stream-markdown", &mut j)?;
         j.text("queued fixture");
-        j.key(K::Enter, M::NONE);
+        if original {
+            j.key(K::Enter, M::NONE);
+        } else {
+            j.key(K::Char('i'), M::ALT);
+        }
         self.frame("queued-prompt", &mut j)?;
         let before_queue_navigation = self.frames.last().cloned().ok_or("missing queued frame")?;
         j.key(K::Up, M::NONE);
@@ -286,16 +294,31 @@ impl Recorder {
 
 // Run-length encoding preserves every blank cell, grapheme, color, and modifier.
 fn cells(buffer: &Buffer) -> Vec<Value> {
-    cell_runs(buffer.content.iter().map(|cell| {
-        json!([
-            cell.symbol(),
-            format!("{:?}", cell.fg),
-            format!("{:?}", cell.bg),
-            cell.modifier.bits(),
-            format!("{:?}", cell.diff_option),
-            format!("{:?}", cell.underline_color)
-        ])
-    }))
+    buffer
+        .content
+        .chunk_by(|left, right| {
+            left.symbol() == right.symbol()
+                && left.fg == right.fg
+                && left.bg == right.bg
+                && left.modifier == right.modifier
+                && left.diff_option == right.diff_option
+                && left.underline_color == right.underline_color
+        })
+        .map(|run| {
+            let cell = &run[0];
+            json!([
+                run.len(),
+                [
+                    cell.symbol(),
+                    format!("{:?}", cell.fg),
+                    format!("{:?}", cell.bg),
+                    cell.modifier.bits(),
+                    format!("{:?}", cell.diff_option),
+                    format!("{:?}", cell.underline_color)
+                ]
+            ])
+        })
+        .collect()
 }
 
 fn cell_runs(cells: impl Iterator<Item = Value>) -> Vec<Value> {
@@ -334,11 +357,36 @@ fn cells_with_documented_gap_correction(frame: &Value) -> Result<Value> {
     Ok(json!(cell_runs(cells.into_iter())))
 }
 
+/// The product shows the canonical project key in external plan paths, so the
+/// journeys need a fixed workspace. A directory left by a killed run (missing or
+/// dead owner PID) is removed first; a live owner is never disturbed.
+fn reserve_reference_workspace() -> Result<tempfile::TempDir> {
+    let root = std::path::Path::new("/tmp/harness-tui-reference");
+    if root.exists() {
+        let owner = fs::read_to_string(root.join("owner.pid")).unwrap_or_default();
+        let owner = owner.trim();
+        if owner.is_empty() || !std::path::Path::new("/proc").join(owner).exists() {
+            fs::remove_dir_all(root)?;
+        }
+    }
+    let workspace = tempfile::Builder::new()
+        .prefix("harness-tui-reference")
+        .rand_bytes(0)
+        .tempdir_in("/tmp")?;
+    fs::write(
+        workspace.path().join("owner.pid"),
+        std::process::id().to_string(),
+    )?;
+    Ok(workspace)
+}
+
 #[test]
 fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
     // Nextest gives this test its own process. Keep filesystem discovery off the checkout.
-    let workspace = tempfile::tempdir()?;
-    std::env::set_current_dir(workspace.path())?;
+    let workspace = reserve_reference_workspace()?;
+    let project = workspace.path().join("project");
+    fs::create_dir(&project)?;
+    std::env::set_current_dir(&project)?;
     let output = std::env::var_os("HARNESS_TUI_REFERENCE_FRAMES").map(PathBuf::from);
     if let Some(path) = &output {
         fs::create_dir_all(path)?;
@@ -352,7 +400,7 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
     for (width, height) in [(40, 24), (80, 24), (120, 40), (160, 50)] {
         r.area = Rect::new(0, 0, width, height);
         r.composer()?;
-        r.session()?;
+        r.session(original)?;
         r.permissions()?;
         r.menus(original)?;
         r.working_permissions()?;
@@ -399,6 +447,9 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
                 + "\n",
         )?;
     } else {
+        if !original && current_surface::recording() {
+            current_settings::Contract::refresh_binding()?;
+        }
         let current = if original {
             None
         } else {
@@ -407,6 +458,9 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
         if let Some(current) = &current {
             current.controls()?;
         }
+        let composer = (!original)
+            .then(current_composer::Contract::load)
+            .transpose()?;
         let expected = fs::read_to_string(path)?;
         let expected = expected
             .lines()
@@ -422,6 +476,9 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
                         "slash-connect-",
                         "dialog-connect-",
                         "selected-connect-",
+                        "slash-extensions-",
+                        "dialog-extensions-",
+                        "selected-extensions-",
                     ]
                     .iter()
                     .any(|prefix| {
@@ -436,14 +493,19 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
             r.frames.len(),
             "reference matrix is incomplete"
         );
-        for (expected, actual) in expected.iter().zip(&r.frames) {
+        let mut frames = Vec::with_capacity(expected.len());
+        for expected in &expected {
             let expected = current
                 .as_ref()
                 .map_or(expected, |current| current.expected(expected));
             let mut expected = expected.clone();
             expected["cells"] = cells_with_documented_gap_correction(&expected)?;
-            current_settings::compare(&expected, actual)?;
+            if let Some(composer) = &composer {
+                composer.apply(&mut expected)?;
+            }
+            frames.push(expected);
         }
+        current_surface::compare(&frames, &r.frames, original)?;
     }
     Ok(())
 }

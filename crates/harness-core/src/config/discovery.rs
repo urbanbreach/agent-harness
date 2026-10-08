@@ -5,6 +5,8 @@ pub struct ConfigDiscoveryContext {
     pub current_dir: PathBuf,
     pub xdg_config_home: Option<PathBuf>,
     pub home: Option<PathBuf>,
+    /// Resolved user data root, including the `harness` directory.
+    pub data_dir: Option<PathBuf>,
     pub runtime_config_path: Option<PathBuf>,
     pub tui_config_path: Option<PathBuf>,
 }
@@ -19,6 +21,7 @@ impl ConfigDiscoveryContext {
             current_dir: std::env::current_dir().unwrap_or_else(|_| ".".into()),
             xdg_config_home: path("XDG_CONFIG_HOME"),
             home: path("HOME"),
+            data_dir: crate::storage_paths::data_dir_from_lookup(&|key| std::env::var(key).ok()),
             runtime_config_path: path("HARNESS_CONFIG"),
             tui_config_path: path("HARNESS_TUI_CONFIG"),
         }
@@ -242,6 +245,7 @@ mod tests {
             discovery: ConfigDiscoveryContext {
                 current_dir: project.clone(),
                 xdg_config_home: Some(root.path().join("config")),
+                data_dir: Some(root.path().join("data/harness")),
                 home: None,
                 runtime_config_path: None,
                 tui_config_path: None,

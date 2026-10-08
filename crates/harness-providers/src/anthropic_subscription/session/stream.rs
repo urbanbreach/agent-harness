@@ -1,4 +1,4 @@
-//! Resident-lane attempts (senpi `session-stream.ts`, `session-turn-attempt.ts`).
+//! Resident-lane attempts.
 use super::binding::{committed_assistant, message_content_hash, restore_binding, BindingStore};
 use super::continuity::{
     decide_native_continuity, BindingSnapshot, Decision, DecisionInput, EntrySnapshot,
@@ -64,7 +64,7 @@ pub struct ResidentInput {
     pub shape: Arc<Mutex<DispatchShape>>,
 }
 
-/// Sessions whose persisted binding was already consulted this process (senpi `session_start`).
+/// Sessions whose persisted binding was already consulted this process.
 static RESTORED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
 
 /// Drops the persisted and in-memory binding with a recorded cause (`invalidateBinding`).

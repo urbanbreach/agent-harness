@@ -80,9 +80,11 @@ async fn native_cancel_after_actual_worktree_creation_cleans_only_owned_material
     Arc::get_mut(&mut config.tool_registry)
         .ok_or("fixture registry is unexpectedly shared")?
         .register(Arc::new(CheckpointSpawn(checkpoint)));
+    let worktrees =
+        crate::storage_paths::ProjectPaths::new(&config.data_dir, &root)?.worktrees_dir();
     let (handle, parent) = start(config, &root).await?;
     let run = handle.run_info().await?;
-    let unrelated = run.run_dir.join("worktrees").join("unrelated");
+    let unrelated = worktrees.join(run.run_id.as_str()).join("unrelated");
     std::fs::create_dir_all(&unrelated)?;
     std::fs::write(unrelated.join("marker"), "do not remove")?;
     let mut events = handle.subscribe_new_events().await?;

@@ -12,8 +12,12 @@ const CASES: [(u16, u16, usize, usize, usize); 4] = [
 fn plan_unicode_paths_and_previews_keep_cell_alignment() -> Result {
     let workspace = tempfile::tempdir()?;
     std::env::set_current_dir(workspace.path())?;
-    fs::create_dir_all(".agent-harness/plans")?;
-    let path = format!(".agent-harness/plans/{}-e\u{301}-👩‍💻.md", "界".repeat(18));
+    let data_dir = workspace.path().join("data");
+    let plans = harness_core::storage_paths::ProjectPaths::new(&data_dir, workspace.path())?
+        .runtime_dir()
+        .join("plans");
+    fs::create_dir_all(&plans)?;
+    let path = plans.join(format!("{}-e\u{301}-👩‍💻.md", "界".repeat(18)));
     let body = format!(
         "{}\n{}\n{}\n{}",
         "界".repeat(80),
@@ -41,6 +45,7 @@ fn plan_unicode_paths_and_previews_keep_cell_alignment() -> Result {
     for (width, height, ..) in CASES {
         recorder.area = Rect::new(0, 0, width, height);
         let mut journey = Journey::new(false);
+        journey.app.set_storage_data_dir(data_dir.clone());
         journey
             .app
             .set_file_mention_workspace_root_for_test(".".into());

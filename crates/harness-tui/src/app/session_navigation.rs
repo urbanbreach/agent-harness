@@ -274,7 +274,7 @@ impl AppState {
             return !self.replay_mode;
         }
         match command {
-            "usage" | "extensions" => true,
+            "usage" => true,
             "new" | "status" | "dashboard" | "toggles" | "login" | "claude-account" | "help"
             | "exit" | "mcps" | "timestamps" | "thinking" | "settings" | "view-plan" | "vim"
             | "worktree" => true,
@@ -363,9 +363,9 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.request_yolo_mode_toggle();
             }
-            "usage" | "extensions" => {
+            "usage" => {
                 self.restore_slash_draft(preserved_draft);
-                self.open_product_info(command == "usage");
+                self.open_product_info();
             }
             "new" => self.navigate_to_home_shell(preserved_draft.unwrap_or_default()),
             "sessions" => {

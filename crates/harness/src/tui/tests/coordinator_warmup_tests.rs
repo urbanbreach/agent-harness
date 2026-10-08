@@ -45,13 +45,15 @@ fn live_coordinator_config_warmup_reuses_interactive_config() {
         "#,
     )
     .unwrap_or_abort();
-    let session_dir = PathBuf::from("/tmp/warmed-session-dir");
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let session_dir = temp.path().join("sessions");
     let agent_profiles = bootstrap::interactive_agent_profiles(&config).unwrap_or_abort();
     let settings = LiveSettings {
         config: Some(config),
         config_path: None,
         session_dir: session_dir.clone(),
-        workspace_root: PathBuf::from("/tmp/warmed-workspace"),
+        data_dir: temp.path().join("data/harness"),
+        workspace_root: temp.path().to_path_buf(),
         shell_allowlist: ShellAllowlist::default(),
         deterministic: false,
         yolo: true,

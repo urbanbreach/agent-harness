@@ -58,12 +58,17 @@ impl AppState {
         self.worktree_picker.selected = 0;
         self.worktree_picker.error = None;
         self.worktree_picker.entries.clear();
-        match self.file_mention_workspace_root_opt() {
-            Some(repository_root) => match list_session_worktrees(&repository_root, None) {
-                Ok(entries) => self.worktree_picker.entries = entries,
-                Err(err) => self.worktree_picker.error = Some(err.to_string()),
-            },
-            None => {
+        match (
+            self.file_mention_workspace_root_opt(),
+            self.storage_data_dir.as_deref(),
+        ) {
+            (Some(repository_root), Some(data_dir)) => {
+                match list_session_worktrees(&repository_root, None, data_dir) {
+                    Ok(entries) => self.worktree_picker.entries = entries,
+                    Err(err) => self.worktree_picker.error = Some(err.to_string()),
+                }
+            }
+            _ => {
                 self.worktree_picker.error =
                     Some("No workspace root available for worktree listing".to_string());
             }

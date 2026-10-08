@@ -85,7 +85,18 @@ pub(crate) fn build(
     interactive: bool,
 ) -> Result<CoordinatorConfig, String> {
     config.validate().map_err(|e| e.to_string())?;
-    let mut result = CoordinatorConfig::new(config.runtime.session_dir.clone());
+    let data_dir =
+        harness_core::storage_paths::data_dir_from_lookup(&|name| deps.env_var_value(name));
+    let session_dir = harness_core::storage_paths::resolve_session_dir(
+        &deps.current_dir().map_err(|error| error.to_string())?,
+        &config.runtime.session_dir,
+        data_dir.as_deref(),
+    )
+    .map_err(|error| error.to_string())?;
+    let mut result = CoordinatorConfig::new(session_dir);
+    if let Some(data_dir) = data_dir {
+        result.data_dir = data_dir;
+    }
     result.interactive = interactive;
     result.model_catalog = harness_core::config::configured_model_catalog(config).into();
     subagents::configure(config, deps, &mut result)?;

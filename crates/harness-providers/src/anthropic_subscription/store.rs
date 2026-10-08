@@ -3,7 +3,7 @@ use super::accounts::AccountPool;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AccountStoreError {
-    /// Another writer held the store past the lock budget (senpi `CredentialStoreBusyError`).
+    /// Another writer held the store past the lock budget.
     #[error("{0}")]
     Busy(String),
     /// The token endpoint refused or failed the refresh; the text is classified.

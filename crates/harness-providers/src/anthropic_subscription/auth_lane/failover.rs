@@ -1,4 +1,4 @@
-//! Account failover (senpi `failover.ts`).
+//! Account failover.
 use super::*;
 
 pub(super) fn retry_after_ms(text: &str) -> Option<i64> {

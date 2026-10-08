@@ -16,12 +16,12 @@ The [Finnish README](README.fi.md) covers the same setup.
 | [File formatting](tools/formatting.md) | Formatter discovery, overrides, edit receipts and cancellation |
 | [Sessions and replay](architecture/sessions-and-replay.md) | Inspection, resume, branching, and support exports |
 | [Session commands](operations/sessions.md) | Listing, branching, recovery, foreign import, and safe exports |
-| [Workspace data](operations/workspace-data.md) | Memory, code index, attribution, schedules, teams, queues, worktrees and plugins |
-| [Operator commands](operations/operators.md) | Local binary updates and stdio peer diagnostics |
+| [Workspace data](operations/workspace-data.md) | Memory, code index, attribution, worktrees, and in-session input queues |
+| [Operator commands](operations/operators.md) | Stdio peer diagnostics |
 | [Privacy and local data](permissions/privacy-and-local-data.md) | Storage, outgoing requests, and redaction |
 | [Troubleshooting](operations/troubleshooting.md) | Config, authentication, tools, and recovery failures |
 | [Starter skills](configuration/starter-skills.md) | Bundled skill instructions and activation rules |
-| [Extensions](operations/extension-strategy.md) | Skills, MCP, hooks, and manifest descriptors |
+| [Extensions](operations/extension-strategy.md) | Skills, MCP, and lifecycle hooks |
 | [Migration notes](operations/migration-notes.md) | Unsupported commands and removed prototype APIs |
 
 ## Develop Harness

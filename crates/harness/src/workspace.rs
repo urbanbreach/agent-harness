@@ -23,7 +23,8 @@ pub(crate) fn memory(
     deps: &CliDeps,
 ) -> Result<(), String> {
     let root = workspace_root(command.workspace, deps)?;
-    let store = DurableMemoryStore::for_workspace(&root);
+    let runtime_dir = deps.project_paths(&root)?.runtime_dir();
+    let store = DurableMemoryStore::for_runtime(&runtime_dir);
     let report = match command.action {
         MemoryAction::Get { key } => json!(store
             .get(&key)
@@ -67,9 +68,11 @@ pub(crate) fn graph(
         build_persistent_graph_index, query_persistent_graph, GraphQuery,
     };
     let root = workspace_root(command.workspace, deps)?;
+    let runtime_dir = deps.project_paths(&root)?.runtime_dir();
     match command.action {
         GraphAction::Build => {
-            let (path, index) = build_persistent_graph_index(&root).map_err(|e| e.to_string())?;
+            let (path, index) =
+                build_persistent_graph_index(&root, &runtime_dir).map_err(|e| e.to_string())?;
             crate::inspect::print_json(
                 io,
                 &json!({"schema_version":"harness-code-graph-build-v1","workspace":root,
@@ -78,7 +81,7 @@ pub(crate) fn graph(
         }
         GraphAction::Query { symbol, kind } => {
             let kind = serde_json::from_value(json!(kind)).map_err(|e| e.to_string())?;
-            let result = query_persistent_graph(&root, &GraphQuery::with_kind(symbol, kind));
+            let result = query_persistent_graph(&runtime_dir, &GraphQuery::with_kind(symbol, kind));
             crate::inspect::print_json(
                 io,
                 &json!({"schema_version":"harness-code-graph-query-v1","workspace":root,"result":result}),
@@ -112,11 +115,10 @@ pub(crate) fn attribution(
 ) -> Result<(), String> {
     let loaded = crate::inspect::configured(config, deps)?;
     let redactor = crate::inspect::redactor(&loaded.config, deps)?;
-    let journal = harness_core::edit_attribution::EditAttributionJournal::open(workspace_root(
-        command.workspace,
-        deps,
-    )?)
-    .map_err(|e| e.to_string())?;
+    let root = workspace_root(command.workspace, deps)?;
+    let runtime_dir = deps.project_paths(&root)?.runtime_dir();
+    let journal = harness_core::edit_attribution::EditAttributionJournal::open(root, &runtime_dir)
+        .map_err(|e| e.to_string())?;
     let mut report = match command.action {
         AttributionAction::Diff { path } => json!(journal.diff(path).map_err(|e| e.to_string())?),
         AttributionAction::Blame { path } => {

@@ -65,7 +65,6 @@ fn settings_writes_validate_before_commit_and_keep_raw_references(
     [
         ("runtime.compaction.fallback_input_tokens", "-1"),
         ("permission.bash", "sometimes"),
-        ("runtime.session_dir", ""),
         ("provider.apiKey", "secret"),
         ("unknown.setting", "true"),
         ("confirm_before_rewind", "false"),
@@ -120,6 +119,7 @@ fn settings_writes_validate_before_commit_and_keep_raw_references(
         current_dir: temp.path().into(),
         xdg_config_home: None,
         home: None,
+        data_dir: Some(temp.path().join("data/harness")),
         runtime_config_path: None,
         tui_config_path: None,
     };

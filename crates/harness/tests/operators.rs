@@ -21,6 +21,10 @@ fn agent_stdio_reports_a_local_exchange_and_failure_without_disclosing_command_c
             &mut CliIo::new(&mut input, &mut output, &mut errors),
             CliDeps::real()
                 .with_current_dir(root.path().into())
+                .with_env(
+                    "HARNESS_DATA_HOME",
+                    root.path().join("data").to_string_lossy(),
+                )
                 .without_env("HOME")
                 .without_env("XDG_CONFIG_HOME")
                 .without_env("HARNESS_CONFIG")

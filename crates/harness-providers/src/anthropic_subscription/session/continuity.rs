@@ -1,4 +1,4 @@
-//! Native continuity decisions (senpi `session-continuity.ts`).
+//! Native continuity decisions.
 //!
 //! Resume-first: only
 //! compaction, a missing transcript, an unrecoverable boundary, model drift, or account drift

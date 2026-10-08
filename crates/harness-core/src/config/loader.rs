@@ -168,11 +168,10 @@ impl HarnessConfig {
         .contains(&0)
             || runtime.permissions.ask_timeout_ms == 0
             || runtime.prompt.wait_timeout_ms == 0
-            || runtime.session_dir.as_os_str().is_empty()
             || runtime.provider_retry.base_delay_ms > runtime.provider_retry.max_delay_ms
         {
             return Err(ConfigError(
-                "invalid runtime concurrency, timeout, session path, or retry limits".into(),
+                "invalid runtime concurrency, timeout, or retry limits".into(),
             ));
         }
         let loop_guard = &runtime.behavior.loop_guard;

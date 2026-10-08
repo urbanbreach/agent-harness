@@ -1,4 +1,4 @@
-//! Operator guidance (senpi `guidance.ts`, `stream-guidance.ts`).
+//! Operator guidance.
 use super::*;
 
 // ---- guidance ----

@@ -434,6 +434,8 @@ async fn directory_instructions_use_the_native_worktree_root_and_map_startup_pat
         .push("read_paths".into());
     config.behavior.directory_instructions.enabled = true;
     config.instruction_paths = vec![root.join("AGENTS.md")];
+    let worktrees =
+        crate::storage_paths::ProjectPaths::new(&config.data_dir, &root)?.worktrees_dir();
     let coordinator = spawn(config);
     let run = coordinator.start_run("instruction worktree", &root).await?;
     let parent = coordinator
@@ -456,7 +458,7 @@ async fn directory_instructions_use_the_native_worktree_root_and_map_startup_pat
     assert!(reminders[0]
         .source
         .as_ref()
-        .is_some_and(|p| Path::new(p).starts_with(run.run_dir.join("worktrees"))));
+        .is_some_and(|p| Path::new(p).starts_with(worktrees.join(run.run_id.as_str()))));
     assert!(!reminders[0].text.contains("WORKTREE_STARTUP"));
     coordinator.stop_run().await?;
     Ok(())

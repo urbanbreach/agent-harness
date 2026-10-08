@@ -13,7 +13,7 @@
         "legacy marketplace installation records",
         "legacy hosted-share receipts"
       ],
-      "required_retained_behavior": "Retain local plugin descriptors, transcript export, support trace bundles, and inline media presentation without hosted marketplace or billing calls."
+      "required_retained_behavior": "Retain historical plugin metadata in durable event replay, transcript export, support trace bundles, and inline media presentation without hosted marketplace or billing calls."
     },
     {
       "family_id": "telemetry-announcements",
@@ -27,6 +27,24 @@
         "legacy analytics preferences"
       ],
       "required_retained_behavior": "Startup, doctor, and local support workflows make no network call for telemetry, analytics, or announcements."
+    },
+    {
+      "family_id": "inert-cli-command-families",
+      "removed_items": [
+        "cron receipt commands and producers",
+        "team mailbox commands and producers",
+        "file-backed prompt queue commands and producers",
+        "plugin package lifecycle and extension manifest descriptors/schema",
+        "binary update commands and producers"
+      ],
+      "persisted_records_to_audit": [
+        "legacy cron receipts",
+        "legacy team mailboxes",
+        "legacy file-backed prompt queues",
+        "legacy plugin registries and load receipts",
+        "legacy update receipts"
+      ],
+      "required_retained_behavior": "Retain durable event variants and side-effect-free replay projections for historical cron, team, plugin, and update records. Preserve live in-session follow-up queues, steering, interrupted-input restoration, and read-only subagent definition discovery. Do not delete or migrate existing files."
     }
   ]
 }

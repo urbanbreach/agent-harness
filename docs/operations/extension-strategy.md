@@ -1,15 +1,13 @@
 # Extension strategy
 
 Harness supports config-backed MCP servers, markdown skills, and native lifecycle
-hooks. A typed extension manifest describes capabilities but does not execute
-plugins. Markdown command files and extension command hooks remain unsupported.
+hooks. Markdown command files and extension command hooks remain unsupported.
 
 | Extension | What it can do | Where to configure it |
 | --- | --- | --- |
 | MCP server | Register concrete tools from an enabled server | `mcp` in runtime config |
 | Markdown skill | Add instructions and declared resources when activated | Configured skill roots |
 | Native lifecycle hook | Run an allowed command at a coordinator lifecycle point | Runtime hook config |
-| Typed extension manifest | Describe capabilities and static replay metadata | `extension.manifest.v1` descriptors |
 
 ## Config-backed MCP
 
@@ -56,32 +54,8 @@ Replay, recovery of historical events, and inspection never execute hooks.
 Deterministic execution records skipped task receipts. Resuming a session invokes
 only the new run's lifecycle hooks.
 
-TUI slash commands remain built-in UI actions. Markdown command files and typed
-extension command descriptors do not execute commands.
-
-## Typed extension manifest descriptors
-
-`ExtensionManifestV1` is a typed descriptor and schema, not a plugin host. The
-schema lives at `configs/extension-manifest.v1.schema.json` and uses
-`schemaVersion: "extension.manifest.v1"`. It can describe stable extension ids,
-capability ids, disablement defaults, optional descriptor arrays for tools,
-hooks, commands, prompts, MCP bundles, diagnostics, provider decorators, and
-static replay labels/templates.
-
-The V1 parser rejects unknown fields, duplicate capability ids, missing
-capability references, unknown hook lifecycle events, dynamic replay text, and
-tool descriptors without a public permission name (`bash`, `edit`, `question`,
-`task`, `webfetch`, `websearch`, `codesearch`, or `lsp`). Parse/validation
-returns descriptor metadata only. It does not discover manifests at runtime,
-register tools, execute commands, launch MCP servers, invoke provider
-decorators, load external code, or mutate sessions.
-
-Replay support is static metadata rendering: old manifest metadata can be
-projected from the stored descriptor fields (extension id, capability ids,
-disabled capabilities, descriptor counts, and replay labels) without loading any
-extension package or executing extension code. Any future extension-provided
-behavior must enter through the existing native registry, coordinator-owned
-permission checks, artifact/redaction paths, and replay side-effect boundaries.
+TUI slash commands remain built-in UI actions. Markdown command files do not
+execute commands.
 
 ## Core runtime behavior vs disableable built-in capabilities
 
@@ -118,11 +92,10 @@ lane-specific perf/PTY artifacts in `docs/testing/budgets.md` and `docs/testing/
 
 ## Unsupported extension execution
 
-The typed extension manifest is descriptor-only in V1. Runtime discovery,
-extension package loading, executable command hooks, MCP launch from manifests,
-provider decorator invocation, and extension-provided tool registration remain
-post-V1 until a separate host design proves command mediation, sandboxing,
-permissions, artifacts, redaction, and replay safety.
+Runtime extension package loading, executable extension command hooks,
+manifest-driven MCP launch, provider decorators, and extension-provided tool
+registration are not supported. MCP tools, skills, and lifecycle hooks use the
+configuration paths above.
 
 The lifecycle map lists unsupported markdown commands, interpolation, and rules
 injection. Existing lifecycle hooks run through the coordinator.

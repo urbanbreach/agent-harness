@@ -107,6 +107,8 @@ pub struct CoordinatorHandle {
 #[derive(Clone)]
 pub struct CoordinatorConfig {
     pub session_dir: PathBuf,
+    /// User-level storage root; embedders default to `session_dir/data`.
+    pub data_dir: PathBuf,
     pub run_id_override: Option<String>,
     pub deterministic_store: bool,
     /// Interactive callers can receive detached eval completions after the foreground receipt.
@@ -145,8 +147,10 @@ pub struct CoordinatorConfig {
 }
 impl CoordinatorConfig {
     pub fn new(session_dir: impl Into<PathBuf>) -> Self {
+        let session_dir = session_dir.into();
         Self {
-            session_dir: session_dir.into(),
+            data_dir: session_dir.join("data"),
+            session_dir,
             run_id_override: None,
             deterministic_store: false,
             interactive: false,

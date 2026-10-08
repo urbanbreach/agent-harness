@@ -1,4 +1,4 @@
-//! Retainable turn attempts (senpi `session-turn-attempt.ts`).
+//! Retainable turn attempts.
 use super::*;
 
 #[derive(Default)]

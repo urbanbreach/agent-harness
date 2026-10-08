@@ -123,7 +123,7 @@ static REGISTRY: LazyLock<Vec<SettingDefinition>> = LazyLock::new(|| {
         "disabled_providers", "enabled_providers", "shell", "logging", "ui",
         "permission.bash", "permission.edit", "permission.question", "permission.task", "permission.eval", "permission.webfetch", "permission.websearch",
         "permission.codesearch", "permission.lsp", "permission.read", "permission.external_directory", "permission.doom_loop", "permission.shell_allowlist",
-        "provider.apiKey", "hashline_edit" => "true", "worktree.relative_base" => ".agent-harness/worktrees", "worktree.branch_prefix" => "harness/wt-",
+        "provider.apiKey", "hashline_edit" => "true", "worktree.relative_base" => "<data>/worktrees/<project-key>", "worktree.branch_prefix" => "harness/wt-",
         "subagents", "subagents.enabled" => "true", "subagents.max_depth" => "1", "subagents.max_concurrent" => "32",
         "subagents.sampling_limit", "subagents.limit_behavior" => "queue", "subagents.models" => "{}",
         "subagents.toggle" => "{}", "subagents.roles" => "{}", "subagents.personas" => "{}",
@@ -135,7 +135,7 @@ static REGISTRY: LazyLock<Vec<SettingDefinition>> = LazyLock::new(|| {
         "runtime.compaction.keep_recent_tokens" => "20000", "runtime.compaction.threshold_percent", "runtime.compaction.threshold_tokens",
         "runtime.compaction.model_thresholds" => "{}", "runtime.compaction.agent_thresholds" => "{}", "runtime.compaction.fallback_input_tokens" => "32768",
         "runtime.compaction.auto_retry_overflow" => "true", "runtime.compaction.structured_summary_contract" => "true", "runtime.compaction.estimated_token_triggers" => "true",
-        "runtime.deterministic.enabled" => "false", "runtime.session_dir" => ".agent-harness/sessions",
+        "runtime.deterministic.enabled" => "false", "runtime.session_dir" => "",
     ));
     entries.extend(entries!("harness.tui.", Tui; "confirm_before_rewind" => "true", "keybinds" => "{}", "$schema"));
     entries

@@ -156,6 +156,9 @@ pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::er
     }
 
     run_tui_with_options(TuiOptions {
+        storage_data_dir: harness_core::storage_paths::data_dir_from_lookup(&|key| {
+            std::env::var(key).ok()
+        }),
         mode: TuiMode::Live {
             run_dir: std::env::var_os("HARNESS_TUI_MANUAL_RUN_DIR")
                 .map(std::path::PathBuf::from)

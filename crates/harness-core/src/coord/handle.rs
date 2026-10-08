@@ -26,16 +26,6 @@ impl CoordinatorHandle {
     pub async fn run_info(&self) -> Result<RunInfo, CoordinatorError> {
         self.call(|s| s.info().cloned()).await
     }
-    pub async fn plugin_lifecycle_summary(
-        &self,
-    ) -> Result<crate::integrations::PluginLifecycleSummary, CoordinatorError> {
-        self.call(|s| {
-            crate::integrations::PluginRuntimeContract::open(&s.info()?.workspace_root)
-                .map(|runtime| runtime.summary())
-                .map_err(|e| CoordinatorError::Invalid(e.to_string()))
-        })
-        .await
-    }
     pub async fn event_store(&self) -> Result<Arc<dyn EventStore>, CoordinatorError> {
         self.call(|s| {
             s.store

@@ -1,6 +1,6 @@
-//! Lineage bindings and reattach (senpi `session-reattach.ts` and recovery).
+//! Lineage bindings, reattach and recovery.
 //!
-//! Also `session-checkpoint-recovery.ts` and `session-restored-admission.ts`. A new query is not a new session: `--resume` re-attaches
+//! A new query is not a new session: `--resume` re-attaches
 //! to the existing lineage; a fork adds `--resume-session-at` and `--fork-session`.
 use super::continuity::BindingSnapshot;
 use super::registry::{close_session, get_or_create_session, CreateEntryInput, SessionEntry};

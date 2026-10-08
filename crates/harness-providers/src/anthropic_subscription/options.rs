@@ -1,4 +1,4 @@
-//! Lane settings and SDK query options (senpi `settings.ts`, `options.ts`, `system-prompt.ts`).
+//! Lane settings and SDK query options.
 use super::errors::{
     override_system_prompt_guidance, preset_append_deprecation_guidance, LaneError,
 };

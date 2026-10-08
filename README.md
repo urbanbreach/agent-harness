@@ -30,9 +30,11 @@ without repeating its tool calls or contacting a provider.
 
 ## Get started
 
+Harness supports Linux only. macOS and Windows are not supported or tested.
+
 Build with Git and the stable Rust toolchain selected by
-[`rust-toolchain.toml`](rust-toolchain.toml). On x86-64 GNU/Linux, install Clang
-and [Wild 0.10.0](docs/testing/build-performance.md) before building:
+[`rust-toolchain.toml`](rust-toolchain.toml). The default build needs no other
+linker or tools:
 
 ```bash
 git clone https://github.com/urbanbreach/agent-harness.git
@@ -61,8 +63,8 @@ To use `harness` outside this checkout, install the binary:
 cargo install --path crates/harness --locked
 ```
 
-Builds and nextest use Wild by default on x86-64 GNU/Linux. See the
-[measured build settings](docs/testing/build-performance.md) for results and the LLD fallback.
+Builds use the stock Rust linker. Linking with Wild is faster and opt-in; see the
+[build settings](docs/testing/build-performance.md).
 
 ## Connect a provider
 
@@ -131,6 +133,26 @@ Runtime settings belong in `harness.jsonc`; keyboard settings belong in
 `harness config show --effective` to inspect the merged, redacted configuration.
 The [config reference](docs/configuration/config.md) lists the supported keys.
 
+## Where Harness stores data
+
+Sessions and other runtime data live outside your project, under
+`$HARNESS_DATA_HOME/harness` if that is set, otherwise `$XDG_DATA_HOME/harness`,
+otherwise `~/.local/share/harness`. Each project gets folders named after its
+path. A project in `/home/me/code/app` keeps sessions in
+`sessions/--home-me-code-app--/`, workspace memory, the code index, edit
+attribution and plan files in `projects/--home-me-code-app--/`, and managed
+worktrees in `worktrees/--home-me-code-app--/`.
+
+The project's own `.agent-harness/` directory holds only the agents, skills and
+prompts you write, plus remembered permission approvals.
+
+Earlier builds saved sessions in `<project>/.agent-harness/sessions`. They are
+not migrated; open them with `--session-dir`:
+
+```bash
+harness sessions list --session-dir .agent-harness/sessions
+```
+
 ## Inspect and share a session
 
 ```bash
@@ -157,3 +179,7 @@ scripts/test-lanes.sh quality-gates
 Use nextest for Rust tests. The [testing guide](docs/testing/testing.md) explains
 the integration, simulation, performance, PTY, and live-provider lanes.
 For setup failures, start with [troubleshooting](docs/operations/troubleshooting.md).
+
+## License
+
+Harness is released under the [MIT License](LICENSE).

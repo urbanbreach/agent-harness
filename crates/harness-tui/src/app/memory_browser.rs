@@ -97,11 +97,8 @@ impl AppState {
         self.memory_browser.selected = 0;
         self.memory_browser.filter_input.clear();
         self.memory_browser.entries.clear();
-        if let Some(root) = self
-            .file_mention_workspace_root_opt()
-            .filter(|_| !self.replay_mode)
-        {
-            let store = DurableMemoryStore::for_workspace(&root);
+        if let Some(root) = self.project_runtime_dir().filter(|_| !self.replay_mode) {
+            let store = DurableMemoryStore::for_runtime(&root);
             if let Ok(entries) = store.search("") {
                 self.memory_browser.entries = entries
                     .into_iter()

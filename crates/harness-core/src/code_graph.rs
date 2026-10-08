@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 mod index;
 pub use index::{build_persistent_graph_index, load_simple_graph_index};
-pub const GRAPH_INDEX_REL: &str = ".agent-harness/code-graph-index.json";
+pub const GRAPH_INDEX_FILE: &str = "code-graph-index.json";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -178,10 +178,10 @@ pub enum CodeGraphError {
     #[error("code index: {0}")]
     Invalid(&'static str),
 }
-pub fn detect_persistent_graph(workspace_root: &Path) -> PersistentGraphAvailability {
-    match load_simple_graph_index(workspace_root) {
+pub fn detect_persistent_graph(runtime_dir: &Path) -> PersistentGraphAvailability {
+    match load_simple_graph_index(runtime_dir) {
         Ok(Some(_)) => PersistentGraphAvailability::Available {
-            index_root: workspace_root.join(GRAPH_INDEX_REL).display().to_string(),
+            index_root: runtime_dir.join(GRAPH_INDEX_FILE).display().to_string(),
         },
         Ok(None) => PersistentGraphAvailability::Unavailable {
             reason: "no saved code index; build one explicitly".into(),
@@ -191,8 +191,8 @@ pub fn detect_persistent_graph(workspace_root: &Path) -> PersistentGraphAvailabi
         },
     }
 }
-pub fn query_persistent_graph(workspace_root: &Path, query: &GraphQuery) -> GraphQueryResult {
-    match load_simple_graph_index(workspace_root) {
+pub fn query_persistent_graph(runtime_dir: &Path, query: &GraphQuery) -> GraphQueryResult {
+    match load_simple_graph_index(runtime_dir) {
         Ok(Some(index)) => query_index(&index, query),
         Ok(None) => unavailable(query, "no saved code index"),
         Err(error) => unavailable(query, &error.to_string()),
@@ -246,10 +246,10 @@ fn query_index(index: &SimpleGraphIndex, query: &GraphQuery) -> GraphQueryResult
     }
 }
 pub fn query_persistent_graph_batch(
-    workspace_root: &Path,
+    runtime_dir: &Path,
     queries: &[GraphQuery],
 ) -> GraphQueryBatchResult {
-    let loaded = load_simple_graph_index(workspace_root);
+    let loaded = load_simple_graph_index(runtime_dir);
     let results = queries
         .iter()
         .map(|query| match &loaded {
@@ -261,7 +261,7 @@ pub fn query_persistent_graph_batch(
     GraphQueryBatchResult { results }
 }
 pub fn query_persistent_graph_multi_symbol(
-    workspace_root: &Path,
+    runtime_dir: &Path,
     symbols: &[&str],
     kinds: &[GraphQueryKind],
 ) -> GraphQueryBatchResult {
@@ -278,7 +278,7 @@ pub fn query_persistent_graph_multi_symbol(
                 .map(move |kind| GraphQuery::with_kind(*symbol, *kind))
         })
         .collect();
-    query_persistent_graph_batch(workspace_root, &queries)
+    query_persistent_graph_batch(runtime_dir, &queries)
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistentGraphProductProbe {
@@ -297,9 +297,10 @@ impl PersistentGraphProductProbe {
 /// An explicit index build; ordinary query and readiness paths never call it.
 pub fn probe_persistent_graph_product(
     workspace_root: &Path,
+    runtime_dir: &Path,
     symbols: &[&str],
 ) -> PersistentGraphProductProbe {
-    match build_persistent_graph_index(workspace_root) {
+    match build_persistent_graph_index(workspace_root, runtime_dir) {
         Ok((path, index)) => PersistentGraphProductProbe {
             availability: PersistentGraphAvailability::Available {
                 index_root: path.display().to_string(),

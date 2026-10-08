@@ -1,4 +1,4 @@
-//! Coordinator session events (senpi `session-registry-wiring.ts`).
+//! Coordinator session events.
 use super::binding::BindingStore;
 use super::reattach::{binding_from_entry, remember_binding};
 use super::registry::{close_session, get_session, record_pending_fork, touch, SessionEntry};

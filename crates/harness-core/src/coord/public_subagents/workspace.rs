@@ -101,7 +101,7 @@ pub(super) async fn prepare(
     id: &str,
     cwd: &Path,
     workspace_root: &Path,
-    run_dir: &Path,
+    worktrees_dir: &Path,
     isolation: SubagentIsolationMode,
     source: Option<ResolvedSubagentContext>,
     snapshot_ref: Option<String>,
@@ -126,13 +126,12 @@ pub(super) async fn prepare(
         });
     if let Some(path) = source_path {
         if let Some(reference) = snapshot_ref.as_deref() {
-            let destination = run_dir.join("worktrees").join(id);
-            tokio::fs::create_dir_all(
+            let destination = worktrees_dir.join(id);
+            crate::store::create_private_dir(
                 destination
                     .parent()
                     .ok_or_else(|| native_invalid("worktree destination has no parent".into()))?,
-            )
-            .await?;
+            )?;
             if tokio::fs::create_dir(&destination).await.is_err() {
                 // A directory not reserved by this attempt is never cleanup
                 // ownership, even if Git would accept it as an empty target.
@@ -178,13 +177,12 @@ pub(super) async fn prepare(
     if source.is_some() || isolation == SubagentIsolationMode::None {
         return Ok(shared());
     }
-    let destination = run_dir.join("worktrees").join(id);
-    tokio::fs::create_dir_all(
+    let destination = worktrees_dir.join(id);
+    crate::store::create_private_dir(
         destination
             .parent()
             .ok_or_else(|| native_invalid("worktree destination has no parent".into()))?,
-    )
-    .await?;
+    )?;
     if tokio::fs::create_dir(&destination).await.is_err() {
         return Ok(shared());
     }

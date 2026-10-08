@@ -46,6 +46,7 @@ pub struct RuntimeConfig {
     pub yolo: bool,
     #[serde(alias = "backgroundTasks")]
     pub background_tasks: BackgroundTaskSettings,
+    /// Empty selects `<data>/sessions/<canonical-project-key>`; relative overrides use the workspace directory.
     #[serde(alias = "sessionDir")]
     pub session_dir: PathBuf,
     pub permissions: RuntimePermissionsConfig,
@@ -194,6 +195,7 @@ pub struct PromptRuntimeConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct PathsConfig {
+    /// Empty selects `<data>/sessions/<canonical-project-key>`; relative overrides use the workspace directory.
     #[serde(alias = "sessionDir")]
     pub session_dir: PathBuf,
 }

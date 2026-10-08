@@ -31,6 +31,7 @@ fn worktrees_keep_changes_isolated_and_refuse_unsafe_cleanup(
     let parent = temp.path().join("checkouts\nwith spaces");
     let options = CreateWorktreeOptions {
         repository_root: &root,
+        data_dir: temp.path(),
         worktree_parent: Some(&parent),
         slug: Some("one"),
         start_point: None,
@@ -43,7 +44,7 @@ fn worktrees_keep_changes_isolated_and_refuse_unsafe_cleanup(
         Some(created.branch.as_str())
     );
     assert!(create_session_worktree(options).is_err());
-    let listed = list_session_worktrees(&root, Some(&parent))?;
+    let listed = list_session_worktrees(&root, Some(&parent), temp.path())?;
     assert!(listed.iter().any(|entry| entry.path == created.path
         && entry.harness_managed
         && entry.branch.as_deref() == Some(created.branch.as_str())));
@@ -51,6 +52,7 @@ fn worktrees_keep_changes_isolated_and_refuse_unsafe_cleanup(
     assert!(!root.join("untracked").exists());
     let remove = RemoveWorktreeOptions {
         repository_root: &root,
+        data_dir: temp.path(),
         path: &created.path,
         worktree_parent: Some(&parent),
         delete_branch: true,
@@ -90,13 +92,50 @@ fn worktrees_keep_changes_isolated_and_refuse_unsafe_cleanup(
         .success());
     let bad = CreateWorktreeOptions {
         repository_root: &root,
+        data_dir: temp.path(),
         worktree_parent: Some(&parent),
         slug: Some("bad"),
         start_point: Some("missing-ref"),
     };
     assert!(create_session_worktree(bad).is_err());
     assert!(!parent.join("bad").exists());
-    assert_eq!(list_session_worktrees(&root, Some(&parent))?.len(), 1);
+    assert_eq!(
+        list_session_worktrees(&root, Some(&parent), temp.path())?.len(),
+        1
+    );
+    let data_dir = temp.path().join("data");
+    assert_managed_worktree_storage(&root, &data_dir)
+}
+
+fn assert_managed_worktree_storage(
+    root: &Path,
+    data_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let managed = create_session_worktree(CreateWorktreeOptions {
+        repository_root: root,
+        worktree_parent: None,
+        data_dir,
+        slug: Some("managed"),
+        start_point: None,
+    })?;
+    assert!(managed.path.starts_with(data_dir.join("worktrees")));
+    assert!(!root.join(".agent-harness").exists());
+    assert_eq!(
+        list_session_worktrees(root, None, data_dir)?
+            .iter()
+            .find(|entry| entry.path == managed.path)
+            .map(|entry| entry.harness_managed),
+        Some(true)
+    );
+    remove_session_worktree(RemoveWorktreeOptions {
+        repository_root: root,
+        path: &managed.path,
+        worktree_parent: None,
+        data_dir,
+        delete_branch: true,
+        force: false,
+    })?;
+    assert!(!managed.path.exists());
     Ok(())
 }
 

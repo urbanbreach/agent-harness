@@ -631,7 +631,7 @@
       {
         "capability_dependency": null,
         "default_scope": "worktree",
-        "default_value": ".agent-harness/worktrees",
+        "default_value": "<data>/worktrees/<project-key>",
         "merge_strategy": "replace",
         "mutability": "read_only",
         "restart_required": true,
@@ -979,7 +979,7 @@
       {
         "capability_dependency": null,
         "default_scope": "project",
-        "default_value": ".agent-harness/sessions",
+        "default_value": "",
         "merge_strategy": "replace",
         "mutability": "editable",
         "restart_required": true,

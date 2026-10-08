@@ -258,6 +258,7 @@ fn tui_mock_mode_still_boots_through_launcher() -> Result<(), Box<dyn std::error
         .env_remove("HARNESS_TUI_CONFIG")
         .env("HOME", temp.path())
         .env("XDG_CONFIG_HOME", temp.path().join("config"))
+        .env("HARNESS_DATA_HOME", temp.path().join("data"))
         .env("HARNESS_TUI_PROFILE_LOG", &profile)
         .stdin(std::process::Stdio::null())
         .output()?;
@@ -325,6 +326,23 @@ fn tui_cli_root_help_only_shows_minimal_interactive_overrides() {
     assert!(stdout.contains("tui"));
     assert!(stdout.contains("run"));
     assert!(stdout.contains("prompt"));
+    for command in ["prompt", "replay", "tui", "auth"] {
+        assert!(
+            stdout.lines().any(|line| {
+                let mut words = line.split_whitespace();
+                words.next() == Some(command) && words.next().is_some()
+            }),
+            "{command} should have a description in root help"
+        );
+    }
+    for command in ["cron", "team", "prompt-queue", "plugin", "update"] {
+        assert!(
+            !stdout
+                .lines()
+                .any(|line| line.split_whitespace().next() == Some(command)),
+            "retired command {command} should not appear in root help"
+        );
+    }
     assert!(
         !stdout.contains("--replay"),
         "root help should keep replay off the bare surface"

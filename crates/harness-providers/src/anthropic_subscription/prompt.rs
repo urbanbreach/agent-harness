@@ -1,5 +1,4 @@
-//! Prompt framing (senpi `prompt-bridge.ts`, `content-blocks.ts`, `cold-seed-images.ts`,
-//! `prompt-directive-dedupe.ts`, and the delta framing of `session-sync.ts`).
+//! Prompt framing.
 use super::tools::map_host_tool_name_to_sdk;
 use crate::{CompletionRequest, MessageRole, ToolDef};
 use base64::Engine;

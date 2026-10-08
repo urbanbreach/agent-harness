@@ -29,9 +29,27 @@ Limits are 1,024 files, 8 MiB per file and 64 MiB of restored plus original file
 data. The snapshot document and inspected journal are each limited to 64 MiB.
 The command reports unchanged files separately and never rewrites source history.
 
-Session commands use `--session-dir DIR`, then `runtime.session_dir` from
-configuration, then `.agent-harness/sessions` under the working directory. A session selector is its
-directory name or an explicit directory path.
+Session commands use `--session-dir DIR`, then a nonempty `runtime.session_dir`
+from configuration, then `<data-dir>/sessions/<project-key>`. An empty
+`runtime.session_dir` means the automatic managed default. Explicit relative
+directories retain their existing meaning: they resolve against the project
+directory selected by `--cwd`, not the config file or data directory. Absolute
+directories are used as supplied. A session selector is its directory name or
+an explicit directory path.
+
+`<data-dir>` resolves to `$HARNESS_DATA_HOME/harness`, otherwise
+`$XDG_DATA_HOME/harness`, otherwise `$HOME/.local/share/harness`. Empty values are
+ignored. The project key encodes the canonical absolute project path,
+so symlink aliases share a session bucket. See the exact
+[storage layout](../architecture/sessions-and-replay.md#storage-layout).
+
+Old project-local sessions are left in place. There is no automatic migration or
+fallback scan; select the old directory explicitly:
+
+```bash
+harness sessions list --session-dir <project>/.agent-harness/sessions --json
+harness sessions continue RUN_ID --session-dir <project>/.agent-harness/sessions
+```
 
 ```bash
 harness sessions list --json --status finished --resumable true
@@ -187,6 +205,8 @@ version-control directories, its own output and session storage. `--with-session
 adds the same sanitized diagnostic exports under their workspace-relative paths;
 this requires session storage to be inside the workspace. Its default output is
 `workspace.wrap.tar.gz`.
+The managed session default is outside the workspace. To use `--with-sessions`,
+select an explicit in-workspace directory with `--session-dir`.
 
 Source files and member names are scanned for known credentials. A finding,
 symlink, unsupported file type or unsafe name stops packaging. Wrap preserves

@@ -326,6 +326,7 @@ struct SpawnedHarness {
     output_rx: Receiver<Vec<u8>>,
     parser: Parser,
     _workspace: Option<tempfile::TempDir>,
+    _data_home: tempfile::TempDir,
 }
 
 impl SpawnedHarness {
@@ -450,6 +451,8 @@ fn spawn_harness_pty_in_owned(
 
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_harness"));
     command.cwd(cwd);
+    let data_home = tempdir().unwrap_or_abort();
+    command.env("HARNESS_DATA_HOME", data_home.path());
     for arg in args {
         command.arg(arg);
     }
@@ -472,6 +475,7 @@ fn spawn_harness_pty_in_owned(
         output_rx,
         parser: Parser::new(ROWS, COLS, 0),
         _workspace: workspace,
+        _data_home: data_home,
     }
 }
 

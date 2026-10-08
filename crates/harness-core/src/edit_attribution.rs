@@ -232,8 +232,9 @@ impl MultiPathEditAttribution {
 /// Explicit diagnostic fixture used by the preserved TUI tests, never by startup.
 pub fn run_multi_path_edit_attribution_product(
     root: &Path,
+    runtime_dir: &Path,
 ) -> Result<MultiPathEditAttribution, EditAttributionError> {
-    let mut journal = EditAttributionJournal::open(root)?;
+    let mut journal = EditAttributionJournal::open(root, runtime_dir)?;
     for name in ["agent.rs", "drift.rs"] {
         journal.record_agent_tool_edit(name, b"agent fixture\n", None)?;
     }
