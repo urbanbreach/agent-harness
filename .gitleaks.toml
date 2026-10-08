@@ -8,3 +8,11 @@ paths = [
   '''(^|/)tests/''',
   '''(^|/)(tests|[^/]+_tests|[^/]+_test)\.rs$''',
 ]
+
+# Line fingerprints in .gitleaksignore depend on the local git diff settings, so a
+# whole fixture file whose credentials are all labelled "(dummy)" is allowlisted by path.
+[[allowlists]]
+description = "TUI parity manifest with dummy provider credentials"
+paths = [
+  '''^docs/tui-reference-parity-manifest\.v1\.json$''',
+]
