@@ -24,8 +24,22 @@ defaults! {
     RuntimeConfig {
         yolo: false, background_tasks: BackgroundTaskSettings::default(), session_dir: PathsConfig::default().session_dir,
         permissions: RuntimePermissionsConfig::default(), prompt: PromptRuntimeConfig::default(), deterministic: DeterministicConfig::default(),
-        compaction: CompactionSettings::default(), provider_retry: ProviderRetryRuntimeConfig::default()
+        compaction: CompactionSettings::default(), provider_retry: ProviderRetryRuntimeConfig::default(), behavior: BehaviorSettings::default()
     }
+    BehaviorSettings {
+        todo_continuation: TodoContinuationSettings::default(), loop_guard: LoopGuardSettings::default(),
+        stream_guard: StreamGuardSettings::default(), directory_instructions: DirectoryInstructionSettings::default(),
+        command_notifications: CommandNotificationSettings::default(), output_contract: OutputContractSettings::default()
+    }
+    TodoContinuationSettings { enabled: true, max_reminders: 3 }
+    LoopGuardSettings {
+        enabled: true, threshold: 4,
+        exempt_tools: vec!["wait_commands_or_subagents".into(), "get_command_or_subagent_output".into(), "question".into()]
+    }
+    StreamGuardSettings { enabled: true, max_retries: 2 }
+    DirectoryInstructionSettings { enabled: true, max_bytes: 32_768 }
+    CommandNotificationSettings { enabled: true, wake_idle: true }
+    OutputContractSettings { max_retries: 2 }
     ProviderRetryRuntimeConfig { max_retries: 2, base_delay_ms: 2_000, max_delay_ms: 30_000 }
     CompactionSettings {
         enabled: true, threshold_percent: None, threshold_tokens: None, model_thresholds: BTreeMap::new(), agent_thresholds: BTreeMap::new(),

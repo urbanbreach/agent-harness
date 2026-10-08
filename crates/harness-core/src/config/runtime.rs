@@ -54,6 +54,92 @@ pub struct RuntimeConfig {
     pub compaction: CompactionSettings,
     #[serde(alias = "providerRetry")]
     pub provider_retry: ProviderRetryRuntimeConfig,
+    /// Coordinator-side guards that keep agents working, out of loops, and informed.
+    pub behavior: BehaviorSettings,
+}
+
+/// Runtime guidance the coordinator adds to an agent's context while it works.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct BehaviorSettings {
+    pub todo_continuation: TodoContinuationSettings,
+    pub loop_guard: LoopGuardSettings,
+    pub stream_guard: StreamGuardSettings,
+    pub directory_instructions: DirectoryInstructionSettings,
+    pub command_notifications: CommandNotificationSettings,
+    pub output_contract: OutputContractSettings,
+}
+
+impl BehaviorSettings {
+    /// Every guard disabled, keeping the configured limits.
+    pub fn off() -> Self {
+        let mut settings = Self::default();
+        settings.todo_continuation.enabled = false;
+        settings.loop_guard.enabled = false;
+        settings.stream_guard.enabled = false;
+        settings.directory_instructions.enabled = false;
+        settings.command_notifications.enabled = false;
+        settings.command_notifications.wake_idle = false;
+        settings.output_contract.max_retries = 0;
+        settings
+    }
+}
+
+/// Remind an agent that ends its turn while its todo list still has open items.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct TodoContinuationSettings {
+    pub enabled: bool,
+    /// Reminders per turn; a reminder is only repeated after the agent made tool calls.
+    pub max_reminders: u32,
+}
+
+/// Detect an agent repeating the same tool calls.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct LoopGuardSettings {
+    pub enabled: bool,
+    /// Consecutive identical calls (or repeated call cycles) that trigger a reminder.
+    /// Twice this many stops the turn. Must be between 2 and 100 while enabled.
+    #[schemars(range(min = 2, max = 100))]
+    pub threshold: u32,
+    /// Tools whose repeated identical calls are expected, such as waits.
+    pub exempt_tools: Vec<String>,
+}
+
+/// Stop a streamed response that degenerates into repetition and retry with a correction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct StreamGuardSettings {
+    pub enabled: bool,
+    /// Corrected retries per turn before the turn fails.
+    pub max_retries: u32,
+}
+
+/// Add AGENTS.md files from directories the agent reads or edits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct DirectoryInstructionSettings {
+    pub enabled: bool,
+    /// Bytes of one instruction file added to context; longer files are truncated.
+    pub max_bytes: u32,
+}
+
+/// Tell an agent when a background shell command it started finishes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct CommandNotificationSettings {
+    pub enabled: bool,
+    /// Start a turn for an idle agent when one of its background commands finishes.
+    pub wake_idle: bool,
+}
+
+/// Hold a subagent to the output schema its caller requested.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct OutputContractSettings {
+    /// Corrective reminders before a non-conforming result is returned as invalid.
+    pub max_retries: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]

@@ -204,16 +204,18 @@ presentation bound does not reject otherwise valid types.
 
 ## Model prompts
 
-Harness selects a model Markdown template over the shared system prompt. Specific
-model versions take precedence over family defaults; catalog `metadata.family`
+Each model has its own complete system prompt template, ported from the matching
+Senpi preset (the prompts OmO Native uses) and fitted to Harness. Specific model
+versions take precedence over family defaults; catalog `metadata.family`
 supports aliases. `harness models --json` includes `resolution.prompt_preset`.
-The system prompt and eval tool description receive the selected eval guidance.
+The selected eval routing guidance reaches the model once: in the system prompt,
+or in the eval tool description when a template or a literal prompt leaves it out.
 
 Edit `.agent-harness/prompts/models/glm-5.3.md` or
 `.agent-harness/prompts/models/gpt-6.1-sol.md` to customize those models without
 rebuilding. Project files override `$XDG_CONFIG_HOME/harness/prompts` or
-`~/.config/harness/prompts`, followed by bundled defaults. Shared `system.md`,
-`personality.md`, `subagent.md`, and `eval/*.md` files use the same precedence.
+`~/.config/harness/prompts`, followed by bundled defaults. The shared
+`partials/*.md`, `subagent.md`, and `eval/*.md` files use the same precedence.
 Templates reload on turns, tool iterations and model changes. Invalid selected
 files fail instead of silently falling back.
 
@@ -377,7 +379,7 @@ for those settings instead of mixing them into runtime config.
 | `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback metadata; runtime profile resolution selects the primary target in V1. |
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. Supports scalar `allow`/`ask`/`deny` or per-tool pattern maps. Catch-all deny hides tools from the model; last matching pattern wins. |
 | `provider` | Provider definitions keyed by provider id. |
-| `runtime` | Runtime settings including startup approval mode, provider-context compaction settings, and provider retry policy. |
+| `runtime` | Runtime settings including startup approval mode, provider-context compaction settings, provider retry policy, and [behavior guidance](#runtime-behavior-guidance). |
 | `server` | Upstream server configuration; accepted only when empty because server commands are outside this runtime config. |
 | `small_model` | Optional smaller model reference for coordinator-owned internal operations such as title generation. |
 | `skills` | Shared skill discovery roots and permission overrides for skill loading. |
@@ -1026,6 +1028,48 @@ Failed or aborted provider turns can be preserved in active context. Replay/debu
 Operational memory is derived from persisted events, not from live filesystem scans. The `SessionCompaction` event records capped read-file and modified-file lists, and replay projections expose these facts so operators can see what context survived compaction.
 
 TUI memory or transcript caps are separate presentation settings. They affect what the operator sees on screen, not the persisted provider context used for resume or overflow-retry compaction. The TUI distinguishes active context estimate from cumulative provider tokens spent: active context may decrease after `SessionCompaction`, while total spend remains cumulative and never decreases.
+
+## Runtime behavior guidance
+
+The coordinator adds short model-only reminders to a running turn when it can
+see that the agent needs them. Each reminder is appended to the journal as a
+`RuntimeReminder` event (with its kind, its exact text, and a source such as an
+instruction file or command id) before the model sees it, so resume, replay, and
+`harness sessions census` show exactly what the model was told. Settings live
+under `runtime.behavior`:
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `todo_continuation.enabled` | `true` | When the main agent ends its turn while its todo list still has pending or in-progress items, remind it of those items and continue the turn. |
+| `todo_continuation.max_reminders` | `3` | Reminders per turn. A reminder is only repeated after the agent made tool calls since the previous one, so a deliberate stop ends the turn. |
+| `loop_guard.enabled` | `true` | Detect the same tool call (same tool, same arguments) or the same cycle of two or three calls repeated in a row. A call to an exempt tool breaks the run, since a wait or an answer can change what the next call returns. |
+| `loop_guard.threshold` | `4` | Repetitions that trigger one reminder; twice this many stops the turn with a loop-guard error. Must be between 2 and 100 while the guard is enabled. |
+| `loop_guard.exempt_tools` | waits, output polling, `question` | Tools whose repeated identical calls are expected. |
+| `stream_guard.enabled` | `true` | Stop a streamed response whose prose starts repeating the same passage or line, and retry it with a correction. Code blocks, tables, and other structured output are not judged. The stopped request finishes with reason `stream_guard`. |
+| `stream_guard.max_retries` | `2` | Corrected retries per turn before the turn fails. |
+| `directory_instructions.enabled` | `true` | When the agent reads or edits files under a directory with its own `AGENTS.md` (below the startup instructions), add that file to its context once; compaction and conversation rewind re-arm it. The file is only read when the read policy allows it without asking. |
+| `directory_instructions.max_bytes` | `32768` | Longest instruction file added; longer files are truncated and marked. |
+| `command_notifications.enabled` | `true` | Tell the agent when a background shell command it started finishes, unless it already saw the result. A command that finishes during the turn's last model request continues that turn. |
+| `command_notifications.wake_idle` | `true` | Start a turn for an idle agent when one of its background commands finishes. When off, the notice waits for the agent's next turn. |
+| `output_contract.max_retries` | `2` | Corrections sent to a subagent whose final answer does not match the `output_schema` its caller passed to `spawn_subagent`. |
+
+In the TUI, keys follow OMP and Senpi. While a turn runs, including while its tools
+run, `Enter` (`Alt+Enter` in multiline mode) steers it: the message is journaled as
+`SteeringAccepted` and joins the turn before its next model request, including a
+message that arrives while the turn's last request streams. `Alt+i` or
+`Ctrl+Alt+Enter` queues a follow-up that runs after the turn instead. When the
+agent is idle, both submit a normal prompt; a draft with tags or attachments
+always queues, since steering carries plain text only. Interrupting the turn with
+`Ctrl+c` returns undelivered steering and plain queued follow-ups to the editor, in
+the order they were sent, instead of running them; they are recorded as cancelled
+with reason `returned to the editor` and left out of the transcript. If a turn ends
+without taking its steering for another reason (it failed, or was cancelled from
+the tasks pane or replaced), the steering starts the next turn. Pending steering is
+not replayed after a crash, which matches both references; a stopping run cancels
+it like any queued prompt.
+
+Embedders that construct `CoordinatorConfig::new` directly start with every
+guard off and opt in by setting `CoordinatorConfig::behavior`.
 
 ## Provider retry policy
 
