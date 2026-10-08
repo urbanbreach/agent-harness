@@ -1,0 +1,49 @@
+name: Setup Harness Rust
+description: Install the repository toolchain and optional test tools
+inputs:
+  tests:
+    description: Install nextest and the JavaScript test runtime
+    default: "false"
+  coverage:
+    description: Install LLVM coverage tools
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: "3.12"
+    - name: Install repository toolchain
+      shell: bash
+      run: |
+        python3 - <<'PY'
+        import subprocess
+        import tomllib
+        from pathlib import Path
+
+        toolchain = tomllib.loads(Path("rust-toolchain.toml").read_text())["toolchain"]
+        command = ["rustup", "toolchain", "install", toolchain["channel"], "--profile", "minimal"]
+        for component in toolchain.get("components", []):
+            command.extend(["--component", component])
+        subprocess.run(command, check=True)
+        PY
+        rustc --version
+    - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      with:
+        key: ${{ inputs.coverage == 'true' && 'coverage' || 'default' }}
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      if: inputs.tests == 'true'
+      with:
+        node-version: "24"
+    - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2
+      if: inputs.tests == 'true'
+      with:
+        tool: cargo-nextest@0.9.146
+    - name: Install LLVM tools
+      if: inputs.coverage == 'true'
+      shell: bash
+      run: rustup component add llvm-tools-preview
+    - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2
+      if: inputs.coverage == 'true'
+      with:
+        tool: cargo-llvm-cov@0.9.1

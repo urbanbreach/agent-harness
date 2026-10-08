@@ -1,0 +1,61 @@
+name: Performance
+
+on:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  INSTA_UPDATE: "no"
+  TZ: UTC
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+  TERM: xterm-256color
+  HARNESS_DETERMINISTIC: "1"
+  HARNESS_DISABLE_ANIMATIONS: "1"
+  HARNESS_SEED: "42"
+  XDG_CONFIG_HOME: /tmp/harness-empty-config
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+jobs:
+  perf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          tests: "true"
+      - name: Performance lane
+        env:
+          PERF_ARTIFACT_DIR: target/ci-perf/${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          python3 -u - <<'PY'
+          import os
+          import subprocess
+
+          with subprocess.Popen([
+              "scripts/test-lanes.sh", "perf", "--artifact-dir", os.environ["PERF_ARTIFACT_DIR"],
+          ]) as lane:
+              while True:
+                  try:
+                      raise SystemExit(lane.wait(timeout=60))
+                  except subprocess.TimeoutExpired:
+                      print("Performance lane is running; stage logs will be uploaded as artifacts.")
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: performance
+          path: |
+            target/nextest/perf/
+            target/ci-perf/
+          retention-days: 7
