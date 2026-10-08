@@ -30,7 +30,11 @@ fn matches(name: &str, marker: &str) -> bool {
 pub(super) fn eval_dialect(preset: &str) -> &'static str {
     if preset.starts_with("gpt") {
         "gpt"
-    } else if preset.starts_with("claude") || preset.starts_with("glm") {
+    } else if preset.starts_with("claude")
+        || preset.starts_with("glm")
+        // V4.1 Flash takes the Claude execution-tooling stance, as in Senpi's preset.
+        || preset == "deepseek-v4.1-flash"
+    {
         "claude"
     } else if preset.starts_with("kimi") || preset == "swe-2" {
         "kimi"

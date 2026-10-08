@@ -160,7 +160,7 @@ impl CoordinatorHandle {
         let (mut progress, mut aborted_usage) = (false, None);
         let response = tokio::select! {
             () = cancellation.cancelled() => Err(CoordinatorError::Cancelled(parent.clone())),
-            response = super::super::streaming::read(self, provider.as_ref(), &actor, &parent, &request_id, request, &parent_cancel, false, &mut progress, &mut aborted_usage) => response,
+            response = super::super::streaming::read(self, provider.as_ref(), &actor, &parent, &request_id, request, &parent_cancel, false, false, &mut progress, &mut aborted_usage) => response,
         };
         let response = self
             .call(move |s| {

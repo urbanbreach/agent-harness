@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
 mod compaction;
 mod provider;
+mod reminder;
 mod subagent_progress;
 mod task;
 mod tool;
 mod workspace;
 pub use compaction::*;
 pub use provider::*;
+pub use reminder::*;
 pub use subagent_progress::*;
 pub use task::*;
 pub use tool::*;
@@ -167,6 +169,9 @@ pub enum EventV1 {
     NativeSubagentMessage(Box<crate::coord::NativeMessageReceipt>),
     NativeSubagentReceipt(Box<crate::coord::NativeSubagentReceipt>),
     NativeSubagentWorkspace(Box<crate::coord::NativeWorkspaceReceipt>),
+    RuntimeReminder(RuntimeReminderEvent),
+    CommandNotice(CommandNoticeEvent),
+    SteeringAccepted(SteeringAcceptedEvent),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -232,6 +237,9 @@ impl EventV1 {
             Self::NativeSubagentMessage(..) => "native_subagent_message",
             Self::NativeSubagentReceipt(..) => "native_subagent_receipt",
             Self::NativeSubagentWorkspace(..) => "native_subagent_workspace",
+            Self::RuntimeReminder(..) => "runtime_reminder",
+            Self::CommandNotice(..) => "command_notice",
+            Self::SteeringAccepted(..) => "steering_accepted",
         }
     }
 

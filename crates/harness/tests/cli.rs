@@ -277,7 +277,7 @@ fn configured_http_prompt_runs_tools_under_coordinator_policy(
             permission == "allow"
         );
         assert_eq!(
-            system.contains("Harness's trusted coding assistant."),
+            system.contains("You are Harness, a coding agent."),
             permission != "allow"
         );
         assert_eq!(requests[0]["model"], "fixture");

@@ -29,6 +29,16 @@ impl<'a> InFlight<'a> {
             EventV1::TaskCompleted(e) => Some(("task", e.task_id.as_str(), false)),
             EventV1::TaskCancelled(e) => Some(("task", e.task_id.as_str(), false)),
             EventV1::TaskResultLate(e) => Some(("task", e.task_id.as_str(), false)),
+            // Accepted steering is open until delivered, queued as a turn, or cancelled.
+            EventV1::SteeringAccepted(e) => Some(("user", e.request_id.as_str(), true)),
+            // Steering delivered into a running turn belongs to that turn and settles with it.
+            EventV1::UserMessageSubmitted(e)
+                if event.correlation_id.as_deref().is_some_and(|turn| {
+                    turn != e.request_id.as_str() && self.open.contains_key(&("task", turn))
+                }) =>
+            {
+                Some(("user", e.request_id.as_str(), false))
+            }
             EventV1::UserMessageSubmitted(e)
                 if !e
                     .text

@@ -30,7 +30,28 @@ fn model_aliases_and_bundled_templates_respect_available_capabilities(
         assert_eq!(resolved.prompt_preset, expected, "{model}");
     }
     let workspace = tempfile::tempdir()?;
-    let tools: Vec<_> = ["eval", "read", "list", "bash", "edit", "spawn_subagent"]
+    let ids = [
+        "eval",
+        "read",
+        "list",
+        "grep",
+        "glob",
+        "edit",
+        "write",
+        "apply_patch",
+        "bash",
+        "lsp",
+        "ast_grep_search",
+        "ast_grep_replace",
+        "skill",
+        "todowrite",
+        "question",
+        "spawn_subagent",
+        "send_subagent_message",
+        "get_command_or_subagent_output",
+        "wait_commands_or_subagents",
+    ];
+    let full: Vec<_> = ids
         .into_iter()
         .map(|name| harness_providers::ToolDef {
             tool_id: name.into(),
@@ -39,6 +60,28 @@ fn model_aliases_and_bundled_templates_respect_available_capabilities(
             parameters: json!({"type":"object"}),
         })
         .collect();
+    // Children never receive the user-facing question or todo tools.
+    let child: Vec<_> = full
+        .iter()
+        .filter(|tool| !matches!(tool.tool_id.as_str(), "question" | "todowrite"))
+        .cloned()
+        .collect();
+    let main = PromptSource::default();
+    let subagent = PromptSource {
+        subagent: true,
+        agent_instructions: "Worker agent.".into(),
+        ..PromptSource::default()
+    };
+    let literal = PromptSource {
+        configured: Some("Literal prompt.".into()),
+        ..PromptSource::default()
+    };
+    let cases = [
+        (&main, &full[..], &full[..]),
+        (&main, &full[..], &full[..1]),
+        (&subagent, &child[..], &child[..]),
+        (&main, &[][..], &[][..]),
+    ];
     // Exercise the shipped templates, including inheritance, without project overrides.
     for entry in fs::read_dir(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -50,33 +93,37 @@ fn model_aliases_and_bundled_templates_respect_available_capabilities(
             .to_str()
             .and_then(|name| name.strip_suffix(".md"))
             .ok_or("model Markdown expected")?;
-        for available in [&tools[..], &[][..]] {
-            let rendered = PromptSource::default().render(&PromptContext {
-                workspace: workspace.path(),
-                model: "fixture:model",
-                prompt_preset: preset,
-                delegation_bias: Default::default(),
-                tools: available,
-                direct_tools: available,
-                current_date: "2026-10-06",
-                max_concurrent: 2,
-                limit_behavior: Default::default(),
-            })?;
-            assert_eq!(
-                rendered.system.contains("# Delegation"),
-                !available.is_empty(),
-                "{preset}"
-            );
-            assert_eq!(
-                rendered.eval_guidance.is_empty(),
-                available.is_empty(),
-                "{preset}"
-            );
-            if !available.is_empty() {
-                assert!(
-                    rendered.system.contains(&rendered.eval_guidance),
-                    "{preset}"
-                );
+        for (source, tools, direct_tools) in cases {
+            let render = |source: &PromptSource| {
+                source.render(&PromptContext {
+                    workspace: workspace.path(),
+                    model: "fixture:model",
+                    prompt_preset: preset,
+                    tools,
+                    direct_tools,
+                    current_date: "2026-10-06",
+                    max_concurrent: 2,
+                    limit_behavior: Default::default(),
+                    behavior: &harness_core::config::BehaviorSettings::default(),
+                })
+            };
+            let rendered = render(source)?;
+            assert!(!rendered.system.contains("${"), "{preset}: template syntax");
+            // The literal prompt cannot carry eval routing, so the tool receives all of it.
+            let guidance = render(&literal)?.eval_tool_guidance;
+            let has_eval = tools.iter().any(|tool| tool.tool_id == "eval");
+            assert_eq!(guidance.is_empty(), !has_eval, "{preset}");
+            assert!(rendered.eval_tool_guidance.is_empty(), "{preset}");
+            if has_eval {
+                assert_eq!(rendered.system.matches(&guidance).count(), 1, "{preset}");
+            }
+            for id in ids {
+                if !tools.iter().any(|tool| tool.tool_id == id) {
+                    assert!(
+                        !rendered.system.contains(&format!("`{id}`")),
+                        "{preset} names unavailable tool {id}"
+                    );
+                }
             }
         }
     }

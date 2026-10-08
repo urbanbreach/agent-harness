@@ -37,6 +37,7 @@ uuid = { version = "1", features = ["v7", "serde"] }
 serde_urlencoded = "0.7"
 json5.workspace = true
 schemars.workspace = true
+jsonschema.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true

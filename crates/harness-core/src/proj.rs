@@ -11,8 +11,10 @@ use crate::event::*;
 pub use catalog::*;
 pub use metadata::*;
 pub use resume::*;
+mod todos;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+pub use todos::{TodoItem, TodoProjection};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -123,8 +125,17 @@ fn validate_history<'a>(
         if !complete {
             continue;
         }
-        if let EventV1::UserMessageSubmitted(user) = &event.payload {
-            users.insert(user.request_id.as_str(), event.seq);
+        match &event.payload {
+            EventV1::UserMessageSubmitted(user) => {
+                users.insert(user.request_id.as_str(), event.seq);
+            }
+            // A wake turn can open with a reminder and no user message.
+            EventV1::RuntimeReminder(reminder) => {
+                users
+                    .entry(reminder.request_id.as_str())
+                    .or_insert(event.seq);
+            }
+            _ => {}
         }
         if let EventV1::SessionCompaction(compaction) = &event.payload {
             let boundary = compaction.first_kept_event_seq;

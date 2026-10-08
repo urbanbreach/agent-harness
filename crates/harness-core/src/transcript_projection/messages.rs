@@ -89,7 +89,7 @@ pub(super) fn apply(
             let message = &mut output.messages[at];
             message.state = match data.finish_reason.as_str() {
                 "error" | "failed" => ProjectedMessageState::Failed,
-                "cancelled" | "canceled" => ProjectedMessageState::Incomplete,
+                "cancelled" | "canceled" | "stream_guard" => ProjectedMessageState::Incomplete,
                 _ => ProjectedMessageState::Complete,
             };
             let provider = message.provider.get_or_insert_with(Default::default);

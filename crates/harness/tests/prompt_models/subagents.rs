@@ -25,7 +25,7 @@ async fn bundled_agents_execute_with_their_roles_models_and_spawn_restrictions(
         ] {
             fs::write(
                 directory.join(format!("{preset}.md")),
-                format!("${{% extends \"system.md\" %}}${{% block model_guidance %}}OVERRIDE_{preset}${{% endblock %}}"),
+                format!("${{% extends \"models/default.md\" %}}${{% block identity %}}OVERRIDE_{preset}${{% endblock %}}"),
             )?;
         }
         if role != "task" {
@@ -134,10 +134,10 @@ print('batch complete');"#
             assert_eq!(request.model_id, model, "wrong model for {role}");
             let system = &request.messages[0].content;
             assert!(
-                system.contains("§ Assignment role"),
+                system.contains("## Assignment role"),
                 "missing role for {role}"
             );
-            assert!(system.contains("# 5. Hand-off"));
+            assert!(system.contains("## Hand-off"));
             assert!(system.contains("Keep the shared project contract."));
             let preset = if model == "zai-glm-5-3" {
                 "glm-5.3"
@@ -146,15 +146,20 @@ print('batch complete');"#
             };
             assert!(system.contains(&format!("OVERRIDE_{preset}")), "{system}");
             assert!(!system.contains("Wrong generic scout prompt."));
-            let role_contract = match role {
-                "scout" => "Investigate the codebase rapidly.",
-                "reviewer" => "Find bugs author wants fixed before merge.",
-                "security-reviewer" => "Review assigned repository scope only.",
-                "sonic" => "Only strictly mechanical updates or data collection.",
-                _ => "Worker agent: delegated tasks.",
+            // Role-specific fields and file/type contracts survive prose rewrites.
+            let role_contract: &[&str] = match role {
+                "scout" => &["`summary`", "`files`", "`architecture`", "`report`"],
+                "reviewer" => &["`findings`", "`overall_correctness`", "`line_start`"],
+                "security-reviewer" => &["`coverage_summary`", "`reviewed_paths`", "`rule_id`"],
+                "sonic" => &[
+                    "Only strictly mechanical updates or data collection.",
+                    "`*.md`",
+                    "`subagent_type`",
+                ],
+                _ => &["`*.md`", "`subagent_type`"],
             };
             assert!(
-                system.contains(role_contract),
+                role_contract.iter().all(|marker| system.contains(marker)),
                 "missing {role} instructions"
             );
             let tools = request.tools.as_deref().unwrap_or_default();
@@ -169,17 +174,19 @@ print('batch complete');"#
                 tools.iter().any(|tool| tool.tool_id == "read"),
                 !child_uses_eval
             );
+            // The child's own eval dialect reaches it exactly once, through its system prompt.
             let dialect = if model == "zai-glm-5-3" {
                 "<eval_routing>"
             } else {
-                "# Eval routing for GPT"
+                "Eval routing:"
             };
             if let Some(eval) = eval {
-                assert!(
-                    system.contains(dialect),
+                assert_eq!(
+                    system.matches(dialect).count(),
+                    1,
                     "missing child eval dialect for {model}"
                 );
-                assert!(eval
+                assert!(!eval
                     .description
                     .as_deref()
                     .unwrap_or_default()
@@ -187,7 +194,7 @@ print('batch complete');"#
                 assert!(system.contains("Follow the model-specific eval routing"));
             } else {
                 assert!(system.contains("Eval is unavailable in this child"));
-                assert!(!system.contains("# Eval routing"));
+                assert!(!system.contains("Eval routing:"));
                 assert!(!system.contains("<eval_routing>"));
             }
             if role == "reviewer" {

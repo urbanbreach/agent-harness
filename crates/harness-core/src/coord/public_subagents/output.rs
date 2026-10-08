@@ -12,7 +12,7 @@ enum Subscription {
 impl Subscription {
     fn result(&self, hint: WaitHint) -> GetCommandOrSubagentOutputResult {
         let result = match self {
-            Self::Command(command) => command.updates.borrow().result.clone(),
+            Self::Command(command) => command.snapshot.result.clone(),
             Self::Subagent(child) => child.borrow().result.clone(),
             Self::Missing(id) => GetCommandOrSubagentOutputResult {
                 task_id: id.clone(),
@@ -173,6 +173,15 @@ impl CoordinatorHandle {
         let (latest, _, _) = self
             .native_query_subscriptions(actor.clone(), tool_call_id, &ids, false)
             .await?;
+        for subscription in &latest {
+            if let Subscription::Command(command) = subscription {
+                let snapshot = &command.snapshot;
+                if snapshot.is_terminal() {
+                    self.observe_command_result(actor.clone(), snapshot.result.task_id.clone())
+                        .await?;
+                }
+            }
+        }
         if ids.len() == 1 {
             return match &latest[0] {
                 Subscription::Missing(_) => {
@@ -201,9 +210,9 @@ impl CoordinatorHandle {
                         },
                     ))
                 }
-                subscription => Ok(GetCommandOrSubagentOutputValue::Result(
+                subscription => Ok(GetCommandOrSubagentOutputValue::Result(Box::new(
                     subscription.result(hint),
-                )),
+                ))),
             };
         }
         Ok(GetCommandOrSubagentOutputValue::MultiResult(aggregate(
@@ -249,8 +258,17 @@ impl CoordinatorHandle {
             .await?;
         let hint = wait?;
         let (latest, _, _) = self
-            .native_query_subscriptions(actor, tool_call_id, &input.task_ids, false)
+            .native_query_subscriptions(actor.clone(), tool_call_id, &input.task_ids, false)
             .await?;
+        for subscription in &latest {
+            if let Subscription::Command(command) = subscription {
+                let snapshot = &command.snapshot;
+                if snapshot.is_terminal() {
+                    self.observe_command_result(actor.clone(), snapshot.result.task_id.clone())
+                        .await?;
+                }
+            }
+        }
         Ok(aggregate(
             if any { "wait_any" } else { "wait_all" },
             &latest,

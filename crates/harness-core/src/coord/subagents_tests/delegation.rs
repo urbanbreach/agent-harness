@@ -133,6 +133,64 @@ async fn native_foreground_reply_cancels_attached_child_on_waiter_and_prompt_can
     Ok(())
 }
 
+#[tokio::test]
+async fn foreground_spawn_result_does_not_repeat_itself_as_a_completion_reminder(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let provider = Arc::new(MockProvider::script([
+        vec![
+            Stream::ToolCallComplete {
+                tool_call_id: "foreground".into(),
+                function_name: "spawn_subagent".into(),
+                arguments_json: json!({
+                    "prompt":"quick child","description":"foreground child",
+                    "subagent_type":"native-fixture","background":false,
+                })
+                .to_string(),
+            },
+            settled_metadata("parent call"),
+        ],
+        vec![
+            Stream::TextDelta("child answer".into()),
+            settled_metadata("child"),
+        ],
+        vec![
+            Stream::TextDelta("parent done".into()),
+            settled_metadata("parent done"),
+        ],
+    ]));
+    let mut config = super::super::children_tests::configuration(
+        temp.path(),
+        Arc::<MockProvider>::clone(&provider),
+    );
+    let mut root = AgentProfile::fallback("default");
+    root.toolset = vec!["spawn_subagent".into()];
+    config.agent_profiles.insert("default".into(), root);
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    coordinator
+        .start_run("foreground result", temp.path())
+        .await?;
+    let parent = coordinator
+        .spawn_agent(system_actor(), "default", None)
+        .await?;
+    let mut events = coordinator.subscribe_new_events().await?;
+    let prompt = coordinator
+        .request_agent_turn(system_actor(), parent, "native parent")
+        .await?;
+    wait_terminal(&mut events, &prompt).await?;
+    let requests = provider.captured_requests().await;
+    let result = &requests.last().ok_or("parent follow-up")?.messages;
+    let result = &result.last().ok_or("spawn result")?.content;
+    assert_eq!(result.matches("child answer").count(), 1, "{result}");
+    assert!(!result.contains("<system-reminder>"), "{result}");
+    coordinator.stop_run().await?;
+    Ok(())
+}
+
 async fn wait_delegated_child_started(
     events: &mut crate::store::EventStream,
     parent: &str,

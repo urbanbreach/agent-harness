@@ -10,6 +10,19 @@ impl Runtime {
         checkpoint: Option<WorkspaceCreationCheckpoint>,
     ) -> Result<NativeSubscription, CoordinatorError> {
         let job = self.authenticated_native_tool(&actor, &tool, true)?;
+        if let Some(schema) = &input.output_schema
+            && crate::redact::redact_map(self.redactor.as_ref(), schema) != *schema
+        {
+            return Err(native_invalid(
+                "Invalid output_schema: redaction policy would change the persisted schema".into(),
+            ));
+        }
+        let output_contract = input
+            .output_schema
+            .as_ref()
+            .map(crate::subagent::output_contract::compile)
+            .transpose()
+            .map_err(native_invalid)?;
         let cancellation = job.cancellation.clone();
         let parent_request = job.parent.clone();
         let parent = actor.agent_id.clone().ok_or_else(|| {
@@ -93,9 +106,18 @@ impl Runtime {
                     .flatten()
             })
             .unwrap_or_else(|| parent_state.cwd.clone());
+        if let Some(schema) = &input.output_schema {
+            input.prompt.push_str("\n\n");
+            input
+                .prompt
+                .push_str(&crate::subagent::output_contract::instructions(schema));
+        }
         let mut system_parts = vec![resolved.definition.prompt_body.clone().unwrap_or_default()];
         system_parts.extend(resolved.role_prompt.clone());
         system_parts.extend(resolved.persona_instructions.clone());
+        if let Some(schema) = &input.output_schema {
+            system_parts.push(crate::subagent::output_contract::instructions(schema));
+        }
         let registration = NativeSubagentRegistration {
             payload_version: 1,
             child_id: id.clone(),
@@ -109,6 +131,7 @@ impl Runtime {
             fork_context: fork && source_state.is_none(),
             description: input.description.clone(),
             prompt: input.prompt.clone(),
+            output_schema: input.output_schema.clone(),
             background: input.background,
             isolation: if source_state.is_some() {
                 match source_state
@@ -245,6 +268,7 @@ impl Runtime {
             id.clone(),
             NativeSubagent {
                 registration,
+                output_contract,
                 resolved: Some(resolved),
                 phase: NativePhase::Queued,
                 request: None,

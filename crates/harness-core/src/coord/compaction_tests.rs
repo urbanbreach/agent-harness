@@ -2,203 +2,12 @@ use super::*;
 use crate::{clock::FakeClock, redact::DefaultRedactor};
 use harness_providers::{mock::MockProvider, ProviderStreamEvent as Stream};
 
+mod budget;
+mod retention;
+
 pub(super) const SUMMARY: &str = "## Goal\nFinish the rewrite.\n## Constraints\nKeep the UI unchanged.\n## Progress\nThe first step is complete.\n## Key Decisions\nUse bounded queues.\n## Next Steps\nContinue the work.\n## Critical Context\nThe recent turn is retained below.";
 pub(super) fn answer(text: impl Into<String>) -> Vec<Stream> {
     vec![Stream::TextDelta(text.into()), Stream::Done { usage: None }]
-}
-
-#[tokio::test]
-async fn compaction_keeps_recent_turns_and_restores_the_same_context_after_resume(
-) -> Result<(), Box<dyn std::error::Error>> {
-    for child_session in [false, true] {
-        let temp = tempfile::tempdir()?;
-        let provider = Arc::new(MockProvider::script([
-            answer("old answer ".repeat(1000)),
-            answer("latest answer"),
-            answer("Incomplete summary without sections."),
-            answer(SUMMARY),
-            answer("after compaction"),
-            answer("after resume"),
-        ]));
-        let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
-        config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
-        config.compaction.keep_recent_tokens = 1;
-        config.compaction.reserve_tokens = 0;
-        config.compaction.suppress_auto_compaction = true;
-        let coordinator = spawn_coordinator(
-            config.clone(),
-            Arc::new(FakeClock::new()),
-            Arc::new(DefaultRedactor::default()),
-        );
-        let run = coordinator.start_run("compact", temp.path()).await?;
-        let mut agent = coordinator
-            .spawn_agent_idle(
-                EventActor::new(ActorKind::Supervisor, None),
-                "default",
-                None,
-            )
-            .await?;
-        if child_session {
-            agent = coordinator
-                .spawn_agent_idle(
-                    EventActor::new(ActorKind::User, None),
-                    "default",
-                    Some(agent),
-                )
-                .await?;
-        }
-        assert!(matches!(
-            coordinator
-                .compact_agent_context_with_instructions(agent.clone(), None, "manual", None)
-                .await?,
-            ManualCompactionOutcome::NoOp
-        ));
-        for (index, prompt) in ["old request ".repeat(1000), "latest request".into()]
-            .into_iter()
-            .enumerate()
-        {
-            let turn = coordinator
-                .request_agent_turn_with_model_and_selected_tags_and_attachments(
-                    EventActor::new(ActorKind::User, None),
-                    agent.clone(),
-                    prompt,
-                    crate::file_tag::SelectedPromptTags::default(),
-                    if index == 0 {
-                        vec![crate::attachment_transport::AttachmentMetadata::from_bytes(
-                            "note",
-                            "text/plain",
-                            None,
-                            b"Remember the attachment when summarizing.",
-                            None,
-                        )]
-                    } else {
-                        Vec::new()
-                    },
-                    None,
-                    None,
-                )
-                .await?;
-            super::history_tests::settled(&coordinator, &turn).await?;
-        }
-        assert!(coordinator
-            .compact_agent_context(agent.clone(), None, "manual")
-            .await
-            .is_err());
-        assert!(!crate::store::read_events(&run.events_path)?
-            .iter()
-            .any(|e| matches!(e.payload, EventV1::SessionCompaction(_))));
-        let before = std::fs::read(&run.events_path)?;
-        let outcome = coordinator
-            .compact_agent_context_with_instructions(
-                agent.clone(),
-                None,
-                "manual",
-                Some("Keep the chosen queue design.".into()),
-            )
-            .await?;
-        assert!(
-            matches!(outcome, ManualCompactionOutcome::Compacted { tokens_before, tokens_after, .. } if tokens_after < tokens_before)
-        );
-        assert!(std::fs::read(&run.events_path)?.starts_with(&before));
-        let requests = provider.captured_requests().await;
-        assert_eq!(requests.len(), 4);
-        assert!(requests[3].tools.is_none());
-        assert_eq!(
-            requests[3]
-                .attachments
-                .values()
-                .flatten()
-                .next()
-                .ok_or("summary lost attachment")?
-                .bytes()?,
-            b"Remember the attachment when summarizing."
-        );
-        assert!(requests[3]
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Keep the chosen queue design.")));
-        let turn = coordinator
-            .request_agent_turn(
-                EventActor::new(ActorKind::User, None),
-                agent.clone(),
-                "continue",
-            )
-            .await?;
-        super::history_tests::settled(&coordinator, &turn).await?;
-        let requests = provider.captured_requests().await;
-        assert!(requests[4]
-            .messages
-            .iter()
-            .any(|m| m.content.contains(SUMMARY)));
-        assert!(requests[4]
-            .messages
-            .iter()
-            .any(|m| m.content == "latest answer"));
-        assert!(!requests[4]
-            .messages
-            .iter()
-            .any(|m| m.content.contains("old request")));
-        assert!(requests[4].attachments.is_empty());
-        coordinator.stop_run().await?;
-        let history_dir = if child_session {
-            config.session_dir.join(&agent)
-        } else {
-            run.run_dir.clone()
-        };
-        let events = crate::store::read_events(&history_dir.join("events.jsonl"))?;
-        assert_eq!(
-            events
-                .iter()
-                .filter(|e| matches!(e.payload, EventV1::SessionCompaction(_)))
-                .count(),
-            1
-        );
-        assert!(!events.iter().any(|e| matches!(&e.payload, EventV1::AssistantMessageFinished(a) if a.parts.iter().any(|p| matches!(p, crate::session::AssistantPart::Text {text} if text == SUMMARY)))));
-        let mut invalid = events.clone();
-        for event in &mut invalid {
-            if let EventV1::SessionCompaction(e) = &mut event.payload {
-                e.first_kept_request_id = Some("missing-retained-turn".into());
-            }
-        }
-        assert!(crate::proj::project_resume_plan(&invalid, run.run_id.as_str()).is_err());
-        let stable = crate::session_lineage::latest_clone_stable_prefix(&events)?;
-        let child = crate::session_lineage::materialize_child_session(
-            crate::session_lineage::ChildSessionMaterializationRequest {
-                source_run_dir: &history_dir,
-                events: &events,
-                stable_prefix: &stable,
-                source_kind:
-                    crate::session_lineage::ChildSessionMaterializationSourceKind::DiskRunDirectory,
-            },
-        )?;
-        let resumed = spawn_coordinator(
-            config,
-            Arc::new(FakeClock::new()),
-            Arc::new(DefaultRedactor::default()),
-        );
-        resumed
-            .resume_run(child.child_run_id, "compact resumed")
-            .await?;
-        let turn = resumed
-            .request_agent_turn(EventActor::new(ActorKind::User, None), agent, "next")
-            .await?;
-        super::history_tests::settled(&resumed, &turn).await?;
-        let requests = provider.captured_requests().await;
-        assert!(requests[5]
-            .messages
-            .iter()
-            .any(|m| m.content.contains(SUMMARY)));
-        assert!(requests[5]
-            .messages
-            .iter()
-            .any(|m| m.content == "latest answer"));
-        assert!(!requests[5]
-            .messages
-            .iter()
-            .any(|m| m.content.contains("old request")));
-        resumed.stop_run().await?;
-    }
-    Ok(())
 }
 
 #[tokio::test]
@@ -345,7 +154,7 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
                 !final_request
                     .messages
                     .iter()
-                    .any(|m| m.content.contains("old request")),
+                    .any(|m| m.content.contains(&"old request ".repeat(1000))),
                 "{mode}"
             );
         }
@@ -397,6 +206,8 @@ async fn cancelling_active_and_queued_compaction_keeps_history_and_unblocks_prom
             answer("latest answer"),
             answer(SUMMARY),
             answer("continued"),
+            answer(SUMMARY),
+            answer("after successful compaction"),
         ]),
         entered: tokio::sync::Notify::new(),
     });
@@ -441,6 +252,16 @@ async fn cancelling_active_and_queued_compaction_keeps_history_and_unblocks_prom
         }
         Err(EventStoreError::Invalid("queued compaction disappeared"))
     }).await??;
+    let cancelled = coordinator
+        .request_agent_turn(
+            EventActor::new(ActorKind::User, None),
+            agent.clone(),
+            "cancelled-before-start sentinel",
+        )
+        .await?;
+    coordinator
+        .cancel_task(&cancelled, "withdraw request")
+        .await?;
     let next = coordinator
         .request_agent_turn(
             EventActor::new(ActorKind::User, None),
@@ -448,7 +269,7 @@ async fn cancelling_active_and_queued_compaction_keeps_history_and_unblocks_prom
             "after cancellation",
         )
         .await?;
-    coordinator.cancel_compaction(agent).await?;
+    coordinator.cancel_compaction(agent.clone()).await?;
     for task in [active, queued] {
         assert!(matches!(
             tokio::time::timeout(Duration::from_secs(3), task).await??,
@@ -470,12 +291,32 @@ async fn cancelling_active_and_queued_compaction_keeps_history_and_unblocks_prom
         ))
     })
     .await??;
-    coordinator.stop_run().await?;
-    assert!(!crate::store::read_events(&run.events_path)?
+    assert!(matches!(
+        coordinator
+            .compact_agent_context(agent.clone(), None, "manual")
+            .await?,
+        ManualCompactionOutcome::Compacted { .. }
+    ));
+    let events = crate::store::read_events(&run.events_path)?;
+    let summary = events
         .iter()
-        .any(|e| matches!(e.payload, EventV1::SessionCompaction(_))));
+        .find_map(|event| match &event.payload {
+            EventV1::SessionCompaction(summary) => Some(&summary.summary),
+            _ => None,
+        })
+        .ok_or("missing successful compaction")?;
+    assert!(!summary.contains("cancelled-before-start sentinel"));
+    let next = coordinator
+        .request_agent_turn(
+            EventActor::new(ActorKind::User, None),
+            agent,
+            "continue after compaction",
+        )
+        .await?;
+    super::history_tests::settled(&coordinator, &next).await?;
+    coordinator.stop_run().await?;
     let requests = provider.provider.captured_requests().await;
-    assert_eq!(requests.len(), 4);
+    assert_eq!(requests.len(), 6);
     assert!(requests[3]
         .messages
         .iter()
@@ -484,5 +325,11 @@ async fn cancelling_active_and_queued_compaction_keeps_history_and_unblocks_prom
         .messages
         .iter()
         .any(|m| m.content.contains(SUMMARY)));
+    assert!(requests
+        .last()
+        .ok_or("missing continuation")?
+        .messages
+        .iter()
+        .any(|message| message.content == format!("Conversation summary:\n{summary}")));
     Ok(())
 }

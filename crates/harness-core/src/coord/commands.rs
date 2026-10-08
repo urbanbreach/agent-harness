@@ -7,7 +7,16 @@
 //! Run shutdown cancels these ordinary jobs and clears commands after draining.
 //! Normal child completion calls `reparent_commands(child, parent)` before child
 //! shutdown; explicit child/session cancellation cancels its command jobs first.
+//! Enabled command notifications deliver a redacted output tail at the next provider
+//! request, or open a reminder-only idle wake. Terminal tool observations suppress
+//! undelivered notices; explicit cancellation and shutdown never notify.
+//! Durable intent/observation receipts survive resume without rerunning commands.
+//! The pending window holds 16 detailed notices and a 64-command overflow summary;
+//! overflow retains only identity/status until delivered. Rejected wake hooks do
+//! not retry unchanged notices, and final-request completions continue that turn.
 mod actor;
+mod notifications;
+pub(super) use notifications::CommandNoticeBacklog;
 
 use super::{runtime::*, *};
 use crate::{
@@ -73,6 +82,7 @@ pub struct CommandExit {
 }
 
 pub(super) struct CommandRun {
+    output_tail: Option<String>,
     snapshot: CommandSnapshot,
     updates: watch::Sender<CommandSnapshot>,
     finished: Option<Instant>,
@@ -83,6 +93,28 @@ pub(super) struct CommandRun {
 }
 
 impl CoordinatorHandle {
+    /// Marks a terminal snapshot returned to its owner as already delivered.
+    pub async fn observe_command_result(
+        &self,
+        actor: EventActor,
+        id: String,
+    ) -> Result<(), CoordinatorError> {
+        self.call(move |runtime| {
+            runtime.info()?;
+            if let Some(agent) = actor.agent_id.as_deref()
+                && runtime.command_notice_unobserved(agent, &id)
+            {
+                runtime.emit(
+                    actor.clone(),
+                    Some(id.clone()),
+                    EventV1::CommandNotice(CommandNoticeEvent::Observed { task_id: id }),
+                )?;
+            }
+            Ok(())
+        })
+        .await
+    }
+
     pub async fn start_command(
         &self,
         context: ToolContext,
@@ -168,6 +200,13 @@ impl CommandRun {
     }
 
     fn append(&mut self, stream: usize, text: &str) -> Result<(), std::io::Error> {
+        if let Some(tail) = self.output_tail.as_mut() {
+            let start = text.ceil_char_boundary(text.len().saturating_sub(4000));
+            let text = &text[start..];
+            let discard = tail.ceil_char_boundary((tail.len() + text.len()).saturating_sub(4000));
+            tail.drain(..discard);
+            tail.push_str(text);
+        }
         let keep = text.floor_char_boundary(FILE_LIMIT.saturating_sub(self.file_bytes));
         let output = self
             .output
@@ -289,5 +328,15 @@ async fn read_output(
         if count == 0 {
             return Ok(());
         }
+    }
+}
+
+impl Runtime {
+    /// Drops an undelivered completion notice the owner no longer needs.
+    fn forget_command_notice(&mut self, agent: &str, id: &str) {
+        if let Some(backlog) = self.command_notices.get_mut(agent) {
+            backlog.pending.remove(id);
+        }
+        self.sync_command_notices(agent);
     }
 }

@@ -78,6 +78,12 @@ impl Runtime {
             };
             let request = agent.attempt.clone();
             let mut child = NativeSubagent {
+                output_contract: registration
+                    .output_schema
+                    .as_ref()
+                    .map(crate::subagent::output_contract::compile)
+                    .transpose()
+                    .map_err(native_invalid)?,
                 registration,
                 resolved: None,
                 phase: if terminal {
@@ -143,8 +149,15 @@ impl Runtime {
                     {
                         let accounting = record.and_then(|record| record.accounting);
                         let duration = accounting.as_ref().map_or(0, |a| a.duration_ms);
+                        let (structured_output, output_errors) =
+                            crate::subagent::output_contract::validate(
+                                child.output_contract.as_deref(),
+                                &terminal.result_summary,
+                            );
                         let output = SpawnSubagentOutput {
                             output: terminal.result_summary.clone(),
+                            structured_output,
+                            output_errors,
                             subagent_id: id.clone(),
                             subagent_type: child.registration.subagent_type.clone(),
                             tool_calls: accounting.as_ref().map_or(0, |a| a.tool_calls),
@@ -159,6 +172,8 @@ impl Runtime {
                             persona_hint: None,
                         };
                         snapshot.result.output = completed_body(&output);
+                        snapshot.result.structured_output = output.structured_output.clone();
+                        snapshot.result.output_errors = output.output_errors.clone();
                         snapshot.result.raw_output_bytes = snapshot.result.output.len();
                         snapshot.completed = Some(output);
                         snapshot.result.status = "completed".into();

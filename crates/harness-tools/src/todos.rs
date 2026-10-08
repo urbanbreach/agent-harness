@@ -1,10 +1,10 @@
 use harness_core::{
-    event::{EventEnvelopeV1, EventV1, ToolCallStatus},
+    event::EventEnvelopeV1,
+    proj::TodoProjection,
     tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
 
 pub(crate) enum TodoTool {
     Read,
@@ -125,7 +125,7 @@ impl Tool for TodoTool {
                     let length = harness_core::store::open_private_file(&path)?
                         .metadata()?
                         .len();
-                    let mut state = Todos::default();
+                    let mut state = TodoProjection::default();
                     for event in
                         harness_core::store::JournalReader::open(&path, length).map_err(invalid)?
                     {
@@ -134,7 +134,7 @@ impl Tool for TodoTool {
                         }
                         state.apply(&event.map_err(invalid)?);
                     }
-                    Ok(state.finish())
+                    Ok(state.current())
                 })
                 .await
                 .map_err(invalid)??
@@ -149,62 +149,7 @@ impl Tool for TodoTool {
 }
 
 pub(crate) fn project(events: &[EventEnvelopeV1]) -> Value {
-    let mut state = Todos::default();
-    for event in events {
-        state.apply(event);
-    }
-    state.finish()
-}
-#[derive(Default)]
-struct Todos {
-    pending: BTreeMap<String, u64>,
-    // ponytail: retain todo versions for rewind; index on disk if long todo histories dominate RAM.
-    versions: Vec<(u64, Value)>,
-}
-impl Todos {
-    fn apply(&mut self, event: &EventEnvelopeV1) {
-        match &event.payload {
-            EventV1::ToolCallRequested(e)
-                if matches!(e.tool_id.as_str(), "todowrite" | "todo.write") =>
-            {
-                self.pending.insert(e.tool_call_id.to_string(), event.seq);
-            }
-            EventV1::ToolCallFinished(e)
-                if self.pending.remove(e.tool_call_id.as_str()).is_some()
-                    && e.status == ToolCallStatus::Succeeded =>
-            {
-                if let Some(value) = e
-                    .output_json
-                    .as_ref()
-                    .and_then(|v| v.get("todos"))
-                    .filter(|v| v.is_array())
-                    && self
-                        .versions
-                        .last()
-                        .is_none_or(|(_, previous)| previous != value)
-                {
-                    self.versions.push((event.seq, value.clone()));
-                }
-            }
-            EventV1::ConversationRewound(e) => {
-                self.versions.truncate(
-                    self.versions
-                        .partition_point(|(seq, _)| *seq < e.target_seq),
-                );
-                self.pending.retain(|_, seq| *seq < e.target_seq);
-            }
-            EventV1::TaskCancelled(e) => {
-                self.pending.remove(e.task_id.as_str());
-            }
-            EventV1::RunFinished(_) | EventV1::RunFailed(_) => self.pending.clear(),
-            _ => {}
-        }
-    }
-    fn finish(mut self) -> Value {
-        self.versions
-            .pop()
-            .map_or_else(|| json!([]), |(_, value)| value)
-    }
+    TodoProjection::from_events(events).current()
 }
 fn invalid(error: impl std::fmt::Display) -> ToolError {
     ToolError::InvalidArguments(error.to_string())

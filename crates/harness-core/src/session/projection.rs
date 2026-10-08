@@ -29,25 +29,29 @@ impl CanonicalSessionProjection {
     }
     pub fn apply_events(&mut self, events: &[EventEnvelopeV1]) -> Result<(), ProjectionError> {
         self.validate(events)?;
-        let rewind = events
-            .iter()
-            .any(|e| matches!(e.payload, EventV1::ConversationRewound(_)));
+        // Rewinds and withdrawn input change earlier messages, so they rebuild the transcript.
+        let rebuild = events.iter().any(|e| {
+            matches!(e.payload, EventV1::ConversationRewound(_))
+                || transcript_projection::withdraws_input(e)
+        });
         for event in events {
             self.run_summary.apply(event);
             self.session.apply(event);
             self.track_warnings(event);
-            if !rewind {
+            if !rebuild {
                 transcript_projection::apply(&mut self.transcript, &mut self.index, event);
             }
             self.event_ids.insert(event.event_id.clone());
             self.source_events.push(event.clone());
         }
-        if rewind {
+        if rebuild {
             self.transcript = TranscriptProjection::default();
             self.index = TranscriptIndex::default();
-            for event in crate::conversation_rewind::active_events(&self.source_events).iter() {
-                transcript_projection::apply(&mut self.transcript, &mut self.index, event);
-            }
+            transcript_projection::rebuild(
+                &mut self.transcript,
+                &mut self.index,
+                &self.source_events,
+            );
         }
         Ok(())
     }

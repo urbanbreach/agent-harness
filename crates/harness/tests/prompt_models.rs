@@ -12,7 +12,7 @@ mod subagents;
 mod templates;
 
 #[tokio::test]
-async fn model_fallback_rebuilds_shared_policy_and_keeps_explicit_instructions(
+async fn model_fallback_rebuilds_the_model_prompt_and_keeps_explicit_instructions(
 ) -> Result<(), Box<dyn std::error::Error>> {
     for explicit in [None, Some("Keep this configured prompt.")] {
         let root = tempfile::tempdir()?;
@@ -68,22 +68,23 @@ async fn model_fallback_rebuilds_shared_policy_and_keeps_explicit_instructions(
         }
         let requests = provider.captured_requests().await;
         assert_eq!(requests.len(), 6);
-        for (request, (model, policy)) in requests.iter().zip([
-            ("gpt-5.6", "No subagents unless"),
-            ("gpt-6.1-sol", "Inline first."),
-            ("claude-sonnet", "Map unknown code via"),
-            ("glm-5.3", "Map unknown code via"),
-            ("aliased-model", "Inline first."),
-            ("aliased-model", "Inline first."),
+        for (request, model) in requests.iter().zip([
+            "gpt-5.6",
+            "gpt-6.1-sol",
+            "claude-sonnet",
+            "glm-5.3",
+            "aliased-model",
+            "aliased-model",
         ]) {
             assert_eq!(request.model_id, model);
             let system = &request.messages[0].content;
             if let Some(explicit) = explicit {
                 assert!(system.starts_with(explicit));
-                assert!(!system.contains("# Delegation"));
             } else {
-                assert!(system.contains("Harness's trusted coding assistant."));
-                assert!(system.contains(policy), "missing {policy} for {model}");
+                assert!(
+                    system.contains(&format!("Active model: local:{model}")),
+                    "{system}"
+                );
             }
             assert!(system.contains("Keep project instructions."));
             assert_eq!(system.matches("Keep the command rule.").count(), 1);
@@ -95,19 +96,24 @@ async fn model_fallback_rebuilds_shared_policy_and_keeps_explicit_instructions(
                 .find(|tool| tool.tool_id == "eval")
                 .and_then(|tool| tool.description.as_deref())
                 .ok_or("missing eval description")?;
-            let guidance = if matches!(model, "glm-5.3" | "claude-sonnet") {
-                "<eval_routing>"
+            // Each model's eval dialect reaches the model exactly once: in the rebuilt system
+            // prompt, or in the tool description when a literal prompt replaces the templates.
+            let (dialect, other) = if matches!(model, "glm-5.3" | "claude-sonnet") {
+                ("<eval_routing>", "Eval routing:")
             } else {
-                "# Eval routing for GPT"
+                ("Eval routing:", "<eval_routing>")
             };
-            assert_eq!(
-                description.matches(guidance).count(),
-                1,
-                "wrong eval dialect for {model}"
+            let (carrier, bystander) = if explicit.is_some() {
+                (description, system.as_str())
+            } else {
+                (system.as_str(), description)
+            };
+            assert_eq!(carrier.matches(dialect).count(), 1, "{model}");
+            assert!(
+                !bystander.contains(dialect),
+                "duplicated eval routing for {model}"
             );
-            if explicit.is_none() {
-                assert_eq!(system.matches(guidance).count(), 1);
-            }
+            assert!(!carrier.contains(other), "wrong eval dialect for {model}");
         }
         assert_eq!(requests[0].messages[1..], requests[3].messages[1..]);
     }
@@ -202,7 +208,7 @@ async fn editable_model_prompts_obey_precedence_reload_and_reject_bad_files(
             .find(|tool| tool.tool_id == "eval")
             .and_then(|tool| tool.description.as_deref())
             .ok_or("eval description missing")?;
-        assert_eq!(description.matches("CUSTOM_EVAL_RULE").count(), 1);
+        assert!(!description.contains("CUSTOM_EVAL_RULE"));
     }
     for (content, expected) in [
         ("${% invalid %}".to_owned(), "syntax error"),
@@ -246,9 +252,20 @@ async fn editable_model_prompts_obey_precedence_reload_and_reject_bad_files(
     fs::remove_file(project.join("system.md"))?;
     let (code, error) = invoke(deps);
     assert_eq!(code, 0, "{error}");
-    assert!(provider.captured_requests().await[3].messages[0]
-        .content
-        .starts_with("USER_BASE"));
+    let requests = provider.captured_requests().await;
+    let last = &requests[3];
+    assert!(last.messages[0].content.starts_with("USER_BASE"));
+    // A base that omits the eval guidance still delivers it through the tool description.
+    assert!(!last.messages[0].content.contains("CUSTOM_EVAL_RULE"));
+    let description = last
+        .tools
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .find(|tool| tool.tool_id == "eval")
+        .and_then(|tool| tool.description.as_deref())
+        .ok_or("eval description missing")?;
+    assert_eq!(description.matches("CUSTOM_EVAL_RULE").count(), 1);
     Ok(())
 }
 

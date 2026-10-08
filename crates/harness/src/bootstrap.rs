@@ -120,6 +120,12 @@ pub(crate) fn build(
     result.tool_concurrency = config.runtime.background_tasks.default_concurrency;
     result.provider_model_concurrency = config.runtime.background_tasks.model_concurrency;
     result.compaction = config.runtime.compaction.clone();
+    result.behavior = config.runtime.behavior.clone();
+    result.instruction_paths = config
+        .instruction_files
+        .iter()
+        .map(|file| file.path.clone())
+        .collect();
     result.provider_retry = config.runtime.provider_retry.clone();
     result.formatter = Arc::new(config.formatter.clone());
     result.hook_runtime_config = harness_core::config::HookRuntimeConfig {

@@ -56,21 +56,45 @@ impl Runtime {
                             .is_some()
                 })
         });
-        if let (Some(poll), Some(completed)) = (poll, &snapshot.completed)
-            && completed.output.len() > 16_000
-        {
-            let mut clipped = completed.clone();
-            let end = completed.output.floor_char_boundary(16_000);
-            clipped.output.truncate(end);
-            clipped.output.push_str(&format!(
-                    "\n[output truncated: {end} of {} bytes shown]\nUse {poll}(\"{id}\") to see the full output.",
-                    completed.output.len(),
+        // With a poll tool the parent can fetch everything, so the notice clips the child's
+        // answer and leaves out a large structured result, keeping the metadata trailer.
+        if let (Some(poll), Some(completed)) = (poll, &snapshot.completed) {
+            let structured = completed
+                .structured_output
+                .as_ref()
+                .map_or(0, |value| value.to_string().len());
+            if completed.output.len() > REMINDER_OUTPUT_LIMIT
+                || structured > REMINDER_STRUCTURED_LIMIT
+            {
+                let mut clipped = completed.clone();
+                if completed.output.len() > REMINDER_OUTPUT_LIMIT {
+                    let end = completed.output.floor_char_boundary(REMINDER_OUTPUT_LIMIT);
+                    clipped.output.truncate(end);
+                    clipped.output.push_str(&format!(
+                        "\n[output truncated: {end} of {} bytes shown]",
+                        completed.output.len(),
+                    ));
+                }
+                if structured > REMINDER_STRUCTURED_LIMIT {
+                    clipped.structured_output = None;
+                    clipped.output.push_str(&format!(
+                        "\n[structured_output left out of this notice: {structured} bytes]"
+                    ));
+                }
+                clipped.output.push_str(&format!(
+                    "\nUse {poll}(\"{id}\") to see the full output and structured_output."
                 ));
-            result.output = completed_body(&clipped);
+                result.output = super::completed_body(&clipped);
+            }
         }
         result.to_prompt_text()
     }
 }
+
+/// Completion notices carry at most this much of the child's answer.
+const REMINDER_OUTPUT_LIMIT: usize = 16_000;
+/// Larger structured results are left to explicit polling.
+const REMINDER_STRUCTURED_LIMIT: usize = 8_000;
 
 fn outcome(status: &str) -> (&'static str, &'static str) {
     match status {

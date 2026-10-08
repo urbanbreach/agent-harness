@@ -166,14 +166,16 @@ async fn provider_fallback_advances_once_and_persists_for_queued_and_resumed_tur
             .content
             .contains(&format!("Active model: mock:{}", request.model_id)));
         assert!(request.messages[0].content.ends_with("Keep instructions."));
-        assert_eq!(
-            request.messages[0]
-                .content
-                .contains("Use short act-inspect-verify loops."),
-            request.model_id == "zai-glm-5-3",
-            "model selection must replace the previous prompt"
-        );
     }
+    let [.., previous, switched] = &requests[..] else {
+        return Err("missing provider requests".into());
+    };
+    let body = |content: &str, model: &str| content.replace(&format!("mock:{model}"), "");
+    assert_ne!(
+        body(&previous.messages[0].content, &previous.model_id),
+        body(&switched.messages[0].content, &switched.model_id),
+        "model selection must replace the previous prompt"
+    );
     let history = crate::store::read_events(&run.events_path)?;
     assert_eq!(
         history

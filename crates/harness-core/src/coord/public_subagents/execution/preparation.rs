@@ -263,6 +263,8 @@ impl Runtime {
             snapshot.demoted = false;
             snapshot.completed = None;
             snapshot.error = None;
+            snapshot.result.structured_output = None;
+            snapshot.result.output_errors.clear();
             snapshot.result.status = "running".into();
             snapshot.result.output = "Subagent running".into();
             snapshot.result.ended = None;

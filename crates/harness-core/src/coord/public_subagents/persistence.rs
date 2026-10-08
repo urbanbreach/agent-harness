@@ -271,6 +271,15 @@ pub(super) fn completed_body(output: &SpawnSubagentOutput) -> String {
         "{}\n\n<subagent_meta>id={id}, tool_calls={}, turns={}, duration_ms={}</subagent_meta>",
         output.output, output.tool_calls, output.turns, output.duration_ms
     );
+    if let Some(value) = &output.structured_output {
+        body.push_str(&format!("\nstructured_output: {value}"));
+    }
+    if !output.output_errors.is_empty() {
+        body.push_str(&format!(
+            "\noutput_errors: {}",
+            serde_json::json!(output.output_errors)
+        ));
+    }
     if let Some(path) = &output.worktree_path {
         body.push_str(&format!("\n<worktree_path>{path}</worktree_path>"));
     }

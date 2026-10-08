@@ -70,10 +70,14 @@ impl CoordinatorHandle {
 
     /// The actual provider worker calls this between tool completion and its
     /// next inference request. Identity and attempt are checked by the actor.
-    pub async fn drain_subagent_messages(
+    /// Subagent messages come first, then user steering, then coordinator reminders.
+    /// Steering waits until the turn has sent a request: a turn discarded before its
+    /// first request would take the steering with it, so it is requeued instead.
+    pub async fn drain_turn_inputs(
         &self,
         actor: EventActor,
         request_id: String,
+        steering: bool,
     ) -> Result<Vec<(u64, String)>, CoordinatorError> {
         self.call(move |s| {
             s.check_task(&request_id)?;
@@ -86,7 +90,12 @@ impl CoordinatorHandle {
             let agent = actor.agent_id.as_deref().ok_or_else(|| {
                 CoordinatorError::PermissionDenied("message drain requires an agent".into())
             })?;
-            s.drain_native_subagent_messages(agent, &request_id)
+            let mut inputs = s.drain_native_subagent_messages(agent, &request_id)?;
+            if steering {
+                inputs.extend(s.drain_steering(agent, &request_id)?);
+            }
+            inputs.extend(s.drain_pending_reminders(agent, &request_id)?);
+            Ok(inputs)
         })
         .await
     }

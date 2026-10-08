@@ -129,6 +129,12 @@ impl Runtime {
         waiter: &str,
     ) -> Result<(), CoordinatorError> {
         if let Some(child) = self.native_subagents.get_mut(id) {
+            // The attached spawn call returns this terminal result itself, so it must not
+            // also surface later as a buffered completion reminder.
+            if child.foreground_attached && child.phase == NativePhase::Terminal {
+                child.consumed = true;
+                child.buffered_for = None;
+            }
             child.foreground_attached = false;
             child.waiters.remove(waiter);
         }

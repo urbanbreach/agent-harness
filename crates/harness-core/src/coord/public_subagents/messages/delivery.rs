@@ -205,6 +205,8 @@ impl Runtime {
             snapshot.terminal = false;
             snapshot.completed = None;
             snapshot.error = None;
+            snapshot.result.structured_output = None;
+            snapshot.result.output_errors.clear();
             snapshot.result.status = "initializing".into();
             snapshot.result.output =
                 "Subagent is initializing (creating worktree, resolving config).".into();

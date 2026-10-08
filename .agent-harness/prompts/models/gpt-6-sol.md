@@ -1,1 +1,1 @@
-${% extends "models/gpt-6.md" %}
+${% extends "models/gpt-6-astra.md" %}

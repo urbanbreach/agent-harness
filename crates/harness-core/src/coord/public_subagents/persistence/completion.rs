@@ -129,8 +129,15 @@ impl Runtime {
             || self.clock.mono_ms().saturating_sub(child.started_ms),
             |a| a.duration_ms,
         );
+        let (structured_output, output_errors) = if status == "completed" {
+            crate::subagent::output_contract::validate(child.output_contract.as_deref(), &output)
+        } else {
+            (None, Vec::new())
+        };
         let completed = (status == "completed").then(|| SpawnSubagentOutput {
             output: output.clone(),
+            structured_output: structured_output.clone(),
+            output_errors: output_errors.clone(),
             subagent_id: agent.into(),
             subagent_type: child.registration.subagent_type.clone(),
             tool_calls: accounting.as_ref().map_or(0, |a| a.tool_calls),
@@ -153,6 +160,8 @@ impl Runtime {
         };
         let snapshot = NativeSnapshot {
             result: GetCommandOrSubagentOutputResult {
+                structured_output,
+                output_errors,
                 task_id: agent.into(),
                 command: format!(
                     "[subagent:{}] {}",
@@ -187,6 +196,9 @@ impl Runtime {
                 .send(SendSubagentMessageResult::NotActiveOrFinalizing);
         }
         self.write_native_projection(agent, true)?;
+        let parent = self.native_subagents[agent].registration.root_agent.clone();
+        self.reparent_commands(agent, Some(&parent));
+        self.transfer_command_notices(agent, &parent)?;
         if self.config.subagents.worktree_snapshot
             && self.native_subagents[agent].worktree.is_some()
         {
@@ -223,8 +235,6 @@ impl Runtime {
         child.phase = NativePhase::Terminal;
         child.preparation = None;
         child.updates.send_replace(snapshot);
-        let parent = self.native_subagents[agent].registration.root_agent.clone();
-        self.reparent_commands(agent, Some(&parent));
         if self.eval_pool_completed_child(agent)?
             && let Some(child) = self.native_subagents.get_mut(agent)
         {
