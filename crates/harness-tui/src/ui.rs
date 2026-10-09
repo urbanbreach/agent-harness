@@ -533,6 +533,7 @@ fn render_toast(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
         .unwrap_or(area);
     let (glyph, accent) = match toast.variant {
         ToastVariant::Error => (theme.live_shell.glyphs.error, theme.status.error),
+        ToastVariant::Warning => (theme.live_shell.glyphs.error, theme.status.warning),
         ToastVariant::Info | ToastVariant::Mode | ToastVariant::Rewind => {
             (theme.live_shell.glyphs.done, theme.text.accent)
         }

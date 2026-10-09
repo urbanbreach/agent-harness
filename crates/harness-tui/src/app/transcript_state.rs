@@ -14,6 +14,7 @@ pub(crate) enum ToastVariant {
     Rewind,
     Info,
     Error,
+    Warning,
     Mode,
 }
 

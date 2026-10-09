@@ -1,12 +1,14 @@
 # Extension strategy
 
-Harness supports config-backed MCP servers, markdown skills, and native lifecycle
-hooks. Markdown command files and extension command hooks remain unsupported.
+Harness supports config-backed MCP servers, Markdown skills, Markdown prompt
+commands and native lifecycle hooks. Executable extension command hooks remain
+unsupported.
 
 | Extension | What it can do | Where to configure it |
 | --- | --- | --- |
 | MCP server | Register concrete tools from an enabled server | `mcp` in runtime config |
 | Markdown skill | Add instructions and declared resources when activated | Configured skill roots |
+| Markdown prompt command | Expand a slash command into an agent prompt | Project `.harness/commands/` or `<home>/commands/` |
 | Native lifecycle hook | Run an allowed command at a coordinator lifecycle point | Runtime hook config |
 
 ## Config-backed MCP
@@ -15,11 +17,15 @@ MCP servers are declared in runtime config under `mcp`. Enabled servers register
 
 ## Markdown skills
 
-Markdown skills live under configured skill roots such as `.agent-harness/skills`.
-Discovery reads frontmatter and compact metadata; full bodies and bundled
-`resources` files load only when the `skill` tool or `task(load_skills=[...])`
+Harness ships no skill pack. Default project roots are `.harness/skills` and
+`.agents/skills`; default global roots are `<home>/skills` and
+`$HOME/.agents/skills`. Here `<home>` is `HARNESS_HOME` when nonempty, otherwise
+`~/.harness`.
+Discovery reads frontmatter and compact metadata; full bodies and declared
+`resources` load only when the `skill` tool or a subagent definition preload
 activates them. Skills never grant runtime tools or bypass coordinator
-permissions.
+permissions. See the [skill contract](../configuration/config.md#skill-discovery-and-v1-skill-contract)
+for discovery order, frontmatter, and activation rules.
 
 Bundled resources use progressive disclosure. The `resources` frontmatter field
 is a comma- or newline-separated list of relative file paths under the skill
@@ -29,14 +35,52 @@ KiB total loaded bytes, and path depth 4 under the skill root. Loaded resource
 text is redacted and appended to the normal skill activation body. The catalog,
 doctor, and support output expose compact metadata only.
 
-Harness-owned skill roots stay first for V1. External editor/assistant/agent
-roots such as `.external-editor/skills`, `.assistant/skills`, and
-`.agents/skills` are adapter-deferred and ignored by default; operators may list
-them explicitly in `skills.project_roots` or `skills.global_roots`, but that is a
-configuration choice rather than a shipped compatibility adapter. Explicitly
-listed compatibility roots are imported after Harness-owned and other
-non-compatibility roots, so they cannot silently shadow shipped or Harness-owned
-skills.
+Harness skill roots rank above `.agents/skills` and `~/.agents/skills`. Duplicate
+skills show as `shadowed` in the catalog. Other assistant roots such as
+`.claude/skills`, `.external-editor/skills` and `.assistant/skills` are not
+searched by default; list them in `skills.project_roots` or
+`skills.global_roots` to import them.
+
+## Markdown prompt commands
+
+Add `*.md` files under `<project>/.harness/commands/` or `<home>/commands/`.
+Discovery searches the current directory and ancestors up to the nearest Git
+root, nearest first, then user commands, then bundled commands. Outside Git,
+only the current project directory is searched. The first matching name wins.
+A command's name is its file stem and must match `[a-z0-9][a-z0-9_-]*`.
+Built-in TUI command names and aliases remain reserved. Conflicting files are
+skipped with a warning on CLI stderr or a TUI warning toast.
+
+YAML frontmatter accepts `description` and `argument-hint`; the Markdown body
+is the prompt template. For example, `.harness/commands/explain.md`:
+
+```markdown
+---
+description: Explain a file for a new contributor
+argument-hint: '[file] [question]'
+---
+Read $1 and explain it in the context of this repository.
+Answer this question: $2
+```
+
+`$ARGUMENTS` and `$@` insert the whole trimmed argument string. `$1` through
+`$9` insert quote-aware positional arguments; missing positions expand to an
+empty string. With no placeholders, nonempty arguments are appended after a
+blank line. Expansion is one pass, so inserted text is not expanded again.
+
+Use `/explain "src/main.rs" "How does startup work?"` in the TUI, or:
+
+```bash
+harness run '/explain "src/main.rs" "How does startup work?"'
+harness prompt '/explain "src/main.rs" "How does startup work?"'
+```
+
+TUI completion shows descriptions and argument hints; custom commands also
+appear in the command palette. They expand into prompts, not shell commands,
+and do not grant tools or bypass permissions. The bundled `/init` asks the
+agent to inspect the repository and create or update a concise root
+`AGENTS.md`, preserving existing user content. Project or user commands can
+override that template.
 
 ## Native lifecycle hooks
 
@@ -54,51 +98,23 @@ Replay, recovery of historical events, and inspection never execute hooks.
 Deterministic execution records skipped task receipts. Resuming a session invokes
 only the new run's lifecycle hooks.
 
-TUI slash commands remain built-in UI actions. Markdown command files do not
-execute commands.
+Built-in slash commands perform UI actions. Markdown slash commands expand into
+agent prompts; they do not directly execute shell commands.
 
-## Core runtime behavior vs disableable built-in capabilities
+## Skill activation and state
 
-| Surface | Classification | Stable id | Default state |
-|---|---|---|---|
-| Coordinator event append, scheduling, permissions, lifecycle | core runtime behavior | n/a | enabled |
-| Native tool registry | core runtime behavior | n/a | enabled |
-| Agent profile prompts | core runtime behavior | n/a | enabled by config |
-| `frontend-ui-ux` skill | disableable built-in capability | `skill:project:frontend-ui-ux` | loadable |
-| `git-master` skill | disableable built-in capability | `skill:project:git-master` | loadable |
-| `harness-qa` skill | disableable built-in capability | `skill:project:harness-qa` | loadable |
-| `review-work` skill | disableable built-in capability | `skill:project:review-work` | loadable |
-
-## Built-in capability order and state policy
-
-The coordinator owns event appends and permission checks. The native registry
-assigns tool IDs before prompt assembly advertises them. Compaction reads event
-and tool context only after those events exist.
-
-Disableable built-in skill rows are sorted by stable id so doctor, docs, and tests
-stay deterministic. Skill activation respects the operator-requested
-`load_skills` order.
-
-V1 disableable built-in skills write no JSONL or artifact state by themselves.
-They can change prompt context only after explicit `skill` or
-`task(load_skills=[...])` activation, and that activity is represented by the
-existing event schema and tool output summaries. Bundled resources follow the
-same activation-only contract and are capped/redacted before they enter the
-skill body. A built-in that writes JSONL or artifacts must document its `schema_version`,
-migration policy, and replay behavior. Existing release evidence artifacts
-document their schemas in the relevant guide: event logs in `docs/architecture/architecture.md` and `docs/architecture/sessions-and-replay.md`, native tool artifacts in
-`docs/tools/native-tool-catalog.md`, simulation artifacts in `docs/testing/testing.md`, and
-lane-specific perf/PTY artifacts in `docs/testing/budgets.md` and `docs/testing/testing.md`.
+Skill discovery does not write event logs or activate skill bodies. Activation
+changes request prompt context through the `skill` tool or a subagent
+definition's `skills` list, subject to coordinator permission checks. The
+existing event schema and tool output summaries record that activity. Readiness
+and support output contain compact catalog metadata, never full skill bodies.
 
 ## Unsupported extension execution
 
 Runtime extension package loading, executable extension command hooks,
 manifest-driven MCP launch, provider decorators, and extension-provided tool
-registration are not supported. MCP tools, skills, and lifecycle hooks use the
-configuration paths above.
-
-The lifecycle map lists unsupported markdown commands, interpolation, and rules
-injection. Existing lifecycle hooks run through the coordinator.
+registration are not supported. MCP tools, skills, Markdown prompt commands and
+lifecycle hooks use the paths above. Lifecycle hooks run through the coordinator.
 
 Executable plugins, upstream plugin compatibility, browser and media automation,
 OAuth MCP, server hosting, session sharing, enterprise administration, cloud

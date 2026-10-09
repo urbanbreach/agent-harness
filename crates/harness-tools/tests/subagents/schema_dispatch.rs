@@ -55,7 +55,7 @@ async fn native_schema_and_lenient_output_dispatch_keep_aliases_and_cardinality_
     let mut configured = harness_tools::coordinator_registry(ShellAllowlist::default());
     let mut settings = SubagentRuntimeConfig::default();
     let mut definitions = SubagentDefinitionSnapshot::default();
-    definitions.cli.insert(
+    definitions.user.insert(
         "fixture-reviewer".into(),
         SubagentDefinition {
             name: "fixture-reviewer".into(),

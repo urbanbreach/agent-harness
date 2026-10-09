@@ -93,6 +93,7 @@ pub(crate) fn build(
         data_dir.as_deref(),
     )
     .map_err(|error| error.to_string())?;
+    let user_prompt_dir = data_dir.as_ref().map(|root| root.join("prompts"));
     let mut result = CoordinatorConfig::new(session_dir);
     if let Some(data_dir) = data_dir {
         result.data_dir = data_dir;
@@ -127,6 +128,17 @@ pub(crate) fn build(
         .with_ask_timeout_ms(config.runtime.permissions.ask_timeout_ms);
     result.yolo_on_start = config.runtime.yolo;
     result.skills = config.skills.clone();
+    result.skills.global_roots.retain_mut(|root| {
+        if root.as_path() == std::path::Path::new("~/.harness/skills") {
+            *root = result.data_dir.join("skills");
+        } else if root.as_path() == std::path::Path::new("~/.agents/skills") {
+            let Some(home) = deps.env_var_value("HOME").filter(|home| !home.is_empty()) else {
+                return false;
+            };
+            *root = PathBuf::from(home).join(".agents/skills");
+        }
+        true
+    });
     result.skill_catalog_discovery = Some(Arc::new(harness_tools::NativeSkillCatalogDiscovery));
     result.tool_concurrency = config.runtime.background_tasks.default_concurrency;
     result.provider_model_concurrency = config.runtime.background_tasks.model_concurrency;
@@ -146,7 +158,7 @@ pub(crate) fn build(
     };
     let mut registry = harness_tools::coordinator_registry_with_skills(
         config.permissions.shell_allowlist.clone(),
-        config.skills.clone(),
+        result.skills.clone(),
     );
     harness_tools::register_subagent_tools(
         &mut registry,
@@ -205,16 +217,7 @@ pub(crate) fn build(
         .join("\n\n");
     for (name, profile) in &mut result.agent_profiles {
         let source = harness_core::system_prompt::PromptSource {
-            user_prompt_dir: {
-                let path = |key| {
-                    deps.env_var_value(key)
-                        .filter(|value| !value.is_empty())
-                        .map(PathBuf::from)
-                };
-                path("XDG_CONFIG_HOME")
-                    .or_else(|| path("HOME").map(|home| home.join(".config")))
-                    .map(|base| base.join("harness/prompts"))
-            },
+            user_prompt_dir: user_prompt_dir.clone(),
             configured: config
                 .agents
                 .get(name)
@@ -371,4 +374,106 @@ fn remote_search_config(
         })?;
     }
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn injected_home_discovers_user_agents_and_resolves_only_default_skills(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let project = tempfile::tempdir()?;
+        let home = tempfile::tempdir()?;
+        std::fs::create_dir(home.path().join("agents"))?;
+        std::fs::write(
+            home.path().join("agents/worker.md"),
+            "---\nname: worker\ndescription: User worker\n---\nUser worker instructions",
+        )?;
+        let mut config = harness_core::config::load_config_from_str("{provider:{local:{type:'openai_compatible',models:{fixture:{}}}},model:'local/fixture'}")?;
+        config.skills.global_roots.push("~/authored/skills".into());
+        let deps = CliDeps::real()
+            .with_current_dir(project.path().into())
+            .with_env("HARNESS_HOME", home.path().to_string_lossy())
+            .without_env("HOME");
+        let built = build(&config, &deps, true, false)?;
+        let definition = built
+            .subagent_definitions
+            .as_ref()
+            .and_then(|snapshot| snapshot.definition("worker"))
+            .ok_or("user agent missing")?;
+        assert_eq!(
+            definition.source,
+            harness_core::config::SubagentDefinitionSource::User
+        );
+        assert_eq!(
+            definition.prompt_body.as_deref(),
+            Some("User worker instructions")
+        );
+        assert_eq!(
+            built.skills.global_roots,
+            [
+                home.path().join("skills"),
+                PathBuf::from("~/authored/skills")
+            ]
+        );
+        assert_eq!(std::fs::read_dir(home.path())?.count(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn compatibility_global_skills_use_injected_home_not_harness_home(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        for home_available in [false, true] {
+            let project = tempfile::tempdir()?;
+            let harness_home = tempfile::tempdir()?;
+            let home = tempfile::tempdir()?;
+            std::fs::create_dir(project.path().join(".git"))?;
+            for (directory, name) in [
+                (harness_home.path().join("skills/review"), "review"),
+                (home.path().join(".agents/skills/review"), "review"),
+                (
+                    home.path().join(".agents/skills/compat-only"),
+                    "compat-only",
+                ),
+            ] {
+                std::fs::create_dir_all(&directory)?;
+                std::fs::write(
+                    directory.join("SKILL.md"),
+                    format!("---\nname: {name}\ndescription: Review\n---\nReview code"),
+                )?;
+            }
+            let deps = CliDeps::real()
+                .with_current_dir(project.path().into())
+                .with_env("HARNESS_HOME", harness_home.path().to_string_lossy());
+            let deps = if home_available {
+                deps.with_env("HOME", home.path().to_string_lossy())
+            } else {
+                deps.without_env("HOME")
+            };
+            let config = harness_core::config::load_config_from_str("{provider:{local:{type:'openai_compatible',models:{fixture:{}}}},model:'local/fixture'}")?;
+            let built = build(&config, &deps, true, false)?;
+            let catalog =
+                harness_tools::discover_skill_catalog_with_config(project.path(), &built.skills)?;
+            assert_eq!(catalog.entries.len(), if home_available { 3 } else { 1 });
+            for entry in &catalog.entries {
+                let shadowed = entry.location == home.path().join(".agents/skills/review/SKILL.md");
+                assert_eq!(entry.loadable, !shadowed);
+                assert_eq!(
+                    entry.status,
+                    if shadowed {
+                        harness_tools::SkillCatalogStatus::Shadowed
+                    } else {
+                        harness_tools::SkillCatalogStatus::Loadable
+                    }
+                );
+            }
+            assert!(built
+                .skills
+                .global_roots
+                .iter()
+                .all(|root| root.is_absolute()));
+        }
+        Ok(())
+    }
 }

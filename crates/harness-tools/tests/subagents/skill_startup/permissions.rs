@@ -40,7 +40,7 @@ async fn check_preload_permission(
     config.tool_registry = Arc::new(registry);
     config.agent_profiles.insert("default".into(), parent);
     config.subagent_definitions = Some(SubagentDefinitionSnapshot {
-        cli: std::collections::BTreeMap::from([(
+        user: std::collections::BTreeMap::from([(
             "preload-reviewer".into(),
             SubagentDefinition {
                 name: "preload-reviewer".into(),

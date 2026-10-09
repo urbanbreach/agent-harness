@@ -20,7 +20,7 @@ async fn skill_startup_uses_effective_spawner_snapshot_for_root_and_nested_reque
         "SPAWNER_BODY",
     )?;
     write_skill(
-        &spawner_cwd.join(".agent-harness/skills/local"),
+        &spawner_cwd.join(".harness/skills/local"),
         "local",
         "PARENT_LOCAL_BODY",
     )?;
@@ -44,7 +44,7 @@ async fn skill_startup_uses_effective_spawner_snapshot_for_root_and_nested_reque
         ),
         ("skill-leaf", true, vec!["Skill".into()]),
     ] {
-        definitions.cli.insert(
+        definitions.user.insert(
             name.into(),
             SubagentDefinition {
                 name: name.into(),

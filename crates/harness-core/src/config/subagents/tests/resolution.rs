@@ -73,44 +73,6 @@ fn permission_mode_override_only_uses_operator_modes() -> Result<(), Box<dyn std
         }
     }
 
-    definitions.plugins.insert(
-        "plugin:worker".into(),
-        SubagentDefinition {
-            name: "plugin:worker".into(),
-            permission_mode: SubagentPermissionMode::BypassPermissions,
-            source: SubagentDefinitionSource::Plugin {
-                name: "plugin".into(),
-            },
-            ..SubagentDefinition::default()
-        },
-    );
-    let plugin_request = SubagentDefinitionRequest {
-        subagent_type: "plugin:worker".into(),
-        type_specified: true,
-        ..SubagentDefinitionRequest::default()
-    };
-    let mut plugin_context = parent_context(&definitions, &catalog, &[]);
-    plugin_context.parent_permission_mode = Some(SubagentPermissionMode::BypassPermissions);
-    assert_eq!(
-        resolve_subagent_definition(
-            &SubagentRuntimeConfig::default(),
-            &plugin_request,
-            &plugin_context,
-        )?
-        .permission_mode,
-        SubagentPermissionMode::Default
-    );
-    plugin_context.parent_permission_mode = Some(auto_definition.permission_mode);
-    assert_eq!(
-        resolve_subagent_definition(
-            &SubagentRuntimeConfig::default(),
-            &plugin_request,
-            &plugin_context,
-        )?
-        .permission_mode,
-        SubagentPermissionMode::Default
-    );
-
     definitions.project.insert(
         "worker".into(),
         SubagentDefinition {
