@@ -19,7 +19,7 @@ agent-harness/
 ├── .github/workflows/       # GitHub Actions CI (Linux runners)
 ├── crates/
 │   ├── harness/             # CLI adapter and command orchestration
-│   ├── harness-core/        # coordinator, durable events, config, projections
+│   ├── harness-core/        # coordinator, durable events, config, projections; prompts/ embeds defaults
 │   ├── harness-providers/   # provider transports and stream normalization
 │   ├── harness-eval/        # persistent code kernels and host-tool composition
 │   ├── harness-tools/       # native and MCP tool registry/execution
@@ -73,14 +73,23 @@ Reference centrality was not measured; `Refs` records only that limitation.
   public boundaries; opt-in PTY/live/native evidence remains deterministic.
 - Workspace lint policy denies unsafe code, unused must-use values, non-ASCII
   identifiers, unwrap/expect/panic/todo, and selected sharp Clippy patterns.
-- Runtime data lives outside the project, resolved by `harness_core::storage_paths`:
-  sessions in `<data>/sessions/<key>/`, memory, code index, edit attribution and plans
-  in `<data>/projects/<key>/`, worktrees in `<data>/worktrees/<key>/`. `<data>` is
-  `$HARNESS_DATA_HOME/harness`, `$XDG_DATA_HOME/harness`, or `~/.local/share/harness`;
-  `<key>` wraps the canonical project path in `--`, with `/`, `\` and `:` turned into
-  `-`. The project's `.agent-harness/` keeps only authored agents, skills, prompts and
-  remembered permission grants. Library code takes injected paths; tests use temporary
-  data roots.
+- User files live in the Harness home, resolved by `harness_core::storage_paths`:
+  `<home>` is a nonempty `$HARNESS_HOME` used as-is, otherwise `~/.harness`.
+  User runtime config is `<home>/harness.jsonc` or `harness.json`; keyboard config
+  is `tui.jsonc` or `tui.json`. Credentials, subscription bindings, model cache,
+  `prompts/`, `agents/`, `commands/`, `skills/` and the last picked TUI model
+  also live under this root.
+  Sessions use `<home>/sessions/<key>/`, memory, code index, edit attribution and
+  plans use `<home>/projects/<key>/`, and worktrees use `<home>/worktrees/<key>/`.
+  `<key>` wraps the canonical project path in `--`, with `/`, `\` and `:`
+  turned into `-`. `<project>/.harness/` keeps authored `agents/`, `commands/`,
+  `skills/`, `prompts/`, project config and remembered permission grants. After
+  successful sign-in, Harness may create a minimal user config with create-new
+  semantics if neither user config exists and `HARNESS_CONFIG` and
+  `HARNESS_CONFIG_CONTENT` are unset. This starter is the only config write
+  Harness performs. Startup
+  creates no new home artifacts beyond the existing session directory. Library
+  code takes injected paths; tests use temporary home roots.
 
 ## Tests
 
