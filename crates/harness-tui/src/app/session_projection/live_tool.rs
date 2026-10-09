@@ -13,9 +13,8 @@ impl SessionProjection {
                 let entry = if use_back {
                     self.activities.back_mut()
                 } else if let Some(corr) = &target_corr_id {
-                    self.activities
-                        .iter_mut()
-                        .find(|activity| &activity.request_id == corr)
+                    self.activity_index_for_correlation(corr)
+                        .and_then(|index| self.activities.get_mut(index))
                 } else {
                     None
                 };
@@ -112,5 +111,20 @@ impl SessionProjection {
             _ => return false,
         }
         true
+    }
+
+    /// A turn's request id, or the tool call id of the eval cell that made a nested call.
+    fn activity_index_for_correlation(&self, correlation: &str) -> Option<usize> {
+        self.activities
+            .iter()
+            .position(|activity| activity.request_id == correlation)
+            .or_else(|| {
+                self.activities.iter().rposition(|activity| {
+                    activity
+                        .tool_calls
+                        .iter()
+                        .any(|tool| tool.tool_call_id == correlation)
+                })
+            })
     }
 }

@@ -176,9 +176,14 @@ impl SessionProjection {
                     );
                     continue;
                 }
-                if let (ProjectedPart::ToolCall(tool), Some(activity)) =
-                    (part, settled_activities.back_mut())
+                if let ProjectedPart::ToolCall(tool) = part
+                    && let Some(index) = tool_owner_activity(
+                        &settled_activities,
+                        &activity_by_request,
+                        message.request_id.as_ref().map(|id| id.as_str()),
+                    )
                 {
+                    let activity = &mut settled_activities[index];
                     activity.tool_calls.push(tool_entry(tool));
                     activity.last_seq = activity.last_seq.max(tool.provenance.last_seq);
                     continue;
@@ -319,6 +324,29 @@ impl SessionProjection {
             }
         }
     }
+}
+
+/// The activity a tool call outside a turn message belongs to. A call made from an eval
+/// cell correlates to the cell's tool call id, so it joins the activity holding that cell;
+/// the newest activity can be a concurrently running child's turn.
+fn tool_owner_activity(
+    activities: &VecDeque<ActivityEntry>,
+    activity_by_request: &BTreeMap<String, usize>,
+    correlation: Option<&str>,
+) -> Option<usize> {
+    correlation
+        .and_then(|id| {
+            activities
+                .iter()
+                .rposition(|activity| {
+                    activity
+                        .tool_calls
+                        .iter()
+                        .any(|tool| tool.tool_call_id == id)
+                })
+                .or_else(|| activity_by_request.get(id).copied())
+        })
+        .or_else(|| activities.len().checked_sub(1))
 }
 
 /// Opens the activity for a user message, or folds steering sent into a running turn

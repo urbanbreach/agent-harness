@@ -188,6 +188,95 @@ fn native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row() {
     progress::assert_native_completion(&mut app, started);
 }
 
+#[test]
+fn eval_spawn_after_a_child_turn_starts_stays_in_the_parent_turn() {
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let mut app = AppState::new_live(Some(temp.path().join("parent")), false, None);
+    app.set_frame_area(Rect::new(0, 0, 120, 40));
+    let spawn = |seq, id: &str, description: &str| {
+        envelope(
+            seq,
+            "cell",
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: id.into(),
+                tool_id: "spawn_subagent".into(),
+                args_summary: format!(r#"{{"prompt":"inspect","description":"{description}"}}"#),
+                args_digest: "digest".into(),
+                metadata: None,
+            }),
+        )
+    };
+    for event in [
+        run_started(1),
+        agent_spawned(2, "parent", "default"),
+        provider_started(3, "req_parent", "mock", "parent-model"),
+        envelope(
+            4,
+            "req_parent",
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "cell".into(),
+                tool_id: "eval".into(),
+                args_summary: r#"{"code":"spawn two children"}"#.into(),
+                args_digest: "digest".into(),
+                metadata: None,
+            }),
+        ),
+        spawn(5, "spawn", "Inspect files"),
+        envelope(
+            6,
+            "req_parent",
+            EventV1::NativeSubagentRegistered(Box::new(registration())),
+        ),
+        envelope(
+            7,
+            "req_child",
+            EventV1::SubagentTransition(Box::new(transition(SubagentTransitionKind::Spawned))),
+        ),
+        envelope_with_actor(
+            8,
+            "req_child",
+            EventActor::new(ActorKind::Worker, Some("child".into())),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "req_child".into(),
+                text: "Child-only prompt".into(),
+            }),
+        ),
+        // The cell's next spawn arrives after the child's turn became the newest activity.
+        spawn(9, "cell-eval-2", "Second sibling"),
+        envelope(
+            10,
+            "cell-eval-2",
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "cell-eval-2".into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("Subagent started in background.".into()),
+                output_digest: None,
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+    ] {
+        app.ingest_event(event);
+    }
+
+    let owner = app
+        .activities
+        .iter()
+        .find(|activity| {
+            activity
+                .tool_calls
+                .iter()
+                .any(|tool| tool.tool_call_id == "cell-eval-2")
+        })
+        .map(|activity| activity.request_id.as_str());
+    assert_eq!(owner, Some("req_parent"));
+    app.navigate_to_child_session_id("child".into());
+    assert_eq!(app.current_session_id(), Some("child"));
+    let child = render_text(&app, 120, 40);
+    assert!(child.contains("Child-only prompt"), "{child}");
+    assert!(!child.contains("Second sibling"), "{child}");
+}
+
 fn assert_task_query_editing(app: &mut AppState) {
     app.handle_key(key(KeyCode::Char('f')));
     app.handle_paste("child-model");

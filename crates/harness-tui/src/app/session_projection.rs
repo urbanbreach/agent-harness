@@ -843,6 +843,7 @@ impl SessionProjection {
                 .or_else(|| request_index(data.request_id.as_str())),
             EventV1::ToolCallRequested(data) => correlated_request()
                 .or_else(|| tool_index(data.tool_call_id.as_str()))
+                .or_else(|| event.correlation_id.as_deref().and_then(tool_index))
                 .or_else(|| self.activities.len().checked_sub(1)),
             EventV1::ToolCallStarted(data) => tool_index(data.tool_call_id.as_str()),
             EventV1::ToolCallFinished(data) | EventV1::EvalCellFinished(data) => {
