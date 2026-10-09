@@ -79,7 +79,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         app.set_toggles_config(toggles);
     }
     app.configure_rewind();
-    app.maybe_set_no_provider_banner();
+    app.initialize_provider_connection();
     let profile = TerminalProfile::negotiate();
     let mut session = crate::terminal::session::Session::enter(options.skip_alternate_screen)
         .context("failed to set up terminal")?;

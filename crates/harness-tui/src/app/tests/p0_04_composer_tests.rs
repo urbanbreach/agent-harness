@@ -377,9 +377,9 @@ fn cancel_replace_empty_draft_emits_no_intents() {
 
 #[test]
 fn cancel_replace_disconnected_configured_profile_preserves_draft_and_error() {
-    // Given: a configured local profile with no connected provider and a draft.
+    // Given: a configured profile with no connected provider and a draft.
     let (mut app, intents) = capturing_live_app();
-    app.set_launch_metadata(LaunchMetadata::new("configured", "local", None));
+    app.set_launch_metadata(LaunchMetadata::disconnected("configured"));
     app.handle_paste("keep this draft");
 
     // When: Ctrl+Shift+Enter is pressed.

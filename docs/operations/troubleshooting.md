@@ -1,13 +1,46 @@
 # Troubleshooting
 
-Start with `harness config validate` and `harness doctor`. Both run locally.
-A passing doctor report confirms local readiness, not working authentication or
-a reachable provider. Use one live `harness run` to check those.
+Start with `harness doctor`, the offline readiness check. It works without a
+config file and never contacts providers. A passing report confirms local
+readiness, not account access or a reachable endpoint. After connecting, run
+`harness run "Hello"` to check a live turn.
+
+Config files are optional. With no runtime files, `harness config validate`
+exits successfully and prints:
+
+```text
+config valid: no configuration files; using built-in defaults
+```
+
+`harness config sources` includes `searched`, every candidate runtime path in
+merge order, even when a file is absent. Personal files are under a nonempty
+`HARNESS_HOME`, used as-is, or `~/.harness` otherwise. Project policy loads after
+personal defaults. First sign-in can create `<home>/harness.jsonc` without
+overwriting an existing user config, unless `HARNESS_CONFIG` or
+`HARNESS_CONFIG_CONTENT` is set. With no runtime layers, the `note` is:
+
+> No configuration files found. Harness uses built-in defaults and providers connected through /login, `harness auth login`, or provider API key environment variables.
+
+`harness config show --effective` and `harness config explain model` work with
+built-in defaults and `primary_path: null`. An explicit `--config` path must
+still exist.
+
+When no provider is connected, doctor reports:
+
+> No provider connected. Run `harness auth login <provider>`, use /login in the TUI, or set a provider API key such as OPENAI_API_KEY or ANTHROPIC_API_KEY.
+
+A provider-less config keeps automatic credential discovery from the embedded
+models.dev catalog. Defining any `provider` entry limits the catalog to
+configured providers plus signed-in Codex, GitHub Copilot, and Claude
+subscription. Check this first if an exported key seems ignored.
 
 | Problem | What to check |
 | --- | --- |
 | A setting seems ignored | Run `harness config sources`, then `harness config explain <path>`. A later layer may override the value. |
-| Credentials are missing | Follow the provider row in `harness doctor`. For the starter, use `harness auth login codex` or set `OPENAI_API_KEY`. |
+| A custom slash command is missing | Check `.harness/commands/<name>.md` or `<home>/commands/<name>.md`, the file-stem pattern, and YAML frontmatter. Built-in names and aliases are reserved; discovery warnings appear on CLI stderr or in a TUI toast. |
+| A custom agent or skill is shadowed | Check nearer project definitions and Harness roots first. User agent definitions override built-ins; `.agents/skills` ranks below Harness skill roots. |
+| A child uses the wrong model or variant | Check the per-call selection, role/persona defaults, `subagents.models`, definition and parent. Unset `@smol`/`@slow` roles inherit the parent; unknown variants are ignored with a runtime warning. |
+| Credentials are missing | Use `/login` in the TUI, `harness auth login <provider>`, or export a catalog provider API key such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. |
 | The provider rejects credentials | Check the selected account and endpoint. Keep the sanitized error and a support export. |
 | The provider rate-limits requests | Wait or reduce request volume. Check the error category before changing credentials. |
 | A local proxy fails | Compare the configured `baseURL` with the proxy's listening address. |

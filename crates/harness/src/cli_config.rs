@@ -2,14 +2,11 @@ use harness_core::{
     config::{load_resolved_config_with_context, ConfigLoadContext, HarnessConfig},
     coord::CoordinatorConfig,
 };
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub(crate) struct LoadedCliConfig {
     pub(crate) config: HarnessConfig,
     pub(crate) digest: String,
-}
-pub(crate) fn shipped_example_config_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../configs/harness.example.jsonc")
 }
 pub(crate) fn load_optional_config_with_digest_context(
     path: Option<&Path>,

@@ -692,7 +692,7 @@ pub(super) fn new_session_resets_transcript_but_keeps_unsent_draft() {
     );
 }
 
-pub(super) fn startup_first_run_shows_onboarding_hint() {
+pub(super) fn startup_first_run_shows_welcome_actions() {
     let mut app = app::AppState::new_startup(Vec::new(), None);
     settle_startup_reveal(&mut app);
 
@@ -710,35 +710,97 @@ pub(super) fn startup_first_run_shows_onboarding_hint() {
     );
 }
 
-pub(super) fn startup_returning_user_hides_onboarding_hint() {
-    let mut app = app::AppState::new_startup(
-        vec![startup_session_entry(
-            "run_resume",
-            "/tmp/sessions/run_resume",
+pub(super) fn startup_login_picker_requires_first_run_without_provider() {
+    let disconnected = app::LaunchMetadata::disconnected("build")
+        .with_switchable_profiles(vec!["build".into(), "plan".into()]);
+    let connected = app::LaunchMetadata::from_model_ref("build", "anthropic:claude-sonnet-4-6")
+        .with_available_models(vec![app::ModelOption::from_model_ref(
+            "build",
+            "anthropic:claude-sonnet-4-6",
+        )]);
+    for (name, saved_session, metadata, replay, picker, banner) in [
+        ("first run", false, disconnected.clone(), false, true, true),
+        (
+            "returning user",
             true,
-            None,
-        )],
-        None,
-    );
-    settle_startup_reveal(&mut app);
+            disconnected.clone(),
+            false,
+            false,
+            true,
+        ),
+        ("connected", false, connected, false, false, false),
+        (
+            "demo",
+            false,
+            app::LaunchMetadata::from_model_ref("build", "mock:model-1").with_mode_label("Demo"),
+            false,
+            false,
+            false,
+        ),
+        ("replay", false, disconnected, true, false, false),
+    ] {
+        let entries = if saved_session {
+            vec![startup_session_entry(
+                "saved",
+                "/tmp/sessions/saved",
+                true,
+                None,
+            )]
+        } else {
+            Vec::new()
+        };
+        let mut state = if replay {
+            app::AppState::new_replay(PathBuf::from("/tmp/sessions/replay"), Vec::new())
+        } else {
+            app::AppState::new_startup(entries, None)
+        };
+        state.set_launch_metadata(metadata);
+        state.initialize_provider_connection();
+        settle_startup_reveal(&mut state);
 
-    assert!(!app.is_first_run());
-
-    let rendered = render_live_lines(&app, 100, 24);
-    assert!(
-        !rendered.contains("harness doctor"),
-        "returning-user startup should not show first-run onboarding hint\n{rendered}"
-    );
-    assert!(
-        !rendered.contains("harness auth login"),
-        "returning-user startup should not show first-run onboarding hint\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Resume session")
-            || rendered.contains("New worktree")
-            || rendered.contains("New session"),
-        "returning-user startup should still show welcome actions\n{rendered}"
-    );
+        assert_eq!(state.connect_dialog.visible, picker, "{name}");
+        assert_eq!(
+            state.status_banner.as_deref(),
+            banner.then_some("No provider connected. Use /login."),
+            "{name}"
+        );
+        if picker {
+            assert!(render_live_lines(&state, 120, 36).contains("Log in to a provider"));
+            state.handle_key(key(crossterm::event::KeyCode::Char('x')));
+            state.handle_key(key_with_modifiers(
+                crossterm::event::KeyCode::Char('p'),
+                crossterm::event::KeyModifiers::CONTROL,
+            ));
+            assert!(state.composer.prompt_buffer.is_empty());
+            assert!(!state.palette_visible);
+            state.handle_key(key(crossterm::event::KeyCode::Esc));
+            assert!(!state.connect_dialog.visible);
+            assert!(state.startup_shell_visible());
+            let rendered = render_live_lines(&state, 120, 36);
+            assert!(
+                rendered.contains("No provider connected. Use /login."),
+                "{rendered}"
+            );
+            assert!(rendered.contains("New worktree"), "{rendered}");
+            assert_eq!(state.focus, app::Focus::Prompt);
+        }
+        if banner {
+            let rendered = render_live_lines(&state, 120, 36);
+            assert!(
+                rendered.contains("Provider not connected"),
+                "{name}: {rendered}"
+            );
+            assert!(
+                !rendered.contains("Logged in with API key"),
+                "{name}: {rendered}"
+            );
+            assert_eq!(state.launch_metadata().profile(), "build");
+            assert_eq!(
+                state.launch_metadata().switchable_profiles(),
+                ["build", "plan"]
+            );
+        }
+    }
 }
 
 pub(super) fn startup_hints_stay_compose_first() {

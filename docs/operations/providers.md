@@ -1,8 +1,24 @@
 # Log in to a provider
 
-Inside the TUI, use `/login` or choose `Login` from the command palette. Both
-open the provider dialog with browser and headless sign-in. Provider API-key
-methods remain available in the same dialog.
+Run `harness` without a config file, then use `/login` or choose `Login` from
+the command palette. Both open the provider picker. It offers OpenAI ChatGPT
+Plus/Pro or an API key, GitHub Copilot device login, Anthropic API key, Claude
+Pro/Max subscription, Google, OpenRouter, and more. You can also
+use `harness auth login <provider>` or export a provider API key before startup.
+
+After a successful CLI or TUI sign-in stores a credential, Harness writes a
+minimal `<home>/harness.jsonc` if neither user runtime config file exists and
+`HARNESS_CONFIG` and `HARNESS_CONFIG_CONTENT` are unset. `<home>` is a nonempty
+`HARNESS_HOME` used as-is, otherwise `~/.harness`. The write uses create-new
+semantics and POSIX mode `0600`, never overwrites a file, and prints
+`wrote starter config: <path>` on stdout.
+
+The file includes the schema URL and comments explaining the one-time write and
+pointing to `harness models`. Its `model` is the default for the provider just
+signed in, if known; otherwise the key is omitted. It has no `provider` entries,
+so automatic discovery stays enabled. Exporting an API key alone does not write
+this file. Keep project policy in `<project>/harness.jsonc`; it overrides personal
+defaults. See [config precedence](../configuration/config.md#discovery-and-precedence).
 
 Local HTTP fixtures verify requests, streaming, tool results, login callbacks,
 device polling, refresh and credential redaction. A live Codex prompt using an
@@ -74,12 +90,19 @@ See [Microsoft's CAPI service implementation](https://github.com/microsoft/vscod
 
 ## Startup and model limits
 
-Catalog selection is offline. Without project configuration, it selects an
-embedded provider with stored or environment credentials. Connected Codex and
-Copilot providers also augment explicit configurations when absent. Existing
-provider definitions, model choices and instructions remain authoritative.
+Catalog selection is offline. When the loaded config has no provider entries,
+it discovers stored credentials and API key environment variables against the
+embedded catalog. A config that only sets permissions or other defaults keeps
+this behavior. Defining any `provider` entry makes the catalog curated: only
+configured providers plus signed-in Codex, GitHub Copilot, and Claude
+subscription are included. A provider-less config may still pin a
+`provider/model`, resolved through runtime discovery rather than config validation.
+A connected pin is preserved; when its provider is disconnected, the TUI uses
+another connected provider's default or shows the disconnected `/login` state.
+A noninteractive run with no connection reports the pinned provider and points
+to `harness auth login`. Project instructions remain authoritative.
 Codex also reads missing, supported model entries from `HARNESS_MODELS_PATH` or
-the credential directory's `models-cache.json`. Cached entries never replace
+`<home>/models-cache.json`. Cached entries never replace
 configured models. Invalid caches are ignored. Runtime
 selection does not fetch or write a catalog; the login flow and explicit model
 commands perform refreshes. `HARNESS_DISABLE_MODELS_FETCH=1` selects embedded data.

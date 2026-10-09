@@ -17,6 +17,10 @@ pub struct ModelConfig {
     #[serde(skip)]
     #[schemars(skip)]
     pub limit_provenance: ModelLimitProvenance,
+    /// models.dev release date used only for automatic model selection.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub catalog_release_date: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]

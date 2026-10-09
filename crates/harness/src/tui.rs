@@ -138,7 +138,7 @@ use self::workflow::UiIntentSink;
 use self::workflow::{
     build_live_ui_intent_router, handle_model_switch_intent, map_startup_intent_to_workflow,
     persist_launch_selection_for_exit, run_interactive_workflow_loop, take_selected_workflow,
-    InteractiveWorkflow, LaunchSelection,
+    InteractiveWorkflow, LaunchSelection, LaunchSelectionState,
 };
 
 #[cfg(test)]
@@ -407,9 +407,10 @@ async fn run_interactive_mode(
         .map_err(|err| format!("failed to create session dir: {err}"))?;
 
     set_pending_connect_providers_from_config(settings.config.as_ref(), demo_mode);
-    let launch_selection = Arc::new(Mutex::new(
-        settings.launch_metadata.clone().without_mode_label(),
-    ));
+    let launch_selection = Arc::new(Mutex::new(LaunchSelectionState {
+        metadata: settings.launch_metadata.clone().without_mode_label(),
+        config_digest: settings.config_digest.clone(),
+    }));
     let persist_model_selection = settings.config.is_some() && !demo_mode;
     let coordinator_config_warmup = LiveCoordinatorConfigWarmup::start(settings, demo_mode);
     profile_handoff("interactive_mode.warmup_started");
@@ -481,10 +482,7 @@ async fn run_interactive_mode(
     .await;
 
     if persist_model_selection {
-        persist_launch_selection_for_exit(
-            &recover_mutex_lock(&launch_selection),
-            &settings.config_digest,
-        );
+        persist_launch_selection_for_exit(&recover_mutex_lock(&launch_selection));
     }
     result
 }
@@ -498,9 +496,10 @@ async fn run_direct_continue_mode(
     fs::create_dir_all(&settings.session_dir)
         .map_err(|err| format!("failed to create session dir: {err}"))?;
 
-    let launch_selection = Arc::new(Mutex::new(
-        settings.launch_metadata.clone().without_mode_label(),
-    ));
+    let launch_selection = Arc::new(Mutex::new(LaunchSelectionState {
+        metadata: settings.launch_metadata.clone().without_mode_label(),
+        config_digest: settings.config_digest.clone(),
+    }));
     let persist_model_selection = settings.config.is_some() && !demo_mode;
     let coordinator_config_warmup = LiveCoordinatorConfigWarmup::start(settings, demo_mode);
     let _ = coordinator_config_warmup
@@ -587,10 +586,7 @@ async fn run_direct_continue_mode(
     .await;
 
     if persist_model_selection {
-        persist_launch_selection_for_exit(
-            &recover_mutex_lock(&launch_selection),
-            &settings.config_digest,
-        );
+        persist_launch_selection_for_exit(&recover_mutex_lock(&launch_selection));
     }
     result
 }
@@ -620,17 +616,14 @@ async fn run_startup_launcher(
         });
     }
     let auth_update_tx = live_update_tx.clone();
-    if let Some(notice) = auth_backend.model_prompt_notice(&recover_mutex_lock(&launch_selection)) {
+    if let Some(notice) =
+        auth_backend.model_prompt_notice(&recover_mutex_lock(&launch_selection).metadata)
+    {
         let _ = live_update_tx.send(notice);
     }
     let startup_auth_backend = auth_backend.clone();
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
-        if handle_model_switch_intent(
-            &intent,
-            &launch_selection,
-            persist_model_selection,
-            &auth_backend.config_digest,
-        ) {
+        if handle_model_switch_intent(&intent, &launch_selection, persist_model_selection) {
             if let UiIntent::SwitchModel {
                 launch_metadata, ..
             } = &intent
@@ -784,6 +777,7 @@ async fn run_continue_session_bootstrap(
     )
     .with_available_models(
         recover_mutex_lock(&launch_selection)
+            .metadata
             .available_models()
             .to_vec(),
     );
@@ -839,7 +833,6 @@ async fn run_continue_session_bootstrap(
         intent_tx.clone(),
         Arc::clone(&launch_selection),
         settings.config.is_some() && !demo_mode,
-        settings.config_digest.clone(),
     );
 
     let exit_on_finish = cmd.exit_on_finish;

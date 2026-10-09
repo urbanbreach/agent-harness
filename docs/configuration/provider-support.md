@@ -10,6 +10,21 @@ The coordinator sends requests through `harness-providers`, which normalizes
 backend streams into common events. Deterministic tests use mock providers. Live
 tests require explicit environment settings.
 
+## Default model selection
+
+A connected provider uses its first available curated default. Codex and Claude
+subscription have their own lists; the generic list includes
+`claude-sonnet-4-6`. Google prefers `gemini-3.1-pro-preview`, then
+`gemini-3-pro-preview`, then `gemini-2.5-pro`. OpenRouter prefers
+`anthropic/claude-sonnet-4.6`, then `openai/gpt-5.5`, then
+`anthropic/claude-sonnet-4.5`.
+
+Otherwise, selection prefers declared tool-call support, then IDs without a
+`:free` suffix or `nano`, `lite`, `mini` or `alpha` tokens, then the newest
+models.dev release date, then alphabetical order. A custom provider with models
+but no catalog metadata still gets a default.
+
+
 ## Codex context profiles
 
 Catalog-derived GPT-5.6 models on the built-in `openai-codex` provider use a 369,384-token maximum input profile. With the default 16,384-token compaction reserve, this exposes the Codex default usable context budget of 353,000 tokens. This applies to the Luna, Terra, and Sol tiers; the nonexistent unsuffixed `gpt-5.6` alias is not exposed. Other OpenAI-compatible providers retain their configured or discovered API limits.
@@ -22,9 +37,9 @@ Sources: [model availability](https://learn.chatgpt.com/docs/models#deprecated-c
 
 ## GPT-6 Astra
 
-`gpt-6-astra` is available in the bundled Codex catalog and the shipped example
-configuration. Select `openai-codex/gpt-6-astra` in `/model`, or set it as the
-top-level `model` in `harness.jsonc`. The starter defaults to `gpt-6-astra`.
+`gpt-6-astra` is available in the bundled Codex catalog. Select
+`openai-codex/gpt-6-astra` in `/model`, or set it as the top-level `model` in
+an optional `harness.jsonc`. First sign-in may write a starter with the provider's default model.
 The supported reasoning variants are `low`, `medium`, `high`, `xhigh`, and `max`;
 `none`, `minimal`, and Codex's multi-agent `ultra` mode are not offered.
 Codex requests without an explicit reasoning effort default to `low` and retain
@@ -32,8 +47,8 @@ the encrypted reasoning-content request option used by the existing Responses
 transport. Explicit reasoning and verbosity settings take precedence.
 
 The bundled API model metadata records 1,050,000 context tokens, 922,000 maximum input tokens, and 128,000 maximum
-output tokens. Catalog discovery preserves these limits. The shipped example and workspace configuration instead
-limit the working context through model configuration:
+output tokens. Catalog discovery preserves these limits. To set a smaller
+working context, add an explicit model limit override:
 
 ```jsonc
 "limit": { "context": 1050000, "input": 288384, "output": 128000 }
@@ -50,10 +65,9 @@ Availability still depends on the account and endpoint;
 
 ## GPT-6.1 Sol
 
-`gpt-6.1-sol` is available in the bundled catalog and the workspace, example,
-and reference configurations. Select `openai-codex/gpt-6.1-sol` in the model
-picker, or set it as the top-level `model` in `harness.jsonc`.
-Existing model defaults are unchanged.
+`gpt-6.1-sol` is available in the bundled catalog and the reference
+configuration. Select `openai-codex/gpt-6.1-sol` in the model picker, or set it
+as the top-level `model` in an optional `harness.jsonc`.
 
 Supported reasoning variants are `low`, `medium`, `high`, `xhigh`, and `max`.
 Without an explicit reasoning setting, Codex requests default to `medium` and
@@ -61,9 +75,9 @@ include encrypted reasoning content. Explicit settings take precedence.
 Tool calling uses the Responses API; `none` and `minimal` are not supported.
 
 Bundled API limits are 1,050,000 context tokens, 922,000 maximum input tokens,
-and 128,000 maximum output tokens. The shipped configurations use a 288,384-token
-input limit, preserving the existing 272,000-token compaction threshold with the
-default 16,384-token reserve. Account and workspace rollout still determine access.
+and 128,000 maximum output tokens. A custom 288,384-token input limit gives a
+272,000-token compaction threshold with the default 16,384-token reserve.
+Account and workspace rollout still determine access.
 See the [model specifications](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
 and [Codex availability](https://learn.chatgpt.com/docs/models#gpt-61-sol).
 
@@ -76,7 +90,14 @@ Local targets such as Ollama are optional manual checks. They are outside
 
 ## Credentials
 
-Use config/env-backed provider credentials. Missing credentials are reported without printing secret values. Invalid credentials and rate limits require live prompt evidence because doctor stays offline.
+No config file is needed. Connect with `/login`, `harness auth login <provider>`,
+or an exported provider API key such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
+Without provider entries, Harness discovers stored credentials and API key
+environment variables from its embedded models.dev catalog. Defining any
+`provider` entry makes the catalog curated: configured providers plus signed-in
+Codex, GitHub Copilot, and Claude subscription. Missing credentials are reported
+without printing secret values. Invalid credentials and rate limits require
+a live prompt because `harness doctor` stays offline.
 
 ## Model catalog refresh
 

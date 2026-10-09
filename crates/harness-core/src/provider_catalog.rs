@@ -313,6 +313,11 @@ fn parse_model(
             output: limits.max_output_tokens(),
         },
         limit_provenance: limits.context_window.provenance.clone(),
+        catalog_release_date: raw
+            .options
+            .pointer("/modelsDev/model/releaseDate")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
         metadata: raw.metadata,
         modalities: raw.modalities,
         variants: raw.variants,

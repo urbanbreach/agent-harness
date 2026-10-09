@@ -28,7 +28,9 @@ fn tui_auth_backend_runs_same_auth_command_and_redacts_output() {
     .unwrap_or_abort();
     let deps = harness::CliDeps::real()
         .with_current_dir(temp.path().to_path_buf())
-        .with_env("HARNESS_DATA_HOME", data_home.to_string_lossy());
+        .with_env("HARNESS_HOME", data_home.to_string_lossy())
+        .without_env("HARNESS_CONFIG")
+        .without_env("HARNESS_CONFIG_CONTENT");
 
     let secret = "tui-auth-backend-secret-value";
     let (message, level) = run_tui_auth_backend_once_with_deps(
@@ -47,7 +49,7 @@ fn tui_auth_backend_runs_same_auth_command_and_redacts_output() {
     assert!(message.contains("auth backend completed: harness auth login codex"));
     assert!(!message.contains(secret), "TUI notice leaked auth secret");
     assert!(
-        data_home.join("harness/credentials/codex.json").is_file(),
+        data_home.join("credentials/codex.json").is_file(),
         "TUI auth route must write through the same credential backend as CLI auth"
     );
 
@@ -92,7 +94,9 @@ fn tui_auth_backend_streams_output_and_accepts_hidden_stdin() {
     .unwrap_or_abort();
     let deps = harness::CliDeps::real()
         .with_current_dir(temp.path().to_path_buf())
-        .with_env("HARNESS_DATA_HOME", data_home.to_string_lossy());
+        .with_env("HARNESS_HOME", data_home.to_string_lossy())
+        .without_env("HARNESS_CONFIG")
+        .without_env("HARNESS_CONFIG_CONTENT");
     let secret = "sk-tui-streamed-stdin-secret";
     let (tx, rx) = live_update_channel();
 
@@ -134,7 +138,7 @@ fn tui_auth_backend_streams_output_and_accepts_hidden_stdin() {
         "streamed auth notice leaked stdin secret"
     );
     assert!(
-        data_home.join("harness/credentials/codex.json").is_file(),
+        data_home.join("credentials/codex.json").is_file(),
         "streamed TUI auth should store the API key through the CLI backend"
     );
 }

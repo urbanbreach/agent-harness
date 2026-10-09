@@ -1411,12 +1411,20 @@ impl AppState {
             });
         }
     }
-    pub fn maybe_set_no_provider_banner(&mut self) {
-        if self.replay_mode || !self.startup_mode {
+    pub fn initialize_provider_connection(&mut self) {
+        if self.replay_mode
+            || !self.startup_mode
+            || self.launch_metadata.provider() == "mock"
+            || matches!(self.launch_metadata.mode_label(), Some("Demo" | "Mock"))
+            || !self.launch_metadata.available_models().is_empty()
+        {
             return;
         }
-        if self.launch_metadata.available_models().is_empty() && self.status_banner.is_none() {
+        if self.status_banner.is_none() {
             self.status_banner = Some(NO_PROVIDER_BANNER.to_string());
+        }
+        if self.is_first_run() {
+            self.open_connect_dialog();
         }
     }
     pub fn apply_keybindings(&mut self, bindings: std::collections::BTreeMap<String, String>) {

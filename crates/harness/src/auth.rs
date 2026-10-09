@@ -7,7 +7,7 @@ use harness_core::{
 use std::{
     collections::BTreeSet,
     ffi::OsString,
-    io::{BufRead, Read},
+    io::{BufRead, Read, Write},
     path::{Path, PathBuf},
 };
 mod claude_account;
@@ -128,7 +128,7 @@ pub(crate) fn execute(
 ) -> Result<(), String> {
     let config = config_path;
     let store = CredentialStore::from_lookup(&|name| deps.env_var_value(name))
-        .ok_or("set HARNESS_DATA_HOME, XDG_DATA_HOME, or HOME for credential storage")?;
+        .ok_or("set HARNESS_HOME or HOME for credential storage")?;
     let config = load_resolved_config_with_lookup(config, &deps.config_load_context(), &|name| {
         deps.env_var_value(name)
     })
@@ -281,6 +281,7 @@ pub(crate) fn execute(
                 store.save(&credential).map_err(|e| e.to_string())?;
                 writeln!(io.stdout, "stored oauth credential for {id}")
                     .map_err(|e| e.to_string())?;
+                write_starter_config_after_login(&id, &store, io, deps);
                 return Ok(());
             }
             if matches!(method, Method::ApiKey) {
@@ -342,9 +343,100 @@ pub(crate) fn execute(
                 writeln!(io.stdout, "stored oauth credential for {id}")
                     .map_err(|e| e.to_string())?;
             }
+            write_starter_config_after_login(&id, &store, io, deps);
         }
     }
     io.stdout.flush().map_err(|e| e.to_string())
+}
+
+fn write_starter_config_after_login(
+    id: &ProviderId,
+    store: &CredentialStore,
+    io: &mut CliIo<'_>,
+    deps: &CliDeps,
+) {
+    match create_starter_config(id, store, deps) {
+        Ok(Some(path)) => {
+            if let Err(err) = writeln!(io.stdout, "wrote starter config: {}", path.display()) {
+                let _ = writeln!(io.stderr, "could not report starter config: {err}");
+            }
+        }
+        Ok(None) => {}
+        Err(err) => {
+            let _ = writeln!(io.stderr, "could not write starter config: {err}");
+        }
+    }
+}
+
+fn create_starter_config(
+    id: &ProviderId,
+    store: &CredentialStore,
+    deps: &CliDeps,
+) -> Result<Option<PathBuf>, String> {
+    if deps.env_var_is_set("HARNESS_CONFIG") || deps.env_var_is_set("HARNESS_CONFIG_CONTENT") {
+        return Ok(None);
+    }
+    let lookup = |name: &str| deps.env_var_value(name);
+    let home = harness_core::storage_paths::data_dir_from_lookup(&lookup)
+        .ok_or("set HARNESS_HOME or HOME for starter config storage")?;
+    let path = home.join("harness.jsonc");
+    if path.try_exists().map_err(|e| e.to_string())?
+        || home
+            .join("harness.json")
+            .try_exists()
+            .map_err(|e| e.to_string())?
+    {
+        return Ok(None);
+    }
+    let catalog = crate::runtime_catalog::resolve_runtime_catalog(
+        None,
+        None,
+        None,
+        &deps.config_load_context(),
+        Some(store),
+        &lookup,
+    )
+    .ok();
+    let model = catalog.as_ref().and_then(|catalog| {
+        catalog
+            .config
+            .providers
+            .iter()
+            .find_map(|(name, provider)| {
+                (provider.credential_provider(name).as_ref() == Some(id))
+                    .then(|| crate::runtime_catalog::default_model_for_provider(name, provider))
+                    .flatten()
+                    .map(|model| format!("{name}/{model}"))
+            })
+    });
+    let mut content = String::from(concat!(
+        "{\n",
+        "  // Harness wrote this after the first sign-in and never overwrites it.\n",
+        "  \"$schema\": \"https://github.com/urbanbreach/agent-harness/releases/latest/download/harness.schema.json\",\n",
+        "  // Run harness models for model choices.\n",
+    ));
+    if let Some(model) = model {
+        use std::fmt::Write as _;
+        let model = serde_json::to_string(&model).map_err(|e| e.to_string())?;
+        writeln!(&mut content, "  \"model\": {model},").map_err(|e| e.to_string())?;
+    }
+    content.push_str("}\n");
+    std::fs::create_dir_all(&home).map_err(|e| e.to_string())?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = match options.open(&path) {
+        Ok(file) => file,
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => return Ok(None),
+        Err(err) => return Err(format!("{}: {err}", path.display())),
+    };
+    file.write_all(content.as_bytes())
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(Some(path))
 }
 
 fn hidden_key(io: &mut CliIo<'_>) -> Result<String, String> {

@@ -235,6 +235,9 @@ pub fn parse_subagent_definition(text: &str) -> Result<SubagentDefinition, Confi
     if definition.name.is_empty() {
         return Err(ConfigError("agent definition requires a name".into()));
     }
+    if let Some(model) = &definition.model {
+        validate_subagent_model_role(model)?;
+    }
     let body = body.split_once('\n').map_or("", |(_, body)| body).trim();
     definition.prompt_body = (!body.is_empty()).then(|| body.to_owned());
     Ok(definition)
@@ -249,7 +252,12 @@ fn load_presets(root: &Path, snapshot: &mut SubagentDefinitionSnapshot) {
             continue;
         }
         let role = super::super::loader::read_text(&path).and_then(|text| {
-            toml::from_str::<SubagentRole>(&text).map_err(super::super::normalize::parse_error)
+            let role: SubagentRole =
+                toml::from_str(&text).map_err(super::super::normalize::parse_error)?;
+            if let Some(model) = &role.model {
+                validate_subagent_model_role(model)?;
+            }
+            Ok(role)
         });
         match role {
             Ok(mut role) => {
@@ -273,7 +281,12 @@ fn load_presets(root: &Path, snapshot: &mut SubagentDefinitionSnapshot) {
             continue;
         }
         let persona = super::super::loader::read_text(&path).and_then(|text| {
-            toml::from_str::<SubagentPersona>(&text).map_err(super::super::normalize::parse_error)
+            let persona: SubagentPersona =
+                toml::from_str(&text).map_err(super::super::normalize::parse_error)?;
+            if let Some(model) = &persona.model {
+                validate_subagent_model_role(model)?;
+            }
+            Ok(persona)
         });
         match persona {
             Ok(mut persona) => {
