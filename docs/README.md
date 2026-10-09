@@ -20,7 +20,6 @@ The [Finnish README](README.fi.md) covers the same setup.
 | [Operator commands](operations/operators.md) | Stdio peer diagnostics |
 | [Privacy and local data](permissions/privacy-and-local-data.md) | Storage, outgoing requests, and redaction |
 | [Troubleshooting](operations/troubleshooting.md) | Config, authentication, tools, and recovery failures |
-| [Starter skills](configuration/starter-skills.md) | Bundled skill instructions and activation rules |
 | [Extensions](operations/extension-strategy.md) | Skills, MCP, and lifecycle hooks |
 | [Migration notes](operations/migration-notes.md) | Unsupported commands and removed prototype APIs |
 

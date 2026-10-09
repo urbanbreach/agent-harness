@@ -39,9 +39,8 @@ Asenna uusin julkaisu:
 
 ```bash
 curl -fsSL https://github.com/urbanbreach/agent-harness/releases/latest/download/install.sh | sh
-
-# Kokeile ilman tunnuksia tai verkkoyhteyttä.
-harness tui --mock
+cd /polku/projektiisi
+harness
 ```
 
 Skripti lataa prosessorillesi sopivan staattisen binäärin, tarkistaa sen
@@ -50,9 +49,16 @@ julkaisun `SHA256SUMS`-tiedostoa vasten ja asentaa sen hakemistoon
 `HARNESS_INSTALL_DIR` toisen asennushakemiston. Poista asennus poistamalla
 `harness`-tiedosto.
 
-Kirjoita `hello` ja paina Enter. Saat valmiiksi määritellyn testivastauksen.
-`Ctrl+p` avaa komentovalikon. Testipalveluntarjoaja vastaa vain testikehotteisiin.
-Omia koodaustehtäviä varten tarvitset oikean palveluntarjoajan.
+Asetustiedostoa ei tarvita. Kun projektissa ei ole yhdistettyä palveluntarjoajaa
+eikä tallennettuja istuntoja, Harness avaa kirjautumisvalikon automaattisesti.
+Valitse palveluntarjoaja ja kirjaudu. Kirjoita sitten koodaustehtävä ja paina
+Enter. Esc sulkee valikon; `/login` avaa sen uudelleen. Jos projektissa on jo
+istuntoja mutta yhteys puuttuu, aloitusnäkymässä lukee
+`No provider connected. Use /login.`
+
+Voit kokeilla käyttöliittymää ilman verkkoa komennolla `harness tui --mock`.
+Kirjoita `hello` ja paina Enter, niin saat testivastauksen. Testipalveluntarjoaja
+vastaa vain testikehotteisiin. `Ctrl+p` avaa komentovalikon.
 
 ### Käännä lähdekoodista
 
@@ -68,25 +74,48 @@ cargo install --path crates/harness --locked
 
 ## Yhdistä palveluntarjoaja
 
-Kopioi [`configs/harness.example.jsonc`](../configs/harness.example.jsonc)
-työstettävän projektin juureen nimellä `harness.jsonc`. Mallina on oletuksena
-`openai-codex/gpt-5.4-mini`. Suorita projektin hakemistossa:
+Käyttöliittymän `/login` avaa palveluntarjoajavalikon. Vaihtoehtoina ovat
+OpenAI ChatGPT Plus/Pro tai API-avain, GitHub Copilotin laitekirjautuminen,
+Anthropicin API-avain, Claude Pro/Max -tilaus, Google, OpenRouter ja muita
+palveluntarjoajia.
+
+Voit kirjautua myös komentoriviltä:
 
 ```bash
-harness config validate
-harness doctor
 harness auth login codex
+# Muut palveluntarjoajat: harness auth login <provider>
+harness doctor
 harness
 ```
 
-Aloitusasetukset käyttävät Codexin OAuth-kirjautumista. Varavaihtoehtona on
-`OPENAI_API_KEY`. Pidä tunnukset poissa asetustiedostosta. `doctor` tarkistaa
-paikalliset asetukset ja tunnusten saatavuuden. Varmista yhteys ja tilin oikeudet
-yhdellä oikealla kehotteella.
+Ympäristömuuttujan API-avain riittää ilman kirjautumiskomentoa tai asetustiedostoa:
 
-Harness tukee OpenAI-yhteensopivia ja Anthropic-yhteyksiä.
-[Palveluntarjoajien opas](configuration/provider-support.md) kuvaa tunnukset,
-mallivalinnan, varamallit ja rajat.
+```bash
+export ANTHROPIC_API_KEY="oma-api-avain"
+harness
+```
+
+Harness löytää tallennetut tunnukset ja palveluntarjoajien API-avainten
+ympäristömuuttujat sisäänrakennetun models.dev-luettelon perusteella. Pidä
+tunnukset poissa asetustiedostoista. `harness doctor` tarkistaa valmiuden ilman
+verkkoa.
+Oikea kehote varmistaa tilin ja palveluntarjoajan yhteyden.
+[Palveluntarjoajien opas](configuration/provider-support.md) kertoo lisää.
+
+Asetustiedosto on valinnainen. Ensimmäisen onnistuneen kirjautumisen jälkeen
+Harness luo tiedoston `~/.harness/harness.jsonc` ja valitsee siihen kyseisen
+palveluntarjoajan oletusmallin, jos malli on tiedossa. Harness ei koskaan
+korvaa olemassa olevaa käyttäjän asetustiedostoa. Se ei myöskään kirjoita
+tiedostoa, jos `HARNESS_CONFIG` tai `HARNESS_CONFIG_CONTENT` on asetettu.
+Tallenna omat oletuksesi tähän tiedostoon ja projektin säännöt tiedostoon
+`<projekti>/harness.jsonc`. Projektin asetukset ohittavat omat oletuksesi.
+`HARNESS_HOME` vaihtaa käyttäjän asetushakemiston.
+[`configs/harness.example.jsonc`](../configs/harness.example.jsonc) on lyhyt,
+kommentoitu esimerkki. Se ei valitse mallia eikä sitä tarvitse kopioida.
+
+Jos asetuksissa ei ole palveluntarjoajia, automaattinen haku pysyy käytössä.
+Yksikin `provider`-määritys rajaa luettelon määritettyihin palveluntarjoajiin
+sekä kirjautuneisiin Codex-, GitHub Copilot- ja Claude-tilaustileihin.
 
 ## Käytä Harnessia
 
@@ -97,24 +126,36 @@ mallivalinnan, varamallit ja rajat.
 | Avaa komennot ja asetukset | `Ctrl+p` |
 | Listaa istunnot | `harness sessions list` |
 | Tarkastele istuntoa | `harness sessions inspect <run-id-or-path>` |
-| Näytä istuntojen haarat | `harness sessions tree <run-id-or-path>` |
+| Näytä istuntojen haarat | `harness sessions tree --root <run-id-or-path>` |
 | Selvitä asetuksen lähde | `harness config explain model` |
 
 Pääagentti delegoi työtä `spawn_subagent`-työkalulla. Valmiit ala-agentit ovat
-`task`, `scout`, `reviewer`, `security-reviewer` ja `sonic`. Kullakin on omat
-tehtävänsä ja työkalunsa.
-Projektin yhteiset oikeudet rajoittavat kaikkia ala-agentteja. Lue lisää
+`task`, `scout`, `reviewer`, `security-reviewer` ja `sonic`. Lisää omat
+Markdown-määritykset YAML-alkutietoineen hakemistoon
+`<projekti>/.harness/agents/` tai `<home>/agents/`. Lähin projektin määritys
+voittaa käyttäjän määrityksen, joka puolestaan voittaa valmiin agentin.
+`task` perii pääagentin mallin. Scout ja sonic käyttävät valitsinta `@smol`,
+arvioijat valitsinta `@slow`. Aseta nämä valinnaiset roolit avaimella
+`model_roles`; määrittämätön rooli perii pääagentin mallin. Projektin yhteiset
+oikeudet rajoittavat kaikkia ala-agentteja. Lue lisää
 [agenteista ja tehtävistä](operations/generic-agent-and-tasks.md).
+
+Omat vinoviivakomennot ovat Markdown-kehotteita hakemistossa
+`<projekti>/.harness/commands/` tai `<home>/commands/`. Ne toimivat TUI:ssa sekä
+komennoilla `harness run "/nimi argumentit"` ja `harness prompt`. Valmis
+`/init` pyytää agenttia luomaan tai päivittämään tiiviin `AGENTS.md`-tiedoston
+projektin juureen käyttäjän sisältöä säilyttäen. Katso
+[komentopohjat](operations/extension-strategy.md#markdown-prompt-commands).
 
 ## Määritä oikeudet
 
-Aloitusasetukset sallivat tavalliset työkalut. Harness kysyy silti luvan projektin
+Oletusoikeudet sallivat tavalliset työkalut. Harness kysyy silti luvan projektin
 ulkopuolisiin hakemistoihin, toistuviin samanlaisiin kutsuihin ja arkaluonteisten
 tiedostojen lukemiseen. Oikeudet säätelevät työkalujen suoritusta. Ne eivät eristä
 hyväksyttyä komentoa käyttöjärjestelmän hiekkalaatikkoon.
 
-Tämä `permission`-arvo pyytää luvan muokkauksiin ja sallii vain valitut
-komentorivitoiminnot:
+Lisää tämä lohko valinnaiseen omaan tai projektin asetustiedostoon, jos haluat
+hyväksyä muokkaukset ja sallia vain valitut komentorivitoiminnot:
 
 ```jsonc
 "permission": {
@@ -139,16 +180,32 @@ arvot. [Asetusviite](configuration/config.md) listaa tuetut avaimet.
 
 ## Missä data on
 
-Istunnot ja muu ajonaikainen data ovat projektin ulkopuolella:
-`$HARNESS_DATA_HOME/harness`, jos muuttuja on asetettu, muuten
-`$XDG_DATA_HOME/harness` tai `~/.local/share/harness`. Jokainen projekti saa
-polkunsa mukaan nimetyt kansiot. Projektin `/home/me/code/app` istunnot ovat
-kansiossa `sessions/--home-me-code-app--/`, muisti, koodi-indeksi,
-muokkausten jäljitys ja suunnitelmat kansiossa `projects/--home-me-code-app--/`
-ja hallitut työpuut kansiossa `worktrees/--home-me-code-app--/`.
+Käyttäjän tiedostot ovat hakemistossa `~/.harness/`. Jos `HARNESS_HOME` ei ole
+tyhjä, Harness käyttää sen arvoa sellaisenaan eikä lisää polkuun hakemistoa.
+Hakemiston sisältö:
 
-Projektin oma `.agent-harness/` sisältää vain itse kirjoittamasi agentit,
-taidot ja kehotteet sekä muistetut käyttöluvat.
+- `harness.jsonc` tai `harness.json`: käyttäjän ajonaikaiset asetukset.
+  Ensimmäinen olemassa oleva tiedosto valitaan.
+- `tui.jsonc` tai `tui.json`: käyttäjän näppäinasetukset samalla valintasäännöllä.
+- `credentials/`, `anthropic-subscription-bindings/`, `models-cache.json`:
+  tallennetut tunnukset, tilaustilien sidokset ja malliluettelon välimuisti.
+- `prompts/`, `agents/`, `commands/`, `skills/`: käyttäjän kehotepohjat,
+  agentit, vinoviivakomennot ja taidot.
+- `model.json`: viimeksi TUI:ssa valittu malli.
+  `HARNESS_MODEL_SELECTION_STATE_FILE` voi vaihtaa tiedoston polun.
+- `sessions/<key>/`: istunnot ja niiden tiedostot.
+- `projects/<key>/`: muisti, koodi-indeksi, muokkausten jäljitys ja suunnitelmat.
+- `worktrees/<key>/`: hallitut Git-työpuut.
+
+Globaalit taidot latautuvat oletuksena hakemistoista `<home>/skills` ja
+`$HOME/.agents/skills`. `HARNESS_HOME` vaikuttaa vain ensimmäiseen polkuun.
+Vaihda `skills.global_roots`, jos säilytät taitoja muualla. Projektin avain
+muodostuu sen polusta. Projektin `/home/me/code/app` istunnot ovat kansiossa
+`sessions/--home-me-code-app--/`.
+
+Projektin `.harness/` sisältää itse kirjoittamasi agentit, komennot, taidot ja
+kehotepohjat, projektin asetukset sekä muistetut käyttöluvat. Projektin taidot
+latautuvat myös hakemistosta `.agents/skills`, Harnessin taitojen jälkeen.
 
 Aiemmat versiot tallensivat istunnot hakemistoon
 `<projekti>/.agent-harness/sessions`. Niitä ei siirretä automaattisesti, mutta

@@ -37,9 +37,8 @@ Install the latest release:
 
 ```bash
 curl -fsSL https://github.com/urbanbreach/agent-harness/releases/latest/download/install.sh | sh
-
-# Try the terminal UI without credentials or network access.
-harness tui --mock
+cd /path/to/your/project
+harness
 ```
 
 The script downloads the static binary for your CPU, checks it against the
@@ -48,9 +47,15 @@ release's `SHA256SUMS`, and installs it to `~/.local/bin`. Set
 somewhere else. To uninstall, delete the `harness` file. Release archives are
 also on the [releases page](https://github.com/urbanbreach/agent-harness/releases).
 
-Type `hello` and press Enter to receive the scripted reply. Press `Ctrl+p` for
-the command palette. The mock provider accepts fixture prompts, so use a live
-provider for your own coding tasks.
+No config file is needed. On a new project with no connected provider or saved
+sessions, Harness opens the login picker automatically. Choose a provider and
+sign in, then type a coding task and press Enter. Esc closes the picker; use
+`/login` to reopen it. Returning users without a connection see
+`No provider connected. Use /login.` instead.
+
+For an offline UI demo, run `harness tui --mock`, type `hello`, and press Enter.
+The mock provider replies to fixture prompts only. `Ctrl+p` opens the command
+palette.
 
 JavaScript `eval` requires [Node.js 24 or newer](https://nodejs.org/en/download)
 on `PATH`. Install the current Node.js LTS release and check `node --version`.
@@ -77,24 +82,44 @@ with `scripts/release.sh`; see [releasing](docs/operations/releasing.md).
 
 ## Connect a provider
 
-Copy [`configs/harness.example.jsonc`](configs/harness.example.jsonc) to
-`harness.jsonc` in the project you want to work on. The starter selects
-`openai-codex/gpt-5.4-mini`. Run these commands from that project:
+In the TUI, `/login` opens the provider picker. It includes OpenAI ChatGPT
+Plus/Pro sign-in or an API key, GitHub Copilot device login, Anthropic API key,
+Claude Pro/Max subscription, Google, OpenRouter, and more.
+
+You can also connect from the command line:
 
 ```bash
-harness config validate
-harness doctor
 harness auth login codex
+# Or choose another provider with: harness auth login <provider>
+harness doctor
 harness
 ```
 
-The starter uses Codex OAuth, with `OPENAI_API_KEY` as a fallback. Keep credentials
-out of the config file. `doctor` checks local configuration and credential
-availability. A live turn checks whether the account and endpoint work.
+An exported API key works without a login command or config file:
 
-Harness implements OpenAI-compatible and Anthropic transports. See
-[provider support](docs/configuration/provider-support.md) for credentials, model
-selection, fallback behavior, and limits.
+```bash
+export ANTHROPIC_API_KEY="your-api-key"
+harness
+```
+
+Harness discovers stored credentials and provider API key environment variables
+from its embedded models.dev catalog. Keep credentials out of config files.
+`harness doctor` is an offline readiness check; a live turn checks account and
+endpoint access. See [provider support](docs/configuration/provider-support.md)
+for details.
+
+Config is optional. After the first successful sign-in, Harness creates
+`~/.harness/harness.jsonc` with the default model for that provider, if one is
+known. It never overwrites an existing user config and skips the write when
+`HARNESS_CONFIG` or `HARNESS_CONFIG_CONTENT` is set. Use this file for personal
+defaults and `<project>/harness.jsonc` for project policy. The project layer
+overrides personal defaults. `HARNESS_HOME` changes the personal config directory.
+[`configs/harness.example.jsonc`](configs/harness.example.jsonc) is a short
+annotated starter, not a model catalog or a required setup step.
+
+A config with no provider entries keeps automatic discovery. Defining any
+`provider` entry makes the catalog curated: only configured providers plus
+signed-in Codex, GitHub Copilot, and Claude subscription are included.
 
 ## Work with Harness
 
@@ -105,21 +130,32 @@ selection, fallback behavior, and limits.
 | Open commands and settings | `Ctrl+p` in the TUI |
 | List saved sessions | `harness sessions list` |
 | Inspect a session | `harness sessions inspect <run-id-or-path>` |
-| View session branches | `harness sessions tree <run-id-or-path>` |
+| View session branches | `harness sessions tree --root <run-id-or-path>` |
 | Find the source of a setting | `harness config explain model` |
 
-The parent agent delegates through `spawn_subagent`. The bundled agents are
-`task`, `scout`, `reviewer`, `security-reviewer`, and `sonic`. Their tools are subject
-to shared project policy. See [agents and tasks](docs/operations/generic-agent-and-tasks.md).
+The parent agent delegates through `spawn_subagent`. Built-ins are `task`,
+`scout`, `reviewer`, `security-reviewer` and `sonic`. Add Markdown definitions
+with YAML frontmatter under `<project>/.harness/agents/` or `<home>/agents/`.
+The nearest project definition wins over user files, which win over built-ins.
+`task` inherits the parent model; scout and sonic use `@smol`, while both
+reviewers use `@slow`. Configure these optional roles in `model_roles`; an unset
+role inherits the parent model. All tools remain subject to shared project policy.
+See [agents and tasks](docs/operations/generic-agent-and-tasks.md).
+
+Custom slash prompt commands are Markdown files in `<project>/.harness/commands/`
+or `<home>/commands/`. Use them in the TUI or with `harness run "/name args"`
+and `harness prompt`. The bundled `/init` asks the agent to create or update a
+concise root `AGENTS.md` while preserving user content. See
+[command templates](docs/operations/extension-strategy.md#markdown-prompt-commands).
 
 ## Set permissions
 
-The starter allows ordinary tools. It still asks about external directories,
+Built-in permissions allow ordinary tools but ask about external directories,
 repeated identical calls, and sensitive file reads. Permissions control tool
 execution; they do not confine an approved shell command to an OS sandbox.
 
-For example, replace the starter's `permission` value with this block to ask
-before edits and allow only selected shell commands:
+To ask before edits and allow only selected shell commands, add this block to
+an optional personal or project config:
 
 ```jsonc
 "permission": {
@@ -144,16 +180,28 @@ The [config reference](docs/configuration/config.md) lists the supported keys.
 
 ## Where Harness stores data
 
-Sessions and other runtime data live outside your project, under
-`$HARNESS_DATA_HOME/harness` if that is set, otherwise `$XDG_DATA_HOME/harness`,
-otherwise `~/.local/share/harness`. Each project gets folders named after its
-path. A project in `/home/me/code/app` keeps sessions in
-`sessions/--home-me-code-app--/`, workspace memory, the code index, edit
-attribution and plan files in `projects/--home-me-code-app--/`, and managed
-worktrees in `worktrees/--home-me-code-app--/`.
+User files live in `~/.harness/`. A nonempty `HARNESS_HOME` replaces this root
+as-is; Harness does not append another directory to it. Under that root:
 
-The project's own `.agent-harness/` directory holds only the agents, skills and
-prompts you write, plus remembered permission approvals.
+- `harness.jsonc` or `harness.json`: personal runtime config, first existing wins.
+- `tui.jsonc` or `tui.json`: personal keyboard config, first existing wins.
+- `credentials/`, `anthropic-subscription-bindings/`, `models-cache.json`: saved
+  sign-ins, subscription bindings and cached model metadata.
+- `prompts/`, `agents/`, `commands/`, `skills/`: personal prompt templates,
+  agent definitions, slash commands and skills.
+- `model.json`: the last model picked in the TUI;
+  `HARNESS_MODEL_SELECTION_STATE_FILE` can override its path.
+- `sessions/<key>/`: sessions and their artifacts.
+- `projects/<key>/`: workspace memory, code index, edit attribution and plans.
+- `worktrees/<key>/`: managed Git worktrees.
+
+Skills also load from `$HOME/.agents/skills` by default. Set `skills.global_roots`
+to change the roots. Project keys encode the project path: for `/home/me/code/app`,
+sessions live in `sessions/--home-me-code-app--/`.
+
+The project's `.harness/` holds authored agents, commands, skills and prompt
+overrides, project config and remembered permission approvals. Project skills
+also load from `.agents/skills`, below Harness skill roots.
 
 Earlier builds saved sessions in `<project>/.agent-harness/sessions`. They are
 not migrated; open them with `--session-dir`:
