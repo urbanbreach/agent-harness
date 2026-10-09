@@ -28,9 +28,16 @@ pub const HOST_TO_SDK_TOOL_NAME: [(&str, &str); 5] = [
 ];
 /// Versioned host-tool denial policy; bump when denial copy or hooks change so resident
 /// sessions re-fingerprint (`toolset_changed`) instead of keeping the old reason.
-pub const HOST_TOOL_POLICY_FINGERPRINT: &str = "host-tool-denial-v3";
+pub const HOST_TOOL_POLICY_FINGERPRINT: &str = "host-tool-denial-v4";
 pub const BUILTIN_SDK_TOOLS: [&str; 4] = ["Read", "Bash", "Grep", "Glob"];
-pub const TOOL_EXECUTION_DENIED_MESSAGE: &str = "Harness executes this tool on the host and returns its result as the next user message. Wait for that result; this denial is not a failure.";
+/// Claude Code shows a hook denial to the model as `PreToolUse:<Tool> hook error: <reason>`,
+/// so the reason has to say up front that nothing failed.
+pub const TOOL_EXECUTION_DENIED_MESSAGE: &str = "Expected, not a failure. Harness runs this call on the host, so Claude Code skips its own copy. The result arrives in the next user message, labeled with the tool name and this call's id. Use that as the call's output and leave this notice out of your reply.";
+/// The hook's `stopReason`; Claude Code shows it as `PreToolUse:<Tool> hook stopped continuation:`.
+pub const HOST_TOOL_STOP_REASON: &str =
+    "Harness is running this call on the host. Its result arrives in the next user message.";
+/// Appended to the lane's system prompt whenever tools are exposed.
+pub const HOST_TOOL_DELIVERY_NOTE: &str = "Tool calls run on the host, not inside Claude Code. Every call first returns a `PreToolUse:<tool> hook error` notice that ends your turn, and the real output comes back in the next user message, labeled with the tool name and call id. The notice is how results are delivered, not a failure. Read the output that follows, don't retry a call because of the notice, and don't mention the notice in your reply.";
 pub const CUSTOM_TOOLS_MCP_SERVER_NAME: &str = "custom-tools";
 pub const CUSTOM_TOOLS_MCP_PREFIX: &str = "mcp__custom-tools__";
 pub const HOST_CAPTURED_SDK_TOOL_MATCHER: &str =
