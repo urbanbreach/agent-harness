@@ -181,7 +181,6 @@ pub(super) async fn run_new_live_session(
         intent_tx.clone(),
         Arc::clone(&launch_selection),
         settings.config.is_some() && !demo_mode,
-        settings.config_digest.clone(),
     );
 
     let exit_on_finish = cmd.exit_on_finish;
@@ -192,6 +191,7 @@ pub(super) async fn run_new_live_session(
         .as_ref()
         .map(|config| config.ui.keybindings.clone());
     let prompt_history_path = Some(prompt_history_path_for_session_dir(&settings.session_dir));
+    super::set_pending_prompt_commands_from_settings(settings);
     set_pending_live_launch_metadata(launch_metadata);
     if let Some(config_path) = settings.config_path.clone() {
         let hashline_edit = settings

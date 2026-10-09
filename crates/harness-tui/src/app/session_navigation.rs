@@ -212,6 +212,15 @@ impl AppState {
                 command.id == slash_query
                     || command.aliases.iter().any(|alias| *alias == slash_query)
             });
+            if self
+                .prompt_commands
+                .iter()
+                .any(|command| command.name == slash_query)
+            {
+                // Once arguments are being typed, Enter submits rather than selecting.
+                self.clear_slash_menu();
+                return;
+            }
             if let Some(command) = exact.filter(|command| command.takes_args) {
                 self.slash_filtered = vec![command.id.to_string()];
                 self.slash_selected = 0;
@@ -232,6 +241,12 @@ impl AppState {
                 .map(|rank| (rank, command.id.to_string()))
             })
             .collect::<Vec<_>>();
+        if !self.replay_mode {
+            filtered.extend(self.prompt_commands.iter().filter_map(|command| {
+                slash_command_match_rank(&command.name, &command.description, &slash_query)
+                    .map(|rank| (rank, command.name.clone()))
+            }));
+        }
         filtered.sort_by(|left, right| {
             left.0
                 .cmp(&right.0)
@@ -641,9 +656,12 @@ impl AppState {
         if self.accept_slash_model(false) {
             return;
         }
-        let Some(command) = self.selected_slash_command() else {
+        let Some(selected) = self.slash_filtered.get(self.slash_selected).cloned() else {
             return;
         };
+        let takes_args = self
+            .selected_slash_command()
+            .is_none_or(|command| command.takes_args);
         let Some((start, end)) = self.active_slash_command_range() else {
             return;
         };
@@ -653,11 +671,11 @@ impl AppState {
             .next()
             .filter(|character| character.is_whitespace())
             .map_or(0, char::len_utf8);
-        let append_space = command.takes_args && argument_separator_len == 0;
+        let append_space = takes_args && argument_separator_len == 0;
         let replacement = if append_space {
-            format!("/{} ", command.id)
+            format!("/{selected} ")
         } else {
-            format!("/{}", command.id)
+            format!("/{selected}")
         };
         self.composer.push_undo();
         self.composer
@@ -681,6 +699,16 @@ impl AppState {
         let Some(command) = self.slash_filtered.get(self.slash_selected).cloned() else {
             return;
         };
+        if self
+            .prompt_commands
+            .iter()
+            .any(|entry| entry.name == command)
+        {
+            self.apply_selected_slash_completion();
+            self.clear_slash_menu();
+            self.submit_prompt();
+            return;
+        }
         let Some(metadata) = keybindings::slash_commands()
             .iter()
             .find(|entry| entry.id == command)

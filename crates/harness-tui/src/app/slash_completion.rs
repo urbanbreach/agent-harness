@@ -97,7 +97,17 @@ impl AppState {
         } else {
             self.slash_filtered
                 .get(index)
-                .map_or_else(String::new, |command| format!("/{command}"))
+                .map_or_else(String::new, |name| {
+                    let hint = self
+                        .prompt_commands
+                        .iter()
+                        .find(|command| command.name == *name)
+                        .and_then(|command| command.argument_hint.as_deref());
+                    match hint {
+                        Some(hint) => format!("/{name} {hint}"),
+                        None => format!("/{name}"),
+                    }
+                })
         }
     }
 
@@ -115,6 +125,13 @@ impl AppState {
             self.slash_filtered
                 .get(index)
                 .map_or_else(String::new, |command| {
+                    if let Some(entry) = self
+                        .prompt_commands
+                        .iter()
+                        .find(|entry| entry.name == *command)
+                    {
+                        return entry.description.clone();
+                    }
                     match self.slash_argument_required(command) {
                         Some(true) => "argument required · Enter to run".to_string(),
                         Some(false) => "argument optional · Enter to run".to_string(),

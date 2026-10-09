@@ -664,6 +664,8 @@ impl AppState {
             return;
         }
 
+        self.expand_prompt_command();
+
         if self.startup_mode {
             let text = self.composer.prompt_buffer.clone();
             set_pending_live_launch_metadata(self.launch_metadata.clone());
