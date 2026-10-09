@@ -13,6 +13,7 @@ pub struct SubagentDefinitionRequest {
     /// Host-injected override, not a model argument.
     pub runtime_model: Option<String>,
     pub reasoning_effort: Option<String>,
+    pub variant: Option<String>,
     pub capability_mode: Option<SubagentCapabilityMode>,
     pub persona: Option<String>,
     pub isolation: Option<SubagentIsolationMode>,
@@ -24,6 +25,7 @@ pub struct SubagentDefinitionContext<'a> {
     pub definitions: &'a SubagentDefinitionSnapshot,
     pub parent_model: &'a str,
     pub parent_reasoning_effort: Option<&'a str>,
+    pub parent_variant: Option<&'a str>,
     pub parent_max_turns: Option<NonZeroU32>,
     pub allowed_types: Option<&'a [String]>,
     pub catalog: Option<&'a SubagentModelCatalog>,
@@ -46,6 +48,7 @@ pub struct ResolvedSubagentDefinition {
     pub subagent_type: String,
     pub model: String,
     pub reasoning_effort: Option<String>,
+    pub variant: Option<String>,
     pub capability_mode: SubagentCapabilityMode,
     pub isolation: SubagentIsolationMode,
     pub permission_mode: SubagentPermissionMode,
@@ -126,6 +129,9 @@ pub fn resolve_subagent_definition(
         .flatten()
         .map(str::trim)
         .filter(|model| !sentinel(model));
+    let public_model = public_model
+        .map(|model| model_role(config, model, context.parent_model))
+        .transpose()?;
     if public_model.is_some() && context.model_selection == SubagentModelSelection::Inherited {
         return Err(SubagentResolutionError::HiddenModelSelection);
     }
@@ -167,11 +173,11 @@ pub fn resolve_subagent_definition(
         }
         outcome => outcome?,
     };
-    if let Some(model) = public_model {
+    if let Some(model) = public_model.filter(|model| *model != context.parent_model) {
         let catalog = context
             .catalog
             .ok_or(SubagentResolutionError::ValidationUnavailable)?;
-        if !catalog.contains(model) {
+        if configured_model(catalog, model).is_none() {
             return Err(SubagentResolutionError::InvalidModel {
                 model: model.into(),
             });
@@ -261,29 +267,61 @@ pub fn resolve_subagent_definition(
         .or(public_model)
         .or_else(|| role.and_then(|role| role.model.as_deref()))
         .or_else(|| persona.and_then(|persona| persona.model.as_deref()));
-    let model = [
-        override_model,
-        config.models.get(&name).map(String::as_str),
-        definition.model.as_deref(),
+    let override_source = if request.runtime_model.is_some() || public_model.is_some() {
+        0
+    } else if role.is_some_and(|role| role.model.is_some()) {
+        1
+    } else {
+        2
+    };
+    let mut model = context.parent_model;
+    let mut embedded_variants = [None; 4];
+    for (candidate, source) in [
+        (override_model, override_source),
+        (config.models.get(&name).map(String::as_str), 3),
+        (definition.model.as_deref(), 3),
     ]
     .into_iter()
-    .flatten()
-    .filter(|model| !model.eq_ignore_ascii_case("inherit"))
-    .find(|model| {
-        if context
+    .filter_map(|(model, source)| model.map(|model| (model, source)))
+    {
+        if candidate.eq_ignore_ascii_case("inherit") {
+            continue;
+        }
+        let candidate = model_role(config, candidate, context.parent_model)?;
+        if candidate == context.parent_model {
+            break;
+        }
+        if let Some((id, variant)) = context
             .catalog
-            .is_some_and(|catalog| catalog.contains(model))
+            .and_then(|catalog| configured_model(catalog, candidate))
         {
+            model = id;
+            embedded_variants[source] = variant;
+            break;
+        }
+        warnings.push(format!(
+            "unknown subagent model \"{candidate}\"; using fallback"
+        ));
+    }
+    let variant = request
+        .variant
+        .as_deref()
+        .or(embedded_variants[0])
+        .or_else(|| role.and_then(|role| role.variant.as_deref()))
+        .or(embedded_variants[1])
+        .or_else(|| persona.and_then(|persona| persona.variant.as_deref()))
+        .or(embedded_variants[2])
+        .or(definition.variant.as_deref())
+        .or(embedded_variants[3])
+        .or(context.parent_variant);
+    let variant = variant.filter(|variant| {
+        if config.model_variants.get(model).is_some_and(|variants| variants.iter().any(|name| name == variant)) {
             true
         } else {
-            warnings.push(format!(
-                "unknown subagent model \"{model}\"; using fallback"
-            ));
+            warnings.push(format!("unknown subagent variant \"{variant}\" for model \"{model}\"; ignoring variant"));
             false
         }
-    })
-    .unwrap_or(context.parent_model)
-    .to_owned();
+    }).map(str::to_owned);
     let effort = request
         .reasoning_effort
         .as_deref()
@@ -312,9 +350,7 @@ pub fn resolve_subagent_definition(
         )
         | None => definition.permission_mode,
     };
-    if matches!(definition.source, SubagentDefinitionSource::Plugin { .. })
-        || context.managed_block_bypass
-            && permission_mode == SubagentPermissionMode::BypassPermissions
+    if context.managed_block_bypass && permission_mode == SubagentPermissionMode::BypassPermissions
     {
         permission_mode = SubagentPermissionMode::Default;
     }
@@ -341,8 +377,9 @@ pub fn resolve_subagent_definition(
     Ok(ResolvedSubagentDefinition {
         definition,
         subagent_type: name,
-        model,
+        model: model.to_owned(),
         reasoning_effort,
+        variant,
         capability_mode,
         isolation,
         permission_mode,
@@ -375,4 +412,45 @@ fn prompt_file(snapshot: &SubagentDefinitionSnapshot, path: &Path) -> Result<Str
         .get(path)
         .cloned()
         .unwrap_or_else(|| Err(format!("prompt file {} was not captured", path.display())))
+}
+
+fn model_role<'a>(
+    config: &'a SubagentRuntimeConfig,
+    model: &'a str,
+    parent: &'a str,
+) -> Result<&'a str, SubagentResolutionError> {
+    match model {
+        "@smol" => Ok(config.model_roles.smol.as_deref().unwrap_or(parent)),
+        "@slow" => Ok(config.model_roles.slow.as_deref().unwrap_or(parent)),
+        model if model.starts_with('@') => Err(SubagentResolutionError::InvalidModel {
+            model: model.into(),
+        }),
+        model => Ok(model),
+    }
+}
+
+fn configured_model<'a, 'b>(
+    catalog: &'a SubagentModelCatalog,
+    reference: &'b str,
+) -> Option<(&'a str, Option<&'b str>)> {
+    fn matches(id: &str, reference: &str) -> bool {
+        id == reference
+            || id
+                .split_once(':')
+                .zip(reference.split_once('/'))
+                .is_some_and(|(id, reference)| id == reference)
+    }
+    if let Some(model) = catalog
+        .models
+        .iter()
+        .find(|model| matches(&model.id, reference))
+    {
+        return Some((&model.id, None));
+    }
+    let (base, variant) = reference.rsplit_once('/')?;
+    catalog
+        .models
+        .iter()
+        .find(|model| matches(&model.id, base))
+        .map(|model| (model.id.as_str(), Some(variant)))
 }

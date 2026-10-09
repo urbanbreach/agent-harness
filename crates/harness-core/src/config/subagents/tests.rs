@@ -24,6 +24,7 @@ fn parent_context<'a>(
         definitions,
         parent_model: "parent",
         parent_reasoning_effort: Some("medium"),
+        parent_variant: None,
         parent_max_turns: NonZeroU32::new(2),
         allowed_types: None,
         catalog: Some(catalog),

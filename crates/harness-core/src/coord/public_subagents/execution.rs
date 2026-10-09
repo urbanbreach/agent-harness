@@ -14,17 +14,30 @@ impl Runtime {
     }
 
     fn native_model_target(&self, model: &str) -> Option<ResolvedModelTarget> {
+        self.native_model_variant_target(model, None)
+    }
+
+    fn native_model_variant_target(
+        &self,
+        model: &str,
+        variant: Option<&str>,
+    ) -> Option<ResolvedModelTarget> {
         self.config
             .agent_model_targets
             .values()
-            .find(|target| target.model_ref == model || target.model == model)
+            .find(|target| {
+                (target.model_ref == model || target.model == model)
+                    && target.variant.as_deref() == variant
+            })
             .cloned()
             .or_else(|| {
                 let parsed = crate::agent::AgentModelRef::parse(model);
                 let entry = self.config.model_catalog.iter().find(|entry| {
-                    entry.model == model
-                        || entry.model == parsed.model_id
-                            && (entry.provider == parsed.provider_id || !model.contains([':', '/']))
+                    entry.variant.as_deref() == variant
+                        && (entry.model == model
+                            || entry.model == parsed.model_id
+                                && (entry.provider == parsed.provider_id
+                                    || !model.contains([':', '/'])))
                 })?;
                 Some(ResolvedModelTarget {
                     model_ref: format!("{}:{}", entry.provider, entry.model),

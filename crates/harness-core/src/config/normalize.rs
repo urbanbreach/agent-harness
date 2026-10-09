@@ -11,7 +11,7 @@ pub(super) fn normalize(ordered: ordered::OrderedValue) -> Result<HarnessConfig,
         ("provider", "providers"),
         ("agent", "agents"),
         ("permission", "permissions"),
-        ("smallModel", "small_model"),
+        ("modelRoles", "model_roles"),
         ("hashlineEdit", "hashline_edit"),
     ]
     .into_iter()

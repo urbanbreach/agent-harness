@@ -13,9 +13,15 @@ async fn bundled_agents_execute_with_their_roles_models_and_spawn_restrictions(
         ("security-reviewer", "gpt-6", true),
         ("sonic", "gpt-5.6", true),
     ] {
+        let variant = (role == "task" && model == "gpt-6" && eval_permitted).then_some("high");
+        let model_pins = if matches!(role, "reviewer" | "security-reviewer") {
+            json!({})
+        } else {
+            json!({(role):format!("local/{model}")})
+        };
         let root = tempfile::tempdir()?;
-        let user = root.path().join("user/harness/prompts/models");
-        let project = root.path().join(".agent-harness/prompts/models");
+        let user = root.path().join("data/prompts/models");
+        let project = root.path().join(".harness/prompts/models");
         fs::create_dir_all(&user)?;
         fs::create_dir_all(&project)?;
         for (directory, preset) in [
@@ -34,10 +40,10 @@ async fn bundled_agents_execute_with_their_roles_models_and_spawn_restrictions(
         fs::write(root.path().join("evidence.txt"), "second evidence file")?;
         fs::write(root.path().join("fixture.json"), json!({
             "provider":{"local":{"type":"openai_compatible","models":{
-                "gpt-6":{}, "gpt-5.6":{}, "zai-glm-5-3":{}
+                "gpt-6":{"variants":{"high":{"metadata":{"text_verbosity":"high"}}}}, "gpt-5.6":{}, "zai-glm-5-3":{}
             }}},
-            "model":"local/gpt-6", "small_model":"local/gpt-5.6",
-            "subagents":{"models":{(role):format!("local/{model}")}},
+            "model":"local/gpt-6", "modelRoles":{"smol":"local/gpt-5.6", "slow":format!("local/{model}")},
+            "subagents":{"models":model_pins},
             "agent":{"scout":{"system_prompt":"Wrong generic scout prompt.","mode":"subagent","tools":[]}},
             "permission":{"*":"allow", "eval":if eval_permitted { "allow" } else { "deny" }},
             "eval":{"route_tools":["read"],"sandbox":{"enabled":true}},
@@ -45,7 +51,7 @@ async fn bundled_agents_execute_with_their_roles_models_and_spawn_restrictions(
         }).to_string())?;
         let mut script = Vec::new();
         let mut children = Vec::new();
-        script.push(call("spawn_subagent", json!({"prompt":"Complete the assigned check.","description":role,"subagent_type":role,"background":false})));
+        script.push(call("spawn_subagent", json!({"prompt":"Complete the assigned check.","description":role,"subagent_type":role,"background":false,"variant":variant})));
         children.push((script.len(), role, model));
         match role {
             "task" | "sonic" => script.push(call(
@@ -129,6 +135,9 @@ print('batch complete');"#
                 .get(index)
                 .ok_or("child provider request missing")?;
             assert_eq!(request.model_id, model, "wrong model for {role}");
+            if role == "task" && variant.is_some() {
+                assert_eq!(request.text_verbosity.as_deref(), Some("high"));
+            }
             let system = &request.messages[0].content;
             assert!(
                 system.contains("## Assignment role"),

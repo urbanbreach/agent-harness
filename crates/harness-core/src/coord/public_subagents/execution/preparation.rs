@@ -198,14 +198,21 @@ impl Runtime {
             }
         } else if let Some(resolved) = self.native_subagents[agent].resolved.as_ref() {
             let settings = resolved.reasoning_effort.clone();
-            let target = self.native_model_target(&resolved.model).or_else(|| {
-                let parent = &self.agents[&self.native_subagents[agent].registration.root_agent];
-                (parent.info.model_ref == resolved.model)
-                    .then(|| parent.target.clone())
-                    .flatten()
-            });
+            let target = self
+                .native_model_variant_target(&resolved.model, resolved.variant.as_deref())
+                .or_else(|| {
+                    let parent =
+                        &self.agents[&self.native_subagents[agent].registration.root_agent];
+                    (parent.info.model_ref == resolved.model)
+                        .then(|| parent.target.clone())
+                        .flatten()
+                });
             if let Some(state) = self.agents.get_mut(agent) {
-                state.settings.reasoning_effort = settings;
+                if let Some(target) = &target {
+                    state.settings = crate::agent::AgentModelSettings::from(target);
+                }
+                state.settings.reasoning_effort =
+                    settings.or(state.settings.reasoning_effort.take());
                 state.target = target;
             }
         }
