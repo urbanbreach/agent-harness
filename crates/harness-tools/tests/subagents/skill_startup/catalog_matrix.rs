@@ -32,7 +32,7 @@ async fn native_skill_startup_selects_local_inherited_disabled_and_untrusted_cat
             )?;
             write_skill(&global.join("global"), "global", "GLOBAL_BODY")?;
             write_skill(
-                &child_cwd.join(".agent-harness/skills/local"),
+                &child_cwd.join(".harness/skills/local"),
                 "local",
                 "LOCAL_BODY",
             )?;
@@ -61,6 +61,11 @@ async fn native_skill_startup_selects_local_inherited_disabled_and_untrusted_cat
                 inject_default_tools: false,
                 ..Default::default()
             };
+            fs::create_dir_all(project.join(".harness/agents"))?;
+            fs::write(
+                project.join(".harness/agents/skill-reader.md"),
+                format!("---\n{}---\n", serde_yaml_ng::to_string(&definition)?),
+            )?;
             let provider = Arc::new(MockProvider::script([
                 vec![
                     Stream::ToolCallComplete {
@@ -82,11 +87,7 @@ async fn native_skill_startup_selects_local_inherited_disabled_and_untrusted_cat
             config.subagent_discovery = Some(SubagentDiscoveryContext {
                 cwd: project.clone(),
                 project_trusted: trusted,
-                home: None,
                 user_root: None,
-                bundled_root: None,
-                plugins: vec![],
-                cli_definitions: vec![definition],
             });
             let registry =
                 harness_tools::coordinator_registry_with_skills(ShellAllowlist::default(), skills);

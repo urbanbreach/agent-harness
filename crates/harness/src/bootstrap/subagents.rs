@@ -6,7 +6,6 @@ use harness_core::{
     },
     coord::CoordinatorConfig,
 };
-use std::path::PathBuf;
 
 pub(super) fn configure(
     config: &HarnessConfig,
@@ -21,24 +20,12 @@ pub(super) fn configure(
         &|name| deps.env_var_value(name),
     );
     let workspace = deps.current_dir().map_err(|e| e.to_string())?;
-    let home = deps
-        .env_var_value("HOME")
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from);
-    let user_root = deps
-        .env_var_value("XDG_CONFIG_HOME")
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| home.as_ref().map(|home| home.join(".config")))
-        .map(|root| root.join("harness"));
+    let user_root =
+        harness_core::storage_paths::data_dir_from_lookup(&|name| deps.env_var_value(name));
     let discovery = SubagentDiscoveryContext {
         cwd: workspace,
         project_trusted: true,
-        home,
         user_root,
-        bundled_root: None,
-        plugins: Vec::new(),
-        cli_definitions: Vec::new(),
     };
     result.subagent_definitions = Some(harness_core::config::discover_subagent_definitions(
         &result.subagents,

@@ -145,7 +145,7 @@ async fn native_skill_startup_shares_body_free_catalog_with_authorized_tool_load
         release: tokio::sync::Semaphore::new(0),
     });
     let mut definitions = SubagentDefinitionSnapshot::default();
-    definitions.cli.insert(
+    definitions.user.insert(
         "skill-reader".into(),
         SubagentDefinition {
             name: "skill-reader".into(),

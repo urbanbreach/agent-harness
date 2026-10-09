@@ -120,6 +120,7 @@ mod permission_prompt;
 pub(crate) mod permissions;
 mod plan_view;
 mod product_info;
+mod prompt_commands;
 mod prompt_history;
 mod prompt_history_picker;
 mod prompt_input;
@@ -254,7 +255,7 @@ pub use model_metadata::{LaunchMetadata, McpResourceOption, ModelOption};
 pub use pending_live::{
     set_pending_connect_providers, set_pending_live_launch_metadata,
     set_pending_live_prompt_auto_submit, set_pending_live_prompt_draft,
-    set_pending_settings_project_config,
+    set_pending_prompt_commands, set_pending_settings_project_config,
 };
 use pending_live::{
     take_pending_connect_providers, take_pending_live_launch_metadata, take_pending_live_prompt,
@@ -530,6 +531,7 @@ pub struct AppState {
     pub(crate) new_worktree_dialog: NewWorktreeDialogState,
     pub foreign_import_picker: ForeignImportPickerState,
     pub slash_visible: bool,
+    pub(crate) prompt_commands: Vec<harness_core::commands::PromptCommand>,
     pub slash_filtered: Vec<String>,
     pub slash_selected: usize,
     pub(crate) slash_recent: Vec<String>,

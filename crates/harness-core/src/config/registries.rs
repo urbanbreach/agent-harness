@@ -181,7 +181,9 @@ pub fn refresh_hook_runtime_config_registry(config: &HarnessConfig) {
 pub fn refresh_profile_model_metadata_registry(config: &HarnessConfig) -> Result<(), ConfigError> {
     let mut models = BTreeMap::new();
     for (name, agent) in &config.agents {
-        if agent.model_ref == "mock:default" && !config.providers.contains_key("mock") {
+        if config.providers.is_empty()
+            || agent.model_ref == "mock:default" && !config.providers.contains_key("mock")
+        {
             continue;
         }
         models.insert(name.clone(), resolve_profile_model_metadata(config, name)?);

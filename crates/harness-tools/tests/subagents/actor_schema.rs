@@ -30,7 +30,7 @@ async fn child_provider_receives_actor_resolved_type_schema_instead_of_global_ca
             vec!["Agent(fixture-specialist)".into()],
         ),
     ] {
-        definitions.cli.insert(
+        definitions.user.insert(
             name.into(),
             SubagentDefinition {
                 name: name.into(),

@@ -1,33 +1,17 @@
 use super::*;
 
-#[derive(Debug, Clone)]
-pub struct SubagentPluginDefinitions {
-    pub name: String,
-    pub enabled: bool,
-    pub trusted: bool,
-    pub agent_dirs: Vec<PathBuf>,
-}
-
 /// All discovery inputs are explicit, including the authoritative project trust verdict.
 #[derive(Debug, Clone)]
 pub struct SubagentDiscoveryContext {
     pub cwd: PathBuf,
     pub project_trusted: bool,
-    pub home: Option<PathBuf>,
     pub user_root: Option<PathBuf>,
-    pub bundled_root: Option<PathBuf>,
-    pub plugins: Vec<SubagentPluginDefinitions>,
-    pub cli_definitions: Vec<SubagentDefinition>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct SubagentDefinitionSnapshot {
     pub project: BTreeMap<String, SubagentDefinition>,
     pub user: BTreeMap<String, SubagentDefinition>,
-    pub bundled: BTreeMap<String, SubagentDefinition>,
-    /// Qualified names; bare lookup succeeds only for a single matching entry.
-    pub plugins: BTreeMap<String, SubagentDefinition>,
-    pub cli: BTreeMap<String, SubagentDefinition>,
     pub roles: BTreeMap<String, SubagentRole>,
     pub personas: BTreeMap<String, SubagentPersona>,
     /// Prompt I/O is captured before pure resolution; failures remain observable.
@@ -40,25 +24,12 @@ impl SubagentDefinitionSnapshot {
         self.project
             .get(name)
             .cloned()
+            .or_else(|| self.user.get(name).cloned())
             .or_else(|| {
                 builtin_subagent_definitions()
                     .into_iter()
                     .find(|definition| definition.name == name)
             })
-            .or_else(|| self.user.get(name).cloned())
-            .or_else(|| self.bundled.get(name).cloned())
-            .or_else(|| {
-                if name.contains(':') {
-                    return self.plugins.get(name).cloned();
-                }
-                let mut matches = self
-                    .plugins
-                    .values()
-                    .filter(|definition| definition.name == name);
-                let first = matches.next()?.clone();
-                matches.next().is_none().then_some(first)
-            })
-            .or_else(|| self.cli.get(name).cloned())
     }
 
     pub fn available_names(&self, toggles: &BTreeMap<String, bool>) -> Vec<String> {
@@ -67,9 +38,6 @@ impl SubagentDefinitionSnapshot {
             .map(|definition| definition.name)
             .chain(self.project.keys().cloned())
             .chain(self.user.keys().cloned())
-            .chain(self.bundled.keys().cloned())
-            .chain(self.plugins.keys().cloned())
-            .chain(self.cli.keys().cloned())
             .collect();
         names.sort();
         names.dedup();
@@ -122,11 +90,6 @@ pub fn discover_subagent_definitions(
             .filter(|(_, persona)| persona.source_path.is_none())
             .map(|(name, persona)| (name.clone(), persona.clone()))
             .collect(),
-        cli: context
-            .cli_definitions
-            .iter()
-            .map(|definition| (definition.name.clone(), definition.clone()))
-            .collect(),
         ..SubagentDefinitionSnapshot::default()
     };
     // Nearest project directory wins; a worktree's .git file is a boundary too.
@@ -134,22 +97,15 @@ pub fn discover_subagent_definitions(
         .into_iter()
         .rev()
     {
-        for prefix in [".agent-harness", ".harness", ".claude"] {
-            load_agents(
-                &root.join(prefix).join("agents"),
-                SubagentDefinitionSource::Project,
-                true,
-                &mut snapshot.project,
-                &mut snapshot.warnings,
-            );
-        }
-        if root.join(".git").exists() {
-            break;
-        }
-    }
-    if context.project_trusted {
-        for prefix in [".agent-harness", ".harness"] {
-            load_presets(&context.cwd.join(prefix), &mut snapshot);
+        let directory = root.join(".harness");
+        load_agents(
+            &directory.join("agents"),
+            SubagentDefinitionSource::Project,
+            &mut snapshot.project,
+            &mut snapshot.warnings,
+        );
+        if context.project_trusted {
+            load_presets(&directory, &mut snapshot);
         }
     }
     for (name, role) in &config.roles {
@@ -164,61 +120,14 @@ pub fn discover_subagent_definitions(
             .entry(name.clone())
             .or_insert_with(|| persona.clone());
     }
-    let mut user_roots = Vec::new();
     if let Some(root) = &context.user_root {
-        user_roots.push(root.clone());
-    }
-    if let Some(home) = &context.home {
-        for prefix in [".agent-harness", ".claude"] {
-            let root = home.join(prefix);
-            if !user_roots.contains(&root) {
-                user_roots.push(root);
-            }
-        }
-    }
-    for root in &user_roots {
         load_agents(
             &root.join("agents"),
             SubagentDefinitionSource::User,
-            true,
             &mut snapshot.user,
             &mut snapshot.warnings,
         );
         load_presets(root, &mut snapshot);
-    }
-    let mut bundled_roots: Vec<_> = user_roots.iter().map(|root| root.join("bundled")).collect();
-    if let Some(root) = &context.bundled_root {
-        bundled_roots.push(root.clone());
-    }
-    for root in bundled_roots {
-        load_agents(
-            &root.join("agents"),
-            SubagentDefinitionSource::Bundled,
-            true,
-            &mut snapshot.bundled,
-            &mut snapshot.warnings,
-        );
-        load_presets(&root, &mut snapshot);
-    }
-    for plugin in context.plugins.iter().filter(|plugin| plugin.enabled) {
-        let mut definitions = BTreeMap::new();
-        for directory in &plugin.agent_dirs {
-            load_agents(
-                directory,
-                SubagentDefinitionSource::Plugin {
-                    name: plugin.name.clone(),
-                },
-                plugin.trusted,
-                &mut definitions,
-                &mut snapshot.warnings,
-            );
-        }
-        for (name, mut definition) in definitions {
-            definition.permission_mode = SubagentPermissionMode::Default;
-            snapshot
-                .plugins
-                .insert(format!("{}:{name}", plugin.name), definition);
-        }
     }
     load_prompt_files(&mut snapshot, context);
     snapshot
@@ -296,7 +205,6 @@ fn files(directory: &Path, extension: &str, warnings: &mut Vec<String>) -> Vec<P
 fn load_agents(
     directory: &Path,
     source: SubagentDefinitionSource,
-    trusted: bool,
     target: &mut BTreeMap<String, SubagentDefinition>,
     warnings: &mut Vec<String>,
 ) {
@@ -305,9 +213,6 @@ fn load_agents(
             .and_then(|text| parse_subagent_definition(&text));
         match parsed {
             Ok(mut definition) => {
-                if !trusted {
-                    definition.prompt_body = None;
-                }
                 definition.source_path = Some(path);
                 definition.source = source.clone();
                 target.entry(definition.name.clone()).or_insert(definition);

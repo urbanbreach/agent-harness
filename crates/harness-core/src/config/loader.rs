@@ -143,10 +143,32 @@ fn prepare_layer(
 pub(super) fn instruction_files(
     config: &mut HarnessConfig,
     directory: &Path,
+    data_dir: Option<&Path>,
 ) -> Result<(), ConfigError> {
+    if let Some(path) = data_dir
+        .map(|home| home.join("AGENTS.md"))
+        .filter(|path| path.is_file())
+    {
+        config
+            .instruction_files
+            .retain(|instruction| instruction.path != path);
+        config.instruction_files.insert(
+            0,
+            InstructionFile {
+                content: read_text(&path)?,
+                path,
+            },
+        );
+    }
     for base in discovery::search_roots(directory) {
-        let path = base.join("AGENTS.md");
-        if path.is_file() && !config.instruction_files.iter().any(|i| i.path == path) {
+        let Some(path) = ["AGENTS.md", "CLAUDE.md"]
+            .into_iter()
+            .map(|name| base.join(name))
+            .find(|path| path.is_file())
+        else {
+            continue;
+        };
+        if !config.instruction_files.iter().any(|i| i.path == path) {
             config.instruction_files.push(InstructionFile {
                 content: read_text(&path)?,
                 path,

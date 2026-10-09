@@ -106,6 +106,7 @@ pub struct SubagentRole {
     pub default_capability_mode: Option<String>,
     pub model: Option<String>,
     pub reasoning_effort: Option<String>,
+    pub variant: Option<String>,
     pub prompt_file: Option<String>,
     pub default_isolation: Option<String>,
     #[serde(skip)]
@@ -122,6 +123,7 @@ pub struct SubagentPersona {
     pub outputs: Vec<SubagentPersonaIoField>,
     pub model: Option<String>,
     pub reasoning_effort: Option<String>,
+    pub variant: Option<String>,
     pub default_isolation: Option<String>,
     #[serde(skip)]
     pub source_dir: Option<PathBuf>,
@@ -193,6 +195,7 @@ pub struct SubagentDefinition {
     pub prompt_body: Option<String>,
     pub model: Option<String>,
     pub effort: Option<String>,
+    pub variant: Option<String>,
     pub capability_mode: Option<SubagentCapabilityMode>,
     pub isolation: Option<SubagentIsolationMode>,
     pub permission_mode: SubagentPermissionMode,
@@ -224,6 +227,7 @@ impl Default for SubagentDefinition {
             prompt_body: None,
             model: None,
             effort: None,
+            variant: None,
             capability_mode: None,
             isolation: None,
             permission_mode: SubagentPermissionMode::Default,
@@ -239,7 +243,7 @@ impl Default for SubagentDefinition {
             tools: Vec::new(),
             disallowed_tools: Vec::new(),
             source_path: None,
-            source: SubagentDefinitionSource::Cli,
+            source: SubagentDefinitionSource::User,
         }
     }
 }
@@ -282,22 +286,17 @@ fn string_or_list<'de, D: serde::Deserializer<'de>>(
 pub enum SubagentDefinitionSource {
     Project,
     Builtin,
-    User,
-    Bundled,
-    Plugin {
-        name: String,
-    },
     #[default]
-    Cli,
+    User,
 }
 
 pub fn builtin_subagent_definitions() -> Vec<SubagentDefinition> {
-    const TASK: &str = include_str!("../../../../../.agent-harness/prompts/agents/task.md");
+    const TASK: &str = include_str!("../../../prompts/agents/task.md");
     [
         ("task", "General-purpose subagent with full capabilities for delegated multi-step tasks", TASK, ""),
-        ("scout", "Fast read-only codebase research, code analysis, and broad pattern searches; returns compressed context for handoff", include_str!("../../../../../.agent-harness/prompts/agents/scout.md"), "read list grep glob websearch"),
-        ("reviewer", "Code review specialist for quality/security analysis", include_str!("../../../../../.agent-harness/prompts/agents/reviewer.md"), "read list grep glob bash lsp websearch ast_grep_search Task(scout) get_command_or_subagent_output wait_commands_or_subagents kill_command_or_subagent"),
-        ("security-reviewer", "Read-only security specialist for evidence-backed repository vulnerability discovery", include_str!("../../../../../.agent-harness/prompts/agents/security-reviewer.md"), "read list grep glob lsp ast_grep_search"),
+        ("scout", "Fast read-only codebase research, code analysis, and broad pattern searches; returns compressed context for handoff", include_str!("../../../prompts/agents/scout.md"), "read list grep glob websearch"),
+        ("reviewer", "Code review specialist for quality/security analysis", include_str!("../../../prompts/agents/reviewer.md"), "read list grep glob bash lsp websearch ast_grep_search Task(scout) get_command_or_subagent_output wait_commands_or_subagents kill_command_or_subagent"),
+        ("security-reviewer", "Read-only security specialist for evidence-backed repository vulnerability discovery", include_str!("../../../prompts/agents/security-reviewer.md"), "read list grep glob lsp ast_grep_search"),
         ("sonic", "Low-reasoning agent for strictly mechanical updates or data collection only", TASK, ""),
     ].into_iter().map(|(name, description, prompt, tools)| SubagentDefinition {
         name: name.into(),

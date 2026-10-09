@@ -56,27 +56,36 @@ pub fn discover_skill_catalog_with_config(
     config: &SkillsConfig,
 ) -> Result<SkillCatalog, ToolError> {
     let workspace = workspace.canonicalize()?;
+    let mut project_roots: Vec<_> = config.project_roots.iter().collect();
+    let mut global_roots: Vec<_> = config.global_roots.iter().collect();
+    project_roots.sort_by_key(|path| root_class(path));
+    global_roots.sort_by_key(|path| root_class(path));
     let mut roots = Vec::new();
-    for parent in workspace.ancestors() {
-        roots.extend(
-            config
-                .project_roots
-                .iter()
-                .map(|path| ("project", parent.join(path))),
-        );
-        if !config.walk_to_git_root || parent.join(".git").exists() {
-            break;
+    for compatibility in [false, true] {
+        for parent in workspace.ancestors() {
+            roots.extend(
+                project_roots
+                    .iter()
+                    .filter(|path| (root_class(path) == 2) == compatibility)
+                    .map(|path| ("project", parent.join(path))),
+            );
+            if !config.walk_to_git_root || parent.join(".git").exists() {
+                break;
+            }
         }
-    }
-    for path in &config.global_roots {
-        let path = match path.strip_prefix("~") {
-            Ok(suffix) => match std::env::var_os("HOME") {
-                Some(home) => PathBuf::from(home).join(suffix),
-                None => continue,
-            },
-            Err(_) => path.clone(),
-        };
-        roots.push(("global", path));
+        for path in global_roots
+            .iter()
+            .filter(|path| (root_class(path) == 2) == compatibility)
+        {
+            let path = match path.strip_prefix("~") {
+                Ok(suffix) => match std::env::var_os("HOME") {
+                    Some(home) => PathBuf::from(home).join(suffix),
+                    None => continue,
+                },
+                Err(_) => (*path).clone(),
+            };
+            roots.push(("global", workspace.join(path)));
+        }
     }
     let compile = |pattern: &str| {
         globset::Glob::new(pattern)
@@ -203,6 +212,21 @@ pub fn discover_skill_catalog_with_config(
         }
     }
     Ok(SkillCatalog { entries })
+}
+
+fn root_class(path: &Path) -> u8 {
+    if path.components().any(|component| {
+        matches!(
+            component.as_os_str().to_str(),
+            Some(".agents" | ".assistant" | ".external-editor")
+        )
+    }) {
+        2
+    } else if path.ends_with(".harness/skills") {
+        0
+    } else {
+        1
+    }
 }
 
 fn header(path: &Path) -> Result<Header, String> {

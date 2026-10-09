@@ -104,3 +104,78 @@ async fn skill_discovery_is_read_only_and_reports_precedence_without_loading_bod
     handle.stop_run().await?;
     Ok(())
 }
+
+#[test]
+fn compatibility_skills_are_discovered_after_harness_roots(
+) -> Result<(), Box<dyn std::error::Error>> {
+    for (locations, winner, reverse) in [
+        (
+            vec!["project/.agents/skills"],
+            "project/.agents/skills",
+            false,
+        ),
+        (
+            vec!["project/.agents/skills", "project/.harness/skills"],
+            "project/.harness/skills",
+            false,
+        ),
+        (
+            vec!["project/.agents/skills", "project/.harness/skills"],
+            "project/.harness/skills",
+            true,
+        ),
+        (
+            vec!["project/sub/.agents/skills", "project/.harness/skills"],
+            "project/.harness/skills",
+            false,
+        ),
+        (
+            vec![
+                "project/.agents/skills",
+                "global/.harness/skills",
+                "global/.agents/skills",
+            ],
+            "global/.harness/skills",
+            true,
+        ),
+    ] {
+        let root = tempfile::tempdir()?;
+        let project = root.path().join("project");
+        fs::create_dir_all(project.join(".git"))?;
+        fs::create_dir(project.join("sub"))?;
+        for location in &locations {
+            let path = root.path().join(location).join("review");
+            fs::create_dir_all(&path)?;
+            fs::write(
+                path.join("SKILL.md"),
+                "---\nname: review\ndescription: Review\n---\nReview code",
+            )?;
+        }
+        let mut config = SkillsConfig {
+            global_roots: vec![
+                root.path().join("global/.harness/skills"),
+                root.path().join("global/.agents/skills"),
+            ],
+            ..Default::default()
+        };
+        if reverse {
+            config.project_roots.reverse();
+            config.global_roots.reverse();
+        }
+        let catalog = discover_skill_catalog_with_config(&project.join("sub"), &config)?;
+        assert_eq!(catalog.entries.len(), locations.len());
+        for entry in &catalog.entries {
+            let wins = entry.root_path == root.path().join(winner);
+            assert_eq!(entry.loadable, wins, "{}", entry.location.display());
+            assert_eq!(
+                entry.status,
+                if wins {
+                    harness_tools::SkillCatalogStatus::Loadable
+                } else {
+                    harness_tools::SkillCatalogStatus::Shadowed
+                }
+            );
+        }
+    }
+    Ok(())
+}

@@ -142,7 +142,12 @@ impl Discovery {
         let mut instructions = Vec::new();
         let mut seen = self.seen;
         for (root, directory) in directories {
-            let Ok(path) = directory.join("AGENTS.md").canonicalize() else {
+            let Some(path) = ["AGENTS.md", "CLAUDE.md"]
+                .into_iter()
+                .map(|name| directory.join(name))
+                .find(|path| path.is_file())
+                .and_then(|path| path.canonicalize().ok())
+            else {
                 continue;
             };
             if !path.starts_with(&root) || startup.contains(&path) || seen.contains(&path) {
