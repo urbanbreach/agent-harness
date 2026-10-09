@@ -4,6 +4,7 @@ use super::errors::{
 };
 use super::prompt::LaneContext;
 use super::protocol::{QueryOptions, SystemPrompt, Thinking};
+use super::tools::HOST_TOOL_DELIVERY_NOTE;
 use serde_json::json;
 use std::{
     collections::BTreeMap,
@@ -291,11 +292,15 @@ pub fn build_query_options(
     let guidance = input.session_id.and_then(|id| {
         preset_append_deprecation_guidance(mode == SystemPromptMode::PresetAppend, conflict, id)
     });
+    let empty_tool_context = input.context.tools.as_ref().is_none_or(Vec::is_empty);
+    let tools_exposed = !input.tool_less && !empty_tool_context;
+    let note = tools_exposed.then_some(HOST_TOOL_DELIVERY_NOTE);
     let system_prompt = match mode {
         SystemPromptMode::PresetAppend => {
             let append: Vec<String> = [
                 extract_agents_append(input.cwd, input.agent_dir),
                 extract_skills_append(input.context.system_prompt.as_deref()),
+                note.map(str::to_owned),
             ]
             .into_iter()
             .flatten()
@@ -304,14 +309,15 @@ pub fn build_query_options(
                 append: (!append.is_empty()).then(|| append.join("\n\n")),
             }
         }
-        SystemPromptMode::Override => SystemPrompt::Custom(load_override_system_prompt(
-            settings.system_prompt_file.as_deref(),
-        )?),
-        SystemPromptMode::Full => {
-            SystemPrompt::Custom(input.context.system_prompt.clone().unwrap_or_default())
-        }
+        SystemPromptMode::Override => SystemPrompt::Custom(with_note(
+            load_override_system_prompt(settings.system_prompt_file.as_deref())?,
+            note,
+        )),
+        SystemPromptMode::Full => SystemPrompt::Custom(with_note(
+            input.context.system_prompt.clone().unwrap_or_default(),
+            note,
+        )),
     };
-    let empty_tool_context = input.context.tools.as_ref().is_none_or(Vec::is_empty);
     let strict = input.tool_less || settings.strict_mcp_config.unwrap_or(!append_system_prompt);
     let setting_sources = settings.setting_sources.clone().unwrap_or_else(|| {
         if mode == SystemPromptMode::PresetAppend && input.auth_lane == TokenInjection::Ambient {
@@ -323,10 +329,10 @@ pub fn build_query_options(
     let mut options = QueryOptions {
         cwd: input.cwd.to_path_buf(),
         model: input.model.into(),
-        tools: if input.tool_less || empty_tool_context {
-            Vec::new()
-        } else {
+        tools: if tools_exposed {
             input.tools.to_vec()
+        } else {
+            Vec::new()
         },
         permission_mode: "dontAsk".into(),
         include_partial_messages: true,
@@ -359,6 +365,17 @@ pub fn build_query_options(
         }
     }
     Ok((options, guidance))
+}
+
+/// Every tool call returns Claude Code's denial notice first; the note tells the model why.
+fn with_note(mut prompt: String, note: Option<&str>) -> String {
+    if let Some(note) = note {
+        if !prompt.is_empty() {
+            prompt.push_str("\n\n");
+        }
+        prompt.push_str(note);
+    }
+    prompt
 }
 
 #[cfg(test)]

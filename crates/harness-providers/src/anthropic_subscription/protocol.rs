@@ -4,7 +4,8 @@
 //! the SDK's argv, answers its control requests (permission prompts, hook callbacks, the
 //! in-process `custom-tools` MCP server), and yields every other stdout message.
 use super::tools::{
-    CUSTOM_TOOLS_MCP_SERVER_NAME, HOST_CAPTURED_SDK_TOOL_MATCHER, TOOL_EXECUTION_DENIED_MESSAGE,
+    CUSTOM_TOOLS_MCP_SERVER_NAME, HOST_CAPTURED_SDK_TOOL_MATCHER, HOST_TOOL_STOP_REASON,
+    TOOL_EXECUTION_DENIED_MESSAGE,
 };
 use serde_json::{json, Value};
 use std::{
@@ -97,6 +98,7 @@ fn mcp_initialize_result(version: &str) -> Value {
 pub fn host_tool_denial_output() -> Value {
     json!({
         "continue": false,
+        "stopReason": HOST_TOOL_STOP_REASON,
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
