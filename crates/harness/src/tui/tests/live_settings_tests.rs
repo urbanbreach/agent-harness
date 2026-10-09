@@ -7,7 +7,7 @@ fn isolated_config_context(
     let data_dir = current_dir.join("data/harness");
     let mut context = [
         "HOME",
-        "XDG_CONFIG_HOME",
+        "HARNESS_HOME",
         "HARNESS_CONFIG",
         "HARNESS_TUI_CONFIG",
         "HARNESS_CONFIG_CONTENT",
@@ -19,6 +19,49 @@ fn isolated_config_context(
     );
     context.discovery.data_dir = Some(data_dir);
     context
+}
+
+#[test]
+fn providerless_pinned_model_follows_provider_connection_state() {
+    for (connected_env, expected_provider, expected_model) in [
+        (
+            Some("ANTHROPIC_API_KEY"),
+            "anthropic",
+            Some("claude-sonnet-4-5"),
+        ),
+        (Some("OPENAI_API_KEY"), "openai", Some("gpt-5.4-mini")),
+        (None, "local", None),
+    ] {
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let context = isolated_config_context(temp.path().into());
+        let home = context.discovery.data_dir.as_ref().unwrap_or_abort();
+        std::fs::create_dir_all(home).unwrap_or_abort();
+        std::fs::write(
+            home.join("harness.jsonc"),
+            r#"{"model":"anthropic/claude-sonnet-4-5"}"#,
+        )
+        .unwrap_or_abort();
+        let lookup = |name: &str| (Some(name) == connected_env).then(|| "test-key".into());
+        let settings = resolve_live_settings_for_test(
+            &live_tui_command(),
+            None,
+            None,
+            temp.path().into(),
+            &context,
+            LiveSettingsDeps {
+                credential_store: None,
+                env_lookup: &lookup,
+                model_selection_path: None,
+            },
+        )
+        .unwrap_or_abort();
+        assert_eq!(settings.launch_metadata.provider(), expected_provider);
+        assert_eq!(settings.launch_metadata.model(), expected_model);
+        assert_eq!(
+            settings.launch_metadata.available_models().is_empty(),
+            connected_env.is_none()
+        );
+    }
 }
 
 #[test]
@@ -84,37 +127,106 @@ fn no_config_tui_with_stored_codex_launches_connected_catalog() {
 #[test]
 fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
     let temp = tempfile::tempdir().unwrap_or_abort();
-    let data_home = temp.path().join("data");
-    let store = CredentialStore::new(data_home.join("harness"));
-    store
-        .save(&StoredCredential::api_key(
-            AuthProviderId::github_copilot(),
-            "test-token",
-            SystemCredentialClock.now_rfc3339(),
-        ))
-        .unwrap_or_abort();
-
-    let settings = resolve_live_settings_for_test(
+    let home = temp.path().join("data/harness");
+    let state_path = home.join("model.json");
+    let deps = harness::CliDeps::real()
+        .with_current_dir(temp.path().into())
+        .with_env("HARNESS_HOME", home.to_string_lossy())
+        .without_env("HARNESS_CONFIG")
+        .without_env("HARNESS_CONFIG_CONTENT")
+        .without_env("HARNESS_TUI_CONFIG")
+        .with_env(
+            "HARNESS_MODEL_SELECTION_STATE_FILE",
+            state_path.to_string_lossy(),
+        );
+    let initial = resolve_live_settings_for_test(
         &live_tui_command(),
         None,
         None,
-        temp.path().to_path_buf(),
-        &isolated_config_context(temp.path().to_path_buf()),
+        temp.path().into(),
+        &deps.config_load_context(),
         LiveSettingsDeps {
-            credential_store: Some(&store),
+            credential_store: None,
             env_lookup: &|_| None,
-            model_selection_path: None,
+            model_selection_path: Some(&state_path),
         },
     )
     .unwrap_or_abort();
-    let launch_metadata = settings.launch_metadata;
-
-    assert_eq!(launch_metadata.provider(), "github-copilot");
-    assert!(launch_metadata.model().is_some());
-    assert!(launch_metadata
+    let selection = Arc::new(Mutex::new(LaunchSelectionState {
+        metadata: initial.launch_metadata,
+        config_digest: initial.config_digest,
+    }));
+    let (tx, _) = mpsc::unbounded_channel();
+    let (_, sink) = build_live_ui_intent_router(tx, Arc::clone(&selection), false);
+    let (message, _, success) = run_tui_auth_backend_streaming_with_deps(
+        vec![
+            "login".into(),
+            "github-copilot".into(),
+            "--api-key-stdin".into(),
+        ],
+        None,
+        None,
+        "test-token",
+        &deps,
+        None,
+    );
+    assert!(success, "{message}");
+    assert!(home.join("harness.jsonc").is_file());
+    let refreshed = super::super::auth_backend::refreshed_settings_after_auth(
+        Some("login"),
+        None,
+        None,
+        temp.path().into(),
+        &deps,
+        Some(&selection),
+    )
+    .unwrap_or_abort()
+    .unwrap_or_abort();
+    assert_eq!(refreshed.launch_metadata.provider(), "github-copilot");
+    assert!(refreshed
+        .launch_metadata
         .available_models()
         .iter()
-        .all(|option| option.provider == "github-copilot"));
+        .any(|option| option.provider == "github-copilot"));
+    let option = refreshed
+        .launch_metadata
+        .available_models()
+        .iter()
+        .find(|option| Some(option.model.as_str()) != refreshed.launch_metadata.model())
+        .unwrap_or_abort();
+    let picked = LaunchMetadata::from_model_ref(
+        refreshed.launch_metadata.profile(),
+        &format!("{}:{}", option.provider, option.model),
+    )
+    .with_available_models(refreshed.launch_metadata.available_models().to_vec());
+    sink(UiIntent::SwitchModel {
+        profile: picked.profile().into(),
+        launch_metadata: picked.clone(),
+    });
+    let recorded = recover_mutex_lock(&selection);
+    super::super::model_selection::save_persisted_model_selection_to_path(
+        &state_path,
+        &recorded.metadata,
+        &recorded.config_digest,
+    )
+    .unwrap_or_abort();
+    drop(recorded);
+    let store = CredentialStore::new(home);
+    let next_launch = resolve_live_settings_for_test(
+        &live_tui_command(),
+        None,
+        None,
+        temp.path().into(),
+        &deps.config_load_context(),
+        LiveSettingsDeps {
+            credential_store: Some(&store),
+            env_lookup: &|name| deps.env_var_value(name),
+            model_selection_path: Some(&state_path),
+        },
+    )
+    .unwrap_or_abort();
+    assert_eq!(refreshed.config_digest, next_launch.config_digest);
+    assert_eq!(next_launch.launch_metadata.model(), picked.model());
 }
 
 #[test]
@@ -253,7 +365,7 @@ fn mock_mode_ignores_discovered_cwd_config() {
               stale_timeout_ms: 15000,
               message_staleness_timeout_ms: 5000
             },
-            session_dir: ".agent-harness/sessions"
+            session_dir: ".harness/sessions"
           },
           integrations: {
             remote_search: {
@@ -338,7 +450,7 @@ fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
               stale_timeout_ms: 15000,
               message_staleness_timeout_ms: 5000
             },
-            session_dir: ".agent-harness/sessions"
+            session_dir: ".harness/sessions"
           },
           integrations: {
             remote_search: {

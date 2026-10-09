@@ -22,13 +22,16 @@ pub(super) enum InteractiveWorkflow {
 
 pub(super) type SelectedWorkflow = Arc<Mutex<Option<InteractiveWorkflow>>>;
 pub(super) type UiIntentSink = Arc<dyn Fn(UiIntent) + Send + Sync>;
-pub(super) type LaunchSelection = Arc<Mutex<LaunchMetadata>>;
+pub(super) type LaunchSelection = Arc<Mutex<LaunchSelectionState>>;
 
-pub(super) fn persist_launch_selection_for_exit(
-    launch_metadata: &LaunchMetadata,
-    config_digest: &str,
-) {
-    if let Err(err) = save_persisted_model_selection(launch_metadata, config_digest) {
+pub(super) struct LaunchSelectionState {
+    pub(super) metadata: LaunchMetadata,
+    pub(super) config_digest: String,
+}
+
+pub(super) fn persist_launch_selection_for_exit(selection: &LaunchSelectionState) {
+    if let Err(err) = save_persisted_model_selection(&selection.metadata, &selection.config_digest)
+    {
         profile_handoff(&format!("model_selection.persist_failed {err}"));
     }
 }
@@ -37,15 +40,13 @@ pub(super) fn record_launch_selection(
     selection: &LaunchSelection,
     launch_metadata: &LaunchMetadata,
 ) {
-    let launch_metadata = launch_metadata.clone().without_mode_label();
-    *recover_mutex_lock(selection) = launch_metadata.clone();
+    recover_mutex_lock(selection).metadata = launch_metadata.clone().without_mode_label();
 }
 
 pub(super) fn handle_model_switch_intent(
     intent: &UiIntent,
     launch_selection: &LaunchSelection,
     persist_model_selection: bool,
-    config_digest: &str,
 ) -> bool {
     let UiIntent::SwitchModel {
         launch_metadata, ..
@@ -56,7 +57,7 @@ pub(super) fn handle_model_switch_intent(
 
     record_launch_selection(launch_selection, launch_metadata);
     if persist_model_selection {
-        persist_launch_selection_for_exit(&recover_mutex_lock(launch_selection), config_digest);
+        persist_launch_selection_for_exit(&recover_mutex_lock(launch_selection));
     }
     true
 }
@@ -159,17 +160,11 @@ pub(super) fn build_live_ui_intent_router(
     intent_tx: mpsc::UnboundedSender<UiIntent>,
     launch_selection: LaunchSelection,
     persist_model_selection: bool,
-    config_digest: String,
 ) -> (SelectedWorkflow, UiIntentSink) {
     let selected_workflow = Arc::new(Mutex::new(None::<InteractiveWorkflow>));
     let selected_workflow_sink = Arc::clone(&selected_workflow);
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
-        handle_model_switch_intent(
-            &intent,
-            &launch_selection,
-            persist_model_selection,
-            &config_digest,
-        );
+        handle_model_switch_intent(&intent, &launch_selection, persist_model_selection);
         if let Some(workflow) = live_workflow_from_intent(&intent) {
             capture_first_workflow(&selected_workflow_sink, workflow);
         }

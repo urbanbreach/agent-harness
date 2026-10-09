@@ -153,10 +153,17 @@ pub fn load_resolved_config_with_lookup(
     context: &ConfigLoadContext,
     lookup: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Option<LoadedConfig>, ConfigError> {
+    let loaded = load_config_or_defaults_with_lookup(explicit, context, lookup)?;
+    Ok((!loaded.paths.is_empty() || context.runtime_content.is_some()).then_some(loaded))
+}
+
+/// Loads defaults, runtime and TUI layers, and workspace instructions even without files.
+pub fn load_config_or_defaults_with_lookup(
+    explicit: Option<&Path>,
+    context: &ConfigLoadContext,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Result<LoadedConfig, ConfigError> {
     let paths = resolve_config_layer_paths_with_context(explicit, &context.discovery);
-    if paths.is_empty() && context.runtime_content.is_none() {
-        return Ok(None);
-    }
     let mut value = ordered::OrderedValue::from(serde_json::json!({}));
     let mut instructions = Vec::new();
     for path in &paths {
@@ -185,9 +192,13 @@ pub fn load_resolved_config_with_lookup(
     }
     let tui: PublicTuiConfig = serde_json::from_value(tui).map_err(normalize::parse_error)?;
     config.ui.keybindings = tui.keybindings;
-    loader::instruction_files(&mut config, &context.discovery.current_dir)?;
+    loader::instruction_files(
+        &mut config,
+        &context.discovery.current_dir,
+        context.discovery.data_dir.as_deref(),
+    )?;
     registries::register(&config)?;
-    Ok(Some(LoadedConfig { config, paths }))
+    Ok(LoadedConfig { config, paths })
 }
 
 pub(crate) fn search_roots(directory: &Path) -> Vec<&Path> {
@@ -385,6 +396,97 @@ mod tests {
         assert!(
             references::expand(&mut serde_json::json!("${ABSENT}"), &project, &|_| None).is_err()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn injected_home_overrides_preserve_precedence_and_can_disable_discovery(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let root = tempfile::tempdir()?;
+        let home = root.path().join("user");
+        let custom = root.path().join("custom");
+        let context = ConfigDiscoveryContext {
+            current_dir: root.path().into(),
+            home: Some(home),
+            harness_home: Some(custom.clone()),
+            data_dir: Some(custom.clone()),
+            runtime_config_path: None,
+            tui_config_path: None,
+        };
+        let changed_home = root.path().join("other");
+        let context =
+            context.apply_env_var("HOME", Some(changed_home.to_string_lossy().into_owned()));
+        assert_eq!(context.data_dir.as_ref(), Some(&custom));
+        #[cfg(not(windows))]
+        {
+            let fallback = context
+                .clone()
+                .apply_env_var("HARNESS_HOME", Some(String::new()));
+            assert_eq!(fallback.data_dir, Some(changed_home.join(".harness")));
+            let missing = context
+                .apply_env_var("HOME", None)
+                .apply_env_var("HARNESS_HOME", None);
+            assert!(missing.data_dir.is_none());
+            assert_eq!(config_search_paths(&missing, false).len(), 4);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn startup_instructions_use_injected_home_and_prefer_agents_over_claude(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        for (files, selected) in [
+            (vec![], None),
+            (vec!["AGENTS.md"], Some("AGENTS.md")),
+            (vec!["CLAUDE.md"], Some("CLAUDE.md")),
+            (vec!["CLAUDE.md", "AGENTS.md"], Some("AGENTS.md")),
+        ] {
+            let root = tempfile::tempdir()?;
+            let home = root.path().join("harness-home");
+            let project = root.path().join("project");
+            let current = project.join("sub");
+            std::fs::create_dir(&home)?;
+            std::fs::create_dir_all(&current)?;
+            std::fs::create_dir(project.join(".git"))?;
+            std::fs::write(home.join("AGENTS.md"), "USER_INSTRUCTIONS")?;
+            std::fs::write(home.join("CLAUDE.md"), "UNUSED_USER_CLAUDE")?;
+            std::fs::write(project.join("AGENTS.md"), "ROOT_INSTRUCTIONS")?;
+            for file in files {
+                std::fs::write(current.join(file), file)?;
+            }
+            let config_path = project.join("harness.jsonc");
+            std::fs::write(&config_path, "{instructions:'CONFIGURED_INSTRUCTIONS'}")?;
+            let context = ConfigLoadContext {
+                discovery: ConfigDiscoveryContext {
+                    current_dir: current,
+                    harness_home: Some(home.clone()),
+                    home: None,
+                    data_dir: Some(home),
+                    runtime_config_path: None,
+                    tui_config_path: None,
+                },
+                runtime_content: None,
+            };
+            let mut expected = vec![
+                "USER_INSTRUCTIONS",
+                "CONFIGURED_INSTRUCTIONS",
+                "ROOT_INSTRUCTIONS",
+            ];
+            expected.extend(selected);
+            for config in [
+                load_config_or_defaults_with_lookup(None, &context, &|_| None)?.config,
+                loader::load_config_from_file_with_context(&config_path, &context)?,
+            ] {
+                assert_eq!(
+                    config
+                        .instruction_files
+                        .iter()
+                        .map(|file| file.content.as_str())
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+            }
+        }
         Ok(())
     }
 }

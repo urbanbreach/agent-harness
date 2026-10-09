@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::io::Read;
 
 pub fn load_config_from_str(raw: &str) -> Result<HarnessConfig, ConfigError> {
-    load(raw, Path::new("."), None)
+    load(raw, Path::new("."), None, None)
 }
 
 pub fn load_config_from_file(path: &Path) -> Result<HarnessConfig, ConfigError> {
@@ -128,7 +128,7 @@ fn prepare_layer(
         ("agents", "agent"),
         ("permissions", "permission"),
         ("hashlineEdit", "hashline_edit"),
-        ("smallModel", "small_model"),
+        ("modelRoles", "model_roles"),
         ("modelProfile", "model_profile"),
         ("model_profiles", "model_profile"),
     ] {
@@ -187,6 +187,21 @@ impl HarnessConfig {
     }
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.eval.validate()?;
+        self.subagents.validate_model_roles()?;
+        for model in [
+            self.model_roles.smol.as_deref(),
+            self.model_roles.slow.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if model.starts_with('@') {
+                return Err(ConfigError(
+                    "model_roles values must be concrete model references".into(),
+                ));
+            }
+            resolve_model_selection(self, model, None)?;
+        }
         let runtime = &self.runtime;
         let tasks = &runtime.background_tasks;
         if [
@@ -222,11 +237,15 @@ impl HarnessConfig {
                     "invalid iteration or sampling limits for agent {name}"
                 )));
             }
-            if profile.model_ref != "mock:default" || self.providers.contains_key("mock") {
+            if !self.providers.is_empty()
+                && (profile.model_ref != "mock:default" || self.providers.contains_key("mock"))
+            {
                 resolve_model_selection(self, &profile.model_ref, profile.variant.as_deref())?;
             }
         }
-        configured_model_profile_catalog(self)?;
+        if !self.providers.is_empty() {
+            configured_model_profile_catalog(self)?;
+        }
         if self.hooks.lifecycle.len() > 64 {
             return Err(ConfigError("at most 64 lifecycle hooks are allowed".into()));
         }

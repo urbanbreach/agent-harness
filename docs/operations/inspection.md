@@ -16,8 +16,11 @@ context or output limits produce a warning and retain unknown values.
 
 `models` and `models list` show configured models and variants. Text output includes
 each token limit and its provenance. `--json` includes the complete resolved model
-metadata. Explicit configuration remains authoritative. Without configuration,
-stored or environment credentials select models from the embedded catalog.
+metadata. Explicit configuration remains authoritative. With no provider
+entries, stored credentials and API key environment variables select models
+from the embedded catalog, even if a config file sets other defaults. Defining
+any `provider` entry makes the catalog curated: configured providers plus
+signed-in Codex, GitHub Copilot, and Claude subscription.
 Known credential values are redacted from both output formats.
 
 `providers protocols` lists implemented transports. Catalog membership alone does
@@ -42,12 +45,23 @@ to the session directory. Separate TUI configuration is validated and appears in
 the source list.
 
 `show --effective` includes resolved defaults, profiles and redacted credentials.
-`sources` lists layers in application order. `explain` shows a value and the last
-input layer defining the requested path. Fields within a merged object can come
-from different layers. Dotted paths accept runtime aliases; JSON Pointer paths
-starting with `/` address exact keys, including names containing dots.
-`settings` reports the typed settings registry without reading configuration.
-Inspection does not create files or contact providers.
+It and `explain` work without files, reporting built-in defaults and
+`primary_path: null`. `validate` also succeeds with no files and prints
+`config valid: no configuration files; using built-in defaults`.
+An explicit `--config FILE` must still exist.
+
+`sources` lists layers in application order and always includes `searched`,
+every candidate runtime path in merge order, whether it exists or not. With no
+runtime layers, it includes this `note`:
+
+> No configuration files found. Harness uses built-in defaults and providers connected through /login, `harness auth login`, or provider API key environment variables.
+
+`explain` shows a value and the last input layer defining the requested path.
+Fields within a merged object can come from different layers. Dotted paths
+accept runtime aliases; JSON Pointer paths starting with `/` address exact
+keys, including names containing dots. `settings` reports the typed settings
+registry without reading configuration. Inspection does not create files or
+contact providers.
 
 The executable loads `.env` without replacing values already in the process
 environment. Global `--debug` writes diagnostic logs to stderr; `--debug-file FILE`
@@ -68,7 +82,9 @@ permission modes and selector maps, tool switches, and `false` for disabling LSP
 or formatters. It is generated from the configuration types and checked against
 `configs/config.json`. Schema validation checks shape and field values; `config
 validate` also checks model references and other relationships between fields.
-The terminal command serves the unchanged `configs/tui.json`.
+The terminal command serves the unchanged `configs/tui.json`. Releases publish
+these schemas as `harness.schema.json` and `tui.schema.json`; their
+`releases/latest/download/` URLs can be used in an editor's `$schema` setting.
 
 ## Generate a catalog
 

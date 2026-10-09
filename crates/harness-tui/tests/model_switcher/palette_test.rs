@@ -301,7 +301,7 @@ fn authenticated_builtin_models() -> Vec<harness_tui::app::ModelOption> {
 #[test]
 fn model_switcher_opens_no_provider_connect_state() {
     let mut app = AppState::new_live(None, false, None);
-    app.set_launch_metadata(LaunchMetadata::new("default", "local", None));
+    app.set_launch_metadata(LaunchMetadata::disconnected("default"));
 
     for ch in "/model".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
@@ -399,7 +399,7 @@ fn no_provider_prompt_submission_blocks_with_connect_guidance() {
         })
     };
     let mut app = AppState::new_live(None, false, Some(sink));
-    app.set_launch_metadata(LaunchMetadata::new("default", "local", None));
+    app.set_launch_metadata(LaunchMetadata::disconnected("default"));
 
     for ch in "hello".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
@@ -417,7 +417,7 @@ fn no_provider_prompt_submission_blocks_with_connect_guidance() {
 fn auth_catalog_refresh_opens_model_picker_with_connected_models() {
     let mut app = AppState::new_live(None, false, None);
     let models = authenticated_builtin_models();
-    app.set_launch_metadata(LaunchMetadata::new("default", "local", None));
+    app.set_launch_metadata(LaunchMetadata::disconnected("default"));
 
     app.apply_auth_provider_catalog_refresh(
         LaunchMetadata::from_model_option(&models[0]).with_available_models(models),

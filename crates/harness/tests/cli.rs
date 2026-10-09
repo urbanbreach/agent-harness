@@ -72,6 +72,113 @@ fn openai_login_routes_oauth_to_codex_and_keeps_api_keys_separate(
 }
 
 #[test]
+fn first_login_writes_starter_config_only_without_user_config(
+) -> Result<(), Box<dyn std::error::Error>> {
+    for case in [
+        "first",
+        "existing_json",
+        "config_env",
+        "content_env",
+        "config_env_empty",
+        #[cfg(unix)]
+        "write_failure",
+    ] {
+        let root = tempfile::tempdir()?;
+        let home = root.path().join("home");
+        let mut deps = CliDeps::real()
+            .with_current_dir(root.path().into())
+            .with_env("HARNESS_HOME", home.to_string_lossy())
+            .without_env("HARNESS_CONFIG")
+            .without_env("HARNESS_CONFIG_CONTENT")
+            .without_env("ANTHROPIC_API_KEY")
+            .without_env("HARNESS_TUI_CONFIG");
+        let existing = "{\"permission\":\"ask\"}\n";
+        match case {
+            "existing_json" => {
+                fs::create_dir_all(&home)?;
+                fs::write(home.join("harness.json"), existing)?;
+            }
+            "config_env" => {
+                let path = root.path().join("explicit.json");
+                fs::write(&path, existing)?;
+                deps = deps.with_env("HARNESS_CONFIG", path.to_string_lossy());
+            }
+            "content_env" => deps = deps.with_env("HARNESS_CONFIG_CONTENT", "{}"),
+            "config_env_empty" => deps = deps.with_env("HARNESS_CONFIG", ""),
+            #[cfg(unix)]
+            "write_failure" => {
+                fs::create_dir_all(&home)?;
+                std::os::unix::fs::symlink("harness.json", home.join("harness.json"))?;
+            }
+            _ => {}
+        }
+        let args = ["login".into(), "anthropic".into(), "--api-key-stdin".into()];
+        let output = harness::execute_auth_backend_args(&args, None, None, "fixture-key", &deps);
+        assert_eq!(output.code, 0, "{case}: {}", output.stderr);
+        assert!(output
+            .stdout
+            .contains("stored api_key credential for anthropic"));
+        assert_eq!(
+            output.stderr.contains("could not write starter config:"),
+            case == "write_failure"
+        );
+        let path = home.join("harness.jsonc");
+        assert_eq!(path.exists(), case == "first", "{case}");
+        assert_eq!(
+            output.stdout.contains("wrote starter config:"),
+            case == "first"
+        );
+        if case == "first" {
+            let content = fs::read_to_string(&path)?;
+            assert!(output
+                .stdout
+                .contains(&format!("wrote starter config: {}", path.display())));
+            let parsed: serde_json::Value = json5::from_str(&content)?;
+            assert_eq!(parsed["$schema"], "https://github.com/urbanbreach/agent-harness/releases/latest/download/harness.schema.json");
+            assert!(parsed["model"]
+                .as_str()
+                .ok_or("starter model missing")?
+                .starts_with("anthropic/"));
+            assert!(
+                parsed.get("provider").is_none(),
+                "starter config must not curate the catalog"
+            );
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                assert_eq!(fs::metadata(&path)?.permissions().mode() & 0o777, 0o600);
+            }
+            assert_config_is_usable(&deps)?;
+            let second =
+                harness::execute_auth_backend_args(&args, None, None, "replacement-key", &deps);
+            assert_eq!(second.code, 0, "{}", second.stderr);
+            assert!(!second.stdout.contains("wrote starter config:"));
+            assert_eq!(fs::read_to_string(&path)?, content);
+        }
+        if case == "existing_json" {
+            assert_eq!(fs::read_to_string(home.join("harness.json"))?, existing);
+        }
+    }
+    Ok(())
+}
+
+fn assert_config_is_usable(deps: &CliDeps) -> Result<(), Box<dyn std::error::Error>> {
+    for args in [
+        &["harness", "config", "validate"][..],
+        &["harness", "doctor"][..],
+    ] {
+        let (mut stdin, mut stdout, mut stderr) = (Cursor::new(Vec::new()), Vec::new(), Vec::new());
+        let result = run(
+            args.iter().copied(),
+            &mut CliIo::new(&mut stdin, &mut stdout, &mut stderr),
+            deps.clone(),
+        );
+        assert_eq!(result.code, 0, "{}", String::from_utf8(stderr)?);
+    }
+    Ok(())
+}
+
+#[test]
 fn invalid_prompt_setup_fails_before_creating_a_session() -> Result<(), Box<dyn std::error::Error>>
 {
     for kind in ["environment", "input", "run_input"] {

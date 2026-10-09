@@ -13,20 +13,26 @@ pub(crate) struct RuntimeCatalogResolution {
     pub(crate) config_digest: String,
     pub(crate) connected_provider_ids: Vec<String>,
     pub(crate) no_provider_connected: bool,
+    pub(crate) curated: bool,
 }
 pub(crate) fn resolve_runtime_catalog(
     base: Option<HarnessConfig>,
     digest: Option<String>,
     directory: Option<PathBuf>,
+    context: &ConfigLoadContext,
     store: Option<&CredentialStore>,
     lookup: &dyn Fn(&str) -> Option<String>,
 ) -> Result<RuntimeCatalogResolution, String> {
-    let explicit = base.is_some();
     let mut config = match base {
         Some(config) => config,
-        None => load_config_from_str("{}").map_err(|e| e.to_string())?,
+        None => {
+            load_config_or_defaults_with_lookup(None, context, lookup)
+                .map_err(|e| e.to_string())?
+                .config
+        }
     };
-    let mut connected = add_connected_providers(&mut config, explicit, store, lookup)?;
+    let curated = !config.providers.is_empty();
+    let mut connected = add_connected_providers(&mut config, curated, store, lookup)?;
     merge_cached_models(&mut config, store, lookup);
     for (name, provider) in &mut config.providers {
         if provider.credential_provider(name) == Some(ProviderId::codex())
@@ -75,28 +81,36 @@ pub(crate) fn resolve_runtime_catalog(
         !config.disabled_providers.contains(id)
             && (config.enabled_providers.is_empty() || config.enabled_providers.contains(id))
     });
-    if let Some(id) = connected.first() {
-        let provider = config
-            .providers
-            .get(id)
-            .ok_or("selected provider missing")?;
-        let preferred = if provider.credential_provider(id) == Some(ProviderId::codex()) {
-            &["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.5"][..]
-        } else if provider.credential_provider(id) == Some(ProviderId::anthropic_subscription()) {
-            &["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1"][..]
-        } else {
-            &["gpt-5.4-mini", "gpt-5.5", "claude-sonnet-4.5"][..]
-        };
-        let models = provider.models();
-        let model = preferred
-            .iter()
-            .find(|name| models.contains_key(**name))
-            .copied()
-            .or_else(|| models.keys().next().map(String::as_str))
-            .ok_or("provider has no usable model")?;
-        for profile in config.agents.values_mut() {
-            if !profile.model_ref_explicit && profile.model_ref == "mock:default" {
-                profile.model_ref = format!("{id}:{model}");
+    let default_model = connected
+        .first()
+        .map(|id| {
+            let provider = config
+                .providers
+                .get(id)
+                .ok_or("selected provider missing")?;
+            let model =
+                default_model_for_provider(id, provider).ok_or("provider has no usable model")?;
+            Ok::<_, String>((id.as_str(), model))
+        })
+        .transpose()?;
+    for profile in config.agents.values_mut() {
+        let selector = config
+            .model_profiles
+            .get(&profile.model_ref)
+            .map_or(profile.model_ref.as_str(), |model| model.model.as_str());
+        let unavailable_pin = !curated
+            && selector
+                .split_once(':')
+                .or_else(|| selector.split_once('/'))
+                .is_some_and(|(provider, _)| !connected.iter().any(|id| id == provider));
+        if (!profile.model_ref_explicit && profile.model_ref == "mock:default") || unavailable_pin {
+            profile.model_ref = match default_model {
+                Some((id, model)) => format!("{id}:{model}"),
+                None => "mock:default".into(),
+            };
+            if unavailable_pin {
+                profile.model_ref_explicit = false;
+                profile.variant = None;
             }
         }
     }
@@ -114,8 +128,69 @@ pub(crate) fn resolve_runtime_catalog(
         config_digest,
         no_provider_connected: connected.is_empty(),
         connected_provider_ids: connected,
+        curated,
     })
 }
+pub(crate) fn default_model_for_provider<'a>(
+    id: &str,
+    provider: &'a ProviderConfig,
+) -> Option<&'a str> {
+    let preferred = if provider.credential_provider(id) == Some(ProviderId::codex()) {
+        &["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.5"][..]
+    } else if provider.credential_provider(id) == Some(ProviderId::anthropic_subscription()) {
+        &["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1"][..]
+    } else if id == "google" {
+        &[
+            "gemini-3.1-pro-preview",
+            "gemini-3-pro-preview",
+            "gemini-2.5-pro",
+        ][..]
+    } else if id == "openrouter" {
+        &[
+            "anthropic/claude-sonnet-4.6",
+            "openai/gpt-5.5",
+            "anthropic/claude-sonnet-4.5",
+        ][..]
+    } else {
+        &[
+            "gpt-5.4-mini",
+            "gpt-5.5",
+            "claude-sonnet-4-6",
+            "claude-sonnet-4-5",
+        ][..]
+    };
+    let models = provider.models();
+    preferred
+        .iter()
+        .find(|name| models.contains_key(**name))
+        .copied()
+        .or_else(|| {
+            models
+                .iter()
+                .map(|(name, model)| {
+                    let excluded = name.ends_with(":free")
+                        || name
+                            .split(['-', '/', '.', ':', '_'])
+                            .any(|token| matches!(token, "nano" | "lite" | "mini" | "alpha"));
+                    let missing_tool_support = model.metadata.supports_tool_calls != Some(true);
+                    (name, model, missing_tool_support, excluded)
+                })
+                .min_by(
+                    |(left_name, left, left_missing_tools, left_excluded),
+                     (right_name, right, right_missing_tools, right_excluded)| {
+                        left_missing_tools
+                            .cmp(right_missing_tools)
+                            .then_with(|| left_excluded.cmp(right_excluded))
+                            .then_with(|| {
+                                right.catalog_release_date.cmp(&left.catalog_release_date)
+                            })
+                            .then_with(|| left_name.cmp(right_name))
+                    },
+                )
+                .map(|(name, _, _, _)| name.as_str())
+        })
+}
+
 fn merge_cached_models(
     config: &mut HarnessConfig,
     store: Option<&CredentialStore>,
@@ -161,7 +236,7 @@ fn merge_cached_models(
 }
 fn add_connected_providers(
     config: &mut HarnessConfig,
-    explicit: bool,
+    curated: bool,
     store: Option<&CredentialStore>,
     lookup: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Vec<String>, String> {
@@ -185,7 +260,7 @@ fn add_connected_providers(
         );
         connected.push(BUILTIN_ANTHROPIC_SUBSCRIPTION_PROVIDER_ID.into());
     }
-    if !explicit || codex || copilot {
+    if !curated || codex || copilot {
         let catalog = ProviderCatalog::from_embedded().map_err(|e| e.to_string())?;
         if codex && !config.providers.contains_key(BUILTIN_CODEX_PROVIDER_ID) {
             let mut provider =
@@ -203,7 +278,7 @@ fn add_connected_providers(
         }
         for source in catalog.sorted_by_priority() {
             if config.providers.contains_key(&source.id)
-                || (explicit && source.id != BUILTIN_COPILOT_PROVIDER_ID)
+                || (curated && source.id != BUILTIN_COPILOT_PROVIDER_ID)
             {
                 continue;
             }
@@ -285,77 +360,5 @@ fn models(source: &ProviderCatalogEntry) -> BTreeMap<String, ModelConfig> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use harness_core::auth::StoredCredential;
-
-    #[test]
-    fn connected_subscriptions_extend_explicit_config_without_replacing_its_model(
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let root = tempfile::tempdir()?;
-        let store = CredentialStore::new(root.path());
-        for id in [ProviderId::codex(), ProviderId::github_copilot()] {
-            store.save(&StoredCredential::oauth(
-                id,
-                "fixture-access",
-                "fixture-refresh",
-                None,
-                "2026-09-26T00:00:00Z",
-            ))?;
-        }
-        let config = load_config_from_str(
-            r#"{"provider":{"local":{"type":"openai_compatible","models":{"chosen":{}}}},"model":"local/chosen"}"#,
-        )?;
-        let result = resolve_runtime_catalog(Some(config), None, None, Some(&store), &|_| None)?;
-        assert_eq!(result.config.agents["default"].model_ref, "local:chosen");
-        assert!(result
-            .connected_provider_ids
-            .contains(&BUILTIN_COPILOT_PROVIDER_ID.into()));
-        let codex = &result.config.providers[BUILTIN_CODEX_PROVIDER_ID];
-        assert!(codex.models().contains_key("gpt-6-astra"));
-        assert!(codex
-            .models()
-            .keys()
-            .all(|model| harness_providers::codex_model_allowed(model)));
-        let selected =
-            resolve_model_selection(&result.config, "openai-codex:gpt-6.1-sol", Some("max"))?;
-        assert_eq!(selected.primary.reasoning_effort.as_deref(), Some("max"));
-        assert_eq!(selected.primary.reasoning_summary.as_deref(), Some("auto"));
-        assert!(selected.primary.resolution.capabilities.supports_vision);
-        assert!(selected
-            .primary
-            .resolution
-            .capabilities
-            .variants
-            .contains(&"max".into()));
-        let mut config = result.config;
-        let ProviderConfig::OpenAiCompatible(codex) = config
-            .providers
-            .get_mut(BUILTIN_CODEX_PROVIDER_ID)
-            .ok_or("missing Codex")?
-        else {
-            return Err("wrong provider".into());
-        };
-        let explicit_astra = codex.models["gpt-6-astra"].clone();
-        codex.models.remove("gpt-6-sol");
-        let cache = root.path().join("catalog.json");
-        std::fs::write(
-            &cache,
-            r#"{"openai":{"models":{
-            "gpt-6-astra":{"limit":{"context":10000,"output":200}},
-            "gpt-6-sol":{"limit":{"context":22222,"output":4444}}
-        }}}"#,
-        )?;
-        let result = resolve_runtime_catalog(Some(config), None, None, Some(&store), &|name| {
-            (name == "HARNESS_MODELS_PATH").then(|| cache.to_string_lossy().into_owned())
-        })?;
-        let models = result.config.providers[BUILTIN_CODEX_PROVIDER_ID].models();
-        assert_eq!(models["gpt-6-sol"].limit.context, Some(22222));
-        assert_eq!(
-            serde_json::to_value(&models["gpt-6-astra"])?,
-            serde_json::to_value(explicit_astra)?
-        );
-        assert_eq!(result.config.agents["default"].model_ref, "local:chosen");
-        Ok(())
-    }
-}
+#[path = "runtime_catalog/tests.rs"]
+mod tests;

@@ -64,6 +64,13 @@ pub struct McpResourceOption {
 }
 
 impl LaunchMetadata {
+    pub fn disconnected(profile: impl Into<String>) -> Self {
+        Self {
+            profile: Some(profile.into()),
+            ..Self::default()
+        }
+    }
+
     pub fn new(
         profile: impl Into<String>,
         provider: impl Into<String>,

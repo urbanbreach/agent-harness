@@ -164,14 +164,14 @@ pub(crate) fn pty_connect_auth_drives_provider_connection() {
     }
 
     let mut helper = spawn_helper(CONNECT_AUTH_TEST, CONNECT_AUTH_SCENARIO);
-    helper.wait_for("❯");
+    helper.wait_for("Log in to a provider");
+    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
+    helper.wait_until_absent("Log in to a provider");
+    helper.wait_for("No provider connected. Use /login.");
+    helper.wait_for("Provider not connected");
 
-    send_key(helper.writer.as_mut(), b'/').unwrap_or_abort();
-    helper.writer.write_all(b"login").unwrap_or_abort();
-    helper.writer.flush().unwrap_or_abort();
-    helper.wait_for("login");
+    send_bytes(helper.writer.as_mut(), b"/login").unwrap_or_abort();
     send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
-
     helper.wait_for("Log in to a provider");
     send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
     helper.wait_until_absent("Log in to a provider");

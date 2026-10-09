@@ -107,7 +107,8 @@ pub struct HarnessConfig {
     pub formatter: FormatterConfig,
     #[serde(skip)]
     pub instruction_files: Vec<InstructionFile>,
-    pub small_model: Option<String>,
+    #[serde(alias = "modelRoles")]
+    pub model_roles: ModelRolesConfig,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -301,7 +302,14 @@ mod tests {
         assert!(
             load_config_from_str("{provider:{x:{type:'openai_compatible',timeoutMs:0}}}").is_err()
         );
-        assert!(load_config_from_str("{model:'missing:model'}").is_err());
+        assert_eq!(
+            load_config_from_str("{model:'missing:model'}")?.agents["default"].model_ref,
+            "missing:model"
+        );
+        assert!(load_config_from_str(
+            "{provider:{local:{type:'openai_compatible',models:{test:{}}}},model:'missing:model'}",
+        )
+        .is_err());
         assert!(load_config_from_str("{hooks:{lifecycle:[{command:['echo']}]}}").is_err());
         Ok(())
     }

@@ -54,9 +54,8 @@ pub(crate) fn execute(
     }
     let context = deps.config_load_context();
     let mut loaded =
-        load_resolved_config_with_lookup(path, &context, &|name| deps.env_var_value(name))
-            .map_err(|e| e.to_string())?
-            .ok_or("no configuration found; use --config <path>")?;
+        load_config_or_defaults_with_lookup(path, &context, &|name| deps.env_var_value(name))
+            .map_err(|e| e.to_string())?;
     loaded
         .config
         .apply_session_dir_override(session_dir.clone());
@@ -78,6 +77,13 @@ pub(crate) fn execute(
         layers.push(("--session-dir".into(), "command_line"));
     }
     if matches!(command.action, Action::Validate) {
+        if layers.is_empty() {
+            return writeln!(
+                io.stdout,
+                "config valid: no configuration files; using built-in defaults"
+            )
+            .map_err(|e| e.to_string());
+        }
         return writeln!(
             io.stdout,
             "config valid: {}",
@@ -99,9 +105,14 @@ pub(crate) fn execute(
             "layers":layers.iter().map(|(p,_)| p).collect::<Vec<_>>(), "primary_path":primary,"effective":effective})
         }
         Action::Sources => {
-            json!({"schema_version":"harness-config-sources-v1","primary_path":primary,
-            "layer_count":layers.len(),"layers":layers.iter().enumerate().map(|(i,(path,kind))|
-                json!({"order":i+1,"path":path,"kind":kind})).collect::<Vec<_>>() })
+            let mut report = json!({"schema_version":"harness-config-sources-v1","primary_path":primary,
+                "searched":config_search_paths(&context.discovery, false),
+                "layer_count":layers.len(),"layers":layers.iter().enumerate().map(|(i,(path,kind))|
+                    json!({"order":i+1,"path":path,"kind":kind})).collect::<Vec<_>>() });
+            if loaded.paths.is_empty() && context.runtime_content.is_none() {
+                report["note"] = json!("No configuration files found. Harness uses built-in defaults and providers connected through /login, `harness auth login`, or provider API key environment variables.");
+            }
+            report
         }
         Action::Explain { path } => explain(
             &path,
@@ -174,10 +185,14 @@ fn explain(
     let value = at_path(&effective, path)
         .filter(|v| !v.is_null())
         .or_else(|| at_path(&merged, path));
+    let primary = layers
+        .iter()
+        .rfind(|(_, kind)| *kind == "runtime")
+        .map(|(path, _)| path);
     Ok(
         json!({"schema_version":"harness-config-explain-v1","path":path,"redacted":true,
-        "found":value.is_some(),"effective":value,"source_path":source,"layers":rows,
-        "source_note":"Last input layer defining this path; fields in merged objects may come from earlier layers."}),
+        "found":value.is_some(),"effective":value,"source_path":source,"primary_path":primary,"layers":rows,
+        "source_note":if source.is_none() && value.is_some() {"Built-in default."} else {"Last input layer defining this path; fields in merged objects may come from earlier layers."}}),
     )
 }
 

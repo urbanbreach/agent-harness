@@ -9,7 +9,7 @@ use harness_core::{
     store::{EventStore, EventStoreError, RuntimeEventStream},
 };
 use std::{
-    io::Read,
+    io::{Read, Write},
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -143,18 +143,59 @@ fn execute_prompt(
         .map_err(|e| e.to_string())?
         .map(|c| c.config);
     }
+    let commands = harness_core::commands::discover(
+        &deps.current_dir().map_err(|error| error.to_string())?,
+        harness_core::storage_paths::data_dir_from_lookup(&|name| deps.env_var_value(name))
+            .as_deref(),
+        &harness_tui::keybindings::reserved_slash_names(),
+    );
+    for warning in &commands.warnings {
+        writeln!(io.stderr, "warning: {warning}").map_err(|error| error.to_string())?;
+    }
+    let text = harness_core::commands::expand_input(&commands.commands, &text).unwrap_or(text);
+    if text.trim().is_empty() || text.len() > 1024 * 1024 {
+        return Err("prompt must contain 1 byte to 1 MiB of text".into());
+    }
     let mut config = if command.mock {
         loaded.unwrap_or_default()
     } else {
-        crate::runtime_catalog::resolve_runtime_catalog(
+        let requested_provider = loaded.as_ref().and_then(|config| {
+            let name = command
+                .profile
+                .as_deref()
+                .or_else(|| resume.as_ref().map(|resume| resume.profile.as_str()))
+                .or(config.ui.default_profile.as_deref())
+                .unwrap_or("default");
+            let profile = config.agents.get(name)?;
+            let selector = config
+                .model_profiles
+                .get(&profile.model_ref)
+                .map_or(profile.model_ref.as_str(), |model| model.model.as_str());
+            selector
+                .split_once(':')
+                .or_else(|| selector.split_once('/'))
+                .filter(|(provider, _)| *provider != "mock")
+                .map(|(provider, _)| provider.to_owned())
+        });
+        let resolved = crate::runtime_catalog::resolve_runtime_catalog(
             loaded,
             None,
             None,
+            &deps.config_load_context(),
             harness_core::auth::CredentialStore::from_lookup(&|name| deps.env_var_value(name))
                 .as_ref(),
             &|name| deps.env_var_value(name),
-        )?
-        .config
+        )?;
+        if resolved.no_provider_connected {
+            return Err(match requested_provider {
+                Some(provider) => format!(
+                    "provider {provider} is not connected; run `harness auth login {provider}`"
+                ),
+                None => "No provider connected. Run `harness auth login <provider>` or use --mock."
+                    .into(),
+            });
+        }
+        resolved.config
     };
     let profile = command
         .profile

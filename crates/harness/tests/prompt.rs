@@ -446,3 +446,52 @@ async fn prompt_uses_the_runtime_catalog_with_environment_or_stored_credentials(
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn markdown_project_commands_expand_in_run_and_prompt(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let workspace = tempfile::tempdir()?;
+    let home = tempfile::tempdir()?;
+    let directory = workspace.path().join(".harness/commands");
+    fs::create_dir_all(&directory)?;
+    fs::write(directory.join("hi.md"), "Hello $ARGUMENTS")?;
+    for command in ["run", "prompt"] {
+        let provider = Arc::new(MockProvider::script([vec![
+            ProviderStreamEvent::TextDelta("Expanded prompt accepted".into()),
+            ProviderStreamEvent::Done { usage: None },
+        ]]));
+        let sessions = workspace.path().join(format!("sessions-{command}"));
+        let (mut input, mut stdout, mut stderr) = (Cursor::new(Vec::new()), Vec::new(), Vec::new());
+        let result = run(
+            [
+                "harness",
+                "--session-dir",
+                sessions.to_str().ok_or("session path")?,
+                command,
+                "--mock",
+                "/hi there",
+            ],
+            &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
+            CliDeps::real()
+                .with_current_dir(workspace.path().into())
+                .with_env("HARNESS_HOME", home.path().to_string_lossy())
+                .with_env("HOME", home.path().to_string_lossy())
+                .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),
+        );
+        assert_eq!(result.code, 0, "{}", String::from_utf8_lossy(&stderr));
+        let requests = provider.captured_requests().await;
+        assert_eq!(requests.len(), 1);
+        let user_text: Vec<_> = requests[0]
+            .messages
+            .iter()
+            .filter(|message| message.role == harness_providers::MessageRole::User)
+            .map(|message| message.content.as_str())
+            .collect();
+        assert_eq!(user_text, ["Hello there"]);
+        assert_eq!(
+            String::from_utf8(stdout)?.trim(),
+            "Expanded prompt accepted"
+        );
+    }
+    Ok(())
+}

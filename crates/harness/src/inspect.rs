@@ -47,15 +47,15 @@ pub(crate) fn configured(
     path: Option<&Path>,
     deps: &CliDeps,
 ) -> Result<crate::runtime_catalog::RuntimeCatalogResolution, String> {
-    let loaded = load_resolved_config_with_lookup(path, &deps.config_load_context(), &|name| {
-        deps.env_var_value(name)
-    })
-    .map_err(|e| e.to_string())?;
+    let context = deps.config_load_context();
+    let loaded = load_resolved_config_with_lookup(path, &context, &|name| deps.env_var_value(name))
+        .map_err(|e| e.to_string())?;
     let store = CredentialStore::from_lookup(&|name| deps.env_var_value(name));
     crate::runtime_catalog::resolve_runtime_catalog(
         loaded.map(|loaded| loaded.config),
         None,
         None,
+        &context,
         store.as_ref(),
         &|name| deps.env_var_value(name),
     )
@@ -150,7 +150,7 @@ pub(crate) fn doctor(
     let mut checks = vec![
         json!({"name":"configuration","status":"pass","message":"Configuration is valid."}),
         json!({"name":"providers","status":if resolved.no_provider_connected {"fail"} else {"pass"},
-            "message":if resolved.no_provider_connected {"No provider is connected or configured for anonymous access."} else {"Provider configuration is present; live access is unverified."}}),
+            "message":if resolved.no_provider_connected {"No provider connected. Run `harness auth login <provider>`, use /login in the TUI, or set a provider API key such as OPENAI_API_KEY or ANTHROPIC_API_KEY."} else {"Provider configuration is present; live access is unverified."}}),
         json!({"name":"model_limits","status":if unknown > 0 {"warn"} else {"pass"},"message":format!("{} model selections; {unknown} have unknown context or output limits.",catalog.len())}),
     ];
     let workspace = deps.current_dir().map_err(|e| e.to_string())?;

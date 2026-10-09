@@ -200,7 +200,7 @@ pub(super) fn resolve_live_settings_for_test(
     )
 }
 
-fn resolve_live_settings_with_deps(
+pub(super) fn resolve_live_settings_with_deps(
     cmd: &TuiCommand,
     config_path: Option<PathBuf>,
     global_session_dir: Option<PathBuf>,
@@ -222,15 +222,16 @@ fn resolve_live_settings_with_deps(
     } else {
         load_optional_config_with_digest_context(config_path.as_deref(), config_context)?
     };
-    let project_config_loaded = loaded.is_some();
 
     let mut connected_provider_ids = Vec::new();
     let mut no_provider_connected = false;
+    let mut curated = false;
     if cmd.scenario.is_none() && !cmd.mock {
         let runtime_catalog = crate::runtime_catalog::resolve_runtime_catalog(
             loaded.as_ref().map(|loaded| loaded.config.clone()),
             loaded.as_ref().map(|loaded| loaded.digest.clone()),
             None,
+            config_context,
             deps.credential_store,
             deps.env_lookup,
         )?;
@@ -238,6 +239,7 @@ fn resolve_live_settings_with_deps(
         config_digest = runtime_catalog.config_digest;
         connected_provider_ids = runtime_catalog.connected_provider_ids;
         no_provider_connected = runtime_catalog.no_provider_connected;
+        curated = runtime_catalog.curated;
         config_default_profile = bootstrap::interactive_profile_name(&config);
         agent_profiles = bootstrap::interactive_agent_profiles(&config)?;
         shell_allowlist = config.permissions.shell_allowlist.clone();
@@ -282,7 +284,7 @@ fn resolve_live_settings_with_deps(
     };
     let mut launch_metadata =
         interactive_launch_metadata(live_config.as_ref(), &agent_profiles, &default_profile)?;
-    if !project_config_loaded {
+    if !curated || no_provider_connected {
         launch_metadata = launch_metadata_for_connected_providers(
             launch_metadata,
             &connected_provider_ids,
@@ -293,7 +295,7 @@ fn resolve_live_settings_with_deps(
         if let Some(path) = deps.model_selection_path {
             apply_persisted_model_selection_from_path(launch_metadata, path, &config_digest)
         } else {
-            apply_persisted_model_selection(launch_metadata, &config_digest)
+            apply_persisted_model_selection(launch_metadata, &config_digest, deps.env_lookup)
         }
     } else {
         launch_metadata
@@ -357,7 +359,7 @@ pub(super) fn launch_metadata_for_mode(
     settings: &LiveSettings,
     selection: &LaunchSelection,
 ) -> LaunchMetadata {
-    let launch_metadata = recover_mutex_lock(selection).clone();
+    let launch_metadata = recover_mutex_lock(selection).metadata.clone();
     if let Some(mode_label) = settings.launch_mode_label.as_deref() {
         launch_metadata.with_mode_label(mode_label)
     } else {

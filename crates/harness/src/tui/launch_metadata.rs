@@ -233,7 +233,7 @@ pub(super) fn launch_metadata_for_connected_providers(
     no_provider_connected: bool,
 ) -> LaunchMetadata {
     if no_provider_connected {
-        return LaunchMetadata::new(launch_metadata.profile().to_string(), "local", None)
+        return LaunchMetadata::disconnected(launch_metadata.profile())
             .with_switchable_profiles(launch_metadata.switchable_profiles().to_vec());
     }
     if connected_provider_ids.is_empty() {

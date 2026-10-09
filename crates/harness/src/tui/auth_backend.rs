@@ -6,7 +6,7 @@ use harness_core::redact::{DefaultRedactor, Redactor};
 use harness_tui::app::LaunchMetadata;
 use harness_tui::{LiveUpdate, LiveUpdateSender, OperatorNoticeLevel};
 
-use super::live_settings::{resolve_live_settings, LiveSettings};
+use super::live_settings::{resolve_live_settings_with_deps, LiveSettings, LiveSettingsDeps};
 use super::TuiCommand;
 
 #[derive(Clone)]
@@ -14,7 +14,6 @@ pub(super) struct TuiAuthBackendContext {
     pub(super) config_path: Option<PathBuf>,
     pub(super) session_dir: Option<PathBuf>,
     pub(super) workspace_root: PathBuf,
-    pub(super) config_digest: String,
     pub(super) prompt_overrides: std::collections::BTreeMap<String, String>,
     /// Providers that run every turn through the installed Claude Code.
     pub(super) claude_code_providers: std::collections::BTreeSet<String>,
@@ -30,7 +29,6 @@ impl TuiAuthBackendContext {
             config_path: settings.config_path.clone(),
             session_dir: Some(settings.session_dir.clone()),
             workspace_root: settings.workspace_root.clone(),
-            config_digest: settings.config_digest.clone(),
             prompt_overrides: settings
                 .config
                 .iter()
@@ -179,14 +177,10 @@ pub(super) fn spawn_tui_auth_backend_task(
                 config_path,
                 session_dir,
                 workspace_root,
+                &deps,
+                launch_selection.as_ref(),
             ) {
                 Ok(Some(settings)) => {
-                    if let Some(selection) = &launch_selection {
-                        super::workflow::record_launch_selection(
-                            selection,
-                            &settings.launch_metadata,
-                        );
-                    }
                     if let (Some(providers), Some(runtime)) = (&providers, &runtime)
                         && let Err(err) =
                             runtime.block_on(providers.add_signed_in_providers(&settings))
@@ -222,11 +216,14 @@ pub(super) fn refreshed_settings_after_auth(
     config_path: Option<PathBuf>,
     session_dir: Option<PathBuf>,
     workspace_root: PathBuf,
+    deps: &harness::CliDeps,
+    launch_selection: Option<&super::workflow::LaunchSelection>,
 ) -> Result<Option<LiveSettings>, String> {
     if command != Some("login") {
         return Ok(None);
     }
-    resolve_live_settings(
+    let store = harness_core::auth::CredentialStore::from_lookup(&|name| deps.env_var_value(name));
+    resolve_live_settings_with_deps(
         &TuiCommand {
             replay: None,
             continue_session: None,
@@ -244,9 +241,21 @@ pub(super) fn refreshed_settings_after_auth(
         config_path,
         session_dir,
         workspace_root.clone(),
-        &harness_core::config::ConfigLoadContext::from_env().with_current_dir(workspace_root),
+        &deps.config_load_context().with_current_dir(workspace_root),
+        LiveSettingsDeps {
+            credential_store: store.as_ref(),
+            env_lookup: &|name| deps.env_var_value(name),
+            model_selection_path: None,
+        },
     )
-    .map(Some)
+    .map(|settings| {
+        if let Some(selection) = launch_selection {
+            let mut selection = super::recover_mutex_lock(selection);
+            selection.metadata = settings.launch_metadata.clone().without_mode_label();
+            selection.config_digest.clone_from(&settings.config_digest);
+        }
+        Some(settings)
+    })
 }
 
 #[cfg(test)]

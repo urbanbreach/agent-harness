@@ -57,7 +57,7 @@ fn interactive_launch_metadata_exposes_catalog_for_default_profile() {
               stale_timeout_ms: 15000,
               message_staleness_timeout_ms: 5000
             },
-            session_dir: ".agent-harness/sessions"
+            session_dir: ".harness/sessions"
           },
         }
         "#,
@@ -247,7 +247,12 @@ fn persisted_model_selection_ignores_unconfigured_variant() {
 #[test]
 fn persisted_model_selection_round_trips_model_json() {
     let temp = tempfile::tempdir().unwrap_or_abort();
-    let path = temp.path().join("model.json");
+    let path = model_selection::model_selection_state_path_from_lookup(&|name| match name {
+        "HARNESS_HOME" => Some(temp.path().to_string_lossy().into_owned()),
+        _ => None,
+    })
+    .unwrap_or_abort();
+    assert_eq!(path, temp.path().join("model.json"));
     let metadata = LaunchMetadata::from_model_option(&ModelOption {
         profile: "default".to_string(),
         provider: "default".to_string(),
