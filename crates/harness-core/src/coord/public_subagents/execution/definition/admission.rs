@@ -30,6 +30,15 @@ impl Runtime {
         })?;
         let (resolved, source_state, source_reference) =
             self.resolve_native_definition(&actor, &input)?;
+        for warning in &resolved.warnings {
+            self.live(
+                actor.clone(),
+                tool.clone(),
+                LiveEventV1::RuntimeWarning {
+                    message: self.redactor.redact_text(warning),
+                },
+            )?;
+        }
         if self.config.permission_policy.check(
             "task",
             &resolved.subagent_type,

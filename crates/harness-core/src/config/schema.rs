@@ -99,7 +99,7 @@ pub fn config_json_schema() -> Value {
         };
         properties[name] = json!({"anyOf":[boolean,object]});
     }
-    aliases(&mut schema, "providers provider;agents agent;permissions permission;model_profile modelProfile model_profiles;hashline_edit hashlineEdit;small_model smallModel");
+    aliases(&mut schema, "providers provider;agents agent;permissions permission;model_profile modelProfile model_profiles;hashline_edit hashlineEdit;model_roles modelRoles");
     schema.sort_all_objects();
     schema
 }

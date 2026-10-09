@@ -90,6 +90,7 @@ fn definition(
                 | "skills"
                 | "mcp"
                 | "model_profile"
+                | "model_roles"
                 | "ui"
                 | "runtime.compaction.model_thresholds"
                 | "runtime.compaction.agent_thresholds"
@@ -119,7 +120,7 @@ macro_rules! entries {
 }
 static REGISTRY: LazyLock<Vec<SettingDefinition>> = LazyLock::new(|| {
     let mut entries = entries!("harness.runtime.", Runtime;
-        "model", "small_model", "agent", "provider", "skills", "mcp", "formatter", "instructions", "model_profile", "lsp",
+        "model", "model_roles", "agent", "provider", "skills", "mcp", "formatter", "instructions", "model_profile", "lsp",
         "disabled_providers", "enabled_providers", "shell", "logging", "ui",
         "permission.bash", "permission.edit", "permission.question", "permission.task", "permission.eval", "permission.webfetch", "permission.websearch",
         "permission.codesearch", "permission.lsp", "permission.read", "permission.external_directory", "permission.doom_loop", "permission.shell_allowlist",

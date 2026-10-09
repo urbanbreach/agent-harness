@@ -304,6 +304,11 @@ pub fn builtin_subagent_definitions() -> Vec<SubagentDefinition> {
         prompt_body: Some(if name == "sonic" {
             format!("Only strictly mechanical updates or data collection. Follow the supplied design; return open design questions to the parent.\n\n{prompt}")
         } else { prompt.into() }),
+        model: match name {
+            "scout" | "sonic" => Some("@smol".into()),
+            "reviewer" | "security-reviewer" => Some("@slow".into()),
+            _ => None,
+        },
         effort: matches!(name, "scout" | "sonic").then(|| "medium".into()),
         tools: tools.split_whitespace().map(str::to_owned).collect(),
         inject_default_tools: false,

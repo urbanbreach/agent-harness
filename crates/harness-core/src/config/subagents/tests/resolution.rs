@@ -427,3 +427,6 @@ fn persona_failures_abort_but_role_prompts_degrade() -> Result<(), Box<dyn std::
     }
     Ok(())
 }
+
+#[path = "resolution/variants.rs"]
+mod variants;

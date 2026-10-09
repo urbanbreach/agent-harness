@@ -62,6 +62,9 @@ pub struct SpawnSubagentInput {
     /// Optional model slug.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Optional model variant; overrides role, persona and definition defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
     /// Accepted wire-only workspace identifier.
     #[schemars(skip)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -94,6 +97,8 @@ struct SpawnSubagentInputDe {
     #[serde(default)]
     model: Option<String>,
     #[serde(default)]
+    variant: Option<String>,
+    #[serde(default)]
     tools: Option<Vec<String>>,
     #[serde(default)]
     workspace: Option<String>,
@@ -123,6 +128,7 @@ impl<'de> Deserialize<'de> for SpawnSubagentInput {
             resume_from: raw.resume_from,
             cwd: raw.cwd,
             model: raw.model,
+            variant: raw.variant,
             tools: raw.tools,
             workspace: raw.workspace,
             task_id: raw.task_id,
@@ -153,6 +159,8 @@ impl Serialize for SpawnSubagentInput {
             #[serde(skip_serializing_if = "Option::is_none")]
             model: Option<&'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
+            variant: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             tools: Option<&'a Vec<String>>,
             #[serde(skip_serializing_if = "Option::is_none")]
             workspace: Option<&'a str>,
@@ -171,6 +179,7 @@ impl Serialize for SpawnSubagentInput {
             resume_from: self.resume_from.as_deref(),
             cwd: self.cwd.as_deref(),
             model: self.model.as_deref(),
+            variant: self.variant.as_deref(),
             tools: self.tools.as_ref(),
             workspace: self.workspace.as_deref(),
             task_id: self.task_id.as_deref(),

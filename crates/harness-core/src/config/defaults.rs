@@ -13,7 +13,7 @@ defaults! {
         permissions: PermissionsConfig::default(), runtime: RuntimeConfig::default(), integrations: IntegrationsConfig::default(),
         hooks: HooksConfig::default(), skills: SkillsConfig::default(), lsp: LspConfig::default(), eval: EvalConfig::default(), background_task: BackgroundTaskSettings::default(),
         paths: PathsConfig::default(), deterministic: DeterministicConfig::default(), ui: UiConfig::default(), logging: LoggingConfig::default(),
-        hashline_edit: true, formatter: FormatterConfig::default(), instruction_files: Vec::new(), small_model: None
+        hashline_edit: true, formatter: FormatterConfig::default(), instruction_files: Vec::new(), model_roles: ModelRolesConfig::default()
     }
     UiConfig { default_profile: None, keybindings: BTreeMap::new(), max_events_in_memory: 25_000, max_transcript_chars_in_memory: 200_000 }
     LoggingConfig { level: "info".into(), file: None }

@@ -1746,6 +1746,26 @@
       ],
       "type": "string"
     },
+    "ModelRolesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "slow": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "smol": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "ModelVariantConfig": {
       "additionalProperties": false,
       "allOf": [
@@ -4765,7 +4785,8 @@
         },
         "globalRoots": {
           "default": [
-            "~/.config/agent-harness/skills"
+            "~/.harness/skills",
+            "~/.agents/skills"
           ],
           "items": {
             "type": "string"
@@ -4774,7 +4795,8 @@
         },
         "global_roots": {
           "default": [
-            "~/.config/agent-harness/skills"
+            "~/.harness/skills",
+            "~/.agents/skills"
           ],
           "items": {
             "type": "string"
@@ -4783,8 +4805,8 @@
         },
         "paths": {
           "default": [
-            ".agent-harness/skills",
-            ".harness/skills"
+            ".harness/skills",
+            ".agents/skills"
           ],
           "items": {
             "type": "string"
@@ -4800,8 +4822,8 @@
         },
         "projectRoots": {
           "default": [
-            ".agent-harness/skills",
-            ".harness/skills"
+            ".harness/skills",
+            ".agents/skills"
           ],
           "items": {
             "type": "string"
@@ -4810,8 +4832,8 @@
         },
         "project_roots": {
           "default": [
-            ".agent-harness/skills",
-            ".harness/skills"
+            ".harness/skills",
+            ".agents/skills"
           ],
           "items": {
             "type": "string"
@@ -4939,6 +4961,13 @@
             "string",
             "null"
           ]
+        },
+        "variant": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -5003,6 +5032,13 @@
           ]
         },
         "reasoning_effort": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variant": {
           "default": null,
           "type": [
             "string",
@@ -5277,8 +5313,8 @@
     {
       "not": {
         "required": [
-          "small_model",
-          "smallModel"
+          "model_roles",
+          "modelRoles"
         ]
       }
     }
@@ -5452,6 +5488,13 @@
       "default": {},
       "type": "object"
     },
+    "modelRoles": {
+      "$ref": "#/$defs/ModelRolesConfig",
+      "default": {
+        "slow": null,
+        "smol": null
+      }
+    },
     "model_profile": {
       "additionalProperties": {
         "$ref": "#/$defs/ModelProfileConfig"
@@ -5465,6 +5508,13 @@
       },
       "default": {},
       "type": "object"
+    },
+    "model_roles": {
+      "$ref": "#/$defs/ModelRolesConfig",
+      "default": {
+        "slow": null,
+        "smol": null
+      }
     },
     "permission": {
       "anyOf": [
@@ -6021,30 +6071,17 @@
       "default": {
         "disabled": [],
         "global_roots": [
-          "~/.config/agent-harness/skills"
+          "~/.harness/skills",
+          "~/.agents/skills"
         ],
         "permissions": {},
         "project_roots": [
-          ".agent-harness/skills",
-          ".harness/skills"
+          ".harness/skills",
+          ".agents/skills"
         ],
         "urls": [],
         "walk_to_git_root": true
       }
-    },
-    "smallModel": {
-      "default": null,
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "small_model": {
-      "default": null,
-      "type": [
-        "string",
-        "null"
-      ]
     },
     "subagents": {
       "$ref": "#/$defs/SubagentsConfig",

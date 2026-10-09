@@ -1,10 +1,20 @@
 # Agents and tasks
 
-Harness uses one interactive parent named `default`. Children resolve their
-definitions through the configured CLI, project, user, plugin, and bundled
-sources. The bundled types are `task`, `scout`, `reviewer`, `security-reviewer`,
-and `sonic`; `task` is the default. Title generation and
+Harness uses one interactive parent named `default`. Child definitions are
+Markdown files with YAML frontmatter under `<project>/.harness/agents/`, then
+`<home>/agents/`, then built-ins. Project discovery walks to the nearest Git
+root; the nearest definition wins. Project and user files can replace built-ins
+with the same name. The built-in types are `task`, `scout`, `reviewer`,
+`security-reviewer` and `sonic`; `task` is the default. Title generation and
 context compaction are internal operations, not selectable agents.
+
+`task` inherits the parent model. Scout and sonic use `@smol`, while both
+reviewers use `@slow`. Configure `model_roles.smol` and `model_roles.slow` with
+`provider/model[/variant]` references; unset roles inherit the parent model.
+Use either selector in a definition's `model`, a `subagents.models` pin, or a
+per-call model. Other `@names` are invalid. Optional `variant` frontmatter
+follows per-call, role, persona, definition, then parent precedence; unknown
+variants are ignored with a runtime warning.
 
 See [subagent configuration](../configuration/config.md#public-subagents)
 for definition discovery, model selection, inheritance, and concurrency settings.

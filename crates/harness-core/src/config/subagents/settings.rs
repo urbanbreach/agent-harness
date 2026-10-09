@@ -1,5 +1,19 @@
 use super::*;
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct ModelRolesConfig {
+    pub smol: Option<String>,
+    pub slow: Option<String>,
+}
+
+pub fn validate_subagent_model_role(model: &str) -> Result<(), ConfigError> {
+    if model.starts_with('@') && !matches!(model, "@smol" | "@slow") {
+        return Err(ConfigError(format!("unknown model role: {model}")));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct SubagentsConfig {
@@ -77,6 +91,9 @@ pub struct SubagentRuntimeConfig {
     pub model_inheritance: bool,
     pub worktree_snapshot: bool,
     pub models: BTreeMap<String, String>,
+    pub model_roles: ModelRolesConfig,
+    /// Enabled variants captured from the provider catalog during bootstrap.
+    pub model_variants: BTreeMap<String, Vec<String>>,
     pub toggle: BTreeMap<String, bool>,
     pub roles: BTreeMap<String, SubagentRole>,
     pub personas: BTreeMap<String, SubagentPersona>,
@@ -135,6 +152,23 @@ fn positive_count(
 }
 
 impl SubagentsConfig {
+    pub fn validate_model_roles(&self) -> Result<(), ConfigError> {
+        for model in self
+            .models
+            .values()
+            .map(String::as_str)
+            .chain(self.roles.values().filter_map(|role| role.model.as_deref()))
+            .chain(
+                self.personas
+                    .values()
+                    .filter_map(|persona| persona.model.as_deref()),
+            )
+        {
+            validate_subagent_model_role(model)?;
+        }
+        Ok(())
+    }
+
     /// Local enablement ignores remote enablement. Limits resolve env > config > remote > defaults.
     /// Features resolve managed requirements > env > effective layered config > remote > false.
     pub fn resolve_with_lookup(
@@ -238,6 +272,8 @@ impl SubagentsConfig {
                 remote.subagent_worktree_snapshot,
             ),
             models: self.models.clone(),
+            model_roles: ModelRolesConfig::default(),
+            model_variants: BTreeMap::new(),
             toggle: self.toggle.clone(),
             roles: self.roles.clone(),
             personas: self.personas.clone(),

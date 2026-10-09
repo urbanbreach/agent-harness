@@ -49,20 +49,43 @@ pub(super) fn configure(
             })
             .collect(),
     });
-    if let Some(model) = &config.small_model {
-        for name in ["scout", "sonic"] {
-            result
-                .subagents
-                .models
-                .entry(name.into())
-                .or_insert_with(|| model.clone());
+    result.subagents.model_roles = config.model_roles.clone();
+    for model in [
+        &mut result.subagents.model_roles.smol,
+        &mut result.subagents.model_roles.slow,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let target = resolve_model_selection(config, model, None)
+            .map_err(|e| e.to_string())?
+            .primary;
+        *model = match target.variant {
+            Some(variant) => format!("{}/{variant}", target.model_ref),
+            None => target.model_ref,
+        };
+    }
+    for (provider, backend) in &config.providers {
+        for (model, entry) in backend.models() {
+            result.subagents.model_variants.insert(
+                format!("{provider}:{model}"),
+                entry
+                    .variants
+                    .iter()
+                    .filter(|(_, variant)| !variant.disabled)
+                    .map(|(name, _)| name.clone())
+                    .collect(),
+            );
         }
     }
     for model in result.subagents.models.values_mut() {
         if !model.eq_ignore_ascii_case("inherit")
             && let Ok(selection) = resolve_model_selection(config, model, None)
         {
-            *model = selection.primary.model_ref;
+            *model = match selection.primary.variant {
+                Some(variant) => format!("{}/{variant}", selection.primary.model_ref),
+                None => selection.primary.model_ref,
+            };
         }
     }
     Ok(())

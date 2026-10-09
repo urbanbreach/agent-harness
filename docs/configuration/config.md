@@ -1,82 +1,39 @@
 # Config reference
 
-Use `harness.json` or `harness.jsonc` for runtime settings. Use `tui.json` or
+Config files are optional. Run `harness` and connect with `/login`,
+`harness auth login <provider>`, or a provider API key environment variable.
+Use `harness.json` or `harness.jsonc` for runtime overrides and `tui.json` or
 `tui.jsonc` for keyboard settings. The generated schemas define the accepted keys:
 
 - [Runtime schema](../../configs/config.json)
 - [TUI schema](../../configs/tui.json)
 
-Start with the [starter](#minimal-starter), then check [config precedence](#discovery-and-precedence).
+For optional overrides, start with the [starter](#minimal-starter) and check [config precedence](#discovery-and-precedence).
 The reference tables cover [runtime keys](#runtime-top-level-keys),
 [keybindings](#tui-default-bindings), [permissions](#permission-policy),
 [compaction](#provider-context-compaction-expectations), and [retries](#provider-retry-policy).
 
 ## Minimal starter
 
-Copy [`configs/harness.example.jsonc`](../../configs/harness.example.jsonc).
-It defines a Codex OAuth provider, a default model, the parent and named subagents,
-and an optional disabled MCP server. This shorter example omits extra model and
-formatter entries:
+Put personal defaults in `~/.harness/harness.jsonc` (or under `HARNESS_HOME`)
+and project policy in `<project>/harness.jsonc`. Only set values you need to
+override. First sign-in can create a minimal personal config; see
+[discovery and precedence](#discovery-and-precedence). For example:
 
 ```jsonc
 {
-  "$schema": "./config.json",
-  "provider": {
-    "openai-codex": {
-      "type": "openai_compatible",
-      "name": "OpenAI Codex",
-      "options": {
-        "authProvider": "codex",
-        "baseURL": "https://api.openai.com/v1",
-        "apiKeyEnv": ["OPENAI_API_KEY"],
-        "timeoutMs": 1800000,
-        "cacheRetention": "short"
-      },
-      "models": {
-        "gpt-5.5": {
-          "name": "GPT 5.5",
-          "metadata": { "supportsToolCalls": true },
-          "limit": { "context": 272000, "input": 272000, "output": 128000 },
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
-          }
-        },
-        "gpt-5.4-mini": {
-          "name": "GPT 5.4 Mini",
-          "metadata": { "supportsToolCalls": true },
-          "limit": { "context": 272000, "input": 272000, "output": 128000 },
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } }
-          }
-        }
-      }
-    }
-  },
-  "model": "openai-codex/gpt-5.4-mini",
-  "agent": {
-    "default": { "variant": "high" }
-  },
-  "permission": "allow",
-  "mcp": {
-    "cargo-mcp": {
-      "transport": "stdio",
-      "command": ["cargo-mcp", "serve"],
-      "enabled": false
-    }
+  "$schema": "https://github.com/urbanbreach/agent-harness/releases/latest/download/harness.schema.json",
+  "permission": {
+    "edit": "ask"
   }
 }
 ```
 
-Only set values you need to override. `agent.default` configures the interactive
-parent. Native children use the bundled definitions and `subagents` settings below.
-Keep larger model catalogs, tool lists, background-task knobs, and
-compaction defaults out of day-to-day configs unless a project needs a deliberate
-override.
+[`configs/harness.example.jsonc`](../../configs/harness.example.jsonc) adds
+comments and an optional custom OpenAI-compatible endpoint. It does not pin a
+model or define providers by default. `agent.default` configures the interactive
+parent; native children use bundled definitions and the `subagents` settings
+below.
 
 Each `variants` entry is a named model preset; for OpenAI-compatible reasoning
 models, set `metadata.reasoningEffort` so the TUI can display and select variants
@@ -96,8 +53,8 @@ OpenAI-compatible providers may also set `authProvider` to `codex` or
 `github-copilot`. That opt-in keeps the OpenAI-compatible transport while letting
 the runtime resolve credentials from the secure credential store before falling
 back to `apiKeyEnv` and inline `apiKey`. Stored credentials live outside
-`harness.json{,c}` under the platform data directory at
-`credentials/{authProvider}.json`, are atomically replaced, and use restrictive
+`harness.json{,c}` at `<home>/credentials/{authProvider}.json`, where `<home>`
+is `HARNESS_HOME` or `~/.harness`. They are atomically replaced and use restrictive
 file permissions: POSIX `0600`, and on Windows a protected owner-only DACL.
 
 ## Public subagents
@@ -149,29 +106,32 @@ exactly `xai` after whitespace trimming. Empty, provisional, unknown, third-part
 and mixed catalogs keep selection available. This policy is latched by the
 constructing actor; later config changes do not reclassify a running parent.
 
-Definitions resolve nearest project, builtin, user/compatibility, bundled,
-enabled plugin, then session CLI fallback. Only project definitions shadow
-builtins. Qualified plugin names use `plugin:name`; bare plugin names must be
-unambiguous. Agent Markdown files use YAML frontmatter. Project discovery walks
-from the current parent directory to the worktree root. It checks
-`.agent-harness/agents`, `.harness/agents`, and the compatibility layout
-`.claude/agents`. User roots, bundled roots and plugin directories are
-explicit discovery inputs.
-These read-only discovery inputs are separate from the removed plugin package
-registry and CLI. They do not install, activate, or execute a package.
+Definitions are Markdown files with YAML frontmatter. Discovery checks
+`<project>/.harness/agents/*.md` from the current parent directory to the nearest
+Git root, then `<home>/agents/*.md`, then built-ins. The nearest project
+definition wins; project and user definitions override built-ins with the same
+name. Outside a Git repository, only the current directory is searched.
+Other assistant layouts, plugin directories, CLI definitions and separate
+`bundled/` roots are not discovery inputs.
 
-Inline roles/personas override trusted project `.toml` files, then user files,
-then bundled files. Untrusted project role/persona files are skipped. A role
+Inline roles/personas override trusted project `.harness/roles/*.toml` and
+`.harness/personas/*.toml`, then `<home>/roles/*.toml` and
+`<home>/personas/*.toml`. Project presets follow the same nearest-ancestor
+search. Untrusted project role/persona files are skipped. A role
 alone never creates a callable type. Relative prompt paths use the preset
 file's source directory, or the current parent directory for inline presets.
 Persona errors abort resolution; a missing role prompt emits a warning and
 continues. Type-specific roles win over persona-named roles.
 
-Runtime model/effort overrides win over role then persona defaults. Valid model
-overrides precede per-type model pins, definition model and current parent model;
-unknown internal pins warn and fall through. Fresh public models require a
-catalog validator; resume ignores that argument and the actor pins the source
-model. Capability modes intersect runtime, role and definition ceilings.
+Per-call model, effort and variant overrides win over role then persona defaults.
+Valid model overrides precede per-type model pins, definition model and current
+parent model; unknown internal pins warn and fall through. Fresh public models
+require a catalog validator; resume ignores that argument and the actor pins the
+source model. The optional frontmatter `variant` selects a model variant such as
+`low`, `high` or `max`. Variant precedence is per-call, role, persona, definition,
+then parent; a variant embedded in a model reference belongs to that reference
+source. Unknown variants are ignored with a runtime warning. Capability modes
+intersect runtime, role and definition ceilings.
 Definition worktree isolation promotes resolved `none`, including explicit
 `none`. Definition `maxTurns` overrides the parent maximum. Definitions control
 MCP inheritance (`all`, `none`, `{"named":[...]}`, `{"except":[...]}`), skill
@@ -185,16 +145,16 @@ inheritance and explicit skill preloads. The bundled agents are:
 | `security-reviewer` | Local security review with read/search/LSP, no shell, eval, network, MCP, or spawning. |
 | `sonic` | Mechanical edits or data collection with task tools, medium effort. |
 
-All inherit the parent model unless pinned in `subagents.models`. `small_model`,
-when configured, supplies the default for `scout` and `sonic`; per-type pins win.
-Every child loses ask-user,
+`task` inherits the parent model. `scout` and `sonic` use `@smol`; `reviewer` and
+`security-reviewer` use `@slow`. Unset roles inherit the parent model.
+`subagents.models` pins override definition defaults. Every child loses ask-user,
 feedback and workflow tools; parent operator allow/deny restrictions still apply.
 
 For runtime integration, `HarnessConfig.subagents.resolve_with_lookup` returns
 `SubagentRuntimeConfig` using explicit CLI, feature, remote, managed requirement
 and environment lookup inputs. `discover_subagent_definitions` captures read-only
-definitions, presets and prompt-file outcomes under explicit cwd/trust/root/plugin
-inputs. `resolve_subagent_definition` is pure: its
+definitions, presets and prompt-file outcomes under explicit cwd, trust and
+user-root inputs. `resolve_subagent_definition` is pure: its
 `SubagentDefinitionContext` supplies the current parent model/effort/maxTurns,
 allowlist, catalog, latched selection, tool inventory, operator restrictions,
 permission ceiling, injected child depth, MCP and skill snapshots. It returns
@@ -203,6 +163,27 @@ The coordinator owns authorization, catalog readiness, source-model resume
 pinning, worktree creation, scheduling and dispatch. Optional type schemas list
 at most 64 names (128 bytes each), with normalized 200-byte descriptions; this
 presentation bound does not reject otherwise valid types.
+
+## Model roles
+
+`model_roles` (alias `modelRoles`) defines optional `smol` and `slow` model
+references in `provider/model[/variant]` form:
+
+```jsonc
+{
+  "model_roles": {
+    "smol": "openai/gpt-5.4-mini",
+    "slow": "openai-codex/gpt-6-astra/high"
+  },
+  "subagents": { "models": { "reviewer": "@slow" } }
+}
+```
+
+Use `@smol` or `@slow` in an agent definition's `model`, a `subagents.models`
+value, or a per-call model argument. An unset role resolves to the parent model.
+Other `@names` are validation errors. Role values must be concrete model
+references, not other role selectors. These roles select subagent models; they
+do not select a separate title-generation model.
 
 ## Model prompts
 
@@ -213,10 +194,10 @@ supports aliases. `harness models --json` includes `resolution.prompt_preset`.
 The selected eval routing guidance reaches the model once: in the system prompt,
 or in the eval tool description when a template or a literal prompt leaves it out.
 
-Edit `.agent-harness/prompts/models/glm-5.3.md` or
-`.agent-harness/prompts/models/gpt-6.1-sol.md` to customize those models without
-rebuilding. Project files override `$XDG_CONFIG_HOME/harness/prompts` or
-`~/.config/harness/prompts`, followed by bundled defaults. The shared
+Edit `.harness/prompts/models/glm-5.3.md` or
+`.harness/prompts/models/gpt-6.1-sol.md` to customize those models without
+rebuilding. Project files override `<home>/prompts`, followed by bundled
+defaults. The shared
 `partials/*.md`, `subagent.md`, and `eval/*.md` files use the same precedence.
 Templates reload on turns, tool iterations and model changes. Invalid selected
 files fail instead of silently falling back.
@@ -225,7 +206,7 @@ Native children use their actual model with the root agent's prompt locations,
 then add their role and completion rules. A nonempty
 `agent.<name>.system_prompt` remains a literal system-body override. Project
 instructions and command rules remain appended. See the
-[editable prompt guide](../../.agent-harness/prompts/README.md) for filenames,
+[editable prompt guide](../../crates/harness-core/prompts/README.md) for filenames,
 inheritance, limits and model-specific behavior.
 
 The larger provider catalog lives in `configs/provider-catalog.reference.jsonc`.
@@ -261,10 +242,20 @@ transports.
 
 ### First-run provider authentication
 
-The copied `configs/harness.example.jsonc` targets Codex OAuth by default through
-the `openai-codex` provider id. It keeps credentials out of config by
-using `authProvider: "codex"` plus `apiKeyEnv` fallback. A typical non-OAuth
-OpenAI-compatible setup still uses:
+No config is needed to connect a provider. Run `harness` and use `/login`,
+run `harness auth login <provider>`, or export an API key such as
+`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The login picker includes OpenAI ChatGPT
+Plus/Pro or an API key, GitHub Copilot device login, Anthropic API key, Claude
+Pro/Max subscription, Google, OpenCode Zen/Go, OpenRouter, and more.
+
+When the loaded config has no provider entries, Harness discovers stored
+credentials and provider API key environment variables against the embedded
+models.dev catalog. This also applies to a config that only sets permissions or
+other defaults. With only `ANTHROPIC_API_KEY`, Harness selects a Claude Sonnet.
+
+Defining any `provider` entry makes the catalog curated: only configured
+providers plus signed-in Codex, GitHub Copilot, and Claude subscription are
+included. To use a custom OpenAI-compatible endpoint, define it explicitly:
 
 ```jsonc
 {
@@ -314,24 +305,22 @@ files, so existing `apiKeyEnv` or inline fallbacks remain valid. Support exports
 include a redaction manifest entry for credential-store files, never credential
 file contents.
 
-Use `harness auth list [--json]` to inspect configured `codex` and
-`github-copilot` auth providers with redacted status. Run `harness auth login`
-for the standalone auth picker: provider order is OpenAI, then GitHub
-Copilot; OpenAI offers `ChatGPT Pro/Plus (browser)`, `ChatGPT Pro/Plus
-(headless)`, and `Manually enter API Key`; GitHub Copilot prompts for
-GitHub.com vs GitHub Enterprise before device-code login. Explicit commands still
-bypass the picker: `harness auth login <provider> --method device|browser|api-key`
-stores or replaces the active stored credential for that auth-provider id. The
-`--method` value also accepts the matching reference implementation labels, such as `ChatGPT
-Pro/Plus (browser)`, `ChatGPT Pro/Plus (headless)`, `Manually enter API Key`,
-and `Login with GitHub Copilot`. Codex supports device, browser, and API-key
-stdin login; browser login can also complete from an SSH session by pasting the
-final localhost callback URL into the terminal if the remote loopback callback is
-not reachable from the desktop browser. GitHub Copilot supports device-code login
-for V1. Use
-`harness auth logout <provider>` to delete only the stored credential file;
-config and environment fallbacks are not edited. In the TUI, `/login` and the `Login` command-palette row open the provider
-dialog. Choose OpenAI, then browser or headless sign-in. `/auth` and `/connect`
+Use `harness auth list --json` to inspect credential status without exposing
+secrets. `harness auth login` opens the standalone provider picker.
+`harness auth login <provider>` selects a provider directly; use `--method`
+for its supported method, such as `device`, `browser`, or `api-key`. Codex
+supports browser, device, and API-key login; `--api-key-stdin` reads the key from
+stdin. Browser login from SSH can also finish by pasting the final localhost
+callback URL when the browser cannot reach the remote loopback listener.
+GitHub Copilot uses device login and supports GitHub Enterprise with
+`--enterprise-url`.
+
+`harness auth logout <provider>` removes only the stored credential, not
+config or environment fallbacks. In the TUI, `/login` and the `Login` palette
+row open the picker. On first run in live mode, with no provider and no saved
+project sessions, it opens automatically. Esc returns to the welcome screen
+with `No provider connected. Use /login.`; returning users see only that banner.
+The disconnected footer reads `Provider not connected`. `/auth` and `/connect`
 are removed.
 
 Codex OAuth follows the ChatGPT PKCE/device-code reference flow and decorates the
@@ -344,19 +333,25 @@ Copilot Enterprise credentials store the normalized enterprise domain so request
 decoration can select `https://copilot-api.<domain>` while public Copilot uses
 `https://api.githubcopilot.com`.
 
-`harness doctor` keeps secret values redacted. For `apiKeyEnv` fallbacks, doctor checks that the named environment variable is present. For `authProvider`
-entries, doctor checks stored credential presence before environment or inline fallbacks, and doctor does not prove live provider authentication or transport health; use a live prompt or signoff-live lane when you need transport and credential proof.
+`harness doctor` checks readiness offline and redacts secret values. It checks
+stored credentials, configured `apiKeyEnv` fallbacks, and automatically
+discovered catalog credentials. It cannot prove live authentication or endpoint
+health. When no provider is connected, the provider failure message is:
+
+> No provider connected. Run `harness auth login <provider>`, use /login in the TUI, or set a provider API key such as OPENAI_API_KEY or ANTHROPIC_API_KEY.
+
+Use a live prompt when you need to check account and transport access.
 
 ## Public contract summary
 
 | Area | Canonical shape | Notes |
 | --- | --- | --- |
-| Runtime config file | `harness.json` / `harness.jsonc` | Shared defaults live under the matching XDG harness directory. |
+| Runtime config file | `harness.json` / `harness.jsonc` | Personal defaults live in `<home>`, normally `~/.harness`. |
 | TUI config file | `tui.json` / `tui.jsonc` | Runtime and TUI settings are intentionally split. |
-| Core runtime keys | `provider`, `model`, `small_model`, `agent`, `permission`, `mcp`, `skills`, `instructions`, plus Harness runtime extensions | `agent` configures the `default` parent and custom profiles; `subagents` configures native child definitions. |
+| Core runtime keys | `provider`, `model`, `model_roles`, `agent`, `permission`, `mcp`, `skills`, `instructions`, plus Harness runtime extensions | `agent` configures the `default` parent and custom profiles; `subagents` configures native child definitions. |
 | TUI settings | `keybinds`, `confirm_before_rewind` | Unsupported TUI-only fields fail validation. |
 | Permission naming | `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`, plus safety kinds `read`, `external_directory`, and `doom_loop` | Legacy `shell` / `network` remain compatibility-only. `external_directory` and `doom_loop` default to ask; `read` defaults to allow with `.env` pattern asks. |
-| Prompt assets | `.agent-harness/prompts/models/*.md`, shared templates and existing agent definitions | `AGENTS.md` is auto-discovered separately as project context. |
+| Prompt assets | `.harness/prompts/models/*.md`, shared templates and existing agent definitions | `AGENTS.md` is auto-discovered separately as project context. |
 
 Runtime and TUI config stay separate. Runtime config controls providers,
 models, the generic agent, permissions, MCP, skills, instructions, and compaction. TUI
@@ -370,7 +365,7 @@ for those settings instead of mixing them into runtime config.
 | `$schema` | Optional schema URI for editor integration. |
 | `agent` | Generic `default` parent and named subagent tuning. Alternate primary roles and category routes are rejected. |
 | `autoshare` | Upstream-compatible sharing flag; inactive `false` is accepted, active sharing is rejected. |
-| `command` | Upstream command configuration; accepted only when empty because the harness does not execute configured commands. |
+| `command` | Configured command objects are accepted only when empty. Use [Markdown command files](../operations/extension-strategy.md#markdown-prompt-commands) for slash prompt templates. |
 | `disabled_providers` | Upstream-compatible provider filter; hides matching configured and authenticated built-in providers from runtime model catalogs. |
 | `enabled_providers` | Upstream-compatible provider allow-list; when non-empty, only matching configured/authenticated built-in providers remain in runtime model catalogs. |
 | `formatter` | Formatter registry. `false` disables formatters; `true` enables all 26 built-in formatters (the default when the key is omitted). An object accepts `enabled`, `experimentalOxfmt`, and named formatter entries such as `<name>: { disabled?, command?, environment?, extensions? }`. Built-in formatter names are `gofmt`, `mix`, `prettier`, `oxfmt`, `biome`, `zig`, `clang-format`, `ktlint`, `ruff`, `air`, `uv`, `rubocop`, `standardrb`, `htmlbeautifier`, `dart`, `ocamlformat`, `terraform`, `latexindent`, `gleam`, `shfmt`, `nixfmt`, `rustfmt`, `pint`, `ormolu`, `cljfmt`, `dfmt`. Formatters are selected by name, not by extension; each built-in formatter declares its own extensions, and an `extensions` override replaces the built-in list. `command` overrides discovery entirely; `environment` merges with the built-in environment (override wins). `$FILE` is substituted with the target file path. When several formatters match a file, they run sequentially in built-in registry declaration order, followed by any custom override-only formatters; failures surface as non-fatal warnings. |
@@ -383,7 +378,7 @@ for those settings instead of mixing them into runtime config.
 | `provider` | Provider definitions keyed by provider id. |
 | `runtime` | Runtime settings including [session storage](#session-storage), startup approval mode, provider-context compaction settings, provider retry policy, and [behavior guidance](#runtime-behavior-guidance). |
 | `server` | Upstream server configuration; accepted only when empty because server commands are outside this runtime config. |
-| `small_model` | Optional smaller model reference for coordinator-owned internal operations such as title generation. |
+| `model_roles` / `modelRoles` | Optional `smol` and `slow` model references for subagent role selectors. |
 | `skills` | Shared skill discovery roots and permission overrides for skill loading. |
 
 ## Session storage
@@ -403,20 +398,19 @@ An absolute override is used as supplied.
 }
 ```
 
-`<data-dir>` resolves to `$HARNESS_DATA_HOME/harness`, otherwise
-`$XDG_DATA_HOME/harness`, otherwise `$HOME/.local/share/harness`. Empty values are
-ignored. The project key uses the canonical absolute path: strip one
+`<data-dir>` is the Harness home: a nonempty `HARNESS_HOME` used as-is, otherwise
+`$HOME/.harness`. The project key uses the canonical absolute path: strip one
 leading slash or backslash, replace slashes, backslashes and colons with dashes,
 and wrap the result in `--`. For example, `/work/app` becomes `--work-app--`.
 
 Runtime data uses `<data-dir>/projects/<project-key>` and managed worktrees use
 `<data-dir>/worktrees/<project-key>`, independently of the session override.
 Authored project agents, skills, prompts and configuration stay in their existing
-locations, as do `.agent-harness/permission-grants.json` workspace grants. Data
+locations, as do `.harness/permission-grants.json` workspace grants. Data
 directory selection does not change the [config discovery order](#discovery-and-precedence).
 
-There is no migration of existing `.agent-harness/sessions` histories. Use
-`--session-dir <project>/.agent-harness/sessions` to access them explicitly.
+Existing project-local session histories are not migrated. Use
+`--session-dir <old-session-dir>` to access them explicitly.
 See [saved sessions](../operations/sessions.md) and the
 [storage layout](../architecture/sessions-and-replay.md#storage-layout).
 
@@ -441,24 +435,35 @@ Print the merged runtime config after discovery, layer merge, and session-dir
 overrides:
 
 ```bash
-cargo run -p harness -- --config configs/harness.example.jsonc config show --effective
-cargo run -p harness -- --config configs/harness.example.jsonc config sources
-cargo run -p harness -- --config configs/harness.example.jsonc config explain model
+harness config validate
+harness config show --effective
+harness config sources
+harness config explain model
 ```
 
 ### `config show --effective`
 
-Output is a JSON envelope:
+These inspection commands work even when no files exist. In that case,
+`harness config validate` exits successfully and prints:
+
+```text
+config valid: no configuration files; using built-in defaults
+```
+
+`--config <missing path>` still errors; an explicit path must exist.
+
+Effective output is a JSON envelope:
 
 - `schema_version`: `harness-config-effective-v1`
 - `redacted`: always `true` for this command
 - `layers`: discovered config file paths in merge order
-- `primary_path`: highest-precedence runtime config path when present (TUI-only
-  paths remain listed under `layers`)
+- `primary_path`: highest-precedence runtime config path, or `null` when no
+  runtime file exists (TUI-only paths remain listed under `layers`)
 - `effective`: the merged config value after secret redaction
 
-Secret-bearing fields (for example `apiKey`) are replaced with redaction
-markers. `config show` without `--effective` exits with usage status `2`.
+With no runtime files, `effective` reports built-in defaults. Secret-bearing
+fields (for example `apiKey`) are replaced with redaction markers.
+`config show` without `--effective` exits with usage status `2`.
 
 ### `config sources`
 
@@ -466,6 +471,12 @@ Lists discovered layers in merge order (`harness-config-sources-v1`):
 
 - `order`, `path`, `exists`, `kind` (`runtime` or `tui`), `primary`
 - `merge_order` documents that later layers override earlier ones
+- `searched` always lists every candidate runtime config path in merge order,
+  including paths that do not exist
+
+When no runtime layers are found, `note` is:
+
+> No configuration files found. Harness uses built-in defaults and providers connected through /login, `harness auth login`, or provider API key environment variables.
 
 ### `config explain <path>`
 
@@ -474,6 +485,8 @@ Explains one dotted public path (for example `model` or
 
 - `found`, `effective` (redacted), `source_path` (last layer that defines the path)
 - per-layer `defines_path` / redacted `value` rows for attribution
+- `primary_path`: runtime config path, or `null` with no runtime files
+- with no files, values come from built-in defaults and `source_path` is `null`
 - empty path exits with usage status `2`
 
 ### Settings registry
@@ -547,9 +560,9 @@ Omitted sections inherit the earlier value. Arrays replace earlier arrays, excep
 `instructions`, which accumulates in layer order. File permission references
 resolve relative to the file that declares them.
 
-Explicit JSON agent fields take precedence over markdown frontmatter. Empty or
-default fields can fall back to frontmatter. Project markdown overrides a shipped
-agent with the same name.
+JSON `agent` settings tune runtime profiles. Native child definitions use the
+separate `subagents` configuration and Markdown discovery described above;
+project and user Markdown definitions can replace a built-in with the same name.
 
 ## TUI top-level keys
 
@@ -612,7 +625,8 @@ bindings, and `<leader>` expands to the configured leader key, for example
 | `yolo_mode` | `Ctrl+o` | Toggle YOLO for this session; opens confirmation when a permission prompt is active. |
 | `deny_permission` | `Ctrl+n` | Deny a pending permission request. |
 | `dismiss_modal` | `Esc` | Dismiss or reject the active modal. |
-| `variant_cycle` | `Ctrl+t` | Cycle the active model variant/reasoning preset. |
+| `variant_cycle` | `Shift-Tab` | Cycle the active model variant/reasoning preset. |
+| `toggle_todos` | `Ctrl+t` | Show, focus, or hide the todo pane. |
 
 TUI prompt history is runtime state, not config. Interactive startup and live
 sessions load and append prompt history at `<session-dir>/tui/prompt-history.json`
@@ -621,36 +635,61 @@ unsent drafts stay in the active composer until submitted or discarded.
 
 ## Discovery and precedence
 
-Runtime config discovery merges these layers from lowest to highest precedence:
+With no files, Harness uses built-in defaults. Workspace `AGENTS.md` instructions
+and TUI keybinding layers still load. Runtime config discovery merges optional
+layers from lowest to highest precedence:
 
 ```mermaid
 flowchart LR
-    Global[XDG global files] --> Env[HARNESS_CONFIG]
-    Env --> Project[Project files]
-    Project --> Agent[.agent-harness files]
-    Agent --> Inline[HARNESS_CONFIG_CONTENT]
+    Global[Personal config in Harness home] --> Env[HARNESS_CONFIG]
+    Env --> Project[Project layers from git root down]
+    Project --> Inline[HARNESS_CONFIG_CONTENT]
     Inline --> Result[Effective configuration]
 ```
 
 Later layers override earlier values. Objects merge; most arrays replace the
 earlier array. `instructions` accumulates. The ordered locations are:
 
-1. `$XDG_CONFIG_HOME/harness/harness.jsonc` (fallback `~/.config/harness/harness.jsonc`)
-2. `$XDG_CONFIG_HOME/harness/harness.json` (fallback `~/.config/harness/harness.json`)
-3. `HARNESS_CONFIG` when set to a custom runtime config path
-4. project `harness.jsonc` / `harness.json` files discovered while traversing upward to the nearest `.git` directory
-5. project `.agent-harness/harness.jsonc` / `.agent-harness/harness.json` files discovered during the same traversal
-6. `HARNESS_CONFIG_CONTENT` as the final runtime overlay
+1. `<home>/harness.jsonc` or `<home>/harness.json`, first existing wins
+2. `HARNESS_CONFIG` when set to a custom runtime config path
+3. Project layers from the git root down to the current directory. At each
+   directory, load `harness.jsonc` or `harness.json`, then
+   `.harness/harness.jsonc` or `.harness/harness.json`.
+4. `HARNESS_CONFIG_CONTENT` as the final runtime overlay
 
-Additional compatibility input still loads from `$XDG_CONFIG_HOME/harness/config.jsonc` and from the older broad runtime shape when present.
+`<home>` is a nonempty `HARNESS_HOME` used as-is, otherwise `$HOME/.harness`.
+The `.jsonc` file wins over `.json` at each location; the two are not separate
+layers. `harness config sources` lists candidate paths in `searched`, including
+absent files, in this merge order.
 
-TUI config discovery is separate and layered the same way:
+After `harness auth login` or TUI sign-in stores a credential successfully,
+Harness creates `<home>/harness.jsonc` only when `HARNESS_CONFIG` and
+`HARNESS_CONFIG_CONTENT` are unset and neither user runtime config file exists.
+It uses create-new semantics and POSIX mode `0600`; an existing file is never
+overwritten. Successful creation prints `wrote starter config: <path>` on stdout.
 
-1. `$XDG_CONFIG_HOME/harness/tui.jsonc` (fallback `~/.config/harness/tui.jsonc`)
-2. `$XDG_CONFIG_HOME/harness/tui.json` (fallback `~/.config/harness/tui.json`)
-3. `HARNESS_TUI_CONFIG` when set to a custom TUI config path
-4. project `tui.jsonc` / `tui.json` files discovered while traversing upward to the nearest `.git` directory
-5. project `.agent-harness/tui.jsonc` / `.agent-harness/tui.json` files discovered during the same traversal
+The starter includes the schema URL
+`https://github.com/urbanbreach/agent-harness/releases/latest/download/harness.schema.json`,
+a comment explaining that Harness wrote it after the first sign-in and never
+overwrites it, and a comment pointing to `harness models` for choices. It sets
+`"model": "<provider>/<model>"` to the default for the provider just signed in,
+or omits the key if no default can be determined. It has no `provider` entries,
+so automatic provider discovery stays enabled. This is the only config write
+Harness performs. Startup does not create a config or other new home artifacts
+beyond the existing session-directory creation.
+
+A config with no `provider` entries may still pin a `provider/model`; validation
+defers that lookup to runtime discovery. A connected pin is preserved. If its
+provider is disconnected, the TUI selects another connected provider's default
+or opens the disconnected `/login` state. A noninteractive run with no connection
+reports the pinned provider and the `harness auth login` command.
+
+TUI config discovery is separate:
+
+1. `<home>/tui.jsonc` or `<home>/tui.json`, first existing wins
+2. `HARNESS_TUI_CONFIG` when set to a custom TUI config path
+3. Project layers from the git root down. At each directory, load `tui.jsonc` or
+   `tui.json`, then `.harness/tui.jsonc` or `.harness/tui.json`.
 
 When multiple layers exist, the harness merges them instead of replacing the
 earlier config wholesale.
@@ -661,14 +700,17 @@ catalog reference must be passed with `--config` or read as documentation.
 ## Prompt and instruction discovery
 
 Main profiles use the shared prompt unless overridden by inline
-`agent.<name>.system_prompt` / `prompt` or discovered profile Markdown at
-`.agent-harness/agents/<name>.md`. Native children resolve their definitions
-through the separate discovery and override rules above. A same-name generic
-profile does not replace a native child's role.
+`agent.<name>.system_prompt` / `prompt`. Markdown files under
+`.harness/agents/` and `<home>/agents/` define native children, using the
+separate discovery and override rules above. A same-name generic profile does
+not replace a native child's role.
 
-Project instructions are auto-discovered from `AGENTS.md`. Configured
-`instructions` entries precede discovered project instructions. They and CLI
-`--rules` are appended after the shared prompt and any child role instructions.
+Instructions load in this order: `<home>/AGENTS.md`, configured `instructions`
+entries, then project directories from the Git root to the working directory.
+In each project directory, only the first existing file of `AGENTS.md`, then
+`CLAUDE.md`, loads. The same first-file rule applies to on-demand per-directory
+loading after filesystem tools. Instructions and CLI `--rules` are appended
+after the shared prompt and any child role instructions.
 An explicit CLI `--system-prompt-override` replaces the main prompt completely;
 `--rules` can still append instructions to it.
 
@@ -683,17 +725,17 @@ Markdown skills are local instruction bundles discovered from configured roots.
 They do not fetch remote URLs, start MCP servers, register tools, or change
 coordinator permissions during discovery. The V1 source scopes emitted by the
 skill catalog are `project` and `global`: configured project/workspace roots are
-reported as `project`, user/XDG roots are reported as `global`, and the starter
-skills checked into `.agent-harness/skills` are ordinary project-scope skills
-when the current workspace is this repository.
+reported as `project` and user roots as `global`. Harness ships no skill pack.
+Add your own project skills under `.harness/skills/<skill-name>/SKILL.md`
+or personal skills under `<home>/skills/<skill-name>/SKILL.md`.
 
 The runtime config shape is:
 
 ```jsonc
 {
   "skills": {
-    "project_roots": [".agent-harness/skills", ".harness/skills"],
-    "global_roots": ["~/.config/agent-harness/skills"],
+    "project_roots": [".harness/skills", ".agents/skills"],
+    "global_roots": ["~/.harness/skills", "~/.agents/skills"],
     "disabled": ["skill:project:old-skill", "experimental-*"],
     "walk_to_git_root": true,
     "permissions": {
@@ -714,33 +756,24 @@ directory. Entries inside each root are sorted by directory name. The first skil
 name wins. Later entries with the same name are reported as `shadowed` with an
 actionable reason.
 
-V1 root precedence is deterministic:
+Root precedence is deterministic:
 
-1. Project/workspace roots from the current workspace up to the nearest `.git`
-   ancestor. At each ancestor, Harness-owned roots (`.agent-harness/skills`, then
-   `.harness/skills`) are searched before other non-compatibility project roots;
-   roots in the same class keep their configured order.
-2. Non-compatibility global roots. Harness-owned global roots such as
-   `~/.config/agent-harness/skills` are searched before other global roots in the
-   same class.
-3. Explicitly configured project compatibility roots, from the current workspace
-   up to the nearest `.git` ancestor, in configured order.
-4. Explicitly configured global compatibility roots, in configured order.
+1. Non-compatibility project roots, from the current workspace to the nearest Git
+   root. At each directory, Harness roots such as `.harness/skills` come first;
+   other roots retain their configured order.
+2. Non-compatibility global roots, with Harness roots first.
+3. Project compatibility roots, including the default `.agents/skills`, from
+   the current workspace to the nearest Git root, in configured order.
+4. Global compatibility roots, including the default `~/.agents/skills`, in
+   configured order.
 
-External editor, assistant, and agent compatibility roots are adapter work, not
-default V1 discovery. The harness does not search `.external-editor/skills`,
-`.assistant/skills`, `.agents/skills`, user-level `.external-editor`,
-user-level `.assistant`, or user-level `.agents` roots unless the operator
-explicitly lists those paths in `skills.project_roots` or `skills.global_roots`.
-When they are listed, they are imported after Harness-owned and other
-non-compatibility roots, even if the compatibility path appears earlier in the
-config array. Therefore `.external-editor/skills/foo/SKILL.md`,
-`.assistant/skills/foo/SKILL.md`, or `.agents/skills/foo/SKILL.md` cannot shadow
-`.agent-harness/skills/foo/SKILL.md`, `.harness/skills/foo/SKILL.md`, or a
-configured `~/.config/agent-harness/skills/foo/SKILL.md`. If only compatibility
-roots contain `foo`, configured project compatibility roots win before
-configured global compatibility roots, and duplicate compatibility roots resolve
-in their configured order.
+The default project roots are `.harness/skills` and `.agents/skills`. The default
+Harness global root is `<home>/skills`: the default `~/.harness/skills` entry
+follows `HARNESS_HOME`. The `~/.agents/skills` entry always uses `$HOME`, not
+`HARNESS_HOME`. These compatibility roots rank below Harness roots, so duplicate
+skills remain visible as `shadowed` rather than replacing the Harness copy.
+Other assistant roots, including `.claude/skills`, are not searched by default;
+add them explicitly to `skills.project_roots` or `skills.global_roots` if needed.
 
 `permissions` is a skill-loading policy keyed by exact names or simple `*`
 patterns. `allow` loads immediately, `ask` requests operator confirmation before
@@ -760,7 +793,7 @@ description: Baseline Rust guidance for this workspace.
 argument_hint: optional short usage hint
 allowed_tools: read, grep
 mcp: deferred-local-metadata
-resources: bundled-reference-not-loaded
+resources: references/usage.md, references/checklist.md
 ---
 
 # Skill body
@@ -787,15 +820,22 @@ An `ask` decision waits for operator approval before the child samples.
 Successful preload bodies are request-only system instructions, cached for the
 child's lifetime and omitted from the ordinary available-skills listing.
 
-The operator chose to retain shared permission checks: explicit
-preloads do not bypass shared skill permissions or a disabled skill tool.
-These checks apply during startup as well as ordinary skill calls.
+Add project skills under a configured root. Describe their purpose, when to use
+them, when not to use them, and execution policy. Link longer references rather
+than loading them during discovery. Explicit preloads still obey shared skill
+permissions and a disabled skill tool.
 
 `allowed_tools` and related skill metadata are descriptive/restrictive contract
 metadata only. They never grant runtime tools, override the generic toolset, or
 bypass coordinator permission checks. Doctor JSON and support exports consume the
 same compact catalog metadata, report loadable/denied/disabled/malformed/shadowed
 counts, and keep full skill bodies out of readiness surfaces.
+
+Declared resources load only on activation and are appended under
+`## Bundled resources`. Limits are 5 files, 64 KiB per file, 200 KiB total loaded
+bytes, and path depth 4 under the skill directory. Absolute paths, `..`, globs,
+directories, and symlink escapes are rejected before reading. Loaded resource
+text is redacted before it enters skill output.
 
 `harness doctor` validates the operator-facing runtime without making provider or
 MCP network calls. It checks provider/model metadata, credential availability
@@ -806,7 +846,7 @@ server state. Use `--json` for machine-readable output.
 ### Generic agent and subagents
 
 Harness materializes one interactive profile named `default`. Child definitions
-resolve through the configured CLI, project, user, plugin, and bundled sources.
+resolve from nearest project Markdown, then user Markdown, then built-ins.
 The coordinator owns their scheduling, permission checks, cancellation, and
 append-only lifecycle history.
 
@@ -936,9 +976,8 @@ The loader still accepts the previous broad harness-native shape for migration:
 - `hooks`, `skills`, `lsp`, `logging`, `hashline_edit`
 - compatibility aliases such as `categories`, `profiles`, `backgroundTask`, `paths`, and `deterministic`
 - compatibility permission names such as `shell` and `network`
-- compatibility config path `$XDG_CONFIG_HOME/harness/config.jsonc`
 
-Those deprecated compatibility aliases, keys, and paths are compatibility inputs,
+Those deprecated compatibility aliases and keys are compatibility inputs,
 not the canonical public contract. New configs, examples, docs, and
 schema-driven validation should use the harness-centered runtime/TUI split shown
 above. If a canonical key and compatibility alias both appear with conflicting

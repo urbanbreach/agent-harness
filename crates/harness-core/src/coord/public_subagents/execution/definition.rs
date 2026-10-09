@@ -201,6 +201,10 @@ impl Runtime {
             definitions: &definitions,
             parent_model: &parent.info.model_ref,
             parent_reasoning_effort: parent.settings.reasoning_effort.as_deref(),
+            parent_variant: parent
+                .target
+                .as_ref()
+                .and_then(|target| target.variant.as_deref()),
             parent_max_turns: parent
                 .profile
                 .max_iters
@@ -230,6 +234,11 @@ impl Runtime {
                 None
             } else {
                 optional(input.model.as_deref())
+            },
+            variant: if source.is_some() {
+                None
+            } else {
+                optional(input.variant.as_deref())
             },
             isolation: input.isolation,
             ..Default::default()
