@@ -370,6 +370,14 @@ pub fn slash_commands() -> &'static [SlashCommand] {
     &SLASH_COMMANDS
 }
 
+/// All built-in slash names and aliases, reserved against markdown commands.
+pub fn reserved_slash_names() -> Vec<&'static str> {
+    slash_commands()
+        .iter()
+        .flat_map(|command| std::iter::once(command.id).chain(command.aliases.iter().copied()))
+        .collect()
+}
+
 pub fn slash_command_description(command: &str) -> &'static str {
     slash_commands()
         .iter()

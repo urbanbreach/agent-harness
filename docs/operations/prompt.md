@@ -26,12 +26,16 @@ harness run --session RUN_ID --fork-session "Try another approach"
 (`-s`) selects a session directly. Both use the prompt resume and fork behavior
 described below. `--model` also accepts `-m`.
 
-When no configuration is found, prompt startup uses the embedded provider catalog
-and the supplied environment or credential store to select a connected provider.
-Discovery does not contact providers. An explicit configuration keeps its own
-provider definitions and model selections. Connected Codex and Copilot providers
-are added when absent; they do not replace configured models. Codex defaults to
-the bundled `gpt-6-astra` entry and filters retired subscription models.
+When the loaded config has no provider entries, prompt startup uses the embedded
+catalog and the supplied environment or credential store to select a connected
+provider. No config file is required; a config that only sets permissions or
+other defaults behaves the same way. Discovery does not contact providers.
+Defining any `provider` entry makes the catalog curated: configured providers
+plus signed-in Codex, GitHub Copilot, and Claude subscription. Existing model
+selections remain authoritative. Codex defaults to the bundled `gpt-6-astra`
+entry and filters retired subscription models. With only `ANTHROPIC_API_KEY`,
+the default model is a Claude Sonnet. Workspace `AGENTS.md` instructions load
+with or without a config file.
 
 The coordinator owns the session, provider requests, tool execution, and approval
 decisions. A prompt completes after its agent turn reaches a terminal event.

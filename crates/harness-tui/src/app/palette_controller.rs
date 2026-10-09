@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 
-use crate::app::AppState;
+use crate::app::{AppState, Focus};
 use crate::keybindings::palette_model::{
     entries, find, DynamicTitle, PaletteCategory, PaletteCommandEntry, PaletteDispatch,
 };
@@ -94,15 +94,15 @@ pub(crate) fn redacted_model_id(app: &AppState) -> Option<String> {
 
 /// A resolved palette row after filtering and grouping.
 #[derive(Debug, Clone)]
-pub struct PaletteRow {
+pub struct PaletteRow<'a> {
     /// Command ID (or `suggested:<id>` for synthetic suggested duplicates).
     pub value: String,
     /// The underlying command ID (without `suggested:` prefix).
-    pub command_id: &'static str,
+    pub command_id: &'a str,
     /// Display title (resolved dynamically for toggle commands).
     pub title: String,
     /// Description.
-    pub description: &'static str,
+    pub description: &'a str,
     /// Category for grouping.
     pub category: PaletteCategory,
     /// Whether this is a synthetic suggested duplicate.
@@ -226,7 +226,7 @@ pub fn resolve_title(app: &AppState, entry: &PaletteCommandEntry) -> String {
 /// - Results are filtered by title and category only (not command IDs).
 /// - Title matches are weighted higher than category matches.
 /// - Results preserve category grouping.
-pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
+pub fn compute_palette_rows<'a>(app: &'a AppState, filter: &str) -> Vec<PaletteRow<'a>> {
     use PaletteCategory as C;
     const CATEGORY_ORDER: [C; 10] = [
         C::Session,
@@ -255,7 +255,7 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
             .unwrap_or(usize::MAX)
     });
 
-    if needle.is_empty() {
+    let mut rows: Vec<_> = if needle.is_empty() {
         const EMPTY_FILTER_CATEGORIES: [C; 4] = [C::Session, C::Context, C::ModelInput, C::Tools];
         available
             .into_iter()
@@ -326,7 +326,30 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
                 is_suggested_duplicate: false,
             })
             .collect()
+    };
+    if !app.replay_mode {
+        rows.extend(app.prompt_commands.iter().filter_map(|command| {
+            let title = match command.argument_hint.as_deref() {
+                Some(hint) => format!("/{} {hint}", command.name),
+                None => format!("/{}", command.name),
+            };
+            if !needle.is_empty()
+                && fuzzy_subsequence_score(&title.to_lowercase(), &needle).is_none()
+                && fuzzy_subsequence_score(&command.description.to_lowercase(), &needle).is_none()
+            {
+                return None;
+            }
+            Some(PaletteRow {
+                value: format!("prompt-command:{}", command.name),
+                command_id: &command.name,
+                title,
+                description: &command.description,
+                category: C::Prompt,
+                is_suggested_duplicate: false,
+            })
+        }));
     }
+    rows
 }
 
 pub(crate) fn fuzzy_subsequence_score(haystack: &str, needle: &str) -> Option<i64> {
@@ -342,6 +365,21 @@ pub(crate) fn fuzzy_subsequence_score(haystack: &str, needle: &str) -> Option<i6
 pub fn dispatch_palette_command(app: &mut AppState, value: &str) {
     // Strip suggested: prefix if present
     let command_id = value.strip_prefix("suggested:").unwrap_or(value);
+
+    if let Some(name) = command_id.strip_prefix("prompt-command:") {
+        if !app.replay_mode
+            && app
+                .prompt_commands
+                .iter()
+                .any(|command| command.name == name)
+        {
+            app.palette_visible = false;
+            app.focus = Focus::Prompt;
+            app.replace_prompt_input(format!("/{name} "));
+            app.sync_slash_overlay();
+        }
+        return;
+    }
 
     let Some(entry) = find(command_id) else {
         return;

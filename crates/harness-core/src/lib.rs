@@ -6,6 +6,7 @@ pub mod auto_fallback;
 pub mod browser_oidc;
 pub mod clock;
 pub mod code_graph;
+pub mod commands;
 pub mod config;
 pub mod context_budget;
 pub mod conversation_rewind;

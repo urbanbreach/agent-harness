@@ -174,6 +174,14 @@ fn set_pending_connect_providers_from_config(
     ));
 }
 
+fn set_pending_prompt_commands_from_settings(settings: &LiveSettings) {
+    harness_tui::app::set_pending_prompt_commands(harness_core::commands::discover(
+        &settings.workspace_root,
+        Some(&settings.data_dir),
+        &harness_tui::keybindings::reserved_slash_names(),
+    ));
+}
+
 fn connect_provider_options_for_mode(
     config: Option<&harness_core::config::HarnessConfig>,
     demo_mode: bool,
@@ -418,6 +426,7 @@ async fn run_interactive_mode(
     let result = run_interactive_workflow_loop(
         InteractiveWorkflow::Startup,
         || {
+            set_pending_prompt_commands_from_settings(settings);
             set_pending_live_launch_metadata(launch_metadata_for_mode(settings, &launch_selection));
             load_startup_session_history_entries(&settings.session_dir)
         },
@@ -522,6 +531,7 @@ async fn run_direct_continue_mode(
     let result = run_interactive_workflow_loop(
         InteractiveWorkflow::Continue { run_id, run_dir },
         || {
+            set_pending_prompt_commands_from_settings(settings);
             set_pending_live_launch_metadata(launch_metadata_for_mode(settings, &launch_selection));
             load_startup_session_history_entries(&settings.session_dir)
         },
@@ -842,6 +852,7 @@ async fn run_continue_session_bootstrap(
         .config
         .as_ref()
         .map(|config| config.ui.keybindings.clone());
+    set_pending_prompt_commands_from_settings(settings);
     set_pending_live_launch_metadata(continue_metadata);
     if let Some(config_path) = settings.config_path.clone() {
         let hashline_edit = settings
@@ -1049,6 +1060,7 @@ async fn run_live_mode(
         .as_ref()
         .map(|config| config.ui.keybindings.clone());
     let prompt_history_path = Some(prompt_history_path_for_session_dir(&settings.session_dir));
+    set_pending_prompt_commands_from_settings(settings);
     set_pending_live_launch_metadata(scenario_launch_metadata());
     let session_history_entries =
         load_live_session_history_entries(&run_dir, &settings.session_dir)?;

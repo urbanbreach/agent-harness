@@ -14,8 +14,8 @@ pub mod palette_model;
 use command_registry::command_metadata;
 pub(crate) use command_registry::HelpCategory;
 pub use command_registry::{
-    slash_command_aliases, slash_command_description, slash_commands, PaletteCommand,
-    PaletteCommandSection, SlashCommand,
+    reserved_slash_names, slash_command_aliases, slash_command_description, slash_commands,
+    PaletteCommand, PaletteCommandSection, SlashCommand,
 };
 
 /// Actions that can be triggered via keybindings.

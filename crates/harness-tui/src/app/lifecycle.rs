@@ -447,6 +447,7 @@ impl AppState {
         if let Some(launch_metadata) = take_pending_live_launch_metadata() {
             state.set_launch_metadata(launch_metadata);
         }
+        state.apply_pending_prompt_commands();
         if let Some(pending_prompt) = take_pending_live_prompt() {
             state.apply_pending_live_prompt(pending_prompt);
         }
@@ -527,6 +528,7 @@ impl AppState {
             state.set_launch_metadata(launch_metadata);
         }
         state.set_session_history_entries(session_history_entries);
+        state.apply_pending_prompt_commands();
         if let Some(pending_prompt) = take_pending_live_prompt() {
             state.replace_prompt_input(pending_prompt.text);
         }

@@ -25,6 +25,9 @@ static PENDING_LIVE_PROMPT_ENV_CONSUMED: AtomicBool = AtomicBool::new(false);
 #[cfg(not(test))]
 static PENDING_CONNECT_PROVIDERS: Mutex<Vec<ConnectProviderOption>> = Mutex::new(Vec::new());
 #[cfg(not(test))]
+static PENDING_PROMPT_COMMANDS: Mutex<Option<harness_core::commands::CommandDiscovery>> =
+    Mutex::new(None);
+#[cfg(not(test))]
 static PENDING_SETTINGS_PROJECT_CONFIG: Mutex<Option<PendingSettingsProjectConfig>> =
     Mutex::new(None);
 
@@ -39,6 +42,7 @@ thread_local! {
     static PENDING_LIVE_PROMPT_DRAFT: RefCell<Option<String>> = const { RefCell::new(None) };
     static PENDING_LIVE_PROMPT_AUTO_SUBMIT: RefCell<bool> = const { RefCell::new(false) };
     static PENDING_CONNECT_PROVIDERS: RefCell<Vec<ConnectProviderOption>> = const { RefCell::new(Vec::new()) };
+    static PENDING_PROMPT_COMMANDS: RefCell<Option<harness_core::commands::CommandDiscovery>> = const { RefCell::new(None) };
     static PENDING_SETTINGS_PROJECT_CONFIG: RefCell<Option<PendingSettingsProjectConfig>> =
         const { RefCell::new(None) };
 }
@@ -219,6 +223,26 @@ pub(super) fn take_pending_connect_providers() -> Vec<ConnectProviderOption> {
     #[cfg(test)]
     {
         PENDING_CONNECT_PROVIDERS.with(|slot| slot.borrow().clone())
+    }
+}
+
+pub fn set_pending_prompt_commands(commands: harness_core::commands::CommandDiscovery) {
+    #[cfg(not(test))]
+    {
+        *PENDING_PROMPT_COMMANDS.lock().unwrap_or_abort() = Some(commands);
+    }
+    #[cfg(test)]
+    PENDING_PROMPT_COMMANDS.with(|pending| *pending.borrow_mut() = Some(commands));
+}
+
+pub(super) fn take_pending_prompt_commands() -> Option<harness_core::commands::CommandDiscovery> {
+    #[cfg(not(test))]
+    {
+        PENDING_PROMPT_COMMANDS.lock().unwrap_or_abort().take()
+    }
+    #[cfg(test)]
+    {
+        PENDING_PROMPT_COMMANDS.with(|pending| pending.borrow_mut().take())
     }
 }
 
