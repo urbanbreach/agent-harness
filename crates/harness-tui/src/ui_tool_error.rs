@@ -55,9 +55,14 @@ fn detail_blocks_surface_error(
         TranscriptToolCallDetailBlock::Message { text, tone } => {
             *tone == TranscriptToolCallDetailTone::Error && text.trim() == error
         }
-        TranscriptToolCallDetailBlock::BashPanel { output, .. }
-        | TranscriptToolCallDetailBlock::EvalPanel { output, .. } => {
+        TranscriptToolCallDetailBlock::BashPanel { output, .. } => {
             output.trim() == error || summary.is_some_and(|summary| output.trim() == summary.trim())
+        }
+        // A failed cell's output already ends with the kernel's error report.
+        TranscriptToolCallDetailBlock::EvalPanel { output, failed, .. } => {
+            *failed && !output.trim().is_empty()
+                || output.trim() == error
+                || summary.is_some_and(|summary| output.trim() == summary.trim())
         }
         TranscriptToolCallDetailBlock::FileSection(section) => {
             detail_blocks_surface_error(&section.detail_blocks, error, summary)

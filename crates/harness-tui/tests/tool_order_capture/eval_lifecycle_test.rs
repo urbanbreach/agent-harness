@@ -199,6 +199,32 @@ fn eval_output_reveals_the_cell_text_and_settles_on_completion() -> Result<()> {
 }
 
 #[test]
+fn failed_eval_shows_its_error_once_without_model_reminders() -> Result<()> {
+    let fixture: Value = serde_json::from_str(FIXTURE)?;
+    let mut state = Capture::new(&fixture)?;
+    state.app.set_reduced_motion_for_evidence(true);
+    state.tools.insert("eval".into(), json!({
+        "tool":"eval", "args":{"language":"js","summary":"Search","code":"await tool.grep({pattern:'a)'})"},
+        "output":""
+    }));
+    for op in ["request", "start"] {
+        state.action(&json!({"op":op, "id":"eval"}), &fixture)?;
+    }
+    let error = "Error: invalid_arguments: regex parse error: unopened group";
+    state.event("tool_call_finished", json!({"tool_call_id":"eval", "status":"failed",
+        "output_summary":format!("{error}\n\n<system-reminder>\nBackground subagent \"one\" completed.\n</system-reminder>\n\n<system-reminder>\nBackground subagent \"two\" completed.\n</system-reminder>"),
+        "output_json":{"cells":[{"output":error,"status":"error"}],"isError":true}}))?;
+    let screen: String = render(&mut state.app, 120, 40)?
+        .content
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+    assert_eq!(screen.matches("unopened group").count(), 1, "{screen}");
+    assert!(!screen.contains("Background subagent"), "{screen}");
+    Ok(())
+}
+
+#[test]
 fn eval_children_settle_and_eval_output_opens_after_the_response_commit() -> Result<()> {
     let fixture: Value = serde_json::from_str(FIXTURE)?;
     let area = Rect::new(0, 0, 120, 40);
