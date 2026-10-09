@@ -69,8 +69,7 @@ def sample(binary):
             "runtime": {"prompt": {"wait_timeout_ms": 30000}, "provider_retry": {"max_retries": 0}}
         }))
         environment = {name: os.environ[name] for name in ["PATH", "LANG", "LC_ALL", "LD_LIBRARY_PATH"] if name in os.environ}
-        environment.update(HOME=str(root / "home"), XDG_CONFIG_HOME=str(root / "config"),
-                           HARNESS_DATA_HOME=str(root / "data"))
+        environment.update(HOME=str(root / "home"), HARNESS_HOME=str(root / "harness-home"))
         launched = time.perf_counter()
         process = subprocess.Popen([
             str(binary), "--cwd", str(root), "--config", str(config),
@@ -115,7 +114,7 @@ def sample(binary):
                 raise RuntimeError(f"CLI status {process.returncode}; fixture errors {failures}; {errors}")
             if output != b"word " * fragments + b"\n":
                 raise RuntimeError("streamed output was lost or repeated")
-            journal = next((root / "data/harness/sessions").glob("*/*/events.jsonl"))
+            journal = next((root / "harness-home/sessions").glob("*/*/events.jsonl"))
             events = [json.loads(line)["payload"]["event_type"] for line in journal.read_text().splitlines()]
             if events[-1] != "run_finished" or any(event in ["provider_stream_delta", "provider_reasoning_delta"] for event in events):
                 raise RuntimeError("streaming produced an invalid durable history")

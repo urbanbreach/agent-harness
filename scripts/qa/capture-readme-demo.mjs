@@ -47,7 +47,7 @@ try {
     disableAnimations: false,
     environment: {
       TERM: "xterm-256color", COLORTERM: "truecolor",
-      XDG_CONFIG_HOME: join(temporary, "config"),
+      HARNESS_HOME: join(temporary, "harness-home"),
       HARNESS_DISABLE_MODELS_FETCH: "1",
     },
     onOutput: (bytes) => terminal.write(bytes),

@@ -163,7 +163,8 @@ impl CliHarness {
             .with_stdin_terminal(stdin_is_terminal);
         let data_home = tempfile::tempdir().unwrap_or_abort();
         let mut deps = harness::CliDeps::real()
-            .with_env("HARNESS_DATA_HOME", data_home.path().to_string_lossy());
+            .with_env("HARNESS_HOME", data_home.path().to_string_lossy())
+            .with_env("HOME", data_home.path().to_string_lossy());
         let capture_session_dir = self.capture_session_dir.clone();
         if let Some(current_dir) = self.current_dir {
             deps = deps.with_current_dir(current_dir);

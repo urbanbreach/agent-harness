@@ -4,17 +4,19 @@ use std::path::{Path, PathBuf};
 pub fn data_dir_from_lookup(lookup: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
     let get = |key| {
         lookup(key)
-            .filter(|value| !value.trim().is_empty())
+            .filter(|value| !value.is_empty())
             .map(PathBuf::from)
     };
-    if let Some(path) = get("HARNESS_DATA_HOME") {
-        return Some(path.join("harness"));
+    if let Some(path) = get("HARNESS_HOME") {
+        return Some(path);
     }
     #[cfg(windows)]
-    let path = get("LOCALAPPDATA").or_else(|| get("APPDATA"));
+    let path = get("LOCALAPPDATA")
+        .or_else(|| get("APPDATA"))
+        .map(|path| path.join("harness"));
     #[cfg(not(windows))]
-    let path = get("XDG_DATA_HOME").or_else(|| get("HOME").map(|path| path.join(".local/share")));
-    path.map(|path| path.join("harness"))
+    let path = get("HOME").map(|path| path.join(".harness"));
+    path
 }
 
 #[derive(Debug, Clone)]
@@ -66,8 +68,37 @@ pub fn resolve_session_dir(
     let data_dir = data_dir.ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            "cannot resolve harness data directory; set HARNESS_DATA_HOME or provide --session-dir",
+            "cannot resolve harness home directory; set HARNESS_HOME or provide --session-dir",
         )
     })?;
     Ok(ProjectPaths::new(data_dir, project)?.sessions_dir())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn harness_home_is_used_as_is_and_empty_override_uses_platform_default() {
+        #[cfg(not(windows))]
+        let default = "/users/test/.harness";
+        #[cfg(windows)]
+        let default = "/users/test/local/harness";
+        for (harness_home, expected) in [
+            (Some("relative/home"), "relative/home"),
+            (Some("~/literal"), "~/literal"),
+            (Some(" "), " "),
+            (Some(""), default),
+            (None, default),
+        ] {
+            let resolved = data_dir_from_lookup(&|name| match name {
+                "HARNESS_HOME" => harness_home.map(str::to_owned),
+                "HOME" => Some("/users/test".into()),
+                "LOCALAPPDATA" => Some("/users/test/local".into()),
+                _ => None,
+            });
+            assert_eq!(resolved, Some(PathBuf::from(expected)));
+        }
+        assert_eq!(data_dir_from_lookup(&|_| None), None);
+    }
 }

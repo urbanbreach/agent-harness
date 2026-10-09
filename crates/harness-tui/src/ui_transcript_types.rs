@@ -938,7 +938,7 @@ mod tool_group_tests {
         let TranscriptAssistantPart::ToolCall(tool) = &mut part else {
             panic!("tool")
         };
-        tool.header.path_metadata = Some(".agent-harness/skills/harness-qa/SKILL.md".into());
+        tool.header.path_metadata = Some(".harness/skills/harness-qa/SKILL.md".into());
 
         // act
         let summary = TranscriptToolGroupSummary::from_adjacent(&[part]).expect("context group");

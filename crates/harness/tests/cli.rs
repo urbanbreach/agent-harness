@@ -23,7 +23,7 @@ fn openai_login_routes_oauth_to_codex_and_keeps_api_keys_separate(
             &config,
             r#"{"provider":{"openai":{"type":"openai_compatible"}}}"#,
         )?;
-        let store = CredentialStore::new(data.join("harness"));
+        let store = CredentialStore::new(data.clone());
         store.save(&StoredCredential::oauth(
             ProviderId::codex(),
             "old-access-token",
@@ -33,7 +33,8 @@ fn openai_login_routes_oauth_to_codex_and_keeps_api_keys_separate(
         ))?;
         let deps = CliDeps::real()
             .with_current_dir(root.path().into())
-            .with_env("HARNESS_DATA_HOME", data.to_str().ok_or("data path")?)
+            .with_env("HARNESS_HOME", data.to_str().ok_or("data path")?)
+            .without_env("HARNESS_CONFIG")
             .without_env("HARNESS_CONFIG_CONTENT");
         let mut args = vec![
             "login".into(),
@@ -85,10 +86,7 @@ fn invalid_prompt_setup_fails_before_creating_a_session() -> Result<(), Box<dyn 
         let (mut input, mut stdout, mut stderr) = (Cursor::new(text), Vec::new(), Vec::new());
         let mut deps = CliDeps::real()
             .with_current_dir(root.path().into())
-            .with_env(
-                "HARNESS_DATA_HOME",
-                root.path().join("data").to_string_lossy(),
-            );
+            .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy());
         if kind == "environment" {
             deps = deps.with_env("HARNESS_REMOTE_SEARCH_TIMEOUT_SECS", "invalid");
         }
@@ -141,18 +139,12 @@ async fn failure_to_print_the_run_directory_finishes_the_started_session(
         &mut CliIo::new(&mut input, &mut output, &mut errors),
         CliDeps::real()
             .with_current_dir(root.path().into())
-            .with_env(
-                "HARNESS_DATA_HOME",
-                root.path().join("data").to_string_lossy(),
-            ),
+            .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy()),
     );
     assert_eq!(result.code, 1);
     let run_dir = fs::read_dir(
-        harness_core::storage_paths::ProjectPaths::new(
-            &root.path().join("data/harness"),
-            root.path(),
-        )?
-        .sessions_dir(),
+        harness_core::storage_paths::ProjectPaths::new(&root.path().join("data"), root.path())?
+            .sessions_dir(),
     )?
     .next()
     .ok_or("session missing")??
@@ -203,21 +195,15 @@ fn interrupted_prompt_cancels_active_work_and_closes_the_session(
         &mut CliIo::new(&mut input, &mut output, &mut errors),
         CliDeps::real()
             .with_current_dir(root.path().into())
-            .with_env(
-                "HARNESS_DATA_HOME",
-                root.path().join("data").to_string_lossy(),
-            )
+            .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
             .with_provider_override(Arc::new(Interrupt(cancel.clone())))
             .with_cancellation(cancel),
     );
     assert_eq!(result.code, 1);
     assert!(String::from_utf8(errors)?.contains("prompt interrupted"));
     let run_dir = fs::read_dir(
-        harness_core::storage_paths::ProjectPaths::new(
-            &root.path().join("data/harness"),
-            root.path(),
-        )?
-        .sessions_dir(),
+        harness_core::storage_paths::ProjectPaths::new(&root.path().join("data"), root.path())?
+            .sessions_dir(),
     )?
     .next()
     .ok_or("session missing")??

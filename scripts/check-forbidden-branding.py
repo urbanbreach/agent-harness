@@ -27,10 +27,10 @@ ALLOWED_DIRS: Final[set[str]] = {
 }
 ALLOWED_REFERENCE_PATHS: Final[set[Path]] = {
     # Bundled prompt source provenance and required upstream copyright notice.
-    Path(".agent-harness/prompts/README.md"),
+    Path("crates/harness-core/prompts/README.md"),
     # Historical host process sample contains an incidental third-party process name.
     Path("docs/evidence/tui-rewrite/runtime-state/post-measure-host.json"),
-    Path(".agent-harness/prompts/LICENSE.upstream"),
+    Path("crates/harness-core/prompts/LICENSE.upstream"),
     # External provider catalog keys still named after third-party products.
     Path("crates/harness-tui/src/app/auth_dialog/provider_menu.rs"),
     # Compaction ports still cite the upstream reference agent in comments.
@@ -69,10 +69,6 @@ ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
     Path("crates/harness-core/src/coord/formatter/resolver.rs"): {17},
     Path("crates/harness-tui/src/keybindings.rs"): {595},
     Path("crates/harness/src/models.rs"): {17},
-    Path(
-        "crates/harness/tests/config_schema_cli/"
-        "03_config_validate_cli_loads_separate_tui_test.rs"
-    ): {202, 203, 212, 244, 277, 299},
     Path("docs/configuration/config.md"): {
         73, 89, 100, 118, 134, 135, 136, 137, 139, 140,
         141, 142, 143, 145, 146, 147, 149, 153, 156, 157,

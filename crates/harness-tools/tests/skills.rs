@@ -9,9 +9,9 @@ async fn skill_discovery_is_read_only_and_reports_precedence_without_loading_bod
     let project = root.path().join("project");
     let global = root.path().join("global");
     for path in [
-        project.join(".agent-harness/skills/review"),
+        project.join(".harness/skills/review"),
         global.join("review"),
-        project.join(".agent-harness/skills/disabled"),
+        project.join(".harness/skills/disabled"),
     ] {
         fs::create_dir_all(&path)?;
         let name = path.file_name().ok_or("skill name")?.to_string_lossy();
@@ -19,9 +19,9 @@ async fn skill_discovery_is_read_only_and_reports_precedence_without_loading_bod
     }
     fs::create_dir_all(project.join(".git"))?;
     #[cfg(unix)]
-    std::os::unix::fs::symlink(&global, project.join(".agent-harness/skills/escape"))?;
+    std::os::unix::fs::symlink(&global, project.join(".harness/skills/escape"))?;
     let config = SkillsConfig {
-        project_roots: vec![".agent-harness/skills".into()],
+        project_roots: vec![".harness/skills".into()],
         global_roots: vec![global],
         disabled: vec!["disabled".into()],
         ..Default::default()
@@ -45,7 +45,7 @@ async fn skill_discovery_is_read_only_and_reports_precedence_without_loading_bod
         && !entry.loadable
         && entry.status.as_str() == "disabled"));
     assert!(!format!("{catalog:?}").contains("PRIVATE BODY SENTINEL"));
-    assert!(!project.join(".agent-harness/sessions").exists());
+    assert!(!project.join(".harness/sessions").exists());
     let mut runtime = harness_core::coord::CoordinatorConfig::new(root.path().join("sessions"));
     runtime.tool_registry = std::sync::Arc::new(harness_tools::coordinator_registry_with_skills(
         Default::default(),
@@ -68,7 +68,7 @@ async fn skill_discovery_is_read_only_and_reports_precedence_without_loading_bod
         )
         .await
         .is_err());
-    let skill = project.join(".agent-harness/skills/review/SKILL.md");
+    let skill = project.join(".harness/skills/review/SKILL.md");
     fs::write(
         &skill,
         "---\nname: review\ndescription: Review\n---\nInspect $ARGUMENTS carefully.\n",

@@ -452,7 +452,7 @@ fn spawn_harness_pty_in_owned(
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_harness"));
     command.cwd(cwd);
     let data_home = tempdir().unwrap_or_abort();
-    command.env("HARNESS_DATA_HOME", data_home.path());
+    command.env("HARNESS_HOME", data_home.path());
     for arg in args {
         command.arg(arg);
     }

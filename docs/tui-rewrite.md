@@ -129,8 +129,8 @@ encoding groups equal cells before serializing them, and composer transforms
 expand only frames containing a reviewed patch or version token. These avoid
 redundant JSON allocations without changing the exact comparison contract.
 
-The PTY helper runs in a temporary cwd with isolated HOME, HARNESS_DATA_HOME, and
-XDG directories. Runtime options use the same storage resolver as the CLI. Its
+The PTY helper runs in a temporary cwd with isolated HOME and HARNESS_HOME.
+Runtime options use the same storage resolver as the CLI. Its
 smoke journey reads a real plan from sibling user-level storage: the list shows
 the stored runtime-qualified path (truncated to the available width), and Enter
 opens its content in Plan preview. Plan actions use that path directly rather

@@ -58,7 +58,7 @@ choice.
 
 Remembered approvals have run, session or workspace scope. Run grants end with
 the run. Session grants restore from that session's journal. Workspace
-grants use a private `.agent-harness/permission-grants.json` file. Tools cannot
+grants use a private `.harness/permission-grants.json` file. Tools cannot
 edit that file or managed session storage.
 
 The matcher depends on the approved operation:

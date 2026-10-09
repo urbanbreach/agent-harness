@@ -28,12 +28,8 @@ fn scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace(
             &mut CliIo::new(&mut input, &mut output, &mut error),
             CliDeps::real()
                 .with_current_dir(root.path().into())
-                .with_env(
-                    "HARNESS_DATA_HOME",
-                    root.path().join("data").to_string_lossy(),
-                )
+                .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
                 .without_env("HOME")
-                .without_env("XDG_CONFIG_HOME")
                 .without_env("HARNESS_CONFIG")
                 .without_env("HARNESS_TUI_CONFIG")
                 .without_env("HARNESS_CONFIG_CONTENT"),
@@ -105,10 +101,7 @@ async fn run_combines_inputs_then_continues_the_latest_resumable_session(
     })));
     let deps = CliDeps::real()
         .with_current_dir(root.path().into())
-        .with_env(
-            "HARNESS_DATA_HOME",
-            root.path().join("data").to_string_lossy(),
-        )
+        .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
         .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>);
     let mut original = Vec::new();
     for (step, args) in [
@@ -184,7 +177,7 @@ async fn run_combines_inputs_then_continues_the_latest_resumable_session(
 }
 
 #[test]
-fn default_run_and_session_listing_use_data_home_and_require_it_without_an_override(
+fn default_run_and_session_listing_use_harness_home_and_require_it_without_an_override(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let root = tempfile::tempdir()?;
     let workspace = root.path().join("workspace");
@@ -193,14 +186,12 @@ fn default_run_and_session_listing_use_data_home_and_require_it_without_an_overr
     let deps = CliDeps::real()
         .with_current_dir(workspace.clone())
         .without_env("HOME")
-        .without_env("XDG_DATA_HOME")
         .without_env("LOCALAPPDATA")
         .without_env("APPDATA")
-        .without_env("XDG_CONFIG_HOME")
         .without_env("HARNESS_CONFIG")
         .without_env("HARNESS_TUI_CONFIG")
         .without_env("HARNESS_CONFIG_CONTENT")
-        .with_env("HARNESS_DATA_HOME", data_home.to_string_lossy());
+        .with_env("HARNESS_HOME", data_home.to_string_lossy());
     let invoke = |args: &[&str], deps: CliDeps| {
         let (mut input, mut output, mut errors) = (Cursor::new(Vec::new()), Vec::new(), Vec::new());
         let result = run(
@@ -218,20 +209,19 @@ fn default_run_and_session_listing_use_data_home_and_require_it_without_an_overr
     assert_eq!(sessions.as_array().map(Vec::len), Some(1));
     let run_id = sessions[0]["run_id"].as_str().ok_or("run id missing")?;
     let session_dir =
-        harness_core::storage_paths::ProjectPaths::new(&data_home.join("harness"), &workspace)?
-            .sessions_dir();
+        harness_core::storage_paths::ProjectPaths::new(&data_home, &workspace)?.sessions_dir();
     let events = read_events(&session_dir.join(run_id).join("events.jsonl"))?;
     assert!(matches!(
         events.last().map(|event| &event.payload),
         Some(EventV1::RunFinished(_))
     ));
-    assert!(!workspace.join(".agent-harness").exists());
+    assert!(!workspace.join(".harness").exists());
 
-    let missing_data = deps.without_env("HARNESS_DATA_HOME");
+    let missing_data = deps.without_env("HARNESS_HOME");
     let (code, _, errors) = invoke(&["run", "--mock", "hello"], missing_data.clone());
     assert_eq!(code, 1);
     let errors = String::from_utf8(errors)?;
-    assert!(errors.contains("HARNESS_DATA_HOME"));
+    assert!(errors.contains("HARNESS_HOME"));
     assert!(errors.contains("--session-dir"));
     assert_eq!(fs::read_dir(&session_dir)?.count(), 1);
     let (code, _, errors) = invoke(
@@ -249,6 +239,6 @@ fn default_run_and_session_listing_use_data_home_and_require_it_without_an_overr
         fs::read_dir(workspace.join("explicit-sessions"))?.count(),
         1
     );
-    assert!(!workspace.join(".agent-harness").exists());
+    assert!(!workspace.join(".harness").exists());
     Ok(())
 }

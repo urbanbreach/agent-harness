@@ -25,35 +25,43 @@ location.
 
 ## Storage
 
-Generated data uses a user-level data directory: `$HARNESS_DATA_HOME/harness`,
-then `$XDG_DATA_HOME/harness`, then `$HOME/.local/share/harness`, ignoring empty
-values.
+User files live in the Harness home, `<home>`: a nonempty `HARNESS_HOME` used
+as-is, otherwise `$HOME/.harness`.
 
 `<project-key>` encodes the canonical absolute project path: strip one leading
 slash or backslash, replace slashes, backslashes and colons with dashes, and wrap
 the result in `--`. For example, `/work/app` becomes `--work-app--`. Symlink aliases
-therefore share a bucket. The data root is separate from configuration discovery.
+therefore share a bucket. Personal configuration and generated data share this root.
 
 | Data | Location |
 | --- | --- |
-| Runtime config | XDG or project `harness.json` and `harness.jsonc` files |
-| Keyboard config | XDG or project `tui.json` and `tui.jsonc` files |
-| Authored project agents, skills and prompts | `.agent-harness/agents`, `.agent-harness/skills` and `.agent-harness/prompts` |
-| Workspace permission grants | Project `.agent-harness/permission-grants.json` |
-| Events and artifacts | `<data-dir>/sessions/<project-key>/<run-id>`, unless session storage is explicitly overridden |
-| Memory, code index and edit attribution | `<data-dir>/projects/<project-key>` |
-| Managed Git worktrees | `<data-dir>/worktrees/<project-key>` |
-| Stored credentials | `<data-dir>/credentials/<authProvider>.json` |
+| Runtime config | `<home>/harness.jsonc` or `harness.json`, explicit `HARNESS_CONFIG`, and project layers |
+| Keyboard config | `<home>/tui.jsonc` or `tui.json`, explicit `HARNESS_TUI_CONFIG`, and project layers |
+| Personal agents, commands and prompts | `<home>/agents/`, `<home>/commands/` and `<home>/prompts/` |
+| Global skills | `<home>/skills` and `$HOME/.agents/skills` by default; configured by `skills.global_roots` |
+| Last picked TUI model | `<home>/model.json`, unless `HARNESS_MODEL_SELECTION_STATE_FILE` overrides it |
+| Cached model metadata | `<home>/models-cache.json` |
+| Subscription bindings | `<home>/anthropic-subscription-bindings/` |
+| Authored project agents, commands, skills and prompts | `<project>/.harness/agents/`, `.harness/commands/`, `.harness/skills/`, `.harness/prompts/`; project skills also load from `.agents/skills/` |
+| User instructions | `<home>/AGENTS.md` |
+| Project instructions | First existing of `AGENTS.md`, then `CLAUDE.md`, in each project directory |
+| Workspace permission grants | Project `.harness/permission-grants.json` |
+| Events and artifacts | `<home>/sessions/<project-key>/<run-id>`, unless session storage is explicitly overridden |
+| Memory, code index, edit attribution and plans | `<home>/projects/<project-key>` |
+| Managed Git worktrees | `<home>/worktrees/<project-key>` |
+| Stored credentials | `<home>/credentials/<authProvider>.json` |
 
 An empty `runtime.session_dir` selects managed storage automatically. A nonempty
 config value or `--session-dir` overrides session storage only. Relative overrides
 still resolve against the selected project. Authored project files and workspace
 grants are not relocated. Old project-local sessions are not migrated; read them
-with `--session-dir <project>/.agent-harness/sessions`.
+with `--session-dir <old-session-dir>`.
 
-Use `harness config sources` to find active configuration files. Credential files
-use restrictive permissions. Logout removes stored credentials, but leaves
-configured environment and inline credential fallbacks in place.
+Use `harness config sources` to find active configuration files. Successful
+sign-in may create a minimal personal config without overwriting existing files;
+see [config discovery](../configuration/config.md#discovery-and-precedence).
+Credential files use restrictive permissions. Logout removes stored credentials,
+but leaves configured environment and inline credential fallbacks in place.
 
 ## Redaction and sharing
 

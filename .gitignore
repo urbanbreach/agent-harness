@@ -10,13 +10,10 @@ artifacts/
 .harness-*-probe*/
 .harness-foreign-probe*/
 
-# Harness runtime state. The root .agent-harness/ keeps only authored resources.
+# Project-authored configuration and local runtime state. Older builds wrote
+# runtime state into .agent-harness/ wherever they ran, including crate dirs.
+.harness/
 .agent-harness/
-!/.agent-harness/
-/.agent-harness/*
-!/.agent-harness/agents/
-!/.agent-harness/prompts/
-!/.agent-harness/skills/
 
 # Local runtime configuration
 /harness.json

@@ -757,6 +757,7 @@ impl Default for AppState {
             new_worktree_dialog: NewWorktreeDialogState::default(),
             foreign_import_picker: ForeignImportPickerState::default(),
             slash_visible: false,
+            prompt_commands: Vec::new(),
             slash_filtered: Vec::new(),
             slash_selected: 0,
             slash_recent: Vec::new(),
@@ -2548,7 +2549,7 @@ impl AppState {
                 let harness_state_dir = self
                     .session_path
                     .clone()
-                    .unwrap_or_else(|| root.join(".agent-harness"));
+                    .unwrap_or_else(|| root.join(".harness"));
                 harness_core::sandbox::SandboxPathRoots {
                     workspace_root: root.to_path_buf(),
                     harness_state_dir,
@@ -2817,7 +2818,7 @@ impl AppState {
       "stale_timeout_ms": 15000,
       "message_staleness_timeout_ms": 5000
     },
-    "session_dir": ".agent-harness/sessions",
+    "session_dir": ".harness/sessions",
     "deterministic": {
       "enabled": false,
       "seed": 42
@@ -3001,7 +3002,7 @@ impl AppState {
             let harness_state_dir = self
                 .session_path
                 .clone()
-                .unwrap_or_else(|| workspace.join(".agent-harness"));
+                .unwrap_or_else(|| workspace.join(".harness"));
             let roots = harness_core::sandbox::SandboxPathRoots {
                 workspace_root: workspace.clone(),
                 harness_state_dir,

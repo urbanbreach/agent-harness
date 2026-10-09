@@ -1,6 +1,6 @@
 macro_rules! bundled {
     ($($name:literal),+ $(,)?) => {
-        &[$(($name, include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.agent-harness/prompts/", $name)))),+]
+        &[$(($name, include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/prompts/", $name)))),+]
     };
 }
 

@@ -26,10 +26,11 @@ It also enforces files below 500 lines, injected process state, bounded event wa
 explicit native/live opt-in, snapshot ownership, and credential-free cassettes.
 Its parser checks run with `--self-test`; `--json` provides a machine-readable report.
 
-Tests that discover configuration need an empty `XDG_CONFIG_HOME` to avoid loading
-personal runtime settings. Set it outside the test process; do not mutate global
-state from Rust tests. During this rewrite, checks use
-`XDG_CONFIG_HOME=/tmp/agent-harness-empty-test-config`.
+Tests that discover configuration need an isolated Harness home to avoid loading
+personal settings. Use a temporary directory and an injected `HARNESS_HOME` lookup
+through `CliDeps::with_env` or `ConfigLoadContext`; do not mutate global environment
+state from Rust tests. For command-line checks, set `HARNESS_HOME` to a fresh
+temporary directory outside the test process.
 
 The `ci` profile uses CPU-count parallelism and no retries. Its default filter
 excludes performance, binary, live, PTY, and native visual targets. An explicit

@@ -196,7 +196,7 @@ async fn native_filters_use_registered_capabilities_aliases_and_mcp_server_metad
     let definition = config
         .subagent_definitions
         .as_mut()
-        .and_then(|defs| defs.cli.get_mut("native-fixture"))
+        .and_then(|defs| defs.user.get_mut("native-fixture"))
         .ok_or("native definition absent")?;
     definition.capability_mode = Some(crate::config::SubagentCapabilityMode::ReadOnly);
     definition.prompt_body = Some("Plan tool: ${{ tools.by_kind.plan }}\nRead tool: ${{ tools.by_kind.read }} path: ${{ params.read.path }}\n${% if tools.by_kind.edit %}Unexpected editor${% endif %}".into());

@@ -78,7 +78,7 @@ pub(crate) fn rich_model_config() -> &'static str {
           stale_timeout_ms: 15000,
           message_staleness_timeout_ms: 5000,
         },
-        session_dir: ".agent-harness/sessions",
+        session_dir: ".harness/sessions",
       },
       integrations: {
         remote_search: {

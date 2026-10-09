@@ -30,7 +30,7 @@ env:
   HARNESS_DISABLE_ANIMATIONS: "1"
   HARNESS_SEED: "42"
   NEXTEST_PROFILE: ci
-  XDG_CONFIG_HOME: /tmp/harness-empty-config
+  HARNESS_HOME: /tmp/harness-home
   CARGO_PROFILE_DEV_DEBUG: "0"
   CARGO_PROFILE_TEST_DEBUG: "0"
 

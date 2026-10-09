@@ -86,7 +86,7 @@ async fn prompt_resume_and_fork_restore_history_and_export_only_committed_events
                     .into(),
                 )
                 .with_env(
-                    "HARNESS_DATA_HOME",
+                    "HARNESS_HOME",
                     workspace.path().join("data").to_string_lossy(),
                 )
                 .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),
@@ -243,10 +243,7 @@ async fn prompt_options_select_model_tools_and_policy_before_execution(
         &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
         CliDeps::real()
             .with_current_dir(root.path().into())
-            .with_env(
-                "HARNESS_DATA_HOME",
-                root.path().join("data").to_string_lossy(),
-            )
+            .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
             .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),
     );
     assert_eq!(result.code, 0, "{}", String::from_utf8_lossy(&stderr));
@@ -315,10 +312,7 @@ async fn prompt_resolves_subagent_enablement_and_messaging_before_provider_dispa
             &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
             CliDeps::real()
                 .with_current_dir(root.path().into())
-                .with_env(
-                    "HARNESS_DATA_HOME",
-                    root.path().join("data").to_string_lossy(),
-                )
+                .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
                 .without_env("HARNESS_SUBAGENTS")
                 .without_env("HARNESS_ACTIVE_AGENT_MESSAGES")
                 .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),
@@ -364,16 +358,13 @@ async fn prompt_uses_the_runtime_catalog_with_environment_or_stored_credentials(
     ] {
         let root = tempfile::tempdir()?;
         let data = root.path().join("data");
-        let config = root.path().join("configuration");
-        std::fs::create_dir(&config)?;
         let provider = Arc::new(MockProvider::script([vec![
             ProviderStreamEvent::TextDelta("Catalog selected. opaque-catalog-credential".into()),
             ProviderStreamEvent::Done { usage: None },
         ]]));
         let mut deps = CliDeps::real()
             .with_current_dir(root.path().into())
-            .with_env("HARNESS_DATA_HOME", data.to_str().ok_or("data path")?)
-            .with_env("XDG_CONFIG_HOME", config.to_str().ok_or("config path")?)
+            .with_env("HARNESS_HOME", data.to_str().ok_or("data path")?)
             .without_env("HARNESS_CONFIG")
             .without_env("HARNESS_CONFIG_CONTENT")
             .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>);
@@ -401,7 +392,7 @@ async fn prompt_uses_the_runtime_catalog_with_environment_or_stored_credentials(
             );
             assert_eq!(login.code, 0, "{}", String::from_utf8_lossy(&stderr));
         } else if source.starts_with("codex") {
-            CredentialStore::new(data.join("harness")).save(&StoredCredential::oauth(
+            CredentialStore::new(data.clone()).save(&StoredCredential::oauth(
                 ProviderId::codex(),
                 "opaque-catalog-credential",
                 "opaque-refresh-credential",
@@ -417,7 +408,7 @@ async fn prompt_uses_the_runtime_catalog_with_environment_or_stored_credentials(
                 deps = deps.with_env("HARNESS_CONFIG", path.to_str().ok_or("fixture path")?);
             }
         } else {
-            CredentialStore::new(data.join("harness")).save(&StoredCredential::api_key(
+            CredentialStore::new(data.clone()).save(&StoredCredential::api_key(
                 ProviderId::parse("openai").ok_or("provider id")?,
                 "opaque-catalog-credential",
                 "2026-09-26T00:00:00Z",

@@ -163,7 +163,7 @@ mod tests {
         let mut context = ConfigLoadContext::from_env().with_current_dir(root.path().into());
         for name in [
             "HOME",
-            "XDG_CONFIG_HOME",
+            "HARNESS_HOME",
             "HARNESS_CONFIG",
             "HARNESS_TUI_CONFIG",
         ] {

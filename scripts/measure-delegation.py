@@ -84,7 +84,7 @@ def measure(binary, count, cancel):
                         'provider_retry': {'max_retries': 0}}
         }))
         environment = {key: os.environ[key] for key in ('PATH', 'LANG', 'LD_LIBRARY_PATH') if key in os.environ}
-        environment.update(HOME=str(root / 'home'), XDG_CONFIG_HOME=str(root / 'xdg'), HARNESS_DATA_HOME=str(root / 'data'))
+        environment.update(HOME=str(root / 'home'), HARNESS_HOME=str(root / 'harness-home'))
         started = time.monotonic()
         process = subprocess.Popen([str(binary), '--cwd', str(root), '--config', str(config),
                                     'prompt', '--text', 'launch delegations', '--yolo'],
@@ -102,7 +102,7 @@ def measure(binary, count, cancel):
             if not cancel:
                 assert output == b'delegation complete\n', output
                 assert len(children) == count
-            journals = list((root / 'data/harness/sessions').glob('*/*/events.jsonl'))
+            journals = list((root / 'harness-home/sessions').glob('*/*/events.jsonl'))
             root_journal, = [p for p in journals
                              if not json.loads((p.parent / 'meta.json').read_text()).get('harness_lineage')]
             events = [json.loads(line)['payload']['event_type'] for line in root_journal.read_text().splitlines()]

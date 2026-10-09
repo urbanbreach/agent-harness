@@ -119,7 +119,7 @@ fn assert_managed_worktree_storage(
         start_point: None,
     })?;
     assert!(managed.path.starts_with(data_dir.join("worktrees")));
-    assert!(!root.join(".agent-harness").exists());
+    assert!(!root.join(".harness").exists());
     assert_eq!(
         list_session_worktrees(root, None, data_dir)?
             .iter()

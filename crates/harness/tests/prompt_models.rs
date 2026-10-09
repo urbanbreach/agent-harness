@@ -60,12 +60,8 @@ async fn model_fallback_rebuilds_the_model_prompt_and_keeps_explicit_instruction
                 &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
                 CliDeps::real()
                     .with_current_dir(root.path().into())
-                    .with_env(
-                        "HARNESS_DATA_HOME",
-                        root.path().join("data").to_string_lossy(),
-                    )
+                    .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
                     .without_env("HOME")
-                    .without_env("XDG_CONFIG_HOME")
                     .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),
             );
             assert_eq!(result.code, 0, "{}", String::from_utf8_lossy(&stderr));
@@ -128,8 +124,8 @@ async fn model_fallback_rebuilds_the_model_prompt_and_keeps_explicit_instruction
 async fn editable_model_prompts_obey_precedence_reload_and_reject_bad_files(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let root = tempfile::tempdir()?;
-    let user = root.path().join("user/harness/prompts");
-    let project = root.path().join("repo/.agent-harness/prompts");
+    let user = root.path().join("data/prompts");
+    let project = root.path().join("repo/.harness/prompts");
     fs::create_dir_all(user.join("models"))?;
     fs::create_dir_all(user.join("eval"))?;
     fs::create_dir_all(project.join("models"))?;
@@ -159,7 +155,7 @@ async fn editable_model_prompts_obey_precedence_reload_and_reject_bad_files(
     let provider = Arc::new(MockProvider::script([
         call(
             "write",
-            json!({"path":".agent-harness/prompts/models/glm-5.3.md", "content":updated}),
+            json!({"path":".harness/prompts/models/glm-5.3.md", "content":updated}),
         ),
         done("Reloaded the prompt."),
         done("Used the ancestor prompt."),
@@ -167,15 +163,8 @@ async fn editable_model_prompts_obey_precedence_reload_and_reject_bad_files(
     ]));
     let deps = CliDeps::real()
         .with_current_dir(workspace.clone())
-        .with_env(
-            "HARNESS_DATA_HOME",
-            root.path().join("data").to_string_lossy(),
-        )
+        .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
         .without_env("HOME")
-        .with_env(
-            "XDG_CONFIG_HOME",
-            root.path().join("user").to_string_lossy(),
-        )
         .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>);
     let invoke = |deps: CliDeps| {
         let config_path = workspace.join("fixture.json");

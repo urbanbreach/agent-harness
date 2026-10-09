@@ -405,10 +405,7 @@ async fn critical_hook_vetoes_the_stage_without_stranding_tasks_or_recording_a_g
         assert!(!events
             .iter()
             .any(|e| matches!(e.payload, EventV1::PermissionGrantRecorded(_))));
-        assert!(!temp
-            .path()
-            .join(".agent-harness/permission-grants.json")
-            .exists());
+        assert!(!temp.path().join(".harness/permission-grants.json").exists());
         assert_eq!(
             matches!(
                 events.last().map(|e| &e.payload),

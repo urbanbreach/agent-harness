@@ -431,7 +431,7 @@ mod tests {
             ("PATH".to_owned(), "/bin".to_owned()),
             ("ANTHROPIC_API_KEY".to_owned(), "k".to_owned()),
             ("CLAUDE_CODE_OAUTH_TOKEN_3".to_owned(), "t".to_owned()),
-            ("HARNESS_DATA_HOME".to_owned(), "/d".to_owned()),
+            ("HARNESS_HOME".to_owned(), "/d".to_owned()),
             ("CLAUDE_CODE_OAUTH_TOKEN_X".to_owned(), "kept".to_owned()),
         ]);
         let child = strip_managed_auth_environment(&parent);

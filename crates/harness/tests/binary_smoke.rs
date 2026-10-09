@@ -25,8 +25,7 @@ fn process_entry_loads_dotenv_and_routes_debug_logs_without_polluting_command_ou
             .current_dir(root.path())
             .env_clear()
             .env("HOME", root.path())
-            .env("XDG_CONFIG_HOME", root.path())
-            .env("HARNESS_DATA_HOME", root.path().join("data"))
+            .env("HARNESS_HOME", root.path().join("data"))
             .arg("--debug")
             .args(["--config", "config.json", "config", "show", "--effective"]);
         if let Some(value) = override_value {
@@ -92,7 +91,7 @@ fn worktree_cli_scopes_cleanup_and_keeps_dirty_work_until_forced(
     fs::write(root.join("source.txt"), "initial\n")?;
     git(&["add", "source.txt"])?;
     git(&["commit", "--quiet", "-m", "fixture"])?;
-    let data_dir = temp.path().join("data/harness");
+    let data_dir = temp.path().join("data");
     let create = |slug| {
         create_session_worktree(CreateWorktreeOptions {
             repository_root: &root,
@@ -143,7 +142,7 @@ fn invoke(root: &Path, args: &[&str], expected: i32) -> Result<Value, Box<dyn st
         &mut CliIo::new(&mut input, &mut output, &mut errors),
         CliDeps::real()
             .with_current_dir(root.into())
-            .with_env("HARNESS_DATA_HOME", root.join("data").to_string_lossy()),
+            .with_env("HARNESS_HOME", root.join("data").to_string_lossy()),
     );
     assert_eq!(
         result.code,

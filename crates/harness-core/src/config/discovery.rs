@@ -3,9 +3,9 @@ use super::*;
 #[derive(Debug, Clone)]
 pub struct ConfigDiscoveryContext {
     pub current_dir: PathBuf,
-    pub xdg_config_home: Option<PathBuf>,
+    pub harness_home: Option<PathBuf>,
     pub home: Option<PathBuf>,
-    /// Resolved user data root, including the `harness` directory.
+    /// Resolved Harness home, used for all user-level files.
     pub data_dir: Option<PathBuf>,
     pub runtime_config_path: Option<PathBuf>,
     pub tui_config_path: Option<PathBuf>,
@@ -19,7 +19,7 @@ impl ConfigDiscoveryContext {
         };
         Self {
             current_dir: std::env::current_dir().unwrap_or_else(|_| ".".into()),
-            xdg_config_home: path("XDG_CONFIG_HOME"),
+            harness_home: path("HARNESS_HOME"),
             home: path("HOME"),
             data_dir: crate::storage_paths::data_dir_from_lookup(&|key| std::env::var(key).ok()),
             runtime_config_path: path("HARNESS_CONFIG"),
@@ -32,13 +32,34 @@ impl ConfigDiscoveryContext {
     }
     pub fn apply_env_var(mut self, name: &str, value: Option<String>) -> Self {
         let field = match name {
-            "XDG_CONFIG_HOME" => &mut self.xdg_config_home,
+            "HARNESS_HOME" => &mut self.harness_home,
             "HOME" => &mut self.home,
             "HARNESS_CONFIG" => &mut self.runtime_config_path,
             "HARNESS_TUI_CONFIG" => &mut self.tui_config_path,
             _ => return self,
         };
         *field = value.filter(|v| !v.is_empty()).map(PathBuf::from);
+        if matches!(name, "HOME" | "HARNESS_HOME") {
+            #[cfg(not(windows))]
+            {
+                self.data_dir = self
+                    .harness_home
+                    .clone()
+                    .or_else(|| self.home.as_ref().map(|home| home.join(".harness")));
+            }
+            #[cfg(windows)]
+            {
+                self.data_dir = self.harness_home.clone().or_else(|| {
+                    crate::storage_paths::data_dir_from_lookup(&|key| {
+                        if key == "HARNESS_HOME" {
+                            None
+                        } else {
+                            std::env::var(key).ok()
+                        }
+                    })
+                });
+            }
+        }
         self
     }
 }
@@ -180,41 +201,68 @@ pub(crate) fn search_roots(directory: &Path) -> Vec<&Path> {
     roots
 }
 
-pub(super) fn discover(context: &ConfigDiscoveryContext, tui: bool) -> Vec<PathBuf> {
-    let names: &[&str] = if tui {
+fn config_names(tui: bool) -> &'static [&'static str] {
+    if tui {
         &["tui.jsonc", "tui.json"]
     } else {
-        &["harness.jsonc", "harness.json", "config.jsonc"]
-    };
-    let mut paths = Vec::new();
-    let global = context
-        .xdg_config_home
-        .clone()
-        .or_else(|| context.home.as_ref().map(|home| home.join(".config")));
-    if let Some(base) = global
-        && let Some(path) = names
-            .iter()
-            .map(|name| base.join("harness").join(name))
-            .find(|path| path.is_file())
-    {
-        paths.push(path);
+        &["harness.jsonc", "harness.json"]
     }
-    if let Some(path) = if tui {
-        &context.tui_config_path
+}
+
+fn global_candidates(context: &ConfigDiscoveryContext, tui: bool) -> Vec<PathBuf> {
+    context.data_dir.as_ref().map_or_else(Vec::new, |dir| {
+        config_names(tui)
+            .iter()
+            .map(|name| dir.join(name))
+            .collect()
+    })
+}
+
+fn environment_candidate(context: &ConfigDiscoveryContext, tui: bool) -> Option<&PathBuf> {
+    if tui {
+        context.tui_config_path.as_ref()
     } else {
-        &context.runtime_config_path
-    } && !paths.contains(path)
+        context.runtime_config_path.as_ref()
+    }
+}
+
+fn project_candidates(context: &ConfigDiscoveryContext, tui: bool) -> Vec<PathBuf> {
+    let names = config_names(tui);
+    search_roots(&context.current_dir)
+        .into_iter()
+        .flat_map(|base| {
+            ["", ".harness"]
+                .into_iter()
+                .flat_map(move |prefix| names.iter().map(move |name| base.join(prefix).join(name)))
+        })
+        .collect()
+}
+
+/// Every candidate configuration path in merge order, including missing files.
+pub fn config_search_paths(context: &ConfigDiscoveryContext, tui: bool) -> Vec<PathBuf> {
+    let mut paths = global_candidates(context, tui);
+    paths.extend(environment_candidate(context, tui).cloned());
+    paths.extend(project_candidates(context, tui));
+    paths
+}
+
+/// Existing layers in merge order. The global directory contributes only its first
+/// existing file; an environment-selected path is kept even when missing so loading
+/// reports it.
+pub(super) fn discover(context: &ConfigDiscoveryContext, tui: bool) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = global_candidates(context, tui)
+        .into_iter()
+        .find(|path| path.is_file())
+        .into_iter()
+        .collect();
+    if let Some(path) = environment_candidate(context, tui)
+        && !paths.contains(path)
     {
         paths.push(path.clone());
     }
-    for base in search_roots(&context.current_dir) {
-        for prefix in ["", ".agent-harness"] {
-            for name in &names[..2] {
-                let path = base.join(prefix).join(name);
-                if path.is_file() && !paths.contains(&path) {
-                    paths.push(path);
-                }
-            }
+    for path in project_candidates(context, tui) {
+        if path.is_file() && !paths.contains(&path) {
+            paths.push(path);
         }
     }
     paths
@@ -237,32 +285,47 @@ mod tests {
     fn config_discovery_merges_layers_without_writing_and_resolves_file_values(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let root = tempfile::tempdir()?;
-        let global = root.path().join("config/harness");
+        let global = root.path().join("home");
         let project = root.path().join("project");
         std::fs::create_dir_all(&global)?;
         std::fs::create_dir_all(project.join(".git"))?;
         let context = ConfigLoadContext {
             discovery: ConfigDiscoveryContext {
                 current_dir: project.clone(),
-                xdg_config_home: Some(root.path().join("config")),
-                data_dir: Some(root.path().join("data/harness")),
+                harness_home: None,
+                data_dir: Some(global.clone()),
                 home: None,
                 runtime_config_path: None,
                 tui_config_path: None,
             },
             runtime_content: None,
         };
+        std::fs::write(global.join("config.jsonc"), "{removed_global_setting:true}")?;
         assert!(load_resolved_config_with_context(None, &context)?.is_none());
         assert!(!project.join("harness.json").exists());
         std::fs::write(global.join("harness.jsonc"), "{runtime:{compaction:{enabled:false,fallbackInputTokens:1234}}, permission:{bash:{'git *':'allow','*':'deny'}}}")?;
+        std::fs::write(global.join("harness.json"), "{unknown_global_setting:true}")?;
+        std::fs::write(
+            project.join("config.jsonc"),
+            "{unknown_project_setting:true}",
+        )?;
         std::fs::write(project.join("prompt.txt"), "local instructions")?;
         std::fs::write(project.join("harness.jsonc"), "{runtime:{compaction:{fallback_input_tokens:8192}},agent:{default:{system_prompt:'{file:prompt.txt}'}},permission:{bash:{'git status':'ask'}}}")?;
+        std::fs::write(
+            global.join("tui.jsonc"),
+            "{keybinds:{copy_selection:'ctrl+x'}}",
+        )?;
+        std::fs::write(global.join("tui.json"), "{removed_tui_setting:true}")?;
         std::fs::write(
             project.join("tui.jsonc"),
             "{keybinds:{copy_selection:'ctrl+y'}}",
         )?;
         let loaded =
             load_resolved_config_with_context(None, &context)?.ok_or("configuration not found")?;
+        assert_eq!(
+            resolve_tui_config_layer_paths_with_context(&context.discovery),
+            [global.join("tui.jsonc"), project.join("tui.jsonc")]
+        );
         assert_eq!(loaded.paths.len(), 2);
         assert_eq!(
             loaded.primary_path(),
@@ -290,12 +353,27 @@ mod tests {
                 PermissionMode::Ask
             ]
         );
-        assert!(!project.join(".agent-harness").exists());
+        assert!(!project.join(".harness").exists());
         let explicit =
             load_resolved_config_with_context(Some(&global.join("harness.jsonc")), &context)?
                 .ok_or("explicit config missing")?;
         assert_eq!(explicit.paths, vec![global.join("harness.jsonc")]);
         assert!(explicit.config.agents["default"].system_prompt.is_none());
+        for environment_path in [global.join("harness.jsonc"), project.join("harness.jsonc")] {
+            let mut duplicate = context.clone();
+            duplicate.discovery.runtime_config_path = Some(environment_path);
+            let resolved = load_resolved_config_with_context(None, &duplicate)?
+                .ok_or("configuration missing with duplicate environment path")?;
+            assert_eq!(resolved.paths, loaded.paths);
+        }
+        let mut missing = context.clone();
+        let missing_path = project.join("missing.jsonc");
+        missing.discovery.runtime_config_path = Some(missing_path.clone());
+        assert!(
+            resolve_config_layer_paths_with_context(None, &missing.discovery)
+                .contains(&missing_path)
+        );
+        assert!(load_resolved_config_with_context(None, &missing).is_err());
         let mut references =
             serde_json::json!({"text":"${EMPTY}|${EMPTY:-fallback}|{env:ABSENT}|{env:TOKEN}"});
         references::expand(&mut references, &project, &|name| match name {

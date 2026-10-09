@@ -32,7 +32,7 @@ fn subscription_prompts_use_their_wire_contract_and_redact_credentials(
             "2026-09-26T00:00:00Z",
         );
         credential.account_id = Some("fixture-account".into());
-        CredentialStore::new(data.join("harness")).save(&credential)?;
+        CredentialStore::new(data.clone()).save(&credential)?;
         std::fs::write(root.path().join("fixture.json"), json!({
             "provider":{"fixture":{"type":"openai_compatible", "authProvider": credential.provider.as_str(),
                 "baseURL":format!("http://{}/v1", listener.local_addr()?), "apiMode": mode, "apiKeyEnv":[],
@@ -55,11 +55,8 @@ fn subscription_prompts_use_their_wire_contract_and_redact_credentials(
             &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
             CliDeps::real()
                 .with_current_dir(root.path().into())
-                .with_env("HARNESS_DATA_HOME", data.to_str().ok_or("data path")?)
-                .with_env(
-                    "XDG_CONFIG_HOME",
-                    root.path().to_str().ok_or("config path")?,
-                )
+                .with_env("HARNESS_HOME", data.to_str().ok_or("data path")?)
+                .with_env("HOME", root.path().to_string_lossy())
                 .without_env("HARNESS_CONFIG")
                 .without_env("HARNESS_CONFIG_CONTENT"),
         );
@@ -76,8 +73,7 @@ fn subscription_prompts_use_their_wire_contract_and_redact_credentials(
         }
         check_wire(profile, &headers, &body);
         let session = std::fs::read_dir(
-            harness_core::storage_paths::ProjectPaths::new(&data.join("harness"), root.path())?
-                .sessions_dir(),
+            harness_core::storage_paths::ProjectPaths::new(&data, root.path())?.sessions_dir(),
         )?
         .next()
         .ok_or("session missing")??

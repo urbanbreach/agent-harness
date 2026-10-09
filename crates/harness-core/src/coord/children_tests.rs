@@ -168,7 +168,7 @@ pub(super) fn configuration(temp: &Path, provider: Arc<dyn Provider>) -> Coordin
         },
     );
     let mut definitions = SubagentDefinitionSnapshot::default();
-    definitions.cli.insert(
+    definitions.user.insert(
         "native-fixture".into(),
         SubagentDefinition {
             name: "native-fixture".into(),
