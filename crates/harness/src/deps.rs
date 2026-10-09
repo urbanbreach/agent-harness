@@ -122,7 +122,10 @@ impl CliDeps {
     }
     pub(crate) fn data_directory(&self) -> Result<PathBuf, String> {
         harness_core::storage_paths::data_dir_from_lookup(&|name| self.env_var_value(name))
-            .ok_or_else(|| "cannot resolve harness data directory; set HARNESS_DATA_HOME or provide --session-dir".to_string())
+            .ok_or_else(|| {
+                "cannot resolve harness data directory; set HARNESS_HOME or provide --session-dir"
+                    .to_string()
+            })
     }
     pub(crate) fn project_paths(
         &self,
@@ -131,7 +134,7 @@ impl CliDeps {
         harness_core::storage_paths::ProjectPaths::new(&self.data_directory()?, project)
             .map_err(|error| error.to_string())
     }
-    pub(crate) fn config_load_context(&self) -> ConfigLoadContext {
+    pub fn config_load_context(&self) -> ConfigLoadContext {
         let mut context = ConfigLoadContext::from_env();
         if let Some(directory) = &self.directory {
             context.discovery.current_dir = context.discovery.current_dir.join(directory);

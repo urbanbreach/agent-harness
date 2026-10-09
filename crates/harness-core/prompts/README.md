@@ -2,7 +2,7 @@
 
 Every model Harness supports gets its own complete system prompt in `models/`.
 Those prompts are ported from the model presets in
-[Senpi](../../inspirations/senpi) at `66d003739`, the prompts OmO Native runs on,
+[Senpi](../../../inspirations/senpi) at `66d003739`, the prompts OmO Native runs on,
 and fitted to Harness's tools and runtime. Senpi is MIT licensed; its notice is
 kept in [LICENSE.upstream](LICENSE.upstream).
 
@@ -73,10 +73,11 @@ a `${# ... #}` comment at the top of the file.
 
 For each requested template, Harness checks these locations in order:
 
-1. `.agent-harness/prompts/` in the working directory, then ancestors up to the
+1. `.harness/prompts/` in the working directory, then ancestors up to the
    nearest Git root. Outside a Git repository it checks only the working directory.
-2. `$XDG_CONFIG_HOME/harness/prompts/`, or `~/.config/harness/prompts/` when XDG is unset.
-3. The defaults bundled into the binary.
+2. `<home>/prompts/`, where `<home>` is a nonempty `$HARNESS_HOME` used as-is,
+   otherwise `~/.harness/`.
+3. The defaults in `crates/harness-core/prompts/`, bundled into the binary.
 
 Paths inside those directories match this bundle, such as `models/glm-5.3.md`,
 `partials/tools.md`, `subagent.md` and `eval/claude.md`. You only need to create
@@ -88,7 +89,7 @@ Every `##` section of a model file is a block named after its heading in
 snake_case (`intent_gate`, `working_the_task`, `verification`, `style`, ...), the
 opening identity line is the `identity` block, and an empty `extra` block sits
 before the environment section. To adjust one model, extend its file and
-override a block. For example, `.agent-harness/prompts/models/glm-5.3.md`:
+override a block. For example, `.harness/prompts/models/glm-5.3.md`:
 
 ```markdown
 ${% extends "models/glm.md" %}
@@ -155,15 +156,20 @@ access does not grant access to its children.
 | Agent | Work and tools | Model default |
 | --- | --- | --- |
 | `task` | General delegated work; inherits permitted tools and MCP servers. | Parent model |
-| `scout` | Codebase research; read, list, grep, glob, web search. No edits, shell, eval, MCP, or child spawning. | `small_model` when configured, otherwise parent; medium effort |
-| `reviewer` | Code review; read/search, LSP, structural search, web search, and shell. Shell use must be read-only. No eval. May delegate only to `scout`. | Parent model |
-| `security-reviewer` | Repository security review; local read/search, LSP, structural search. No shell, eval, network, MCP, or child spawning. | Parent model |
-| `sonic` | Strictly mechanical edits or data collection; task tools and prompt. | `small_model` when configured, otherwise parent; medium effort |
+| `scout` | Codebase research; read, list, grep, glob, web search. No edits, shell, eval, MCP, or child spawning. | `@smol`, otherwise parent; medium effort |
+| `reviewer` | Code review; read/search, LSP, structural search, web search, and shell. Shell use must be read-only. No eval. May delegate only to `scout`. | `@slow`, otherwise parent |
+| `security-reviewer` | Repository security review; local read/search, LSP, structural search. No shell, eval, network, MCP, or child spawning. | `@slow`, otherwise parent |
+| `sonic` | Strictly mechanical edits or data collection; task tools and prompt. | `@smol`, otherwise parent; medium effort |
 
-`subagents.models.<name>` overrides these model defaults. Harness does not have
-upstream's `@task`, `@slow`, and `@smol` role selector. Pin `reviewer` to a stronger
-configured model when needed. Task and sonic can delegate within the parent's
-permissions and the depth limit, which defaults to two. Concurrency defaults to 32.
+`subagents.models.<name>` overrides these model defaults. `model_roles.smol` and
+`model_roles.slow` configure concrete `provider/model[/variant]` references for
+`@smol` and `@slow`; an unset role inherits the parent model. Those selectors
+also work in definition and per-call models. Other `@names` are invalid.
+Optional definition frontmatter `variant` chooses a model variant. Per-call,
+role, persona, definition and parent variants apply in that order; unknown
+variants are ignored with a runtime warning. Task and sonic can delegate within
+the parent's permissions and the depth limit, which defaults to two.
+Concurrency defaults to 32.
 Definitions, roles, personas, and caller restrictions can narrow these capabilities.
 Scouts, reviewers, and security reviewers keep explicit tool lists without
 eval. Task and sonic inherit eval only when their resolved tools and permissions

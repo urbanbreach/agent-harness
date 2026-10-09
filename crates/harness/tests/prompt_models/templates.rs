@@ -85,7 +85,7 @@ fn model_aliases_and_bundled_templates_respect_available_capabilities(
     // Exercise the shipped templates, including inheritance, without project overrides.
     for entry in fs::read_dir(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../.agent-harness/prompts/models"
+        "/../harness-core/prompts/models"
     ))? {
         let entry = entry?;
         let name = entry.file_name();

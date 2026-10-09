@@ -10,11 +10,10 @@ fn cli(root: &Path) -> CliHarness {
         .current_dir(root)
         .args(["--config", "config.json"])
         .env_remove("HOME")
-        .env_remove("XDG_CONFIG_HOME")
         .env_remove("HARNESS_CONFIG")
         .env_remove("HARNESS_TUI_CONFIG")
         .env_remove("HARNESS_CONFIG_CONTENT")
-        .env("HARNESS_DATA_HOME", root.join("data"))
+        .env("HARNESS_HOME", root.join("data"))
 }
 
 fn call(id: &str, tool: &str, args: Value) -> Vec<Stream> {

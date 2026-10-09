@@ -72,7 +72,7 @@ fn durable_attribution_keeps_other_writers_and_reverts_to_the_recorded_agent_byt
     let mut reopened = EditAttributionJournal::open(temp.path(), runtime.path())?;
     assert!(!reopened.query("source")?.drifted);
     let bytes = fs::read(reopened.journal_path())?;
-    assert!(!temp.path().join(".agent-harness").exists());
+    assert!(!temp.path().join(".harness").exists());
     assert!(reopened
         .record_agent_tool_edit("../escape", b"x", None)
         .is_err());

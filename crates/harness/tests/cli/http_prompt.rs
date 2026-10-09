@@ -35,24 +35,20 @@ fn configured_http_prompt_runs_tools_under_coordinator_policy(
         let mut deps = CliDeps::real()
             .with_current_dir(root.path().into())
             .without_env("HOME")
-            .without_env("XDG_DATA_HOME")
-            .with_env(
-                "HARNESS_DATA_HOME",
-                root.path().join("data").to_string_lossy(),
-            )
+            .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
             .without_env("LOCALAPPDATA")
             .without_env("APPDATA")
             .with_env("HARNESS_TEST_KEY", "private-fixture-token");
         if permission == "stored" {
             let data = root.path().join("data");
-            harness_core::auth::CredentialStore::new(data.join("harness")).save(
+            harness_core::auth::CredentialStore::new(data.clone()).save(
                 &harness_core::auth::StoredCredential::api_key(
                     harness_core::auth::ProviderId::parse("local").ok_or("provider id")?,
                     "private-fixture-token",
                     "2026-09-26T00:00:00Z",
                 ),
             )?;
-            deps = deps.with_env("HARNESS_DATA_HOME", data.to_str().ok_or("data path")?);
+            deps = deps.with_env("HARNESS_HOME", data.to_str().ok_or("data path")?);
         }
         let server = std::thread::spawn(move || serve_provider(listener, permission == "stored"));
         let (mut input, mut stdout, mut stderr) = (Cursor::new(Vec::new()), Vec::new(), Vec::new());
@@ -108,11 +104,9 @@ fn configured_http_prompt_runs_tools_under_coordinator_policy(
                 "Finished after the tool result. [REDACTED]"
             }
         );
-        let sessions = harness_core::storage_paths::ProjectPaths::new(
-            &root.path().join("data/harness"),
-            root.path(),
-        )?
-        .sessions_dir();
+        let sessions =
+            harness_core::storage_paths::ProjectPaths::new(&root.path().join("data"), root.path())?
+                .sessions_dir();
         let run = fs::read_dir(sessions)?
             .next()
             .ok_or("session missing")??
@@ -171,10 +165,7 @@ async fn prompt_commits_before_completion_and_replay_never_calls_the_provider(
     ]]));
     let deps = CliDeps::real()
         .with_current_dir(root.path().into())
-        .with_env(
-            "HARNESS_DATA_HOME",
-            root.path().join("data").to_string_lossy(),
-        )
+        .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
         .with_provider_override(Arc::clone(&provider) as Arc<dyn harness_providers::Provider>);
     let mut input = Cursor::new(Vec::<u8>::new());
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());

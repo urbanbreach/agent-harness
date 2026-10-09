@@ -16,10 +16,7 @@ fn inspection_is_offline_redacted_and_reports_unknown_model_limits(
     }).to_string())?;
     let deps = CliDeps::real()
         .with_current_dir(root.path().into())
-        .with_env(
-            "HARNESS_DATA_HOME",
-            root.path().join("data").to_string_lossy(),
-        )
+        .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
         .with_env("INSPECTION_KEY", "opaque-inspection-token");
     for args in [
         vec!["doctor", "--json"],
@@ -81,7 +78,7 @@ fn inspection_is_offline_redacted_and_reports_unknown_model_limits(
         ["harness", "--config", "fixture.json", "doctor", "--json"],
         &mut CliIo::new(&mut input, &mut output, &mut errors),
         deps.with_env(
-            "HARNESS_DATA_HOME",
+            "HARNESS_HOME",
             root.path().join("empty-data").to_str().ok_or("data path")?,
         ),
     );
@@ -124,10 +121,7 @@ fn catalog_generation_filters_models_and_preserves_output_after_invalid_input(
             &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
             CliDeps::real()
                 .with_current_dir(root.path().into())
-                .with_env(
-                    "HARNESS_DATA_HOME",
-                    root.path().join("data").to_string_lossy(),
-                ),
+                .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy()),
         );
         assert_eq!(
             result.code == 0,
@@ -154,7 +148,7 @@ fn catalog_generation_filters_models_and_preserves_output_after_invalid_input(
 fn config_commands_explain_layer_precedence_without_writes_or_secret_output(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let root = tempfile::tempdir()?;
-    let global = root.path().join("xdg/harness");
+    let global = root.path().join("home");
     let project = root.path().join("project");
     fs::create_dir_all(&global)?;
     fs::create_dir(&project)?;
@@ -172,14 +166,7 @@ fn config_commands_explain_layer_precedence_without_writes_or_secret_output(
     )?;
     let deps = CliDeps::real()
         .with_current_dir(project.clone())
-        .with_env(
-            "HARNESS_DATA_HOME",
-            root.path().join("data").to_string_lossy(),
-        )
-        .with_env(
-            "XDG_CONFIG_HOME",
-            root.path().join("xdg").to_str().ok_or("xdg path")?,
-        )
+        .with_env("HARNESS_HOME", global.to_string_lossy())
         .with_env(
             "HARNESS_CONFIG_CONTENT",
             "{runtime:{compaction:{fallbackInputTokens:16384}}}",
@@ -242,5 +229,79 @@ fn config_commands_explain_layer_precedence_without_writes_or_secret_output(
     assert_ne!(result.code, 0);
     assert!(output.is_empty());
     assert_eq!(fs::read_dir(&project)?.count(), 2);
+    Ok(())
+}
+
+#[test]
+fn config_commands_use_defaults_without_files_and_report_search_candidates(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let root = tempfile::tempdir()?;
+    let project = root.path().join("project");
+    let home = root.path().join("home");
+    fs::create_dir_all(project.join(".git"))?;
+    let deps = CliDeps::real()
+        .with_current_dir(project.clone())
+        .with_env("HOME", home.to_string_lossy())
+        .without_env("HARNESS_HOME")
+        .without_env("HARNESS_CONFIG")
+        .without_env("HARNESS_CONFIG_CONTENT")
+        .without_env("HARNESS_TUI_CONFIG");
+    for args in [
+        vec!["validate"],
+        vec!["sources"],
+        vec!["show", "--effective"],
+        vec!["explain", "runtime.yolo"],
+    ] {
+        let (mut input, mut output, mut errors) = (Cursor::new(Vec::new()), Vec::new(), Vec::new());
+        let result = run(
+            ["harness", "config"].into_iter().chain(args.clone()),
+            &mut CliIo::new(&mut input, &mut output, &mut errors),
+            deps.clone(),
+        );
+        assert_eq!(result.code, 0, "{}", String::from_utf8_lossy(&errors));
+        if args[0] == "validate" {
+            assert!(!output.is_empty());
+            continue;
+        }
+        let report: Value = serde_json::from_slice(&output)?;
+        assert_eq!(report.get("primary_path"), Some(&Value::Null));
+        match args[0] {
+            "sources" => {
+                assert_eq!(report["layer_count"], 0);
+                assert_eq!(report["layers"], json!([]));
+                let searched = report["searched"]
+                    .as_array()
+                    .ok_or("searched paths missing")?;
+                assert_eq!(
+                    searched,
+                    &vec![
+                        json!(home.join(".harness/harness.jsonc")),
+                        json!(home.join(".harness/harness.json")),
+                        json!(project.join("harness.jsonc")),
+                        json!(project.join("harness.json")),
+                        json!(project.join(".harness/harness.jsonc")),
+                        json!(project.join(".harness/harness.json")),
+                    ]
+                );
+                assert!(report["note"].as_str().is_some_and(|note| !note.is_empty()));
+            }
+            "explain" => {
+                assert_eq!(report["found"], true);
+                assert_eq!(report["effective"], false);
+                assert_eq!(report["source_path"], Value::Null);
+            }
+            _ => {}
+        }
+    }
+    let (mut input, mut output, mut errors) = (Cursor::new(Vec::new()), Vec::new(), Vec::new());
+    let result = run(
+        ["harness", "--config", "missing.jsonc", "config", "validate"],
+        &mut CliIo::new(&mut input, &mut output, &mut errors),
+        deps,
+    );
+    assert_ne!(result.code, 0);
+    assert!(output.is_empty());
+    assert_eq!(fs::read_dir(&project)?.count(), 1);
+    assert!(!home.join(".harness").exists());
     Ok(())
 }

@@ -65,7 +65,7 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
     send_bytes(helper.writer.as_mut(), b"view plan").unwrap_or_abort();
     helper.wait_for("View Plan");
     send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
-    helper.wait_for("../data/harness/projects/");
+    helper.wait_for("../data/projects/");
     helper.wait_for("saved");
     let plan_list = helper.screen_text();
     assert!(
@@ -961,13 +961,10 @@ fn spawn_helper_with_motion(
     std::fs::create_dir(&project).unwrap_or_abort();
     command.cwd(&project);
     command.env("HOME", workspace.path());
-    command.env("XDG_CONFIG_HOME", workspace.path().join("config"));
-    command.env("HARNESS_DATA_HOME", "../data");
-    command.env("XDG_DATA_HOME", workspace.path().join("data"));
-    command.env("XDG_CACHE_HOME", workspace.path().join("cache"));
+    command.env("HARNESS_HOME", "../data");
     if scenario == TYPE_FIRST_STARTUP_SCENARIO {
         let runtime = harness_core::storage_paths::ProjectPaths::new(
-            &workspace.path().join("data/harness"),
+            &workspace.path().join("data"),
             &project,
         )
         .unwrap_or_abort()

@@ -4,7 +4,7 @@ use super::*;
 async fn skill_approval_and_metadata_cannot_grant_a_child_denied_write(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    let skill = temp.path().join(".agent-harness/skills/review");
+    let skill = temp.path().join(".harness/skills/review");
     std::fs::create_dir_all(&skill)?;
     std::fs::write(
         skill.join("SKILL.md"),

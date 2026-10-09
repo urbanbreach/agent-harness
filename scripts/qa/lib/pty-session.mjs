@@ -38,7 +38,7 @@ export function spawnHarnessPty(settings) {
   const stderr = [];
   const shellCommand = `stty cols ${settings.cols} rows ${settings.rows}; exec ${settings.command}`;
   const environment = safePtyEnvironment(process.env, {
-    HARNESS_DATA_HOME: join(settings.tempRoot, "data"),
+    HARNESS_HOME: join(settings.tempRoot, "harness-home"),
     HARNESS_DETERMINISTIC: "1",
     HARNESS_QA_SESSION_DIR: settings.sessionDir,
     HARNESS_SEED: "42",

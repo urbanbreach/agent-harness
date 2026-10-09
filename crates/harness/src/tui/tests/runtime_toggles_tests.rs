@@ -10,7 +10,7 @@ fn runtime_toggles_report_compact_skill_catalog_states() {
         ("ready-skill", "READY SKILL BODY SENTINEL"),
         ("disabled-skill", "DISABLED SKILL BODY SENTINEL"),
     ] {
-        let skill_dir = workspace.path().join(".agent-harness/skills").join(name);
+        let skill_dir = workspace.path().join(".harness/skills").join(name);
         fs::create_dir_all(&skill_dir).unwrap_or_abort();
         fs::write(
             skill_dir.join("SKILL.md"),
@@ -38,10 +38,10 @@ fn runtime_toggles_report_compact_skill_catalog_states() {
             }
           },
           permissions: { defaults: { edit: "allow", shell: "allow", network: "allow" } },
-          runtime: { session_dir: ".agent-harness/sessions" },
+          runtime: { session_dir: ".harness/sessions" },
           integrations: { remote_search: { endpoint: "https://mcp.exa.ai/mcp" } },
           skills: {
-            project_roots: [".agent-harness/skills"],
+            project_roots: [".harness/skills"],
             global_roots: [],
             disabled: ["disabled-skill"]
           }

@@ -100,10 +100,7 @@ async fn prompt_streams_before_completion_without_exposing_split_credentials(
             &mut CliIo::new(&mut input, &mut output, &mut stderr),
             CliDeps::real()
                 .with_current_dir(root.path().into())
-                .with_env(
-                    "HARNESS_DATA_HOME",
-                    root.path().join("data").to_string_lossy(),
-                )
+                .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
                 .with_provider_override(Arc::new(Streaming(ready))),
         );
         assert_eq!(result.code, 0, "{}", String::from_utf8_lossy(&stderr));
@@ -132,11 +129,8 @@ async fn prompt_streams_before_completion_without_exposing_split_credentials(
             assert!(events.iter().any(|e| matches!(e, RuntimeEvent::Durable(e) if matches!(e.payload, EventV1::AssistantMessageFinished(_)))));
         }
         let session = std::fs::read_dir(
-            harness_core::storage_paths::ProjectPaths::new(
-                &root.path().join("data/harness"),
-                root.path(),
-            )?
-            .sessions_dir(),
+            harness_core::storage_paths::ProjectPaths::new(&root.path().join("data"), root.path())?
+                .sessions_dir(),
         )?
         .next()
         .ok_or("session missing")??

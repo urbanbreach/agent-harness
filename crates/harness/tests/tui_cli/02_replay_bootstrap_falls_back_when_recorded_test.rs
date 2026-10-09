@@ -257,8 +257,7 @@ fn tui_mock_mode_still_boots_through_launcher() -> Result<(), Box<dyn std::error
         .env_remove("HARNESS_CONFIG")
         .env_remove("HARNESS_TUI_CONFIG")
         .env("HOME", temp.path())
-        .env("XDG_CONFIG_HOME", temp.path().join("config"))
-        .env("HARNESS_DATA_HOME", temp.path().join("data"))
+        .env("HARNESS_HOME", temp.path().join("data"))
         .env("HARNESS_TUI_PROFILE_LOG", &profile)
         .stdin(std::process::Stdio::null())
         .output()?;

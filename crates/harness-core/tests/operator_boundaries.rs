@@ -48,7 +48,7 @@ fn graph_queries_are_read_only_and_rebuilt_indexes_replace_stale_symbols(
     )?;
     let (path, index) = build_persistent_graph_index(temp.path(), runtime.path())?;
     assert_eq!(index.symbols.len(), 2);
-    assert!(!temp.path().join(".agent-harness").exists());
+    assert!(!temp.path().join(".harness").exists());
     assert!(detect_persistent_graph(runtime.path()).is_available());
     let batch = query_persistent_graph_batch(
         runtime.path(),

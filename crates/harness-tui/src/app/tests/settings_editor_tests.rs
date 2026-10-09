@@ -95,7 +95,7 @@ pub(super) fn settings_editor_toggles_hashline_edit_persists_and_reloads() {
       "stale_timeout_ms": 15000,
       "message_staleness_timeout_ms": 5000
     },
-    "session_dir": ".agent-harness/sessions",
+    "session_dir": ".harness/sessions",
     "deterministic": { "enabled": false, "seed": 42 }
   },
   "integrations": {
@@ -230,7 +230,7 @@ pub(super) fn settings_editor_toggles_compaction_enabled_persists_and_reloads() 
       "stale_timeout_ms": 15000,
       "message_staleness_timeout_ms": 5000
     },
-    "session_dir": ".agent-harness/sessions",
+    "session_dir": ".harness/sessions",
     "deterministic": { "enabled": false, "seed": 42 }
   },
   "integrations": {
@@ -306,7 +306,7 @@ pub(super) fn settings_editor_toggles_compaction_auto_retry_overflow_persists_an
       "stale_timeout_ms": 15000,
       "message_staleness_timeout_ms": 5000
     },
-    "session_dir": ".agent-harness/sessions",
+    "session_dir": ".harness/sessions",
     "deterministic": { "enabled": false, "seed": 42 }
   },
   "integrations": {
@@ -429,7 +429,7 @@ pub(super) fn settings_editor_toggles_deterministic_enabled_persists_and_reloads
       "stale_timeout_ms": 15000,
       "message_staleness_timeout_ms": 5000
     },
-    "session_dir": ".agent-harness/sessions",
+    "session_dir": ".harness/sessions",
     "deterministic": { "enabled": false, "seed": 42 }
   },
   "integrations": {
@@ -498,7 +498,7 @@ pub(super) fn settings_editor_toggles_compaction_structured_summary_contract_per
       "stale_timeout_ms": 15000,
       "message_staleness_timeout_ms": 5000
     },
-    "session_dir": ".agent-harness/sessions",
+    "session_dir": ".harness/sessions",
     "deterministic": { "enabled": false, "seed": 42 }
   },
   "integrations": {
@@ -567,7 +567,7 @@ pub(super) fn settings_editor_toggles_compaction_estimated_token_triggers_persis
       "stale_timeout_ms": 15000,
       "message_staleness_timeout_ms": 5000
     },
-    "session_dir": ".agent-harness/sessions",
+    "session_dir": ".harness/sessions",
     "deterministic": { "enabled": false, "seed": 42 }
   },
   "integrations": {
@@ -641,7 +641,7 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
       "stale_timeout_ms": 15000,
       "message_staleness_timeout_ms": 5000
     },
-    "session_dir": ".agent-harness/sessions",
+    "session_dir": ".harness/sessions",
     "deterministic": { "enabled": false, "seed": 42 },
     "compaction": { "enabled": true }
   },

@@ -57,7 +57,7 @@ defaults! {
         lsp: Some(PermissionMode::Allow), read: Some(PermissionMode::Allow), external_directory: Some(PermissionMode::Ask), doom_loop: Some(PermissionMode::Ask)
     }
     PermissionsConfig { defaults: PermissionDefaultsConfig::default(), fallback: None, rules: default_permission_rule_set_with_read_env(), shell_allowlist: ShellAllowlist::default() }
-    SkillsConfig { project_roots: vec![".agent-harness/skills".into(), ".harness/skills".into()], global_roots: vec!["~/.config/agent-harness/skills".into()], urls: Vec::new(), disabled: Vec::new(), walk_to_git_root: true, permissions: BTreeMap::new() }
+    SkillsConfig { project_roots: vec![".harness/skills".into(), ".agents/skills".into()], global_roots: vec!["~/.harness/skills".into(), "~/.agents/skills".into()], urls: Vec::new(), disabled: Vec::new(), walk_to_git_root: true, permissions: BTreeMap::new() }
     LifecycleHookConfig { id: None, event: HookLifecycleEvent::ToolCallStarted, command: Vec::new(), cwd: None, timeout_ms: 5_000, critical: false, env: BTreeMap::new() }
     FormatterConfig { enabled: true, experimental_oxfmt: false, overrides: BTreeMap::new() }
     RemoteSearchConfig { endpoint: "https://mcp.exa.ai/mcp".into(), auth_token: None, require_auth: false, timeout_secs: 30, max_retries: 1, retry_backoff_ms: 250 }

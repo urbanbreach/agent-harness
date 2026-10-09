@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{perm::*, store, tool::ToolCapability};
 use std::path::Path;
-pub(super) const GRANTS_FILE: &str = ".agent-harness/permission-grants.json";
+pub(super) const GRANTS_FILE: &str = ".harness/permission-grants.json";
 const MAX_GRANTS: usize = 4096;
 
 pub(super) fn can_auto_approve(permission: &str, path: &Path) -> bool {

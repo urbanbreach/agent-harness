@@ -8,14 +8,11 @@ fn memory_commands_keep_reads_empty_and_scope_redacted_writes_to_the_requested_w
     let root = tempfile::tempdir()?;
     let selected = root.path().join("selected");
     fs::create_dir(&selected)?;
-    let data = root.path().join("data/harness");
+    let data = root.path().join("data");
     let runtime = harness_core::storage_paths::ProjectPaths::new(&data, &selected)?.runtime_dir();
     let deps = CliDeps::real()
         .with_current_dir(root.path().into())
-        .with_env(
-            "HARNESS_DATA_HOME",
-            root.path().join("data").to_string_lossy(),
-        );
+        .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy());
     for action in [
         vec!["list"],
         vec!["put", "preference", "Use tabs. api_key=private-value"],
@@ -36,13 +33,13 @@ fn memory_commands_keep_reads_empty_and_scope_redacted_writes_to_the_requested_w
         let json: Value = serde_json::from_str(&text)?;
         if action[0] == "list" {
             assert_eq!(json["entries"].as_array().map(Vec::len), Some(0));
-            assert!(!selected.join(".agent-harness").exists());
+            assert!(!selected.join(".harness").exists());
         } else {
             assert!(text.contains("Use tabs."));
             assert!(text.contains("[REDACTED]"));
         }
-        assert!(!root.path().join(".agent-harness").exists());
-        assert!(!selected.join(".agent-harness").exists());
+        assert!(!root.path().join(".harness").exists());
+        assert!(!selected.join(".harness").exists());
     }
     let stored = runtime.join("memory/entries.json");
     assert!(!fs::read_to_string(stored)?.contains("private-value"));
@@ -57,11 +54,9 @@ fn graph_commands_report_missing_indexes_and_query_the_selected_workspace(
         root.path().join("sample.rs"),
         "pub fn entry() {\n    helper();\n}\npub fn helper() {}\n",
     )?;
-    let runtime = harness_core::storage_paths::ProjectPaths::new(
-        &root.path().join("data/harness"),
-        root.path(),
-    )?
-    .runtime_dir();
+    let runtime =
+        harness_core::storage_paths::ProjectPaths::new(&root.path().join("data"), root.path())?
+            .runtime_dir();
     let index = runtime.join(harness_core::code_graph::GRAPH_INDEX_FILE);
     for (args, succeeds) in [
         (vec!["query", "helper"], false),
@@ -74,10 +69,7 @@ fn graph_commands_report_missing_indexes_and_query_the_selected_workspace(
             &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
             CliDeps::real()
                 .with_current_dir(root.path().into())
-                .with_env(
-                    "HARNESS_DATA_HOME",
-                    root.path().join("data").to_string_lossy(),
-                ),
+                .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy()),
         );
         assert_eq!(
             result.code == 0,
@@ -95,7 +87,7 @@ fn graph_commands_report_missing_indexes_and_query_the_selected_workspace(
         } else {
             assert_eq!(report["symbol_count"], 2);
         }
-        assert!(!root.path().join(".agent-harness").exists());
+        assert!(!root.path().join(".harness").exists());
     }
     Ok(())
 }

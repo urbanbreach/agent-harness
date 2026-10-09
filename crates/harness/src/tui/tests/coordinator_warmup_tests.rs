@@ -39,7 +39,7 @@ fn live_coordinator_config_warmup_reuses_interactive_config() {
               stale_timeout_ms: 15000,
               message_staleness_timeout_ms: 5000
             },
-            session_dir: ".agent-harness/sessions"
+            session_dir: ".harness/sessions"
           },
         }
         "#,

@@ -110,15 +110,8 @@ print('batch complete');"#
             &mut CliIo::new(&mut input, &mut stdout, &mut stderr),
             CliDeps::real()
                 .with_current_dir(root.path().into())
-                .with_env(
-                    "HARNESS_DATA_HOME",
-                    root.path().join("data").to_string_lossy(),
-                )
+                .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
                 .without_env("HOME")
-                .with_env(
-                    "XDG_CONFIG_HOME",
-                    root.path().join("user").to_string_lossy(),
-                )
                 .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),
         );
         assert_eq!(result.code, 0, "{}", String::from_utf8_lossy(&stderr));

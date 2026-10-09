@@ -19,7 +19,7 @@ pub(super) fn configure(
     let mut directories: Vec<_> = crate::config::search_roots(root)
         .into_iter()
         .rev()
-        .map(|path| path.join(".agent-harness/prompts"))
+        .map(|path| path.join(".harness/prompts"))
         .collect();
     directories.extend(source.user_prompt_dir.iter().cloned());
     environment.set_loader(move |name| {

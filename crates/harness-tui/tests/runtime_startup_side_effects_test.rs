@@ -1,7 +1,7 @@
 //! Regression test: production TUI startup must not write synthetic probe artifacts
 //! to the workspace.
 //!
-//! `seed_operator_host_probes` writes `harness.json`, `.agent-harness/plans/`,
+//! `seed_operator_host_probes` writes `harness.json`, `.harness/plans/`,
 //! `.harness-cow-probe/`, `.harness-sessions-probe/`, `.harness-foreign-probe-root/`,
 //! `.jj/`, cron journals, team mailboxes, plugins, code graph fixtures, and
 //! edit-attribution data. These are test/diagnostic fixtures and must never be
@@ -23,7 +23,7 @@ use tempfile::TempDir;
 /// Retained as documentation of the concrete artifacts that must never appear.
 const PROBE_ARTIFACT_RELATIVE_PATHS: &[&str] = &[
     "harness.json",
-    ".agent-harness/plans",
+    ".harness/plans",
     ".harness-cow-probe",
     ".harness-sessions-probe",
     ".harness-foreign-probe-root",

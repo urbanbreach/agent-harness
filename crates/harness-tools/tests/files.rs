@@ -245,13 +245,13 @@ async fn file_edits_require_current_reads_and_obey_external_path_policy(
                 actor(),
                 None,
                 "write",
-                json!({"path":".agent-harness/permission-grants.json","content":"{}"})
+                json!({"path":".harness/permission-grants.json","content":"{}"})
             )
             .await
             .is_err(),
         "tools must not rewrite their persistent permissions"
     );
-    assert!(!root.join(".agent-harness/permission-grants.json").exists());
+    assert!(!root.join(".harness/permission-grants.json").exists());
     let edit = || json!({"filePath":"sample.txt", "oldString":"alpha", "newString":"gamma"});
     assert!(coordinator
         .execute_agent_tool_call(actor(), None, "edit", edit())

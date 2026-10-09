@@ -109,7 +109,7 @@ fn scan(
                             | "target"
                             | "node_modules"
                             | "__pycache__"
-                            | ".agent-harness"
+                            | ".harness"
                     )
                 )
         });

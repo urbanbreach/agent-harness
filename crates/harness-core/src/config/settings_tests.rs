@@ -117,7 +117,7 @@ fn settings_writes_validate_before_commit_and_keep_raw_references(
     assert_eq!(parsed.keybindings["copy_selection"], "ctrl+y");
     let context = ConfigDiscoveryContext {
         current_dir: temp.path().into(),
-        xdg_config_home: None,
+        harness_home: None,
         home: None,
         data_dir: Some(temp.path().join("data/harness")),
         runtime_config_path: None,

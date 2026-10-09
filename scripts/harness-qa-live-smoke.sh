@@ -182,16 +182,16 @@ log_cmd() {
   } >>"${commands_log}"
 }
 
-# Isolation: session-dir must stay under evidence or /tmp; never $HOME/.config/harness.
-config_harness_home="${HOME}/.config/harness"
+# Isolation: session-dir must stay under evidence or /tmp, outside the Harness home.
+harness_home="${HARNESS_HOME:-${HOME}/.harness}"
 {
   printf 'repo_root=%s\n' "${repo_root}"
   printf 'evidence_dir=%s\n' "${evidence_dir}"
   printf 'session_dir=%s\n' "${session_dir}"
   printf 'config_path=%s\n' "${config_path}"
-  printf 'config_harness_home=%s\n' "${config_harness_home}"
+  printf 'harness_home=%s\n' "${harness_home}"
   printf 'isolation_rule=session-dir must be under evidence_dir or /tmp\n'
-  printf 'isolation_rule=must not write into $HOME/.config/harness\n'
+  printf 'isolation_rule=session-dir must be outside harness_home\n'
 } >"${isolation_receipt}"
 
 case "${session_dir}" in
@@ -205,12 +205,12 @@ case "${session_dir}" in
     ;;
 esac
 
-if [[ "${session_dir}" == "${config_harness_home}"/* || "${session_dir}" == "${config_harness_home}" ]]; then
-  printf 'config_harness_untouched=false\n' >>"${isolation_receipt}"
-  printf 'Isolation failure: session-dir points at %s\n' "${config_harness_home}" >&2
+if [[ "${session_dir}" == "${harness_home}"/* || "${session_dir}" == "${harness_home}" ]]; then
+  printf 'session_dir_outside_harness_home=false\n' >>"${isolation_receipt}"
+  printf 'Isolation failure: session-dir points at %s\n' "${harness_home}" >&2
   exit 1
 fi
-printf 'config_harness_untouched=true\n' >>"${isolation_receipt}"
+printf 'session_dir_outside_harness_home=true\n' >>"${isolation_receipt}"
 
 cd "${repo_root}"
 

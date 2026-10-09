@@ -6,15 +6,10 @@ be rebuilt; they cannot authorize provider or tool work.
 
 ## Storage layout
 
-The CLI stores generated data outside the project. The data directory is the
-first available location in this order:
-
-1. `$HARNESS_DATA_HOME/harness`
-2. `$XDG_DATA_HOME/harness`
-3. `$HOME/.local/share/harness`
-
-Empty environment values are ignored. These locations are separate from the
-XDG configuration directory.
+The CLI stores generated data outside the project in the Harness home. A
+nonempty `HARNESS_HOME` is used as-is; otherwise the root is `$HOME/.harness`.
+The `<data-dir>` paths below refer to this root, which also holds personal
+runtime and keyboard config, credentials, prompts, agents and skills.
 
 Each project uses a key derived from its canonical absolute path, so symlink
 aliases share storage. Remove one leading `/` or `\`, replace every `/`, `\`
@@ -29,14 +24,14 @@ and `:` with `-`, then wrap the result in `--`. For example, `/work/app` becomes
 
 Session metadata and artifacts stay with their run. Memory, the code index and
 edit attribution use the project runtime directory. Managed Git worktrees use
-the worktree directory. Authored agents, skills, prompts and configuration remain
-in the project, as do `.agent-harness/permission-grants.json` workspace grants.
+the worktree directory. Project-authored agents, skills, prompts and configuration
+remain in the project, as do `.harness/permission-grants.json` workspace grants.
 
 An empty `runtime.session_dir` selects the managed session directory automatically.
 A nonempty setting or `--session-dir` overrides only session storage; relative
 paths are still resolved against the selected project directory. Existing
-`.agent-harness/sessions` histories are not migrated or discovered automatically.
-Use `--session-dir <project>/.agent-harness/sessions` to access them explicitly.
+project-local session histories are not migrated or discovered automatically.
+Use `--session-dir <old-session-dir>` to access them explicitly.
 See [saved sessions](../operations/sessions.md) for command examples.
 
 ## Inspection

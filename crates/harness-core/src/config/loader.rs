@@ -12,6 +12,7 @@ pub fn load_config_from_file(path: &Path) -> Result<HarnessConfig, ConfigError> 
         &read_text(path)?,
         path.parent().unwrap_or(Path::new(".")),
         path.parent(),
+        None,
     )
 }
 pub fn load_config_from_file_with_context(
@@ -22,14 +23,20 @@ pub fn load_config_from_file_with_context(
         &read_text(path)?,
         path.parent().unwrap_or(Path::new(".")),
         Some(&context.discovery.current_dir),
+        context.discovery.data_dir.as_deref(),
     )
 }
-fn load(raw: &str, base: &Path, workspace: Option<&Path>) -> Result<HarnessConfig, ConfigError> {
+fn load(
+    raw: &str,
+    base: &Path,
+    workspace: Option<&Path>,
+    data_dir: Option<&Path>,
+) -> Result<HarnessConfig, ConfigError> {
     let mut instructions = Vec::new();
     let mut config = normalize::normalize(parse_layer(raw, base, &mut instructions)?)?;
     config.instruction_files = instructions;
     if let Some(workspace) = workspace {
-        instruction_files(&mut config, workspace)?;
+        instruction_files(&mut config, workspace, data_dir)?;
     }
     registries::register(&config)?;
     Ok(config)

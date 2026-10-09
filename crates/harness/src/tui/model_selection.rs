@@ -19,27 +19,17 @@ pub(super) struct PersistedModelSelection {
 }
 
 fn model_selection_state_path() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("HARNESS_MODEL_SELECTION_STATE_FILE") {
-        let path = PathBuf::from(path);
-        return (!path.as_os_str().is_empty()).then_some(path);
-    }
+    model_selection_state_path_from_lookup(&|name| std::env::var(name).ok())
+}
 
-    if let Some(state_home) = std::env::var_os("XDG_STATE_HOME") {
-        let state_home = PathBuf::from(state_home);
-        if !state_home.as_os_str().is_empty() {
-            return Some(state_home.join("harness").join(MODEL_SELECTION_STATE_FILE));
-        }
+pub(super) fn model_selection_state_path_from_lookup(
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Option<PathBuf> {
+    if let Some(path) = lookup("HARNESS_MODEL_SELECTION_STATE_FILE") {
+        return (!path.is_empty()).then(|| PathBuf::from(path));
     }
-
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .filter(|home| !home.as_os_str().is_empty())
-        .map(|home| {
-            home.join(".local")
-                .join("state")
-                .join("harness")
-                .join(MODEL_SELECTION_STATE_FILE)
-        })
+    harness_core::storage_paths::data_dir_from_lookup(lookup)
+        .map(|root| root.join(MODEL_SELECTION_STATE_FILE))
 }
 
 pub(super) fn load_persisted_model_selection_from_path(
@@ -132,8 +122,9 @@ fn persisted_model_selection_from_metadata(
 pub(super) fn apply_persisted_model_selection(
     launch_metadata: LaunchMetadata,
     config_digest: &str,
+    lookup: &dyn Fn(&str) -> Option<String>,
 ) -> LaunchMetadata {
-    let Some(path) = model_selection_state_path() else {
+    let Some(path) = model_selection_state_path_from_lookup(lookup) else {
         return launch_metadata;
     };
     apply_persisted_model_selection_from_path(launch_metadata, &path, config_digest)

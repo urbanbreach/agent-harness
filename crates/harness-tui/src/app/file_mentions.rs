@@ -21,7 +21,7 @@ use entries::{
 
 const ALWAYS_SKIPPED_DIRS: &[&str] = &[
     ".git",
-    ".agent-harness/sessions",
+    ".harness/sessions",
     "target",
     "node_modules",
     "dist",

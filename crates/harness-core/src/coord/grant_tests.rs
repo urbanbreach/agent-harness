@@ -117,9 +117,7 @@ async fn grants_match_exact_requests_and_respect_run_session_workspace_lifetimes
         coordinator.stop_run().await?;
         let baseline_count = count.load(Ordering::SeqCst);
         assert_eq!(
-            temp.path()
-                .join(".agent-harness/permission-grants.json")
-                .exists(),
+            temp.path().join(".harness/permission-grants.json").exists(),
             scope == PermissionGrantScope::Workspace
         );
 

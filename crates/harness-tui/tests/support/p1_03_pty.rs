@@ -9,6 +9,9 @@ pub(crate) fn run_helper() {
         return;
     }
 
+    harness_tui::app::set_pending_live_launch_metadata(
+        harness_tui::app::LaunchMetadata::from_model_ref("build", "mock:model-1"),
+    );
     let (_update_tx, update_rx) = harness_tui::live_update_channel();
     run_tui_with_options(TuiOptions {
         storage_data_dir: harness_core::storage_paths::data_dir_from_lookup(&|key| {

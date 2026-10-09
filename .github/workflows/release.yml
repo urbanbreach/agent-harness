@@ -116,8 +116,8 @@ jobs:
           work="$(mktemp -d)"
           mkdir "$work/project"
           git -C "$work/project" init -q
-          (cd "$work/project" && HARNESS_DATA_HOME="$work/data" "$bin" --mock run hello) | grep -qx 'Hello world'
-          test ! -e "$work/project/.agent-harness"
+          (cd "$work/project" && HARNESS_HOME="$work/harness-home" "$bin" --mock run hello) | grep -qx 'Hello world'
+          test ! -e "$work/project/.harness"
           # Run on a musl distribution too, with nothing else installed.
           docker run --rm -v "$bin:/usr/local/bin/harness:ro" alpine:3.22 harness --version
       - name: Package

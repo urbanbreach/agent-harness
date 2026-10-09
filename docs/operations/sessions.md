@@ -37,9 +37,8 @@ directory selected by `--cwd`, not the config file or data directory. Absolute
 directories are used as supplied. A session selector is its directory name or
 an explicit directory path.
 
-`<data-dir>` resolves to `$HARNESS_DATA_HOME/harness`, otherwise
-`$XDG_DATA_HOME/harness`, otherwise `$HOME/.local/share/harness`. Empty values are
-ignored. The project key encodes the canonical absolute project path,
+`<data-dir>` is a nonempty `HARNESS_HOME` used as-is, otherwise `$HOME/.harness`.
+The project key encodes the canonical absolute project path,
 so symlink aliases share a session bucket. See the exact
 [storage layout](../architecture/sessions-and-replay.md#storage-layout).
 
@@ -47,8 +46,8 @@ Old project-local sessions are left in place. There is no automatic migration or
 fallback scan; select the old directory explicitly:
 
 ```bash
-harness sessions list --session-dir <project>/.agent-harness/sessions --json
-harness sessions continue RUN_ID --session-dir <project>/.agent-harness/sessions
+harness sessions list --session-dir <old-session-dir> --json
+harness sessions continue RUN_ID --session-dir <old-session-dir>
 ```
 
 ```bash
