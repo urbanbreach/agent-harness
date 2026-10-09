@@ -108,7 +108,10 @@ pub(super) fn tool_entry(tool: &ProjectedToolCallPart) -> ToolCallEntry {
         args_digest: tool.args_digest.clone(),
         lifecycle_state: Some(lifecycle_state),
         status: display_status_for_tool_call(lifecycle_state, &permissions),
-        output_summary: tool.output_summary.clone(),
+        output_summary: tool
+            .output_summary
+            .as_deref()
+            .map(|text| without_trailing_reminders(text).to_owned()),
         output_digest: tool.output_digest.clone(),
         output_json: tool.output_json.clone(),
         truncated_output: None,
@@ -133,6 +136,26 @@ pub(super) fn tool_entry(tool: &ProjectedToolCallPart) -> ToolCallEntry {
         first_timestamp: None,
         last_timestamp: None,
     }
+}
+
+/// The coordinator appends `<system-reminder>` blocks (for example background
+/// completions) to a tool's output for the model. They are not tool output, so the
+/// transcript drops them. Each block starts at the output's start or after a blank
+/// line; scanning back to the last such opener never cuts real output.
+fn without_trailing_reminders(text: &str) -> &str {
+    const OPEN: &str = "<system-reminder>\n";
+    let mut kept = text;
+    while kept.trim_end().ends_with("\n</system-reminder>") {
+        let Some(start) = kept
+            .rmatch_indices(OPEN)
+            .map(|(start, _)| start)
+            .find(|&start| start == 0 || kept[..start].ends_with("\n\n"))
+        else {
+            break;
+        };
+        kept = kept[..start].trim_end();
+    }
+    kept
 }
 
 const fn tool_lifecycle(state: ProjectedToolCallState) -> ToolCallLifecycleState {
