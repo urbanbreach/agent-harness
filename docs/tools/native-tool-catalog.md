@@ -81,6 +81,12 @@ Successful tool results are the stored state. Resume and rewind follow those
 journal records; no separate todo file needs synchronization. Reads scan the
 journal and retain only todo versions needed to resolve rewinds.
 
+In the TUI, a live update that leaves pending or in-progress items opens the
+todo pane above the transcript without taking focus. A pane opened this way
+closes again once no item is open. `toggle_todos` (`Ctrl+t` by default) shows,
+focuses, or hides it. After you hide it, later updates leave it closed until you
+open it again.
+
 ## Delegation and MCP
 
 `spawn_subagent` requires `prompt` and `description`, defaults to the
