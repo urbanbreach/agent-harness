@@ -154,16 +154,15 @@ async fn tool(session: &Inner, cell: &Cell, name: &str, args: Value) -> Result<V
     if name == "eval" {
         return Err("recursive eval is not allowed".into());
     }
-    let descriptor = cell
+    if !cell
         .tools
         .lock()
         .await
         .as_array()
         .into_iter()
         .flatten()
-        .find(|tool| tool["name"] == name)
-        .cloned();
-    if descriptor.is_none() {
+        .any(|tool| tool["name"] == name)
+    {
         return Err(
             format!("unknown tool {name:?}; use tool_schema() to list available tools").into(),
         );
@@ -212,15 +211,7 @@ async fn tool(session: &Inner, cell: &Cell, name: &str, args: Value) -> Result<V
         }
     }
     cell.state.lock().await.tool_calls.finish(index, summary);
-    result.map_err(|error| {
-        format!(
-            "{error}\nTool {name} parameters: {}",
-            descriptor
-                .as_ref()
-                .map_or(&Value::Null, |tool| &tool["parameters"])
-        )
-        .into()
-    })
+    result.map_err(|error| format!("{error}\n(see tool_schema({name:?}) for parameters)").into())
 }
 
 fn marshal(result: &Value) -> Value {
