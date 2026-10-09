@@ -1,120 +1,30 @@
 {
-  "$schema": "./config.json",
+  "$schema": "https://github.com/urbanbreach/agent-harness/releases/latest/download/harness.schema.json",
 
-  // Provider and model catalog. Most projects only need one provider and one
-  // default model here; keep larger catalogs in provider-catalog.reference.jsonc.
-  "provider": {
-    "openai-codex": {
-      "type": "openai_compatible",
-      "name": "OpenAI Codex",
-      "options": {
-        "authProvider": "codex",
-        "baseURL": "https://api.openai.com/v1",
-        "apiKeyEnv": ["OPENAI_API_KEY"],
-        "timeoutMs": 1800000,
-        // Prompt-cache routing posture for OpenAI-compatible providers:
-        // "short" (default) sends a stable per-session prompt_cache_key,
-        // "long" adds provider-supported long retention only for direct OpenAI,
-        // and "none" omits cache-affinity fields.
-        "cacheRetention": "short"
-      },
-      "models": {
-        "gpt-6.1-sol": {
-          "name": "GPT 6.1 Sol",
-          "metadata": { "supportsToolCalls": true, "supportsReasoningSummaries": true },
-          "limit": { "context": 1050000, "input": 288384, "output": 128000 },
-          "modalities": { "input": ["text", "image"], "output": ["text"] },
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } },
-            "max": { "name": "Max", "metadata": { "reasoningEffort": "max" } }
-          }
-        },
-        "gpt-6-astra": {
-          "name": "GPT 6 Astra",
-          "metadata": { "family": "gpt-astra", "supportsToolCalls": true, "supportsReasoningSummaries": true },
-          "limit": { "context": 1050000, "input": 288384, "output": 128000 },
-          "modalities": { "input": ["text", "image"], "output": ["text"] },
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low", "textVerbosity": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium", "textVerbosity": "low" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high", "textVerbosity": "low" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh", "textVerbosity": "low" } },
-            "max": { "name": "Max", "metadata": { "reasoningEffort": "max", "textVerbosity": "low" } }
-          }
-        },
-        "gpt-5.5": {
-          "name": "GPT 5.5",
-          "metadata": { "supportsToolCalls": true },
-          "limit": { "context": 272000, "input": 272000, "output": 128000 },
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": { "name": "Medium", "metadata": { "reasoningEffort": "medium" } },
-            "high": { "name": "High", "metadata": { "reasoningEffort": "high" } },
-            "xhigh": { "name": "XHigh", "metadata": { "reasoningEffort": "xhigh" } }
-          }
-        },
-      }
-    }
+  // Optional personal defaults for ~/.harness/harness.jsonc.
+  // First sign-in creates a minimal config if none exists; it never overwrites it.
+  // No config is needed to start: run harness and use /login.
+  // Choose a connected provider/model only if you want to pin the default.
+  // "model": "anthropic/claude-sonnet-4-6",
+
+  // Ask before changing files. Other permissions keep their built-in defaults.
+  "permission": {
+    "edit": "ask"
   },
 
-  // Active default model. Use provider/model, optionally provider/model/variant.
-  "model": "openai-codex/gpt-6-astra",
-
-  // The default handles interactive turns. The bundled task, scout, reviewer,
-  // security-reviewer, and sonic agents are available through spawn_subagent.
-  "agent": {
-    "default": { "variant": "high" }
-  },
-
-  // Harness-aligned allow-by-default. A scalar applies to all supported tool
-  // permissions; switch to an object for per-tool pattern rules. Last matching
-  // pattern wins; catch-all deny (pattern "*") hides that
-  // tool from the model tool list. When permission is omitted, ordinary tools
-  // still default to allow while external_directory / doom_loop stay ask and
-  // read keeps .env pattern asks.
-  "permission": "allow",
-  // "permission": {
-  //   "edit": "allow",
-  //   "bash": {
-  //     "git *": "allow",
-  //     "cargo test*": "ask",
-  //     "*": "deny"
-  //   },
-  //   "webfetch": "allow",
-  //   "task": "allow",
-  //   "shell_allowlist": {
-  //     "mode": "permission_patterns",
-  //     "cwd_roots": ["."]
+  // Custom OpenAI-compatible endpoint. Defining any provider makes the catalog
+  // curated: only configured providers plus signed-in Codex, GitHub Copilot and
+  // Claude subscription are included. Without provider entries, stored
+  // credentials and provider API key environment variables are discovered
+  // automatically.
+  // "provider": {
+  //   "local": {
+  //     "type": "openai_compatible",
+  //     "options": {
+  //       "baseURL": "http://localhost:1234/v1",
+  //       "apiKeyEnv": ["LOCAL_API_KEY"]
+  //     },
+  //     "models": { "my-model": {} }
   //   }
   // },
-
-  // Optional auto-formatters applied after successful file edits.
-  // Use `formatter: false` to disable; omit the key to enable all 26 built-in
-  // formatters by default. Entries are keyed by formatter name, not extension.
-  // Matching formatters run in built-in registry declaration order.
-  "formatter": {
-    "enabled": true,
-    "experimentalOxfmt": false,
-    "rustfmt": {},
-    "biome": { "disabled": true },
-    "prettier": { "environment": { "BUN_BE_BUN": "1" } }
-  },
-
-  // Optional MCP servers. Disabled entries stay documented but do not launch.
-  "mcp": {
-    "cargo-mcp": {
-      "transport": "stdio",
-      "command": ["cargo-mcp", "serve"],
-      "enabled": false
-    }
-  }
-
-  // Variable substitution examples (uncomment to use):
-  //   "{env:HOME}"             — expands to $HOME, empty string if unset
-  //   "${OPENAI_API_KEY}"      — expands to $OPENAI_API_KEY, errors if unset
-  //   "${OPENAI_API_KEY:-key}" — expands to $OPENAI_API_KEY, "key" if unset/empty
-  //   "{file:secrets/key.txt}" — expands to file contents (relative to config dir)
 }

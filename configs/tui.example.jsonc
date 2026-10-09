@@ -1,5 +1,5 @@
 {
-  "$schema": "./tui.json",
+  "$schema": "https://github.com/urbanbreach/agent-harness/releases/latest/download/tui.schema.json",
   "keybinds": {
     "leader": "ctrl+x",
     "palette": "ctrl+p, <leader>p",

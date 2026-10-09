@@ -54,7 +54,9 @@ Release assets:
 | `harness-x86_64-unknown-linux-musl.tar.gz` | `harness`, `LICENSE`, `README.md`, `CHANGELOG.md` |
 | `harness-aarch64-unknown-linux-musl.tar.gz` | The same for 64-bit ARM |
 | `install.sh` | The installer (`scripts/install.sh`) |
-| `SHA256SUMS` | Checksums of the files above |
+| `harness.schema.json` | Runtime config schema (copy of `configs/config.json`) |
+| `tui.schema.json` | Keyboard config schema (copy of `configs/tui.json`) |
+| `SHA256SUMS` | Checksums of both archives, the installer, and both schemas |
 
 Asset names carry no version, so
 `https://github.com/urbanbreach/agent-harness/releases/latest/download/<asset>`

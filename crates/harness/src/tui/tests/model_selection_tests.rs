@@ -91,19 +91,6 @@ fn interactive_launch_metadata_exposes_catalog_for_default_profile() {
 }
 
 #[test]
-fn shipped_example_config_preserves_configured_model_variant() {
-    let config_path = crate::cli_config::shipped_example_config_path();
-    let config = harness_core::config::load_config_from_file(&config_path).unwrap_or_abort();
-
-    let agent_profiles = bootstrap::interactive_agent_profiles(&config).unwrap_or_abort();
-    let metadata =
-        interactive_launch_metadata(Some(&config), &agent_profiles, "default").unwrap_or_abort();
-
-    assert_eq!(metadata.profile(), "default");
-    assert_eq!(metadata.variant(), Some("high"));
-}
-
-#[test]
 fn persisted_model_selection_restores_valid_variant_for_active_profile() {
     let base = LaunchMetadata::from_model_option(&ModelOption {
         profile: "default".to_string(),

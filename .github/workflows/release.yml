@@ -156,8 +156,10 @@ jobs:
       - name: Checksums
         run: |
           cp scripts/install.sh dist/install.sh
+          cp configs/config.json dist/harness.schema.json
+          cp configs/tui.json dist/tui.schema.json
           cd dist
-          sha256sum harness-*.tar.gz install.sh > SHA256SUMS
+          sha256sum harness-*.tar.gz install.sh harness.schema.json tui.schema.json > SHA256SUMS
           sha256sum -c SHA256SUMS
           set -- harness-*.tar.gz
           test "$#" -eq 2
