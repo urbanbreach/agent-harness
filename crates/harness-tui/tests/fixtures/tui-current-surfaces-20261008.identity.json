@@ -2,18 +2,26 @@
   "binding": {
     "contract": "Reviewed 0.0.1 visual surface cutovers; unchanged inputs and intents",
     "frame_ids": [
+      "dialog-settings-40x24-reduced-0ms",
+      "selected-settings-40x24-reduced-0ms",
       "dashboard-details-40x24-reduced-0ms",
       "populated-view-plan-40x24-reduced-0ms",
+      "dialog-settings-80x24-reduced-0ms",
+      "selected-settings-80x24-reduced-0ms",
       "dashboard-details-80x24-reduced-0ms",
       "populated-view-plan-80x24-reduced-0ms",
+      "dialog-settings-120x40-reduced-0ms",
+      "selected-settings-120x40-reduced-0ms",
       "dashboard-details-120x40-reduced-0ms",
       "populated-view-plan-120x40-reduced-0ms",
+      "dialog-settings-160x50-reduced-0ms",
+      "selected-settings-160x50-reduced-0ms",
       "dashboard-details-160x50-reduced-0ms",
       "populated-view-plan-160x50-reduced-0ms"
     ],
     "original_base": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
     "original_fixture_sha256": "ae9cf00461889a0a8b254242f33e484ad1ebca401c4768f9cd33f801f38c16cf",
-    "settings_binding_sha256": "47664c0993b75001f3ea0c9f5732a9d0b523f4577f9dd7151abd36e4119cc151"
+    "settings_binding_sha256": "7ea979c21e8577e01e69d6835f915b5f0eaa93b60644bc7d5d67568eed632dc8"
   },
-  "fixture_sha256": "fe4b18896d78a84e29ea37344293ab635bc480d01bfdff1c2ef0553339714e89"
+  "fixture_sha256": "cb7fac57423d3ef02af6eeb7355915af7e9ea12a866f22af321f9922381ca7e7"
 }

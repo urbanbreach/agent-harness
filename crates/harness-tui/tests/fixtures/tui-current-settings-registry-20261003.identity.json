@@ -7,7 +7,7 @@
         "None"
       ],
       [
-        "small_model",
+        "model_roles",
         "None"
       ],
       [
@@ -284,12 +284,12 @@
         "capability_dependency": null,
         "default_scope": "project",
         "default_value": null,
-        "merge_strategy": "replace",
+        "merge_strategy": "deep_merge_map",
         "mutability": "editable",
         "restart_required": false,
-        "schema_id": "harness.runtime.small_model",
+        "schema_id": "harness.runtime.model_roles",
         "sensitivity": "public",
-        "setting_id": "small_model",
+        "setting_id": "model_roles",
         "surface": "runtime"
       },
       {
