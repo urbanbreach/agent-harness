@@ -20,6 +20,10 @@ pub(crate) struct TodoPaneState {
     pub(crate) hovered: bool,
     pub(crate) close_hovered: bool,
     close_pressed: Option<ratatui::layout::Rect>,
+    // A live todo update opened the pane; it closes again once no item is open.
+    auto_opened: bool,
+    // The user closed the pane, so live todo updates leave it closed until reopened.
+    dismissed: bool,
 }
 
 impl TodoPaneState {
@@ -146,7 +150,27 @@ impl TodoPaneState {
         self.focused = false;
         self.fullscreen = false;
         self.close_pressed = None;
+        self.auto_opened = false;
+        self.dismissed = true;
         self.query.close_unaccepted();
+    }
+
+    /// Opens the pane for a list with open items and closes a pane it opened once none remain.
+    pub(super) fn follow_live_update(&mut self) {
+        let open = self.items.iter().any(|item| {
+            matches!(
+                item.status,
+                TranscriptTodoStatus::Pending | TranscriptTodoStatus::InProgress
+            )
+        });
+        if open && !self.visible && !self.dismissed {
+            self.visible = true;
+            self.auto_opened = true;
+        } else if !open && self.auto_opened && !self.focused {
+            self.visible = false;
+            self.fullscreen = false;
+            self.auto_opened = false;
+        }
     }
 
     pub(crate) fn placeholder(&self) -> String {
@@ -172,8 +196,9 @@ impl TodoPaneState {
 }
 
 impl AppState {
-    pub(crate) fn refresh_todo_items(&mut self) {
-        self.todo_pane.items = self
+    /// Reloads the latest todo list; true when it changed.
+    pub(crate) fn refresh_todo_items(&mut self) -> bool {
+        let items = self
             .activities
             .iter()
             .flat_map(|activity| &activity.tool_calls)
@@ -187,6 +212,9 @@ impl AppState {
             })
             .map(|tool| crate::ui::todo_items_from_tool_call(tool, self.session_path.as_deref()))
             .unwrap_or_default();
+        let changed = items != self.todo_pane.items;
+        self.todo_pane.items = items;
+        changed
     }
 
     pub(crate) fn todo_pane_focused(&self) -> bool {
@@ -204,6 +232,8 @@ impl AppState {
             self.refresh_todo_items();
             self.todo_pane.visible = true;
             self.todo_pane.focused = true;
+            self.todo_pane.auto_opened = false;
+            self.todo_pane.dismissed = false;
             if self.todo_pane.selected.is_none() {
                 self.todo_pane.selected = self.todo_pane.visible_items().first().map(|(id, _)| *id);
             }

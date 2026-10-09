@@ -705,6 +705,79 @@ fn operator_sidebar_selection_test_app() -> AppState {
     app
 }
 
+#[test]
+fn live_todo_lists_open_the_todo_pane_until_the_user_closes_it() {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        "req_todo_pane",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_todo_pane".into(),
+            provider_id: "default".to_string(),
+            model_id: "model-todo".to_string(),
+            prompt_summary: "todo pane".to_string(),
+            request_digest: "digest-todo-pane".to_string(),
+            metadata: None,
+        }),
+    ));
+    let mut seq = 1;
+    let mut write_todos = |app: &mut AppState, statuses: &[&str]| {
+        seq += 2;
+        let tool_call_id = format!("tc_todo_{seq}");
+        let todos: Vec<_> = statuses
+            .iter()
+            .enumerate()
+            .map(|(index, status)| {
+                serde_json::json!({"content": format!("Step {index}"), "status": status})
+            })
+            .collect();
+        app.ingest_event(envelope(
+            seq - 1,
+            "req_todo_pane",
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: tool_call_id.clone().into(),
+                tool_id: "todowrite".to_string(),
+                args_summary: "update todo list".to_string(),
+                args_digest: format!("digest-{tool_call_id}"),
+                metadata: None,
+            }),
+        ));
+        app.ingest_event(envelope(
+            seq,
+            "req_todo_pane",
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: tool_call_id.into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("todo list updated".to_string()),
+                output_digest: None,
+                output_json: Some(serde_json::json!({ "todos": todos })),
+                metadata: None,
+            }),
+        ));
+    };
+
+    write_todos(&mut app, &["in_progress", "pending"]);
+    assert!(app.todo_pane.visible, "open items show the pane");
+    assert!(!app.todo_pane_focused(), "the pane must not take focus");
+
+    write_todos(&mut app, &["completed", "completed"]);
+    assert!(
+        !app.todo_pane.visible,
+        "a finished list closes a pane it opened"
+    );
+
+    write_todos(&mut app, &["completed", "in_progress"]);
+    assert!(app.todo_pane.visible);
+    app.toggle_todo_pane();
+    app.toggle_todo_pane();
+    write_todos(&mut app, &["in_progress", "pending"]);
+    assert!(!app.todo_pane.visible, "a closed pane stays closed");
+
+    app.toggle_todo_pane();
+    write_todos(&mut app, &["completed", "completed"]);
+    assert!(app.todo_pane.visible, "a pane the user opened stays open");
+}
+
 fn transcript_selection_text_position(app: &AppState, needle: &str) -> (u16, u16) {
     let snapshot = transcript_selection_debug_snapshot(app, TEST_FRAME_AREA).unwrap_or_abort();
     for (row_idx, row) in snapshot.rows.iter().enumerate() {

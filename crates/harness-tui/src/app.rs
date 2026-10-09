@@ -1768,8 +1768,11 @@ impl AppState {
         if historical && update_canonical {
             self.projection.run_terminal_seen = run_terminal_seen_before_historical_ingest;
         }
-        if matches!(event.payload, EventV1::ToolCallFinished(_)) {
-            self.refresh_todo_items();
+        if matches!(event.payload, EventV1::ToolCallFinished(_))
+            && self.refresh_todo_items()
+            && !historical
+        {
+            self.todo_pane.follow_live_update();
         }
         if !historical {
             self.sync_live_turn_phase_timing(previous_phase);
