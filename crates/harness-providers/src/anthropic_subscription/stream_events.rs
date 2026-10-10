@@ -279,10 +279,16 @@ impl StreamState {
     }
 
     pub fn completion_usage(&self) -> Option<CompletionUsage> {
+        // Anthropic reports `input_tokens` without cache reads and writes.
+        let prompt_tokens = self
+            .usage
+            .input
+            .saturating_add(self.usage.cache_read)
+            .saturating_add(self.usage.cache_write);
         self.usage_seen.then(|| CompletionUsage {
-            prompt_tokens: self.usage.input,
+            prompt_tokens,
             completion_tokens: self.usage.output,
-            total_tokens: self.usage.input.saturating_add(self.usage.output),
+            total_tokens: prompt_tokens.saturating_add(self.usage.output),
         })
     }
 
@@ -361,10 +367,18 @@ mod tests {
             if function_name == "read" && arguments_json == r#"{"filePath":"/x","limit":5}"#)
         );
         state.apply(&json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 7}}), &custom);
-        state.apply_success_result(
-            &json!({"stop_reason": "end_turn", "usage": {"input_tokens": 9, "output_tokens": 8}}),
-        );
+        state.apply_success_result(&json!({
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 9, "cache_read_input_tokens": 20, "cache_creation_input_tokens": 3, "output_tokens": 8}
+        }));
         assert_eq!(state.stop_reason, "toolUse");
-        assert_eq!(state.usage.output, 8);
+        assert_eq!(
+            state.completion_usage(),
+            Some(CompletionUsage {
+                prompt_tokens: 32,
+                completion_tokens: 8,
+                total_tokens: 40,
+            })
+        );
     }
 }

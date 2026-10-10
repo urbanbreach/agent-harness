@@ -283,13 +283,15 @@ mod tests {
 
     #[test]
     fn provider_streams_preserve_tool_calls_and_terminal_usage() -> Result<(), &'static str> {
+        // Each protocol bills 4 prompt tokens, 2 of them cache reads; Anthropic reports
+        // cached tokens outside `input_tokens`, the others inside it.
         let cases = [
             (
                 Protocol::Chat,
                 vec![
                     json!({"choices":[{"delta":{"content":"hello","tool_calls":[{"index":0,"id":"call-1","function":{"name":"read","arguments":"{\"path\":"}}]}}]}),
                     json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"read","arguments":"\"x\"}"}}]},"finish_reason":"tool_calls"}]}),
-                    json!({"choices":[],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}),
+                    json!({"choices":[],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6,"prompt_tokens_details":{"cached_tokens":2}}}),
                 ],
             ),
             (
@@ -298,13 +300,13 @@ mod tests {
                     json!({"type":"response.output_text.delta","delta":"hello"}),
                     json!({"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc-1","call_id":"call-1","name":"read","arguments":""}}),
                     json!({"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"path\":\"x\"}"}),
-                    json!({"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":4,"output_tokens":2,"total_tokens":6}}}),
+                    json!({"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":4,"output_tokens":2,"total_tokens":6,"input_tokens_details":{"cached_tokens":2}}}}),
                 ],
             ),
             (
                 Protocol::Anthropic,
                 vec![
-                    json!({"type":"message_start","message":{"usage":{"input_tokens":4,"output_tokens":0}}}),
+                    json!({"type":"message_start","message":{"usage":{"input_tokens":2,"cache_read_input_tokens":2,"output_tokens":0}}}),
                     json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}),
                     json!({"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call-1","name":"read","input":{}}}),
                     json!({"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"path\":\"x\"}"}}),
@@ -336,7 +338,10 @@ mod tests {
                         completion_tokens: 2,
                         total_tokens: 6
                     }),
-                    ..
+                    metadata: Some(crate::ProviderStreamFinishedMetadata {
+                        cache_read_tokens: Some(2),
+                        ..
+                    }),
                 })
             ));
             assert!(decoder.frame("[DONE]")?.is_empty());
