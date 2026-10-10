@@ -1,3 +1,4 @@
+use harness_core::config::BilledTokens;
 use harness_core::provider_catalog::{duplicate_checked_json_value, ProviderCatalog};
 
 #[test]
@@ -41,6 +42,35 @@ fn catalog_rejects_ambiguous_limits_and_preserves_unknown_capabilities(
         r#"{"example":{"models":{"bad":{"limit":{"context":0,"output":1}}}}}"#,
     )?;
     assert!(ProviderCatalog::from_path(&path).is_err());
+    Ok(())
+}
+
+#[test]
+fn catalog_prices_models_from_models_dev_cost() -> Result<(), Box<dyn std::error::Error>> {
+    // The generated catalog nests models.dev prices under options; models.dev itself
+    // puts them at the top level.
+    let limit = serde_json::json!({"context": 1000, "output": 100});
+    let raw = serde_json::json!({"provider": {"example": {"models": {
+        "generated": {"limit": limit, "options": {"modelsDev": {"cost": {"input": 3, "output": 15, "cache_read": 0.3, "cache_write": 3.75}}}},
+        "upstream": {"limit": limit, "cost": {"input": 3, "output": 15}},
+        "partial": {"limit": limit, "cost": {"input": 3}},
+    }}}});
+    let catalog = ProviderCatalog::from_json(&raw.to_string())?;
+    let tokens = BilledTokens {
+        input: 1_000_000,
+        output: 1_000_000,
+        cache_read: 1_000_000,
+        cache_write: 1_000_000,
+    };
+    let picodollars = |model: &str| {
+        catalog
+            .validated_model("example", model)
+            .map(|entry| entry.definition.cost.map(|cost| cost.picodollars(&tokens)))
+    };
+    // $3 + $15 + $0.30 + $3.75; cache tokens without a price bill at the input rate.
+    assert_eq!(picodollars("generated")?, Some(22_050_000_000_000));
+    assert_eq!(picodollars("upstream")?, Some(24_000_000_000_000));
+    assert_eq!(picodollars("partial")?, None);
     Ok(())
 }
 

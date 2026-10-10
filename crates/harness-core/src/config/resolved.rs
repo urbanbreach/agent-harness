@@ -41,6 +41,8 @@ pub struct ResolvedModelCatalogEntry {
     pub recommended_for: Option<String>,
     pub thinking: Option<serde_json::Value>,
     pub supports_reasoning_summaries: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<ModelCost>,
     pub resolution: ModelResolution,
 }
 

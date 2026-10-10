@@ -10,6 +10,7 @@ pub fn config_json_schema() -> Value {
         ("OpenAiCompatibleProviderOptions", "baseURL base_url baseUrl;apiKey api_key;apiKeyEnv api_key_env apiKeyEnvironment;timeoutMs timeout_ms;authProvider auth_provider;apiMode api_mode;cacheRetention cache_retention"),
         ("AnthropicProviderOptions", "baseURL base_url baseUrl;apiKey api_key;apiKeyEnv api_key_env apiKeyEnvironment;timeoutMs timeout_ms"),
         ("ModelConfig", "name display_name displayName;max_input_tokens maxInputTokens;max_output_tokens maxOutputTokens"),
+        ("ModelCost", "cache_read cacheRead;cache_write cacheWrite"),
         ("ModelVariantConfig", "name display_name displayName;context_window_tokens contextWindowTokens;max_input_tokens maxInputTokens;max_output_tokens maxOutputTokens"),
         ("ModelMetadataConfig", "release_stage releaseStage;context_window_tokens contextWindowTokens;supports_tool_calls supportsToolCalls;supports_reasoning_summaries supportsReasoningSummaries"),
         ("ModelVariantMetadataConfig", "reasoning_effort reasoningEffort;text_verbosity textVerbosity;recommended_for recommendedFor"),

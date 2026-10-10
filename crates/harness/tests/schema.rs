@@ -23,7 +23,7 @@ fn public_schema_accepts_loader_syntax_and_rejects_misspelled_settings(
         json!({"formatter":true}),
         json!({"eval":{"languages":["js","py"],"parallel_pool_width":8},"permission":{"eval":"ask"}}),
         json!({"formatter":{"languages":{"demo":{"command":["formatter","$FILE"]}},"uvformat":{"disabled":true}}}),
-        json!({"provider":{"local":{"type":"openai_compatible","baseURL":"http://localhost:1234","models":{"fixture":{}}}},"model":"local/fixture","instructions":["Follow the rules"],"permission":{"bash":{"git *":"allow","*":"deny"}},"agent":{"default":{"tools":{"read":true,"bash":false},"permission":"deny"}},"formatter":false,"lsp":false}),
+        json!({"provider":{"local":{"type":"openai_compatible","baseURL":"http://localhost:1234","models":{"fixture":{"cost":{"input":3,"output":15,"cacheRead":0.3}}}}},"model":"local/fixture","instructions":["Follow the rules"],"permission":{"bash":{"git *":"allow","*":"deny"}},"agent":{"default":{"tools":{"read":true,"bash":false},"permission":"deny"}},"formatter":false,"lsp":false}),
         json!({"providers":{"local":{"type":"openai_compatible","options":{"base_url":"http://localhost:1234"},"models":{"fixture":{}}}},"model":"local/fixture","runtime":{"yolo":true,"compaction":{"thresholdPercent":80,"keep_recent_tokens":2000}}}),
         json!({"mcp":{"remote":{"transport":"streamable_http","url":"http://127.0.0.1:1/rpc","timeout":5,"enabled":false}}}),
     ] {
@@ -44,6 +44,7 @@ fn public_schema_accepts_loader_syntax_and_rejects_misspelled_settings(
         json!({"permission":{"bash":"always"}}),
         json!({"agent":{"default":{"toos":[]}}}),
         json!({"agent":{"default":{"permission":{"shell":null}}}}),
+        json!({"provider":{"local":{"type":"openai_compatible","baseURL":"http://localhost:1234","models":{"fixture":{"cost":{"input":-1,"output":15}}}}}}),
     ] {
         assert!(!validator.is_valid(&config), "{config}");
         assert!(harness_core::config::load_config_from_str(&config.to_string()).is_err());

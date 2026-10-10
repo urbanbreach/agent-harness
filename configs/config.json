@@ -1441,6 +1441,18 @@
         }
       ],
       "properties": {
+        "cost": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelCost"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Token prices for the TUI cost counter; catalog models carry models.dev prices."
+        },
         "displayName": {
           "default": "",
           "type": "string"
@@ -1527,6 +1539,77 @@
           "type": "object"
         }
       },
+      "type": "object"
+    },
+    "ModelCost": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "cache_read",
+              "cacheRead"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "cache_write",
+              "cacheWrite"
+            ]
+          }
+        }
+      ],
+      "description": "Token prices in USD per million tokens, the unit config files and models.dev use.",
+      "properties": {
+        "cacheRead": {
+          "format": "double",
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cacheWrite": {
+          "format": "double",
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cache_read": {
+          "format": "double",
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cache_write": {
+          "format": "double",
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "input": {
+          "format": "double",
+          "minimum": 0,
+          "type": "number"
+        },
+        "output": {
+          "format": "double",
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
       "type": "object"
     },
     "ModelLimitConfig": {
