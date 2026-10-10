@@ -51,3 +51,8 @@ The first public release.
 - Static Linux binaries for x86_64 and aarch64, and an install script.
 - JSON schemas for `harness.jsonc` and `tui.jsonc` attached to each release as
   `harness.schema.json` and `tui.schema.json`.
+- A live tokens-per-second readout and a session cost counter beside the
+  context meter in the TUI. The speed updates while the model streams and
+  settles to billed counts. Costs use models.dev prices for catalog models and
+  an optional `cost` on custom models. Anthropic token counts include cached
+  prompt tokens, as OpenAI's already do.

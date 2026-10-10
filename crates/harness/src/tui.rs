@@ -778,6 +778,13 @@ async fn run_continue_session_bootstrap(
         .known_agents
         .get(&resume_agent_id)
         .map(String::as_str);
+    let (available_models, resolved_models) = {
+        let selection = recover_mutex_lock(&launch_selection);
+        (
+            selection.metadata.available_models().to_vec(),
+            selection.metadata.resolved_models().to_vec(),
+        )
+    };
     let continue_metadata = continue_launch_metadata(
         run.run_id.as_str(),
         recorded_runtime_context.as_ref(),
@@ -785,12 +792,8 @@ async fn run_continue_session_bootstrap(
         &resume_agent_id,
         resume_profile,
     )
-    .with_available_models(
-        recover_mutex_lock(&launch_selection)
-            .metadata
-            .available_models()
-            .to_vec(),
-    );
+    .with_available_models(available_models)
+    .with_resolved_models(resolved_models);
     let (live_update_tx, live_update_rx) = live_update_channel();
     let _ = live_update_tx.send(LiveUpdate::YoloModeChanged {
         enabled: coordinator

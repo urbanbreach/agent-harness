@@ -133,6 +133,130 @@ fn live_turn_status_omits_context_budget_meter() {
     }
 }
 
+fn breadcrumb_rate(debug: &str) -> f64 {
+    debug
+        .split(" tok/s")
+        .next()
+        .and_then(|before| before.rsplit(' ').next())
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0.0)
+}
+
+fn acme_started(request: &str) -> EventV1 {
+    EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+        request_id: request.into(),
+        provider_id: "acme".to_string(),
+        model_id: "m1".to_string(),
+        prompt_summary: "continue".to_string(),
+        request_digest: format!("digest-{request}"),
+        metadata: None,
+    })
+}
+
+#[test]
+fn breadcrumb_rate_updates_live_while_a_request_streams() {
+    // Given: a live shell whose clock follows the stream.
+    let base = std::time::Instant::now();
+    let offset = std::sync::Arc::new(std::sync::Mutex::new(std::time::Duration::ZERO));
+    let mut app = AppState::new_live(None, false, None);
+    app.startup_mode = false;
+    app.set_now_fn_for_test(std::sync::Arc::new({
+        let offset = std::sync::Arc::clone(&offset);
+        move || base + *offset.lock().unwrap_or_abort()
+    }));
+    let set_stream_time = |mono_ms: u64| {
+        *offset.lock().unwrap_or_abort() = std::time::Duration::from_millis(mono_ms - 1_000);
+    };
+    app.ingest_event(EventEnvelopeV1 {
+        mono_ms: 1_000,
+        ..envelope(1, "turn_1", acme_started("req_a"))
+    });
+
+    // When: 10 tokens stream every 100 ms for 7 s, with no billed count yet.
+    for mono_ms in (1_100..=8_000).step_by(100) {
+        set_stream_time(mono_ms);
+        app.ingest_runtime_event(harness_core::event::RuntimeEvent::Live(Box::new(
+            harness_core::event::LiveEventEnvelope {
+                event_id: format!("delta-{mono_ms}"),
+                run_id: "run_ui_tests".into(),
+                mono_ms,
+                ts: None,
+                actor: EventActor::new(ActorKind::System, Some("ui-tests".to_string())),
+                correlation_id: Some("turn_1".to_string()),
+                causation_id: None,
+                stream_key: None,
+                payload: harness_core::event::LiveEventV1::ProviderTextDelta {
+                    request_id: "req_a".into(),
+                    delta: "abcd".repeat(10),
+                },
+            },
+        )));
+    }
+    let streaming = breadcrumb_rate(&render_debug(&app, 140, 30));
+    // Six silent seconds of the same request, as while a model reasons unseen.
+    set_stream_time(14_000);
+    let silent = breadcrumb_rate(&render_debug(&app, 140, 30));
+
+    // Then: the readout tracks the stream mid-request and keeps moving between deltas.
+    assert!((80.0..120.0).contains(&streaming), "{streaming}");
+    assert!(silent < streaming - 10.0, "{silent} vs {streaming}");
+}
+
+#[test]
+fn resumed_breadcrumb_shows_the_last_request_rate_and_session_cost() {
+    // Given: a priced model and one turn whose two requests straddle 10 s of tool work.
+    let config = harness_core::config::load_config_from_str(
+        r#"{"providers":{"acme":{"type":"openai_compatible","baseURL":"https://acme.test/v1","models":{"m1":{
+            "limit":{"context":200000,"output":8000},
+            "cost":{"input":3,"output":15,"cacheRead":0.3,"cacheWrite":3.75}}}}}}"#,
+    )
+    .unwrap_or_abort();
+    let entry =
+        harness_core::config::resolve_configured_model_metadata(&config, "acme", "m1", None)
+            .unwrap_or_abort();
+    let finished = |request: &str, prompt: u32, completion: u32, read: u32, write: u32| {
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: request.into(),
+            finish_reason: "stop".to_string(),
+            output_digest: None,
+            usage: Some(harness_providers::CompletionUsage {
+                prompt_tokens: prompt,
+                completion_tokens: completion,
+                total_tokens: prompt + completion,
+            }),
+            metadata: Some(harness_core::event::ProviderRequestFinishedMetadata {
+                cache_read_tokens: Some(read),
+                cache_write_tokens: Some(write),
+                ..Default::default()
+            }),
+        })
+    };
+    let events = (1_u64..)
+        .zip([
+            (1_000, acme_started("req_a")),
+            (3_000, finished("req_a", 100_000, 100, 60_000, 20_000)),
+            (13_000, acme_started("req_b")),
+            (14_000, finished("req_b", 100_000, 50, 100_000, 0)),
+        ])
+        .map(|(seq, (mono_ms, payload))| EventEnvelopeV1 {
+            mono_ms,
+            ..envelope(seq, "turn_1", payload)
+        })
+        .collect::<Vec<_>>();
+    let mut app = AppState::new_live(None, false, None);
+    app.startup_mode = false;
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("worker", "acme:m1").with_resolved_models(vec![entry]),
+    );
+
+    // When: the turn arrives from a resumed history.
+    app.replace_events(events);
+
+    // Then: the last request's 50 tokens over 1 s; cache tokens bill at cache prices.
+    let debug = render_debug(&app, 140, 30);
+    assert!(debug.contains("50.0 tok/s · $0.185"), "{debug}");
+}
+
 #[test]
 fn copied_to_clipboard_toast_renders_in_live_shell() {
     let mut app = AppState::new_live(None, false, None);
