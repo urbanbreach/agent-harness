@@ -6,8 +6,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use harness_core::context_budget::RequestBudgetSnapshot;
 use harness_core::event::{
     ActorKind, BackgroundTaskNotificationEvent, EventEnvelopeV1, EventV1, LiveEventEnvelope,
-    LiveEventV1, ProviderRequestFinishedEvent, ProviderRequestRetryMetadata, ResolvedToolIdentity,
-    ToolCallLifecycleState, UserMessageSubmittedEvent,
+    LiveEventV1, ProviderRequestFinishedEvent, ProviderRequestRetryMetadata,
+    ProviderRequestStartedEvent, ResolvedToolIdentity, ToolCallLifecycleState,
+    UserMessageSubmittedEvent,
 };
 use harness_core::session::{
     canonical_projection_update_for_event, canonical_provider_fragment_for_event, AssistantPart,
@@ -134,6 +135,7 @@ pub struct SessionProjection {
     /// The provider and pooled account that served the latest finished request.
     latest_account: Option<(String, String)>,
     pub(crate) compaction_status: Option<CompactionStatus>,
+    pub(crate) usage: super::session_usage::SessionUsage,
     pub(crate) compaction_usage_metrics: CompactionUsageMetrics,
     pub(crate) memory_caps: MemoryCaps,
     pub(crate) events_trimmed_count: usize,
@@ -220,6 +222,7 @@ impl SessionProjection {
         self.active_context_usage = None;
         self.latest_request_budget = None;
         self.latest_account = None;
+        self.usage = super::session_usage::SessionUsage::default();
         self.compaction_status = None;
         self.compaction_usage_metrics = CompactionUsageMetrics::default();
         self.orchestration_tasks.clear();
@@ -409,6 +412,13 @@ impl SessionProjection {
                 ..
             } => (request_id.as_str(), Some(tool_call_id.as_str())),
         };
+        if let LiveEventV1::ProviderTextDelta { delta, .. }
+        | LiveEventV1::ProviderReasoningDelta { delta, .. }
+        | LiveEventV1::ProviderToolInputDelta { delta, .. } = &event.payload
+        {
+            self.usage
+                .request_delta(provider_request_id, delta.len(), event.mono_ms);
+        }
         let activity_index = self.activities.iter().position(|activity| {
             event.correlation_id.as_deref() == Some(activity.request_id.as_str())
                 || activity.request_id == provider_request_id
@@ -658,6 +668,7 @@ impl SessionProjection {
         self.finish_transient_state_for_event(event);
         self.seen_seqs.insert(event.seq);
         self.note_agent_ownership(event);
+        self.record_provider_usage(event, historical);
         self.update_live_presentation_for_event(event, historical);
         self.transcript_delta = if historical {
             ProjectionDelta::ReplayPending
@@ -672,6 +683,7 @@ impl SessionProjection {
         historical: bool,
     ) -> usize {
         self.note_agent_ownership(&event);
+        self.record_provider_usage(&event, historical);
         self.update_phase_for_event(&event);
         self.seen_seqs.insert(event.seq);
         self.transcript_delta = if historical {
@@ -1003,6 +1015,30 @@ impl SessionProjection {
             self.note_child_agent_request(event, request_id);
             let turn_id = Self::canonical_provider_turn_id(event, request_id);
             self.note_child_agent_request(event, turn_id);
+        }
+    }
+
+    fn record_provider_usage(&mut self, event: &EventEnvelopeV1, historical: bool) {
+        let (EventV1::ProviderRequestStarted(ProviderRequestStartedEvent { request_id, .. })
+        | EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent { request_id, .. })) =
+            &event.payload
+        else {
+            return;
+        };
+        let request_id = request_id.as_str();
+        let turn_id = Self::canonical_provider_turn_id(event, request_id);
+        let own = !self.child_request_agents.contains_key(turn_id)
+            && !self.child_request_agents.contains_key(request_id);
+        match &event.payload {
+            EventV1::ProviderRequestStarted(data) => {
+                self.usage
+                    .request_started(data, event.mono_ms, own, historical);
+            }
+            EventV1::ProviderRequestFinished(data) => {
+                self.usage
+                    .request_finished(data, event.mono_ms, own, historical);
+            }
+            _ => {}
         }
     }
 

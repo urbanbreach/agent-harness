@@ -142,6 +142,7 @@ mod session_pins;
 mod session_projection;
 mod session_slash;
 mod session_stack;
+mod session_usage;
 mod settings_editor;
 mod slash_completion;
 pub(crate) mod tasks_pane;
@@ -1682,7 +1683,9 @@ impl AppState {
 
     fn ingest_live_event(&mut self, event: &LiveEventEnvelope) {
         self.projection.phase_clock = Some(Arc::clone(&self.now_fn));
-        self.subagents.observed_at = Some(self.now());
+        let now = self.now();
+        self.subagents.observed_at = Some(now);
+        self.projection.usage.observe(event.mono_ms, now);
         if self.route_live_fragment_while_viewing_child(event) {
             return;
         }
@@ -1724,6 +1727,10 @@ impl AppState {
 
         if self.projection.has_seen_seq(event.seq) {
             return;
+        }
+        if !historical {
+            let now = self.now();
+            self.projection.usage.observe(event.mono_ms, now);
         }
 
         // Durable boundaries settle display prefixes before canonical content replaces them.

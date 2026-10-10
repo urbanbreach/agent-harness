@@ -40,6 +40,31 @@ models, set `metadata.reasoningEffort` so the TUI can display and select variant
 like `low`, `medium`, or `high`. Use additional variant fields only for
 non-standard names or per-variant limits, modalities, or options.
 
+The live TUI shows generation speed and session cost next to context usage in
+the row above the transcript, for example `49.6 tok/s · $0.047 · 9.9K / 192K 5%`.
+Speed updates while the model streams. It counts streamed text, reasoning and
+tool input at roughly four bytes per token, weights the last minute or so of
+streaming most, and corrects itself to the provider's billed count when each
+request ends. The clock only runs while a request is open, so the reading holds
+through tool runs, and it stays blank until about 200 tokens and four seconds of
+streaming are in. A resumed session starts from its last request's speed. Cost
+adds up every request in the session, subagents included, priced by model.
+Catalog models take their prices from models.dev. For a custom model, set `cost`
+in USD per million tokens:
+
+```jsonc
+"models": {
+  "my-model": {
+    "cost": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 }
+  }
+}
+```
+
+Cache reads and writes without their own price are billed at the input rate. The
+cost reads `$0.047+` when some usage came from a model with no price, and
+`$0.047 (sub)` for a Codex or Copilot sign-in, where the bill isn't per token.
+Narrow terminals drop speed first, then cost.
+
 OpenAI-compatible providers accept `cacheRetention` either beside the provider
 fields or under `options`. The default is `short`: the runtime sends a stable,
 clamped, per-session `prompt_cache_key` when a session id is available. Set

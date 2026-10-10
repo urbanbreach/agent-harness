@@ -214,17 +214,17 @@ pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Re
             .saturating_sub(crate::layout::composer_horizontal_inset(area.width)),
         height: 1,
     };
-    let context_meta = breadcrumb_context_meta(app);
+    let meta = breadcrumb_meta(app, usize::from(row.width));
     let text = pack_breadcrumb_line(
         &live_breadcrumb_text(app, area.width),
-        context_meta.as_deref(),
+        meta.as_deref(),
         usize::from(row.width),
     );
     let dim = Style::default()
         .fg(theme.text.tertiary)
         .bg(theme.surface.canvas)
         .add_modifier(Modifier::DIM);
-    let metadata = context_meta.as_deref().filter(|meta| text.ends_with(*meta));
+    let metadata = meta.as_deref().filter(|meta| text.ends_with(*meta));
     let split = text.len().saturating_sub(metadata.map_or(0, str::len));
     let left = &text[..split];
     let (prefix, _) = startup_breadcrumb_parts(app);
@@ -264,6 +264,23 @@ pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Re
     }
     let line = Line::from(spans);
     frame.render_widget(Paragraph::new(line), row);
+}
+
+/// Tok/s, cost and context usage: `42.1 tok/s · $0.123 · 12K / 262K 5%`. Tok/s, then
+/// cost, drop first so the meta stays within half the row.
+fn breadcrumb_meta(app: &AppState, width: usize) -> Option<String> {
+    let segments = [
+        app.generation_rate_label(),
+        app.session_cost_label(),
+        breadcrumb_context_meta(app),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    (0..segments.len())
+        .map(|skip| segments[skip..].join(" · "))
+        .find(|meta| super::display_width(meta) * 2 <= width)
+        .or_else(|| segments.last().cloned())
 }
 
 /// Compact context usage and rounded percentage: `12K / 262K 5%`.
