@@ -133,6 +133,7 @@ pub struct CompletionRequest {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompletionUsage {
+    /// Every prompt token, including cache reads and writes, on every protocol.
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,

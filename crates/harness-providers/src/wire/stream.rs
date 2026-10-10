@@ -384,6 +384,25 @@ impl StreamDecoder {
             .usage
             .as_ref()
             .map(|_| self.usage_prompt_tokens_seen && self.usage_completion_tokens_seen);
+        if self.protocol == Protocol::Anthropic
+            && let Some(usage) = self.usage.as_mut()
+        {
+            // Anthropic reports `input_tokens` without cache reads and writes.
+            let cached = [
+                self.metadata.cache_read_tokens,
+                self.metadata.cache_write_tokens,
+            ];
+            for tokens in cached.into_iter().flatten() {
+                usage.prompt_tokens = usage
+                    .prompt_tokens
+                    .checked_add(tokens)
+                    .ok_or("usage overflow")?;
+            }
+            usage.total_tokens = usage
+                .prompt_tokens
+                .checked_add(usage.completion_tokens)
+                .ok_or("usage overflow")?;
+        }
         self.metadata.settled_reasoning = match self.protocol {
             Protocol::Chat if self.chat_reasoning_available => Some(
                 if self.chat_reasoning_seen && !self.chat_reasoning.is_empty() {
