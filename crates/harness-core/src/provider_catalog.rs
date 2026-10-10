@@ -1,6 +1,7 @@
 use crate::config::{
-    ModelConfig, ModelLimitConfig, ModelLimitError, ModelLimitProvenance, ModelMetadataConfig,
-    ModelModalitiesConfig, ModelVariantConfig, ResolvedModelLimits,
+    ModelConfig, ModelCost, ModelCostRates, ModelLimitConfig, ModelLimitError,
+    ModelLimitProvenance, ModelMetadataConfig, ModelModalitiesConfig, ModelVariantConfig,
+    ResolvedModelLimits,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -230,6 +231,7 @@ struct RawModel {
     reasoning: Option<bool>,
     #[serde(alias = "lastUpdated")]
     last_updated: Option<String>,
+    cost: serde_json::Value,
     options: serde_json::Value,
 }
 #[derive(Deserialize, Default)]
@@ -248,6 +250,7 @@ fn parse_model(
 ) -> Result<ModelCatalogEntry, String> {
     let mut raw: RawModel =
         serde_json::from_value(value.clone()).map_err(|_| "invalid model metadata".to_owned())?;
+    let cost = catalog_cost(&raw);
     let source = sanitize_catalog_source_origin(
         raw.options
             .pointer("/modelsDev/source")
@@ -322,6 +325,7 @@ fn parse_model(
         modalities: raw.modalities,
         variants: raw.variants,
         options: options.into_iter().collect(),
+        cost,
         ..Default::default()
     };
     Ok(ModelCatalogEntry {
@@ -329,6 +333,20 @@ fn parse_model(
         limits,
         definition,
     })
+}
+/// models.dev prices, top-level or under `options.modelsDev`; partial prices stay unknown.
+fn catalog_cost(raw: &RawModel) -> Option<ModelCost> {
+    let cost = Some(&raw.cost)
+        .filter(|cost| !cost.is_null())
+        .or_else(|| raw.options.pointer("/modelsDev/cost"))?;
+    let rate = |key: &str| cost.get(key).and_then(serde_json::Value::as_f64);
+    ModelCost::try_from(ModelCostRates {
+        input: rate("input")?,
+        output: rate("output")?,
+        cache_read: rate("cache_read"),
+        cache_write: rate("cache_write"),
+    })
+    .ok()
 }
 pub fn checked_catalog_limits(
     context: Option<u64>,

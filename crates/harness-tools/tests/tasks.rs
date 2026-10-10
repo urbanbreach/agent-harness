@@ -77,6 +77,7 @@ fn config(path: &std::path::Path, provider: Arc<MockProvider>) -> CoordinatorCon
         recommended_for: None,
         thinking: None,
         supports_reasoning_summaries: true,
+        cost: None,
         resolution: resolution.clone(),
     };
     config.agent_model_targets.insert(
