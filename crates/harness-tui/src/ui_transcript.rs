@@ -464,6 +464,26 @@ pub(super) fn transcript_pane_context<'a>(
     }
 }
 
+/// Right edge of the live transcript's cards, which give a column to the scrollbar on
+/// overflow. The layout lookup hits the cache the pane render fills.
+pub(super) fn live_transcript_content_right(app: &AppState, area: Rect, theme: &Theme) -> u16 {
+    let context = transcript_pane_context(app, area, theme);
+    let inner_area = context.inner_area;
+    if app.replay_mode || app.startup_shell_visible() || live_empty_state_visible(app) {
+        return inner_area.right();
+    }
+    let show_scrollbar = with_measured_transcript_layout_for_width_on_surface(
+        app,
+        theme,
+        inner_area.width,
+        context.base_surface,
+        |layout| layout.scrollbar_needed(inner_area),
+    );
+    app_transcript_viewport_layout(app, inner_area, show_scrollbar)
+        .content
+        .right()
+}
+
 fn render_measured_transcript_pane(
     frame: &mut Frame,
     app: &AppState,

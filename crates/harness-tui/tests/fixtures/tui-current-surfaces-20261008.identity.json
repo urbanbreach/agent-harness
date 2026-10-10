@@ -2,6 +2,16 @@
   "binding": {
     "contract": "Reviewed 0.0.1 visual surface cutovers; unchanged inputs and intents",
     "frame_ids": [
+      "stream-markdown-40x24-reduced-0ms",
+      "queued-prompt-40x24-reduced-0ms",
+      "queued-entry-navigation-40x24-reduced-0ms",
+      "queued-entry-return-40x24-reduced-0ms",
+      "completed-turn-40x24-reduced-0ms",
+      "long-history-40x24-reduced-0ms",
+      "detached-history-40x24-reduced-0ms",
+      "detached-append-40x24-reduced-0ms",
+      "transcript-search-40x24-reduced-0ms",
+      "run-failed-40x24-reduced-0ms",
       "dialog-settings-40x24-reduced-0ms",
       "selected-settings-40x24-reduced-0ms",
       "dashboard-details-40x24-reduced-0ms",
@@ -23,5 +33,5 @@
     "original_fixture_sha256": "ae9cf00461889a0a8b254242f33e484ad1ebca401c4768f9cd33f801f38c16cf",
     "settings_binding_sha256": "7ea979c21e8577e01e69d6835f915b5f0eaa93b60644bc7d5d67568eed632dc8"
   },
-  "fixture_sha256": "cb7fac57423d3ef02af6eeb7355915af7e9ea12a866f22af321f9922381ca7e7"
+  "fixture_sha256": "786c0d4d70364bad0af37a9dd2338e39b04300c664e2dde788f3bfd5f020532c"
 }

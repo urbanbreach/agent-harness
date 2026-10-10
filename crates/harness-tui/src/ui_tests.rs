@@ -1309,3 +1309,40 @@ fn status_strip_surfaces_selected_tool_summary() {
         "status strip should surface active tool context\n{debug}"
     );
 }
+
+#[test]
+fn breadcrumb_meta_ends_at_the_transcript_card_edge() {
+    // Given: a short transcript, then one long enough to give a column to the scrollbar.
+    let mut app = app_with_context_budget(17_800);
+    for (messages, seq) in [(1_u64, 1_u64), (40, 2)] {
+        for seq in seq..=messages {
+            let id = format!("req_align_{seq}");
+            app.ingest_event(envelope(
+                seq,
+                &id,
+                EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                    request_id: id.clone().into(),
+                    text: format!("message {seq}"),
+                    ..serde_json::from_value(serde_json::json!({"request_id": "x", "text": "x"}))
+                        .unwrap_or_abort()
+                }),
+            ));
+        }
+
+        // When: the live shell renders.
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap_or_abort();
+        terminal
+            .draw(|frame| render_app(frame, &app))
+            .unwrap_or_abort();
+        let buffer = terminal.backend().buffer();
+        let canvas = buffer[(0, 0)].bg;
+        let meta_end = (0..140).rposition(|x| buffer[(x, 1)].symbol() != " ");
+        let card_end = (2..30)
+            .find_map(|y| (0..140).rposition(|x| buffer[(x, y)].bg != canvas))
+            .unwrap_or_default();
+
+        // Then: the context meter's last cell sits over the card's last cell.
+        assert_eq!(meta_end, Some(card_end), "messages={messages}");
+    }
+}
