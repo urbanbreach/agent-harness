@@ -402,8 +402,9 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
         live_transcript_shell_section(theme.surface.shell),
         plan.shell,
     );
-    render_live_breadcrumb(frame, app, plan.shell, theme);
     let transcript_area = live_transcript_area_with_breadcrumb(transcript_area);
+    let content_right = ui_transcript::live_transcript_content_right(app, transcript_area, theme);
+    render_live_breadcrumb(frame, app, plan.shell, content_right, theme);
     render_transcript_pane(frame, app, transcript_area, theme);
     if let Some(todo) = plan.todo {
         ui_todo_pane::render_todo_pane(frame, app, todo, theme);

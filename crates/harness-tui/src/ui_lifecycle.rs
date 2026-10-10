@@ -199,7 +199,14 @@ fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, them
     }
 }
 
-pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+/// `content_right` is the transcript cards' right edge; the meta ends there, not past it.
+pub(super) fn render_live_breadcrumb(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    content_right: u16,
+    theme: &Theme,
+) {
     let reserve = crate::layout::breadcrumb_reserve_rows(area.width);
     if area.height < reserve {
         return;
@@ -211,7 +218,8 @@ pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Re
             .saturating_add(crate::layout::breadcrumb_top_margin(area.width)),
         width: area
             .width
-            .saturating_sub(crate::layout::composer_horizontal_inset(area.width)),
+            .saturating_sub(crate::layout::composer_horizontal_inset(area.width))
+            .min(content_right.saturating_sub(area.x)),
         height: 1,
     };
     let meta = breadcrumb_meta(app, usize::from(row.width));
@@ -339,7 +347,8 @@ fn pack_breadcrumb_line(left: &str, meta: Option<&str>, width: usize) -> String 
         return truncate_plain_text(meta, width);
     }
     let left_budget = width.saturating_sub(meta_width);
-    let left = truncate_plain_text(left, left_budget);
+    // A truncated left side still leaves one space before the meta.
+    let left = truncate_plain_text(left, left_budget.saturating_sub(1));
     let left_width = super::display_width(&left);
     let pad = left_budget.saturating_sub(left_width);
     format!("{left}{}{meta}", " ".repeat(pad))
@@ -863,6 +872,7 @@ mod breadcrumb_token_meta_tests {
                         frame,
                         &app,
                         ratatui::layout::Rect::new(0, 3, 100, 2),
+                        100,
                         &theme,
                     );
                 })
@@ -896,6 +906,7 @@ mod breadcrumb_token_meta_tests {
                     frame,
                     app,
                     ratatui::layout::Rect::new(0, 3, 100, 2),
+                    100,
                     app.theme(),
                 );
             },
