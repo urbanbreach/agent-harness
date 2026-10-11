@@ -162,8 +162,6 @@ where
             exit_on_finish: false,
             profile: cli.profile.clone(),
             no_alt_screen: false,
-            minimal: false,
-            fullscreen: false,
         })
     });
     let result = match command {

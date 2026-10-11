@@ -31,7 +31,6 @@ humantime = "2"
 uuid = { version = "1", features = ["v5"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
-tracing-appender = "0.2"
 tar = "0.4"
 flate2 = "1"
 ignore = "0.4"

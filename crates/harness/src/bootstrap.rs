@@ -73,11 +73,6 @@ pub(crate) fn interactive_agent_profiles(
         })
         .collect()
 }
-pub(crate) fn build_interactive_coordinator_config(
-    config: &HarnessConfig,
-) -> Result<CoordinatorConfig, String> {
-    build(config, &CliDeps::real(), false, true)
-}
 pub(crate) fn build(
     config: &HarnessConfig,
     deps: &CliDeps,

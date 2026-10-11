@@ -56,8 +56,6 @@ fn live_tui_command() -> TuiCommand {
         exit_on_finish: false,
         profile: None,
         no_alt_screen: false,
-        minimal: false,
-        fullscreen: false,
     }
 }
 

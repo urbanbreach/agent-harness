@@ -10,11 +10,26 @@ use std::{
 #[test]
 fn subscription_prompts_use_their_wire_contract_and_redact_credentials(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    for (profile, model, mode, reasoning_effort) in [
-        ("openai-codex", "gpt-6-astra", "auto", "low"),
-        ("openai-codex", "gpt-6.1-sol", "auto", "medium"),
-        ("github-copilot", "gpt-6-astra", "chat_completions", ""),
-        ("copilot-claude", "claude-sonnet-4.6", "auto", ""),
+    for (profile, model, mode, reasoning_effort, truncated) in [
+        ("openai-codex", "gpt-6-astra", "auto", "low", false),
+        ("openai-codex", "gpt-6-astra", "auto", "low", true),
+        ("openai-codex", "gpt-6.1-sol", "auto", "medium", false),
+        (
+            "github-copilot",
+            "gpt-6-astra",
+            "chat_completions",
+            "",
+            false,
+        ),
+        (
+            "github-copilot",
+            "gpt-6-astra",
+            "chat_completions",
+            "",
+            true,
+        ),
+        ("copilot-claude", "claude-sonnet-4.6", "auto", "", false),
+        ("copilot-claude", "claude-sonnet-4.6", "auto", "", true),
     ] {
         let root = tempfile::tempdir()?;
         let listener = TcpListener::bind("127.0.0.1:0")?;
@@ -41,7 +56,7 @@ fn subscription_prompts_use_their_wire_contract_and_redact_credentials(
             "model":format!("fixture/{model}"), "agent":{"default":{"tools":[],"system_prompt":"Follow the fixture."}},
             "runtime":{"provider_retry":{"max_retries":0},"prompt":{"wait_timeout_ms":5000}}
         }).to_string())?;
-        let server = std::thread::spawn(move || serve(listener, profile));
+        let server = std::thread::spawn(move || serve(listener, profile, truncated));
         let (mut input, mut stdout, mut stderr) = (Cursor::new(Vec::new()), Vec::new(), Vec::new());
         let result = run(
             [
@@ -63,7 +78,7 @@ fn subscription_prompts_use_their_wire_contract_and_redact_credentials(
         let (headers, body) = server.join().map_err(|_| "HTTP fixture stopped")??;
         assert_eq!(
             result.code,
-            0,
+            i32::from(truncated),
             "{profile}: {}",
             String::from_utf8_lossy(&stderr)
         );
@@ -80,6 +95,21 @@ fn subscription_prompts_use_their_wire_contract_and_redact_credentials(
         .path();
         assert!(!std::fs::read_to_string(session.join("events.jsonl"))?
             .contains("private-subscription-token"));
+        if truncated {
+            assert!(String::from_utf8_lossy(&stderr).contains("output limit"));
+            let events = harness_core::store::read_events(&session.join("events.jsonl"))?;
+            assert!(events.iter().any(|event| matches!(&event.payload,
+                harness_core::event::EventV1::ProviderRequestFinished(finished)
+                if finished.usage.as_ref().is_some_and(|usage| usage.total_tokens == 10)
+                    && finished.metadata.as_ref().and_then(|m| m.provider_error_category)
+                        .is_some_and(|category| category.as_str() == "output_limit_exceeded")
+            )));
+            assert!(!events.iter().any(|event| matches!(
+                &event.payload,
+                harness_core::event::EventV1::TaskCompleted(_)
+                    | harness_core::event::EventV1::ToolCallRequested(_)
+            )));
+        }
     }
     Ok(())
 }
@@ -122,7 +152,7 @@ fn check_codex(headers: &str, body: &Value) {
     assert_eq!(body["input"][0]["role"], "user");
 }
 
-fn serve(listener: TcpListener, profile: &str) -> Result<(String, Value), String> {
+fn serve(listener: TcpListener, profile: &str, truncated: bool) -> Result<(String, Value), String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -172,9 +202,32 @@ fn serve(listener: TcpListener, profile: &str) -> Result<(String, Value), String
     let reply = if profile == "openai-codex" {
         "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Done. private-subscription-token\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"fixture\",\"status\":\"completed\"}}\n\n"
     } else if profile == "copilot-claude" {
-        "data: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\"}}\n\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Done. private-subscription-token\"}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n"
+        "data: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture\",\"usage\":{\"input_tokens\":7}}}\n\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Done. private-subscription-token\"}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":3}}\n\ndata: {\"type\":\"message_stop\"}\n\n"
     } else {
-        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Done. private-subscription-token\"}}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Done. private-subscription-token\"}}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3}}\n\ndata: [DONE]\n\n"
+    };
+    let reply = if truncated {
+        let (fragments, terminal) = if profile == "openai-codex" {
+            (
+                "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"call_id\":\"partial\",\"name\":\"write\",\"arguments\":\"{\"}}\n\n",
+                "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Done. private-subscription-token\"}\n\ndata: {\"type\":\"response.incomplete\",\"response\":{\"status\":\"incomplete\",\"incomplete_details\":{\"reason\":\"max_output_tokens\"},\"usage\":{\"input_tokens\":7,\"output_tokens\":3}}}\n\n".to_owned(),
+            )
+        } else {
+            let fragment = if profile == "copilot-claude" {
+                "data: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"partial\",\"name\":\"write\",\"input\":{}}}\n\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\"}}\n\n"
+            } else {
+                "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"partial\",\"function\":{\"name\":\"write\",\"arguments\":\"{\"}}]}}]}\n\n"
+            };
+            (
+                fragment,
+                reply
+                    .replace("\"end_turn\"", "\"max_tokens\"")
+                    .replace("\"stop\"", "\"length\""),
+            )
+        };
+        format!("{fragments}{terminal}")
+    } else {
+        reply.to_owned()
     };
     write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len()).map_err(|e| e.to_string())?;
     Ok((headers, body))

@@ -50,6 +50,8 @@ pub struct AuthToastState {
 
 #[derive(Debug, Clone)]
 pub struct ConnectDialogState {
+    pub attempt: u64,
+    pub(crate) catalog_attempt: Option<u64>,
     pub visible: bool,
     pub step: ConnectDialogStep,
     pub providers: Vec<ConnectProviderOption>,
@@ -73,6 +75,8 @@ pub struct ConnectDialogState {
 impl Default for ConnectDialogState {
     fn default() -> Self {
         Self {
+            attempt: 0,
+            catalog_attempt: None,
             visible: false,
             step: ConnectDialogStep::SelectProvider,
             providers: Vec::new(),

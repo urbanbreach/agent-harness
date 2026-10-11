@@ -49,7 +49,6 @@ impl AppState {
                     });
                 }
                 KeyCode::Esc => {
-                    self.emit_ui_intent(UiIntent::AuthBackendInput { line: None });
                     self.close_connect_dialog();
                 }
                 _ => self.handle_connect_dialog_input(key),
@@ -230,6 +229,7 @@ impl AppState {
         self.connect_dialog.step = ConnectDialogStep::Waiting;
         self.connect_dialog.notice = None;
         self.emit_ui_intent(UiIntent::OpenAuthManager {
+            attempt: Some(self.connect_dialog.attempt),
             args: vec![
                 "login".to_string(),
                 provider_id.as_str().to_string(),

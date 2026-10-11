@@ -2,6 +2,32 @@ use super::*;
 use harness_core::auth::StoredCredential;
 
 #[test]
+fn google_api_keys_discover_a_chat_provider_and_default_model(
+) -> Result<(), Box<dyn std::error::Error>> {
+    for variable in ["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"] {
+        let root = tempfile::tempdir()?;
+        let context = load_context(root.path());
+        std::fs::create_dir_all(&context.discovery.current_dir)?;
+        let lookup = |name: &str| (name == variable).then(|| "fixture-key".into());
+        let result = resolve_runtime_catalog(None, None, None, &context, None, &lookup)?;
+        assert!(!result.no_provider_connected, "{variable}");
+        let Some(ProviderConfig::OpenAiCompatible(google)) = result.config.providers.get("google")
+        else {
+            return Err("Google provider missing".into());
+        };
+        assert_eq!(
+            google.base_url,
+            "https://generativelanguage.googleapis.com/v1beta/openai"
+        );
+        assert_eq!(google.api_mode, OpenAiApiMode::ChatCompletions);
+        assert!(result.config.agents["default"]
+            .model_ref
+            .starts_with("google:"));
+    }
+    Ok(())
+}
+
+#[test]
 fn default_model_preferences_and_catalog_fallback() -> Result<(), Box<dyn std::error::Error>> {
     type Candidate = (&'static str, Option<bool>, Option<&'static str>);
     let cases: &[(&str, &[Candidate], Option<&str>)] = &[

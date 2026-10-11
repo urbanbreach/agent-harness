@@ -29,6 +29,7 @@ fn terminal_and_live_sources_wake_parked_wait() {
         ))
         .expect("terminal send");
     let wait = RuntimeWaitSet {
+        shutdown: None,
         frame: &frame_rx,
         reader: &status_rx,
         terminal: &terminal_rx,
@@ -51,6 +52,7 @@ fn deadline_wakes_without_periodic_polling() {
     let (_terminal_tx, terminal_rx) = bounded(1);
     let (_live_tx, live_rx) = live_update_channel();
     let wait = RuntimeWaitSet {
+        shutdown: None,
         frame: &frame_rx,
         reader: &status_rx,
         terminal: &terminal_rx,
@@ -74,6 +76,7 @@ fn empty_live_wake_uses_terminal_disconnect_transition_once() {
     let mut app = AppState::new_live(None, false, None);
     let mut live_updates = Some(live_rx);
     let wait = RuntimeWaitSet {
+        shutdown: None,
         frame: &frame_rx,
         reader: &status_rx,
         terminal: &terminal_rx,
@@ -197,6 +200,7 @@ fn live_disconnect_is_reported_once() {
     let (live_tx, live_rx) = live_update_channel();
     drop(live_tx);
     let with_live = RuntimeWaitSet {
+        shutdown: None,
         frame: &frame_rx,
         reader: &status_rx,
         terminal: &terminal_rx,
@@ -216,6 +220,7 @@ fn live_disconnect_is_reported_once() {
         ))
         .expect("terminal send");
     let without_live = RuntimeWaitSet {
+        shutdown: None,
         frame: &frame_rx,
         reader: &status_rx,
         terminal: &terminal_rx,

@@ -359,6 +359,14 @@ fn legacy_journal(
     use harness_core::{event::EventV1, session::AssistantPart};
     let mut events = harness_core::store::read_events(&source)?;
     for event in &mut events {
+        if let EventV1::ProviderRequestFinished(finished) = &mut event.payload {
+            finished.metadata.get_or_insert_default().thinking =
+                Some(harness_core::event::ProviderThinkingMetadata {
+                    summary: Some("private reasoning summary".into()),
+                    signature: Some("private reasoning signature".into()),
+                    summary_digest: Some("retained-reasoning-digest".into()),
+                });
+        }
         if let EventV1::AssistantMessageFinished(message) = &mut event.payload {
             message.parts.push(AssistantPart::Text {
                 text: credentials.join(" "),
@@ -405,6 +413,7 @@ fn check_exports(
         assert!(!rendered.contains(credential), "leaked {credential}");
     }
     assert!(!rendered.contains("private reasoning"));
+    assert!(rendered.contains("retained-reasoning-digest"));
     assert!(!rendered.contains("provider_reasoning_delta"));
     assert_eq!(bundle["replay"]["counts"]["total_events"], count - 1);
     assert_eq!(bundle["support"]["secret_scan_status"]["status"], "clean");

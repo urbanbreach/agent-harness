@@ -21,7 +21,7 @@ use tokio::task::JoinHandle;
 
 use crate::cli_config::apply_runtime_metadata;
 use crate::logging;
-use crate::scenarios::{deterministic_run_id, supervisor_actor, ScenarioName};
+use crate::scenarios::{supervisor_actor, ScenarioName};
 
 use super::auth_backend::TuiAuthBackendContext;
 use super::coordinator_warmup::LiveCoordinatorConfigWarmup;
@@ -137,20 +137,7 @@ pub(super) async fn run_new_live_session(
     coordinator_config_warmup: LiveCoordinatorConfigWarmup,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("new_live.begin");
-    let run_id_override = if settings.deterministic {
-        deterministic_run_id(settings.seed, ScenarioName::GoldenPathInteractive)
-    } else {
-        unique_interactive_run_id()
-    };
-
-    if settings.deterministic {
-        let run_id = &run_id_override;
-        let stale_run_dir = settings.session_dir.join(run_id);
-        if stale_run_dir.exists() {
-            fs::remove_dir_all(&stale_run_dir)
-                .map_err(|err| format!("failed to reset deterministic run dir: {err}"))?;
-        }
-    }
+    let run_id_override = unique_interactive_run_id();
 
     let launch_metadata = launch_metadata_for_mode(settings, &launch_selection);
     let run_dir = settings.session_dir.join(&run_id_override);
@@ -251,6 +238,7 @@ pub(super) async fn run_new_live_session(
             no_alt_screen,
         );
         options.storage_data_dir = Some(data_dir);
+        let _auth_cleanup = super::auth_backend::TuiAuthCleanup;
         run_tui_with_options(options)
     })
     .await;

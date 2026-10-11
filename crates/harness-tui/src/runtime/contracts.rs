@@ -50,10 +50,17 @@ pub enum LiveUpdate {
         level: OperatorNoticeLevel,
     },
     AuthBackendResult {
+        attempt: Option<u64>,
         success: bool,
         message: String,
     },
+    AuthBackendNotice {
+        attempt: Option<u64>,
+        message: String,
+        level: OperatorNoticeLevel,
+    },
     AuthProviderCatalogRefreshed {
+        attempt: Option<u64>,
         launch_metadata: Box<LaunchMetadata>,
     },
     /// Input the user queued for a turn they interrupted, returned to the editor.

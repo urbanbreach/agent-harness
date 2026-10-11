@@ -1,6 +1,43 @@
 use super::*;
 use harness::UnwrapOrAbort;
 
+#[test]
+fn explicit_profile_selects_its_configured_model_and_rejects_unknown_names(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let config_path = temp.path().join("harness.jsonc");
+    std::fs::write(
+        &config_path,
+        r#"{
+        "provider":{"local":{"type":"openai_compatible","apiKey":"fixture","models":{"default":{},"review":{}}}},
+        "model":"local/default",
+        "agent":{"reviewer":{"model":"local/review","tools":["read"],"permission":{"edit":"deny"}}}
+    }"#,
+    )?;
+    let context = isolated_config_context(temp.path().into());
+    let resolve = |profile: &str| {
+        let mut command = live_tui_command();
+        command.profile = Some(profile.into());
+        resolve_live_settings_for_test(
+            &command,
+            Some(config_path.clone()),
+            None,
+            temp.path().into(),
+            &context,
+            LiveSettingsDeps {
+                credential_store: None,
+                env_lookup: &|_| None,
+                model_selection_path: None,
+            },
+        )
+    };
+    let settings = resolve("reviewer")?;
+    assert_eq!(settings.launch_metadata.profile(), "reviewer");
+    assert_eq!(settings.launch_metadata.model(), Some("review"));
+    assert!(resolve("missing").is_err());
+    Ok(())
+}
+
 fn isolated_config_context(
     current_dir: std::path::PathBuf,
 ) -> harness_core::config::ConfigLoadContext {
@@ -168,6 +205,7 @@ fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
         None,
         "test-token",
         &deps,
+        None,
         None,
     );
     assert!(success, "{message}");
@@ -388,8 +426,6 @@ fn mock_mode_ignores_discovered_cwd_config() {
             exit_on_finish: false,
             profile: None,
             no_alt_screen: false,
-            minimal: false,
-            fullscreen: false,
         },
         None,
         None,
@@ -473,8 +509,6 @@ fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
             exit_on_finish: false,
             profile: None,
             no_alt_screen: false,
-            minimal: false,
-            fullscreen: false,
         },
         Some(config_path.clone()),
         None,
@@ -703,8 +737,6 @@ fn continue_mode_uses_session_workspace_root_not_process_cwd() {
             exit_on_finish: false,
             profile: None,
             no_alt_screen: false,
-            minimal: false,
-            fullscreen: false,
         },
         None,
         None,

@@ -347,8 +347,14 @@ pub(super) async fn handle_ui_intents(
             UiIntent::AuthBackendInput { line } => {
                 super::auth_backend::send_tui_auth_backend_input(line)
             }
-            UiIntent::OpenAuthManager { args, stdin } => {
+            UiIntent::OpenAuthManager {
+                attempt,
+                args,
+                stdin,
+            } => {
                 spawn_tui_auth_backend_task(
+                    attempt,
+                    Some(coordinator.clone()),
                     args,
                     stdin,
                     auth_backend.clone(),

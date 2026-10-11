@@ -87,54 +87,118 @@ fn login_commands_open_dialog_and_offer_browser_and_headless_sign_in() {
         .iter()
         .any(|method| matches!(method, AuthMethodSpec::ApiKey { .. })));
 
-    for startup in [true, false] {
-        for palette in [true, false] {
-            for method in ["browser", "device"] {
-                let intents = Arc::new(Mutex::new(Vec::new()));
-                let captured = Arc::clone(&intents);
-                let sink = Arc::new(move |intent| captured.lock().unwrap_or_abort().push(intent));
-                let mut app = if startup {
-                    AppState::new_startup(Vec::new(), Some(sink))
-                } else {
-                    AppState::new_live(None, false, Some(sink))
-                };
-                app.set_connect_dialog_providers(providers.clone());
-                if palette {
-                    app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
-                }
-                for ch in if palette { "login" } else { "/login" }.chars() {
-                    app.handle_key(key(KeyCode::Char(ch)));
-                }
-                app.handle_key(key(KeyCode::Enter));
-                assert!(
-                    app.connect_dialog.visible,
-                    "login must open the provider dialog"
-                );
-                assert!(intents.lock().unwrap_or_abort().is_empty());
-                for ch in "openai".chars() {
-                    app.handle_key(key(KeyCode::Char(ch)));
-                }
-                app.handle_key(key(KeyCode::Enter));
-                if method == "device" {
-                    app.handle_key(key(KeyCode::Down));
-                }
-                app.handle_key(key(KeyCode::Enter));
-                assert_eq!(app.connect_dialog.step, ConnectDialogStep::Waiting);
-                assert_eq!(
-                    intents.lock().unwrap_or_abort().as_slice(),
-                    &[UiIntent::OpenAuthManager {
-                        args: vec![
-                            "login".into(),
-                            "openai".into(),
-                            "--method".into(),
-                            method.into()
-                        ],
-                        stdin: None,
-                    }]
-                );
-            }
+    for (startup, palette, method) in [
+        (true, true, "browser"),
+        (true, true, "device"),
+        (true, false, "browser"),
+        (true, false, "device"),
+        (false, true, "browser"),
+        (false, true, "device"),
+        (false, false, "browser"),
+        (false, false, "device"),
+    ] {
+        let intents = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&intents);
+        let sink = Arc::new(move |intent| captured.lock().unwrap_or_abort().push(intent));
+        let mut app = if startup {
+            AppState::new_startup(Vec::new(), Some(sink))
+        } else {
+            AppState::new_live(None, false, Some(sink))
+        };
+        app.set_connect_dialog_providers(providers.clone());
+        if palette {
+            app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
         }
+        for ch in if palette { "login" } else { "/login" }.chars() {
+            app.handle_key(key(KeyCode::Char(ch)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+        assert!(
+            app.connect_dialog.visible,
+            "login must open the provider dialog"
+        );
+        assert!(intents.lock().unwrap_or_abort().is_empty());
+        for ch in "openai".chars() {
+            app.handle_key(key(KeyCode::Char(ch)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+        if method == "device" {
+            app.handle_key(key(KeyCode::Down));
+        }
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.connect_dialog.step, ConnectDialogStep::Waiting);
+        assert_eq!(
+            intents.lock().unwrap_or_abort().as_slice(),
+            &[UiIntent::OpenAuthManager {
+                attempt: Some(1),
+                args: vec![
+                    "login".into(),
+                    "openai".into(),
+                    "--method".into(),
+                    method.into()
+                ],
+                stdin: None,
+            }]
+        );
+        app.handle_key(key(KeyCode::Esc));
+        assert!(!app.connect_dialog.visible);
+        assert!(matches!(
+            intents.lock().unwrap_or_abort().last(),
+            Some(UiIntent::AuthBackendInput { line: None })
+        ));
+        assert_late_auth_updates_do_not_change_new_login(&mut app);
     }
+}
+
+fn assert_late_auth_updates_do_not_change_new_login(app: &mut AppState) {
+    let previous = app.connect_dialog.attempt.wrapping_sub(1);
+    app.open_connect_dialog();
+    app.connect_dialog.step = ConnectDialogStep::Waiting;
+    let (tx, rx) = crate::live_update_channel();
+    tx.send(crate::LiveUpdate::AuthBackendNotice {
+        attempt: Some(previous),
+        message: "auth backend output: Open https://old.example.test".into(),
+        level: crate::OperatorNoticeLevel::Info,
+    })
+    .unwrap_or_abort();
+    tx.send(crate::LiveUpdate::AuthBackendResult {
+        attempt: Some(previous),
+        success: true,
+        message: "old login".into(),
+    })
+    .unwrap_or_abort();
+    crate::runtime_live_updates::apply_live_update_quantum(
+        app,
+        &rx,
+        &mut crate::runtime_integration::RuntimeExperience::new(),
+    );
+    assert_eq!(app.connect_dialog.step, ConnectDialogStep::Waiting);
+    assert!(app.connect_dialog.notice.is_none());
+    let completed = app.connect_dialog.attempt;
+    app.close_connect_dialog();
+    tx.send(crate::LiveUpdate::AuthProviderCatalogRefreshed {
+        attempt: Some(completed),
+        launch_metadata: Box::new(crate::app::LaunchMetadata::from_model_ref(
+            "latest",
+            "fixture:model",
+        )),
+    })
+    .unwrap_or_abort();
+    tx.send(crate::LiveUpdate::AuthProviderCatalogRefreshed {
+        attempt: Some(previous),
+        launch_metadata: Box::new(crate::app::LaunchMetadata::from_model_ref(
+            "stale",
+            "fixture:model",
+        )),
+    })
+    .unwrap_or_abort();
+    crate::runtime_live_updates::apply_live_update_quantum(
+        app,
+        &rx,
+        &mut crate::runtime_integration::RuntimeExperience::new(),
+    );
+    assert_eq!(app.launch_metadata().profile(), "latest");
+    assert!(!app.connect_dialog.visible);
 }
 
 #[test]
@@ -263,6 +327,7 @@ fn other_provider_api_key_emits_generic_auth_login() {
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::OpenAuthManager {
+            attempt: Some(1),
             args: vec![
                 "login".to_string(),
                 "my-provider".to_string(),

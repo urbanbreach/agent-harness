@@ -348,6 +348,11 @@ fn compatible(source: &ProviderCatalogEntry) -> OpenAiCompatibleProviderConfig {
         base_url: source.base_url.clone(),
         api_key_env: source.api_key_env.clone(),
         models: models(source),
+        api_mode: if source.id == "google" {
+            OpenAiApiMode::ChatCompletions
+        } else {
+            OpenAiApiMode::default()
+        },
         ..Default::default()
     }
 }

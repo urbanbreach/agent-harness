@@ -10,7 +10,7 @@ use super::profile_log;
 
 #[derive(Clone)]
 pub(super) struct LiveCoordinatorConfigWarmup {
-    state: Arc<tokio::sync::Mutex<LiveCoordinatorConfigWarmupState>>,
+    state: Arc<tokio::sync::Mutex<(std::path::PathBuf, LiveCoordinatorConfigWarmupState)>>,
 }
 
 enum LiveCoordinatorConfigWarmupState {
@@ -28,27 +28,20 @@ impl LiveCoordinatorConfigWarmup {
         ));
         let state = if demo_mode {
             LiveCoordinatorConfigWarmupState::Disabled
-        } else if let Some(mut config) = settings.config.clone() {
-            config.runtime.yolo = settings.yolo;
-            let session_dir = settings.session_dir.clone();
-            let data_dir = settings.data_dir.clone();
+        } else if settings.config.is_some() {
+            let settings = settings.clone();
             LiveCoordinatorConfigWarmupState::Pending(tokio::task::spawn_blocking(move || {
-                profile_log::profile_handoff("warmup.default.begin");
-                config.apply_session_dir_override(Some(session_dir));
-                let result =
-                    bootstrap::build_interactive_coordinator_config(&config).map(|mut config| {
-                        config.data_dir = data_dir;
-                        config
-                    });
-                profile_log::profile_handoff("warmup.default.end");
-                result
+                interactive_coordinator_config(&settings)
             }))
         } else {
             LiveCoordinatorConfigWarmupState::Disabled
         };
 
         Self {
-            state: Arc::new(tokio::sync::Mutex::new(state)),
+            state: Arc::new(tokio::sync::Mutex::new((
+                settings.workspace_root.clone(),
+                state,
+            ))),
         }
     }
 
@@ -62,66 +55,66 @@ impl LiveCoordinatorConfigWarmup {
             return Ok(demo_coordinator_config(settings));
         }
 
-        let pending = {
-            let mut state = self.state.lock().await;
-            match &*state {
-                LiveCoordinatorConfigWarmupState::Ready(config) => {
-                    profile_log::profile_handoff("warmup.cache_hit");
-                    return Ok(config.as_ref().clone());
-                }
-                LiveCoordinatorConfigWarmupState::Disabled => {
-                    profile_log::profile_handoff("warmup.disabled_fallback");
-                    None
-                }
-                LiveCoordinatorConfigWarmupState::Pending(_) => {
-                    profile_log::profile_handoff("warmup.await_pending");
-                    match std::mem::replace(&mut *state, LiveCoordinatorConfigWarmupState::Disabled)
-                    {
-                        LiveCoordinatorConfigWarmupState::Pending(handle) => Some(handle),
-                        LiveCoordinatorConfigWarmupState::Ready(config) => {
-                            let resolved = config.as_ref().clone();
-                            profile_log::profile_handoff("warmup.ready_race");
-                            *state = LiveCoordinatorConfigWarmupState::Ready(config);
-                            return Ok(resolved);
-                        }
-                        LiveCoordinatorConfigWarmupState::Disabled => None,
-                    }
-                }
+        let mut cached = self.state.lock().await;
+        let (workspace, state) = &mut *cached;
+        if *workspace != settings.workspace_root {
+            if let LiveCoordinatorConfigWarmupState::Pending(handle) = state {
+                handle.abort();
             }
-        };
-
-        if let Some(handle) = pending {
-            let config = handle
-                .await
-                .map_err(|err| format!("live coordinator warmup task failed: {err}"))??;
-            profile_log::profile_handoff("warmup.pending_resolved");
-            let mut state = self.state.lock().await;
-            *state = LiveCoordinatorConfigWarmupState::Ready(Box::new(config.clone()));
-            return Ok(config);
+            *state = LiveCoordinatorConfigWarmupState::Disabled;
+            workspace.clone_from(&settings.workspace_root);
         }
-
-        profile_log::profile_handoff("warmup.rebuild_fallback");
-        interactive_coordinator_config(settings)
+        let config = match std::mem::replace(state, LiveCoordinatorConfigWarmupState::Disabled) {
+            LiveCoordinatorConfigWarmupState::Ready(config) => *config,
+            LiveCoordinatorConfigWarmupState::Pending(handle) => handle
+                .await
+                .map_err(|err| format!("live coordinator warmup task failed: {err}"))??,
+            LiveCoordinatorConfigWarmupState::Disabled => interactive_coordinator_config(settings)?,
+        };
+        *state = LiveCoordinatorConfigWarmupState::Ready(Box::new(config.clone()));
+        Ok(config)
     }
 
     /// Every live session clones this config, so its router serves a provider signed in mid-run.
     pub(super) async fn add_signed_in_providers(
         &self,
         settings: &LiveSettings,
+        coordinator: Option<&harness_core::coord::CoordinatorHandle>,
     ) -> Result<(), String> {
         let Some(config) = settings.config.as_ref() else {
             return Ok(());
         };
         if matches!(
-            *self.state.lock().await,
+            self.state.lock().await.1,
             LiveCoordinatorConfigWarmupState::Disabled
         ) {
             return Ok(());
         }
         let current = self.coordinator_config(settings, false).await?;
-        let providers =
-            bootstrap::provider_map(config, &harness::CliDeps::real(), &current.secret_registry)?;
+        let mut refreshed = interactive_coordinator_config(settings)?;
+        let providers = bootstrap::provider_map(
+            config,
+            &harness::CliDeps::real()
+                .with_current_dir(settings.workspace_root.clone())
+                .with_env("HARNESS_HOME", settings.data_dir.to_string_lossy()),
+            &current.secret_registry,
+        )?;
         current.provider.add_providers(providers);
+        current
+            .secret_registry
+            .register(refreshed.secret_values.clone())?;
+        refreshed.provider = current.provider;
+        refreshed.secret_registry = current.secret_registry;
+        *self.state.lock().await = (
+            settings.workspace_root.clone(),
+            LiveCoordinatorConfigWarmupState::Ready(Box::new(refreshed.clone())),
+        );
+        if let Some(coordinator) = coordinator {
+            coordinator
+                .refresh_provider_models(refreshed)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
         Ok(())
     }
 }

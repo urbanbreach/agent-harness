@@ -83,6 +83,50 @@ fn scenario_runs_are_deterministic_and_denied_edits_do_not_touch_the_workspace(
             serde_json::from_slice(&fs::read(run_dir.join("meta.json"))?)?;
         assert_eq!(metadata["mode_source"], "scenario_fixture");
         assert!(metadata["created_at"].is_null());
+        if step == 1 {
+            for locked in [true, false] {
+                let writer = if locked {
+                    Some(harness_core::store::Journal::open_existing(
+                        &root.path().join("sessions"),
+                        run_dir
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .ok_or("run id")?,
+                        true,
+                    )?)
+                } else {
+                    let mut metadata = metadata.clone();
+                    metadata["mode_source"] = "interactive_live".into();
+                    fs::write(run_dir.join("meta.json"), serde_json::to_vec(&metadata)?)?;
+                    None
+                };
+                let metadata_before = fs::read(run_dir.join("meta.json"))?;
+                let (mut input, mut output, mut error) = (Cursor::new(""), Vec::new(), Vec::new());
+                let result = run(
+                    [
+                        "harness",
+                        "--session-dir",
+                        "sessions",
+                        "run",
+                        "--scenario",
+                        "golden_path",
+                        "--deterministic",
+                    ],
+                    &mut CliIo::new(&mut input, &mut output, &mut error),
+                    CliDeps::real()
+                        .with_current_dir(root.path().into())
+                        .with_env("HARNESS_HOME", root.path().join("data").to_string_lossy())
+                        .without_env("HOME")
+                        .without_env("HARNESS_CONFIG")
+                        .without_env("HARNESS_CONFIG_CONTENT"),
+                );
+                assert_ne!(result.code, 0, "protected session was replaced");
+                assert_eq!(fs::read(run_dir.join("events.jsonl"))?, original);
+                assert_eq!(fs::read(run_dir.join("meta.json"))?, metadata_before);
+                assert_eq!(fs::read(workspace.join("demo.txt"))?, b"Hello world\n");
+                drop(writer);
+            }
+        }
     }
     Ok(())
 }

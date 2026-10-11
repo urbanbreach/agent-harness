@@ -111,3 +111,22 @@ pub fn golden_path_edit_args() -> Value {
 pub fn question_interactive_request_json() -> Value {
     json!({"questions":[{"header":"Choice", "question":"Pick an option", "options":[{"label":"A","description":"First option"},{"label":"B","description":"Second option"}], "multiple":false,"custom":true}]})
 }
+
+pub(crate) fn reset_fixture(sessions: &Path, id: &str) -> Result<(), String> {
+    let directory = sessions.join(id);
+    if !directory.try_exists().map_err(|e| e.to_string())? {
+        return Ok(());
+    }
+    let metadata = harness_core::proj::load_run_metadata(&directory)
+        .ok_or("cannot replace a fixture with missing or invalid metadata")?;
+    if metadata.mode_source != Some(harness_core::proj::SessionModeSource::ScenarioFixture)
+        || metadata.run_id != id
+    {
+        return Err(
+            "refusing to replace a session that is not a generated scenario fixture".into(),
+        );
+    }
+    let _writer = harness_core::store::Journal::open_existing(sessions, id, true)
+        .map_err(|e| e.to_string())?;
+    std::fs::remove_dir_all(directory).map_err(|e| e.to_string())
+}

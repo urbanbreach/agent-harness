@@ -29,6 +29,7 @@ mod contracts;
 mod input;
 mod paint;
 mod setup;
+mod signals;
 
 pub use crate::terminal::session::close_preserved_terminal_session;
 pub use contracts::{
@@ -62,6 +63,8 @@ struct Runtime {
 }
 
 pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
+    let signals =
+        signals::ShutdownSignals::new().context("failed to listen for shutdown signals")?;
     let bindings = options
         .keybindings
         .take()
@@ -120,7 +123,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         flush_interval: Duration::from_millis(crate::scheduling::runtime_flush_interval_ms()),
     };
     runtime.cause(Cause::Startup, Reason::Startup);
-    let mut result = runtime.run(ingress, live);
+    let mut result = runtime.run(ingress, live, &signals.receiver);
 
     // Always stop producers and drain the writer before restoring stdout modes.
     if reader.stop_and_join().is_err() {
@@ -193,11 +196,15 @@ impl Runtime {
         &mut self,
         mut ingress: TerminalIngress,
         mut live: Option<LiveUpdateReceiver>,
+        shutdown: &crossbeam_channel::Receiver<i32>,
     ) -> Result<()> {
         let mut input = RuntimeInputIngress::default();
         let mut selected = None;
         let stopped_input = crossbeam_channel::never();
         loop {
+            if let Ok(signal) = shutdown.try_recv() {
+                anyhow::bail!("interrupted by signal {signal}");
+            }
             let acknowledgements = self.output.take_acknowledgements();
             let writer_ready = !self.output.has_in_flight_frame();
             if let Some(error) = self.output.take_fatal_failure() {
@@ -306,6 +313,7 @@ impl Runtime {
                 .min()
             };
             let wake = RuntimeWaitSet {
+                shutdown: Some(shutdown),
                 frame: self.output.acknowledgement_receiver(),
                 reader: &ingress.status,
                 terminal: if self.app.should_quit {
@@ -320,6 +328,7 @@ impl Runtime {
             }
             .wait(deadline);
             match wake {
+                RuntimeWake::Shutdown(signal) => anyhow::bail!("interrupted by signal {signal}"),
                 RuntimeWake::Terminal(envelope) => {
                     selected = input.ingest_at(
                         envelope.received_at.saturating_duration_since(self.epoch),

@@ -117,6 +117,14 @@ fn archives_keep_session_exports_private_and_do_not_publish_unsafe_workspace_fil
 fn legacy_journal(source: &Path) -> Result<String, Box<dyn std::error::Error>> {
     let mut events = read_events(source)?;
     for event in &mut events {
+        if let EventV1::ProviderRequestFinished(finished) = &mut event.payload {
+            finished.metadata.get_or_insert_default().thinking =
+                Some(harness_core::event::ProviderThinkingMetadata {
+                    summary: Some("private legacy reasoning summary".into()),
+                    signature: Some("private legacy reasoning signature".into()),
+                    summary_digest: None,
+                });
+        }
         if let EventV1::AssistantMessageFinished(message) = &mut event.payload {
             message.parts.push(AssistantPart::Reasoning {
                 text: "private legacy reasoning".into(),

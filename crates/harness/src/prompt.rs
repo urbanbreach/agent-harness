@@ -300,7 +300,7 @@ fn execute_prompt(
             tokio::select! {
                 biased;
                 () = cancellation.cancelled() => Err("prompt interrupted".into()),
-                signal = tokio::signal::ctrl_c(), if handle_signals => {
+                signal = wait_for_shutdown_signal(), if handle_signals => {
                     signal.map_err(|e| e.to_string())?;
                     Err("prompt interrupted".into())
                 },
@@ -323,6 +323,17 @@ fn execute_prompt(
         }
         Ok(())
     })
+}
+
+async fn wait_for_shutdown_signal() -> std::io::Result<()> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut terminate = signal(SignalKind::terminate())?;
+    let mut hangup = signal(SignalKind::hangup())?;
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => result,
+        _ = terminate.recv() => Ok(()),
+        _ = hangup.recv() => Ok(()),
+    }
 }
 
 async fn wait(

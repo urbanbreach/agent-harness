@@ -117,7 +117,10 @@ pub(super) fn render_plan_view_overlay(
         };
         let width = usize::from(area.width);
         let meta_width = display_width(meta);
-        let path = truncate_plain_text(&entry.path, width.saturating_sub(meta_width + 3).max(1));
+        let path = truncate_plain_text(
+            &format!("{}.md", entry.slug),
+            width.saturating_sub(meta_width + 3).max(1),
+        );
         let padding = width
             .saturating_sub(display_width(&path))
             .saturating_sub(meta_width + 1);

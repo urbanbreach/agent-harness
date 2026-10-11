@@ -20,6 +20,7 @@ tui-scrollbar = "=0.2.8"
 # The level-triggered reader continues draining input after large terminal bursts.
 crossterm = { workspace = true, features = ["use-dev-tty"] }
 crossbeam-channel.workspace = true
+signal-hook = "0.3"
 fuzzy-matcher = "0.3"
 harness-core = { path = "../harness-core" }
 imara-diff = "0.2"

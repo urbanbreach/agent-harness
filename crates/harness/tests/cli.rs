@@ -9,6 +9,8 @@ use std::{
 
 #[path = "cli/http_prompt.rs"]
 mod http_prompt;
+#[path = "cli/thinking.rs"]
+mod thinking;
 
 #[test]
 fn openai_login_routes_oauth_to_codex_and_keeps_api_keys_separate(

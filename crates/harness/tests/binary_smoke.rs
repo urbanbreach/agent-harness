@@ -4,6 +4,111 @@ use serde_json::Value;
 use std::{fs, io::Cursor, path::Path, process::Command};
 
 #[test]
+fn shutdown_signals_restore_the_terminal_and_stop_tool_processes(
+) -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var("HARNESS_BINARY_SIGNOFF").as_deref() != Ok("1") {
+        return Err("set HARNESS_BINARY_SIGNOFF=1 for real process checks".into());
+    }
+    let output = Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/process_signals.py"
+        ))
+        .arg(env!("CARGO_BIN_EXE_harness"))
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(())
+}
+
+#[test]
+fn cancelled_browser_login_releases_callback_and_saves_nothing(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::{
+        io::Write,
+        os::unix::fs::PermissionsExt,
+        time::{Duration, Instant},
+    };
+    if std::env::var("HARNESS_BINARY_SIGNOFF").as_deref() != Ok("1") {
+        return Err("set HARNESS_BINARY_SIGNOFF=1 for real process checks".into());
+    }
+    // Isolate PATH so the browser launcher cannot open a real login page.
+    if let Ok(root) = std::env::var("HARNESS_AUTH_CANCEL_FIXTURE") {
+        struct CancelAtUrl {
+            token: tokio_util::sync::CancellationToken,
+            output: String,
+        }
+        impl Write for CancelAtUrl {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.output.push_str(&String::from_utf8_lossy(bytes));
+                if self.output.contains("Open this URL to sign in:") {
+                    self.token.cancel();
+                }
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let token = tokio_util::sync::CancellationToken::new();
+        let mut output = CancelAtUrl {
+            token: token.clone(),
+            output: String::new(),
+        };
+        let mut input = Cursor::new(Vec::new());
+        let mut error = Vec::new();
+        let code = run(
+            ["harness", "auth", "login", "codex", "--method", "browser"],
+            &mut CliIo::new(&mut input, &mut output, &mut error),
+            CliDeps::real().with_cancellation(token),
+        );
+        assert_ne!(code.code, 0);
+        assert!(String::from_utf8(error)?.contains("Login cancelled"));
+        let _listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 1455))?;
+        assert!(!Path::new(&root)
+            .join("data/credentials/codex.json")
+            .exists());
+        assert!(!Path::new(&root).join("data/harness.jsonc").exists());
+        return Ok(());
+    }
+    let root = tempfile::tempdir()?;
+    let launcher = root.path().join("xdg-open");
+    fs::write(&launcher, "#!/bin/sh\nexit 0\n")?;
+    fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755))?;
+    let mut child = Command::new(std::env::current_exe()?)
+        .args([
+            "--exact",
+            "cancelled_browser_login_releases_callback_and_saves_nothing",
+            "--nocapture",
+        ])
+        .env_clear()
+        .env("HARNESS_BINARY_SIGNOFF", "1")
+        .env("HARNESS_AUTH_CANCEL_FIXTURE", root.path())
+        .env("HOME", root.path())
+        .env("HARNESS_HOME", root.path().join("data"))
+        .env("PATH", root.path())
+        .current_dir(root.path())
+        .spawn()?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = child.try_wait()? {
+            assert!(status.success());
+            break;
+        }
+        if Instant::now() >= deadline {
+            child.kill()?;
+            child.wait()?;
+            return Err("cancelled OAuth flow kept its callback listener alive".into());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
+}
+
+#[test]
 fn process_entry_loads_dotenv_and_routes_debug_logs_without_polluting_command_output(
 ) -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("HARNESS_BINARY_SIGNOFF").as_deref() != Ok("1") {

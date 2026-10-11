@@ -17,6 +17,7 @@ pub enum FrameRuntimeEvent {
 }
 
 pub enum RuntimeWake {
+    Shutdown(i32),
     Frame(FrameRuntimeEvent),
     Reader(TerminalReaderStatus),
     ReaderDisconnected,
@@ -28,6 +29,7 @@ pub enum RuntimeWake {
 }
 
 pub struct RuntimeWaitSet<'a> {
+    pub shutdown: Option<&'a Receiver<i32>>,
     pub frame: &'a Receiver<FrameAck>,
     pub reader: &'a Receiver<TerminalReaderStatus>,
     pub terminal: &'a Receiver<TerminalEnvelope>,
@@ -39,6 +41,7 @@ impl RuntimeWaitSet<'_> {
         let timeout = deadline.map(|value| value.saturating_duration_since(Instant::now()));
         let timer = timeout.map(crossbeam_channel::after);
         let mut select = Select::new_biased();
+        let shutdown_index = self.shutdown.map(|receiver| select.recv(receiver));
         let frame_index = select.recv(self.frame);
         let reader_index = select.recv(self.reader);
         let terminal_index = select.recv(self.terminal);
@@ -46,6 +49,11 @@ impl RuntimeWaitSet<'_> {
         let timer_index = timer.as_ref().map(|receiver| select.recv(receiver));
         let selected = select.select();
         let index = selected.index();
+        if shutdown_index == Some(index)
+            && let Some(receiver) = self.shutdown
+        {
+            return RuntimeWake::Shutdown(selected.recv(receiver).unwrap_or(0));
+        }
         if index == frame_index {
             return match selected.recv(self.frame) {
                 Ok(ack) => RuntimeWake::Frame(frame_event(ack)),

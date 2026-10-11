@@ -27,7 +27,7 @@ fn live_coordinator_config_warmup_reuses_interactive_config() {
             default: {
               system_prompt: "Implement carefully.",
               model: "default/gpt-5.4-mini",
-              tools: ["read"]
+              tools: ["read", "spawn_subagent"]
             }
           },
           permission: "allow",
@@ -85,7 +85,25 @@ fn live_coordinator_config_warmup_reuses_interactive_config() {
         assert!(first.agent_profiles.contains_key("default"));
         assert!(second.tool_registry.get("read").is_some());
         assert!(first.yolo_on_start && second.yolo_on_start);
+        assert_eq!(
+            first.subagent_discovery.as_ref().unwrap_or_abort().cwd,
+            settings.workspace_root
+        );
 
+        let mut active = first.clone();
+        let fixture = Arc::new(harness_providers::mock::MockProvider::default());
+        active.provider = Arc::clone(&fixture) as Arc<dyn harness_providers::Provider>;
+        let coordinator = harness_core::coord::spawn_coordinator(active,
+            Arc::new(harness_core::clock::FakeClock::new()),
+            Arc::new(harness_core::redact::DefaultRedactor::default()));
+        coordinator.start_run("login-refresh", temp.path()).await.unwrap_or_abort();
+        let parent = coordinator.spawn_agent(user_actor(), "default", None).await.unwrap_or_abort();
+        let input = serde_json::json!({
+            "prompt": "Answer once", "description": "new provider", "model": "later/gpt-5.4-mini", "background": false
+        });
+        let actor = harness_core::event::EventActor::new(harness_core::event::ActorKind::Worker, Some(parent));
+        let rejected = coordinator.execute_agent_tool_call(actor.clone(), None, "spawn_subagent", input.clone()).await;
+        assert!(matches!(rejected, Err(error) if error.contains("unavailable")));
         // A provider signed in after a session started serves that session's next request.
         let request = harness_providers::CompletionRequest {
             provider_id: Some("later".into()),
@@ -105,9 +123,35 @@ fn live_coordinator_config_warmup_reuses_interactive_config() {
         let provider = config.providers["default"].clone();
         config.providers.insert("later".into(), provider);
         warmup
-            .add_signed_in_providers(&signed_in)
+            .add_signed_in_providers(&signed_in, Some(&coordinator))
             .await
             .unwrap_or_abort();
         assert!(first.provider.request_budget_semantics(&request, 0).is_ok());
+        let refreshed = warmup.coordinator_config(&signed_in, false).await.unwrap_or_abort();
+        assert!(refreshed.model_catalog.iter().any(|entry| entry.provider == "later"));
+
+        let child = coordinator.execute_agent_tool_call(
+            actor, None, "spawn_subagent", input).await;
+        assert!(child.is_ok(), "{child:?}");
+        let requests = fixture.captured_requests().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].provider_id.as_deref(), Some("later"));
+        assert_eq!(requests[0].context.working_directory.as_deref(), Some(temp.path()));
+        coordinator.stop_run().await.unwrap_or_abort();
+        let other = tempfile::tempdir().unwrap_or_abort();
+        let mut switched = settings.clone();
+        switched.workspace_root = other.path().into();
+        let switched_config = warmup
+            .coordinator_config(&switched, false)
+            .await
+            .unwrap_or_abort();
+        assert_eq!(
+            switched_config
+                .subagent_discovery
+                .as_ref()
+                .unwrap_or_abort()
+                .cwd,
+            switched.workspace_root
+        );
     });
 }

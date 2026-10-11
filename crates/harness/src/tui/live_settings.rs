@@ -276,7 +276,7 @@ pub(super) fn resolve_live_settings_with_deps(
         .clone()
         .unwrap_or_else(|| session_dir.join("data"));
     let deterministic = cmd.deterministic || Determinism::enabled(config_deterministic);
-    let default_profile = config_default_profile;
+    let default_profile = cmd.profile.clone().unwrap_or(config_default_profile);
     let launch_mode_label = if live_config.is_some() {
         None
     } else {
@@ -291,15 +291,16 @@ pub(super) fn resolve_live_settings_with_deps(
             no_provider_connected,
         );
     }
-    let launch_metadata = if live_config.is_some() && !no_provider_connected {
-        if let Some(path) = deps.model_selection_path {
-            apply_persisted_model_selection_from_path(launch_metadata, path, &config_digest)
+    let launch_metadata =
+        if live_config.is_some() && !no_provider_connected && cmd.profile.is_none() {
+            if let Some(path) = deps.model_selection_path {
+                apply_persisted_model_selection_from_path(launch_metadata, path, &config_digest)
+            } else {
+                apply_persisted_model_selection(launch_metadata, &config_digest, deps.env_lookup)
+            }
         } else {
-            apply_persisted_model_selection(launch_metadata, &config_digest, deps.env_lookup)
-        }
-    } else {
-        launch_metadata
-    };
+            launch_metadata
+        };
     let launch_metadata = if uses_oauth_credential(
         &launch_metadata,
         live_config.as_ref(),
@@ -388,7 +389,14 @@ pub(super) fn interactive_coordinator_config(
         .ok_or_else(bootstrap::interactive_config_guidance)?;
     config.apply_session_dir_override(Some(settings.session_dir.clone()));
     config.runtime.yolo = settings.yolo;
-    let mut coordinator_config = bootstrap::build_interactive_coordinator_config(&config)?;
+    let mut coordinator_config = bootstrap::build(
+        &config,
+        &harness::CliDeps::real()
+            .with_current_dir(settings.workspace_root.clone())
+            .with_env("HARNESS_HOME", settings.data_dir.to_string_lossy()),
+        false,
+        true,
+    )?;
     coordinator_config.data_dir.clone_from(&settings.data_dir);
     Ok(coordinator_config)
 }

@@ -195,8 +195,6 @@ pub(super) fn continue_session(
             exit_on_finish,
             profile: None,
             no_alt_screen: false,
-            minimal: false,
-            fullscreen: false,
         },
         config.map(Path::to_path_buf),
         Some(root),

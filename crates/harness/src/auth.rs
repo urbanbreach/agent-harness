@@ -231,6 +231,12 @@ pub(crate) fn execute(
             }
         }
         AuthAction::Login(mut login) => {
+            if deps
+                .cancellation()
+                .is_some_and(|token| token.is_cancelled())
+            {
+                return Err("Login cancelled".into());
+            }
             let selected = login.provider_option.take().or(login.provider.take());
             let name = match selected {
                 Some(name) => name,
@@ -302,6 +308,12 @@ pub(crate) fn execute(
                 if token.is_empty() || token.len() > 65_536 {
                     return Err("API key must contain 1 to 65,536 bytes".into());
                 }
+                if deps
+                    .cancellation()
+                    .is_some_and(|token| token.is_cancelled())
+                {
+                    return Err("Login cancelled".into());
+                }
                 store
                     .save(&StoredCredential::api_key(
                         id.clone(),
@@ -333,6 +345,7 @@ pub(crate) fn execute(
                         &store,
                         io,
                         oauth::LoginInput {
+                            cancellation: deps.cancellation().unwrap_or_default(),
                             lines,
                             callback_host,
                             environment: deps.environment_snapshot(),

@@ -14,7 +14,7 @@ use harness_core::{
     perm::PermissionDecision,
     proj::SessionModeSource,
     redact::DefaultRedactor,
-    store::{self, Journal},
+    store,
 };
 use std::{
     io::{BufRead, Read},
@@ -55,7 +55,7 @@ pub(super) fn execute(
     let id = deterministic
         .then(|| scenarios::deterministic_run_id(config.runtime.deterministic.seed, scenario));
     if let Some(id) = &id {
-        reset_fixture(&sessions, id)?;
+        scenarios::reset_fixture(&sessions, id)?;
     }
     let workspace = scenarios::create_workspace(&sessions, scenario, id.as_deref())?;
     let decision = if scenario.interactive_permissions() {
@@ -205,19 +205,4 @@ fn approval(io: &mut CliIo<'_>) -> Result<PermissionDecision, String> {
             PermissionDecision::Deny
         },
     )
-}
-fn reset_fixture(sessions: &Path, id: &str) -> Result<(), String> {
-    let directory = sessions.join(id);
-    if !directory.try_exists().map_err(|e| e.to_string())? {
-        return Ok(());
-    }
-    let metadata = harness_core::proj::load_run_metadata(&directory)
-        .ok_or("cannot replace a fixture with missing or invalid metadata")?;
-    if metadata.mode_source != Some(SessionModeSource::ScenarioFixture) || metadata.run_id != id {
-        return Err(
-            "refusing to replace a session that is not a generated scenario fixture".into(),
-        );
-    }
-    let _writer = Journal::open_existing(sessions, id, true).map_err(|e| e.to_string())?;
-    std::fs::remove_dir_all(directory).map_err(|e| e.to_string())
 }

@@ -65,7 +65,7 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
     send_bytes(helper.writer.as_mut(), b"view plan").unwrap_or_abort();
     helper.wait_for("View Plan");
     send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
-    helper.wait_for("../data/projects/");
+    helper.wait_for("fixture.md");
     helper.wait_for("saved");
     let plan_list = helper.screen_text();
     assert!(
@@ -640,9 +640,10 @@ pub(crate) fn pty_helper_connect_auth() {
     let (update_tx, update_rx) = live_update_channel();
     let auth_tx = update_tx.clone();
     let on_ui_intent: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(move |intent| {
-        if matches!(intent, UiIntent::OpenAuthManager { .. }) {
+        if let UiIntent::OpenAuthManager { attempt, .. } = intent {
             auth_tx
                 .send(LiveUpdate::AuthBackendResult {
+                    attempt,
                     success: true,
                     message: "authenticated".to_string(),
                 })

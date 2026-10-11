@@ -114,6 +114,17 @@ fn clean_event(
             false
         }
         EventV1::ProviderReasoningDelta(_) => false,
+        EventV1::ProviderRequestFinished(finished) => {
+            if let Some(thinking) = finished
+                .metadata
+                .as_mut()
+                .and_then(|meta| meta.thinking.as_mut())
+            {
+                thinking.summary = None;
+                thinking.signature = None;
+            }
+            true
+        }
         EventV1::AssistantMessageFinished(message) => {
             if let Some(text) = pending.remove(message.request_id.as_str())
                 && message.parts.is_empty()

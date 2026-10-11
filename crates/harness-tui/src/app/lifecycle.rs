@@ -175,6 +175,7 @@ pub enum UiIntent {
         handle_id: String,
     },
     OpenAuthManager {
+        attempt: Option<u64>,
         args: Vec<String>,
         stdin: Option<String>,
     },

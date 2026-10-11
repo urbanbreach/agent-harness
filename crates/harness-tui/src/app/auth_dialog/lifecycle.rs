@@ -3,6 +3,7 @@ use crate::app::AppState;
 
 impl AppState {
     pub fn open_connect_dialog(&mut self) {
+        self.close_connect_dialog();
         self.connect_dialog.visible = true;
         self.connect_dialog.step = ConnectDialogStep::SelectProvider;
         self.connect_dialog.selected_provider = None;
@@ -21,6 +22,10 @@ impl AppState {
     }
 
     pub fn close_connect_dialog(&mut self) {
+        if self.connect_dialog.visible && self.connect_dialog.step == ConnectDialogStep::Waiting {
+            self.emit_ui_intent(crate::app::UiIntent::AuthBackendInput { line: None });
+        }
+        self.connect_dialog.attempt = self.connect_dialog.attempt.wrapping_add(1);
         self.connect_dialog.visible = false;
     }
 

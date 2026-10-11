@@ -429,6 +429,7 @@ impl AppState {
                     let mut command = vec!["claude-account".to_string()];
                     command.extend(args);
                     self.emit_ui_intent(UiIntent::OpenAuthManager {
+                        attempt: None,
                         args: command,
                         stdin: None,
                     });

@@ -96,7 +96,7 @@ impl PlanViewSummary {
 impl AppState {
     pub(in crate::app) fn open_plan_view(&mut self) {
         if self.replay_mode {
-            self.status_banner = Some("plan mode is unavailable during replay".to_string());
+            self.status_banner = Some("plan viewer is unavailable during replay".to_string());
             return;
         }
 
@@ -104,7 +104,7 @@ impl AppState {
         self.prepare_plan_view();
         self.plan_view_selected = 0;
         self.plan_view_preview = None;
-        self.status_banner = Some("plan mode entered".to_string());
+        self.status_banner = Some("plan viewer opened".to_string());
         self.theme_dialog_visible = false;
         self.error_details_visible = false;
         self.prompt_stash.list_visible = false;

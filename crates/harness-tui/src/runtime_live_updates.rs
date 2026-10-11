@@ -220,7 +220,24 @@ fn apply_update(
         LiveUpdate::OperatorNotice { message, level } => {
             apply_operator_notice(app, message, level);
         }
-        LiveUpdate::AuthBackendResult { success, message } => {
+        LiveUpdate::AuthBackendNotice {
+            attempt,
+            message,
+            level,
+        } => {
+            if attempt.is_some_and(|id| id != app.connect_dialog.attempt) {
+                return false;
+            }
+            apply_operator_notice(app, message, level);
+        }
+        LiveUpdate::AuthBackendResult {
+            attempt,
+            success,
+            message,
+        } => {
+            if attempt.is_some_and(|id| id != app.connect_dialog.attempt) {
+                return false;
+            }
             let message = if !success && is_auth_backend_failure_summary(&message) {
                 app.status_banner.clone().unwrap_or(message)
             } else {
@@ -228,8 +245,22 @@ fn apply_update(
             };
             app.apply_auth_backend_result(success, &message);
         }
-        LiveUpdate::AuthProviderCatalogRefreshed { launch_metadata } => {
-            app.apply_auth_provider_catalog_refresh(*launch_metadata);
+        LiveUpdate::AuthProviderCatalogRefreshed {
+            attempt,
+            launch_metadata,
+        } => {
+            if attempt
+                .zip(app.connect_dialog.catalog_attempt)
+                .is_some_and(|(id, previous)| id < previous)
+            {
+                return false;
+            }
+            app.connect_dialog.catalog_attempt = attempt.or(app.connect_dialog.catalog_attempt);
+            if attempt.is_some_and(|id| id != app.connect_dialog.attempt) {
+                app.set_launch_metadata(*launch_metadata);
+            } else {
+                app.apply_auth_provider_catalog_refresh(*launch_metadata);
+            }
         }
         LiveUpdate::RestoreQueuedInput(texts) => app.restore_queued_input(texts),
     }

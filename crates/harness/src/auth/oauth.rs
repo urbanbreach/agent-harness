@@ -19,6 +19,7 @@ pub(super) struct LoginInput {
     pub(super) environment: std::collections::BTreeMap<String, String>,
     /// The TUI closes its input channel to cancel; a terminal's or pipe's end is not a cancel.
     pub(super) closed_cancels: bool,
+    pub(super) cancellation: tokio_util::sync::CancellationToken,
 }
 
 pub(super) fn input_lines(
@@ -171,8 +172,12 @@ pub(super) async fn login(
     io: &mut CliIo<'_>,
     input: LoginInput,
 ) -> Result<(), String> {
+    let cancellation = input.cancellation.clone();
     let http = Arc::new(ReqwestAuthHttpClient::new().map_err(|e| e.to_string())?);
-    tokio::time::timeout(Duration::from_secs(900), async {
+    tokio::select! {
+        biased;
+        () = cancellation.cancelled() => Err("Login cancelled".into()),
+        result = tokio::time::timeout(Duration::from_secs(900), async {
         if id == &ProviderId::anthropic_subscription() {
             anthropic_subscription(method, store, io, input, http).await
         } else if id == &ProviderId::codex() {
@@ -227,9 +232,8 @@ pub(super) async fn login(
         } else {
             Err("this provider does not support the selected OAuth method; use api-key".into())
         }
-    })
-    .await
-    .map_err(|_| "login timed out after 15 minutes".to_owned())?
+        }) => result.map_err(|_| "login timed out after 15 minutes".to_owned())?,
+    }
 }
 async fn codex_device(
     client: &CodexOAuthClient,

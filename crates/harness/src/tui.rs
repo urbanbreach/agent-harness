@@ -298,20 +298,12 @@ pub struct TuiCommand {
     #[arg(long, default_value_t = false)]
     pub exit_on_finish: bool,
 
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["replay", "scenario", "continue_session"])]
     pub profile: Option<String>,
 
     /// Run inline instead of using the terminal alternate screen.
     #[arg(long, default_value_t = false)]
     pub no_alt_screen: bool,
-
-    /// Use scrollback-native rendering instead of the fullscreen TUI.
-    #[arg(long, default_value_t = false, conflicts_with = "fullscreen")]
-    pub minimal: bool,
-
-    /// Open in the standard fullscreen TUI, overriding a sticky minimal preference.
-    #[arg(long, default_value_t = false, conflicts_with = "minimal")]
-    pub fullscreen: bool,
 }
 
 struct LiveBootstrap {
@@ -648,8 +640,15 @@ async fn run_startup_launcher(
             auth_backend::send_tui_auth_backend_input(line);
             return;
         }
-        if let UiIntent::OpenAuthManager { args, stdin } = intent {
+        if let UiIntent::OpenAuthManager {
+            attempt,
+            args,
+            stdin,
+        } = intent
+        {
             spawn_tui_auth_backend_task(
+                attempt,
+                None,
                 args,
                 stdin,
                 startup_auth_backend.clone(),
@@ -682,6 +681,7 @@ async fn run_startup_launcher(
     });
 
     let tui_result = tokio::task::spawn_blocking(move || {
+        let _auth_cleanup = auth_backend::TuiAuthCleanup;
         run_tui_with_options(TuiOptions {
             mode: TuiMode::Startup {
                 session_history_entries,
@@ -918,14 +918,17 @@ async fn run_continue_session_bootstrap(
             no_alt_screen,
         );
         options.storage_data_dir = Some(data_dir);
+        let _auth_cleanup = auth_backend::TuiAuthCleanup;
         run_tui_with_options(options)
     })
     .await
     .map_err(|err| format!("TUI task failed: {err}"))?;
 
     if let Err(err) = tui_result {
+        let stop_result = stop_live_source_run(&coordinator).await;
         event_forwarder_task.abort();
         ui_intent_task.abort();
+        stop_result?;
         return Err(format!("TUI error: {err}"));
     }
 
@@ -963,12 +966,12 @@ async fn run_live_mode(
         .deterministic
         .then(|| deterministic_run_id(settings.seed, scenario));
 
+    let fixture_lock =
+        harness_core::store::open_private_append(&settings.session_dir.join(".scenario.lock"))
+            .map_err(|err| err.to_string())?;
+    fixture_lock.try_lock().map_err(|err| err.to_string())?;
     if let Some(run_id) = &deterministic_run_id {
-        let stale_run_dir = settings.session_dir.join(run_id);
-        if stale_run_dir.exists() {
-            fs::remove_dir_all(&stale_run_dir)
-                .map_err(|err| format!("failed to reset deterministic run dir: {err}"))?;
-        }
+        crate::scenarios::reset_fixture(&settings.session_dir, run_id)?;
     }
 
     let workspace = create_workspace(
@@ -991,6 +994,8 @@ async fn run_live_mode(
     coordinator_config.provider = Arc::new(golden_path_provider());
     coordinator_config.agent_profiles = golden_path_profiles();
     coordinator_config.run_id_override = deterministic_run_id;
+    coordinator_config.session_mode_source =
+        Some(harness_core::proj::SessionModeSource::ScenarioFixture);
     apply_runtime_metadata(
         &mut coordinator_config,
         settings.deterministic,
@@ -1084,6 +1089,7 @@ async fn run_live_mode(
             no_alt_screen,
         );
         options.storage_data_dir = Some(data_dir);
+        let _auth_cleanup = auth_backend::TuiAuthCleanup;
         run_tui_with_options(options)
     })
     .await
@@ -1091,9 +1097,11 @@ async fn run_live_mode(
     profile_handoff("new_live.live_tui_end");
 
     if let Err(err) = tui_result {
+        let stop_result = stop_live_source_run(&coordinator).await;
         scenario_task.abort();
         event_forwarder_task.abort();
         ui_intent_task.abort();
+        stop_result?;
         return Err(format!("TUI error: {err}"));
     }
 

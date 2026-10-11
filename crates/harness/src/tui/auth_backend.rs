@@ -102,7 +102,11 @@ impl TuiAuthBackendContext {
 
 /// The newest login's input channel, tagged with the login that owns it: a login that
 /// outlives its dialog must never clear or receive a newer login's input.
-type LoginInput = Option<(u64, std::sync::mpsc::Sender<String>)>;
+type LoginInput = Option<(
+    u64,
+    std::sync::mpsc::Sender<String>,
+    tokio_util::sync::CancellationToken,
+)>;
 static AUTH_BACKEND_INPUT: std::sync::Mutex<LoginInput> = std::sync::Mutex::new(None);
 static AUTH_BACKEND_LOGINS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -113,15 +117,29 @@ pub(super) fn send_tui_auth_backend_input(line: Option<String>) {
     };
     match line {
         Some(line) => {
-            if let Some((_, input)) = slot.as_ref() {
+            if let Some((_, input, _)) = slot.as_ref() {
                 let _ = input.send(line);
             }
         }
-        None => *slot = None,
+        None => {
+            if let Some((_, _, cancellation)) = slot.take() {
+                cancellation.cancel();
+            }
+        }
+    }
+}
+
+pub(super) struct TuiAuthCleanup;
+
+impl Drop for TuiAuthCleanup {
+    fn drop(&mut self) {
+        send_tui_auth_backend_input(None);
     }
 }
 
 pub(super) fn spawn_tui_auth_backend_task(
+    attempt: Option<u64>,
+    coordinator: Option<harness_core::coord::CoordinatorHandle>,
     args: Vec<String>,
     stdin: Option<String>,
     context: TuiAuthBackendContext,
@@ -138,20 +156,27 @@ pub(super) fn spawn_tui_auth_backend_task(
     let runtime = tokio::runtime::Handle::try_current().ok();
     let normalized_args = normalize_tui_auth_args(args.clone());
     let display = display_tui_auth_args(&normalized_args);
-    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+    let _ = live_update_tx.send(LiveUpdate::AuthBackendNotice {
+        attempt,
         message: format!("auth backend running: harness auth {display}"),
         level: OperatorNoticeLevel::Info,
     });
     let (input, lines) = std::sync::mpsc::channel();
+    let cancellation = tokio_util::sync::CancellationToken::new();
     let login = AUTH_BACKEND_LOGINS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let interactive = normalized_args.first().map(String::as_str) == Some("login");
     if interactive && let Ok(mut slot) = AUTH_BACKEND_INPUT.lock() {
-        *slot = Some((login, input));
+        if let Some((_, _, previous)) = slot.take() {
+            previous.cancel();
+        }
+        *slot = Some((login, input, cancellation.clone()));
     }
     std::thread::spawn(move || {
         let mut deps = harness::CliDeps::real().with_current_dir(workspace_root.clone());
         if interactive {
-            deps = deps.with_interactive_input(lines);
+            deps = deps
+                .with_interactive_input(lines)
+                .with_cancellation(cancellation.clone());
         }
         let (message, level, success) = run_tui_auth_backend_streaming_with_deps(
             args,
@@ -159,18 +184,22 @@ pub(super) fn spawn_tui_auth_backend_task(
             session_dir.clone(),
             &stdin.unwrap_or_default(),
             &deps,
+            attempt,
             Some(live_update_tx.clone()),
         );
         if let Ok(mut slot) = AUTH_BACKEND_INPUT.lock()
-            && slot.as_ref().is_some_and(|(owner, _)| *owner == login)
+            && slot.as_ref().is_some_and(|(owner, _, _)| *owner == login)
         {
             *slot = None;
         }
-        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+        let _ = live_update_tx.send(LiveUpdate::AuthBackendNotice {
+            attempt,
             message: message.clone(),
             level,
         });
-        let _ = live_update_tx.send(LiveUpdate::AuthBackendResult { success, message });
+        if cancellation.is_cancelled() {
+            return;
+        }
         if success {
             match refreshed_settings_after_auth(
                 normalized_args.first().map(String::as_str),
@@ -182,18 +211,26 @@ pub(super) fn spawn_tui_auth_backend_task(
             ) {
                 Ok(Some(settings)) => {
                     if let (Some(providers), Some(runtime)) = (&providers, &runtime)
-                        && let Err(err) =
-                            runtime.block_on(providers.add_signed_in_providers(&settings))
+                        && let Err(err) = runtime.block_on(
+                            providers.add_signed_in_providers(&settings, coordinator.as_ref()),
+                        )
                     {
-                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                        let _ = live_update_tx.send(LiveUpdate::AuthBackendNotice {
+                            attempt,
                             message: format!("signed-in provider unavailable until restart: {err}"),
                             level: OperatorNoticeLevel::Error,
                         });
+                        let _ = live_update_tx.send(LiveUpdate::AuthBackendResult {
+                            attempt, success: false, message: format!("Signed in, but the provider catalog could not be refreshed: {err}. Restart Harness."),
+                        });
+                        return;
                     }
                     let _ = live_update_tx.send(LiveUpdate::AuthProviderCatalogRefreshed {
+                        attempt,
                         launch_metadata: Box::new(settings.launch_metadata),
                     });
-                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                    let _ = live_update_tx.send(LiveUpdate::AuthBackendNotice {
+                        attempt,
                         message: "provider catalog refreshed; choose a model with /model"
                             .to_string(),
                         level: OperatorNoticeLevel::Info,
@@ -201,13 +238,19 @@ pub(super) fn spawn_tui_auth_backend_task(
                 }
                 Ok(None) => {}
                 Err(err) => {
-                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                    let _ = live_update_tx.send(LiveUpdate::AuthBackendNotice {
+                        attempt,
                         message: format!("provider catalog refresh skipped: {err}"),
                         level: OperatorNoticeLevel::Error,
                     });
                 }
             }
         }
+        let _ = live_update_tx.send(LiveUpdate::AuthBackendResult {
+            attempt,
+            success,
+            message,
+        });
     });
 }
 
@@ -235,8 +278,6 @@ pub(super) fn refreshed_settings_after_auth(
             exit_on_finish: false,
             profile: None,
             no_alt_screen: false,
-            minimal: false,
-            fullscreen: false,
         },
         config_path,
         session_dir,
@@ -265,8 +306,15 @@ pub(super) fn run_tui_auth_backend_once_with_deps(
     session_dir: Option<PathBuf>,
     deps: &harness::CliDeps,
 ) -> (String, OperatorNoticeLevel) {
-    let (message, level, _) =
-        run_tui_auth_backend_streaming_with_deps(args, config_path, session_dir, "", deps, None);
+    let (message, level, _) = run_tui_auth_backend_streaming_with_deps(
+        args,
+        config_path,
+        session_dir,
+        "",
+        deps,
+        None,
+        None,
+    );
     (message, level)
 }
 
@@ -276,17 +324,20 @@ pub(super) fn run_tui_auth_backend_streaming_with_deps(
     session_dir: Option<PathBuf>,
     stdin: &str,
     deps: &harness::CliDeps,
+    attempt: Option<u64>,
     live_update_tx: Option<LiveUpdateSender>,
 ) -> (String, OperatorNoticeLevel, bool) {
     let args = normalize_tui_auth_args(args);
     let mut stdin = std::io::Cursor::new(stdin.as_bytes().to_vec());
     let mut stdout = TuiAuthNoticeWriter::new(
         live_update_tx.clone(),
+        attempt,
         OperatorNoticeLevel::Info,
         "auth backend output",
     );
     let mut stderr = TuiAuthNoticeWriter::new(
         live_update_tx,
+        attempt,
         OperatorNoticeLevel::Error,
         "auth backend error",
     );
@@ -313,6 +364,7 @@ pub(super) fn run_tui_auth_backend_streaming_with_deps(
 }
 
 struct TuiAuthNoticeWriter {
+    attempt: Option<u64>,
     live_update_tx: Option<LiveUpdateSender>,
     level: OperatorNoticeLevel,
     prefix: &'static str,
@@ -324,11 +376,13 @@ struct TuiAuthNoticeWriter {
 impl TuiAuthNoticeWriter {
     fn new(
         live_update_tx: Option<LiveUpdateSender>,
+        attempt: Option<u64>,
         level: OperatorNoticeLevel,
         prefix: &'static str,
     ) -> Self {
         Self {
             live_update_tx,
+            attempt,
             level,
             prefix,
             redactor: DefaultRedactor::default(),
@@ -357,7 +411,8 @@ impl TuiAuthNoticeWriter {
         self.captured.push_str(&redacted);
         self.captured.push('\n');
         if let Some(tx) = &self.live_update_tx {
-            let _ = tx.send(LiveUpdate::OperatorNotice {
+            let _ = tx.send(LiveUpdate::AuthBackendNotice {
+                attempt: self.attempt,
                 message: format!("{}: {redacted}", self.prefix),
                 level: self.level,
             });

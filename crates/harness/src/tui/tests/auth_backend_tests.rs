@@ -112,6 +112,7 @@ fn tui_auth_backend_streams_output_and_accepts_hidden_stdin() {
         Some(temp.path().join("sessions")),
         secret,
         &deps,
+        None,
         Some(tx),
     );
 
@@ -125,14 +126,14 @@ fn tui_auth_backend_streams_output_and_accepts_hidden_stdin() {
     assert!(
         notices.iter().any(|update| matches!(
             update,
-            LiveUpdate::OperatorNotice { message, level: OperatorNoticeLevel::Info }
+            LiveUpdate::AuthBackendNotice { message, level: OperatorNoticeLevel::Info, .. }
                 if message.contains("stored api_key credential for codex")
         )),
         "expected streamed auth output before the final completion notice"
     );
     assert!(
         notices.iter().all(|update| match update {
-            LiveUpdate::OperatorNotice { message, .. } => !message.contains(secret),
+            LiveUpdate::AuthBackendNotice { message, .. } => !message.contains(secret),
             _ => true,
         }),
         "streamed auth notice leaked stdin secret"

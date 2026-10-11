@@ -65,7 +65,11 @@ impl AppState {
         self.connect_dialog.step = ConnectDialogStep::Waiting;
         self.connect_dialog.notice = None;
         self.connect_dialog.error_message = None;
-        self.emit_ui_intent(UiIntent::OpenAuthManager { args, stdin: None });
+        self.emit_ui_intent(UiIntent::OpenAuthManager {
+            attempt: Some(self.connect_dialog.attempt),
+            args,
+            stdin: None,
+        });
     }
 
     fn push_connect_dialog_filter(&mut self, c: char) {
