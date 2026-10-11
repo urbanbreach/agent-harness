@@ -78,6 +78,7 @@ impl Worker {
         // Request-only projection: source locations and catalog configuration
         // never enter conversation buffers, finalized state, or durable events.
         let mut request_messages = messages.messages();
+        let mut attachments = messages.attachments();
         if let Some(metadata) = &self.skill_metadata {
             let after_system = request_messages
                 .iter()
@@ -87,6 +88,10 @@ impl Worker {
                 after_system,
                 harness_providers::CompletionMessage::text(MessageRole::System, metadata),
             );
+            attachments = attachments
+                .into_iter()
+                .map(|(index, media)| (index + usize::from(index >= after_system), media))
+                .collect();
         }
         if let Some(preloads) = &self.skill_preloads
             && !preloads.is_empty()
@@ -102,12 +107,16 @@ impl Worker {
                         .join("\n\n"),
                 ),
             );
+            attachments = attachments
+                .into_iter()
+                .map(|(index, media)| (index + 1, media))
+                .collect();
         }
         CompletionRequest {
             provider_id: Some(model.provider_id),
             model_id: model.model_id,
             messages: request_messages,
-            attachments: messages.attachments(),
+            attachments,
             temperature: self.profile.temperature,
             max_tokens: self
                 .turn
@@ -121,6 +130,7 @@ impl Worker {
             thinking: self.turn.settings.thinking.clone(),
             tools: (!self.tools.is_empty()).then(|| self.tools.clone()),
             context: ProviderRequestContext {
+                working_directory: Some(self.workspace.clone()),
                 session_id: Some(self.session.clone()),
                 request_id: Some(self.turn.id.clone()),
                 initiator: if self.turn.user_initiated

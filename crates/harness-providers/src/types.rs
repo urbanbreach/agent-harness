@@ -2,6 +2,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod continuation;
+pub use continuation::ProviderContinuation;
+
 pub type ProviderId = String;
 pub type ModelId = String;
 
@@ -16,6 +19,8 @@ pub enum MessageRole {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompletionMessage {
+    #[serde(skip)]
+    pub continuation: Option<Box<ProviderContinuation>>,
     pub role: MessageRole,
     pub content: String,
     pub name: Option<String>,
@@ -26,6 +31,7 @@ pub struct CompletionMessage {
 impl CompletionMessage {
     pub fn text(role: MessageRole, content: impl Into<String>) -> Self {
         Self {
+            continuation: None,
             role,
             content: content.into(),
             name: None,
@@ -100,6 +106,9 @@ pub enum ProviderRequestInitiator {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProviderRequestContext {
+    /// Actor workspace for local subprocess providers; never part of persisted context.
+    #[serde(skip)]
+    pub working_directory: Option<std::path::PathBuf>,
     pub session_id: Option<String>,
     pub request_id: Option<String>,
     pub initiator: ProviderRequestInitiator,
@@ -154,10 +163,15 @@ pub struct ProviderStreamThinkingMetadata {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderStreamFinishedMetadata {
+    #[serde(skip)]
+    pub continuation: Option<Box<ProviderContinuation>>,
     pub provider_response_id: Option<String>,
     pub provider_session_id: Option<String>,
     pub provider_cache_id: Option<String>,
     pub provider_stop_reason: Option<String>,
+    /// The provider exhausted its output budget before completing the response.
+    #[serde(default)]
+    pub output_limit_reached: bool,
     pub cache_read_tokens: Option<u32>,
     pub cache_write_tokens: Option<u32>,
     pub assistant_message_id: Option<String>,

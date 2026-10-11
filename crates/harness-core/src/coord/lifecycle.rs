@@ -177,6 +177,7 @@ impl Runtime {
                 attempt_started_ms: 0,
                 notification_seq: 0,
                 finalized: None,
+                finalized_snapshot: None,
                 source_reference: None,
                 skill_startup: None,
                 skill_preloads: None,

@@ -58,7 +58,7 @@ impl HttpProvider {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(timeout.min(Duration::from_secs(30)))
-            .timeout(timeout)
+            .read_timeout(timeout)
             .build()
             .map_err(|_| "could not initialize provider HTTP client")?;
         Ok(Self {
@@ -131,6 +131,13 @@ impl HttpProvider {
                     .decorate(&mut endpoint, &mut headers, &mut body, request, token)
                     .map_err(|e| (e, Category::InvalidCredentials))?;
             }
+        }
+        if request.context.cache_retention == crate::CacheRetention::Long
+            && protocol != Protocol::Anthropic
+            && self.auth_profile.is_none()
+            && endpoint.host_str() == Some("api.openai.com")
+        {
+            body["prompt_cache_retention"] = "24h".into();
         }
         let mut post = self
             .client
@@ -232,7 +239,14 @@ impl HttpProvider {
                 };
                 for frame in frames {
                     match decoder.frame(&frame) {
-                        Ok(events) => for event in events { yield event; },
+                        Ok(events) => for mut event in events {
+                            if let Event::DoneWithMetadata { metadata: Some(metadata), .. } = &mut event
+                                && let Some(state) = &mut metadata.continuation {
+                                state.provider_id.clone_from(&request.provider_id);
+                                state.model_id.clone_from(&request.model_id);
+                            }
+                            yield event;
+                        },
                         Err(error) => { yield Event::categorized_error(error, Category::MalformedStream); return; }
                     }
                     if decoder.done { return; }
@@ -243,5 +257,7 @@ impl HttpProvider {
     }
 }
 
+#[cfg(test)]
+mod cache_tests;
 #[cfg(test)]
 mod tests;

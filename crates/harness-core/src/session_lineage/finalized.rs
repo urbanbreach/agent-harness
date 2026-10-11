@@ -67,6 +67,7 @@ pub(super) fn references(
             state.owner_agent_id = next.state.owner.clone();
             state.owner_session_id.clone_from(&next.owner_session_id);
             state.source_reference = Some(Box::new(reference.clone()));
+            next.state.fidelity = state.fidelity;
             let bytes = serde_json::to_vec(&state)?;
             next.state.sha256 = hex::encode(Sha256::digest(&bytes));
             next.byte_length = bytes.len() as u64;

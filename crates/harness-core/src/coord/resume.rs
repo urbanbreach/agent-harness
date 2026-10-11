@@ -128,6 +128,7 @@ impl Runtime {
         self.info = Some(info.clone());
         self.store = Some(Arc::new(journal));
         self.agents = agents;
+        self.subagent_history = crate::subagent::SubagentHistory::from_events(&events);
         self.restore_native_subagents(&events)?;
         for event in &events {
             if let EventV1::SubagentCancelRequested(intent) = &event.payload {
@@ -147,7 +148,6 @@ impl Runtime {
             }
         }
         self.restore_command_notices();
-        self.subagent_history = crate::subagent::SubagentHistory::from_events(&events);
         self.grants = grants;
         self.fault = None;
         self.metadata = Some(metadata.unwrap_or(self.new_metadata()?));
@@ -167,7 +167,9 @@ impl Runtime {
             events.push(self.emit(event.actor, event.correlation_id, event.payload)?);
         }
         self.restore_children(&events);
+        self.reconcile_native_preparations(&events)?;
         self.reconcile_subagents()?;
+        self.restore_native_subagents(&crate::store::read_events(&info.events_path)?)?;
         if was_active {
             self.emit(
                 system(),

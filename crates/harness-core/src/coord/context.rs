@@ -2,6 +2,7 @@ use harness_providers::{CompletionMessage, MessageRole};
 
 #[derive(Clone, Default)]
 pub(super) struct Context {
+    pub semantic: bool,
     pub entries: Vec<Entry>,
     pub usage: Vec<crate::subagent::FinalizedProviderUsage>,
     pub native_context_usage: Option<crate::subagent::SubagentContextUsage>,

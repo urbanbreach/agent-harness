@@ -33,14 +33,7 @@ impl ProjectPaths {
                 "project path is not UTF-8",
             )
         })?;
-        let path = path.strip_prefix(['/', '\\']).unwrap_or(path);
-        let mut key = String::with_capacity(path.len() + 4);
-        key.push_str("--");
-        key.extend(path.chars().map(|ch| match ch {
-            '/' | '\\' | ':' => '-',
-            other => other,
-        }));
-        key.push_str("--");
+        let key = format!("v2-{}", blake3::hash(path.as_bytes()).to_hex());
         Ok(Self {
             data_dir: data_dir.to_path_buf(),
             key,
@@ -77,6 +70,59 @@ pub fn resolve_session_dir(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_storage_is_distinct_bounded_and_stable_through_symlinks(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let temp = tempfile::tempdir()?;
+        let data = temp.path().join("data");
+        let mut previous = Vec::new();
+        for relative in [
+            "a-b/c".to_owned(),
+            "a/b-c".to_owned(),
+            "a:b/c".to_owned(),
+            "a\\b/c".to_owned(),
+            format!("{0}/{0}/{0}", "long".repeat(25)),
+        ] {
+            let project = temp.path().join(relative);
+            std::fs::create_dir_all(&project)?;
+            let paths = ProjectPaths::new(&data, &project)?;
+            let directories = [
+                paths.sessions_dir(),
+                paths.runtime_dir(),
+                paths.worktrees_dir(),
+            ];
+            assert!(
+                !directories.iter().any(|dir| previous.contains(dir)),
+                "project storage collided"
+            );
+            assert!(directories.iter().all(|dir| !dir.exists()));
+            for directory in &directories {
+                std::fs::create_dir_all(directory)?;
+                std::fs::write(
+                    directory.join("owner"),
+                    project.as_os_str().as_encoded_bytes(),
+                )?;
+            }
+            #[cfg(unix)]
+            {
+                let alias = temp.path().join("alias");
+                std::os::unix::fs::symlink(&project, &alias)?;
+                let aliases = ProjectPaths::new(&data, &alias)?;
+                assert_eq!(
+                    directories,
+                    [
+                        aliases.sessions_dir(),
+                        aliases.runtime_dir(),
+                        aliases.worktrees_dir()
+                    ]
+                );
+                std::fs::remove_file(alias)?;
+            }
+            previous.extend(directories);
+        }
+        Ok(())
+    }
 
     #[test]
     fn harness_home_is_used_as_is_and_empty_override_uses_platform_default() {

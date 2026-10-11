@@ -143,6 +143,7 @@ pub(super) fn messages(
                                 seq: event.seq,
                                 turn: Some(request_seqs[index].0.clone()),
                                 message: CompletionMessage {
+                                    continuation: None,
                                     role: MessageRole::Tool,
                                     content: INTERRUPTED_TOOL_RESULT.into(),
                                     tool_call_id: Some(provider_id.clone()),

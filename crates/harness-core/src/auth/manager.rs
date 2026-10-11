@@ -206,6 +206,22 @@ impl ProviderCredentialManager {
                 .ok_or_else(|| CredentialResolveError::RefreshUnavailable {
                     provider: self.provider.clone(),
                 })?;
+        let refresh_store = store.clone();
+        let provider = self.provider.clone();
+        let _refresh_guard =
+            tokio::task::spawn_blocking(move || refresh_store.lock_refresh(&provider))
+                .await
+                .map_err(|_| {
+                    CredentialStoreError::Invalid("credential refresh lock task failed")
+                })??;
+        stored = store.load(&self.provider)?.ok_or_else(|| self.missing())?;
+        self.register_stored(&stored)?;
+        if stored.kind != StoredCredentialKind::Oauth {
+            return Err(self.missing());
+        }
+        if !self.expired(&stored, leeway) {
+            return resolve_stored(stored);
+        }
         let outcome = refresher
             .refresh(&self.provider, &stored)
             .await

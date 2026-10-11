@@ -19,7 +19,9 @@ pub struct FinalizedConversationItem {
     pub event_seq: u64,
     pub turn_id: Option<String>,
     pub attachments: Vec<AttachmentMetadata>,
+    #[serde(default, skip_serializing)]
     pub settled_reasoning: Vec<String>,
+    #[serde(default, skip_serializing)]
     pub raw_tool_result: Option<FinalizedToolResult>,
 }
 
@@ -41,7 +43,9 @@ pub struct FinalizedProviderUsage {
     pub model_ref: String,
     pub usage: Option<CompletionUsage>,
     pub usage_complete: bool,
+    #[serde(default, skip_serializing)]
     pub thinking: Option<harness_providers::ProviderStreamThinkingMetadata>,
+    #[serde(default, skip_serializing)]
     pub settled_reasoning: Option<Vec<String>>,
 }
 
@@ -68,6 +72,7 @@ pub struct RawFinalizedState {
     pub generation: u64,
     pub conversation_items: Vec<FinalizedConversationItem>,
     /// Last post-compaction model input; system prompt/tool declarations are not copied.
+    #[serde(default, skip_serializing)]
     pub model_request: Option<Box<harness_providers::CompletionRequest>>,
     pub usage: Vec<FinalizedProviderUsage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -124,6 +129,37 @@ pub struct FinalizedAgentStateReferenceV1 {
     pub unavailable: Option<FinalizedStateUnavailable>,
 }
 
+impl RawFinalizedState {
+    pub(crate) fn durable(
+        &self,
+        redactor: &(impl Redactor + ?Sized),
+    ) -> Result<(Self, bool), serde_json::Error> {
+        let mut state = self.clone();
+        if state.fidelity == FinalizedStateFidelity::Exact {
+            state.fidelity = FinalizedStateFidelity::Semantic;
+        }
+        state.model_request = None;
+        let mut modified = false;
+        for item in &mut state.conversation_items {
+            item.message.continuation = None;
+            item.settled_reasoning.clear();
+            item.raw_tool_result = None;
+            for call in item.message.assistant_tool_calls.iter_mut().flatten() {
+                let args: serde_json::Value = serde_json::from_str(&call.arguments_json)
+                    .unwrap_or_else(|_| serde_json::json!({}));
+                let redacted = crate::redact::redact_value(redactor, &args);
+                modified |= redacted != args;
+                call.arguments_json = serde_json::to_string(&redacted)?;
+            }
+        }
+        for usage in &mut state.usage {
+            usage.thinking = None;
+            usage.settled_reasoning = None;
+        }
+        Ok((state, modified))
+    }
+}
+
 impl FinalizedAgentStateReferenceV1 {
     pub fn artifact_path(&self) -> String {
         format!("artifacts/{}.finalized-v1.json", self.state.sha256)
@@ -153,7 +189,10 @@ pub fn resolve_finalized_state(
     if let Some(reason) = reference.unavailable {
         return unavailable(reason);
     }
-    if reference.state.fidelity != FinalizedStateFidelity::Exact {
+    if !matches!(
+        reference.state.fidelity,
+        FinalizedStateFidelity::Semantic | FinalizedStateFidelity::Exact
+    ) {
         return unavailable(FinalizedStateUnavailable::PolicyModified);
     }
     if reference.state.availability != FinalizedStateAvailability::Available {
@@ -243,9 +282,10 @@ pub(crate) fn read_finalized_payload(
         || state.availability != reference.state.availability
         || state.unavailable != reference.unavailable
         || (state.availability == FinalizedStateAvailability::Available
-            && state.usage.iter().any(|entry| {
-                (entry.usage_complete && entry.usage.is_none()) || entry.settled_reasoning.is_none()
-            }))
+            && state
+                .usage
+                .iter()
+                .any(|entry| entry.usage_complete && entry.usage.is_none()))
         || state
             .conversation_items
             .iter()
@@ -257,6 +297,13 @@ pub(crate) fn read_finalized_payload(
     if crate::redact::redact_artifact_text(&String::from_utf8_lossy(&bytes))
         != String::from_utf8_lossy(&bytes)
     {
+        return unavailable(FinalizedStateUnavailable::PolicyModified);
+    }
+    // Older v1 artifacts may contain transient fields; never return or copy them.
+    let (state, modified) = state
+        .durable(&crate::redact::DefaultRedactor::default())
+        .map_err(|_| FinalizedStateUnavailable::Corrupt)?;
+    if modified {
         return unavailable(FinalizedStateUnavailable::PolicyModified);
     }
     Ok(state)

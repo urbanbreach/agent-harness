@@ -225,6 +225,7 @@ impl Worker {
                 });
             messages.push(
                 CompletionMessage {
+                    continuation: response.continuation,
                     role: MessageRole::Assistant,
                     content: response.text.clone(),
                     name: None,
@@ -366,6 +367,7 @@ impl Worker {
             let provider_call_id = call.tool_call_id.clone();
             messages.push(
                 CompletionMessage {
+                    continuation: None,
                     role: MessageRole::Tool,
                     content: text,
                     name: Some(call.function_name),

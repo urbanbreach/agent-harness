@@ -220,7 +220,11 @@ impl Provider for AnthropicSubscriptionProvider {
             .clone()
             .with_env(&|name| environment.get(name).cloned());
         let agent_dir = self.agent_dir.clone();
-        let cwd = self.cwd.clone();
+        let cwd = request
+            .context
+            .working_directory
+            .clone()
+            .unwrap_or_else(|| self.cwd.clone());
         let context_window = self.context_windows.get(&request.model_id).copied();
         let binding_store = agent_dir
             .as_deref()

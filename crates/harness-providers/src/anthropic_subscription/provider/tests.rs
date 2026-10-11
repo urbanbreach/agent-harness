@@ -8,7 +8,7 @@ use std::os::unix::fs::PermissionsExt;
 const FAKE_CLAUDE: &str = r#"#!/usr/bin/env python3
 import json, os, sys, uuid
 log = open(os.environ["FAKE_CLAUDE_LOG"], "a", buffering=1)
-log.write(json.dumps({"argv": sys.argv[1:], "token": os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")}) + "\n")
+log.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "token": os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")}) + "\n")
 reject = os.environ.get("FAKE_CLAUDE_REJECT_FIRST")
 reject = bool(reject) and not os.path.exists(reject) and not open(reject, "w").close()
 mode, sid = os.environ["FAKE_CLAUDE_MODE"], str(uuid.uuid4())
@@ -152,6 +152,8 @@ async fn resident_session_plans_tools_and_sends_results_as_a_delta(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let fake = Fake::new("tool")?;
     let mut request = request("resident-delta-test", vec![user("read x")]);
+    let workspace = tempfile::tempdir()?;
+    request.context.working_directory = Some(workspace.path().into());
     request.tools = Some(vec![ToolDef {
         tool_id: "read".into(),
         function_name: "read".into(),
@@ -180,6 +182,10 @@ async fn resident_session_plans_tools_and_sends_results_as_a_delta(
     else {
         return Err(format!("no tool call: {first:?}").into());
     };
+    assert_eq!(
+        fake.log()?[0]["cwd"],
+        workspace.path().to_string_lossy().as_ref()
+    );
     assert_eq!(
         (
             tool_call_id.as_str(),

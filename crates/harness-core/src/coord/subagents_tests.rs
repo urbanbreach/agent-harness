@@ -21,6 +21,7 @@ mod finalized_checks;
 mod history;
 mod native_resume;
 mod storage;
+use finalized_checks::assert_semantic_source_integrity;
 use fixtures::*;
 
 #[tokio::test]
@@ -188,6 +189,7 @@ async fn actual_finalized_state_survives_presentation_bounding_copy_and_readonly
     let reference = history.finalized[&source].clone();
     let artifact = run.run_dir.join(reference.artifact_path());
     let original_bytes = std::fs::read(&artifact)?;
+    assert!(!String::from_utf8_lossy(&original_bytes).contains("settled-first"));
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -204,18 +206,17 @@ async fn actual_finalized_state_survives_presentation_bounding_copy_and_readonly
         .collect::<Result<_, _>>()?;
     let decoded = SubagentHistory::from_events(&journal);
     assert!(decoded.records[&source].lifecycle.is_finished());
-    assert_eq!(
-        resolve_finalized_state(
-            &run.run_dir,
-            &reference,
-            run.run_id.as_str(),
-            &SubagentId(source.clone()),
-            &attempt
-        ),
-        FinalizedStateResult::Available {
-            state: source_state
-        }
-    );
+    let FinalizedStateResult::Available { state: durable } = resolve_finalized_state(
+        &run.run_dir,
+        &reference,
+        run.run_id.as_str(),
+        &SubagentId(source.clone()),
+        &attempt,
+    ) else {
+        return Err("durable state missing".into());
+    };
+    assert_semantic_source_integrity(&durable, &source_state)?;
+    finalized_checks::check_legacy_snapshot(&reference, &source_state)?;
     assert_eq!(provider.call_count(), calls);
     assert_eq!(std::fs::read(&artifact)?, original_bytes);
     assert_eq!(
@@ -435,16 +436,15 @@ async fn actual_finalized_state_survives_presentation_bounding_copy_and_readonly
             state.conversation_items[0].attachments[0].bytes()?,
             b"faithful attachment"
         );
-        let result = state
+        assert_eq!(state.fidelity, FinalizedStateFidelity::Semantic);
+        assert!(state
             .conversation_items
             .iter()
-            .find_map(|item| item.raw_tool_result.as_ref())
-            .and_then(|result| result.output.as_ref())
-            .ok_or("materialized raw result missing")?;
-        assert_eq!(
-            result.structured_json.as_ref().ok_or("raw data missing")?["session_id"],
-            source
-        );
+            .all(|item| item.raw_tool_result.is_none()));
+        assert!(state
+            .conversation_items
+            .iter()
+            .any(|item| item.message.content.contains("Output shortened")));
         assert_eq!(
             destination.raw_finalized_state(parent.clone()).await?,
             FinalizedStateResult::Unavailable {

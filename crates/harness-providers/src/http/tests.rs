@@ -5,6 +5,70 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_stream::StreamExt;
 
 #[tokio::test]
+async fn http_timeout_measures_idle_reads_instead_of_total_stream_duration(
+) -> Result<(), Box<dyn std::error::Error>> {
+    for idle in [false, true] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let endpoint = format!("http://{}/v1/chat/completions", listener.local_addr()?);
+        let server = tokio::spawn(async move {
+            let (mut connection, _) = listener.accept().await?;
+            let mut request = [0; 8192];
+            let count = connection.read(&mut request).await?;
+            assert!(request[..count].starts_with(b"POST "));
+            connection.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n").await?;
+            if idle {
+                std::future::pending::<()>().await;
+            }
+            for _ in 0..8 {
+                connection
+                    .write_all(b"data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n")
+                    .await?;
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            connection.write_all(b"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n").await
+        });
+        let provider = HttpProvider::new(&endpoint, Protocol::Chat, Duration::from_millis(500))?;
+        let events = tokio::time::timeout(
+            Duration::from_secs(5),
+            provider
+                .stream(CompletionRequest {
+                    model_id: "fixture".into(),
+                    messages: vec![CompletionMessage::text(MessageRole::User, "hello")],
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>(),
+        )
+        .await?;
+        server.abort();
+        if idle {
+            assert!(matches!(
+                events.last(),
+                Some(ProviderStreamEvent::Error {
+                    category: Some(ProviderErrorCategory::TransportFailure),
+                    ..
+                })
+            ));
+        } else {
+            assert!(
+                matches!(
+                    events.last(),
+                    Some(ProviderStreamEvent::DoneWithMetadata { .. })
+                ),
+                "{events:?}"
+            );
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| matches!(event, ProviderStreamEvent::TextDelta(_)))
+                    .count(),
+                8
+            );
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn http_stream_reports_truncation_and_keeps_server_errors_private(
 ) -> Result<(), Box<dyn std::error::Error>> {
     for (status, content_type, body, category) in [
@@ -172,7 +236,10 @@ async fn http_completions_finalize_only_complete_logical_reasoning(
         ),
     )
     .await?;
-    assert_eq!(settled_reasoning(&signed_anthropic), None);
+    assert_eq!(
+        settled_reasoning(&signed_anthropic),
+        Some(vec!["thought".into()])
+    );
 
     let truncated_anthropic = http_fixture_events(
         Protocol::Anthropic,

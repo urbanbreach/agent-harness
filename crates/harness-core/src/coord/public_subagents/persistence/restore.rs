@@ -1,6 +1,50 @@
 use super::*;
 
 impl Runtime {
+    pub(in crate::coord) fn reconcile_native_preparations(
+        &mut self,
+        events: &[EventEnvelopeV1],
+    ) -> Result<(), CoordinatorError> {
+        let interrupted: Vec<_> = self
+            .native_subagents
+            .keys()
+            .filter(|id| self.agents[*id].attempt.is_none())
+            .cloned()
+            .collect();
+        for id in interrupted {
+            let actor = EventActor::new(ActorKind::Worker, Some(id.clone()));
+            if !events.iter().any(|event| {
+                matches!(&event.payload,
+                EventV1::AgentSpawned(spawn) if spawn.agent_id == id)
+            }) {
+                let agent = &self.agents[&id];
+                self.emit(
+                    actor.clone(),
+                    None,
+                    EventV1::AgentSpawned(AgentSpawnedEvent {
+                        agent_id: id.clone(),
+                        profile: agent.info.profile_name.clone(),
+                        parent_agent_id: agent.info.parent_agent_id.clone(),
+                    }),
+                )?;
+            }
+            // Recovery records termination without hooks, tools, or parent wakeups.
+            let request = self.id("subagent-interrupted")?;
+            self.begin_agent_attempt(&id, &request)?;
+            self.emit(
+                actor,
+                Some(request.clone()),
+                EventV1::TaskCancelled(TaskCancelledEvent {
+                    task_id: request.into(),
+                    reason: "Subagent interrupted by process restart".into(),
+                    failure: true,
+                    task_scope: Some(TaskTerminalScope::AgentTurn),
+                }),
+            )?;
+        }
+        Ok(())
+    }
+
     pub(in crate::coord) fn restore_native_profiles(
         &mut self,
         events: &[EventEnvelopeV1],
@@ -50,6 +94,9 @@ impl Runtime {
             };
             let record = self.subagent_history.records.get(&id);
             let terminal = record.is_some_and(|record| record.lifecycle.is_finished());
+            let interrupted = record.is_some_and(|record| {
+                record.outcome == Some(SubagentTerminalOutcome::SessionError)
+            });
             let result = NativeSnapshot {
                 result: GetCommandOrSubagentOutputResult {
                     task_id: id.clone(),
@@ -57,14 +104,14 @@ impl Runtime {
                         "[subagent:{}] {}",
                         registration.subagent_type, registration.description
                     ),
-                    status: if terminal {
-                        "cancelled"
-                    } else {
-                        "initializing"
+                    status: match (interrupted, terminal) {
+                        (true, _) => "failed",
+                        (false, true) => "cancelled",
+                        _ => "initializing",
                     }
                     .into(),
                     started: event.ts.clone().unwrap_or_default(),
-                    output: if terminal {
+                    output: if terminal && !interrupted {
                         "Subagent output is unavailable in this observation".into()
                     } else {
                         "Subagent interrupted by process restart".into()
@@ -72,7 +119,7 @@ impl Runtime {
                     ..Default::default()
                 },
                 completed: None,
-                error: None,
+                error: interrupted.then(|| "Subagent interrupted by process restart".into()),
                 terminal,
                 demoted: false,
             };

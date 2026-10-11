@@ -119,6 +119,15 @@ pub(crate) fn request_budget_semantics(
                     .ok_or(ProviderRequestCostError::ArithmeticOverflow)
             },
         )?;
+        let bytes = bytes
+            .checked_add(
+                message
+                    .continuation
+                    .as_ref()
+                    .filter(|s| s.matches(request, protocol))
+                    .map_or(0, |s| s.byte_len()),
+            )
+            .ok_or(ProviderRequestCostError::ArithmeticOverflow)?;
         let component = if message.role == MessageRole::System {
             &mut cost.system_tokens
         } else if index == pending_prompt_index {

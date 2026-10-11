@@ -26,7 +26,7 @@ pub(super) struct Worker {
     prompt_source: Option<Arc<crate::system_prompt::PromptSource>>,
     prompt_date: String,
     prompt_limits: (usize, crate::config::SubagentLimitBehavior),
-    workspace: PathBuf,
+    pub(super) workspace: PathBuf,
     pub(super) compaction: crate::config::CompactionSettings,
     pub(super) tools: Vec<harness_providers::ToolDef>,
     native_schema: Value,

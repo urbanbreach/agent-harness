@@ -69,6 +69,11 @@ pub(super) fn apply_native_schema_hints(tools: &mut Vec<ToolDef>, hints: &Value,
         }
         if hints["model_selectable"] == false {
             properties.remove("model");
+        } else if !properties.contains_key("model") {
+            let schema: Value = schemars::schema_for!(crate::subagent::SpawnSubagentInput).into();
+            if let Some(model) = schema["properties"].get("model") {
+                properties.insert("model".into(), model.clone());
+            }
         }
     }
 }

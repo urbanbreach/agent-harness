@@ -68,9 +68,7 @@ pub(crate) fn encode(req: &CompletionRequest, protocol: Protocol) -> Result<Valu
         if !system.is_empty() {
             body["system"] = system.into();
         }
-        if let Some(thinking) = &req.thinking {
-            body["thinking"] = thinking.clone();
-        }
+        anthropic_thinking(&mut body, req)?;
     } else if req.context.cache_retention != CacheRetention::None
         && let Some(session) = &req.context.session_id
     {
@@ -149,6 +147,10 @@ fn messages(req: &CompletionRequest, protocol: Protocol) -> Result<Vec<Value>, &
     let mut tool_media = Vec::new();
     for (index, message) in req.messages.iter().enumerate() {
         let attached = req.attachments.get(&index).map_or(&[][..], Vec::as_slice);
+        let continuation = message
+            .continuation
+            .as_deref()
+            .filter(|s| message.role == MessageRole::Assistant && s.matches(req, protocol));
         let role = match message.role {
             MessageRole::System => "system",
             MessageRole::User => "user",
@@ -233,7 +235,13 @@ fn messages(req: &CompletionRequest, protocol: Protocol) -> Result<Vec<Value>, &
                     |tool| tool.function_name.clone(),
                 );
             calls.push(match protocol {
-                Protocol::Chat => json!({"id":call.tool_call_id,"type":"function","function":{"name":name,"arguments":call.arguments_json}}),
+                Protocol::Chat => {
+                    let mut item = json!({"id":call.tool_call_id,"type":"function","function":{"name":name,"arguments":call.arguments_json}});
+                    if let Some(extra) = continuation.and_then(|s| s.data["tool_calls"].get(&call.tool_call_id)) {
+                        item["extra_content"] = extra.clone();
+                    }
+                    item
+                },
                 Protocol::Responses => json!({"type":"function_call","call_id":call.tool_call_id,"name":name,"arguments":call.arguments_json}),
                 Protocol::Anthropic => json!({"type":"tool_use","id":call.tool_call_id,"name":name,"input":args}),
             });
@@ -245,19 +253,13 @@ fn messages(req: &CompletionRequest, protocol: Protocol) -> Result<Vec<Value>, &
             protocol,
         )?;
         match protocol {
-            Protocol::Chat => {
-                let mut item = json!({"role":role,"content":message.content});
-                if attached.is_some() {
-                    item["content"] = content.into();
-                }
-                if let Some(name) = &message.name {
-                    item["name"] = name.clone().into();
-                }
-                if !calls.is_empty() {
-                    item["tool_calls"] = calls.into();
-                }
-                result.push(item);
-            }
+            Protocol::Chat => result.push(chat_message(
+                message,
+                calls,
+                content,
+                attached.is_some(),
+                continuation,
+            )),
             Protocol::Responses => {
                 if !message.content.is_empty() || calls.is_empty() {
                     result.push(json!({"role":role,"content":if attached.is_some() { Value::Array(content) } else { Value::String(message.content.clone()) }}));
@@ -266,6 +268,13 @@ fn messages(req: &CompletionRequest, protocol: Protocol) -> Result<Vec<Value>, &
             }
             Protocol::Anthropic => {
                 content.extend(calls);
+                let content = if let Some(state) =
+                    continuation.filter(|_| message.role == MessageRole::Assistant)
+                {
+                    state.data.clone()
+                } else {
+                    Value::Array(content)
+                };
                 result.push(json!({"role":role,"content":content}));
             }
         }
@@ -308,4 +317,100 @@ fn content_blocks(
         });
     }
     Ok(content)
+}
+
+fn anthropic_thinking(body: &mut Value, req: &CompletionRequest) -> Result<(), &'static str> {
+    let effort = match req.reasoning_effort.as_deref() {
+        Some("minimal") => Some("low"),
+        Some("xhigh") => Some("high"),
+        Some("max") if !req.model_id.contains("opus") => Some("high"),
+        effort => effort,
+    };
+    if let Some(thinking) = &req.thinking {
+        body["thinking"] = thinking.clone();
+        if thinking["type"] == "adaptive"
+            && let Some(effort) = effort
+        {
+            body["output_config"]["effort"] = effort.into();
+        }
+        return Ok(());
+    }
+    let Some(effort) = effort else {
+        return Ok(());
+    };
+    if effort == "none" {
+        body["thinking"] = json!({"type":"disabled"});
+        return Ok(());
+    }
+    let model = req.model_id.replace('.', "-");
+    let parts: Vec<_> = model.split('-').collect();
+    let version = parts.iter().enumerate().find_map(|(index, part)| {
+        part.parse::<u32>()
+            .ok()
+            .filter(|n| (3..100).contains(n))
+            .map(|major| {
+                (
+                    major,
+                    parts
+                        .get(index + 1)
+                        .and_then(|p| p.parse::<u32>().ok())
+                        .filter(|n| *n < 100)
+                        .unwrap_or(0),
+                )
+            })
+    });
+    let adaptive = version.is_some_and(|version| version >= (4, 6));
+    if adaptive {
+        body["thinking"] = json!({"type":"adaptive"});
+        body["output_config"]["effort"] = effort.into();
+    } else {
+        let budget = match effort {
+            "minimal" | "low" => 1024,
+            "medium" => 4096,
+            "high" => 8192,
+            "max" | "xhigh" => 16384,
+            _ => return Err("unsupported Anthropic reasoning effort"),
+        };
+        let max = req.max_tokens.unwrap_or(4096);
+        if max <= 1024 {
+            return Err("Anthropic thinking requires max_tokens above 1024");
+        }
+        body["thinking"] = json!({"type":"enabled","budget_tokens":budget.min(max - 1)});
+        if model.contains("opus-4-5") {
+            body["output_config"]["effort"] = effort.into();
+        }
+    }
+    Ok(())
+}
+
+fn chat_message(
+    message: &crate::CompletionMessage,
+    calls: Vec<Value>,
+    content: Vec<Value>,
+    attached: bool,
+    continuation: Option<&crate::ProviderContinuation>,
+) -> Value {
+    let role = match message.role {
+        MessageRole::System => "system",
+        MessageRole::User => "user",
+        MessageRole::Assistant => "assistant",
+        MessageRole::Tool => "tool",
+    };
+    let mut item = json!({"role":role,"content":message.content});
+    if attached {
+        item["content"] = content.into();
+    }
+    if let Some(extra) = continuation
+        .and_then(|s| s.data.get("extra_content"))
+        .filter(|v| !v.is_null())
+    {
+        item["extra_content"] = extra.clone();
+    }
+    if let Some(name) = &message.name {
+        item["name"] = name.clone().into();
+    }
+    if !calls.is_empty() {
+        item["tool_calls"] = calls.into();
+    }
+    item
 }

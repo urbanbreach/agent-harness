@@ -2,6 +2,7 @@ use super::*;
 use crate::{clock::FakeClock, redact::DefaultRedactor};
 use harness_providers::{mock::MockProvider, MessageRole};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio_stream::StreamExt;
 
 const PASSAGE: &str = "I need to examine the current implementation and decide which concrete change should happen next. ";
 const BILLED_USAGE: CompletionUsage = CompletionUsage {

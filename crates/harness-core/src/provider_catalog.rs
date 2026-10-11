@@ -177,6 +177,9 @@ impl ProviderCatalog {
                         .unwrap_or_else(|| match id.as_str() {
                             "openai" => "https://api.openai.com/v1".into(),
                             "anthropic" => "https://api.anthropic.com/v1".into(),
+                            "google" => {
+                                "https://generativelanguage.googleapis.com/v1beta/openai".into()
+                            }
                             _ => String::new(),
                         }),
                     id,

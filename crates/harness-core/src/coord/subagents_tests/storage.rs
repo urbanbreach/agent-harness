@@ -115,6 +115,10 @@ async fn missing_normalized_fields_and_policy_modified_state_are_not_exact(
             Stream::TextDelta("sk-policy-rejected-secret-value".into()),
             settled_metadata("safe"),
         ],
+        vec![
+            Stream::TextDelta("safe answer".into()),
+            settled_metadata("sk-transient-rejected-secret-value"),
+        ],
     ]));
     let coordinator = spawn_coordinator(
         config,
@@ -128,9 +132,13 @@ async fn missing_normalized_fields_and_policy_modified_state_are_not_exact(
     let second = coordinator
         .spawn_agent(system_actor(), "default", None)
         .await?;
+    let third = coordinator
+        .spawn_agent(system_actor(), "default", None)
+        .await?;
     for (agent, reason) in [
         (first, FinalizedStateUnavailable::UnsupportedReasoning),
         (second, FinalizedStateUnavailable::PolicyModified),
+        (third, FinalizedStateUnavailable::PolicyModified),
     ] {
         let mut events = coordinator.subscribe_new_events().await?;
         let id = coordinator

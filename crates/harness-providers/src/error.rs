@@ -8,6 +8,7 @@ pub enum ProviderErrorCategory {
     InvalidCredentials,
     RateLimited,
     ContextWindowExceeded,
+    OutputLimitExceeded,
     UnsupportedToolCall,
     MalformedStream,
     TransportFailure,
@@ -15,11 +16,12 @@ pub enum ProviderErrorCategory {
 }
 
 impl ProviderErrorCategory {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::MissingCredentials,
         Self::InvalidCredentials,
         Self::RateLimited,
         Self::ContextWindowExceeded,
+        Self::OutputLimitExceeded,
         Self::UnsupportedToolCall,
         Self::MalformedStream,
         Self::TransportFailure,
@@ -32,6 +34,7 @@ impl ProviderErrorCategory {
             Self::InvalidCredentials => "invalid_credentials",
             Self::RateLimited => "rate_limited",
             Self::ContextWindowExceeded => "context_window_exceeded",
+            Self::OutputLimitExceeded => "output_limit_exceeded",
             Self::UnsupportedToolCall => "unsupported_tool_call",
             Self::MalformedStream => "malformed_stream",
             Self::TransportFailure => "transport_failure",
@@ -44,6 +47,7 @@ impl ProviderErrorCategory {
             Self::MissingCredentials | Self::InvalidCredentials => "Check provider credentials.",
             Self::RateLimited => "Wait before retrying, or switch providers.",
             Self::ContextWindowExceeded => "Compact the session or use a larger context window.",
+            Self::OutputLimitExceeded => "Ask the model to continue, or increase the output limit.",
             Self::UnsupportedToolCall => "Check the tool schema and model capabilities.",
             Self::MalformedStream => "Retry the request. The provider returned an invalid stream.",
             Self::TransportFailure => "Check the provider URL and network connection.",

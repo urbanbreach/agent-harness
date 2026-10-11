@@ -2,6 +2,8 @@ use super::Protocol;
 use crate::{CompletionUsage, ProviderStreamEvent as Event, ProviderStreamFinishedMetadata};
 use serde_json::Value;
 use std::collections::BTreeMap;
+mod anthropic;
+mod continuation;
 
 #[derive(Default)]
 struct ToolCall {
@@ -9,6 +11,7 @@ struct ToolCall {
     name: String,
     arguments: String,
     initial_input: Option<Value>,
+    extra_content: Option<Value>,
 }
 
 #[derive(Default)]
@@ -28,6 +31,9 @@ pub(crate) struct StreamDecoder {
     chat_reasoning_seen: bool,
     chat_reasoning_available: bool,
     anthropic_thinking: BTreeMap<u64, ThinkingBlock>,
+    anthropic_content: BTreeMap<u64, Value>,
+    chat_extra_content: Option<Value>,
+    continuation_bytes: usize,
     anthropic_reasoning_bytes: usize,
     anthropic_reasoning_unavailable: bool,
     pub done: bool,
@@ -47,6 +53,9 @@ impl StreamDecoder {
             chat_reasoning_seen: false,
             chat_reasoning_available: true,
             anthropic_thinking: BTreeMap::new(),
+            anthropic_content: BTreeMap::new(),
+            chat_extra_content: None,
+            continuation_bytes: 0,
             anthropic_reasoning_bytes: 0,
             anthropic_reasoning_unavailable: false,
             done: false,
@@ -87,6 +96,10 @@ impl StreamDecoder {
         }
         for choice in choices {
             let delta = &choice["delta"];
+            if let Some(extra) = delta.get("extra_content").filter(|v| !v.is_null()) {
+                self.add_continuation_bytes(extra.to_string().len())?;
+                self.chat_extra_content = Some(extra.clone());
+            }
             if let Some(text) = delta["content"].as_str() {
                 events.push(Event::TextDelta(text.into()));
             }
@@ -111,8 +124,7 @@ impl StreamDecoder {
             }
             if let Some(calls) = delta["tool_calls"].as_array() {
                 for call in calls {
-                    let index = call["index"].as_u64().ok_or("missing tool index")?;
-                    let tool = self.tool(index)?;
+                    let tool = self.chat_tool(call)?;
                     label(&mut tool.id, call["id"].as_str())?;
                     label(&mut tool.name, call["function"]["name"].as_str())?;
                     let fragment = call["function"]["arguments"].as_str().unwrap_or("");
@@ -126,6 +138,7 @@ impl StreamDecoder {
                 }
                 self.metadata.provider_stop_reason = Some(reason.into());
                 if reason == "length" {
+                    self.metadata.output_limit_reached = true;
                     self.chat_reasoning_available = false;
                 }
                 self.stopped = true;
@@ -168,152 +181,26 @@ impl StreamDecoder {
                 append(&mut tool.arguments, fragment)?;
                 events.push(tool.delta(fragment));
             }
-            "response.completed" => {
+            "response.completed" | "response.incomplete" => {
                 let response = &value["response"];
-                if response["status"] != "completed" {
+                if value["type"] == "response.incomplete"
+                    && response["status"] == "incomplete"
+                    && response["incomplete_details"]["reason"] == "max_output_tokens"
+                {
+                    self.metadata.output_limit_reached = true;
+                    self.metadata.provider_stop_reason = Some("max_output_tokens".into());
+                } else if value["type"] != "response.completed" || response["status"] != "completed"
+                {
                     return Err("response is incomplete");
                 }
                 self.metadata.provider_response_id = response["id"].as_str().map(str::to_owned);
                 self.record_usage(&response["usage"], "input_tokens", "output_tokens")?;
                 return self.finish();
             }
-            "response.failed" | "response.incomplete" => return Err("response is incomplete"),
+            "response.failed" => return Err("response is incomplete"),
             _ => {}
         }
         Ok(events)
-    }
-
-    fn anthropic(&mut self, value: &Value) -> Result<Vec<Event>, &'static str> {
-        let mut events = Vec::new();
-        match value["type"].as_str().ok_or("missing message event type")? {
-            "message_start" => {
-                self.metadata.assistant_message_id =
-                    value["message"]["id"].as_str().map(str::to_owned);
-                self.record_usage(&value["message"]["usage"], "input_tokens", "output_tokens")?;
-            }
-            "content_block_start" => match value["content_block"]["type"].as_str() {
-                Some("thinking") => {
-                    self.start_anthropic_thinking(value["index"].as_u64(), &value["content_block"]);
-                }
-                Some("redacted_thinking") => self.anthropic_reasoning_unavailable = true,
-                Some("tool_use") => {
-                    let tool = self.tool(value["index"].as_u64().ok_or("missing tool index")?)?;
-                    label(&mut tool.id, Some(text(&value["content_block"], "id")?))?;
-                    label(&mut tool.name, Some(text(&value["content_block"], "name")?))?;
-                    tool.initial_input = value["content_block"].get("input").cloned();
-                }
-                _ => {}
-            },
-            "content_block_delta" => match value["delta"]["type"].as_str() {
-                Some("text_delta") => {
-                    events.push(Event::TextDelta(text(&value["delta"], "text")?.into()))
-                }
-                Some("thinking_delta") => {
-                    let fragment = text(&value["delta"], "thinking")?;
-                    self.append_anthropic_reasoning(value["index"].as_u64(), fragment);
-                    events.push(Event::ReasoningDelta(fragment.into()));
-                }
-                Some("signature_delta") => self.anthropic_reasoning_unavailable = true,
-                Some("input_json_delta") => {
-                    let tool = self.tool(value["index"].as_u64().ok_or("missing tool index")?)?;
-                    let fragment = text(&value["delta"], "partial_json")?;
-                    append(&mut tool.arguments, fragment)?;
-                    events.push(tool.delta(fragment));
-                }
-                _ => {}
-            },
-            "content_block_stop" => {
-                if let Some(index) = value["index"].as_u64()
-                    && let Some(block) = self.anthropic_thinking.get_mut(&index)
-                {
-                    block.finished = true;
-                }
-            }
-            "message_delta" => {
-                self.metadata.provider_stop_reason =
-                    value["delta"]["stop_reason"].as_str().map(str::to_owned);
-                if self.metadata.provider_stop_reason.as_deref() == Some("max_tokens") {
-                    self.anthropic_reasoning_unavailable = true;
-                }
-                self.stopped = self
-                    .metadata
-                    .provider_stop_reason
-                    .as_deref()
-                    .is_some_and(|r| {
-                        matches!(r, "end_turn" | "tool_use" | "max_tokens" | "stop_sequence")
-                    });
-                self.record_usage(&value["usage"], "input_tokens", "output_tokens")?;
-            }
-            "message_stop" => {
-                if !self.stopped {
-                    return Err("message ended without a stop reason");
-                }
-                return self.finish();
-            }
-            _ => {}
-        }
-        Ok(events)
-    }
-
-    fn start_anthropic_thinking(&mut self, index: Option<u64>, content: &Value) {
-        let Some(index) = index else {
-            self.anthropic_reasoning_unavailable = true;
-            return;
-        };
-        if self.anthropic_thinking.len() >= 128 && !self.anthropic_thinking.contains_key(&index) {
-            self.anthropic_reasoning_unavailable = true;
-            return;
-        }
-        if self
-            .anthropic_thinking
-            .insert(index, ThinkingBlock::default())
-            .is_some()
-        {
-            self.anthropic_reasoning_unavailable = true;
-            return;
-        }
-        if content
-            .get("signature")
-            .is_some_and(|signature| !signature.is_null())
-        {
-            self.anthropic_reasoning_unavailable = true;
-        }
-        if let Some(thinking) = content.get("thinking") {
-            if let Some(thinking) = thinking.as_str() {
-                self.append_anthropic_reasoning(Some(index), thinking);
-            } else {
-                self.anthropic_reasoning_unavailable = true;
-            }
-        }
-    }
-
-    fn append_anthropic_reasoning(&mut self, index: Option<u64>, fragment: &str) {
-        let Some(index) = index else {
-            self.anthropic_reasoning_unavailable = true;
-            return;
-        };
-        if self
-            .anthropic_thinking
-            .get(&index)
-            .is_some_and(|block| block.finished)
-        {
-            self.anthropic_reasoning_unavailable = true;
-            return;
-        }
-        let Some(block) = self.anthropic_thinking.get_mut(&index) else {
-            self.anthropic_reasoning_unavailable = true;
-            return;
-        };
-        if self
-            .anthropic_reasoning_bytes
-            .saturating_add(fragment.len())
-            > 1_048_576
-            || append(&mut block.text, fragment).is_err()
-        {
-            self.anthropic_reasoning_unavailable = true;
-            return;
-        }
-        self.anthropic_reasoning_bytes += fragment.len();
     }
 
     fn record_usage(
@@ -359,7 +246,11 @@ impl StreamDecoder {
     }
 
     fn finish(&mut self) -> Result<Vec<Event>, &'static str> {
+        self.finish_continuation()?;
         let mut events = Vec::new();
+        if self.metadata.output_limit_reached {
+            self.tools.clear();
+        }
         let mut ids = std::collections::BTreeSet::new();
         for (_, mut tool) in std::mem::take(&mut self.tools) {
             if tool.arguments.is_empty()

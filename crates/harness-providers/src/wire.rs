@@ -146,6 +146,7 @@ mod tests {
             CompletionMessage::text(MessageRole::System, "Be concise."),
             CompletionMessage::text(MessageRole::User, "Read the file."),
             CompletionMessage {
+                continuation: None,
                 role: MessageRole::Assistant,
                 content: String::new(),
                 name: None,
@@ -157,6 +158,7 @@ mod tests {
                 }]),
             },
             CompletionMessage {
+                continuation: None,
                 role: MessageRole::Tool,
                 content: "contents".into(),
                 name: None,
@@ -193,6 +195,8 @@ mod tests {
             "call-1"
         );
 
+        check_continuation_scope(&mut request)?;
+
         use base64::Engine;
         let encoded = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
         let png = base64::engine::general_purpose::STANDARD
@@ -218,6 +222,7 @@ mod tests {
                 arguments_json: "{}".into(),
             });
         request.messages.push(CompletionMessage {
+            continuation: None,
             role: MessageRole::Tool,
             content: "second result".into(),
             tool_call_id: Some("call-2".into()),
@@ -279,6 +284,48 @@ mod tests {
         }
         assert!(encode(&request, Protocol::Chat).is_ok());
         assert!(crate::request_budget::generic_request_budget_semantics(&request, 0).is_ok());
+    }
+
+    fn check_continuation_scope(request: &mut CompletionRequest) -> Result<(), &'static str> {
+        let mut state = crate::ProviderContinuation::new(
+            Protocol::Chat,
+            json!({
+                "tool_calls":{"call-1":{"google":{"thought_signature":"private-continuation"}}}
+            }),
+        )?;
+        state.model_id.clone_from(&request.model_id);
+        request.messages[2].continuation = Some(Box::new(state));
+        let budget = crate::request_budget::request_budget_semantics(request, 1, Protocol::Chat)
+            .map_err(|_| "budget failed")?
+            .request_cost;
+        assert!(encode(request, Protocol::Chat)?
+            .to_string()
+            .contains("private-continuation"));
+        assert!(!serde_json::to_string(request)
+            .map_err(|_| "serialization failed")?
+            .contains("private-continuation"));
+        assert!(!format!("{request:?}").contains("private-continuation"));
+        request.provider_id = Some("different-provider".into());
+        assert!(!encode(request, Protocol::Chat)?
+            .to_string()
+            .contains("private-continuation"));
+        request.provider_id = None;
+        request.model_id = "different-model".into();
+        assert!(!encode(request, Protocol::Chat)?
+            .to_string()
+            .contains("private-continuation"));
+        assert!(!encode(request, Protocol::Anthropic)?
+            .to_string()
+            .contains("private-continuation"));
+        assert!(
+            crate::request_budget::request_budget_semantics(request, 1, Protocol::Chat)
+                .map_err(|_| "budget failed")?
+                .request_cost
+                .history_tokens
+                < budget.history_tokens
+        );
+        request.messages[2].continuation = None;
+        Ok(())
     }
 
     #[test]

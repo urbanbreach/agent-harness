@@ -141,11 +141,14 @@ async fn credential_refresh_coalesces_waiters_and_cannot_resurrect_logout(
     );
     expired.metadata.insert("retained".into(), "value".into());
     store.save(&expired)?;
-    let tasks: Vec<_> = (0..2)
-        .map(|_| {
-            let manager = Arc::clone(&manager);
-            tokio::spawn(async move { manager.resolve().await })
-        })
+    let other_manager = Arc::new(
+        ProviderCredentialManager::new(store.clone(), provider.clone(), Vec::new(), "", |_| None)
+            .with_clock(Arc::new(FixedClock))
+            .with_refresher(Arc::clone(&refresh) as Arc<dyn OAuthTokenRefresher>),
+    );
+    let tasks: Vec<_> = [Arc::clone(&manager), Arc::clone(&manager), other_manager]
+        .into_iter()
+        .map(|manager| tokio::spawn(async move { manager.resolve().await }))
         .collect();
     tokio::time::timeout(Duration::from_secs(3), refresh.entered.notified()).await?;
     refresh.release.notify_one();

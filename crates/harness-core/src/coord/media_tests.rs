@@ -11,6 +11,37 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 const IMAGE: &str =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 
+struct MediaSkills;
+impl crate::config::SkillCatalogDiscovery for MediaSkills {
+    fn discover(
+        &self,
+        cwd: &std::path::Path,
+        _: &crate::config::SkillsConfig,
+        _: Option<bool>,
+    ) -> Result<crate::config::SkillCatalog, ToolError> {
+        Ok(crate::config::SkillCatalog {
+            entries: vec![crate::config::SkillCatalogEntry {
+                stable_id: "image-review".into(),
+                name: "image-review".into(),
+                description: "Review an image".into(),
+                source_scope: "project".into(),
+                root_path: cwd.to_path_buf(),
+                location: cwd.join("SKILL.md"),
+                loadable: true,
+                permission_mode: "allow".into(),
+                status: crate::config::SkillCatalogStatus::Loadable,
+                reason: None,
+                argument_hint: None,
+                allowed_tools: Vec::new(),
+                deferred_mcp: None,
+                deferred_resources: None,
+                body_loaded: false,
+                body_digest: None,
+            }],
+        })
+    }
+}
+
 struct MediaTool(Arc<AtomicUsize>);
 #[async_trait::async_trait]
 impl Tool for MediaTool {
@@ -70,6 +101,7 @@ async fn tool_media_reaches_the_provider_and_survives_resume_without_reexecution
     let mut config = CoordinatorConfig::new(root.path().join("sessions"));
     config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
     config.tool_registry = Arc::new(registry);
+    config.skill_catalog_discovery = Some(Arc::new(MediaSkills));
     config.permission_policy = PermissionPolicy::allow_all();
     let mut profile = crate::agent::AgentProfile::fallback("default");
     profile.model_ref = "mock:gpt-4.1".into();

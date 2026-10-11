@@ -22,7 +22,7 @@ pub enum CredentialStoreError {
 pub const CREDENTIAL_LOCK_RETRY_BUDGET: std::time::Duration =
     std::time::Duration::from_millis(5_500);
 
-/// An exclusive hold on the credential directory; released on drop.
+/// An exclusive credential lock; released on drop.
 pub struct CredentialStoreLock {
     _file: Option<File>,
 }
@@ -197,26 +197,23 @@ impl CredentialStore {
         #[cfg(unix)]
         {
             crate::store::create_private_dir(&path)?;
-            let file = File::open(&path)?;
-            let started = std::time::Instant::now();
-            let mut delay = std::time::Duration::from_millis(100);
-            loop {
-                match file.try_lock() {
-                    Ok(()) => return Ok(CredentialStoreLock { _file: Some(file) }),
-                    Err(std::fs::TryLockError::WouldBlock) if started.elapsed() < budget => {
-                        std::thread::sleep(delay.min(budget.saturating_sub(started.elapsed())));
-                        delay = (delay * 2).min(std::time::Duration::from_secs(1));
-                    }
-                    Err(std::fs::TryLockError::WouldBlock) => {
-                        return Err(CredentialStoreError::Busy {
-                            path: path.display().to_string(),
-                            waited_ms: started.elapsed().as_millis(),
-                        });
-                    }
-                    Err(std::fs::TryLockError::Error(e)) => return Err(e.into()),
-                }
-            }
+            lock_file_bounded(File::open(&path)?, &path, budget)
         }
+    }
+    pub(super) fn lock_refresh(
+        &self,
+        provider: &ProviderId,
+    ) -> Result<CredentialStoreLock, CredentialStoreError> {
+        // Separate from the store lock so logout can still invalidate an in-flight refresh.
+        let path = self
+            .data_dir
+            .join("credentials")
+            .join(format!(".{provider}.refresh.lock"));
+        lock_file_bounded(
+            crate::store::open_private_append(&path)?,
+            &path,
+            CREDENTIAL_LOCK_RETRY_BUDGET,
+        )
     }
     fn lock(&self, create: bool) -> Result<Option<File>, CredentialStoreError> {
         let path = self.data_dir.join("credentials");
@@ -263,6 +260,30 @@ impl CredentialStore {
                 }
             })
             .collect()
+    }
+}
+fn lock_file_bounded(
+    file: File,
+    path: &Path,
+    budget: std::time::Duration,
+) -> Result<CredentialStoreLock, CredentialStoreError> {
+    let started = std::time::Instant::now();
+    let mut delay = std::time::Duration::from_millis(100);
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(CredentialStoreLock { _file: Some(file) }),
+            Err(std::fs::TryLockError::WouldBlock) if started.elapsed() < budget => {
+                std::thread::sleep(delay.min(budget.saturating_sub(started.elapsed())));
+                delay = (delay * 2).min(std::time::Duration::from_secs(1));
+            }
+            Err(std::fs::TryLockError::WouldBlock) => {
+                return Err(CredentialStoreError::Busy {
+                    path: path.display().to_string(),
+                    waited_ms: started.elapsed().as_millis(),
+                });
+            }
+            Err(std::fs::TryLockError::Error(e)) => return Err(e.into()),
+        }
     }
 }
 fn validate_path(path: &Path) -> Result<(), CredentialStoreError> {

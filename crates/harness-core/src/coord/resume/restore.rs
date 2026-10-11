@@ -22,7 +22,23 @@ impl Runtime {
             })
             .ok_or_else(|| CoordinatorError::Invalid("run context missing".into()))?;
         for event in active.iter() {
-            if let EventV1::AgentSpawned(e) = &event.payload {
+            let spawn = match &event.payload {
+                EventV1::AgentSpawned(e) => Some(e.clone()),
+                EventV1::NativeSubagentRegistered(e)
+                    if !active.iter().any(|event| {
+                        matches!(&event.payload,
+                        EventV1::AgentSpawned(spawn) if spawn.agent_id == e.child_id)
+                    }) =>
+                {
+                    Some(AgentSpawnedEvent {
+                        agent_id: e.child_id.clone(),
+                        profile: format!("native:{}", e.child_id),
+                        parent_agent_id: Some(e.spawner.clone()),
+                    })
+                }
+                _ => None,
+            };
+            if let Some(e) = spawn {
                 let profile = self
                     .profiles
                     .get(&e.profile)
@@ -90,6 +106,7 @@ impl Runtime {
                         attempt_started_ms: 0,
                         notification_seq: 0,
                         finalized: None,
+                        finalized_snapshot: None,
                         source_reference: None,
                         skill_startup: None,
                         skill_preloads: None,

@@ -22,6 +22,8 @@ impl Runtime {
         let fidelity = if messages.unavailable == Some(FinalizedStateUnavailable::LegacySummaryOnly)
         {
             FinalizedStateFidelity::SummaryOnly
+        } else if messages.semantic {
+            FinalizedStateFidelity::Semantic
         } else {
             FinalizedStateFidelity::Exact
         };
@@ -79,15 +81,18 @@ impl Runtime {
                 .read_state
                 .keys()
                 .any(|path| path.to_str().is_none());
+        let (durable, args_modified) = snapshot.durable(self.redactor.as_ref())?;
         let bytes = if unrepresentable {
             Vec::new()
         } else {
-            serde_json::to_vec(&snapshot)?
+            serde_json::to_vec(&durable)?
         };
         let text = String::from_utf8_lossy(&bytes);
         let safe = crate::redact::redact_artifact_text(&text);
-        let policy_modified =
-            safe != text || self.redactor.redact_text(&text) != text || text.contains("[REDACTED");
+        let policy_modified = args_modified
+            || safe != text
+            || self.redactor.redact_text(&text) != text
+            || text.contains("[REDACTED");
         let unavailable = if unrepresentable {
             Some(FinalizedStateUnavailable::UnsupportedEncoding)
         } else if policy_modified {
@@ -106,7 +111,7 @@ impl Runtime {
                 fidelity: if policy_modified {
                     FinalizedStateFidelity::Redacted
                 } else {
-                    fidelity
+                    durable.fidelity
                 },
                 availability: if unavailable.is_some() {
                     FinalizedStateAvailability::Unsupported
@@ -116,7 +121,7 @@ impl Runtime {
             },
             byte_length: 0,
             owner_run_id: snapshot.owner_run_id.clone(),
-            owner_session_id: snapshot.owner_session_id,
+            owner_session_id: snapshot.owner_session_id.clone(),
             attempt_id: attempt.into(),
             generation: agent.generation,
             unavailable,
@@ -129,6 +134,9 @@ impl Runtime {
                 &self.info()?.run_dir.join(reference.artifact_path()),
                 &bytes,
             )?;
+        }
+        if let Some(agent) = self.agents.get_mut(agent_id) {
+            agent.finalized_snapshot = unavailable.is_none().then(|| Box::new(snapshot));
         }
         Ok(reference)
     }
@@ -165,7 +173,7 @@ impl Runtime {
                     .unwrap_or(FinalizedStateUnavailable::Missing),
             });
         };
-        let result = resolve_finalized_state(
+        let mut result = resolve_finalized_state(
             &self.info()?.run_dir,
             reference,
             self.projection_owner
@@ -175,8 +183,31 @@ impl Runtime {
             &SubagentId(id.into()),
             &reference.attempt_id,
         );
+        if matches!(result, FinalizedStateResult::Available { .. })
+            && let Some(snapshot) = &agent.finalized_snapshot
+            && snapshot.attempt_id == reference.attempt_id
+            && snapshot.generation == reference.generation
+        {
+            result = FinalizedStateResult::Available {
+                state: snapshot.clone(),
+            };
+        }
         if let FinalizedStateResult::Available { state } = &result {
-            let value = serde_json::to_value(state)?;
+            // Transient fields still cross the copy boundary even though serde omits them.
+            let value = serde_json::to_value((
+                state,
+                &state.model_request,
+                state
+                    .conversation_items
+                    .iter()
+                    .map(|item| (&item.settled_reasoning, &item.raw_tool_result))
+                    .collect::<Vec<_>>(),
+                state
+                    .usage
+                    .iter()
+                    .map(|usage| (&usage.thinking, &usage.settled_reasoning))
+                    .collect::<Vec<_>>(),
+            ))?;
             if crate::redact::redact_value(self.redactor.as_ref(), &value) != value {
                 return Ok(FinalizedStateResult::Unavailable {
                     reason: FinalizedStateUnavailable::PolicyModified,

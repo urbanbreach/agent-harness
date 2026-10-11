@@ -26,6 +26,34 @@ impl CoordinatorHandle {
     pub async fn run_info(&self) -> Result<RunInfo, CoordinatorError> {
         self.call(|s| s.info().cloned()).await
     }
+    /// Refresh discovery after sign-in; running agents keep their selected model and policy.
+    pub async fn refresh_provider_models(
+        &self,
+        config: CoordinatorConfig,
+    ) -> Result<(), CoordinatorError> {
+        self.call(move |s| {
+            s.accepting()?;
+            s.config
+                .secret_registry
+                .register(config.secret_values)
+                .map_err(|error| CoordinatorError::Invalid(error.into()))?;
+            s.config.model_catalog = config.model_catalog;
+            s.config.subagent_model_catalog = config.subagent_model_catalog;
+            s.config.agent_model_targets = config.agent_model_targets;
+            s.config.agent_model_fallbacks = config.agent_model_fallbacks;
+            s.config.subagents.model_roles = config.subagents.model_roles;
+            s.config.subagents.model_variants = config.subagents.model_variants;
+            s.config.subagents.models = config.subagents.models;
+            for (name, profile) in &mut s.config.agent_profiles {
+                if let Some(refreshed) = config.agent_profiles.get(name) {
+                    profile.model_ref.clone_from(&refreshed.model_ref);
+                    profile.cache_retention = refreshed.cache_retention;
+                }
+            }
+            Ok(())
+        })
+        .await
+    }
     pub async fn event_store(&self) -> Result<Arc<dyn EventStore>, CoordinatorError> {
         self.call(|s| {
             s.store

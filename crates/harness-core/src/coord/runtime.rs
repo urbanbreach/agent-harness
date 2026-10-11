@@ -90,6 +90,7 @@ pub(super) struct Agent {
     pub attempt_started_ms: u64,
     pub notification_seq: u64,
     pub finalized: Option<crate::subagent::FinalizedAgentStateReferenceV1>,
+    pub finalized_snapshot: Option<Box<crate::subagent::RawFinalizedState>>,
     pub source_reference: Option<Box<crate::subagent::FinalizedAgentStateReferenceV1>>,
     pub skill_startup: Option<Arc<crate::config::SkillStartupSnapshot>>,
     pub skill_preloads: Option<Vec<(String, String)>>,
@@ -197,6 +198,7 @@ impl Runtime {
     }
     pub async fn run(mut self, mut rx: mpsc::Receiver<Command>, shutdown: CancellationToken) {
         let mut closing = false;
+        let mut channel_open = true;
         loop {
             if closing && self.jobs.is_empty() {
                 break;
@@ -209,9 +211,10 @@ impl Runtime {
                     let (reply, _) = oneshot::channel();
                     let _ = self.stop(Some("coordinator owner disconnected".into()), reply);
                 }
-                command = rx.recv(), if !closing => match command {
+                command = rx.recv(), if channel_open => match command {
                     Some(command) => command(&mut self),
                     None => {
+                        channel_open = false;
                         closing = true;
                         let (reply, _) = oneshot::channel();
                         let _ = self.stop(Some("coordinator command channel disconnected".into()), reply);

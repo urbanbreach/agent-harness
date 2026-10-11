@@ -300,6 +300,7 @@ fn fork_context(source: &Context, system: &str, window: u64) -> Context {
             .entries
             .retain(|entry| entry.message.role != MessageRole::System);
         let mut head = Context::new(system);
+        head.semantic = source.semantic;
         head.entries.append(&mut result.entries);
         head.usage = result.usage;
         return head;
@@ -358,6 +359,7 @@ fn fork_context(source: &Context, system: &str, window: u64) -> Context {
         .collect::<Vec<_>>()
         .join("\n");
     let mut context = Context::new(system);
+    context.semantic = true;
     if !older.is_empty() || !recent.is_empty() {
         context.push(
             harness_providers::CompletionMessage::text(

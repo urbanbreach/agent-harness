@@ -37,6 +37,7 @@ impl Worker {
                 CompletionMessage::text(MessageRole::User, ""),
             ],
             context: ProviderRequestContext {
+                working_directory: Some(self.workspace.clone()),
                 session_id: Some(self.session.clone()),
                 cache_retention: CacheRetention::None,
                 ..Default::default()
@@ -125,6 +126,7 @@ impl Worker {
             )
             .await?;
             drop(permit);
+            response.ensure_complete()?;
             if !response.calls.is_empty()
                 || response.text.trim().is_empty()
                 || response.text.len() > 64 * 1024

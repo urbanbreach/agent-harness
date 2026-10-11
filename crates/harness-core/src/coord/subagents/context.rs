@@ -10,6 +10,7 @@ pub(in crate::coord) fn restored_context(
     run_dir: &Path,
 ) -> Result<Context, CoordinatorError> {
     let mut context = Context::new(system_prompt);
+    context.semantic = state.fidelity == FinalizedStateFidelity::Semantic;
     for item in &state.conversation_items {
         context.entries.push(Entry {
             message: item.message.clone(),

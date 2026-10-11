@@ -23,11 +23,13 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
         "retry_disabled",
         "second_overflow",
         "native_context",
+        "truncated_summary",
     ] {
         let temp = tempfile::tempdir()?;
         // A backend that compacts its own session (senpi's lane policy) stands harness
         // auto-compaction and the input-budget stop down.
         let native = mode == "native_context";
+        let truncated = mode == "truncated_summary";
         let large = mode == "retention_budget" || native;
         let overflow = !matches!(mode, "threshold" | "retention_budget" | "native_context");
         let enabled = !matches!(mode, "disabled" | "suppressed" | "retry_disabled");
@@ -40,7 +42,20 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
             )]);
         }
         if compacts {
-            script.push(answer(SUMMARY));
+            script.push(if truncated {
+                vec![
+                    Stream::TextDelta(SUMMARY.into()),
+                    Stream::DoneWithMetadata {
+                        usage: None,
+                        metadata: Some(harness_providers::ProviderStreamFinishedMetadata {
+                            output_limit_reached: true,
+                            ..Default::default()
+                        }),
+                    },
+                ]
+            } else {
+                answer(SUMMARY)
+            });
         }
         script.push(if mode == "second_overflow" {
             vec![Stream::categorized_error(
@@ -98,16 +113,25 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
         let result = super::history_tests::settled(&coordinator, &turn).await;
         assert_eq!(
             result.is_ok(),
-            enabled && mode != "second_overflow",
+            enabled && mode != "second_overflow" && !truncated,
             "{mode}: {result:?}"
         );
         if mode == "disabled" {
             assert_eq!(
                 coordinator
-                    .compact_agent_context(agent, None, "manual")
+                    .compact_agent_context(agent.clone(), None, "manual")
                     .await?,
                 ManualCompactionOutcome::NoOp
             );
+        }
+        if truncated {
+            let retained = coordinator
+                .call(move |s| Ok(s.agents[&agent].messages.messages()))
+                .await?;
+            assert!(retained
+                .iter()
+                .any(|m| m.content == "old answer ".repeat(1000)));
+            assert!(!retained.iter().any(|m| m.content.contains(SUMMARY)));
         }
         coordinator.stop_run().await?;
         let events = crate::store::read_events(&run.events_path)?;
@@ -121,19 +145,19 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
                 .iter()
                 .filter(|e| matches!(e.payload, EventV1::SessionCompaction(_)))
                 .count(),
-            usize::from(compacts),
+            usize::from(compacts && !truncated),
             "{mode}"
         );
         assert_eq!(
             provider.call_count(),
             if compacts {
-                4 + usize::from(overflow)
+                4 + usize::from(overflow) - usize::from(truncated)
             } else {
                 3
             },
             "{mode}"
         );
-        if compacts {
+        if compacts && !truncated {
             let requests = provider.captured_requests().await;
             let final_request = requests.last().ok_or("missing continuation")?;
             assert!(

@@ -36,7 +36,7 @@ impl CoordinatorHandle {
         }
         let schema = option("schema").cloned();
         let task = parent.clone();
-        let (provider, permits, actor, parent_cancel, target, model_ref, compaction) = self
+        let (provider, permits, actor, parent_cancel, target, model_ref, compaction, cwd) = self
             .call(move |s| {
                 s.check_eval(&task)?;
                 let job = &s.running[&task];
@@ -74,6 +74,7 @@ impl CoordinatorHandle {
                     target,
                     model_ref,
                     s.config.compaction.clone(),
+                    agent.cwd.clone(),
                 ))
             })
             .await?;
@@ -91,6 +92,10 @@ impl CoordinatorHandle {
             reasoning_summary: target.as_ref().and_then(|t| t.reasoning_summary.clone()),
             text_verbosity: target.as_ref().and_then(|t| t.text_verbosity.clone()),
             thinking: target.as_ref().and_then(|t| t.thinking.clone()),
+            context: harness_providers::ProviderRequestContext {
+                working_directory: Some(cwd),
+                ..Default::default()
+            },
             stream: true,
             ..Default::default()
         };
@@ -170,6 +175,7 @@ impl CoordinatorHandle {
                     EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
                         request_id: request_id.into(),
                         finish_reason: match &response {
+                            Ok(response) if response.ensure_complete().is_err() => "output_limit",
                             Ok(_) => "stop",
                             Err(CoordinatorError::Cancelled(_)) => "cancelled",
                             Err(_) => "error",
@@ -179,6 +185,13 @@ impl CoordinatorHandle {
                         usage: response.as_ref().ok().and_then(|r| r.usage.clone()),
                         metadata: Some(ProviderRequestFinishedMetadata {
                             turn_id: Some(parent),
+                            provider_error_category: response
+                                .as_ref()
+                                .ok()
+                                .filter(|r| r.ensure_complete().is_err())
+                                .map(|_| {
+                                    harness_providers::ProviderErrorCategory::OutputLimitExceeded
+                                }),
                             ..Default::default()
                         }),
                     }),
@@ -186,6 +199,7 @@ impl CoordinatorHandle {
                 response
             })
             .await?;
+        response.ensure_complete()?;
         if !response.calls.is_empty() || response.text.trim().is_empty() {
             return Err(CoordinatorError::Invalid(
                 "completion returned no text or attempted a tool call".into(),
