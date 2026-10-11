@@ -6,7 +6,7 @@
 # Options (flags or environment):
 #   --version vX.Y.Z   HARNESS_VERSION       install a specific release (default: latest)
 #   --dir DIR          HARNESS_INSTALL_DIR   install directory (default: ~/.local/bin)
-# Uninstall by deleting the installed `harness` file.
+# Uninstall by deleting `harness` and its sibling `harness-licenses` directory.
 set -eu
 
 repo="urbanbreach/agent-harness"
@@ -74,9 +74,14 @@ actual="$(sha256 "$tmp/$asset")"
 [ "$expected" = "$actual" ] || fail "checksum mismatch for $asset (expected $expected, got $actual)"
 
 tar -xzf "$tmp/$asset" -C "$tmp"
+package="$tmp/harness-${arch}-unknown-linux-musl"
+test -s "$package/LICENSES/dependencies.txt" || fail "release archive has no dependency notices"
 mkdir -p "$install_dir"
+mkdir -p "$install_dir/harness-licenses"
+cp "$package/LICENSE" "$install_dir/harness-licenses/LICENSE"
+cp -R "$package/LICENSES/." "$install_dir/harness-licenses/third-party/"
 # Copy then rename, so a running harness is never overwritten in place.
-cp "$tmp/harness-${arch}-unknown-linux-musl/harness" "$install_dir/.harness.new"
+cp "$package/harness" "$install_dir/.harness.new"
 chmod 0755 "$install_dir/.harness.new"
 mv -f "$install_dir/.harness.new" "$install_dir/harness"
 

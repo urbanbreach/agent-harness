@@ -103,6 +103,8 @@ jobs:
           rustup toolchain install
           rustup target add ${{ matrix.target }}
           python3 -m pip install cargo-zigbuild==0.23.4 ziglang==0.17.0
+          rustup component add rust-docs
+          cargo install cargo-about --version 0.9.2 --locked
       - name: Build static binary
         run: cargo zigbuild --release --locked -p harness --target ${{ matrix.target }}
       - name: Smoke test
@@ -121,7 +123,9 @@ jobs:
           # Run on a musl distribution too, with nothing else installed.
           docker run --rm -v "$bin:/usr/local/bin/harness:ro" alpine:3.22 harness --version
       - name: Package
-        run: scripts/package-release.sh ${{ matrix.target }} "$BIN" dist
+        run: |
+          scripts/package-release.sh ${{ matrix.target }} "$BIN" dist
+          bash scripts/test-package.sh dist/harness-${{ matrix.target }}.tar.gz
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-${{ matrix.target }}

@@ -24,6 +24,7 @@ trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$name" "$out_dir"
 install -m 0755 "$binary" "$stage/$name/harness"
 install -m 0644 "$repo_root/LICENSE" "$repo_root/README.md" "$repo_root/CHANGELOG.md" "$stage/$name/"
+python3 "$repo_root/scripts/package-licenses.py" "$stage/$name/LICENSES"
 
 # Stable archive bytes for identical inputs.
 mtime="${SOURCE_DATE_EPOCH:-$(git -C "$repo_root" log -1 --format=%ct)}"

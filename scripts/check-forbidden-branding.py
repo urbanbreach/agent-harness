@@ -33,6 +33,8 @@ ALLOWED_REFERENCE_PATHS: Final[set[Path]] = {
     Path("crates/harness-core/prompts/LICENSE.upstream"),
     # External provider catalog keys still named after third-party products.
     Path("crates/harness-tui/src/app/auth_dialog/provider_menu.rs"),
+    # Token-rate implementation retains its upstream attribution.
+    Path("crates/harness-tui/src/app/session_usage/token_rate.rs"),
     # Compaction ports still cite the upstream reference agent in comments.
     Path("crates/harness-core/src/coord/compaction.rs"),
     Path("crates/harness-core/src/coord/compaction/branch_summary.rs"),

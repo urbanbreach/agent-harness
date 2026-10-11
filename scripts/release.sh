@@ -31,8 +31,7 @@ fail() {
   exit 1
 }
 
-[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] ||
-  fail "'$version' is not a semantic version like 0.1.0 or 0.2.0-rc.1"
+python3 scripts/release-version.py "$version" </dev/null
 
 branch="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/dev)"
 branch="${branch#origin/}"
@@ -44,13 +43,14 @@ git merge-base --is-ancestor "origin/$branch" HEAD || fail "$branch is behind or
 if git rev-parse -q --verify "refs/tags/$tag" >/dev/null || git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
   fail "tag $tag already exists"
 fi
-latest="$(git tag --list 'v*' --sort=-v:refname | head -n1)"
-if [[ -n "$latest" ]]; then
-  newest="$(printf '%s\n%s\n' "${latest#v}" "$version" | sort -V | tail -n1)"
-  [[ "$newest" == "$version" ]] || fail "$version is not newer than $latest"
-fi
+git tag --list 'v*' | python3 scripts/release-version.py "$version"
 
 notes="$(scripts/release-notes.sh Unreleased)" || fail "add your changes under '## [Unreleased]' in CHANGELOG.md"
+
+if $dry_run; then
+  # Restore even when Cargo or release-note validation fails after editing.
+  trap 'git restore -- Cargo.toml Cargo.lock CHANGELOG.md' EXIT
+fi
 
 # Version: [workspace.package] in Cargo.toml, then the workspace entries in Cargo.lock.
 current="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)"
@@ -73,7 +73,6 @@ echo "Release notes:"
 printf '%s\n' "$notes"
 
 if $dry_run; then
-  git checkout -- Cargo.toml Cargo.lock CHANGELOG.md
   echo
   echo "Dry run: changes restored, nothing committed or pushed."
   exit 0

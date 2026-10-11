@@ -52,7 +52,8 @@ is in `perf.yml`, scheduled weekly or launched manually, not on each push.
 Secret scanning uses the free, checksum-pinned Gitleaks CLI with redacted output,
 not its licensed organization action. It extends the default rules via
 `.gitleaks.toml`, excludes test-only paths, and records reviewed historical
-fixture fingerprints in `.gitleaksignore`. Production-source and documentation
+fixture fingerprints in `.gitleaksignore`. History scanning also opens nested
+archives, up to five levels deep. Production-source and documentation
 paths are not broadly exempted. The previous template-based SAST job was dropped:
 GitHub CodeQL has no Rust analysis equivalent. Clippy is a code-quality gate,
 not a substitute for security analysis.

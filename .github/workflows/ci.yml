@@ -49,6 +49,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
       - run: python3 scripts/check-test-suite-gates.py
       - run: python3 scripts/check-forbidden-branding.py
+      - run: python3 scripts/test-release.py
 
   fmt:
     runs-on: ubuntu-24.04
@@ -197,4 +198,4 @@ jobs:
             "$RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
           tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
       - name: Scan Git history without exposing secret values
-        run: '"$RUNNER_TEMP/gitleaks" git --redact --no-banner .'
+        run: '"$RUNNER_TEMP/gitleaks" git --redact --no-banner --max-archive-depth 5 .'

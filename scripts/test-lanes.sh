@@ -489,6 +489,7 @@ run_integration() {
 run_quality_gates() {
   run_stage quality-gates static_test_suite_gates "$repo_root" python3 scripts/check-test-suite-gates.py || true
   run_stage quality-gates forbidden_branding "$repo_root" python3 scripts/check-forbidden-branding.py || true
+  run_stage quality-gates release_scripts "$repo_root" python3 scripts/test-release.py || true
 }
 
 run_perf() {

@@ -51,7 +51,7 @@ Release assets:
 
 | File | Contents |
 | --- | --- |
-| `harness-x86_64-unknown-linux-musl.tar.gz` | `harness`, `LICENSE`, `README.md`, `CHANGELOG.md` |
+| `harness-x86_64-unknown-linux-musl.tar.gz` | `harness`, `LICENSE`, `LICENSES/`, `README.md`, `CHANGELOG.md` |
 | `harness-aarch64-unknown-linux-musl.tar.gz` | The same for 64-bit ARM |
 | `install.sh` | The installer (`scripts/install.sh`) |
 | `harness.schema.json` | Runtime config schema (copy of `configs/config.json`) |
@@ -61,6 +61,14 @@ Release assets:
 Asset names carry no version, so
 `https://github.com/urbanbreach/agent-harness/releases/latest/download/<asset>`
 always points at the newest stable release.
+
+Packaging runs `cargo-about` against the locked dependencies and the license
+policy in `about.toml`. `LICENSES/` includes dependency notices, embedded prompt,
+syntax and Acorn notices, and the Rust standard library, Zig and musl notices
+from the build toolchain. Missing notices or an unaccepted dependency license
+stop packaging. The installer preserves them beside the binary in
+`harness-licenses/`. Each native build also tests installation and checksum
+rejection in a temporary directory.
 
 Check where a downloaded archive was built with
 `gh attestation verify harness-x86_64-unknown-linux-musl.tar.gz --repo urbanbreach/agent-harness`.
@@ -86,8 +94,11 @@ publishing. Use it to test the pipeline on an existing tag.
 
 ```bash
 rustup target add x86_64-unknown-linux-musl
+rustup component add rust-docs
 pip install cargo-zigbuild==0.23.4 ziglang==0.17.0
+cargo install cargo-about --version 0.9.2 --locked
 cargo zigbuild --release --locked -p harness --target x86_64-unknown-linux-musl
 scripts/package-release.sh x86_64-unknown-linux-musl \
   target/x86_64-unknown-linux-musl/release/harness dist
+bash scripts/test-package.sh dist/harness-x86_64-unknown-linux-musl.tar.gz
 ```
