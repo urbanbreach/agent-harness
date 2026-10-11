@@ -44,7 +44,8 @@ harness
 The script downloads the static binary for your CPU, checks it against the
 release's `SHA256SUMS`, and installs it to `~/.local/bin`. Set
 `HARNESS_VERSION=v0.1.0` to pick a release or `HARNESS_INSTALL_DIR` to install
-somewhere else. To uninstall, delete the `harness` file. Release archives are
+somewhere else. The installer also keeps third-party notices in the sibling
+`harness-licenses` directory. To uninstall, delete both. Release archives are
 also on the [releases page](https://github.com/urbanbreach/agent-harness/releases).
 
 No config file is needed. On a new project with no connected provider or saved
@@ -196,8 +197,11 @@ as-is; Harness does not append another directory to it. Under that root:
 - `worktrees/<key>/`: managed Git worktrees.
 
 Skills also load from `$HOME/.agents/skills` by default. Set `skills.global_roots`
-to change the roots. Project keys encode the project path: for `/home/me/code/app`,
-sessions live in `sessions/--home-me-code-app--/`.
+to change the roots. Project keys are `v2-` followed by the full BLAKE3 hex digest
+of the canonical project path. They have a fixed length and keep different paths
+separate, including paths that differ only in slashes and dashes.
+See [storage migration](docs/architecture/sessions-and-replay.md#legacy-storage)
+for older `--path--` directories.
 
 The project's `.harness/` holds authored agents, commands, skills and prompt
 overrides, project config and remembered permission approvals. Project skills

@@ -81,8 +81,10 @@ Reference centrality was not measured; `Refs` records only that limitation.
   also live under this root.
   Sessions use `<home>/sessions/<key>/`, memory, code index, edit attribution and
   plans use `<home>/projects/<key>/`, and worktrees use `<home>/worktrees/<key>/`.
-  `<key>` wraps the canonical project path in `--`, with `/`, `\` and `:`
-  turned into `-`. `<project>/.harness/` keeps authored `agents/`, `commands/`,
+  `<key>` is `v2-` plus the full BLAKE3 hex digest of the canonical UTF-8 project
+  path. Legacy `--path--` directories are left intact and require explicit
+  migration; see `docs/architecture/sessions-and-replay.md`.
+  `<project>/.harness/` keeps authored `agents/`, `commands/`,
   `skills/`, `prompts/`, project config and remembered permission grants. After
   successful sign-in, Harness may create a minimal user config with create-new
   semantics if neither user config exists and `HARNESS_CONFIG` and

@@ -46,8 +46,12 @@ harness
 Skripti lataa prosessorillesi sopivan staattisen binäärin, tarkistaa sen
 julkaisun `SHA256SUMS`-tiedostoa vasten ja asentaa sen hakemistoon
 `~/.local/bin`. `HARNESS_VERSION=v0.1.0` valitsee tietyn julkaisun ja
-`HARNESS_INSTALL_DIR` toisen asennushakemiston. Poista asennus poistamalla
-`harness`-tiedosto.
+`HARNESS_INSTALL_DIR` toisen asennushakemiston. Asentaja tallentaa lisenssitiedot
+binäärin viereiseen `harness-licenses`-hakemistoon. Poista asennus poistamalla
+`harness`-tiedosto ja tämä hakemisto.
+
+JavaScript-eval tarvitsee Node.js 24:n tai uudemman ja Python-eval Python 3:n.
+Asenna tulkki, jos haluat käyttää kyseistä eval-työkalua.
 
 Asetustiedostoa ei tarvita. Kun projektissa ei ole yhdistettyä palveluntarjoajaa
 eikä tallennettuja istuntoja, Harness avaa kirjautumisvalikon automaattisesti.
@@ -199,9 +203,12 @@ Hakemiston sisältö:
 
 Globaalit taidot latautuvat oletuksena hakemistoista `<home>/skills` ja
 `$HOME/.agents/skills`. `HARNESS_HOME` vaikuttaa vain ensimmäiseen polkuun.
-Vaihda `skills.global_roots`, jos säilytät taitoja muualla. Projektin avain
-muodostuu sen polusta. Projektin `/home/me/code/app` istunnot ovat kansiossa
-`sessions/--home-me-code-app--/`.
+Vaihda `skills.global_roots`, jos säilytät taitoja muualla. Projektin avaimessa on
+`v2-`-etuliite ja kanonisesta polusta laskettu BLAKE3-tiiviste heksamuodossa.
+Avain on aina 67 merkkiä pitkä. Eri projektien tiedot pysyvät erillään, vaikka
+polut eroaisivat vain kauttaviivojen ja yhdysmerkkien osalta.
+Vanhat `--polku--`-hakemistot säilyvät ennallaan. Niiden siirtämisestä on
+[erillinen ohje](architecture/sessions-and-replay.md#legacy-storage).
 
 Projektin `.harness/` sisältää itse kirjoittamasi agentit, komennot, taidot ja
 kehotepohjat, projektin asetukset sekä muistetut käyttöluvat. Projektin taidot

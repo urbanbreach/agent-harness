@@ -11,10 +11,10 @@ nonempty `HARNESS_HOME` is used as-is; otherwise the root is `$HOME/.harness`.
 The `<data-dir>` paths below refer to this root, which also holds personal
 runtime and keyboard config, credentials, prompts, agents and skills.
 
-Each project uses a key derived from its canonical absolute path, so symlink
-aliases share storage. Remove one leading `/` or `\`, replace every `/`, `\`
-and `:` with `-`, then wrap the result in `--`. For example, `/work/app` becomes
-`--work-app--`. There are no home-relative shortcuts or hashed buckets.
+Each project uses `v2-` followed by the full, lowercase BLAKE3 hex digest of its
+canonical absolute UTF-8 path. The key is always 67 bytes, so long project paths
+fit within filesystem component limits. Symlink aliases share storage; paths
+that differ in slashes, backslashes, colons or dashes have distinct keys.
 
 ```text
 <data-dir>/sessions/<project-key>/<run-id>/events.jsonl
@@ -33,6 +33,27 @@ paths are still resolved against the selected project directory. Existing
 project-local session histories are not migrated or discovered automatically.
 Use `--session-dir <old-session-dir>` to access them explicitly.
 See [saved sessions](../operations/sessions.md) for command examples.
+
+## Legacy storage
+
+Older builds used `--path--` keys, replacing path separators and colons with
+dashes. Different projects could share one directory. Harness leaves those
+directories intact and does not load or migrate them automatically: memory and
+plans do not contain enough ownership information to separate mixed data safely.
+
+Open old sessions explicitly with `harness --session-dir <old-session-dir>
+sessions list` or set `runtime.session_dir` to that directory. Inspect each
+session's recorded workspace before resuming it.
+
+To move data to the new layout, stop Harness processes using it and back it up.
+`harness memory list --workspace <project>` reports the new runtime location as
+`store_path` without creating it; its project key also applies to sessions and
+worktrees. Move only data verified to belong to that project, and never overwrite
+an existing destination. Whole `sessions/<old-key>` or `projects/<old-key>`
+directories can be renamed only when all their contents belong to the same
+project. If ownership is uncertain, keep the old data separate. Move Git
+worktrees individually with `git worktree move` so Git updates its registrations;
+`harness worktree list --all` includes checkouts still at legacy locations.
 
 ## Inspection
 
@@ -116,6 +137,10 @@ for three seconds. Workspace files stay as they are.
 Live provider text, reasoning, and tool-input fragments are an ephemeral TUI overlay. Settling a
 turn removes that overlay and displays the single durable semantic assistant commit from
 `CanonicalSessionProjection`; replay never reconstructs draft fragments as durable messages.
+Finalized agent artifacts retain semantic conversation and execution metadata.
+Exact provider inputs, reasoning and raw tool results remain in process memory.
+Live continuation after restart uses the semantic snapshot; inspection and replay
+do not dispatch providers or rerun tools.
 
 ## Exports
 

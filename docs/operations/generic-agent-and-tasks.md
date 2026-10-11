@@ -38,6 +38,9 @@ or incompatible retained state returns an error rather than reconstructing a
 conversation by repeating tools or provider calls.
 
 Retained conversations preserve tool errors and missing provider usage exactly.
+Within a running process, continuation can reuse the exact completed context.
+After restart it uses the saved semantic conversation: tool arguments have passed
+redaction, results are bounded, and provider reasoning and raw payloads are absent.
 Missing usage keeps accounting marked incomplete; it does not prevent resuming
 an otherwise complete conversation. The native terminal `tokens_used` counter
 tracks the last provider context total, starting from the child's initial

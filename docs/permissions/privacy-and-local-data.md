@@ -28,10 +28,11 @@ location.
 User files live in the Harness home, `<home>`: a nonempty `HARNESS_HOME` used
 as-is, otherwise `$HOME/.harness`.
 
-`<project-key>` encodes the canonical absolute project path: strip one leading
-slash or backslash, replace slashes, backslashes and colons with dashes, and wrap
-the result in `--`. For example, `/work/app` becomes `--work-app--`. Symlink aliases
-therefore share a bucket. Personal configuration and generated data share this root.
+`<project-key>` is `v2-` followed by the full BLAKE3 hex digest of the canonical
+absolute UTF-8 project path. Symlink aliases share storage; different paths stay
+separate. Personal configuration and generated data share this root.
+Older `--path--` directories are preserved but require
+[explicit migration](../architecture/sessions-and-replay.md#legacy-storage).
 
 | Data | Location |
 | --- | --- |
@@ -69,6 +70,11 @@ The redactor lives in [`crates/harness-core/src/redact.rs`](../../crates/harness
 Live output is redacted before reaching CLI or TUI subscribers. Incomplete words
 and possible credentials are held until safe, including credentials split across
 provider fragments. Reasoning remains transient and shares the response byte limit.
+Finalized agent snapshots keep exact provider context in memory only. Their
+private disk artifacts contain semantic conversation state, redacted and
+normalized tool arguments, bounded tool results, read-state hashes and usage
+counts. They omit reasoning, raw tool results and complete provider requests.
+Resuming after restart uses that semantic state and never repeats historical tools.
 Support export redacts API keys, bearer tokens, cookies, PEM blocks, provider
 credentials, and hidden prompt or config instruction values. It includes a
 redaction manifest and refuses to write a bundle if the final secret scan fails.

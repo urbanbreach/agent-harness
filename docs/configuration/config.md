@@ -35,10 +35,18 @@ model or define providers by default. `agent.default` configures the interactive
 parent; native children use bundled definitions and the `subagents` settings
 below.
 
-Each `variants` entry is a named model preset; for OpenAI-compatible reasoning
-models, set `metadata.reasoningEffort` so the TUI can display and select variants
+Each `variants` entry is a named model preset; for reasoning models, set
+`metadata.reasoningEffort` so the TUI can display and select variants
 like `low`, `medium`, or `high`. Use additional variant fields only for
 non-standard names or per-variant limits, modalities, or options.
+
+For Anthropic Messages, an effort preset enables adaptive thinking on Claude 4.6
+and newer, or a bounded thinking budget on older models. Explicit
+`options.thinking` takes precedence over the generated thinking configuration.
+
+HTTP provider `options.timeoutMs` limits idle reads, including the wait for
+response headers. Each successful read resets the limit, so a progressing stream
+can run longer. Connection setup has a separate limit of at most 30 seconds.
 
 The live TUI shows generation speed and session cost next to context usage in
 the row above the transcript, for example `49.6 tok/s · $0.047 · 9.9K / 192K 5%`.
@@ -67,7 +75,7 @@ Narrow terminals drop speed first, then cost.
 
 OpenAI-compatible providers accept `cacheRetention` either beside the provider
 fields or under `options`. The default is `short`: the runtime sends a stable,
-clamped, per-session `prompt_cache_key` when a session id is available. Set
+per-session `prompt_cache_key` when a session id is available. Set
 `cacheRetention: "none"` to omit cache-affinity request fields. Set
 `cacheRetention: "long"` only when you want provider-supported extended
 retention; the current transport emits `prompt_cache_retention: "24h"` only for
@@ -424,9 +432,9 @@ An absolute override is used as supplied.
 ```
 
 `<data-dir>` is the Harness home: a nonempty `HARNESS_HOME` used as-is, otherwise
-`$HOME/.harness`. The project key uses the canonical absolute path: strip one
-leading slash or backslash, replace slashes, backslashes and colons with dashes,
-and wrap the result in `--`. For example, `/work/app` becomes `--work-app--`.
+`$HOME/.harness`. The project key is `v2-` followed by the full BLAKE3 hex digest
+of the canonical absolute UTF-8 project path. Its fixed length supports long
+paths, and symlink aliases share the same storage.
 
 Runtime data uses `<data-dir>/projects/<project-key>` and managed worktrees use
 `<data-dir>/worktrees/<project-key>`, independently of the session override.
@@ -434,10 +442,11 @@ Authored project agents, skills, prompts and configuration stay in their existin
 locations, as do `.harness/permission-grants.json` workspace grants. Data
 directory selection does not change the [config discovery order](#discovery-and-precedence).
 
-Existing project-local session histories are not migrated. Use
+Existing project-local histories and legacy `--path--` directories are preserved
+but not migrated automatically. Use
 `--session-dir <old-session-dir>` to access them explicitly.
 See [saved sessions](../operations/sessions.md) and the
-[storage layout](../architecture/sessions-and-replay.md#storage-layout).
+[storage migration instructions](../architecture/sessions-and-replay.md#legacy-storage).
 
 ## Variable substitution
 

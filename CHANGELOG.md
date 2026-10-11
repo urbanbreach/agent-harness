@@ -9,6 +9,55 @@ Notable changes to Harness. The format follows
 
 The first public release.
 
+### Fixed
+
+- Update rustls and rand to patched dependency versions.
+- SIGTERM and SIGHUP restore terminal modes and cancel active CLI work before
+  exiting.
+- Recover interrupted queued and preparing subagents as failed without rerunning
+  their providers, tools or hooks.
+- Keep finalized provider requests, reasoning and raw tool results in memory;
+  persist semantic state for continuation after restart.
+- Anthropic reasoning variants enable thinking, and Anthropic and Gemini keep
+  signed continuation state across tool calls without writing it to disk.
+- Release archives and installed binaries include third-party license notices.
+- Closing a login dialog cancels OAuth and releases its callback listener.
+  Late results from a previous login cannot change a newly opened dialog.
+- Claude Code runs in the selected agent workspace. Switching projects rebuilds
+  the TUI's cached runtime configuration.
+- Signing in refreshes model discovery for subagents in the current session as
+  well as future sessions.
+- `cacheRetention: "long"` sends the documented extended-retention request to
+  direct OpenAI endpoints.
+- MCP requests respect `network` and `bash` transport permissions, including
+  tools discovered during a session.
+- Multi-file LSP renames synchronize approved file snapshots before computing
+  edits, preventing stale offsets from overwriting editor changes.
+- Deterministic live TUI sessions keep separate histories. Scenario resets
+  refuse ordinary sessions and active writers.
+- TUI `--profile` selects the requested profile. Removed the unused `--minimal`
+  and `--fullscreen` flags.
+- HTTP provider timeouts measure idle reads, allowing long responses that keep
+  making progress. Responses cut short by an output limit report failure while
+  preserving their partial text and usage.
+- Image attachments keep their message owners when skill instructions are added.
+- Google API keys now discover the Google OpenAI-compatible provider and model.
+- Dropping the last coordinator handle cancels active work and releases the
+  session writer after cleanup.
+- Release validation follows SemVer ordering, including RC-to-stable releases.
+  Failed release dry runs restore the files they changed.
+- File edits preserve private permissions from the moment staging files are
+  created.
+- Project storage keys use a fixed-length path digest, preventing different
+  projects from sharing data and supporting long project paths. Existing
+  `--path--` directories remain intact; see
+  [storage migration](docs/architecture/sessions-and-replay.md#legacy-storage).
+  The plan picker shows filenames so storage keys cannot hide them.
+- Support exports and session archives omit reasoning summaries and signatures
+  from legacy provider-completion metadata.
+- Concurrent credential managers and Harness processes share an OAuth refresh
+  lock. Logout can still invalidate a refresh in progress.
+
 ### Added
 
 - A terminal UI and a headless `harness run` for coding agents, with streamed
