@@ -5,6 +5,8 @@ use harness_core::{
 };
 use harness_providers::{mock::MockProvider, ProviderStreamEvent as Stream};
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
+#[path = "completion.rs"]
+mod completion;
 #[path = "kernel_tools.rs"]
 mod kernel_tools;
 #[path = "performance.rs"]
@@ -293,75 +295,6 @@ async fn display_images_spill_output_and_redact_durable_results() -> Result {
         )?)
         .contains("eval-test-credential-9f3724"));
     }
-    Ok(())
-}
-
-#[tokio::test]
-#[ignore = "requires local eval runtimes; scripts/test-lanes.sh eval"]
-async fn completion_and_agent_helpers_use_the_native_provider_and_task_boundaries() -> Result {
-    let provider = MockProvider::script((0..8).map(|_| {
-        vec![
-            Stream::TextDelta("{\"answer\":42}".into()),
-            Stream::DoneWithMetadata {
-                usage: Some(harness_providers::CompletionUsage {
-                    prompt_tokens: 12,
-                    completion_tokens: 3,
-                    total_tokens: 15,
-                }),
-                metadata: Some(harness_providers::ProviderStreamFinishedMetadata {
-                    settled_reasoning: Some(Vec::new()),
-                    usage_complete: Some(true),
-                    ..Default::default()
-                }),
-            },
-        ]
-    }));
-    let session = Session::new(settings(), provider, None).await?;
-    for language in ["js", "py"] {
-        let code = if language == "js" {
-            "display(await completion('answer', {model:'smol',schema:{type:'object'}}))"
-        } else {
-            "display(completion('answer', model='slow', schema={'type':'object'}))"
-        };
-        assert!(session
-            .good(language, code)
-            .await?
-            .display_text
-            .contains("42"));
-    }
-    let foreground = session
-        .good(
-            "js",
-            "var answer = await agent('answer', {schema:{type:'object'}, tools:[]}); if(answer.answer !== 42) throw new Error('agent did not return parsed JSON'); display(answer)",
-        )
-        .await?;
-    assert!(foreground.display_text.contains("42"));
-    let background = session
-        .good(
-            "js",
-            "var child = await agent('answer', {handle:true, tools:[]}); display(child); display(await child.control.wait({timeout:10})); display(await child.control.status()); display(await child.control.output()); try { await wait([{id:child.id,run_epoch:1}],{timeout:0}); throw new Error('stale epoch accepted'); } catch(e) { if(e.code !== 'stale_task_handle') throw e; }",
-        )
-        .await?;
-    assert!(
-        background.display_text.contains("agent://"),
-        "{}",
-        background.display_text
-    );
-    assert!(background.display_text.contains("42"));
-    session.good("js", "await child.control.send('answer again'); for (const op of ['status','output','cancel']) { let rejected = false; try { await child.control[op](); } catch(e) { rejected = String(e).includes('stale task handle'); } if(!rejected) throw Error('old handle reached restarted child: '+op); } display(await wait(child.id,{timeout:10}));").await?;
-    let python = session.good("py", "child = agent('answer', handle=True, tools=[])\ndisplay(child.control.wait(timeout=10))\ndisplay(child.control.status())\ndisplay(child.control.output())").await?;
-    assert!(python.display_text.contains("42"));
-    let output = session
-        .good("js", "display(await output(child.id))")
-        .await?;
-    assert!(
-        !output.display_text.contains("TaskNotFound"),
-        "{}",
-        output.display_text
-    );
-    session.handle.stop_run().await?;
-    let events = harness_core::store::read_events(&session.info.events_path)?;
-    assert_eq!(events.iter().filter(|e| matches!(&e.payload, EventV1::ProviderRequestStarted(t) if t.prompt_summary == "Eval completion")).count(),2);
     Ok(())
 }
 

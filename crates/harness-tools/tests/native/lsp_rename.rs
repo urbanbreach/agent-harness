@@ -27,6 +27,7 @@ def send(value):
     body = json.dumps(dict(jsonrpc='2.0', **value)).encode()
     sys.stdout.buffer.write(('Content-Length: %d\r\n\r\n' % len(body)).encode() + body)
     sys.stdout.buffer.flush()
+documents = {}
 while True:
     req = read()
     method, p = req.get('method'), req.get('params', {})
@@ -35,9 +36,20 @@ while True:
     elif method == 'textDocument/prepareRename':
         assert p['position'] == {'line':0,'character':3}
         result = {'range':{'start':{'line':0,'character':3},'end':{'line':0,'character':6}},'placeholder':'old'}
+    elif method == 'textDocument/didOpen':
+        documents[p['textDocument']['uri']] = p['textDocument']['text']
+        continue
+    elif method == 'textDocument/didChange':
+        documents[p['textDocument']['uri']] = p['contentChanges'][0]['text']
+        continue
+    elif method == 'textDocument/didClose':
+        documents.pop(p['textDocument']['uri'], None)
+        continue
     elif method == 'textDocument/rename':
         assert p['newName'] == 'new'
         result = json.loads(pathlib.Path('plan.json').read_text())
+        if any(text == 'editor\n' for text in documents.values()):
+            result['documentChanges'] = [c for c in result.get('documentChanges', []) if not c.get('textDocument', {}).get('uri', '').endswith('/b.fixture')]
     elif method == 'textDocument/diagnostic': result = {'kind':'full','items':[]}
     elif method == 'shutdown': result = None
     elif method == 'exit': break
@@ -130,15 +142,26 @@ while True:
     set_plan(plan.clone())?;
     args["apply"] = true.into();
     let mut events = handle.subscribe_new_events().await?;
-    for outcome in ["deny", "cancel", "stale", "allow"] {
+    for outcome in ["read_stale", "deny", "cancel", "stale", "allow"] {
         let task = handle
             .request_tool_call(actor(), None, "lsp.rename", args.clone())
             .await?;
         let read = ast_permission(&mut events).await?;
         assert!(read.summary.contains("b.fixture"));
+        if outcome == "read_stale" {
+            std::fs::write(root.path().join("b.fixture"), "editor\n")?;
+        }
         handle
             .resolve_permission(read.permission_id, PermissionDecision::Allow, None)
             .await?;
+        if outcome == "read_stale" {
+            let status = rename_finish_approving_edits(&handle, &mut events, &task).await?;
+            assert_eq!(std::fs::read_to_string(root.path().join("b.fixture"))?, "editor\n");
+            assert_eq!(status, ToolCallStatus::Failed);
+            assert_eq!(std::fs::read_to_string(root.path().join("a.fixture"))?, source);
+            std::fs::write(root.path().join("b.fixture"), "old\n")?;
+            continue;
+        }
         let permission = ast_permission(&mut events).await?;
         assert_eq!(
             std::fs::read_to_string(root.path().join("a.fixture"))?,
@@ -270,4 +293,27 @@ while True:
     assert!(!root.path().join("moved.fixture").exists());
     handle.stop_run().await?;
     Ok(())
+}
+
+async fn rename_finish_approving_edits(
+    handle: &harness_core::coord::CoordinatorHandle,
+    events: &mut harness_core::store::EventStream,
+    task: &str,
+) -> Result<ToolCallStatus, Box<dyn std::error::Error>> {
+    use tokio_stream::StreamExt;
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                while let Some(event) = events.next().await {
+                    match event?.payload {
+                        EventV1::PermissionRequested(permission) => {
+                            handle.resolve_permission(permission.permission_id, harness_core::event::PermissionDecision::Allow, None).await?;
+                        }
+                        EventV1::ToolCallFinished(finished) if finished.tool_call_id.as_str() == task => {
+                            return Ok::<_, Box<dyn std::error::Error>>(finished.status);
+                        }
+                        _ => {}
+                    }
+                }
+                Err("rename did not settle".into())
+            }).await?
+
 }

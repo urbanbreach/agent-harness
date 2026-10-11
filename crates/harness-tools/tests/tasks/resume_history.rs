@@ -98,10 +98,17 @@ async fn new_identity_resume_retains_raw_history_read_state_and_source_without_r
         "after\n"
     );
     assert_eq!(std::fs::read(&child_events)?, source_bytes);
+    let restored_source = available(resumed.raw_finalized_state(child.clone()).await?)?;
     assert_eq!(
-        available(resumed.raw_finalized_state(child.clone()).await?)?,
-        source
+        restored_source.fidelity,
+        harness_core::subagent::FinalizedStateFidelity::Semantic
     );
+    assert_eq!(restored_source.read_state, source.read_state);
+    assert!(restored_source.model_request.is_none());
+    assert!(restored_source
+        .conversation_items
+        .iter()
+        .all(|item| item.raw_tool_result.is_none() && item.settled_reasoning.is_empty()));
     let requests = provider.captured_requests().await;
     assert_eq!(requests[2].model_id, "chosen");
     assert!(requests[2]

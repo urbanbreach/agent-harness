@@ -110,6 +110,14 @@ struct McpTool {
     description: &'static str,
     server: Arc<Server>,
 }
+impl Server {
+    fn transport_permission(&self) -> (String, String) {
+        match &self.config {
+            McpServerConfig::Stdio { command, .. } => ("bash".into(), command.join(" ")),
+            McpServerConfig::Http { endpoint, .. } => ("network".into(), endpoint.clone()),
+        }
+    }
+}
 #[async_trait::async_trait]
 impl Tool for McpTool {
     fn id(&self) -> &str {
@@ -164,6 +172,7 @@ impl Tool for McpTool {
                 args.get("arguments").unwrap_or(&Value::Null).to_string(),
             ));
         }
+        requests.push(self.server.transport_permission());
         requests
     }
     async fn call(&self, ctx: ToolContext, args: Value) -> Result<ToolResult, ToolError> {

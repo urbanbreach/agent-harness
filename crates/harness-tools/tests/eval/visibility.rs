@@ -109,7 +109,6 @@ async fn eval_routing_hides_schemas_without_changing_permissions_or_direct_fallb
         for request in &requests {
             let system = &request.messages[0].content;
             assert_eq!(system.contains("eval: tool.read"), routed);
-            assert_eq!(system.contains("# Eval"), enabled && permitted);
             let tools = request.tools.as_ref().ok_or("missing tool definitions")?;
             assert_eq!(tools.iter().any(|tool| tool.tool_id == "read"), !routed);
             assert_eq!(

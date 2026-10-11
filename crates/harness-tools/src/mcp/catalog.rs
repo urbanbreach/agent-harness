@@ -90,6 +90,7 @@ impl Tool for DiscoveredTool {
     }
     fn permission_requests(&self, args: &Value) -> Vec<(String, String)> {
         vec![
+            self.server.transport_permission(),
             (self.id.clone(), args.to_string()),
             (
                 format!("mcp.{}.tool.call", self.server.name),

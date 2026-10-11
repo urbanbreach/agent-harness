@@ -226,7 +226,7 @@ impl Session {
             )
             .await?;
         } else {
-            if self.documents.len() >= 64
+            if self.documents.len() >= 257
                 && let Some((uri, _)) = self.documents.pop_first()
             {
                 self.diagnostics.remove(&uri);
@@ -253,6 +253,14 @@ impl Session {
                 end: json!({"line":line,"character":character}),
             },
         );
+        Ok(())
+    }
+    pub async fn close_document(&mut self, uri: &str) -> Result<(), ToolError> {
+        if self.documents.remove(uri).is_some() {
+            self.diagnostics.remove(uri);
+            self.notify("textDocument/didClose", json!({"textDocument":{"uri":uri}}))
+                .await?;
+        }
         Ok(())
     }
     pub async fn published_diagnostics(&mut self, uri: &str) -> Result<Value, ToolError> {

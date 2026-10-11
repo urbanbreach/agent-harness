@@ -83,24 +83,39 @@ impl Tool for RenameTool {
         #[cfg(unix)]
         {
             let primary = context.resolve_workspace_path(&args.file)?;
-            let response = self
-                .0
-                .query(
-                    &context,
-                    Args {
-                        operation: Operation::Rename(args.name.clone()),
-                        file: args.file,
-                        line: Some(args.line),
-                        character: Some(args.character),
-                        query: None,
-                        server: args.server,
-                        decision: None,
-                    },
-                )
-                .await?;
+            let query_args = || Args {
+                operation: Operation::Rename(args.name.clone()),
+                file: args.file.clone(),
+                line: Some(args.line),
+                character: Some(args.character),
+                query: None,
+                server: args.server.clone(),
+                decision: None,
+            };
+            let response = self.0.query(&context, query_args()).await?;
+            let scan_context = context.clone();
+            let scan_primary = primary.clone();
+            let (mut response, sources) = tokio::task::spawn_blocking(move || {
+                let sources = plan::snapshot(&scan_context, &scan_primary, &response)?;
+                Ok::<_, ToolError>((response, sources))
+            })
+            .await
+            .map_err(|_| failure("rename source reader stopped"))??;
+            if sources.keys().any(|path| path != &primary) {
+                response = self
+                    .0
+                    .query_until(
+                        &context,
+                        query_args(),
+                        tokio::time::Instant::now() + std::time::Duration::from_secs(30),
+                        Some(&sources),
+                    )
+                    .await?;
+            }
             // Join filesystem work even when cancelled; no edits may outlive their tool call.
             tokio::task::spawn_blocking(move || {
-                let mut result = plan::execute(&context, &primary, &response, args.apply)?;
+                let mut result =
+                    plan::execute(&context, &primary, &response, &sources, args.apply)?;
                 if let Some(metadata) = result.structured_json.as_mut() {
                     metadata["newName"] = args.name.into();
                     metadata["server"] = response.data["server"].clone();

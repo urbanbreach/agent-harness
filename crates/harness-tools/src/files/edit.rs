@@ -241,7 +241,11 @@ fn replace_file(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        builder.permissions(fs::Permissions::from_mode(0o666));
+        builder.permissions(fs::Permissions::from_mode(
+            mode.as_ref()
+                .or(permissions.as_ref())
+                .map_or(0o666, |p| p.mode() & 0o777),
+        ));
     }
     let mut temp = builder.tempfile_in(parent)?;
     temp.write_all(bytes)?;

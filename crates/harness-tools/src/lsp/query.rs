@@ -15,6 +15,7 @@ impl LspTool {
             context,
             args,
             tokio::time::Instant::now() + Duration::from_secs(30),
+            None,
         )
         .await
     }
@@ -23,6 +24,7 @@ impl LspTool {
         context: &ToolContext,
         args: Args,
         deadline: tokio::time::Instant,
+        sources: Option<&BTreeMap<PathBuf, Option<String>>>,
     ) -> Result<Response, ToolError> {
         if context.cancellation.is_cancelled() {
             return Err(ToolError::Cancelled);
@@ -45,6 +47,11 @@ impl LspTool {
         if text.len() > 512 * 1024 {
             return Err(failure("LSP source exceeds 512 KiB"));
         }
+        if sources.is_some_and(|sources| {
+            sources.get(&primary).and_then(Option::as_deref) != Some(text.as_str())
+        }) {
+            return Err(failure("rename source changed before synchronization"));
+        }
         let (method, capability, params) = request(&args, &uri, &text)?;
         let mut sessions = tokio::select! {
             biased;
@@ -64,12 +71,23 @@ impl LspTool {
         let session = sessions
             .get_mut(&key)
             .ok_or_else(|| failure("LSP session unavailable"))?;
+        let mut versions = BTreeMap::new();
         let result = tokio::select! {
             biased;
             () = context.cancellation.cancelled() => Err(ToolError::Cancelled),
             result = tokio::time::timeout_at(deadline, async {
                 session.initialize().await?;
                 session.document(&uri, &language, &text).await?;
+                if let Some(sources) = sources {
+                    for (path, text) in sources {
+                        let uri = session::uri(path)?;
+                        if let Some(text) = text {
+                            session.document(&uri, &super::language(path), text).await?;
+                        } else {
+                            session.close_document(&uri).await?;
+                        }
+                    }
+                }
                 if matches!(args.operation, Operation::WorkspaceDiagnostics) && session.capabilities["diagnosticProvider"]["workspaceDiagnostics"] != true {
                     return Ok(None);
                 }
@@ -86,6 +104,13 @@ impl LspTool {
                         result
                     } else { Value::Null };
                     let edit = session.request(method, params).await?;
+                    versions = session.versions();
+                    if let Some(sources) = sources {
+                        // Secondary snapshots belong to this request, not future editor changes.
+                        for path in sources.keys().filter(|path| *path != &primary) {
+                            session.close_document(&session::uri(path)?).await?;
+                        }
+                    }
                     return Ok(Some(json!({"workspaceEdit":edit,"prepareRename":prepared})));
                 }
                 let result = session.request(method, params).await?;
@@ -118,11 +143,7 @@ impl LspTool {
             Ok(result) => Ok(Response {
                 data: json!({"server":name,"result":result,"status":session.status}),
                 primary_digest: blake3::hash(text.as_bytes()),
-                versions: if matches!(args.operation, Operation::Rename(_)) {
-                    session.versions()
-                } else {
-                    BTreeMap::new()
-                },
+                versions,
             }),
             Err(error) => {
                 if let Some(mut session) = sessions.remove(&key) {

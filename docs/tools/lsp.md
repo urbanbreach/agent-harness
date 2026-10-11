@@ -72,7 +72,9 @@ Server requests to apply workspace edits are refused. File edits use the shared
 plan from the server and applies it. `prepareRename` is used when advertised.
 Both forms require read and LSP permission; applying also requires edit permission.
 Every additional file passes coordinator policy before its contents are loaded.
-Read approval cannot grant edit access. Denials, cancelled approvals, invalid
+For multi-file renames, the approved snapshots are synchronized to the server
+and the plan is requested again. Changed target sets require a retry; file
+contents are checked again before writing. Read approval cannot grant edit access. Denials, cancelled approvals, invalid
 ranges and stale file contents stop the operation before publication.
 
 The tool accepts `changes` and versioned `documentChanges`, including file create,
@@ -85,7 +87,8 @@ normal undo receipts. Moved files retain their permissions. Previews return a
 private `.diff` artifact readable by the existing TUI.
 
 Plans are limited to 256 operations and files, 10,000 text edits per document
-change, 8 MiB per file, 32 MiB of source and resulting contents, and a 1 MiB
+change, 512 KiB per source file, 8 MiB per resulting file, 32 MiB of source
+and resulting contents, and a 1 MiB
 combined preview. Unknown document versions fail rather than guessing.
 
 Successful native writes, edits, patches, structural replacements and renames

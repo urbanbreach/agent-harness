@@ -188,13 +188,11 @@ fn simulate(
     }
     Ok(())
 }
-pub(super) fn execute(
-    ctx: &ToolContext,
-    primary: &Path,
-    response: &query::Response,
-    apply: bool,
-) -> Result<ToolResult, ToolError> {
-    let changes = changes(&response.data["result"]["workspaceEdit"])?;
+struct Targets {
+    paths: BTreeMap<String, PathBuf>,
+    inputs: BTreeMap<PathBuf, PathBuf>,
+}
+fn targets(ctx: &ToolContext, changes: &[Change]) -> Result<Targets, ToolError> {
     let mut paths = BTreeMap::new();
     let mut inputs = BTreeMap::new();
     for uri in changes.iter().flat_map(Change::uris) {
@@ -209,6 +207,17 @@ pub(super) fn execute(
     if inputs.len() > 256 {
         return Err(failure("rename exceeds 256 files"));
     }
+    Ok(Targets { paths, inputs })
+}
+
+pub(super) fn snapshot(
+    ctx: &ToolContext,
+    primary: &Path,
+    response: &query::Response,
+) -> Result<BTreeMap<PathBuf, Option<String>>, ToolError> {
+    let changes = changes(&response.data["result"]["workspaceEdit"])?;
+    let Targets { mut inputs, .. } = targets(ctx, &changes)?;
+    inputs.insert(primary.to_path_buf(), primary.to_path_buf());
     let executor = tokio::runtime::Handle::current();
     let reads = inputs
         .keys()
@@ -222,7 +231,7 @@ pub(super) fn execute(
             &["read", "lsp"],
         ))
         .map_err(|e| failure(&e.to_string()))?;
-    let mut files = BTreeMap::new();
+    let mut sources = BTreeMap::new();
     let mut size = 0;
     for (input, resolved) in &inputs {
         if ctx.cancellation.is_cancelled() {
@@ -232,6 +241,9 @@ pub(super) fn execute(
             return Err(failure("rename target changed during approval"));
         }
         let before = existing_contents(resolved)?;
+        if before.as_ref().is_some_and(|text| text.len() > 512 * 1024) {
+            return Err(failure("LSP source exceeds 512 KiB"));
+        }
         size += before.as_ref().map_or(0, String::len);
         if size > 32 * 1024 * 1024 {
             return Err(failure("rename sources exceed 32 MiB"));
@@ -244,6 +256,47 @@ pub(super) fn execute(
                 "rename source changed while the server was computing edits",
             ));
         }
+        sources.insert(resolved.clone(), before);
+    }
+    Ok(sources)
+}
+
+pub(super) fn execute(
+    ctx: &ToolContext,
+    primary: &Path,
+    response: &query::Response,
+    sources: &BTreeMap<PathBuf, Option<String>>,
+    apply: bool,
+) -> Result<ToolResult, ToolError> {
+    let changes = changes(&response.data["result"]["workspaceEdit"])?;
+    let Targets { paths, inputs } = targets(ctx, &changes)?;
+    let expected: std::collections::BTreeSet<_> = inputs
+        .values()
+        .map(PathBuf::as_path)
+        .chain(std::iter::once(primary))
+        .collect();
+    if expected.len() != sources.len() || expected.iter().any(|path| !sources.contains_key(*path)) {
+        return Err(failure(
+            "rename targets changed after synchronization; retry the rename",
+        ));
+    }
+    for (path, before) in sources {
+        if ctx.cancellation.is_cancelled() {
+            return Err(ToolError::Cancelled);
+        }
+        if ctx.resolve_workspace_path(path)? != *path || existing_contents(path)? != *before {
+            return Err(failure(
+                "rename source changed while the server was computing edits",
+            ));
+        }
+    }
+    let executor = tokio::runtime::Handle::current();
+    let mut files = BTreeMap::new();
+    for resolved in inputs.values() {
+        let before = sources
+            .get(resolved)
+            .cloned()
+            .ok_or_else(|| failure("rename source is unavailable"))?;
         let permissions = if before.is_some() {
             Some(fs::metadata(resolved)?.permissions())
         } else {
