@@ -64,6 +64,26 @@ impl Tool for FileTool {
             Self::List => "List the immediate children of a directory in name order.",
         }
     }
+    fn description_for_edit_mode(&self, mode: harness_core::config::EditMode) -> &str {
+        match (self, mode) {
+            (Self::Read, harness_core::config::EditMode::Replace | harness_core::config::EditMode::ApplyPatch) => "Read plain UTF-8 text, return a PNG/JPEG/GIF/WebP image, or retain a PDF artifact without extracting its contents. Text offset is 1-based; output is bounded.",
+            (Self::Edit, harness_core::config::EditMode::Replace) => "Edit a previously read file using oldString/newString. Ambiguous exact matches require replaceAll.",
+            _ => self.description(),
+        }
+    }
+    fn parameters_for_edit_mode(&self, mode: harness_core::config::EditMode) -> Value {
+        let mut schema = self.parameters_json_schema();
+        if matches!(self, Self::Edit) && mode == harness_core::config::EditMode::Replace {
+            if let Some(properties) = schema["properties"].as_object_mut() {
+                properties.remove("edits");
+            }
+            schema["required"] = json!(["filePath", "oldString", "newString"]);
+            if let Some(object) = schema.as_object_mut() {
+                object.remove("$defs");
+            }
+        }
+        schema
+    }
     fn parameters_json_schema(&self) -> Value {
         match self {
             Self::Read => schemars::schema_for!(ReadArgs).to_value(),
@@ -178,8 +198,12 @@ fn read(ctx: &ToolContext, args: ReadArgs) -> Result<ToolResult, ToolError> {
             truncated = true;
             break;
         }
-        let hash = crate::hashline::hash(line);
-        let numbered = format!("{}#{hash}|{line}\n", index + 1);
+        let hash = (ctx.edit_mode == harness_core::config::EditMode::Hashline)
+            .then(|| crate::hashline::hash(line));
+        let numbered = hash.as_ref().map_or_else(
+            || format!("{line}\n"),
+            |hash| format!("{}#{hash}|{line}\n", index + 1),
+        );
         let end = numbered.floor_char_boundary((MAX_DISPLAY - output.len()).min(numbered.len()));
         output.push_str(&numbered[..end]);
         displayed += 1;
@@ -187,7 +211,9 @@ fn read(ctx: &ToolContext, args: ReadArgs) -> Result<ToolResult, ToolError> {
             truncated = true;
             break;
         }
-        anchors.push(json!({"line":index + 1, "hash":hash}));
+        if let Some(hash) = hash {
+            anchors.push(json!({"line":index + 1, "hash":hash}));
+        }
     }
     if truncated {
         output.push_str("\n[Output truncated; request a narrower range.]\n");

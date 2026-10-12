@@ -13,6 +13,8 @@ use serde_json::json;
 use std::{fs, sync::Arc};
 use tokio_stream::StreamExt;
 
+#[path = "files/edit_modes.rs"]
+mod edit_modes;
 #[path = "files/finalized_state.rs"]
 mod finalized_state;
 

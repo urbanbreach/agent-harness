@@ -49,6 +49,11 @@ pub(crate) async fn dispatch(session: &Inner, cell: &Cell, event: &Value) -> Res
                     .as_str()
                     .filter(|name| !name.is_empty())
                     .ok_or("tool_schema() name must be nonempty")?;
+                if name == "eval:helpers" {
+                    return Ok(
+                        json!({"name":name,"description":include_str!("helpers/reference.md")}),
+                    );
+                }
                 if let Some(tool) = tools.iter().find(|tool| tool["name"] == name) {
                     return Ok(
                         json!({"name":name,"description":tool["description"],"parameters":tool["parameters"]}),

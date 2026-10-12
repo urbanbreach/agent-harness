@@ -29,6 +29,9 @@ use provider::NotificationGate;
 #[cfg(unix)]
 #[path = "notifications/commands.rs"]
 mod commands;
+#[cfg(unix)]
+#[path = "notifications/monitor.rs"]
+mod monitor;
 
 #[tokio::test]
 async fn accepted_background_work_reserves_parent_queue_capacity_for_its_notification(

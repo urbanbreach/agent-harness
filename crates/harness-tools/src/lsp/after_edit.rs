@@ -33,6 +33,12 @@ impl Tool for CheckedEdit {
     fn parameters_json_schema(&self) -> Value {
         self.tool.parameters_json_schema()
     }
+    fn description_for_edit_mode(&self, mode: harness_core::config::EditMode) -> &str {
+        self.tool.description_for_edit_mode(mode)
+    }
+    fn parameters_for_edit_mode(&self, mode: harness_core::config::EditMode) -> Value {
+        self.tool.parameters_for_edit_mode(mode)
+    }
     fn capability(&self) -> ToolCapability {
         self.tool.capability()
     }

@@ -1,5 +1,6 @@
 mod background;
 mod launch;
+mod monitor;
 use harness_core::{
     config::{ShellAllowlist, ShellAllowlistMode},
     tool::{Tool, ToolCapability, ToolContext, ToolError, ToolResult},
@@ -21,7 +22,13 @@ pub fn register_shell_tool(
     allowlist: ShellAllowlist,
     lookup: &dyn Fn(&str) -> Option<String>,
 ) {
-    registry.register(std::sync::Arc::new(BashTool::new(allowlist, lookup)));
+    registry.register(std::sync::Arc::new(BashTool::new(
+        allowlist.clone(),
+        lookup,
+    )));
+    registry.register(std::sync::Arc::new(monitor::MonitorTool {
+        bash: BashTool::new(allowlist, lookup),
+    }));
 }
 impl BashTool {
     fn new(allowlist: ShellAllowlist, lookup: &dyn Fn(&str) -> Option<String>) -> Self {
@@ -34,6 +41,49 @@ impl BashTool {
             },
         );
         Self { allowlist, policy }
+    }
+
+    /// Validates `source` and prepares it to run under bash in `workdir`.
+    fn command(
+        &self,
+        context: &ToolContext,
+        source: &str,
+        workdir: Option<&Path>,
+    ) -> Result<
+        (
+            tokio::process::Command,
+            Option<tempfile::TempDir>,
+            harness_core::sandbox::SandboxPolicy,
+        ),
+        ToolError,
+    > {
+        scan(source, &self.allowlist)?;
+        let cwd = context.resolve_workspace_path(workdir.unwrap_or(Path::new(".")))?;
+        if !cwd.is_dir() {
+            return Err(ToolError::InvalidArguments(
+                "workdir must be a directory".into(),
+            ));
+        }
+        if !self.allowlist.cwd_roots.is_empty()
+            && !self.allowlist.cwd_roots.iter().any(|root| {
+                context
+                    .resolve_workspace_path(Path::new(root))
+                    .is_ok_and(|root| cwd.starts_with(root))
+            })
+        {
+            return Err(ToolError::Execution(
+                "workdir is outside the configured command roots".into(),
+            ));
+        }
+        let policy = self
+            .policy
+            .map_err(|error| ToolError::Execution(error.into()))?;
+        let (mut command, scratch) = launch::prepare(context, policy)?;
+        command
+            .args(["--noprofile", "--norc", "-c", source])
+            .current_dir(cwd);
+        launch::environment(&mut command, scratch.as_ref().map(tempfile::TempDir::path));
+        Ok((command, scratch, policy))
     }
 }
 #[derive(Deserialize, JsonSchema)]
@@ -186,39 +236,14 @@ impl Tool for BashTool {
     }
     async fn call(&self, context: ToolContext, value: Value) -> Result<ToolResult, ToolError> {
         let args = args(value)?;
-        scan(&args.command, &self.allowlist)?;
         let timeout = args.timeout.unwrap_or(120_000);
         if !(1..=3_600_000).contains(&timeout) {
             return Err(ToolError::InvalidArguments(
                 "timeout must be between 1 and 3600000 milliseconds".into(),
             ));
         }
-        let cwd =
-            context.resolve_workspace_path(args.workdir.as_deref().unwrap_or(Path::new(".")))?;
-        if !cwd.is_dir() {
-            return Err(ToolError::InvalidArguments(
-                "workdir must be a directory".into(),
-            ));
-        }
-        if !self.allowlist.cwd_roots.is_empty()
-            && !self.allowlist.cwd_roots.iter().any(|root| {
-                context
-                    .resolve_workspace_path(Path::new(root))
-                    .is_ok_and(|root| cwd.starts_with(root))
-            })
-        {
-            return Err(ToolError::Execution(
-                "workdir is outside the configured command roots".into(),
-            ));
-        }
-        let policy = self
-            .policy
-            .map_err(|error| ToolError::Execution(error.into()))?;
-        let (mut command, scratch) = launch::prepare(&context, policy)?;
-        command
-            .args(["--noprofile", "--norc", "-c", &args.command])
-            .current_dir(cwd);
-        launch::environment(&mut command, scratch.as_ref().map(tempfile::TempDir::path));
+        let (command, scratch, policy) =
+            self.command(&context, &args.command, args.workdir.as_deref())?;
         if args.run_in_background || args.block_until_ms.is_some() {
             return background::run(
                 context,

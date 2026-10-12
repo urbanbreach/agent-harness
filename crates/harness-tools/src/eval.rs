@@ -15,14 +15,49 @@ use tokio_util::sync::CancellationToken;
 pub fn register(registry: &mut ToolRegistry, config: EvalConfig) {
     registry.route_through_eval(config.route_tools.clone());
     registry.register(Arc::new(EvalTool {
+        description: format!("{DESCRIPTION}\n\n{}", host_line()),
         config,
         hosts: Mutex::new(BTreeMap::new()),
     }));
 }
 
+const DESCRIPTION: &str = "Execute code in persistent JavaScript, Python, Ruby or Julia kernels. Run requires language, code and a one-line summary. State survives until reset or session end. Top-level await and a final expression work. Compose independent tool calls with known arguments using parallel(thunks) or JavaScript's Promise.allSettled, inspecting every result. Direct calls suit isolated operations. Inspect dependent results before choosing later calls; never guess arguments to fill a batch. Follow the model-specific eval routing guidance when supplied. Use specialized tools through tool.<name>(args) inside batches, rather than raw file or process APIs, to retain normal tool permissions and behavior. For example, await tool.read({path: '...'}). tool_schema() lists callable tools, including tools routed only through eval; tool_schema(name) returns their schema. Results have text, details, images and hasError. Check hasError before using a tool result. Filter large results in code and display the relevant evidence. display(value) emits JSON, markdown or images; images are delivered only when displayed. print, log, phase, read, write, env, agent, completion, output, wait, workpool, parallel(thunks) and pipeline(items, ...stages) are available. JS tool(function...) and Python @tool define child-callable functions; %load runs a local script, and %npm install and %pip install use managed session environments. tool_schema('eval:helpers') returns the options of agent, wait, output, workpool, completion, pipeline, kernel-defined tools and these magics; in JavaScript, await it like every helper call. isolate:true uses a fresh QuickJS context when eval.sandbox.enabled; only tool and output helpers are present. parallel preserves order with bounded concurrency. Promise.allSettled retains independent failures. Long interactive cells detach and notify once at completion; do not rerun them. action peek/stop needs cell_id; list shows live and recent cells. reset clears only the selected language and refuses a busy kernel. timeout is the cell's execution budget in seconds, paused during host tool calls. on_timeout:error waits for settlement. Eval runs local code with the user's permissions; it is not an OS sandbox. Nested tools still require their own permissions, and recursive eval is rejected.";
+
+/// Platform, CPU model and usable cores of the machine that runs every cell.
+fn host_line() -> String {
+    let cpu = std::fs::read_to_string("/proc/cpuinfo")
+        .ok()
+        .and_then(|info| {
+            info.lines().find_map(|line| {
+                let (key, model) = line.split_once(':')?;
+                (key.trim() == "model name").then(|| model.trim().to_owned())
+            })
+        });
+    let cores = std::thread::available_parallelism()
+        .ok()
+        .map(|cores| format!("{cores} cores"));
+    let host = [
+        Some(format!(
+            "{} {}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )),
+        cpu,
+        cores,
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(", ");
+    format!(
+        "Host: {host}. Cells and the commands they start run here: size process pools and parallel builds to these cores, and use commands that work on this platform even when the code targets another."
+    )
+}
+
 type HostSlot = Arc<Mutex<Option<Arc<host::Host>>>>;
 
 struct EvalTool {
+    description: String,
     config: EvalConfig,
     hosts: Mutex<BTreeMap<(String, Option<String>), HostSlot>>,
 }
@@ -33,7 +68,7 @@ impl Tool for EvalTool {
         "eval"
     }
     fn description(&self) -> &str {
-        "Execute code in persistent JavaScript, Python, Ruby or Julia kernels. Run requires language, code and a one-line summary. State survives until reset or session end. Top-level await and a final expression work. Compose independent tool calls with known arguments using parallel(thunks) or JavaScript's Promise.allSettled, inspecting every result. Direct calls suit isolated operations. Inspect dependent results before choosing later calls; never guess arguments to fill a batch. Follow the model-specific eval routing guidance when supplied. Use specialized tools through tool.<name>(args) inside batches, rather than raw file or process APIs, to retain normal tool permissions and behavior. For example, await tool.read({path: '...'}). tool_schema() lists callable tools, including tools routed only through eval; tool_schema(name) returns their schema. Results have text, details, images and hasError. Check hasError before using a tool result. Filter large results in code and display the relevant evidence. display(value) emits JSON, markdown or images; images are delivered only when displayed. print, log, phase, read, write, env, agent, completion, output, wait, workpool, parallel(thunks) and pipeline(items, ...stages) are available. JS tool(function...) and Python @tool define child-callable functions. JS/Python %load executes a local script in the current kernel; %npm install and %pip install use managed session environments. workpool creates bounded native subagents; close seals input and delivers one aggregate notice. agent(handle:true) returns a record with control.status/output/send/cancel/wait methods in JS/Python. wait supports all, any-success, and settled outcomes. isolate:true uses a fresh QuickJS context when eval.sandbox.enabled; only tool and output helpers are present. parallel preserves order with bounded concurrency. Promise.allSettled retains independent failures. Long interactive cells detach and notify once at completion; do not rerun them. action peek/stop needs cell_id; list shows live and recent cells. reset clears only the selected language and refuses a busy kernel. timeout is the cell's execution budget in seconds, paused during host tool calls. on_timeout:error waits for settlement. Eval runs local code with the user's permissions; it is not an OS sandbox. Nested tools still require their own permissions, and recursive eval is rejected."
+        &self.description
     }
     fn capability(&self) -> ToolCapability {
         ToolCapability::SpawnAgent
