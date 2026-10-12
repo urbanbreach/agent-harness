@@ -178,9 +178,9 @@ inheritance and explicit skill preloads. The bundled agents are:
 | `scout` | Read/search/web research, medium effort, no edits, shell, eval, MCP, or spawning. |
 | `reviewer` | Code review with read/search/LSP, web search, and read-only shell instructions. No eval. May spawn only `scout`. |
 | `security-reviewer` | Local security review with read/search/LSP, no shell, eval, network, MCP, or spawning. |
-| `sonic` | Mechanical edits or data collection with task tools, medium effort. |
+| `clerk` | Mechanical edits or data collection with task tools, medium effort. |
 
-`task` inherits the parent model. `scout` and `sonic` use `@smol`; `reviewer` and
+`task` inherits the parent model. `scout` and `clerk` use `@smol`; `reviewer` and
 `security-reviewer` use `@slow`. Unset roles inherit the parent model.
 `subagents.models` pins override definition defaults. Every child loses ask-user,
 feedback and workflow tools; parent operator allow/deny restrictions still apply.

@@ -301,19 +301,19 @@ pub fn builtin_subagent_definitions() -> Vec<SubagentDefinition> {
         ("scout", "Quick, read-only repository investigation and analysis through broad searches, returning concise findings ready for reuse", include_str!("../../../prompts/agents/scout.md"), "read list grep glob websearch"),
         ("reviewer", "Patch reviewer for correctness, quality and security", include_str!("../../../prompts/agents/reviewer.md"), "read list grep glob bash lsp websearch ast_grep_search Task(scout) get_command_or_subagent_output wait_commands_or_subagents kill_command_or_subagent"),
         ("security-reviewer", "Read-only repository security audit that reports vulnerabilities with supporting evidence", include_str!("../../../prompts/agents/security-reviewer.md"), "read list grep glob lsp ast_grep_search"),
-        ("sonic", "Light-reasoning worker for purely mechanical edits or data gathering", TASK, ""),
+        ("clerk", "Light-reasoning worker for purely mechanical edits or data gathering", TASK, ""),
     ].into_iter().map(|(name, description, prompt, tools)| SubagentDefinition {
         name: name.into(),
         description: description.into(),
-        prompt_body: Some(if name == "sonic" {
+        prompt_body: Some(if name == "clerk" {
             format!("Perform only mechanical changes or data gathering. Implement the supplied design; return unresolved design choices to the parent.\n\n{prompt}")
         } else { prompt.into() }),
         model: match name {
-            "scout" | "sonic" => Some("@smol".into()),
+            "scout" | "clerk" => Some("@smol".into()),
             "reviewer" | "security-reviewer" => Some("@slow".into()),
             _ => None,
         },
-        effort: matches!(name, "scout" | "sonic").then(|| "medium".into()),
+        effort: matches!(name, "scout" | "clerk").then(|| "medium".into()),
         tools: tools.split_whitespace().map(str::to_owned).collect(),
         inject_default_tools: false,
         mcp_inheritance: if tools.is_empty() {

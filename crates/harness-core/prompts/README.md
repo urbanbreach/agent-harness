@@ -2,7 +2,7 @@
 
 Harness selects a system-prompt preset from `models/` for each model. Presets
 can be standalone templates or aliases. Bundled subagent roles live in `agents/`.
-The `sonic` agent reuses the task prompt. Role bodies keep their scope, tool
+The `clerk` agent reuses the task prompt. Role bodies keep their scope, tool
 limits and output fields; shared tool routing, hand-off and completion rules live
 in `subagent.md` rather than being repeated in each role.
 
@@ -158,7 +158,7 @@ access does not grant access to its children.
 | `scout` | Codebase research; read, list, grep, glob, web search. No edits, shell, eval, MCP, or child spawning. | `@smol`, otherwise parent; medium effort |
 | `reviewer` | Code review; read/search, LSP, structural search, web search, and shell. Shell use must be read-only. No eval. May delegate only to `scout`. | `@slow`, otherwise parent |
 | `security-reviewer` | Repository security review; local read/search, LSP, structural search. No shell, eval, network, MCP, or child spawning. | `@slow`, otherwise parent |
-| `sonic` | Strictly mechanical edits or data collection; task tools and prompt. | `@smol`, otherwise parent; medium effort |
+| `clerk` | Strictly mechanical edits or data collection; task tools and prompt. | `@smol`, otherwise parent; medium effort |
 
 `subagents.models.<name>` overrides these model defaults. `model_roles.smol` and
 `model_roles.slow` configure concrete `provider/model[/variant]` references for
@@ -166,12 +166,12 @@ access does not grant access to its children.
 also work in definition and per-call models. Other `@names` are invalid.
 Optional definition frontmatter `variant` chooses a model variant. Per-call,
 role, persona, definition and parent variants apply in that order; unknown
-variants are ignored with a runtime warning. Task and sonic can delegate within
+variants are ignored with a runtime warning. Task and clerk can delegate within
 the parent's permissions and the depth limit, which defaults to two.
 Concurrency defaults to 32.
 Definitions, roles, personas, and caller restrictions can narrow these capabilities.
 Scouts, reviewers, and security reviewers keep explicit tool lists without
-eval. Task and sonic inherit eval only when their resolved tools and permissions
+eval. Task and clerk inherit eval only when their resolved tools and permissions
 allow it.
 Scout, reviewer and security-reviewer also carry default output schemas that
 match their role prompts. The runtime checks their final answers against them and

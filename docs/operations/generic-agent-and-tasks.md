@@ -5,7 +5,7 @@ Markdown files with YAML frontmatter under `<project>/.harness/agents/`, then
 `<home>/agents/`, then built-ins. Project discovery walks to the nearest Git
 root; the nearest definition wins. Project and user files can replace built-ins
 with the same name. The built-in types are `task`, `scout`, `reviewer`,
-`security-reviewer` and `sonic`; `task` is the default. Title generation and
+`security-reviewer` and `clerk`; `task` is the default. Title generation and
 context compaction are internal operations, not selectable agents.
 Here `<home>` is nonempty `HARNESS_HOME`, otherwise `~/.harness`. Outside Git,
 definition discovery searches only the current directory.
@@ -16,9 +16,9 @@ definition discovery searches only the current directory.
 | `scout` | Repository searches and analysis with an explicit read-only tool list | `@smol` | `summary`, `files`, `architecture` |
 | `reviewer` | Patch review; can delegate to `scout` | `@slow` | `overall_correctness`, `explanation`, `confidence` |
 | `security-reviewer` | Security audit with an explicit read-only tool list | `@slow` | `coverage_summary` |
-| `sonic` | Mechanical changes or data gathering with inherited tools | `@smol` | No default schema |
+| `clerk` | Mechanical changes or data gathering with inherited tools | `@smol` | No default schema |
 
-Both reviewer schemas describe optional `findings`. Scout and sonic default to
+Both reviewer schemas describe optional `findings`. Scout and clerk default to
 `medium` reasoning effort. Restricted built-ins do not inherit MCP servers.
 All tool access remains subject to parent restrictions and permissions.
 
@@ -45,7 +45,7 @@ Definition fields use camelCase, including `capabilityMode`, `permissionMode`,
 `skills` use the spellings shown. `tools` and `disallowedTools` accept a list
 or a comma-separated string. Skill inheritance and discovery default to true.
 
-`task` inherits the parent model. Scout and sonic use `@smol`, while both
+`task` inherits the parent model. Scout and clerk use `@smol`, while both
 reviewers use `@slow`. Configure `model_roles.smol` and `model_roles.slow` with
 `provider/model[/variant]` references; unset roles inherit the parent model.
 Use either selector in a definition's `model`, a `subagents.models` pin, or a
@@ -121,7 +121,7 @@ the workspace path reflects its prepared directory or worktree. Live requests
 refresh model and tool guidance. A same-identity wake after restart retains the
 saved prompt without rediscovering its old definition.
 
-Eval guidance follows the child's selected model. Task and sonic agents can
+Eval guidance follows the child's selected model. Task and clerk agents can
 batch independent permitted tools through eval. Scouts, reviewers, and security
 reviewers keep their explicit tool lists without eval. When eval is unavailable,
 the child prompt instructs direct parallel calls instead. Parent permissions and

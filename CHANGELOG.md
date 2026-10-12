@@ -93,7 +93,7 @@ The first public release.
   `hashline_edit` boolean is still read.
 - A todo pane above the transcript. It opens on its own while the agent's todo
   list has open items, and `Ctrl+t` shows, focuses or hides it.
-- Bundled subagents (`task`, `scout`, `reviewer`, `security-reviewer`, `sonic`)
+- Bundled subagents (`task`, `scout`, `reviewer`, `security-reviewer`, `clerk`)
   with their own permissions under the project policy. Your own agents in
   `~/.harness/agents/` or `.harness/agents/` can add to or replace them, and
   can pick a model `variant`.

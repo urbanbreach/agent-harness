@@ -47,7 +47,7 @@ and replayed offline. Replay never reruns a tool or contacts a provider.
 | --- | --- |
 | Models you already use | Sign in with ChatGPT, GitHub Copilot or a Claude subscription, or export an API key for OpenAI, Anthropic, Google, OpenRouter and other models.dev providers. Any OpenAI-compatible endpoint works too. |
 | Tools that do real work | Read, write and edit files (patches, string replacement or hashline anchors, picked per model), shell, grep, glob, web fetch and search, LSP, ast-grep, GitHub, MCP servers, persistent JavaScript and Python eval, and a background `monitor` that wakes the agent when a command or file changes. |
-| Subagents | The agent can hand work to `task`, `scout`, `reviewer`, `security-reviewer` and `sonic`, or to agents you define in Markdown. Children run under the same project policy. |
+| Subagents | The agent can hand work to `task`, `scout`, `reviewer`, `security-reviewer` and `clerk`, or to agents you define in Markdown. Children run under the same project policy. |
 | Permissions | Allow, ask and deny rules per tool, path and shell command pattern. YOLO mode when you want it, opt-in Landlock confinement for shell commands. |
 | Replayable sessions | Append-only journals with resume, fork, rewind, a session tree, offline replay and redacted support bundles. Sessions from Codex and Claude Code can be imported too. |
 | Your conventions | Reads `AGENTS.md` (or `CLAUDE.md`), loads skills, runs lifecycle hooks and turns Markdown files into slash commands. |
@@ -185,7 +185,7 @@ permission presets and attachments. See the [prompt CLI](docs/operations/prompt.
 ## Agents, skills and commands
 
 The main agent delegates with `spawn_subagent`. `task` inherits the parent model,
-`scout` and `sonic` use the `@smol` role, and both reviewers use `@slow`. Point
+`scout` and `clerk` use the `@smol` role, and both reviewers use `@slow`. Point
 those roles at real models in `model_roles`; an unset role falls back to the
 parent model. Your own agents are Markdown files with YAML frontmatter in
 `.harness/agents/` (project) or `~/.harness/agents/` (personal). Project files

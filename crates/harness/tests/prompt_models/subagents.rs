@@ -11,7 +11,7 @@ async fn bundled_agents_execute_with_their_roles_models_and_spawn_restrictions(
         ("scout", "gpt-5.6", true),
         ("task", "gpt-6", false),
         ("security-reviewer", "gpt-6", true),
-        ("sonic", "gpt-5.6", true),
+        ("clerk", "gpt-5.6", true),
     ] {
         let variant = (role == "task" && model == "gpt-6" && eval_permitted).then_some("high");
         let model_pins = if matches!(role, "reviewer" | "security-reviewer") {
@@ -54,7 +54,7 @@ async fn bundled_agents_execute_with_their_roles_models_and_spawn_restrictions(
         script.push(call("spawn_subagent", json!({"prompt":"Complete the assigned check.","description":role,"subagent_type":role,"background":false,"variant":variant})));
         children.push((script.len(), role, model));
         match role {
-            "task" | "sonic" => script.push(call(
+            "task" | "clerk" => script.push(call(
                 "write",
                 json!({"path":format!("{role}.txt"),"content":role}),
             )),
@@ -87,7 +87,7 @@ async fn bundled_agents_execute_with_their_roles_models_and_spawn_restrictions(
             )),
             _ => return Err("unknown fixture role".into()),
         }
-        let uses_eval = eval_permitted && matches!(role, "task" | "sonic");
+        let uses_eval = eval_permitted && matches!(role, "task" | "clerk");
         if uses_eval {
             // QuickJS exercises the real child tool bridge without requiring Node.
             script.push(call("eval", json!({
@@ -127,7 +127,7 @@ print('batch complete');"#
                 .with_provider_override(Arc::clone(&provider) as Arc<dyn Provider>),
         );
         assert_eq!(result.code, 0, "{}", String::from_utf8_lossy(&stderr));
-        if matches!(role, "task" | "sonic") {
+        if matches!(role, "task" | "clerk") {
             assert_eq!(
                 fs::read_to_string(root.path().join(format!("{role}.txt")))?,
                 role
@@ -171,7 +171,7 @@ print('batch complete');"#
             );
             let tools = request.tools.as_deref().unwrap_or_default();
             let eval = tools.iter().find(|tool| tool.tool_id == "eval");
-            let child_uses_eval = eval_permitted && matches!(role, "task" | "sonic");
+            let child_uses_eval = eval_permitted && matches!(role, "task" | "clerk");
             assert_eq!(
                 eval.is_some(),
                 child_uses_eval,

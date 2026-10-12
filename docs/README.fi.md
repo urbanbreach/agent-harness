@@ -48,7 +48,7 @@ verkkoa. Toisto ei koskaan aja työkaluja uudelleen eikä ota yhteyttä palvelun
 | --- | --- |
 | Tutut mallit | Kirjaudu ChatGPT-, GitHub Copilot- tai Claude-tilauksella tai aseta API-avain ympäristömuuttujaan. Tuettuja ovat OpenAI, Anthropic, Google, OpenRouter ja muut models.dev-palveluntarjoajat. Myös mikä tahansa OpenAI-yhteensopiva päätepiste toimii. |
 | Työkalut käytännön työhön | Tiedostojen luku, kirjoitus ja muokkaus (mallin mukaan joko paikkauksilla, merkkijonojen korvauksilla tai hashline-ankkureilla), shell, grep, glob, verkkohaku ja verkkosisällön nouto, LSP, ast-grep, GitHub, MCP-palvelimet, JavaScript- ja Python-eval pysyvällä tilalla sekä taustalla toimiva `monitor`, joka herättää agentin, kun komento tai tiedosto muuttuu. |
-| Ala-agentit | Agentti voi delegoida työtä agenteille `task`, `scout`, `reviewer`, `security-reviewer` ja `sonic` tai itse Markdownissa määrittelemillesi agenteille. Ala-agentteja koskevat samat projektin säännöt. |
+| Ala-agentit | Agentti voi delegoida työtä agenteille `task`, `scout`, `reviewer`, `security-reviewer` ja `clerk` tai itse Markdownissa määrittelemillesi agenteille. Ala-agentteja koskevat samat projektin säännöt. |
 | Oikeudet | Salli, kysy ja kiellä työkalun, polun tai shell-komennon kuvion perusteella. Halutessasi voit käyttää YOLO-tilaa tai ottaa käyttöön Landlock-rajoitukset shell-komennoille. |
 | Toistettavat istunnot | Lokit, joihin voi vain lisätä tapahtumia, istuntojen jatkaminen, haarauttaminen ja kelaaminen, istuntopuu, toisto ilman verkkoa sekä tukipaketit, joista salaiset tiedot on peitetty. Voit myös tuoda istuntoja Codexista ja Claude Codesta. |
 | Omat käytännöt | Lukee `AGENTS.md`-tiedoston (tai `CLAUDE.md`-tiedoston), lataa taitoja, ajaa elinkaarikoukkuja ja tekee Markdown-tiedostoista vinoviivakomentoja. |
@@ -191,7 +191,7 @@ työkalut, oikeuksien esiasetukset ja liitteet. Katso
 ## Agentit, taidot ja komennot
 
 Pääagentti delegoi työtä `spawn_subagent`-työkalulla. `task` perii pääagentin
-mallin, `scout` ja `sonic` käyttävät roolia `@smol` ja molemmat arvioijat roolia
+mallin, `scout` ja `clerk` käyttävät roolia `@smol` ja molemmat arvioijat roolia
 `@slow`. Valitse rooleille mallit asetuksella `model_roles`. Jos roolia ei ole
 määritetty, ala-agentti perii pääagentin mallin. Omat agentit ovat
 Markdown-tiedostoja YAML-alkutietoineen hakemistossa `.harness/agents/`
