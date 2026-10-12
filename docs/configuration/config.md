@@ -199,6 +199,38 @@ pinning, worktree creation, scheduling and dispatch. Optional type schemas list
 at most 64 names (128 bytes each), with normalized 200-byte descriptions; this
 presentation bound does not reject otherwise valid types.
 
+### Choosing subagent models
+
+Every subagent runs on the parent model until you configure something else.
+Harness never assigns per-agent models by itself, and none of the settings below
+are filled in for you. Edit `harness.jsonc` (user or project) by hand, or ask the
+agent to make the change.
+
+The most direct setup is one role per agent. A role named after an agent type
+applies every time that type is spawned:
+
+```jsonc
+{
+  "subagents": {
+    "roles": {
+      "task": { "model": "anthropic/claude-sonnet-5-5", "variant": "medium", "reasoning_effort": "medium" },
+      "scout": { "model": "mistral/zai-glm-5-3", "variant": "low", "reasoning_effort": "low" },
+      "reviewer": { "model": "openai-codex/gpt-6.1-sol", "variant": "high", "reasoning_effort": "high" }
+    }
+  }
+}
+```
+
+Set `reasoning_effort` next to `variant`. Without it, the agent's built-in effort
+(medium for `scout` and `clerk`) or the parent's effort is sent instead and can
+override the variant's effort. Agents you leave out keep their defaults.
+`harness models` lists valid `provider/model` references and their variants;
+`harness config validate` checks the file.
+
+Two shorter forms set only the model: `subagents.models.<agent>` pins one agent,
+and [`model_roles`](#model-roles) fills the shared `@smol` and `@slow` slots used
+by `scout`, `clerk` and the reviewers.
+
 ## Model roles
 
 `model_roles` (alias `modelRoles`) defines optional `smol` and `slow` model
@@ -218,7 +250,9 @@ Use `@smol` or `@slow` in an agent definition's `model`, a `subagents.models`
 value, or a per-call model argument. An unset role resolves to the parent model.
 Other `@names` are validation errors. Role values must be concrete model
 references, not other role selectors. These roles select subagent models; they
-do not select a separate title-generation model.
+do not select a separate title-generation model. A variant in a role reference
+does not set the subagent's effort; use `subagents.roles` for that (see
+[choosing subagent models](#choosing-subagent-models)).
 
 ## Model prompts
 

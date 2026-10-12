@@ -48,6 +48,9 @@ or a comma-separated string. Skill inheritance and discovery default to true.
 `task` inherits the parent model. Scout and clerk use `@smol`, while both
 reviewers use `@slow`. Configure `model_roles.smol` and `model_roles.slow` with
 `provider/model[/variant]` references; unset roles inherit the parent model.
+Harness doesn't configure any of this for you; to run subagents on other models,
+set them up by hand or ask the agent to. See
+[choosing subagent models](../configuration/config.md#choosing-subagent-models).
 Use either selector in a definition's `model`, a `subagents.models` pin, or a
 per-call model. Other `@names` are invalid. Optional `variant` frontmatter
 follows per-call, role, persona, definition, then parent precedence; unknown

@@ -184,10 +184,12 @@ permission presets and attachments. See the [prompt CLI](docs/operations/prompt.
 
 ## Agents, skills and commands
 
-The main agent delegates with `spawn_subagent`. `task` inherits the parent model,
-`scout` and `clerk` use the `@smol` role, and both reviewers use `@slow`. Point
-those roles at real models in `model_roles`; an unset role falls back to the
-parent model. Your own agents are Markdown files with YAML frontmatter in
+The main agent delegates with `spawn_subagent`. Out of the box, every subagent
+runs on your main model; Harness doesn't pick a different model for any of them.
+To give `task`, `scout`, `clerk` or the reviewers their own models, set them
+yourself in `harness.jsonc` or ask the agent to do it for you. See
+[choosing subagent models](docs/configuration/config.md#choosing-subagent-models).
+Your own agents are Markdown files with YAML frontmatter in
 `.harness/agents/` (project) or `~/.harness/agents/` (personal). Project files
 win over personal ones, which win over the built-ins. Details are in
 [agents and tasks](docs/operations/generic-agent-and-tasks.md).

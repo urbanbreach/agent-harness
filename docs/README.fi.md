@@ -190,10 +190,12 @@ työkalut, oikeuksien esiasetukset ja liitteet. Katso
 
 ## Agentit, taidot ja komennot
 
-Pääagentti delegoi työtä `spawn_subagent`-työkalulla. `task` perii pääagentin
-mallin, `scout` ja `clerk` käyttävät roolia `@smol` ja molemmat arvioijat roolia
-`@slow`. Valitse rooleille mallit asetuksella `model_roles`. Jos roolia ei ole
-määritetty, ala-agentti perii pääagentin mallin. Omat agentit ovat
+Pääagentti delegoi työtä `spawn_subagent`-työkalulla. Oletuksena kaikki
+ala-agentit käyttävät pääagentin mallia, eikä Harness valitse niille muita malleja
+itse. Jos haluat agenteille `task`, `scout`, `clerk` tai arvioijille omat mallit,
+määritä ne itse tiedostoon `harness.jsonc` tai pyydä agenttia tekemään se. Ohjeet
+ovat kohdassa
+[ala-agenttien mallit](configuration/config.md#choosing-subagent-models). Omat agentit ovat
 Markdown-tiedostoja YAML-alkutietoineen hakemistossa `.harness/agents/`
 (projektin agentit) tai `~/.harness/agents/` (omat agentit). Projektin määritys
 voittaa oman määrityksen, joka puolestaan voittaa valmiin agentin. Lue lisää
