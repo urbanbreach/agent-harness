@@ -46,6 +46,7 @@ pub enum SettingEditorKind {
     Integer,
     String,
     Choice(&'static [&'static str]),
+    Json,
 }
 pub fn setting_editor_kind(id: &str) -> Option<SettingEditorKind> {
     match id {
@@ -63,12 +64,18 @@ pub fn setting_editor_kind(id: &str) -> Option<SettingEditorKind> {
         "runtime.session_dir" => Some(SettingEditorKind::String),
         "permission.bash" => Some(SettingEditorKind::Choice(&["ask", "allow", "deny"])),
         "subagents.limit_behavior" => Some(SettingEditorKind::Choice(&["queue", "fail"])),
+        "edit.mode" => Some(SettingEditorKind::Choice(&[
+            "auto",
+            "hashline",
+            "replace",
+            "apply_patch",
+        ])),
+        "edit.model_variants" => Some(SettingEditorKind::Json),
         _ => None,
     }
 }
-// The unchanged UI has separate toggles for these six settings.
+// These settings retain dedicated live toggles.
 const TOGGLES: &[&str] = &[
-    "hashline_edit",
     "runtime.compaction.enabled",
     "runtime.compaction.auto_retry_overflow",
     "runtime.compaction.structured_summary_contract",
@@ -98,6 +105,17 @@ pub fn read_project_setting_value(
 ) -> Result<Option<String>, SettingWriteError> {
     let entry = writable(id)?;
     let raw = raw_file(path)?;
+    if entry.setting_id.0.starts_with("edit.") {
+        let mut value = raw.json()?;
+        edit::normalize_compat(&mut value)?;
+        return Ok(value
+            .pointer(&format!("/{}", entry.setting_id.0.replace('.', "/")))
+            .map(|value| {
+                value
+                    .as_str()
+                    .map_or_else(|| value.to_string(), str::to_owned)
+            }));
+    }
     if setting_editor_kind(entry.setting_id.0).is_some() {
         let value = raw.json()?;
         return Ok(value
@@ -133,6 +151,7 @@ pub fn write_project_setting_value(
             ))
         }
         SettingEditorKind::Choice(_) | SettingEditorKind::String => Value::String(input.into()),
+        SettingEditorKind::Json => serde_json::from_str(input).map_err(parse_error)?,
     };
     update(path, id, Some(value))
 }
@@ -160,13 +179,9 @@ fn update(path: &Path, id: &str, value: Option<Value>) -> Result<String, Setting
     let path = absolute(path)?;
     let _lock = lock(&path)?;
     let mut raw = raw_file(&path)?;
-    for (old, new) in [
-        ("permissions", "permission"),
-        ("hashlineEdit", "hashline_edit"),
-    ] {
-        raw.rename(old, new)?;
-    }
+    raw.rename("permissions", "permission")?;
     let mut edited = raw.json()?;
+    edit::normalize_compat(&mut edited)?;
     let keys = setting_path(&mut edited, id)?;
     replace(&mut edited, &keys, value)?;
     let raw = raw.replace(edited);
@@ -217,9 +232,6 @@ fn effective(raw: &OrderedValue, path: &Path, id: &str) -> Result<String, Settin
 }
 fn setting_path(raw: &mut Value, id: &str) -> Result<Vec<String>, SettingWriteError> {
     let root = raw.as_object_mut().ok_or(SettingWriteError::InvalidRoot)?;
-    if id == "hashline_edit" {
-        alias(root, "hashlineEdit", "hashline_edit")?;
-    }
     if id == "permission.bash" {
         alias(root, "permissions", "permission")?;
         let permission = root.entry("permission").or_insert_with(|| json!({}));
@@ -336,7 +348,6 @@ macro_rules! toggles {
     )*};
 }
 toggles! {
-    "hashline_edit" => read_effective_hashline_edit, write_project_hashline_edit, reset_project_hashline_edit;
     "runtime.compaction.enabled" => read_effective_compaction_enabled, write_project_compaction_enabled, reset_project_compaction_enabled;
     "runtime.compaction.auto_retry_overflow" => read_effective_compaction_auto_retry_overflow, write_project_compaction_auto_retry_overflow, reset_project_compaction_auto_retry_overflow;
     "runtime.compaction.structured_summary_contract" => read_effective_compaction_structured_summary_contract, write_project_compaction_structured_summary_contract, reset_project_compaction_structured_summary_contract;

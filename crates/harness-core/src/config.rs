@@ -8,6 +8,7 @@ use std::{
 };
 mod defaults;
 mod discovery;
+mod edit;
 mod eval;
 mod extensions;
 mod integrations;
@@ -34,6 +35,7 @@ mod subagents;
 pub use crate::perm::PermissionAction as PermissionMode;
 pub use defaults::{default_permission_rule_set_with_read_env, default_read_env_permission_rules};
 pub use discovery::*;
+pub use edit::*;
 pub use eval::*;
 pub use extensions::*;
 pub use integrations::*;
@@ -102,8 +104,7 @@ pub struct HarnessConfig {
     pub deterministic: DeterministicConfig,
     pub ui: UiConfig,
     pub logging: LoggingConfig,
-    #[serde(default = "yes", alias = "hashlineEdit")]
-    pub hashline_edit: bool,
+    pub edit: EditConfig,
     pub formatter: FormatterConfig,
     #[serde(skip)]
     pub instruction_files: Vec<InstructionFile>,
@@ -188,7 +189,6 @@ mod tests {
     #[test]
     fn config_rejects_unknown_fields_and_preserves_model_and_permission_intent(
     ) -> Result<(), Box<dyn std::error::Error>> {
-        assert!(HarnessConfig::default().hashline_edit);
         let read_policy = crate::perm::PermissionPolicy::from_rules(
             default_read_env_permission_rules()
                 .into_iter()
@@ -273,7 +273,6 @@ mod tests {
         }"#,
         )?;
         assert_eq!(config.agents["default"].model_ref, "local:test");
-        assert!(config.hashline_edit);
         assert!(config.runtime.compaction.structured_summary_contract);
         assert!(
             load_config_from_str("{runtime:{compaction:{}}}")?

@@ -32,6 +32,7 @@ pub fn config_json_schema() -> Value {
         ("IntegrationsConfig", "remote_search remoteSearch"),
         ("RemoteSearchConfig", "auth_token authToken;require_auth requireAuth;timeout_secs timeoutSecs;max_retries maxRetries;retry_backoff_ms retryBackoffMs"),
         ("McpServerConfig", "env environment;endpoint url;timeout_secs timeoutSecs timeout"),
+        ("EditConfig", "model_variants modelVariants"),
     ] {
         if let Some(def) = defs.get_mut(name) {
             aliases(def, fields);
@@ -91,6 +92,8 @@ pub fn config_json_schema() -> Value {
     ]});
     properties["mcp"] =
         json!({"type":"object","additionalProperties":{"$ref":"#/$defs/McpServerConfig"}});
+    properties["hashline_edit"] = json!({"type":"boolean","deprecated":true});
+    properties["hashlineEdit"] = json!({"type":"boolean","deprecated":true});
     for name in ["formatter", "lsp"] {
         let object = std::mem::take(&mut properties[name]);
         let boolean = if name == "formatter" {
@@ -100,7 +103,12 @@ pub fn config_json_schema() -> Value {
         };
         properties[name] = json!({"anyOf":[boolean,object]});
     }
-    aliases(&mut schema, "providers provider;agents agent;permissions permission;model_profile modelProfile model_profiles;hashline_edit hashlineEdit;model_roles modelRoles");
+    aliases(&mut schema, "providers provider;agents agent;permissions permission;model_profile modelProfile model_profiles;model_roles modelRoles");
+    schema["allOf"] = json!([
+        {"not":{"required":["edit","hashline_edit"]}},
+        {"not":{"required":["edit","hashlineEdit"]}},
+        {"not":{"required":["hashline_edit","hashlineEdit"]}}
+    ]);
     schema.sort_all_objects();
     schema
 }

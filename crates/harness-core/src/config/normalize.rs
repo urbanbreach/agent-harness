@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 
 pub(super) fn normalize(ordered: ordered::OrderedValue) -> Result<HarnessConfig, ConfigError> {
     let mut value = ordered.json()?;
+    edit::normalize_compat(&mut value)?;
     let object = value
         .as_object_mut()
         .ok_or_else(|| ConfigError("expected an object".into()))?;
@@ -12,7 +13,6 @@ pub(super) fn normalize(ordered: ordered::OrderedValue) -> Result<HarnessConfig,
         ("agent", "agents"),
         ("permission", "permissions"),
         ("modelRoles", "model_roles"),
-        ("hashlineEdit", "hashline_edit"),
     ]
     .into_iter()
     .try_for_each(|(old, new)| rename(object, old, new))?;
@@ -357,7 +357,7 @@ fn shipped_profiles(model: &str) -> BTreeMap<String, ProfileConfig> {
         model_ref: model.into(),
         description: "Harness coding assistant.".into(),
         mode: AgentMode::Primary,
-        tools: "read glob grep list ast_grep_search webfetch websearch codesearch session_list session_read session_search session_info bash lsp skill edit write apply_patch eval todowrite todoread question spawn_subagent get_command_or_subagent_output wait_commands_or_subagents kill_command_or_subagent send_subagent_message"
+        tools: "read glob grep list ast_grep_search webfetch websearch codesearch session_list session_read session_search session_info bash monitor lsp skill edit write apply_patch eval todowrite todoread question spawn_subagent get_command_or_subagent_output wait_commands_or_subagents kill_command_or_subagent send_subagent_message"
             .split_whitespace().map(str::to_owned).collect(),
         ..Default::default()
     })])

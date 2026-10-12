@@ -65,6 +65,9 @@ impl Runtime {
             return Err(CoordinatorError::Stopping);
         }
         let user_initiated = actor.kind == ActorKind::User;
+        if user_initiated {
+            self.user_resumes_monitors(agent_id);
+        }
         prompt.validate(self.redactor.as_ref())?;
         if !prompt.reminder_wake
             && let Some(backlog) = self.command_notices.get_mut(agent_id)
@@ -366,6 +369,7 @@ impl Runtime {
             tools: self.config.tool_registry.definitions(
                 &agent.profile,
                 tool_scope.as_deref(),
+                &turn.model,
                 (&self.config.permission_policy, &agent.policy),
             ),
             registry: Arc::clone(&self.config.tool_registry),

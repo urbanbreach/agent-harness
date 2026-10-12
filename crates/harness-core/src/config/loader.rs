@@ -136,6 +136,7 @@ fn prepare_layer(
     }
     let mut value = ordered.json()?;
     super::references::expand(&mut value, base, lookup)?;
+    edit::normalize_compat(&mut value)?;
     runtime::normalize_aliases(&mut value)?;
     Ok(ordered.replace(value))
 }
@@ -211,7 +212,7 @@ impl HarnessConfig {
         ]
         .contains(&0)
             || runtime.permissions.ask_timeout_ms == 0
-            || runtime.prompt.wait_timeout_ms == 0
+            || runtime.prompt.wait_timeout_ms == Some(0)
             || runtime.provider_retry.base_delay_ms > runtime.provider_retry.max_delay_ms
         {
             return Err(ConfigError(

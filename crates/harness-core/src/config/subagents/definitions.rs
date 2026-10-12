@@ -214,6 +214,9 @@ pub struct SubagentDefinition {
     pub tools: Vec<String>,
     #[serde(deserialize_with = "string_or_list")]
     pub disallowed_tools: Vec<String>,
+    /// Final-answer JSON Schema a built-in role enforces when the caller supplies none.
+    #[serde(skip)]
+    pub output_schema: Option<serde_json::Map<String, serde_json::Value>>,
     #[serde(skip)]
     pub source_path: Option<PathBuf>,
     #[serde(skip)]
@@ -242,6 +245,7 @@ impl Default for SubagentDefinition {
             tool_config: None,
             tools: Vec::new(),
             disallowed_tools: Vec::new(),
+            output_schema: None,
             source_path: None,
             source: SubagentDefinitionSource::User,
         }
@@ -293,16 +297,16 @@ pub enum SubagentDefinitionSource {
 pub fn builtin_subagent_definitions() -> Vec<SubagentDefinition> {
     const TASK: &str = include_str!("../../../prompts/agents/task.md");
     [
-        ("task", "General-purpose subagent with full capabilities for delegated multi-step tasks", TASK, ""),
-        ("scout", "Fast read-only codebase research, code analysis, and broad pattern searches; returns compressed context for handoff", include_str!("../../../prompts/agents/scout.md"), "read list grep glob websearch"),
-        ("reviewer", "Code review specialist for quality/security analysis", include_str!("../../../prompts/agents/reviewer.md"), "read list grep glob bash lsp websearch ast_grep_search Task(scout) get_command_or_subagent_output wait_commands_or_subagents kill_command_or_subagent"),
-        ("security-reviewer", "Read-only security specialist for evidence-backed repository vulnerability discovery", include_str!("../../../prompts/agents/security-reviewer.md"), "read list grep glob lsp ast_grep_search"),
-        ("sonic", "Low-reasoning agent for strictly mechanical updates or data collection only", TASK, ""),
+        ("task", "Full-capability worker for delegated multi-step assignments", TASK, ""),
+        ("scout", "Quick, read-only repository investigation and analysis through broad searches, returning concise findings ready for reuse", include_str!("../../../prompts/agents/scout.md"), "read list grep glob websearch"),
+        ("reviewer", "Patch reviewer for correctness, quality and security", include_str!("../../../prompts/agents/reviewer.md"), "read list grep glob bash lsp websearch ast_grep_search Task(scout) get_command_or_subagent_output wait_commands_or_subagents kill_command_or_subagent"),
+        ("security-reviewer", "Read-only repository security audit that reports vulnerabilities with supporting evidence", include_str!("../../../prompts/agents/security-reviewer.md"), "read list grep glob lsp ast_grep_search"),
+        ("sonic", "Light-reasoning worker for purely mechanical edits or data gathering", TASK, ""),
     ].into_iter().map(|(name, description, prompt, tools)| SubagentDefinition {
         name: name.into(),
         description: description.into(),
         prompt_body: Some(if name == "sonic" {
-            format!("Only strictly mechanical updates or data collection. Follow the supplied design; return open design questions to the parent.\n\n{prompt}")
+            format!("Perform only mechanical changes or data gathering. Implement the supplied design; return unresolved design choices to the parent.\n\n{prompt}")
         } else { prompt.into() }),
         model: match name {
             "scout" | "sonic" => Some("@smol".into()),
@@ -317,7 +321,85 @@ pub fn builtin_subagent_definitions() -> Vec<SubagentDefinition> {
         } else {
             SubagentMcpInheritance::Mode(SubagentMcpMode::None)
         },
+        output_schema: role_output_schema(name),
         source: SubagentDefinitionSource::Builtin,
         ..SubagentDefinition::default()
     }).collect()
+}
+
+/// The JSON contract each read-only role prompt describes, so the runtime can hold answers to it.
+/// Required fields match the role prompts; optional members stay lenient to avoid needless retries.
+fn role_output_schema(name: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let string = serde_json::json!({"type": "string"});
+    let strings = serde_json::json!({"type": "array", "items": {"type": "string"}});
+    let line = serde_json::json!({"type": "integer", "minimum": 1});
+    let unit = serde_json::json!({"type": "number", "minimum": 0, "maximum": 1});
+    let schema = match name {
+        "scout" => serde_json::json!({
+            "type": "object",
+            "required": ["summary", "files", "architecture"],
+            "properties": {
+                "summary": string,
+                "files": {"type": "array", "items": {
+                    "type": "object",
+                    "required": ["path", "description"],
+                    "properties": {"path": string, "description": string}
+                }},
+                "architecture": string,
+                "report": {"description": "The complete requested deliverable, when the assignment asks for one."}
+            }
+        }),
+        "reviewer" => serde_json::json!({
+            "type": "object",
+            "required": ["overall_correctness", "explanation", "confidence"],
+            "properties": {
+                "findings": {"type": "array", "items": {
+                    "type": "object",
+                    "required": ["title", "body", "priority", "confidence", "file_path", "line_start", "line_end"],
+                    "properties": {
+                        "title": string, "body": string,
+                        "priority": {"type": "integer", "minimum": 0, "maximum": 3},
+                        "confidence": unit, "file_path": string,
+                        "line_start": line, "line_end": line
+                    }
+                }},
+                "overall_correctness": {"enum": ["correct", "incorrect"]},
+                "explanation": string,
+                "confidence": unit
+            }
+        }),
+        "security-reviewer" => serde_json::json!({
+            "type": "object",
+            "required": ["coverage_summary"],
+            "properties": {
+                "coverage_summary": string,
+                "findings": {"type": "array", "items": {
+                    "type": "object",
+                    "required": ["rule_id", "title", "summary", "severity", "confidence", "category", "locations", "cwe", "evidence"],
+                    "properties": {
+                        "rule_id": string, "title": string, "summary": string, "category": string,
+                        "locations": {"type": "array", "items": {
+                            "type": "object",
+                            "required": ["path", "start_line"],
+                            "properties": {"path": string, "start_line": line, "end_line": line, "role": string}
+                        }},
+                        "evidence": {"type": "array", "items": {
+                            "type": "object",
+                            "required": ["label", "explanation"],
+                            "properties": {"label": string, "explanation": string, "excerpt": string}
+                        }},
+                        "remediation": string
+                    }
+                }},
+                "reviewed_paths": strings,
+                "deferred": {"type": "array", "items": {
+                    "type": "object",
+                    "required": ["reason"],
+                    "properties": {"reason": string, "paths": strings}
+                }}
+            }
+        }),
+        _ => return None,
+    };
+    schema.as_object().cloned()
 }

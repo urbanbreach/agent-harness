@@ -81,6 +81,8 @@ fn definition(
         restart_required: metadata
             || id.starts_with("subagents.")
             || id.starts_with("features.")
+            || id == "edit"
+            || id.starts_with("edit.")
             || matches!(id, "runtime.yolo" | "runtime.session_dir"),
         default_value: default,
         merge_strategy: if matches!(
@@ -92,6 +94,8 @@ fn definition(
                 | "model_profile"
                 | "model_roles"
                 | "ui"
+                | "edit"
+                | "edit.model_variants"
                 | "runtime.compaction.model_thresholds"
                 | "runtime.compaction.agent_thresholds"
                 | "subagents"
@@ -124,7 +128,7 @@ static REGISTRY: LazyLock<Vec<SettingDefinition>> = LazyLock::new(|| {
         "disabled_providers", "enabled_providers", "shell", "logging", "ui",
         "permission.bash", "permission.edit", "permission.question", "permission.task", "permission.eval", "permission.webfetch", "permission.websearch",
         "permission.codesearch", "permission.lsp", "permission.read", "permission.external_directory", "permission.doom_loop", "permission.shell_allowlist",
-        "provider.apiKey", "hashline_edit" => "true", "worktree.relative_base" => "<data>/worktrees/<project-key>", "worktree.branch_prefix" => "harness/wt-",
+        "provider.apiKey", "edit", "edit.mode" => "auto", "edit.model_variants" => "{}", "worktree.relative_base" => "<data>/worktrees/<project-key>", "worktree.branch_prefix" => "harness/wt-",
         "subagents", "subagents.enabled" => "true", "subagents.max_depth" => "1", "subagents.max_concurrent" => "32",
         "subagents.sampling_limit", "subagents.limit_behavior" => "queue", "subagents.models" => "{}",
         "subagents.toggle" => "{}", "subagents.roles" => "{}", "subagents.personas" => "{}",
@@ -145,10 +149,6 @@ pub fn settings_registry() -> &'static [SettingDefinition] {
     &REGISTRY
 }
 pub fn setting_definition(id: &str) -> Option<&'static SettingDefinition> {
-    let id = match id {
-        "hashlineEdit" | "hashline-edit" => "hashline_edit",
-        _ => id,
-    };
     settings_registry()
         .iter()
         .find(|entry| entry.setting_id.0 == id)
@@ -200,12 +200,12 @@ pub struct SettingCompatMigration {
 pub fn settings_compat_migrations() -> &'static [SettingCompatMigration] {
     &[
         SettingCompatMigration {
-            legacy_id: "hashlineEdit",
-            canonical_id: "hashline_edit",
+            legacy_id: "hashline_edit",
+            canonical_id: "edit.mode",
         },
         SettingCompatMigration {
-            legacy_id: "hashline-edit",
-            canonical_id: "hashline_edit",
+            legacy_id: "hashlineEdit",
+            canonical_id: "edit.mode",
         },
     ]
 }

@@ -43,7 +43,32 @@ impl Runtime {
     pub(super) fn admit_command(
         &mut self,
         context: ToolContext,
-        mut prepared: PreparedCommand,
+        prepared: PreparedCommand,
+    ) -> Result<CommandSnapshot, CoordinatorError> {
+        self.admit(
+            context,
+            Launch::Pipes(prepared.command),
+            prepared.label,
+            prepared.description,
+            prepared.timeout,
+            prepared.scratch,
+            None,
+        )
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "commands and monitors share one admission with their own launch fields"
+    )]
+    pub(super) fn admit(
+        &mut self,
+        context: ToolContext,
+        launch: Launch,
+        label: String,
+        description: Option<String>,
+        timeout: Duration,
+        scratch: Option<tempfile::TempDir>,
+        monitor: Option<super::monitor::Monitor>,
     ) -> Result<CommandSnapshot, CoordinatorError> {
         self.accepting()?;
         let tool = context.tool_call_id.as_str();
@@ -78,32 +103,18 @@ impl Runtime {
             .write(true)
             .create_new(true)
             .open(&path)?;
-        prepared
-            .command
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        let cwd = prepared
-            .command
-            .as_std()
-            .get_current_dir()
-            .unwrap_or(&context.workspace_root)
-            .to_string_lossy()
-            .into_owned();
         #[cfg(not(unix))]
         return Err(CoordinatorError::Invalid(
             "process-tree control is unavailable on this platform".into(),
         ));
         #[cfg(unix)]
-        let (child, group) = crate::process::spawn_group(prepared.command)
-            .map_err(|error| CoordinatorError::Invalid(error.to_string()))?;
+        let (source, cwd, pid) = super::source::spawn(launch, &context.workspace_root)?;
         #[cfg(unix)]
         {
             let snapshot = CommandSnapshot {
                 result: GetCommandOrSubagentOutputResult {
                     task_id: id.clone(),
-                    command: self.redactor.redact_text(&prepared.label),
+                    command: self.redactor.redact_text(&label),
                     status: "running".into(),
                     started: self.clock.system_time_rfc3339().unwrap_or_default(),
                     output_file: path.to_string_lossy().into_owned(),
@@ -113,11 +124,9 @@ impl Runtime {
                 original_owner_agent_id: context.actor.agent_id.clone(),
                 parent_tool_call_id: tool.into(),
                 parent_task_id: parent.clone(),
-                description: prepared
-                    .description
-                    .map(|description| self.redactor.redact_text(&description)),
+                description: description.map(|description| self.redactor.redact_text(&description)),
                 cwd,
-                pid: child.id(),
+                pid,
                 started_mono_ms: self.clock.mono_ms(),
                 finished_mono_ms: None,
                 stdout: String::new(),
@@ -129,7 +138,14 @@ impl Runtime {
                 EventV1::TaskScheduled(TaskScheduledEvent {
                     task_id: id.clone().into(),
                     state: TaskScheduleState::Started,
-                    queue_key: Some("command".into()),
+                    queue_key: Some(
+                        if monitor.is_some() {
+                            "monitor"
+                        } else {
+                            "command"
+                        }
+                        .into(),
+                    ),
                     metadata: Some(TaskScheduleMetadata {
                         lineage: Some(TaskLineageMetadata {
                             parent_tool_call_id: Some(tool.into()),
@@ -157,22 +173,17 @@ impl Runtime {
                     file_bytes: 0,
                     pending: [Vec::new(), Vec::new()],
                     discarded: [false, false],
+                    monitor,
                 },
             );
             let handle = self.handle()?;
             let worker_id = id.clone();
             let worker_token = cancellation.clone();
             let worker = self.jobs.spawn(async move {
-                let _scratch = prepared.scratch;
-                let result = run_command(
-                    handle,
-                    worker_id.clone(),
-                    child,
-                    group,
-                    prepared.timeout,
-                    worker_token,
-                )
-                .await;
+                let _scratch = scratch;
+                let result =
+                    super::source::run(handle, worker_id.clone(), source, timeout, worker_token)
+                        .await;
                 Completion::Command {
                     id: worker_id,
                     result,
@@ -226,6 +237,7 @@ impl Runtime {
             .result
             .raw_output_bytes
             .saturating_add(bytes.len());
+        let mut fed = None;
         if !command.discarded[stream] {
             if bytes.len() > PENDING_LIMIT.saturating_sub(command.pending[stream].len()) {
                 // Never publish a possibly secret-bearing partial token.
@@ -248,11 +260,21 @@ impl Runtime {
                 } else {
                     redactor.streaming_prefix(&text)
                 };
+                // Redaction holds back whitespace after the last word; a newline in it
+                // still ends the monitor's current line, which must not wait for more output.
+                let line_end = text[safe..]
+                    .trim_start_matches(|c: char| c != '\n' && c.is_whitespace())
+                    .starts_with('\n');
+                let mut safe_text = String::new();
                 if safe != 0 {
-                    let safe_text = redactor.redact_text(&text[..safe]);
+                    safe_text = redactor.redact_text(&text[..safe]);
                     command.pending[stream].drain(..safe.min(valid));
                     command.append(stream, &safe_text)?;
                 }
+                if line_end {
+                    safe_text.push('\n');
+                }
+                fed = Some(safe_text);
             }
         }
         command.snapshot.result.duration_secs = Duration::from_millis(
@@ -262,6 +284,9 @@ impl Runtime {
         )
         .as_secs_f64();
         command.updates.send_replace(command.snapshot.clone());
+        if let Some(text) = fed {
+            self.feed_monitor(id, &text);
+        }
         Ok(())
     }
 
@@ -356,7 +381,15 @@ impl Runtime {
                 command.updates.send_replace(command.snapshot.clone());
             }
         })?;
-        self.notify_command_completed(&completed_id)?;
+        if self
+            .commands
+            .get(&completed_id)
+            .is_some_and(|c| c.monitor.is_some())
+        {
+            self.monitor_exited(&completed_id);
+        } else {
+            self.notify_command_completed(&completed_id)?;
+        }
         // The pinned native terminal retains at most 100 completed snapshots.
         while self
             .commands

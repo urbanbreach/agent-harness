@@ -73,6 +73,56 @@ async fn output_contract_corrects_final_answers_and_returns_parsed_objects(
 }
 
 #[tokio::test]
+async fn definition_output_schema_applies_unless_the_caller_supplies_one(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let caller =
+        json!({"type": "object", "properties": {"note": {"type": "string"}}, "required": ["note"]});
+    for (caller_schema, answers, structured, corrections) in [
+        (
+            None,
+            vec!["plain findings", r#"{"answer":"ok"}"#],
+            json!({"answer":"ok"}),
+            1,
+        ),
+        (
+            Some(caller),
+            vec![r#"{"note":"x"}"#],
+            json!({"note":"x"}),
+            0,
+        ),
+    ] {
+        let temp = tempfile::tempdir()?;
+        let provider = Arc::new(MockProvider::script(
+            answers.iter().map(|answer| done(answer)),
+        ));
+        let mut config = configuration(temp.path(), Arc::<MockProvider>::clone(&provider));
+        config.behavior.output_contract.max_retries = 2;
+        if let Some(definition) = config
+            .subagent_definitions
+            .as_mut()
+            .and_then(|definitions| definitions.user.get_mut("native-fixture"))
+        {
+            definition.output_schema = schema().as_object().cloned();
+        }
+        let (handle, parent) = start(config, temp.path()).await?;
+        let run = handle.run_info().await?;
+        let mut args = spawn_args(false);
+        if let Some(schema) = caller_schema {
+            args["output_schema"] = schema;
+        }
+        let result = join(launch(&handle, &parent, "spawn_subagent", args)).await?;
+        let output = result.structured_json.ok_or("spawn output missing")?;
+        assert_eq!(output["structured_output"], structured);
+        let recorded = crate::store::read_events(&run.events_path)?;
+        assert_eq!(recorded.iter().filter(|event| matches!(&event.payload,
+            EventV1::RuntimeReminder(reminder) if reminder.kind == RuntimeReminderKind::OutputContract
+        )).count(), corrections);
+        handle.stop_run().await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn output_contract_exhaustion_completes_and_no_schema_preserves_text(
 ) -> Result<(), Box<dyn std::error::Error>> {
     for (with_schema, budget, answers) in [

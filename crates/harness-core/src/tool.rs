@@ -1,4 +1,6 @@
+mod edit_mode;
 mod files;
+pub use edit_mode::resolve_edit_mode;
 mod question;
 use crate::{
     agent::AgentModelSettings, coord::CoordinatorHandle, event::EventActor, ids::ToolCallId,
@@ -112,6 +114,7 @@ pub struct ToolContext {
     pub profile: Option<String>,
     pub tool_call_id: ToolCallId,
     pub current_model_ref: Option<String>,
+    pub edit_mode: crate::config::EditMode,
     pub current_model_settings: Option<AgentModelSettings>,
     pub skill_startup: Option<Arc<crate::config::SkillStartupSnapshot>>,
     pub coordinator: CoordinatorHandle,
@@ -148,6 +151,12 @@ pub trait Tool: Send + Sync {
         ""
     }
     fn parameters_json_schema(&self) -> Value;
+    fn description_for_edit_mode(&self, _mode: crate::config::EditMode) -> &str {
+        self.description()
+    }
+    fn parameters_for_edit_mode(&self, _mode: crate::config::EditMode) -> Value {
+        self.parameters_json_schema()
+    }
     /// Optional globals installed while this tool is active in an eval cell.
     fn kernel_prelude(&self) -> Option<KernelPrelude> {
         None
@@ -190,6 +199,7 @@ pub struct KernelPrelude {
 #[derive(Default)]
 pub struct ToolRegistry {
     tools: BTreeMap<String, Arc<dyn Tool>>,
+    edit_config: crate::config::EditConfig,
     eval_routes: std::collections::BTreeSet<String>,
     descriptions: BTreeMap<(String, String), String>,
     catalogs: BTreeMap<String, ToolCatalog>,
@@ -198,6 +208,35 @@ pub struct ToolRegistry {
 /// Descriptors obtained by an approved discovery call; reading a catalog never performs I/O.
 pub type ToolCatalog = Arc<RwLock<BTreeMap<String, Arc<dyn Tool>>>>;
 impl ToolRegistry {
+    pub fn set_edit_config(&mut self, config: crate::config::EditConfig) {
+        self.edit_config = config;
+    }
+    pub(crate) fn unscoped_edit_mode(&self) -> crate::config::EditMode {
+        resolve_edit_mode(
+            &self.edit_config,
+            "",
+            self.get("edit").is_some(),
+            self.get("apply_patch").is_some(),
+        )
+    }
+    pub(crate) fn edit_mode_for(
+        &self,
+        profile: &crate::agent::AgentProfile,
+        agent: Option<&str>,
+        model: &str,
+        permissions: (
+            &crate::perm::PermissionPolicy,
+            &crate::perm::PermissionPolicy,
+        ),
+    ) -> crate::config::EditMode {
+        let tools = self.available_tools(profile, agent, permissions);
+        resolve_edit_mode(
+            &self.edit_config,
+            model,
+            tools.iter().any(|tool| tool.id() == "edit"),
+            tools.iter().any(|tool| tool.id() == "apply_patch"),
+        )
+    }
     pub fn new() -> Self {
         Self::default()
     }
@@ -338,12 +377,13 @@ impl ToolRegistry {
         &self,
         profile: &crate::agent::AgentProfile,
         agent: Option<&str>,
+        model: &str,
         permissions: (
             &crate::perm::PermissionPolicy,
             &crate::perm::PermissionPolicy,
         ),
     ) -> Vec<harness_providers::ToolDef> {
-        let mut tools = self.prompt_definitions(profile, agent, permissions);
+        let mut tools = self.prompt_definitions(profile, agent, model, permissions);
         if tools.iter().any(|tool| tool.tool_id == "eval") {
             tools.retain(|tool| {
                 matches!(tool.tool_id.as_str(), "eval" | "question")
@@ -353,7 +393,7 @@ impl ToolRegistry {
         tools
     }
 
-    pub(crate) fn prompt_definitions(
+    fn available_tools(
         &self,
         profile: &crate::agent::AgentProfile,
         agent: Option<&str>,
@@ -361,7 +401,7 @@ impl ToolRegistry {
             &crate::perm::PermissionPolicy,
             &crate::perm::PermissionPolicy,
         ),
-    ) -> Vec<harness_providers::ToolDef> {
+    ) -> Vec<Arc<dyn Tool>> {
         let mut seen = std::collections::BTreeSet::new();
         let mut tools: Vec<_> = profile
             .toolset
@@ -393,16 +433,46 @@ impl ToolRegistry {
                 })
         });
         tools
+    }
+    pub fn prompt_definitions(
+        &self,
+        profile: &crate::agent::AgentProfile,
+        agent: Option<&str>,
+        model: &str,
+        permissions: (
+            &crate::perm::PermissionPolicy,
+            &crate::perm::PermissionPolicy,
+        ),
+    ) -> Vec<harness_providers::ToolDef> {
+        let mut tools = self.available_tools(profile, agent, permissions);
+        let mode = resolve_edit_mode(
+            &self.edit_config,
+            model,
+            tools.iter().any(|tool| tool.id() == "edit"),
+            tools.iter().any(|tool| tool.id() == "apply_patch"),
+        );
+        let has_edit = tools.iter().any(|tool| tool.id() == "edit");
+        let has_patch = tools.iter().any(|tool| tool.id() == "apply_patch");
+        tools.retain(|tool| match mode {
+            crate::config::EditMode::ApplyPatch if has_patch => {
+                !matches!(tool.id(), "edit" | "write")
+            }
+            crate::config::EditMode::Hashline | crate::config::EditMode::Replace if has_edit => {
+                tool.id() != "apply_patch"
+            }
+            _ => true,
+        });
+        tools
             .into_iter()
             .map(|tool| harness_providers::ToolDef {
                 tool_id: tool.id().into(),
                 function_name: harness_providers::tool_function_name(tool.id()),
                 description: Some(
                     self.description_for_profile(tool.id(), &profile.name)
-                        .unwrap_or_else(|| tool.description())
+                        .unwrap_or_else(|| tool.description_for_edit_mode(mode))
                         .into(),
                 ),
-                parameters: tool.parameters_json_schema(),
+                parameters: tool.parameters_for_edit_mode(mode),
             })
             .collect()
     }

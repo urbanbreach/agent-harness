@@ -6,6 +6,21 @@ use super::{
 use crate::perm::{PermissionAction, PermissionKind};
 
 impl Runtime {
+    pub fn expire_permissions(&mut self) {
+        let expired: Vec<_> = self
+            .pending
+            .iter()
+            .filter(|(_, p)| p.deadline.is_some_and(|d| d <= tokio::time::Instant::now()))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in expired {
+            let _ = self.resolve_permission(
+                &id,
+                PermissionDecision::Deny,
+                Some("approval timed out".into()),
+            );
+        }
+    }
     pub fn start_tool(&mut self, mut work: ToolWork) -> Result<(), CoordinatorError> {
         if work.approval == ToolApproval::Repeated {
             self.last_tool = None;

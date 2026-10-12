@@ -253,16 +253,6 @@ impl Worker {
             self.run_tools(&request_id, response.event_seq, calls.clone(), messages)
                 .await?;
             self.after_tools(&calls, messages).await?;
-            self.tools = self.registry.definitions(
-                &self.profile,
-                self.tool_scope.as_deref(),
-                (&self.permissions.0, &self.permissions.1),
-            );
-            super::super::public_subagent_hooks::apply_native_schema_hints(
-                &mut self.tools,
-                &self.native_schema,
-                self.native,
-            );
             self.update_prompt(messages)?;
         }
     }
@@ -273,6 +263,20 @@ impl Worker {
         calls: Vec<AssistantToolCall>,
         messages: &mut super::super::context::Context,
     ) -> Result<(), CoordinatorError> {
+        let owner = self.actor.agent_id.clone().unwrap_or_default();
+        let model = self.turn.model.clone();
+        let settings = self.turn.settings.clone();
+        self.handle
+            .call(move |runtime| {
+                let agent = runtime
+                    .agents
+                    .get_mut(&owner)
+                    .ok_or(CoordinatorError::UnknownAgent(owner))?;
+                agent.info.model_ref = model;
+                agent.settings = settings;
+                Ok(())
+            })
+            .await?;
         self.handle
             .capture_active_context(self.actor.clone(), self.turn.id.clone(), messages.clone())
             .await?;

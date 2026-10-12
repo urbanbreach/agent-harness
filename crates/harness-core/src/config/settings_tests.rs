@@ -18,8 +18,23 @@ fn settings_writes_validate_before_commit_and_keep_raw_references(
         agents:{default:{permission:{bash:{'git *':'allow','*':'deny','git status':'ask'}}}}
     }"#,
     )?;
-    assert!(!read_effective_hashline_edit(&path)?);
-    assert!(write_project_hashline_edit(&path, true)?);
+    assert_eq!(load_config_from_file(&path)?.edit.mode, EditMode::Replace);
+    assert_eq!(
+        write_project_setting_value(&path, "edit.mode", "apply_patch")?,
+        "apply_patch"
+    );
+    assert_eq!(
+        load_config_from_file(&path)?.edit.mode,
+        EditMode::ApplyPatch
+    );
+    assert_eq!(
+        write_project_setting_value(&path, "edit.model_variants", r#"{"kimi":"replace"}"#)?,
+        r#"{"kimi":"replace"}"#
+    );
+    assert_eq!(
+        load_config_from_file(&path)?.edit.model_variants["kimi"],
+        EditMode::Replace
+    );
     assert_eq!(
         write_project_setting_value(&path, "runtime.compaction.fallback_input_tokens", "8192")?,
         "8192"
@@ -68,6 +83,9 @@ fn settings_writes_validate_before_commit_and_keep_raw_references(
         ("provider.apiKey", "secret"),
         ("unknown.setting", "true"),
         ("confirm_before_rewind", "false"),
+        ("edit.mode", "patch"),
+        ("edit.model_variants", r#"{"kimi":"patch"}"#),
+        ("edit.model_variants", "[]"),
     ]
     .into_iter()
     .try_for_each(|(id, input)| -> Result<(), Box<dyn std::error::Error>> {
@@ -100,6 +118,8 @@ fn settings_writes_validate_before_commit_and_keep_raw_references(
         ("subagents.sampling_limit", "2", "32"),
         ("subagents.limit_behavior", "fail", "queue"),
         ("features.subagent_model_inheritance", "true", "false"),
+        ("edit.mode", "hashline", "auto"),
+        ("edit.model_variants", r#"{"gpt":"apply_patch"}"#, "{}"),
     ]
     .into_iter()
     .try_for_each(
@@ -132,5 +152,33 @@ fn settings_writes_validate_before_commit_and_keep_raw_references(
     let empty_context = context.with_current_dir(empty.clone());
     assert!(rewind_confirmation_settings(None, &empty_context)?.0);
     assert_eq!(std::fs::read_dir(empty)?.count(), 0);
+    Ok(())
+}
+
+#[test]
+fn edit_configuration_normalizes_legacy_inputs_and_rejects_conflicts(
+) -> Result<(), Box<dyn std::error::Error>> {
+    for (raw, expected) in [
+        ("{}", EditMode::Auto),
+        ("{hashline_edit:true}", EditMode::Auto),
+        ("{hashlineEdit:false}", EditMode::Replace),
+        ("{edit:{mode:'hashline'}}", EditMode::Hashline),
+    ] {
+        assert_eq!(load_config_from_str(raw)?.edit.mode, expected, "{raw}");
+    }
+    let config = load_config_from_str("{edit:{modelVariants:{kimi:'replace',gpt:'apply_patch'}}}")?;
+    assert_eq!(config.edit.model_variants["gpt"], EditMode::ApplyPatch);
+    for raw in [
+        "{edit:{},hashline_edit:true}",
+        "{edit:{},hashlineEdit:false}",
+        "{hashline_edit:true,hashlineEdit:true}",
+        "{hashline_edit:'false'}",
+        "{edit:{mode:'patch'}}",
+        "{edit:{model_variants:{kimi:'patch'}}}",
+        "{edit:{model_variants:{},modelVariants:{}}}",
+        "{edit:{unknown:true}}",
+    ] {
+        assert!(load_config_from_str(raw).is_err(), "{raw}");
+    }
     Ok(())
 }

@@ -20,7 +20,7 @@ pub fn spawn_subagent_schema(
             "output_schema".into(),
             serde_json::json!({
                 "type": "object",
-                "description": "JSON Schema for the child final JSON object. Invalid answers receive bounded corrections."
+                "description": "JSON Schema for the child final JSON object. Replaces the role's default schema (scout, reviewer and security-reviewer have one). Invalid answers receive bounded corrections."
             }),
         );
         if let Some(type_schema) = subagent_type_schema(&types) {

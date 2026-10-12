@@ -189,7 +189,8 @@ pub struct RuntimePermissionsConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct PromptRuntimeConfig {
-    pub wait_timeout_ms: u64,
+    /// Optional cap on how long `harness run`/`prompt` wait for the turn. Unset waits until it ends.
+    pub wait_timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]

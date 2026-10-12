@@ -65,6 +65,7 @@ pub(super) struct Runtime {
     pub steering: BTreeMap<String, VecDeque<super::reminders::Steering>>,
     /// Directory instruction files already added to each agent's context since its last compaction.
     pub instructions_seen: BTreeMap<String, std::collections::BTreeSet<PathBuf>>,
+    pub monitor_wakes: super::commands::MonitorWakes,
 }
 pub(super) struct Agent {
     pub info: AgentRuntimeInfo,
@@ -194,6 +195,7 @@ impl Runtime {
             command_notices: BTreeMap::new(),
             steering: BTreeMap::new(),
             instructions_seen: BTreeMap::new(),
+            monitor_wakes: Default::default(),
         }
     }
     pub async fn run(mut self, mut rx: mpsc::Receiver<Command>, shutdown: CancellationToken) {
@@ -205,6 +207,7 @@ impl Runtime {
             }
             let deadline = self.pending.values().filter_map(|p| p.deadline).min();
             let progress_deadline = self.native_progress_deadline();
+            let monitor_deadline = self.monitor_wakes.deadline;
             tokio::select! {
                 () = shutdown.cancelled(), if !closing => {
                     closing = true;
@@ -235,6 +238,10 @@ impl Runtime {
                     if let Some(deadline) = progress_deadline { tokio::time::sleep_until(deadline).await; }
                     else { std::future::pending::<()>().await; }
                 } => self.publish_native_progress(),
+                () = async {
+                    if let Some(deadline) = monitor_deadline { tokio::time::sleep_until(deadline).await; }
+                    else { std::future::pending::<()>().await; }
+                } => { let _ = self.flush_monitors(); },
             }
             self.finish_stop().await;
             self.finish_rewind();

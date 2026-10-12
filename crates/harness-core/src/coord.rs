@@ -86,7 +86,10 @@ mod tests;
 mod tools;
 mod turn;
 mod workspace;
-pub use commands::{CommandExit, CommandSnapshot, CommandSubscription, PreparedCommand};
+pub use commands::{
+    CommandExit, CommandSnapshot, CommandSubscription, FileEvent, MonitorLaunch, PreparedCommand,
+    PreparedMonitor,
+};
 #[cfg(test)]
 mod workspace_tests;
 use runtime::Runtime;

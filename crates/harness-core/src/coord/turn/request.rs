@@ -8,6 +8,17 @@ impl Worker {
         &mut self,
         messages: &mut super::super::context::Context,
     ) -> Result<(), CoordinatorError> {
+        self.tools = self.registry.definitions(
+            &self.profile,
+            self.tool_scope.as_deref(),
+            &self.turn.model,
+            (&self.permissions.0, &self.permissions.1),
+        );
+        super::super::public_subagent_hooks::apply_native_schema_hints(
+            &mut self.tools,
+            &self.native_schema,
+            self.native,
+        );
         let Some(source) = &self.prompt_source else {
             return Ok(());
         };
@@ -30,6 +41,7 @@ impl Worker {
         let mut available = self.registry.prompt_definitions(
             &self.profile,
             self.tool_scope.as_deref(),
+            &self.turn.model,
             (&self.permissions.0, &self.permissions.1),
         );
         super::super::public_subagent_hooks::apply_native_schema_hints(

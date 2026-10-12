@@ -30,6 +30,8 @@ pub enum RuntimeReminderKind {
     CommandCompleted,
     /// A subagent result did not match its requested output schema.
     OutputContract,
+    /// Output lines or the exit of a running monitor.
+    MonitorEvent,
 }
 
 impl RuntimeReminderKind {
@@ -41,6 +43,7 @@ impl RuntimeReminderKind {
             Self::DirectoryInstructions => "directory_instructions",
             Self::CommandCompleted => "command_completed",
             Self::OutputContract => "output_contract",
+            Self::MonitorEvent => "monitor_event",
         }
     }
 }

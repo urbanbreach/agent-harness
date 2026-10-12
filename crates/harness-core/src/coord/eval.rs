@@ -34,13 +34,36 @@ impl CoordinatorHandle {
             s.check_eval(&parent)?;
             let job = &s.running[&parent];
             let agent = job.actor.agent_id.as_ref().and_then(|id| s.agents.get(id));
+            let scope = s.tool_scope(job.actor.agent_id.as_deref());
+            let projected = agent.map(|agent| {
+                s.config.tool_registry.prompt_definitions(
+                    &agent.profile,
+                    scope.as_deref(),
+                    &agent.info.model_ref,
+                    (&s.config.permission_policy, &agent.policy),
+                )
+            });
+            let mode = agent.map_or_else(
+                || s.config.tool_registry.unscoped_edit_mode(),
+                |agent| {
+                    s.config.tool_registry.edit_mode_for(
+                        &agent.profile,
+                        scope.as_deref(),
+                        &agent.info.model_ref,
+                        (&s.config.permission_policy, &agent.policy),
+                    )
+                },
+            );
             Ok(Value::Array(
                 s.config
                     .tool_registry
                     .tool_ids_for(s.tool_scope(job.actor.agent_id.as_deref()).as_deref())
                     .into_iter()
                     .filter_map(|id| {
-                        if id == "eval"
+                        if projected
+                            .as_ref()
+                            .is_some_and(|tools| !tools.iter().any(|tool| tool.tool_id == id))
+                            || id == "eval"
                             || agent
                                 .is_some_and(|a| !s.config.tool_registry.allows(&a.profile, &id))
                         {
@@ -58,7 +81,7 @@ impl CoordinatorHandle {
                         ) {
                             return None;
                         }
-                        Some(describe_tool(tool.as_ref()))
+                        Some(describe_tool(tool.as_ref(), mode))
                     })
                     .collect::<Result<Vec<_>, CoordinatorError>>()?,
             ))
@@ -168,7 +191,10 @@ impl CoordinatorHandle {
     }
 }
 
-fn describe_tool(tool: &dyn crate::tool::Tool) -> Result<Value, CoordinatorError> {
+fn describe_tool(
+    tool: &dyn crate::tool::Tool,
+    mode: crate::config::EditMode,
+) -> Result<Value, CoordinatorError> {
     let prelude = tool.kernel_prelude();
     if let Some(prelude) = &prelude
         && (prelude.exports.is_empty()
@@ -202,11 +228,17 @@ fn describe_tool(tool: &dyn crate::tool::Tool) -> Result<Value, CoordinatorError
         )));
     }
     let description = prelude.as_ref().map_or_else(
-        || tool.description().to_owned(),
-        |prelude| format!("{}\n{}", tool.description(), prelude.documentation),
+        || tool.description_for_edit_mode(mode).to_owned(),
+        |prelude| {
+            format!(
+                "{}\n{}",
+                tool.description_for_edit_mode(mode),
+                prelude.documentation
+            )
+        },
     );
     Ok(
-        serde_json::json!({"name":tool.id(),"description":description,"parameters":tool.parameters_json_schema(),"kernelPrelude":prelude}),
+        serde_json::json!({"name":tool.id(),"description":description,"parameters":tool.parameters_for_edit_mode(mode),"kernelPrelude":prelude}),
     )
 }
 

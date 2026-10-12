@@ -79,6 +79,9 @@ impl Runtime {
                         text: prompt.text.clone(),
                     }),
                 )?;
+                if actor.kind == ActorKind::User {
+                    self.user_resumes_monitors(agent);
+                }
                 self.steering
                     .entry(agent.to_owned())
                     .or_default()

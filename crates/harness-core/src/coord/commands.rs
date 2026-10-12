@@ -15,7 +15,12 @@
 //! overflow retains only identity/status until delivered. Rejected wake hooks do
 //! not retry unchanged notices, and final-request completions continue that turn.
 mod actor;
+mod monitor;
 mod notifications;
+#[cfg(unix)]
+mod source;
+pub(super) use monitor::MonitorWakes;
+pub use monitor::{FileEvent, MonitorLaunch, PreparedMonitor};
 pub(super) use notifications::CommandNoticeBacklog;
 
 use super::{runtime::*, *};
@@ -47,6 +52,17 @@ pub struct PreparedCommand {
     pub description: Option<String>,
     pub timeout: Duration,
     pub scratch: Option<tempfile::TempDir>,
+}
+
+/// What `admit` starts: a shell command on pipes or a terminal, or a file watch.
+enum Launch {
+    Pipes(tokio::process::Command),
+    /// Programs line-buffer on a terminal, so monitor lines arrive as they are printed.
+    Pty(tokio::process::Command),
+    File {
+        path: PathBuf,
+        event: FileEvent,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -90,6 +106,7 @@ pub(super) struct CommandRun {
     file_bytes: usize,
     pending: [Vec<u8>; 2],
     discarded: [bool; 2],
+    monitor: Option<monitor::Monitor>,
 }
 
 impl CoordinatorHandle {
@@ -240,20 +257,25 @@ async fn run_command(
     id: String,
     mut child: tokio::process::Child,
     mut group: crate::process::Group,
+    pty: Option<rustix::fd::OwnedFd>,
     timeout: Duration,
     cancellation: CancellationToken,
 ) -> Result<CommandExit, CoordinatorError> {
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| CoordinatorError::Invalid("stdout pipe is unavailable".into()))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| CoordinatorError::Invalid("stderr pipe is unavailable".into()))?;
     let mut readers = JoinSet::new();
-    readers.spawn(read_output(handle.clone(), id.clone(), 0, stdout));
-    readers.spawn(read_output(handle, id, 1, stderr));
+    if let Some(master) = pty {
+        readers.spawn(source::read_pty(handle, id, master));
+    } else {
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| CoordinatorError::Invalid("stdout pipe is unavailable".into()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| CoordinatorError::Invalid("stderr pipe is unavailable".into()))?;
+        readers.spawn(read_output(handle.clone(), id.clone(), 0, stdout));
+        readers.spawn(read_output(handle, id, 1, stderr));
+    }
     let deadline = tokio::time::sleep(timeout);
     tokio::pin!(deadline);
     let mut timed_out = false;

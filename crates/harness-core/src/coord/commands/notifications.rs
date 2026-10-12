@@ -213,7 +213,7 @@ impl Runtime {
         Ok(())
     }
 
-    fn command_notice_allowed(&self, agent: &str) -> bool {
+    pub(super) fn command_notice_allowed(&self, agent: &str) -> bool {
         self.stopping.is_none()
             && self.rewind.is_none()
             && self.fault.is_none()

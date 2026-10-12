@@ -13,13 +13,13 @@ defaults! {
         permissions: PermissionsConfig::default(), runtime: RuntimeConfig::default(), integrations: IntegrationsConfig::default(),
         hooks: HooksConfig::default(), skills: SkillsConfig::default(), lsp: LspConfig::default(), eval: EvalConfig::default(), background_task: BackgroundTaskSettings::default(),
         paths: PathsConfig::default(), deterministic: DeterministicConfig::default(), ui: UiConfig::default(), logging: LoggingConfig::default(),
-        hashline_edit: true, formatter: FormatterConfig::default(), instruction_files: Vec::new(), model_roles: ModelRolesConfig::default()
+        edit: EditConfig::default(), formatter: FormatterConfig::default(), instruction_files: Vec::new(), model_roles: ModelRolesConfig::default()
     }
     UiConfig { default_profile: None, keybindings: BTreeMap::new(), max_events_in_memory: 25_000, max_transcript_chars_in_memory: 200_000 }
     LoggingConfig { level: "info".into(), file: None }
     BackgroundTaskSettings { default_concurrency: 4, provider_concurrency: 4, model_concurrency: 2, stale_timeout_ms: 30_000, message_staleness_timeout_ms: 10_000 }
     RuntimePermissionsConfig { ask_timeout_ms: 30_000 }
-    PromptRuntimeConfig { wait_timeout_ms: 30_000 }
+    PromptRuntimeConfig { wait_timeout_ms: None }
     PathsConfig { session_dir: PathBuf::new() }
     RuntimeConfig {
         yolo: false, background_tasks: BackgroundTaskSettings::default(), session_dir: PathsConfig::default().session_dir,
@@ -53,7 +53,7 @@ defaults! {
     }
     PermissionDefaultsConfig {
         edit: PermissionMode::Allow, shell: PermissionMode::Allow, network: PermissionMode::Allow, question: Some(PermissionMode::Deny),
-        task: Some(PermissionMode::Allow), eval: Some(PermissionMode::Ask), webfetch: Some(PermissionMode::Allow), websearch: Some(PermissionMode::Allow), codesearch: Some(PermissionMode::Allow),
+        task: Some(PermissionMode::Allow), eval: Some(PermissionMode::Allow), webfetch: Some(PermissionMode::Allow), websearch: Some(PermissionMode::Allow), codesearch: Some(PermissionMode::Allow),
         lsp: Some(PermissionMode::Allow), read: Some(PermissionMode::Allow), external_directory: Some(PermissionMode::Ask), doom_loop: Some(PermissionMode::Ask)
     }
     PermissionsConfig { defaults: PermissionDefaultsConfig::default(), fallback: None, rules: default_permission_rule_set_with_read_env(), shell_allowlist: ShellAllowlist::default() }

@@ -200,6 +200,17 @@ impl Runtime {
         let model = profile.map(|a| a.info.model_ref.clone());
         let settings = profile.map(|a| a.settings.clone());
         let skill_startup = profile.and_then(|agent| agent.skill_startup.clone());
+        let edit_mode = profile.map_or_else(
+            || self.config.tool_registry.unscoped_edit_mode(),
+            |agent| {
+                self.config.tool_registry.edit_mode_for(
+                    &agent.profile,
+                    self.tool_scope(actor.agent_id.as_deref()).as_deref(),
+                    &agent.info.model_ref,
+                    (&self.config.permission_policy, &agent.policy),
+                )
+            },
+        );
         let id = match id {
             Some(id) => id,
             None => self.id("tool")?,
@@ -215,6 +226,9 @@ impl Runtime {
             &requirements,
             &paths,
         ))?);
+        if let Some(agent) = &actor.agent_id {
+            self.monitor_activity(agent);
+        }
         self.emit(
             actor.clone(),
             parent.clone(),
@@ -245,6 +259,7 @@ impl Runtime {
             profile: profile_name,
             tool_call_id: id.clone().into(),
             current_model_ref: model,
+            edit_mode,
             current_model_settings: settings,
             skill_startup,
             coordinator: self.handle()?,
@@ -429,21 +444,6 @@ impl Runtime {
             }
         }
         Ok(())
-    }
-    pub fn expire_permissions(&mut self) {
-        let expired: Vec<_> = self
-            .pending
-            .iter()
-            .filter(|(_, p)| p.deadline.is_some_and(|d| d <= Instant::now()))
-            .map(|(id, _)| id.clone())
-            .collect();
-        for id in expired {
-            let _ = self.resolve_permission(
-                &id,
-                PermissionDecision::Deny,
-                Some("approval timed out".into()),
-            );
-        }
     }
     pub fn record_tool_result(
         &mut self,

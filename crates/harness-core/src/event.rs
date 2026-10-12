@@ -60,6 +60,11 @@ pub enum LiveEventV1 {
     RuntimeWarning {
         message: String,
     },
+    /// A monitor stopped or resumed delivering its matching lines.
+    MonitorState {
+        task_id: String,
+        paused: bool,
+    },
     CompactionProgress {
         agent_id: String,
         generation: u64,

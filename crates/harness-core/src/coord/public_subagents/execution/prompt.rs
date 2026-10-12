@@ -55,12 +55,15 @@ impl Runtime {
         let mut available = self.config.tool_registry.prompt_definitions(
             &state.profile,
             scope.as_deref(),
+            &state.info.model_ref,
             permissions,
         );
-        let mut direct =
-            self.config
-                .tool_registry
-                .definitions(&state.profile, scope.as_deref(), permissions);
+        let mut direct = self.config.tool_registry.definitions(
+            &state.profile,
+            scope.as_deref(),
+            &state.info.model_ref,
+            permissions,
+        );
         let hints = self.native_subagent_schema(agent)?;
         for tools in [&mut available, &mut direct] {
             crate::coord::public_subagent_hooks::apply_native_schema_hints(tools, &hints, true);

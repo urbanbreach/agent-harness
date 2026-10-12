@@ -10,6 +10,17 @@ impl Runtime {
         checkpoint: Option<WorkspaceCreationCheckpoint>,
     ) -> Result<NativeSubscription, CoordinatorError> {
         let job = self.authenticated_native_tool(&actor, &tool, true)?;
+        let cancellation = job.cancellation.clone();
+        let parent_request = job.parent.clone();
+        let parent = actor.agent_id.clone().ok_or_else(|| {
+            CoordinatorError::PermissionDenied("subagent spawn requires a parent agent".into())
+        })?;
+        let (resolved, source_state, source_reference) =
+            self.resolve_native_definition(&actor, &input)?;
+        // A caller schema replaces the role's default contract; otherwise the role's applies.
+        if input.output_schema.is_none() {
+            input.output_schema = resolved.definition.output_schema.clone();
+        }
         if let Some(schema) = &input.output_schema
             && crate::redact::redact_map(self.redactor.as_ref(), schema) != *schema
         {
@@ -23,13 +34,6 @@ impl Runtime {
             .map(crate::subagent::output_contract::compile)
             .transpose()
             .map_err(native_invalid)?;
-        let cancellation = job.cancellation.clone();
-        let parent_request = job.parent.clone();
-        let parent = actor.agent_id.clone().ok_or_else(|| {
-            CoordinatorError::PermissionDenied("subagent spawn requires a parent agent".into())
-        })?;
-        let (resolved, source_state, source_reference) =
-            self.resolve_native_definition(&actor, &input)?;
         for warning in &resolved.warnings {
             self.live(
                 actor.clone(),

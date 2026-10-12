@@ -25,6 +25,9 @@ pub struct PromptSource {
     pub role_instructions: String,
     pub persona_instructions: String,
     pub isolated: bool,
+    /// One-shot `harness run`/`prompt`: only the final message reaches stdout, so presets
+    /// replace the visible opening line with a silent stop condition.
+    pub headless: bool,
     pub tool_kinds: Vec<(String, String)>,
 }
 
@@ -97,7 +100,7 @@ impl PromptSource {
             "os_name": std::env::consts::OS,
             "shell_path": std::env::var("SHELL").unwrap_or_default(),
             "current_date": context.current_date.split('T').next().unwrap_or_default(),
-            "subagent": self.subagent, "isolated": self.isolated,
+            "subagent": self.subagent, "isolated": self.isolated, "headless": self.headless,
             "max_concurrent": context.max_concurrent,
             "behavior": {
                 "command_notifications": context.behavior.command_notifications.enabled,
