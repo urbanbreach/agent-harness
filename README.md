@@ -43,7 +43,7 @@ and replayed offline. Replay never reruns a tool or contacts a provider.
 
 ## What you get
 
-| | |
+| Feature | Details |
 | --- | --- |
 | Models you already use | Sign in with ChatGPT, GitHub Copilot or a Claude subscription, or export an API key for OpenAI, Anthropic, Google, OpenRouter and other models.dev providers. Any OpenAI-compatible endpoint works too. |
 | Tools that do real work | Read, write and edit files (patches, string replacement or hashline anchors, picked per model), shell, grep, glob, web fetch and search, LSP, ast-grep, GitHub, MCP servers, persistent JavaScript and Python eval, and a background `monitor` that wakes the agent when a command or file changes. |

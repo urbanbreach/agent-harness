@@ -44,7 +44,7 @@ verkkoa. Toisto ei koskaan aja työkaluja uudelleen eikä ota yhteyttä palvelun
 
 ## Mitä Harnessilla voi tehdä
 
-| | |
+| Ominaisuus | Tarkemmin |
 | --- | --- |
 | Tutut mallit | Kirjaudu ChatGPT-, GitHub Copilot- tai Claude-tilauksella tai aseta API-avain ympäristömuuttujaan. Tuettuja ovat OpenAI, Anthropic, Google, OpenRouter ja muut models.dev-palveluntarjoajat. Myös mikä tahansa OpenAI-yhteensopiva päätepiste toimii. |
 | Työkalut käytännön työhön | Tiedostojen luku, kirjoitus ja muokkaus (mallin mukaan joko paikkauksilla, merkkijonojen korvauksilla tai hashline-ankkureilla), shell, grep, glob, verkkohaku ja verkkosisällön nouto, LSP, ast-grep, GitHub, MCP-palvelimet, JavaScript- ja Python-eval pysyvällä tilalla sekä taustalla toimiva `monitor`, joka herättää agentin, kun komento tai tiedosto muuttuu. |
