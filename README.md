@@ -1,9 +1,19 @@
 <div align="center">
-  <h1>agent-harness</h1>
-  <p>A coding agent for your terminal, with tool permissions and replayable sessions.</p>
+  <h1>Harness</h1>
   <p>
-    <a href="#get-started">Get started</a> ·
-    <a href="#connect-a-provider">Connect a provider</a> ·
+    <strong>A coding agent for your terminal.</strong><br />
+    You decide what it may touch, and every session leaves a trail you can replay.
+  </p>
+  <p>
+    <a href="https://github.com/urbanbreach/agent-harness/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/urbanbreach/agent-harness/ci.yml?branch=dev&style=flat-square&label=CI" /></a>
+    <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
+    <img alt="Linux x86_64 and aarch64" src="https://img.shields.io/badge/platform-linux%20x86__64%20%7C%20aarch64-informational?style=flat-square&logo=linux&logoColor=white" />
+    <img alt="Rust 2024 edition" src="https://img.shields.io/badge/rust-2024%20edition-orange?style=flat-square&logo=rust" />
+  </p>
+  <p>
+    <a href="#install">Install</a> ·
+    <a href="#quick-start">Quick start</a> ·
+    <a href="#connect-a-provider">Providers</a> ·
     <a href="docs/README.md">Documentation</a> ·
     <a href="docs/README.fi.md">Suomeksi</a>
   </p>
@@ -12,62 +22,59 @@
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/harness-tui.png" />
-    <img src="docs/assets/harness-demo.gif" alt="Harness running in a terminal. A user types Hello from PTY, receives the mock reply Hello world, opens the command palette, approves a fixture edit, and views its diff." width="1000" />
+    <img src="docs/assets/harness-demo.gif" alt="Harness in a terminal. The user types: cargo test is failing, find the root cause and fix it. The agent writes a todo list, runs the tests, reads the crate, explains that parse_duration drops trailing digits, patches src/lib.rs, reruns the tests and reports that all three pass." width="960" />
   </picture>
 </p>
 
 <p align="center">
-  Recorded from the real TUI with the offline mock provider.<br />
-  <a href="docs/assets/harness-tui.png">Still image</a> · <a href="docs/assets/README.md">Record the demo</a>
+  <sub>An unscripted session with GPT 6.1 Sol, recorded from the real TUI. The one-minute run is sped up and long waits are trimmed.<br />
+  <a href="docs/assets/harness-tui.png">Still image</a> · <a href="docs/assets/README.md">How it was recorded</a></sub>
 </p>
 
-Harness runs coding agents in a Rust CLI and Ratatui terminal UI. Agents can read
-and edit files, run commands, call configured MCP tools, and delegate work to
-named subagents. One coordinator checks permissions and owns execution.
+Harness is a coding agent you run inside a project. Give it a task and it reads
+the code, runs commands, edits files and checks its own work. Every tool call
+shows up in the transcript as it happens, and your permission rules decide what
+runs without asking.
 
-Sessions keep an append-only event log. You can inspect or replay a session
-without repeating its tool calls or contacting a provider.
+It is a single Rust binary with a Ratatui interface. One coordinator owns every
+tool call, permission check and subagent, and records what happened in an
+append-only event log. That log is why sessions can be resumed, forked, rewound
+and replayed offline. Replay never reruns a tool or contacts a provider.
 
-## Get started
+## What you get
 
-Harness supports Linux only, on x86_64 and aarch64. macOS and Windows are not
-supported or tested.
+| | |
+| --- | --- |
+| Models you already use | Sign in with ChatGPT, GitHub Copilot or a Claude subscription, or export an API key for OpenAI, Anthropic, Google, OpenRouter and other models.dev providers. Any OpenAI-compatible endpoint works too. |
+| Tools that do real work | Read, write and edit files (patches, string replacement or hashline anchors, picked per model), shell, grep, glob, web fetch and search, LSP, ast-grep, GitHub, MCP servers, persistent JavaScript and Python eval, and a background `monitor` that wakes the agent when a command or file changes. |
+| Subagents | The agent can hand work to `task`, `scout`, `reviewer`, `security-reviewer` and `sonic`, or to agents you define in Markdown. Children run under the same project policy. |
+| Permissions | Allow, ask and deny rules per tool, path and shell command pattern. YOLO mode when you want it, opt-in Landlock confinement for shell commands. |
+| Replayable sessions | Append-only journals with resume, fork, rewind, a session tree, offline replay and redacted support bundles. Sessions from Codex and Claude Code can be imported too. |
+| Your conventions | Reads `AGENTS.md` (or `CLAUDE.md`), loads skills, runs lifecycle hooks and turns Markdown files into slash commands. |
+| A terminal UI worth watching | Streaming transcript with diffs, a todo pane, live tokens per second, session cost, context use, managed Git worktrees and a command palette. |
 
-Install the latest release:
+## Install
+
+Harness runs on Linux, x86_64 and aarch64. macOS and Windows are not supported.
 
 ```bash
 curl -fsSL https://github.com/urbanbreach/agent-harness/releases/latest/download/install.sh | sh
-cd /path/to/your/project
-harness
 ```
 
 The script downloads the static binary for your CPU, checks it against the
-release's `SHA256SUMS`, and installs it to `~/.local/bin`. Set
-`HARNESS_VERSION=v0.1.0` to pick a release or `HARNESS_INSTALL_DIR` to install
-somewhere else. The installer also keeps third-party notices in the sibling
-`harness-licenses` directory. To uninstall, delete both. Release archives are
-also on the [releases page](https://github.com/urbanbreach/agent-harness/releases).
+release's `SHA256SUMS` and installs it to `~/.local/bin`, with third-party
+notices in the sibling `harness-licenses` directory. Set
+`HARNESS_VERSION=v0.1.0` to pin a release or `HARNESS_INSTALL_DIR` to install
+elsewhere. To uninstall, delete both.
 
-No config file is needed. On a new project with no connected provider or saved
-sessions, Harness opens the login picker automatically. Choose a provider and
-sign in, then type a coding task and press Enter. Esc closes the picker; use
-`/login` to reopen it. Returning users without a connection see
-`No provider connected. Use /login.` instead.
-
-For an offline UI demo, run `harness tui --mock`, type `hello`, and press Enter.
-The mock provider replies to fixture prompts only. `Ctrl+p` opens the command
-palette.
-
-JavaScript `eval` requires [Node.js 24 or newer](https://nodejs.org/en/download)
-on `PATH`. Install the current Node.js LTS release and check `node --version`.
-Harness includes its eval scripts and parser; no npm install is needed to use
-eval. Python eval also needs `python3` or `python`.
+> [!NOTE]
+> No release has been tagged yet. Until the first one is published, build from
+> source.
 
 ### Build from source
 
-Build with Git and the stable Rust toolchain selected by
-[`rust-toolchain.toml`](rust-toolchain.toml). The default build needs no other
-linker or tools:
+You need Git and the stable Rust toolchain pinned in
+[`rust-toolchain.toml`](rust-toolchain.toml). Nothing else is required to build.
 
 ```bash
 git clone https://github.com/urbanbreach/agent-harness.git
@@ -75,95 +82,133 @@ cd agent-harness
 cargo install --path crates/harness --locked
 ```
 
-Use release builds for interactive sessions. Unoptimized development builds
-spend substantially more CPU rendering active tools and streaming text.
-Linking with Wild is faster and opt-in; see the
-[build settings](docs/testing/build-performance.md). Maintainers cut releases
-with `scripts/release.sh`; see [releasing](docs/operations/releasing.md).
+Use release builds for real sessions; debug builds burn noticeably more CPU
+while streaming. [Build settings](docs/testing/build-performance.md) covers the
+optional Wild linker.
+
+### Optional tools
+
+| For | Install |
+| --- | --- |
+| JavaScript eval | [Node.js 24 or newer](https://nodejs.org/en/download) on `PATH`. Harness bundles its eval scripts, so no npm install is needed. |
+| Python eval | `python3` or `python` on `PATH` |
+| Structural search and rewrite | `ast-grep` on `PATH` |
+| Claude Pro/Max subscription | An installed, signed-in Claude Code |
+
+## Quick start
+
+```bash
+cd /path/to/your/project
+harness
+```
+
+No config file is needed. On a fresh install the login picker opens by itself.
+Pick a provider, sign in, type a task and press Enter. Esc closes the picker and
+`/login` brings it back.
+
+Want to look around first? `harness tui --mock` opens the same interface with an
+offline provider that answers every prompt with `Hello world`.
 
 ## Connect a provider
 
-In the TUI, `/login` opens the provider picker. It includes OpenAI ChatGPT
-Plus/Pro sign-in or an API key, GitHub Copilot device login, Anthropic API key,
-Claude Pro/Max subscription, Google, OpenRouter, and more.
-
-You can also connect from the command line:
+`/login` in the TUI lists every provider Harness knows about, with OpenAI,
+ChatGPT Plus/Pro, GitHub Copilot, Anthropic, Claude Pro/Max and Google near the
+top. The same flows work from the shell:
 
 ```bash
-harness auth login codex
-# Or choose another provider with: harness auth login <provider>
-harness doctor
+harness auth login codex     # ChatGPT Plus/Pro
+harness auth list            # what is connected
+harness doctor               # offline readiness check
+```
+
+An exported API key works with no login step and no config:
+
+```bash
+export ANTHROPIC_API_KEY="..."
 harness
 ```
 
-An exported API key works without a login command or config file:
+Harness finds stored credentials and provider API key variables through its
+embedded [models.dev](https://models.dev) catalog. `harness doctor` never
+contacts a provider; the first real turn is what proves your account and
+endpoint work. Keep keys out of config files. See
+[provider support](docs/configuration/provider-support.md) for every transport.
 
-```bash
-export ANTHROPIC_API_KEY="your-api-key"
-harness
-```
+## Working with Harness
 
-Harness discovers stored credentials and provider API key environment variables
-from its embedded models.dev catalog. Keep credentials out of config files.
-`harness doctor` is an offline readiness check; a live turn checks account and
-endpoint access. See [provider support](docs/configuration/provider-support.md)
-for details.
+### In the terminal UI
 
-Config is optional. After the first successful sign-in, Harness creates
-`~/.harness/harness.jsonc` with the default model for that provider, if one is
-known. It never overwrites an existing user config and skips the write when
-`HARNESS_CONFIG` or `HARNESS_CONFIG_CONTENT` is set. Use this file for personal
-defaults and `<project>/harness.jsonc` for project policy. The project layer
-overrides personal defaults. `HARNESS_HOME` changes the personal config directory.
-[`configs/harness.example.jsonc`](configs/harness.example.jsonc) is a short
-annotated starter, not a model catalog or a required setup step.
-
-A config with no provider entries keeps automatic discovery. Defining any
-`provider` entry makes the catalog curated: only configured providers plus
-signed-in Codex, GitHub Copilot, and Claude subscription are included.
-
-## Work with Harness
-
-| Task | Command or control |
+| Key | Does |
 | --- | --- |
-| Open the interactive agent | `harness` |
-| Run a prompt without the TUI | `harness run "Summarize this workspace"` |
-| Open commands and settings | `Ctrl+p` in the TUI |
-| List saved sessions | `harness sessions list` |
-| Inspect a session | `harness sessions inspect <run-id-or-path>` |
-| View session branches | `harness sessions tree --root <run-id-or-path>` |
-| Find the source of a setting | `harness config explain model` |
+| Enter | Send the prompt, or steer the running turn |
+| Alt+i | Queue a follow-up for after the current turn |
+| Ctrl+Enter | Cancel the running turn and send the draft instead |
+| `/` | Slash commands: `/models`, `/sessions`, `/compact`, `/rewind`, `/worktree`, `/init` and more |
+| `@` | Mention a file |
+| Ctrl+p | Command palette |
+| Ctrl+x | Shortcut menu (themes, models, status, export) |
+| Shift+Tab | Cycle the model's reasoning variant |
+| Ctrl+o | Toggle the approval mode |
+| Ctrl+t | Show or hide the todo pane |
+| Ctrl+c | Cancel the running turn |
 
-Native tools include file reads and edits, shell commands, search, eval, and
-[monitor](docs/tools/monitor.md) for background command and file watches. See the
-[native tool catalog](docs/tools/native-tool-catalog.md) for the full list.
+Keys are configurable in `tui.jsonc`; the [design guide](DESIGN.md) lists them all.
 
-The parent agent delegates through `spawn_subagent`. Built-ins are `task`,
-`scout`, `reviewer`, `security-reviewer` and `sonic`. Add Markdown definitions
-with YAML frontmatter under `<project>/.harness/agents/` or `<home>/agents/`.
-The nearest project definition wins over user files, which win over built-ins.
-`task` inherits the parent model; scout and sonic use `@smol`, while both
-reviewers use `@slow`. Configure these optional roles in `model_roles`; an unset
-role inherits the parent model. All tools remain subject to shared project policy.
-See [agents and tasks](docs/operations/generic-agent-and-tasks.md).
+### From scripts
 
-Custom slash prompt commands are Markdown files in `<project>/.harness/commands/`
-or `<home>/commands/`. Use them in the TUI or with `harness run "/name args"`
-and `harness prompt`. The bundled `/init` asks the agent to create or update a
-concise root `AGENTS.md` while preserving user content. See
-[command templates](docs/operations/extension-strategy.md#markdown-prompt-commands).
+`harness run` takes the prompt from arguments, stdin or a file, waits for the
+turn to finish and prints only the final answer.
 
-## Set permissions
+```bash
+harness run "Summarize this workspace"
+git diff | harness run "Review this change" --format json
+harness run -c "Now add tests for it"        # continue the last session
+```
 
-Built-in permissions allow ordinary tools but ask about external directories,
-repeated identical calls, and sensitive file reads. Permissions control tool
-execution; they do not confine an approved shell command to an OS sandbox.
+Flags cover the model (`-m`), reasoning effort, tool allow and deny lists,
+permission presets and attachments. See the [prompt CLI](docs/operations/prompt.md).
 
-To ask before edits and allow only selected shell commands, add this block to
-an optional personal or project config:
+### Other commands
+
+| Command | Does |
+| --- | --- |
+| `harness sessions list` | List saved sessions for this project |
+| `harness sessions inspect <id>` | Show what happened in a session |
+| `harness sessions tree` | Show forks and branches |
+| `harness replay --session <id>` | Replay a session without providers or tools |
+| `harness export <id>` | Write the visible conversation as redacted Markdown |
+| `harness dashboard status` | Summarize sessions and local configuration |
+| `harness config explain model` | Show where a setting comes from |
+| `harness models` | List models, variants and token limits |
+| `harness completions <shell>` | Print shell completions |
+
+## Agents, skills and commands
+
+The main agent delegates with `spawn_subagent`. `task` inherits the parent model,
+`scout` and `sonic` use the `@smol` role, and both reviewers use `@slow`. Point
+those roles at real models in `model_roles`; an unset role falls back to the
+parent model. Your own agents are Markdown files with YAML frontmatter in
+`.harness/agents/` (project) or `~/.harness/agents/` (personal). Project files
+win over personal ones, which win over the built-ins. Details are in
+[agents and tasks](docs/operations/generic-agent-and-tasks.md).
+
+Skills load from `.harness/skills` and `.agents/skills` in the project, and from
+the same two directories under your home. Markdown files in `.harness/commands/` or
+`~/.harness/commands/` become slash commands, with `$ARGUMENTS` and `$1` to `$9`
+filled in. They also work headless: `harness run "/name args"`. The bundled
+`/init` writes or updates a short root `AGENTS.md` and keeps what you wrote. See
+[extensions](docs/operations/extension-strategy.md) for skills, MCP servers and
+[hooks](docs/operations/hooks.md).
+
+## Permissions
+
+Out of the box, ordinary tools run without asking. Harness asks before touching
+paths outside the project, before repeating an identical call, and before
+reading `.env` files. A personal or project config can tighten that:
 
 ```jsonc
 "permission": {
+  "*": "allow",
   "edit": "ask",
   "bash": {
     "*": "deny",
@@ -174,66 +219,87 @@ an optional personal or project config:
 }
 ```
 
-The last matching rule wins. Put broad rules first and exceptions afterward.
-Read the [permission guide](docs/permissions/permissions.md) before changing
-shared or subagent policy.
+The last matching rule wins, so put broad rules first and exceptions after them.
+Keep the leading `"*": "allow"`. Once a `permission` block exists, any tool
+without a rule of its own (`todowrite`, `skill`, the session tools) asks every
+time.
 
-Runtime settings belong in `harness.jsonc`; keyboard settings belong in
-`tui.jsonc`. Use `harness config sources` to see the load order and
-`harness config show --effective` to inspect the merged, redacted configuration.
-The [config reference](docs/configuration/config.md) lists the supported keys.
+`--yolo` (or `/yolo`) approves ordinary requests for a session, and
+`--sandbox readonly` is a quick read-only preset for `harness run`.
 
-## Where Harness stores data
+Permissions decide which tool calls run. They are not an operating-system
+sandbox: an approved shell command can do anything your user can. For real
+filesystem confinement of shell commands, set `HARNESS_OS_SANDBOX_POLICY` to
+`workspace_write`, `read_only` or `strict` (Linux Landlock). Read the
+[permission guide](docs/permissions/permissions.md) before sharing a policy with a
+team or with subagents.
 
-User files live in `~/.harness/`. A nonempty `HARNESS_HOME` replaces this root
-as-is; Harness does not append another directory to it. Under that root:
+## Configuration
 
-- `harness.jsonc` or `harness.json`: personal runtime config, first existing wins.
-- `tui.jsonc` or `tui.json`: personal keyboard config, first existing wins.
-- `credentials/`, `anthropic-subscription-bindings/`, `models-cache.json`: saved
-  sign-ins, subscription bindings and cached model metadata.
-- `prompts/`, `agents/`, `commands/`, `skills/`: personal prompt templates,
-  agent definitions, slash commands and skills.
-- `model.json`: the last model picked in the TUI;
-  `HARNESS_MODEL_SELECTION_STATE_FILE` can override its path.
-- `sessions/<key>/`: sessions and their artifacts.
-- `projects/<key>/`: workspace memory, code index, edit attribution and plans.
-- `worktrees/<key>/`: managed Git worktrees.
-
-Skills also load from `$HOME/.agents/skills` by default. Set `skills.global_roots`
-to change the roots. Project keys are `v2-` followed by the full BLAKE3 hex digest
-of the canonical project path. They have a fixed length and keep different paths
-separate, including paths that differ only in slashes and dashes.
-See [storage migration](docs/architecture/sessions-and-replay.md#legacy-storage)
-for older `--path--` directories.
-
-The project's `.harness/` holds authored agents, commands, skills and prompt
-overrides, project config and remembered permission approvals. Project skills
-also load from `.agents/skills`, below Harness skill roots.
-
-Earlier builds saved sessions in `<project>/.agent-harness/sessions`. They are
-not migrated; open them with `--session-dir`:
+Config is optional. After your first successful sign-in Harness writes
+`~/.harness/harness.jsonc` with that provider's default model, unless a user
+config already exists or `HARNESS_CONFIG` or `HARNESS_CONFIG_CONTENT` is set.
+Put personal defaults there and project policy in `harness.jsonc` or
+`.harness/harness.jsonc` at the project root; project layers override personal
+ones. Keyboard settings live in `tui.jsonc`.
 
 ```bash
-harness sessions list --session-dir .agent-harness/sessions
+harness config sources             # every file it looked for, in load order
+harness config show --effective    # the merged, redacted result
+harness schema                     # JSON schema for editor completion
 ```
 
-## Inspect and share a session
+[`configs/harness.example.jsonc`](configs/harness.example.jsonc) is a short,
+annotated starting point. Defining any `provider` entry switches the model catalog
+from automatic discovery to curated: only configured providers, plus signed-in
+Codex, GitHub Copilot and Claude subscription accounts, remain. The
+[config reference](docs/configuration/config.md) lists every key.
 
-```bash
-harness sessions inspect <run-id-or-path>
-harness sessions export --session-dir <session-dir> --output support-bundle.json <run-id-or-directory-name>
-```
+## Where your data lives
 
-Support exports contain replay-derived metadata and redaction results. The export
-stops without writing a bundle if its secret scan fails. See
-[sessions and replay](docs/architecture/sessions-and-replay.md) and
-[local data](docs/permissions/privacy-and-local-data.md) before sharing logs.
+Everything Harness writes for you goes under `~/.harness/`, or under
+`$HARNESS_HOME` used as-is when it is set and nonempty:
 
-## Contribute
+| Path | Holds |
+| --- | --- |
+| `harness.jsonc`, `tui.jsonc` | Personal runtime and keyboard config (`.json` also works) |
+| `credentials/`, `anthropic-subscription-bindings/` | Sign-ins and subscription bindings |
+| `models-cache.json`, `model.json` | Cached model metadata and the last model picked in the TUI |
+| `prompts/`, `agents/`, `commands/`, `skills/` | Your prompt overrides, agents, slash commands and skills |
+| `sessions/<key>/` | Session journals and artifacts |
+| `projects/<key>/` | Workspace memory, code index, edit attribution and plans |
+| `worktrees/<key>/` | Managed Git worktrees |
 
-The workspace uses Rust 2024 across seven crates and builds with the stable toolchain. Start with the [architecture guide](docs/architecture/architecture.md)
-for code ownership and the [terminal design guide](DESIGN.md) for UI changes.
+`<key>` is `v2-` plus the BLAKE3 digest of the canonical project path, so every
+project gets its own fixed-length directory. Inside a project, `.harness/` holds
+authored agents, commands, skills, prompt overrides, project config and
+remembered approvals. Older `--path--` directories are left alone; see
+[legacy storage](docs/architecture/sessions-and-replay.md#legacy-storage) to move
+them. Sessions from early builds in `<project>/.agent-harness/sessions` open with
+`harness sessions list --session-dir .agent-harness/sessions`.
+
+Before you share a session, run `harness sessions export <id> --output bundle.json`.
+The bundle keeps replay metadata and drops provider deltas and tool payloads. If
+its secret scan finds anything, nothing is written. [Privacy and local
+data](docs/permissions/privacy-and-local-data.md) explains what leaves your
+machine and when.
+
+## Documentation
+
+| Use Harness | Work on Harness |
+| --- | --- |
+| [Configuration](docs/configuration/config.md) | [Architecture](docs/architecture/architecture.md) |
+| [Providers](docs/configuration/provider-support.md) | [Terminal design](DESIGN.md) |
+| [Native tools](docs/tools/native-tool-catalog.md) | [Testing](docs/testing/testing.md) |
+| [Permissions](docs/permissions/permissions.md) | [Releasing](docs/operations/releasing.md) |
+| [Sessions and replay](docs/architecture/sessions-and-replay.md) | [Changelog](CHANGELOG.md) |
+| [Troubleshooting](docs/operations/troubleshooting.md) | [All documentation](docs/README.md) |
+
+## Contributing
+
+The workspace is seven Rust 2024 crates on the stable toolchain. Start with the
+[architecture guide](docs/architecture/architecture.md) to see who owns what, and
+the [terminal design guide](DESIGN.md) before touching the UI.
 
 ```bash
 cargo fmt --all -- --check
@@ -241,10 +307,9 @@ scripts/test-lanes.sh fast
 scripts/test-lanes.sh quality-gates
 ```
 
-Use nextest for Rust tests. The [testing guide](docs/testing/testing.md) explains
-the integration, simulation, performance, PTY, and live-provider lanes.
-For setup failures, start with [troubleshooting](docs/operations/troubleshooting.md).
+Tests run under nextest. The [testing guide](docs/testing/testing.md) explains the
+integration, simulation, performance, PTY and live-provider lanes.
 
 ## License
 
-Harness is released under the [MIT License](LICENSE).
+[MIT](LICENSE)
