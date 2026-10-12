@@ -278,7 +278,7 @@ pub(super) fn render_live_breadcrumb(
 /// cost, drop first so the meta stays within half the row.
 fn breadcrumb_meta(app: &AppState, width: usize) -> Option<String> {
     let segments = [
-        app.generation_rate_label(),
+        app.generation_rate_label(None),
         app.session_cost_label(),
         breadcrumb_context_meta(app),
     ]

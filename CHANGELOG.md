@@ -117,6 +117,7 @@ The first public release.
   `harness.schema.json` and `tui.schema.json`.
 - A live tokens-per-second readout and a session cost counter beside the
   context meter in the TUI. The speed updates while the model streams and
-  settles to billed counts. Costs use models.dev prices for catalog models and
+  settles to billed counts. Each subagent's row in the Tasks pane shows its own
+  speed next to its model. Costs use models.dev prices for catalog models and
   an optional `cost` on custom models. Anthropic token counts include cached
   prompt tokens, as OpenAI's already do.

@@ -1037,16 +1037,19 @@ impl SessionProjection {
         };
         let request_id = request_id.as_str();
         let turn_id = Self::canonical_provider_turn_id(event, request_id);
-        let own = !self.child_request_agents.contains_key(turn_id)
-            && !self.child_request_agents.contains_key(request_id);
+        let child = self
+            .child_request_agents
+            .get(turn_id)
+            .or_else(|| self.child_request_agents.get(request_id))
+            .map(String::as_str);
         match &event.payload {
             EventV1::ProviderRequestStarted(data) => {
                 self.usage
-                    .request_started(data, event.mono_ms, own, historical);
+                    .request_started(data, event.mono_ms, child, historical);
             }
             EventV1::ProviderRequestFinished(data) => {
                 self.usage
-                    .request_finished(data, event.mono_ms, own, historical);
+                    .request_finished(data, event.mono_ms, child, historical);
             }
             _ => {}
         }

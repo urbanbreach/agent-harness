@@ -161,8 +161,13 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, area: Rect, theme: &Them
         let base = Style::default();
         let running = !row.state.is_terminal();
         let (icon, color) = task_icon(app, row, theme);
+        let rate = row
+            .child
+            .then(|| app.generation_rate_label(Some(&row.id)))
+            .flatten()
+            .map_or_else(String::new, |rate| format!("{rate} "));
         let right = format!(
-            "{}{}{} [↗]{}",
+            "{}{}{rate}{} [↗]{}",
             collapse_inline_whitespace(&row.model),
             if row.model.is_empty() { "" } else { " " },
             crate::app::subagents::duration_label(row.elapsed_ms),

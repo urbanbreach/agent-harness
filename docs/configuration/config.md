@@ -55,7 +55,9 @@ tool input at roughly four bytes per token, weights the last minute or so of
 streaming most, and corrects itself to the provider's billed count when each
 request ends. The clock only runs while a request is open, so the reading holds
 through tool runs, and it stays blank until about 200 tokens and four seconds of
-streaming are in. A resumed session starts from its last request's speed. Cost
+streaming are in. A resumed session starts from its last request's speed. This
+row counts only the main agent; each subagent's row in the Tasks pane shows that
+subagent's speed next to its model, measured the same way. Cost
 adds up every request in the session, subagents included, priced by model.
 Catalog models take their prices from models.dev. For a custom model, set `cost`
 in USD per million tokens:

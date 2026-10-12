@@ -18,13 +18,20 @@ pub(crate) struct SessionUsage {
     started: BTreeMap<String, RequestStart>,
     /// Billed tokens by provider and model; a request with no recorded start has empty keys.
     by_model: BTreeMap<(String, String), BilledTokens>,
-    /// Generation rate of this session's own requests; subagents keep their own pace.
-    meter: token_rate::TokenRateMeter,
-    /// The open request whose streamed deltas feed `meter`.
-    metered_request: Option<String>,
+    /// Generation rate of this session's own requests.
+    own: Meter,
+    /// Generation rate of each subagent, by child id.
+    children: BTreeMap<String, Meter>,
     /// The newest event's stream time and when it arrived, so the open request's stream
     /// time keeps running between deltas.
     observed: Option<(u64, Instant)>,
+}
+
+/// A generation-rate meter and the open request whose streamed deltas feed it.
+#[derive(Default)]
+struct Meter {
+    rate: token_rate::TokenRateMeter,
+    request: Option<String>,
 }
 
 struct RequestStart {
@@ -34,18 +41,20 @@ struct RequestStart {
 }
 
 impl SessionUsage {
-    /// `own` is false for a subagent's request. Historical requests only price and seed.
+    /// `child` names the subagent that sent the request, `None` for this session's own.
+    /// Historical requests only price and seed.
     pub(crate) fn request_started(
         &mut self,
         event: &ProviderRequestStartedEvent,
         mono_ms: u64,
-        own: bool,
+        child: Option<&str>,
         historical: bool,
     ) {
         let request_id = event.request_id.to_string();
-        if own && !historical {
-            self.meter.begin(mono_ms);
-            self.metered_request = Some(request_id.clone());
+        if !historical {
+            let meter = self.meter_mut(child);
+            meter.rate.begin(mono_ms);
+            meter.request = Some(request_id.clone());
         }
         self.started.insert(
             request_id,
@@ -59,8 +68,8 @@ impl SessionUsage {
 
     /// Streamed text, reasoning or tool input of a live provider request.
     pub(crate) fn request_delta(&mut self, request_id: &str, bytes: usize, mono_ms: u64) {
-        if self.metered_request.as_deref() == Some(request_id) {
-            self.meter.push(bytes, mono_ms);
+        if let Some(meter) = self.metering(request_id) {
+            meter.rate.push(bytes, mono_ms);
         }
     }
 
@@ -68,24 +77,24 @@ impl SessionUsage {
         &mut self,
         event: &ProviderRequestFinishedEvent,
         mono_ms: u64,
-        own: bool,
+        child: Option<&str>,
         historical: bool,
     ) {
         let request_id = event.request_id.as_str();
         let start = self.started.remove(request_id);
         let usage = event.usage.as_ref();
-        if self.metered_request.as_deref() == Some(request_id) {
-            self.metered_request = None;
-            self.meter
+        if let Some(meter) = self.metering(request_id) {
+            meter.request = None;
+            meter
+                .rate
                 .end(usage.map(|usage| usage.completion_tokens), mono_ms);
-        } else if historical
-            && own
-            && let (Some(usage), Some(start)) = (usage, start.as_ref())
-        {
+        } else if historical && let (Some(usage), Some(start)) = (usage, start.as_ref()) {
             // A resumed session reads its last request's pace until new requests blend in.
             let span_ms = mono_ms.saturating_sub(start.mono_ms);
             if usage.completion_tokens > 0 && span_ms >= MIN_SEED_SPAN_MS {
-                self.meter.seed(usage.completion_tokens, span_ms);
+                self.meter_mut(child)
+                    .rate
+                    .seed(usage.completion_tokens, span_ms);
             }
         }
         let Some(usage) = usage else {
@@ -98,6 +107,20 @@ impl SessionUsage {
             metadata.and_then(|m| m.cache_read_tokens).unwrap_or(0),
             metadata.and_then(|m| m.cache_write_tokens).unwrap_or(0),
         );
+    }
+
+    fn meter_mut(&mut self, child: Option<&str>) -> &mut Meter {
+        match child {
+            Some(child) => self.children.entry(child.to_owned()).or_default(),
+            None => &mut self.own,
+        }
+    }
+
+    /// The meter fed by open request `request_id`.
+    fn metering(&mut self, request_id: &str) -> Option<&mut Meter> {
+        std::iter::once(&mut self.own)
+            .chain(self.children.values_mut())
+            .find(|meter| meter.request.as_deref() == Some(request_id))
     }
 
     /// Pairs a live event's stream time with its arrival.
@@ -119,14 +142,19 @@ impl AppState {
 }
 
 impl AppState {
-    /// `42.1 tok/s`: live while a request streams, the last reading between requests.
-    pub(crate) fn generation_rate_label(&self) -> Option<String> {
+    /// `42.1 tok/s` of this session, or of subagent `child`: live while a request streams,
+    /// the last reading between requests.
+    pub(crate) fn generation_rate_label(&self, child: Option<&str>) -> Option<String> {
         let usage = &self.projection.usage;
+        let meter = match child {
+            Some(child) => usage.children.get(child)?,
+            None => &usage.own,
+        };
         let now_ms = usage.observed.map_or(0, |(mono_ms, at)| {
             let since = self.now().saturating_duration_since(at).as_millis();
             mono_ms.saturating_add(u64::try_from(since).unwrap_or(u64::MAX))
         });
-        let rate = usage.meter.rate(now_ms)?;
+        let rate = meter.rate.rate(now_ms)?;
         Some(format!("{rate:.1} tok/s"))
     }
 

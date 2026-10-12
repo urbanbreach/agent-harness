@@ -189,6 +189,84 @@ fn native_subagent_lifecycle_drives_pane_child_view_and_one_terminal_row() {
 }
 
 #[test]
+fn streaming_child_reads_its_own_rate_on_its_task_row() {
+    // Given: a running child while the parent's own request is open but silent.
+    let mut app = AppState::new_live(None, false, None);
+    app.set_frame_area(Rect::new(0, 0, 120, 40));
+    let now = std::time::Instant::now();
+    app.set_now_fn_for_test(Arc::new(move || now));
+    let child = || EventActor::new(ActorKind::Worker, Some("child".into()));
+    for event in [
+        run_started(1),
+        agent_spawned(2, "parent", "default"),
+        provider_started(3, "req_parent", "mock", "parent-model"),
+        envelope(
+            4,
+            "req_parent",
+            EventV1::NativeSubagentRegistered(Box::new(registration())),
+        ),
+        envelope(
+            5,
+            "req_child",
+            EventV1::SubagentTransition(Box::new(transition(SubagentTransitionKind::Spawned))),
+        ),
+        EventEnvelopeV1 {
+            mono_ms: 1_000,
+            ..envelope_with_actor(
+                6,
+                "req_child",
+                child(),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "prov_child".into(),
+                    provider_id: "mock".into(),
+                    model_id: "child-model".into(),
+                    prompt_summary: "inspect".into(),
+                    request_digest: "digest".into(),
+                    metadata: None,
+                }),
+            )
+        },
+    ] {
+        app.ingest_event(event);
+    }
+
+    // When: the child streams 10 tokens every 100 ms for 7 s.
+    for mono_ms in (1_100..=8_000).step_by(100) {
+        app.ingest_runtime_event(RuntimeEvent::Live(Box::new(
+            harness_core::event::LiveEventEnvelope {
+                event_id: format!("child-delta-{mono_ms}"),
+                run_id: "run_app_tests".into(),
+                mono_ms,
+                ts: None,
+                actor: child(),
+                correlation_id: Some("req_child".into()),
+                causation_id: None,
+                stream_key: None,
+                payload: harness_core::event::LiveEventV1::ProviderTextDelta {
+                    request_id: "prov_child".into(),
+                    delta: "abcd".repeat(10),
+                },
+            },
+        )));
+    }
+
+    // Then: the child's Tasks row reads ~100 tok/s and the parent breadcrumb reads nothing.
+    let root = render_text(&app, 120, 40);
+    let row = root
+        .lines()
+        .find(|line| line.contains("child-model"))
+        .unwrap_or_abort();
+    let rate: f64 = row
+        .split(" tok/s")
+        .next()
+        .and_then(|before| before.rsplit(' ').next())
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0.0);
+    assert!((80.0..120.0).contains(&rate), "{row}");
+    assert_eq!(root.matches("tok/s").count(), 1, "{root}");
+}
+
+#[test]
 fn eval_spawn_after_a_child_turn_starts_stays_in_the_parent_turn() {
     let temp = tempfile::tempdir().unwrap_or_abort();
     let mut app = AppState::new_live(Some(temp.path().join("parent")), false, None);
