@@ -73,7 +73,8 @@ pub(crate) fn tool_call_has_transcript_disclosure(tool_call: &ToolCallEntry) -> 
                     ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed
                 ) && (tool_call_has_preview_content(tool_call) || has_trimmed_content(output))
             }
-            "spawn_subagent" | "agent.spawn" | "task" => false,
+            // A monitor's started message only repeats its row.
+            "spawn_subagent" | "agent.spawn" | "task" | "monitor" => false,
             _ => has_trimmed_content(output),
         }
 }
@@ -116,5 +117,6 @@ pub(super) fn tool_error_hidden_inline(tool: &ToolCallEntry) -> bool {
                     | "websearch"
                     | "web.fetch"
                     | "webfetch"
+                    | "monitor"
             ))
 }

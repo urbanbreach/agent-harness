@@ -119,8 +119,16 @@
         "None"
       ],
       [
-        "hashline_edit",
+        "edit",
         "None"
+      ],
+      [
+        "edit.mode",
+        "Some(Choice([\"auto\", \"hashline\", \"replace\", \"apply_patch\"]))"
+      ],
+      [
+        "edit.model_variants",
+        "Some(Json)"
       ],
       [
         "worktree.relative_base",
@@ -258,12 +266,20 @@
     "frame_ids": [
       "dialog-settings-40x24-reduced-0ms",
       "selected-settings-40x24-reduced-0ms",
+      "populated-settings-40x24-reduced-0ms",
+      "activated-settings-40x24-reduced-0ms",
       "dialog-settings-80x24-reduced-0ms",
       "selected-settings-80x24-reduced-0ms",
+      "populated-settings-80x24-reduced-0ms",
+      "activated-settings-80x24-reduced-0ms",
       "dialog-settings-120x40-reduced-0ms",
       "selected-settings-120x40-reduced-0ms",
+      "populated-settings-120x40-reduced-0ms",
+      "activated-settings-120x40-reduced-0ms",
       "dialog-settings-160x50-reduced-0ms",
-      "selected-settings-160x50-reduced-0ms"
+      "selected-settings-160x50-reduced-0ms",
+      "populated-settings-160x50-reduced-0ms",
+      "activated-settings-160x50-reduced-0ms"
     ],
     "original_base": "1bb0f98988670a5f4b48cdf749b455a79cfdaa82",
     "original_fixture_sha256": "ae9cf00461889a0a8b254242f33e484ad1ebca401c4768f9cd33f801f38c16cf",
@@ -619,13 +635,37 @@
       {
         "capability_dependency": null,
         "default_scope": "project",
-        "default_value": "true",
+        "default_value": null,
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.edit",
+        "sensitivity": "public",
+        "setting_id": "edit",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "auto",
         "merge_strategy": "replace",
         "mutability": "editable",
-        "restart_required": false,
-        "schema_id": "harness.runtime.hashline_edit",
+        "restart_required": true,
+        "schema_id": "harness.runtime.edit.mode",
         "sensitivity": "public",
-        "setting_id": "hashline_edit",
+        "setting_id": "edit.mode",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "{}",
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": true,
+        "schema_id": "harness.runtime.edit.model_variants",
+        "sensitivity": "public",
+        "setting_id": "edit.model_variants",
         "surface": "runtime"
       },
       {
@@ -1026,5 +1066,5 @@
       }
     ]
   },
-  "fixture_sha256": "f6a281e8bc0894ed19436ce1cbadbee28f90f144230cdbe8891116c87f950411"
+  "fixture_sha256": "370ab2cbe36afc16c0ef9f6b4f9fb60831eabee015acf5496098adb7776ec913"
 }

@@ -113,6 +113,10 @@ impl AppState {
                 plan
             };
         }
+        // The watching segment under the composer counts seconds.
+        if self.presentation_is_live() && !self.running_monitors().is_empty() {
+            plan = plan.merge(MotionDemand::slow(Duration::from_secs(1)));
+        }
         let mut visual_sample = 0;
         if let Some(interval) = plan.cadence().interval() {
             let elapsed = now.saturating_duration_since(self.motion_epoch_started_at);

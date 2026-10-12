@@ -107,6 +107,16 @@ impl SessionUsage {
         }
     }
 }
+impl AppState {
+    pub(crate) fn live_elapsed_since(&self, started_ms: u64) -> u64 {
+        self.projection.usage.observed.map_or(0, |(mono_ms, at)| {
+            let since = self.now().saturating_duration_since(at).as_millis();
+            mono_ms
+                .saturating_add(u64::try_from(since).unwrap_or(u64::MAX))
+                .saturating_sub(started_ms)
+        })
+    }
+}
 
 impl AppState {
     /// `42.1 tok/s`: live while a request streams, the last reading between requests.

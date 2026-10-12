@@ -1,7 +1,7 @@
 //! Settings list overlay backed by `settings_registry()` with project-file edit paths.
 //!
 //! Writable when a project runtime config path is bound:
-//! - `hashline_edit`
+//! - `edit.mode` and `edit.model_variants`
 //! - `runtime.yolo`
 //! - `runtime.compaction.enabled`
 //! - `runtime.compaction.auto_retry_overflow`
@@ -17,11 +17,10 @@ use harness_core::config::{
     reset_project_compaction_auto_retry_overflow, reset_project_compaction_enabled,
     reset_project_compaction_estimated_token_triggers,
     reset_project_compaction_structured_summary_contract, reset_project_deterministic_enabled,
-    reset_project_hashline_edit, setting_definition, settings_registry,
-    write_project_compaction_auto_retry_overflow, write_project_compaction_enabled,
-    write_project_compaction_estimated_token_triggers,
+    setting_definition, settings_registry, write_project_compaction_auto_retry_overflow,
+    write_project_compaction_enabled, write_project_compaction_estimated_token_triggers,
     write_project_compaction_structured_summary_contract, write_project_deterministic_enabled,
-    write_project_hashline_edit, SettingDefinition, SettingSensitivity, SettingWriteError,
+    SettingDefinition, SettingSensitivity, SettingWriteError,
 };
 
 use super::{AppState, Focus, ToastVariant};
@@ -161,7 +160,6 @@ impl SettingsEditorSummary {
     }
 }
 
-const HASHLINE_EDIT_ID: &str = "hashline_edit";
 const COMPACTION_ENABLED_ID: &str = "runtime.compaction.enabled";
 const COMPACTION_AUTO_RETRY_OVERFLOW_ID: &str = "runtime.compaction.auto_retry_overflow";
 const COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID: &str =
@@ -176,8 +174,7 @@ fn is_writable_setting(setting_id: &str) -> bool {
     setting_editor_kind(setting_id).is_some()
         || matches!(
             setting_id,
-            HASHLINE_EDIT_ID
-                | COMPACTION_ENABLED_ID
+            COMPACTION_ENABLED_ID
                 | COMPACTION_AUTO_RETRY_OVERFLOW_ID
                 | COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID
                 | COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID
@@ -248,7 +245,6 @@ impl AppState {
     pub fn bind_settings_project_config(
         &mut self,
         path: impl Into<PathBuf>,
-        hashline_edit: bool,
         compaction_enabled: bool,
         compaction_auto_retry_overflow: bool,
         compaction_structured_summary_contract: bool,
@@ -271,7 +267,6 @@ impl AppState {
             }
         }
         self.settings_project_config_path = Some(path);
-        self.settings_hashline_edit = hashline_edit;
         self.settings_compaction_enabled = compaction_enabled;
         self.settings_compaction_auto_retry_overflow = compaction_auto_retry_overflow;
         self.settings_compaction_structured_summary_contract =
@@ -282,10 +277,6 @@ impl AppState {
 
     pub fn settings_project_config_path(&self) -> Option<&Path> {
         self.settings_project_config_path.as_deref()
-    }
-
-    pub fn settings_hashline_edit(&self) -> bool {
-        self.settings_hashline_edit
     }
 
     pub fn settings_compaction_enabled(&self) -> bool {
@@ -503,19 +494,6 @@ impl AppState {
             return;
         }
         match setting_id {
-            HASHLINE_EDIT_ID => {
-                let next = !self.settings_hashline_edit;
-                match write_project_hashline_edit(&path, next) {
-                    Ok(effective) => {
-                        self.settings_hashline_edit = effective;
-                        self.show_toast(
-                            format!("hashline_edit set to {effective}"),
-                            ToastVariant::Info,
-                        );
-                    }
-                    Err(err) => self.report_settings_write_error(err),
-                }
-            }
             COMPACTION_ENABLED_ID => {
                 let next = !self.settings_compaction_enabled;
                 match write_project_compaction_enabled(&path, next) {
@@ -623,7 +601,7 @@ impl AppState {
             );
             return;
         };
-        if setting_editor_kind(setting_id) == Some(SettingEditorKind::Boolean) {
+        if setting_editor_kind(setting_id).is_some() {
             match harness_core::config::reset_project_setting_to_default(&path, setting_id) {
                 Ok(value) => {
                     self.settings_interaction
@@ -639,16 +617,6 @@ impl AppState {
             return;
         }
         match setting_id {
-            HASHLINE_EDIT_ID => match reset_project_hashline_edit(&path) {
-                Ok(effective) => {
-                    self.settings_hashline_edit = effective;
-                    self.show_toast(
-                        format!("hashline_edit reset to default ({effective})"),
-                        ToastVariant::Info,
-                    );
-                }
-                Err(err) => self.report_settings_write_error(err),
-            },
             COMPACTION_ENABLED_ID => match reset_project_compaction_enabled(&path) {
                 Ok(effective) => {
                     self.settings_compaction_enabled = effective;
@@ -828,6 +796,9 @@ impl AppState {
                             }
                             SettingEditorKind::Choice(_) => "Choose one of the listed values.",
                             SettingEditorKind::Boolean => "Choose true or false.",
+                            SettingEditorKind::Json => {
+                                "Enter a JSON object mapping model selectors to edit modes."
+                            }
                         }
                         .into(),
                     );
@@ -858,7 +829,6 @@ impl AppState {
                 });
         }
         match setting_id {
-            HASHLINE_EDIT_ID => Some(bool_label(self.settings_hashline_edit)),
             COMPACTION_ENABLED_ID => Some(bool_label(self.settings_compaction_enabled)),
             COMPACTION_AUTO_RETRY_OVERFLOW_ID => {
                 Some(bool_label(self.settings_compaction_auto_retry_overflow))
@@ -974,8 +944,8 @@ mod tests {
     #[test]
     fn settings_editor_writable_settings_identified() {
         assert!(
-            is_writable_setting("hashline_edit"),
-            "hashline_edit must be writable"
+            is_writable_setting("edit.mode"),
+            "edit.mode must be writable"
         );
         assert!(
             is_writable_setting("runtime.compaction.enabled"),

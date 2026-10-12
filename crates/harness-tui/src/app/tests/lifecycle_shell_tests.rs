@@ -64,17 +64,16 @@ fn assert_settings_values(app: &AppState) {
         settings.bound,
         "expected project config bound: {settings:?}"
     );
-    assert_eq!((settings.writable_paths, settings.editable), (21, 20));
+    assert_eq!((settings.writable_paths, settings.editable), (22, 21));
     assert!(settings.with_effective_value >= 6);
     assert!(settings.total >= 38);
     assert!(settings.one_line().contains("bound=true"));
-    assert!(settings.one_line().contains("writable_paths=21"));
+    assert!(settings.one_line().contains("writable_paths=22"));
     assert!(
         app.settings_project_config_path()
             .is_some_and(|path| path.ends_with("harness.json")),
         "expected harness.json project config path"
     );
-    assert!(app.settings_hashline_edit());
     assert!(app.settings_compaction_enabled());
     assert!(app.settings_compaction_auto_retry_overflow());
     assert!(app.settings_compaction_structured_summary_contract());
@@ -85,8 +84,11 @@ fn assert_settings_values(app: &AppState) {
         .expect("settings path bound")
         .to_path_buf();
     assert_eq!(
-        harness_core::config::read_effective_hashline_edit(&settings_path).expect("hashline"),
-        app.settings_hashline_edit()
+        harness_core::config::load_config_from_file(&settings_path)
+            .expect("edit config")
+            .edit
+            .mode,
+        harness_core::config::EditMode::Auto
     );
     assert_eq!(
         harness_core::config::read_effective_compaction_enabled(&settings_path)
@@ -121,13 +123,13 @@ fn assert_settings_definitions() {
     let registry_json =
         harness_core::config::settings_registry_json().expect("settings registry json");
     assert!(
-        registry_json.contains("hashline_edit")
+        registry_json.contains("edit.mode")
             && registry_json.contains("runtime.compaction.enabled")
             && registry_json.contains("runtime.deterministic.enabled"),
         "expected writable setting ids in registry json"
     );
     let writable_ids = [
-        "hashline_edit",
+        "edit.mode",
         "runtime.compaction.enabled",
         "runtime.compaction.auto_retry_overflow",
         "runtime.compaction.structured_summary_contract",

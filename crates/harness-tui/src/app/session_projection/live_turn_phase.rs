@@ -332,6 +332,7 @@ impl SessionProjection {
         let activity = &self.activities[index];
         let (request_id, delta, phase) = match &event.payload {
             LiveEventV1::ProviderRetrying { .. }
+            | LiveEventV1::MonitorState { .. }
             | LiveEventV1::CompactionProgress { .. }
             | LiveEventV1::RuntimeWarning { .. }
             | LiveEventV1::SubagentProgress(_)

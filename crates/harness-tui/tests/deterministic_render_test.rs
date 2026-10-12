@@ -93,6 +93,74 @@ fn live_transcript_and_composer_shell_render_without_pty() {
 }
 
 #[test]
+fn monitor_call_is_one_transcript_line_and_status_sits_under_the_composer() {
+    let mut app = AppState::new_live(None, false, None);
+    app.set_reduced_motion_for_evidence(true);
+    let mut seq = 0;
+    for mut event in deterministic_render_fixtures::tool_lifecycle_events() {
+        if (3..=13).contains(&event.seq) || event.seq >= 17 {
+            continue;
+        }
+        match &mut event.payload {
+            EventV1::ToolCallRequested(tool) => {
+                tool.tool_id = "monitor".into();
+                tool.args_summary = r#"{"description":"Build errors","command":"tail -f build.log","filter":"error"}"#.into();
+            }
+            EventV1::ToolCallFinished(tool) => {
+                tool.status = ToolCallStatus::Succeeded;
+                tool.output_summary = Some("Monitor started with task_id monitor-1.".into());
+            }
+            _ => {}
+        }
+        seq += 1;
+        event.seq = seq;
+        app.ingest_event(event);
+    }
+    app.ingest_event(envelope(
+        6,
+        Some("req_tool_lifecycle"),
+        EventV1::TaskScheduled(harness_core::event::TaskScheduledEvent {
+            task_id: "monitor-1".into(),
+            state: harness_core::event::TaskScheduleState::Started,
+            queue_key: Some("monitor".into()),
+            metadata: Some(harness_core::event::TaskScheduleMetadata {
+                lineage: Some(harness_core::event::TaskLineageMetadata {
+                    parent_tool_call_id: Some("tc_shell".into()),
+                    ..Default::default()
+                }),
+            }),
+        }),
+    ));
+    let during_turn = render_text(&app, 150, 45);
+    assert!(during_turn.contains("Enter:steer"), "{during_turn}");
+    let mut finished = envelope(
+        7,
+        Some("req_tool_lifecycle"),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req_tool_lifecycle".into(),
+            finish_reason: "stop".into(),
+            output_digest: None,
+            usage: None,
+            metadata: None,
+        }),
+    );
+    finished.mono_ms = 12_006;
+    app.ingest_event(finished);
+    app.toggle_tool_output_for_test("tc_shell");
+    let rendered = render_text(&app, 150, 45);
+    for text in [&during_turn, &rendered] {
+        let bottom = text.lines().rev().find(|line| !line.trim().is_empty());
+        assert!(
+            bottom.is_some_and(|line| line.contains("◉ watching Build errors (")),
+            "{text}"
+        );
+        for hidden in ["Monitor started", "Filter", "Tasks", "still running"] {
+            assert!(!text.contains(hidden), "{hidden}: {text}");
+        }
+    }
+    insta::assert_snapshot!(trim_trailing_snapshot_whitespace(&rendered));
+}
+#[test]
 fn tool_lifecycle_rows_stay_ordered_without_pty() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_tool_lifecycle")), false, None);
     app.set_reduced_motion_for_evidence(true);

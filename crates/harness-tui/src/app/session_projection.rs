@@ -90,7 +90,6 @@ impl AppState {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct LiveTurnWatchers {
     pub(crate) commands: usize,
-    pub(crate) monitors: usize,
     pub(crate) loops: usize,
     pub(crate) subagents: usize,
     pub(crate) workflows: usize,
@@ -98,7 +97,7 @@ pub(crate) struct LiveTurnWatchers {
 
 impl LiveTurnWatchers {
     pub(crate) const fn total(self) -> usize {
-        self.commands + self.monitors + self.loops + self.subagents + self.workflows
+        self.commands + self.loops + self.subagents + self.workflows
     }
 }
 
@@ -120,6 +119,7 @@ struct ReasoningTiming {
 
 #[derive(Default)]
 pub struct SessionProjection {
+    pub(crate) paused_monitors: BTreeSet<String>,
     pub(crate) subagents: super::subagents::SubagentPresentation,
     live_compactions: BTreeMap<String, LiveCompaction>,
     pub(super) phase_clock: Option<std::sync::Arc<dyn Fn() -> std::time::Instant + Send + Sync>>,
@@ -211,6 +211,7 @@ impl SessionProjection {
     }
 
     pub(crate) fn reset(&mut self) {
+        self.paused_monitors.clear();
         self.subagents = super::subagents::SubagentPresentation::default();
         self.live_compactions.clear();
         self.inspection_events = None;
@@ -321,6 +322,14 @@ impl SessionProjection {
     pub(crate) fn ingest_live_event(&mut self, event: &LiveEventEnvelope) {
         self.subagents.last_mono_ms = self.subagents.last_mono_ms.max(event.mono_ms);
         let (provider_request_id, tool_input) = match &event.payload {
+            LiveEventV1::MonitorState { task_id, paused } => {
+                if *paused {
+                    self.paused_monitors.insert(task_id.clone());
+                } else {
+                    self.paused_monitors.remove(task_id);
+                }
+                return;
+            }
             LiveEventV1::EvalProgress {
                 tool_call_id,
                 output,
@@ -454,6 +463,7 @@ impl SessionProjection {
         activity.status = ActivityStatus::Streaming;
         match &event.payload {
             LiveEventV1::ProviderRetrying { .. }
+            | LiveEventV1::MonitorState { .. }
             | LiveEventV1::CompactionProgress { .. }
             | LiveEventV1::RuntimeWarning { .. }
             | LiveEventV1::SubagentProgress(_)
@@ -1388,6 +1398,16 @@ impl SessionProjection {
             "shell.run" | "bash" => {
                 arg(&["description", "command", "cmd"]).map(|value| format!("Shell {value}"))?
             }
+            "monitor" => {
+                if arg(&["action"]).as_deref() == Some("rearm") {
+                    format!(
+                        "Monitor rearm {}",
+                        arg(&["task_id"]).unwrap_or_else(|| "all".into())
+                    )
+                } else {
+                    format!("Monitor {}", arg(&["description", "command", "path"])?)
+                }
+            }
             "edit.hashline_apply" | "edit" => format!("Edit {}", arg(&["filePath", "path"])?),
             "fs.write" | "write" => format!("Write {}", arg(&["filePath", "path"])?),
             other => titlecase_word(other),
@@ -1472,6 +1492,10 @@ impl SessionProjection {
             .filter(|row| !row.state.is_terminal())
         {
             let queue_key = row.queue_key.as_deref().unwrap_or_default();
+            // Monitors show only in the watching segment under the composer.
+            if queue_key == "monitor" {
+                continue;
+            }
             if native
                 .values()
                 .any(|child| child.parent_tool == row.task_id)
@@ -1509,9 +1533,6 @@ impl SessionProjection {
                 }
                 Some("eval") => {
                     watchers.workflows = watchers.workflows.saturating_add(1);
-                }
-                Some("monitor") => {
-                    watchers.monitors = watchers.monitors.saturating_add(1);
                 }
                 Some(_) | None => {
                     watchers.commands = watchers.commands.saturating_add(1);

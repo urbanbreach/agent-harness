@@ -509,7 +509,7 @@ fn verify_settings_controls(area: Rect) {
     app.set_reduced_motion_for_evidence(true);
     app.set_frame_area(area);
     app.handle_paste("keep this draft");
-    app.bind_settings_project_config(&path, true, true, true, true, true, false);
+    app.bind_settings_project_config(&path, true, true, true, true, false);
     app.execute_action(Action::OpenSettings);
     app.handle_key(key(KeyCode::End));
     assert_eq!(

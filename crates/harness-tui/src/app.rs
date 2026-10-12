@@ -398,7 +398,6 @@ pub struct AppState {
     pub(crate) settings_editor_tab: settings_editor::SettingsTab,
     pub(crate) settings_parent: Option<settings_editor::SettingsParent>,
     pub(crate) settings_project_config_path: Option<PathBuf>,
-    pub(crate) settings_hashline_edit: bool,
     pub(crate) settings_compaction_enabled: bool,
     pub(crate) settings_compaction_auto_retry_overflow: bool,
     pub(crate) settings_compaction_structured_summary_contract: bool,
@@ -676,7 +675,6 @@ impl Default for AppState {
             settings_editor_tab: settings_editor::SettingsTab::default(),
             settings_parent: None,
             settings_project_config_path: None,
-            settings_hashline_edit: true,
             settings_compaction_enabled: true,
             settings_compaction_auto_retry_overflow: true,
             settings_compaction_structured_summary_contract: true,
@@ -1689,7 +1687,10 @@ impl AppState {
         if self.route_live_fragment_while_viewing_child(event) {
             return;
         }
-        if matches!(event.payload, LiveEventV1::SubagentProgress(_)) {
+        if matches!(
+            event.payload,
+            LiveEventV1::SubagentProgress(_) | LiveEventV1::MonitorState { .. }
+        ) {
             self.projection.ingest_live_event(event);
             if self.status_dashboard_is_active() {
                 self.refresh_status_dashboard();
@@ -1921,6 +1922,7 @@ impl AppState {
             .as_deref()
             .unwrap_or(match &event.payload {
                 LiveEventV1::ProviderRetrying { .. }
+                | LiveEventV1::MonitorState { .. }
                 | LiveEventV1::CompactionProgress { .. }
                 | LiveEventV1::RuntimeWarning { .. }
                 | LiveEventV1::SubagentProgress(_)
@@ -2855,11 +2857,15 @@ impl AppState {
       "endpoint": "https://mcp.exa.ai/mcp"
     }
   },
-  "hashline_edit": true
+  "edit": { "mode": "auto" }
 }"#;
             let _ = std::fs::write(&settings_path, body);
         }
-        let _ = harness_core::config::write_project_hashline_edit(&settings_path, false);
+        let _ = harness_core::config::write_project_setting_value(
+            &settings_path,
+            "edit.mode",
+            "replace",
+        );
         let _ = harness_core::config::write_project_compaction_enabled(&settings_path, false);
         let _ = harness_core::config::write_project_compaction_auto_retry_overflow(
             &settings_path,
@@ -2874,7 +2880,7 @@ impl AppState {
             false,
         );
         let _ = harness_core::config::write_project_deterministic_enabled(&settings_path, true);
-        let _ = harness_core::config::reset_project_hashline_edit(&settings_path);
+        let _ = harness_core::config::reset_project_setting_to_default(&settings_path, "edit.mode");
         let _ = harness_core::config::reset_project_compaction_enabled(&settings_path);
         let _ = harness_core::config::reset_project_compaction_auto_retry_overflow(&settings_path);
         let _ = harness_core::config::reset_project_compaction_structured_summary_contract(
@@ -2883,7 +2889,8 @@ impl AppState {
         let _ =
             harness_core::config::reset_project_compaction_estimated_token_triggers(&settings_path);
         let _ = harness_core::config::reset_project_deterministic_enabled(&settings_path);
-        let _ = harness_core::config::write_project_hashline_edit(&settings_path, true);
+        let _ =
+            harness_core::config::write_project_setting_value(&settings_path, "edit.mode", "auto");
         let _ = harness_core::config::write_project_compaction_enabled(&settings_path, true);
         let _ = harness_core::config::write_project_compaction_auto_retry_overflow(
             &settings_path,
@@ -2899,8 +2906,6 @@ impl AppState {
         );
         let _ = harness_core::config::write_project_deterministic_enabled(&settings_path, false);
         let _ = harness_core::config::settings_registry_json();
-        let hashline_edit =
-            harness_core::config::read_effective_hashline_edit(&settings_path).unwrap_or(true);
         let compaction_enabled =
             harness_core::config::read_effective_compaction_enabled(&settings_path).unwrap_or(true);
         let compaction_auto_retry_overflow =
@@ -2921,7 +2926,6 @@ impl AppState {
                 .unwrap_or(false);
         self.bind_settings_project_config(
             &settings_path,
-            hashline_edit,
             compaction_enabled,
             compaction_auto_retry_overflow,
             compaction_structured_summary_contract,

@@ -6,7 +6,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use crate::layout::{ControlDockLayout, FrameLayoutPlan, SessionFooterMode, SessionHeaderMode};
-use crate::text::has_trimmed_content;
+use crate::text::{collapse_inline_whitespace, has_trimmed_content};
 use crate::theme::{ChromeMode, DividerIntensity};
 
 #[path = "ui_permission_dock.rs"]
@@ -567,6 +567,70 @@ fn compact_footer_hints(
     }
     compact.truncate(max_hints);
     compact
+}
+
+fn monitor_footer_segment(app: &AppState, theme: &Theme) -> Option<String> {
+    let monitors = app.running_monitors();
+    let oldest = monitors.iter().min_by_key(|row| row.first_mono_ms)?;
+    let elapsed = app.live_elapsed_since(oldest.first_mono_ms);
+    let titles: Vec<_> = monitors
+        .iter()
+        .take(2)
+        .map(|row| collapse_inline_whitespace(&app.background_task_title(row)))
+        .collect();
+    let muted = monitors
+        .iter()
+        .filter(|row| app.paused_monitors.contains(&row.task_id))
+        .count();
+    Some(format_monitor_footer(
+        &titles,
+        monitors.len(),
+        muted,
+        elapsed,
+        theme.glyph_mode() == crate::theme::GlyphMode::Ascii,
+    ))
+}
+
+fn format_monitor_footer(
+    titles: &[String],
+    count: usize,
+    muted: usize,
+    elapsed_ms: u64,
+    ascii: bool,
+) -> String {
+    let prefix = if count == 1 {
+        "watching ".to_owned()
+    } else {
+        format!("watching {count}: ")
+    };
+    let more = if count > 2 {
+        format!(" (+{} more)", count - 2)
+    } else {
+        String::new()
+    };
+    let mute = if muted == count {
+        " muted".to_owned()
+    } else if muted > 0 {
+        format!(" {muted} muted")
+    } else {
+        String::new()
+    };
+    let suffix = format!(
+        "{more} ({}){mute}",
+        super::ui_live_turn_status::format_elapsed_ms(elapsed_ms)
+    );
+    let glyph = if ascii { "o" } else { "◉" };
+    let prefix = format!("{glyph} {prefix}");
+    let available = 48usize.saturating_sub(display_width(&prefix) + display_width(&suffix));
+    let text = format!(
+        "{prefix}{}{suffix}",
+        truncate_plain_text(&titles.join(", "), available)
+    );
+    if display_width(&text) > 48 {
+        truncate_plain_text(&text, 48)
+    } else {
+        text
+    }
 }
 
 fn live_footer_status_candidates(app: &AppState, max_width: usize, theme: &Theme) -> Vec<String> {
@@ -1398,4 +1462,53 @@ fn control_dock_summary_segment(
         text,
         tone,
     })
+}
+#[cfg(test)]
+mod monitor_footer_tests {
+    use super::*;
+
+    #[test]
+    fn watching_text_keeps_counts_timing_and_mute_state_within_48_cells() {
+        for (titles, count, muted, elapsed, ascii, expected) in [
+            (vec!["build"], 1, 0, 12_000, false, "◉ watching build (12s)"),
+            (
+                vec!["a", "b"],
+                4,
+                0,
+                63_000,
+                false,
+                "◉ watching 4: a, b (+2 more) (1m3s)",
+            ),
+            (
+                vec!["a", "b"],
+                2,
+                2,
+                12_000,
+                false,
+                "◉ watching 2: a, b (12s) muted",
+            ),
+            (
+                vec!["a", "b"],
+                3,
+                2,
+                12_000,
+                false,
+                "◉ watching 3: a, b (+1 more) (12s) 2 muted",
+            ),
+            (vec!["build"], 1, 0, 12_000, true, "o watching build (12s)"),
+            (
+                vec!["界界界界界界界界界界界界界界界界界界界界"],
+                1,
+                1,
+                12_000,
+                false,
+                "◉ watching 界界界界界界界界界界界界… (12s) muted",
+            ),
+        ] {
+            let titles = titles.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            let actual = format_monitor_footer(&titles, count, muted, elapsed, ascii);
+            assert_eq!(actual, expected);
+            assert!(display_width(&actual) <= 48);
+        }
+    }
 }

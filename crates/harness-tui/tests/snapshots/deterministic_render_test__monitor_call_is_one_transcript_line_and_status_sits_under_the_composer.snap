@@ -1,0 +1,48 @@
+---
+source: crates/harness-tui/tests/deterministic_render_test.rs
+expression: trim_trailing_snapshot_whitespace(&rendered)
+---
+
+  git:test-workspace /workspace/agent-harness
+
+
+     ❯ Inspect tool activity
+
+
+  ┃  ◆ Monitor Build errors · tail -f build.log
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                                              │
+  ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── model-1 ╯
+
+  Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts                                                                   ◉ watching Build errors (12s)

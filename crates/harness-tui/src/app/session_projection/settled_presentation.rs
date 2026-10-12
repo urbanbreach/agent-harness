@@ -227,6 +227,7 @@ impl SessionProjection {
             &mut settled_activities,
         );
         merge_orchestration_presentation(&mut orchestration_tasks, &presentation_orchestration);
+        restore_task_timing(events, &mut orchestration_tasks);
         let mut activities = settled_activities;
         apply_turn_terminals(
             &mut activities,
@@ -269,6 +270,11 @@ impl SessionProjection {
         }
         self.pending_permissions = pending_permissions;
         self.orchestration_tasks = orchestration_tasks;
+        self.paused_monitors.retain(|id| {
+            self.orchestration_tasks
+                .get(id)
+                .is_some_and(|row| !row.state.is_terminal())
+        });
         let checkpoint = transcript.compaction_checkpoints.last().cloned();
         self.enforce_orchestration_retention();
         self.rebuild_compaction_presentation(checkpoint.as_ref());

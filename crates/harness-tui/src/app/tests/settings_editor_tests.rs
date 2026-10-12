@@ -62,84 +62,6 @@ pub(super) fn settings_slash_command_opens_settings_editor() {
     assert!(!app.settings_editor_rows().is_empty());
 }
 
-pub(super) fn settings_editor_toggles_hashline_edit_persists_and_reloads() {
-    // Given: bound project config with hashline_edit=true and open editor
-    let dir = std::env::temp_dir().join(format!(
-        "harness-tui-settings-{}-{}",
-        "toggle",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).expect("temp dir");
-    let path = dir.join("harness.json");
-    fs::write(
-        &path,
-        r#"{
-  "providers": {
-    "default": {
-      "type": "openai_compatible",
-      "base_url": "http://127.0.0.1:8317/v1",
-      "api_key": "test-key",
-      "models": { "gpt-4o-mini": { "display_name": "GPT-4o mini" } }
-    }
-  },
-  "model": "default:gpt-4o-mini",
-  "permissions": {
-    "defaults": { "edit": "ask", "shell": "ask", "network": "deny" }
-  },
-  "runtime": {
-    "background_tasks": {
-      "default_concurrency": 2,
-      "provider_concurrency": 2,
-      "model_concurrency": 2,
-      "stale_timeout_ms": 15000,
-      "message_staleness_timeout_ms": 5000
-    },
-    "session_dir": ".harness/sessions",
-    "deterministic": { "enabled": false, "seed": 42 }
-  },
-  "integrations": {
-    "remote_search": { "endpoint": "https://mcp.exa.ai/mcp" }
-  },
-  "hashline_edit": true
-}"#,
-    )
-    .expect("write fixture");
-
-    let mut app = AppState::new_live(None, false, None);
-    app.bind_settings_project_config(&path, true, true, true, true, true, false);
-    app.execute_action(Action::OpenSettings);
-    assert!(app.settings_editor_is_visible());
-    assert!(app.settings_hashline_edit());
-
-    // When: select hashline_edit and activate
-    let hashline_index = settings_registry()
-        .iter()
-        .position(|entry| entry.setting_id.as_str() == "hashline_edit")
-        .expect("hashline_edit registered");
-    app.settings_editor_selected = hashline_index;
-    app.handle_key(key(KeyCode::Enter));
-
-    // Then: effective flipped and file persisted
-    assert!(!app.settings_hashline_edit());
-    let body = fs::read_to_string(&path).expect("reread");
-    assert!(body.contains("\"hashline_edit\": false") || body.contains("\"hashline_edit\":false"));
-    let row = app
-        .settings_editor_rows()
-        .into_iter()
-        .find(|row| row.setting_id == "hashline_edit")
-        .expect("row");
-    assert_eq!(row.effective_value.as_deref(), Some("false"));
-    assert!(row.editable);
-
-    // When: reset
-    app.handle_key(key(KeyCode::Char('r')));
-
-    // Then: default true again
-    assert!(app.settings_hashline_edit());
-    let _ = fs::remove_dir_all(&dir);
-}
-
 pub(super) fn settings_editor_fails_closed_for_secret_setting() {
     // Given: open settings on secret row with bound config
     let dir = std::env::temp_dir().join(format!(
@@ -153,7 +75,7 @@ pub(super) fn settings_editor_fails_closed_for_secret_setting() {
     fs::write(&path, "{}").expect("write empty");
 
     let mut app = AppState::new_live(None, false, None);
-    app.bind_settings_project_config(&path, true, true, true, true, true, false);
+    app.bind_settings_project_config(&path, true, true, true, true, false);
     app.execute_action(Action::OpenSettings);
     let secret_index = settings_registry()
         .iter()
@@ -165,9 +87,8 @@ pub(super) fn settings_editor_fails_closed_for_secret_setting() {
     // When
     app.handle_key(key(KeyCode::Enter));
 
-    // Then: file unchanged; hashline value unchanged
+    // Then: file unchanged.
     assert_eq!(fs::read_to_string(&path).expect("after"), before);
-    assert!(app.settings_hashline_edit());
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -181,8 +102,8 @@ pub(super) fn pending_settings_project_config_is_applied_on_new_live() {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("temp dir");
     let path = dir.join("harness.json");
-    fs::write(&path, r#"{"hashline_edit": false}"#).expect("write fixture");
-    set_pending_settings_project_config(path.clone(), false, true, true, true, true, false);
+    fs::write(&path, r#"{"edit":{"mode":"replace"}}"#).expect("write fixture");
+    set_pending_settings_project_config(path.clone(), true, true, true, true, false);
 
     // When: live AppState is constructed
     let app = AppState::new_live(None, false, None);
@@ -192,7 +113,15 @@ pub(super) fn pending_settings_project_config_is_applied_on_new_live() {
         app.settings_project_config_path().map(Path::to_path_buf),
         Some(path)
     );
-    assert!(!app.settings_hashline_edit());
+    assert_eq!(
+        app.settings_editor_rows()
+            .into_iter()
+            .find(|row| row.setting_id == "edit.mode")
+            .expect("edit mode row")
+            .effective_value
+            .as_deref(),
+        Some("replace")
+    );
     assert!(app.settings_compaction_enabled());
     let _ = fs::remove_dir_all(&dir);
 }
@@ -236,13 +165,13 @@ pub(super) fn settings_editor_toggles_compaction_enabled_persists_and_reloads() 
   "integrations": {
     "remote_search": { "endpoint": "https://mcp.exa.ai/mcp" }
   },
-  "hashline_edit": true
+  "edit": { "mode": "auto" }
 }"#,
     )
     .expect("write fixture");
 
     let mut app = AppState::new_live(None, false, None);
-    app.bind_settings_project_config(&path, true, true, true, true, true, false);
+    app.bind_settings_project_config(&path, true, true, true, true, false);
     app.execute_action(Action::OpenSettings);
     assert!(app.settings_compaction_enabled());
 
@@ -312,13 +241,13 @@ pub(super) fn settings_editor_toggles_compaction_auto_retry_overflow_persists_an
   "integrations": {
     "remote_search": { "endpoint": "https://mcp.exa.ai/mcp" }
   },
-  "hashline_edit": true
+  "edit": { "mode": "auto" }
 }"#,
     )
     .expect("write fixture");
 
     let mut app = AppState::new_live(None, false, None);
-    app.bind_settings_project_config(&path, true, true, true, true, true, false);
+    app.bind_settings_project_config(&path, true, true, true, true, false);
     app.execute_action(Action::OpenSettings);
     assert!(app.settings_compaction_auto_retry_overflow());
 
@@ -355,7 +284,7 @@ pub(super) fn settings_editor_summary_counts_bound_writable_paths() {
     assert_eq!(unbound.total, settings_registry().len());
     assert!(!unbound.bound);
     assert_eq!(unbound.editable, 0);
-    assert_eq!(unbound.writable_paths, 21);
+    assert_eq!(unbound.writable_paths, 22);
     assert!(unbound.secret > 0);
     assert_eq!(unbound.editable + unbound.read_only, unbound.total);
     assert!(unbound.one_line().starts_with("settings editor: "));
@@ -372,8 +301,8 @@ pub(super) fn settings_editor_summary_counts_bound_writable_paths() {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("workspace");
     let path = dir.join("harness.json");
-    fs::write(&path, r#"{ "hashline_edit": true }"#).expect("write config");
-    app.bind_settings_project_config(&path, true, true, true, true, true, false);
+    fs::write(&path, "{}").expect("write config");
+    app.bind_settings_project_config(&path, true, true, true, true, false);
 
     // Then: three write paths become editable with effective values
     let bound = app.settings_editor_summary();
@@ -384,11 +313,11 @@ pub(super) fn settings_editor_summary_counts_bound_writable_paths() {
             bound.editable,
             bound.with_effective_value
         ),
-        (21, 20, 19)
+        (22, 21, 20)
     );
     assert!(bound.has_editable());
     assert!(bound.one_line().contains("bound=true"));
-    assert!(bound.one_line().contains("editable=20"));
+    assert!(bound.one_line().contains("editable=21"));
     assert!(bound.overlay_line().contains("bound"));
     assert!(bound.overlay_line().contains("editable"));
     assert!(!bound.overlay_line().contains("unbound"));
@@ -435,13 +364,13 @@ pub(super) fn settings_editor_toggles_deterministic_enabled_persists_and_reloads
   "integrations": {
     "remote_search": { "endpoint": "https://mcp.exa.ai/mcp" }
   },
-  "hashline_edit": true
+  "edit": { "mode": "auto" }
 }"#,
     )
     .expect("write fixture");
 
     let mut app = AppState::new_live(None, false, None);
-    app.bind_settings_project_config(&path, true, true, true, true, true, false);
+    app.bind_settings_project_config(&path, true, true, true, true, false);
     app.execute_action(Action::OpenSettings);
     assert!(!app.settings_deterministic_enabled());
 
@@ -504,13 +433,13 @@ pub(super) fn settings_editor_toggles_compaction_structured_summary_contract_per
   "integrations": {
     "remote_search": { "endpoint": "https://mcp.exa.ai/mcp" }
   },
-  "hashline_edit": true
+  "edit": { "mode": "auto" }
 }"#,
     )
     .expect("write fixture");
 
     let mut app = AppState::new_live(None, false, None);
-    app.bind_settings_project_config(&path, true, true, true, true, true, false);
+    app.bind_settings_project_config(&path, true, true, true, true, false);
     app.execute_action(Action::OpenSettings);
     assert!(app.settings_compaction_structured_summary_contract());
 
@@ -573,13 +502,13 @@ pub(super) fn settings_editor_toggles_compaction_estimated_token_triggers_persis
   "integrations": {
     "remote_search": { "endpoint": "https://mcp.exa.ai/mcp" }
   },
-  "hashline_edit": true
+  "edit": { "mode": "auto" }
 }"#,
     )
     .expect("write fixture");
 
     let mut app = AppState::new_live(None, false, None);
-    app.bind_settings_project_config(&path, true, true, true, true, true, false);
+    app.bind_settings_project_config(&path, true, true, true, true, false);
     app.execute_action(Action::OpenSettings);
     assert!(app.settings_compaction_estimated_token_triggers());
 
@@ -612,8 +541,8 @@ pub(super) fn settings_editor_toggles_compaction_estimated_token_triggers_persis
 pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
     // Given: valid project harness.json bound from read_effective_*
     use harness_core::config::{
-        read_effective_compaction_enabled, read_effective_hashline_edit,
-        write_project_hashline_edit,
+        load_config_from_file, read_effective_compaction_enabled, write_project_setting_value,
+        EditMode,
     };
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -648,18 +577,16 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
   "integrations": {
     "remote_search": { "endpoint": "https://mcp.exa.ai/mcp" }
   },
-  "hashline_edit": true
+  "edit": { "mode": "auto" }
 }"#,
     )
     .expect("write fixture");
 
-    let hashline = read_effective_hashline_edit(&path).expect("hashline effective");
     let compaction = read_effective_compaction_enabled(&path).expect("compaction effective");
-    assert!(hashline);
     assert!(compaction);
 
     let mut app = AppState::new_live(None, false, None);
-    app.bind_settings_project_config(&path, hashline, compaction, true, true, true, false);
+    app.bind_settings_project_config(&path, compaction, true, true, true, false);
 
     // When: open settings editor (product path)
     app.execute_action(Action::OpenSettings);
@@ -667,28 +594,40 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::SettingsEditor));
     let summary = app.settings_editor_summary();
     assert!(summary.bound);
-    assert_eq!(summary.writable_paths, 21);
-    assert_eq!(summary.editable, 20);
+    assert_eq!(summary.writable_paths, 22);
+    assert_eq!(summary.editable, 21);
     assert!(summary.with_effective_value >= 6);
 
-    // When: edit hashline_edit via Enter
-    let hashline_index = settings_registry()
+    // Choice drafts do not persist until Enter commits them.
+    let edit_index = settings_registry()
         .iter()
-        .position(|entry| entry.setting_id.as_str() == "hashline_edit")
-        .expect("hashline_edit registered");
-    app.settings_editor_selected = hashline_index;
+        .position(|entry| entry.setting_id.as_str() == "edit.mode")
+        .expect("edit.mode registered");
+    app.settings_editor_selected = edit_index;
     app.handle_key(key(KeyCode::Enter));
-
-    // Then: AppState flipped, file persisted, read_effective matches
-    assert!(!app.settings_hashline_edit());
-    let effective = read_effective_hashline_edit(&path).expect("reread effective");
-    assert!(!effective);
+    app.handle_key(key(KeyCode::Down));
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(
+        load_config_from_file(&path)
+            .expect("draft unchanged")
+            .edit
+            .mode,
+        EditMode::Auto
+    );
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(
+        load_config_from_file(&path)
+            .expect("saved choice")
+            .edit
+            .mode,
+        EditMode::Replace
+    );
     let row = app
         .settings_editor_rows()
         .into_iter()
-        .find(|row| row.setting_id == "hashline_edit")
+        .find(|row| row.setting_id == "edit.mode")
         .expect("row");
-    assert_eq!(row.effective_value.as_deref(), Some("false"));
+    assert_eq!(row.effective_value.as_deref(), Some("replace"));
     assert!(row.editable);
 
     // The startup preference persists without changing the active session.
@@ -703,7 +642,7 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
         assert_eq!(loaded.runtime.yolo, enabled);
         assert!(!app.yolo_mode());
     }
-    app.bind_settings_project_config(&path, false, compaction, true, true, true, false);
+    app.bind_settings_project_config(&path, compaction, true, true, true, false);
     assert_eq!(
         app.settings_editor_rows()
             .into_iter()
@@ -724,16 +663,20 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
     exercise_typed_settings_drafts(&mut app, &path);
 
     // When: write another value via backend and re-bind from read_effective
-    write_project_hashline_edit(&path, true).expect("write true");
-    let reloaded = read_effective_hashline_edit(&path).expect("reload");
-    app.bind_settings_project_config(&path, reloaded, compaction, true, true, true, false);
-    assert!(app.settings_hashline_edit());
+    write_project_setting_value(&path, "edit.mode", "apply_patch").expect("write edit mode");
+    app.bind_settings_project_config(&path, compaction, true, true, true, false);
     let row = app
         .settings_editor_rows()
         .into_iter()
-        .find(|row| row.setting_id == "hashline_edit")
+        .find(|row| row.setting_id == "edit.mode")
         .expect("row after rebind");
-    assert_eq!(row.effective_value.as_deref(), Some("true"));
+    assert_eq!(row.effective_value.as_deref(), Some("apply_patch"));
+    app.settings_editor_selected = edit_index;
+    app.settings_editor_reset_selected();
+    assert_eq!(
+        load_config_from_file(&path).expect("reset mode").edit.mode,
+        EditMode::Auto
+    );
 }
 
 fn exercise_typed_settings_drafts(app: &mut AppState, path: &std::path::Path) {

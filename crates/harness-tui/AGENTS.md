@@ -37,6 +37,16 @@ submit normally when idle; tagged or attached drafts fall back to queueing
 during an active turn. Steering rows stay inside the running activity in output
 order; a message that misses its turn starts a turn of its own.
 
+## Monitor presentation
+
+A monitor call is a single inline transcript row (`Monitor <description> ·
+<command>`) with no output disclosure; failures are viewer-only like other inline
+rows. Running monitors stay out of the tasks pane and the still-running watchers
+and show only in the watching segment of the row under the composer. The parent
+call supplies the label; `MonitorState` marks muted monitors until resume or task
+completion. The segment shows labels, elapsed time and mute counts in at most 48
+cells, with an ASCII glyph fallback.
+
 ## ANTI-PATTERNS
 
 - Do not perform coordinator work from renderers or view models; repeated projection/render calls must be pure.

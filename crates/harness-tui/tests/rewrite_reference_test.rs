@@ -448,7 +448,7 @@ fn recorded_terminal_journeys_match_reference_cells_and_intents() -> Result {
         )?;
     } else {
         if !original && current_surface::recording() {
-            current_settings::Contract::refresh_binding()?;
+            current_settings::Contract::record(&r.frames)?;
         }
         let current = if original {
             None

@@ -255,3 +255,16 @@ pub(super) fn restore_tool_timing(
         }
     }
 }
+pub(super) fn restore_task_timing(
+    events: &[EventEnvelopeV1],
+    tasks: &mut BTreeMap<String, OrchestrationTaskRow>,
+) {
+    for task in tasks.values_mut() {
+        if let Ok(index) = events.binary_search_by_key(&task.first_seq, |event| event.seq) {
+            task.first_mono_ms = events[index].mono_ms;
+        }
+        if let Ok(index) = events.binary_search_by_key(&task.last_seq, |event| event.seq) {
+            task.last_mono_ms = events[index].mono_ms;
+        }
+    }
+}

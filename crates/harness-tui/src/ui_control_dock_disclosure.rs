@@ -66,6 +66,7 @@ pub(super) fn render_control_dock_disclosure(
         return;
     }
 
+    let area = reserve_monitor_footer(frame, area, app, theme);
     let background = app.active_background_task_count();
     let foreground_shortcuts = !app.interrupt_hint_visible() || turn;
     let compact = area.width <= theme.live_shell.breakpoints.minimum.width;
@@ -187,6 +188,35 @@ pub(super) fn render_control_dock_disclosure(
     }
 }
 
+fn reserve_monitor_footer(frame: &mut Frame, area: Rect, app: &AppState, theme: &Theme) -> Rect {
+    let Some(watching) = super::monitor_footer_segment(app, theme) else {
+        return area;
+    };
+    let watching_width = u16::try_from(super::display_width(&watching)).unwrap_or(u16::MAX);
+    let hint_width = area.width.saturating_sub(watching_width.saturating_add(2));
+    if hint_width < 32 {
+        return area;
+    }
+    frame.render_widget(
+        Paragraph::new(watching)
+            .style(
+                Style::default()
+                    .bg(theme.surface.canvas)
+                    .fg(theme.status.info),
+            )
+            .alignment(Alignment::Right),
+        Rect::new(
+            area.right().saturating_sub(watching_width),
+            area.y,
+            watching_width,
+            1,
+        ),
+    );
+    Rect {
+        width: hint_width,
+        ..area
+    }
+}
 fn width(line: &Line<'_>) -> usize {
     // Preserve legacy candidate priority for Unicode labels. Painting uses terminal cells.
     line.spans

@@ -51,7 +51,6 @@ thread_local! {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingSettingsProjectConfig {
     pub path: PathBuf,
-    pub hashline_edit: bool,
     pub compaction_enabled: bool,
     pub compaction_auto_retry_overflow: bool,
     pub compaction_structured_summary_contract: bool,
@@ -160,7 +159,6 @@ pub fn set_pending_live_launch_metadata(metadata: LaunchMetadata) {
 /// Stage project runtime config for the next live AppState so settings editor can persist.
 pub fn set_pending_settings_project_config(
     path: PathBuf,
-    hashline_edit: bool,
     compaction_enabled: bool,
     compaction_auto_retry_overflow: bool,
     compaction_structured_summary_contract: bool,
@@ -169,7 +167,6 @@ pub fn set_pending_settings_project_config(
 ) {
     let pending = PendingSettingsProjectConfig {
         path,
-        hashline_edit,
         compaction_enabled,
         compaction_auto_retry_overflow,
         compaction_structured_summary_contract,

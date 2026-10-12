@@ -167,7 +167,6 @@ pub(super) fn format_still_running(watchers: LiveTurnWatchers) -> String {
     let mut kinds = Vec::with_capacity(5);
     for (count, noun) in [
         (watchers.commands, "command"),
-        (watchers.monitors, "monitor"),
         (watchers.loops, "loop"),
         (watchers.subagents, "subagent"),
         (watchers.workflows, "workflow"),

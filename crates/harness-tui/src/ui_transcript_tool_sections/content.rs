@@ -30,6 +30,7 @@ pub(super) fn populate(
             | "user.question"
             | "question"
             | "eval"
+            | "monitor"
     );
     let header = &mut row.header;
     let blocks = &mut row.detail_blocks;
@@ -102,6 +103,7 @@ pub(super) fn populate(
         }
         "background_output" => (background_output_tool_title(tool), Some("↻")),
         "background_cancel" => (background_cancel_tool_title(tool), Some("✕")),
+        "monitor" => (monitor_tool_title(tool), None),
         "plan_enter" => (plan_enter_tool_title(tool), Some("⊕")),
         "plan_exit" => (plan_exit_tool_title(tool), Some("⊖")),
         "invalid" => (invalid_tool_title(tool), Some("!")),
@@ -308,6 +310,12 @@ pub(super) fn subtitle(
                 .map(|path| format!("in {path}"))
         }
         "fs.read" | "read" => read_tool_subtitle(tool),
+        // The source, in the same dim text as other inline rows; no output body.
+        "monitor" => tool_summary_string(&tool.args_summary, &["command"]).or_else(|| {
+            let event = tool_summary_string(&tool.args_summary, &["event"]);
+            tool_path_display(tool)
+                .map(|path| format!("{} {path}", event.as_deref().unwrap_or("create")))
+        }),
         "fs.ls" | "list" => (tool.status == ToolCallDisplayStatus::Succeeded)
             .then(|| tool_entry_count(tool))
             .flatten()
@@ -531,4 +539,18 @@ fn tool_entry_count(tool_call: &crate::app::ToolCallEntry) -> Option<u64> {
         }
     }
     None
+}
+
+fn monitor_tool_title(tool: &ToolCallEntry) -> String {
+    if tool_summary_string(&tool.args_summary, &["action"]).as_deref() == Some("rearm") {
+        return tool_summary_string(&tool.args_summary, &["task_id"]).map_or_else(
+            || "Rearm monitors".into(),
+            |id| format!("Rearm monitor {id}"),
+        );
+    }
+    format!(
+        "Monitor {}",
+        tool_summary_string(&tool.args_summary, &["description", "command", "path"])
+            .unwrap_or_default()
+    )
 }

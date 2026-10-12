@@ -25,7 +25,7 @@ fn ids() -> Vec<String> {
     SIZES
         .into_iter()
         .flat_map(|(width, height)| {
-            ["dialog", "selected"]
+            ["dialog", "selected", "populated", "activated"]
                 .map(|state| format!("{state}-settings-{width}x{height}-reduced-0ms"))
         })
         .collect()
@@ -51,6 +51,31 @@ pub(super) struct Contract {
 }
 
 impl Contract {
+    pub(super) fn record(frames: &[Value]) -> Result {
+        let ids = ids();
+        let settings: Vec<_> = frames
+            .iter()
+            .filter(|frame| {
+                frame["id"]
+                    .as_str()
+                    .is_some_and(|id| ids.iter().any(|expected| expected == id))
+            })
+            .collect();
+        if settings.len() != ids.len() {
+            return Err("current settings capture coverage differs".into());
+        }
+        let bytes = settings
+            .iter()
+            .map(|frame| frame.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        fs::write(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(FIXTURE),
+            bytes,
+        )?;
+        Self::refresh_binding()
+    }
     pub(super) fn refresh_binding() -> Result {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let bytes = fs::read(root.join(FIXTURE))?;

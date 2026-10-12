@@ -457,7 +457,6 @@ impl AppState {
         if let Some(settings_config) = take_pending_settings_project_config() {
             state.bind_settings_project_config(
                 settings_config.path,
-                settings_config.hashline_edit,
                 settings_config.compaction_enabled,
                 settings_config.compaction_auto_retry_overflow,
                 settings_config.compaction_structured_summary_contract,

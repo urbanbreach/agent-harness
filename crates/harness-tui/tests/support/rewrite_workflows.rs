@@ -98,14 +98,13 @@ impl Recorder {
         )?;
         DurableMemoryStore::for_runtime(&runtime_dir)
             .put("terminal", "Use graphemes and display cells.")?;
-        fs::write(root.join("settings.json"), "{\"hashline_edit\":false}\n")?;
+        fs::write(root.join("settings.json"), r#"{"edit":{"mode":"replace"}}"#)?;
         for command in ["view-plan", "settings"] {
             let mut j = Journey::new(false);
             j.app.set_file_mention_workspace_root_for_test(root.into());
             j.app.set_storage_data_dir(data_dir.clone());
             j.app.bind_settings_project_config(
                 root.join("settings.json"),
-                false,
                 true,
                 false,
                 false,
@@ -116,17 +115,21 @@ impl Recorder {
             j.key(K::Enter, M::NONE);
             if command == "settings" {
                 j.key(K::Char('/'), M::NONE);
-                j.text("hashline_edit");
+                j.text("edit.mode");
                 j.key(K::Enter, M::NONE);
             }
             self.frame(&format!("populated-{command}"), &mut j)?;
             j.key(K::Enter, M::NONE);
+            if command == "settings" {
+                j.key(K::Down, M::NONE);
+                j.key(K::Enter, M::NONE);
+            }
             self.frame(&format!("activated-{command}"), &mut j)?;
             if command == "settings" {
                 let written: serde_json::Value =
                     serde_json::from_str(&fs::read_to_string(root.join("settings.json"))?)?;
                 assert_eq!(
-                    written["hashline_edit"], true,
+                    written["edit"]["mode"], "apply_patch",
                     "settings edit did not persist"
                 );
             }

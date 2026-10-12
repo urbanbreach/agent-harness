@@ -60,6 +60,33 @@ impl TaskPaneRow {
 }
 
 impl AppState {
+    pub(crate) fn background_task_title(&self, task: &super::OrchestrationTaskRow) -> String {
+        task.parent_tool_call_id
+            .as_deref()
+            .and_then(|id| {
+                self.activities
+                    .iter()
+                    .flat_map(|activity| &activity.tool_calls)
+                    .find(|tool| tool.tool_call_id == id)
+            })
+            .and_then(|tool| serde_json::from_str::<serde_json::Value>(&tool.args_summary).ok())
+            .and_then(|args| {
+                ["description", "command", "path"].iter().find_map(|key| {
+                    args.get(key)
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|value| !value.trim().is_empty())
+                        .map(str::to_owned)
+                })
+            })
+            .unwrap_or_else(|| task.task_id.clone())
+    }
+    /// Running monitors; they appear only in the watching segment under the composer.
+    pub(crate) fn running_monitors(&self) -> Vec<super::OrchestrationTaskRow> {
+        self.orchestration_visible_rows()
+            .into_iter()
+            .filter(|row| row.queue_key.as_deref() == Some("monitor") && !row.state.is_terminal())
+            .collect()
+    }
     pub(crate) fn task_pane_layout(&self, area: Rect) -> TaskPaneLayout {
         let query = self.tasks_pane.query.has_bar();
         let height = area.height.saturating_sub(u16::from(query));
@@ -140,25 +167,7 @@ impl AppState {
             .filter(|task| task.queue_key.as_deref() == Some("command"))
         {
             if self.tasks_pane.show_done || !task.state.is_terminal() {
-                let title = task
-                    .parent_tool_call_id
-                    .as_deref()
-                    .and_then(|id| {
-                        self.activities
-                            .iter()
-                            .flat_map(|activity| &activity.tool_calls)
-                            .find(|tool| tool.tool_call_id == id)
-                    })
-                    .and_then(|tool| {
-                        serde_json::from_str::<serde_json::Value>(&tool.args_summary).ok()
-                    })
-                    .and_then(|args| {
-                        args.get("description")
-                            .or_else(|| args.get("command"))
-                            .and_then(serde_json::Value::as_str)
-                            .map(str::to_owned)
-                    })
-                    .unwrap_or_else(|| task.task_id.clone());
+                let title = self.background_task_title(&task);
                 items.push(TaskPaneRow {
                     id: task.task_id,
                     group: "Tasks",
