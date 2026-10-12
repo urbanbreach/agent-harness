@@ -1,7 +1,9 @@
 # Native tools
 
-The replacement registry contains the native tools below. Configured MCP
-servers add their helper operations and discovered tools.
+`coordinator_registry_with_skills` registers the tools below on Linux. This is
+the base registry, not the tool list advertised to every model. Agent toolsets,
+permission rules, eval routing, and edit mode can reduce that list. Configured
+MCP servers add their helper operations and discovered tools.
 
 The coordinator checks an agent's toolset and permission rules before running a
 tool. Calls share the run's concurrency limit. Tools that wait for child work
@@ -9,25 +11,26 @@ release that capacity. Cancellation waits for tool cleanup before shutdown.
 
 | Tool | Permission | Behavior |
 | --- | --- | --- |
-| `read` | `read` | Read bounded UTF-8 text with line/hash anchors, a PNG, JPEG, GIF, or WebP image, or a retained PDF artifact. |
-| `list` | `read` | List a directory in name order. |
-| `glob`, `grep` | `read` | Find paths or text with ignore-file support; skip files that need separate read approval. |
+| `read` | `read` | Read UTF-8 text (1-based offset, at most 2,000 lines and 64 KiB before coordinator limits), a PNG, JPEG, GIF, or WebP image, or a retained PDF artifact. Hashline mode adds line/hash anchors. |
+| `list` | `read` | List up to 1,000 immediate directory entries in name order. |
+| `glob` | `read` | Find paths with ignore-file support, newest first. It lists names without reading file contents. Default limit 100, accepted range 1 through 1,000. |
+| `grep` | `read` | Search UTF-8 contents with ignore-file support; skip files that need separate read approval. Default limit and head limit 100, accepted range 1 through 1,000; context defaults to 0 and accepts up to 64 lines. |
 | `ast_grep_search`, `ast_grep_replace` | `read`, plus `edit` when applying | Structural search, previews, and checked rewrites using the installed ast-grep CLI. See [structural edits](ast-grep-replace-safety-gate.md). |
 | `lsp` | `lsp` and `read` | Query an installed language server for symbols, definitions, references, hover, call hierarchy, and diagnostics. See [language tools](lsp.md). |
 | `lsp.rename` | `lsp`, `read`, plus `edit` when applying | Preview or apply a semantic rename with path approvals, diffs and undo. |
 | `write`, `edit` | `edit` | Create or edit UTF-8 files through coordinator-owned mutation checks. |
-| `apply_patch` | `edit` | Apply add, update, or delete patches. Moves remain unsupported. |
+| `apply_patch` | `edit` | Apply add, update, or delete patches to at most 256 files, sequentially. Moves remain unsupported. |
 | `bash` | `bash` | Execute an approved command with bounded output, process-group cleanup and optional filesystem confinement. See [shell commands](shell.md). |
-| `monitor` | `bash` for commands; `read` for paths | Watch command lines or a file condition in a coordinator background task. See [monitor](monitor.md) for events, limits, and rearm. |
+| `monitor` | `bash` for commands; `read` for paths; `task` for rearm | Watch command lines or a file condition in a coordinator background task. See [monitor](monitor.md) for events, limits, and rearm. |
 | `webfetch` | `webfetch` | Fetch bounded text, images, or binary artifacts. See [web fetching](web.md) for limits. |
 | `websearch`, `codesearch` | Tool ID, matched against the query | Search public pages or code documentation through Exa. See [web tools](web.md). |
 | `github.issue`, `github.pull_request` | Tool ID, matched against `owner/repo:operation` | Read and update issues or pull requests. See [GitHub tools](github.md). |
 | `question` | `question` | Request an operator answer through the coordinator. |
-| `skill` | `skill` | Load configured local skill instructions. Tool hints do not grant permissions. |
-| `spawn_subagent` | `task` | Start a child from a resolved definition, optionally resuming a completed conversation. |
-| `get_command_or_subagent_output`, `wait_commands_or_subagents` | `task` | Read output or wait for owned children, background commands, and monitors. |
-| `kill_command_or_subagent` | `task` | Cancel an owned child, background command, or monitor. |
-| `send_subagent_message` | `task` | Steer, queue a message for, or interject into an authorized agent. |
+| `skill` | `skill` | Load configured local skill instructions. Arguments are limited to 16 KiB; expanded instructions to 1 MiB. Tool hints do not grant permissions. |
+| `spawn_subagent`, `task` | `spawn_subagent`, plus `task` matched against the resolved agent type | Start a child from a resolved definition, optionally resuming a completed conversation. `task` uses `run_in_background` instead of `background`. |
+| `get_command_or_subagent_output`, `get_task_output` | `get_command_or_subagent_output` | Read owned child, background command, or monitor output. |
+| `wait_commands_or_subagents`, `wait_tasks` | `wait_commands_or_subagents` | Wait for owned children, background commands, and monitors. |
+| `kill_command_or_subagent`, `kill_task` | `kill_command_or_subagent` | Cancel an owned child, background command, or monitor. |
 | `eval` | `eval` (allowed by default), plus each nested call | Persistent code cells, parallel tool composition, structured output, and background execution. See [eval](eval.md). |
 | `todoread` | `task` | Read the current run's journaled todo list. |
 | `todowrite` | `task` and `todowrite` | Replace the validated todo list. |
@@ -37,17 +40,46 @@ Paths outside the workspace also require `external_directory` approval. Native
 edits cannot modify managed session storage or the permission-grant file. These
 checks are application policy, not an operating-system sandbox.
 
+Resolved CLI subagent settings replace the base registrations. Disabling spawning
+removes `spawn_subagent` and `task`, but leaves output, wait, and kill tools
+available for commands. Enabling active-agent messaging adds
+`send_subagent_message`, with permission key `send_subagent_message` and
+coordinator routing checks. It is absent from the default base registry.
+
+`bash` and command monitors require Bash. Structural tools require `ast-grep`
+on `PATH`; LSP queries and rename require a language server executable. Eval
+requires the selected language runtime. Search requires access to the configured
+Exa MCP endpoint. GitHub mutations require a token; public reads do not. Skill
+loading requires a readable local skill in the configured catalog. See the linked
+tool pages for setup and per-tool limits.
+
 ## Edits and output
 
 Edits to existing files require a current read fingerprint. The coordinator keeps
 bounded undo baselines and refuses to undo over a later external change. File
-operations preserve existing permissions. Patch moves are unsupported, as in the original backend. Semantic rename supports
-file moves through `lsp.rename`.
+operations preserve existing permissions. Patch moves are unsupported. Semantic
+rename supports file moves through `lsp.rename`.
+
+`edit.mode` accepts `auto` (the default), `apply_patch`, `replace`, or `hashline`.
+`edit.model_variants` overrides the mode by case-insensitive model substring;
+the longest matching key wins. Auto selects patches for GPT, Codex, and numbered
+o-series model names; exact replacement for Kimi, MiMo, MiniMax, DeepSeek,
+StepFun, and GLM Flash; hashline otherwise. If the preferred editing tool is
+unavailable, resolution uses the available patch or replacement tool.
+
+Patch mode advertises `apply_patch` instead of `edit` and `write`. Replace and
+hashline modes advertise `edit` and `write` instead of `apply_patch`. Replace
+mode uses `oldString`, `newString`, and optional `replaceAll`. Hashline mode
+also accepts up to 1,000 line edits with `replace`, `append`, or `prepend`,
+`pos`/`end` anchors, and `lines`. Reads show `LINE#HASH` anchors only in
+hashline mode. Each resulting UTF-8 file must fit within 8 MiB.
 
 Tool results pass through the coordinator's redactor before storage and delivery.
-Display text is capped at 50 KiB or 2,000 lines. Larger output goes into a redacted
-artifact, with an 8 MiB retained-output limit. Structured tool fields reach the provider together with display text and survive
-resume. Raw provider fragments remain transient. Settled assistant content is
+Display text is shortened at 50 KiB or the 2,001st newline. Larger output goes
+into a redacted artifact, with an 8 MiB retained-output limit. Structured fields
+survive resume; most tools send them alongside display text. Subagent tools and
+their aliases send display text to the provider without the structured wrapper.
+Raw provider fragments remain transient. Settled assistant content is
 retained for conversation continuity; support exports omit provider reasoning.
 
 Image results reach the provider through the same attachment path as prompt

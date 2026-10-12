@@ -34,11 +34,12 @@ agent-harness/
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Change runtime coordination | `crates/harness-core/src/coord/` | Coordinator owns transitions and authority |
-| Change durable history | `crates/harness-core/src/event/`, `store.rs`, `session/`, `proj/` | Append-only events feed replay projections |
+| Change runtime coordination | `crates/harness-core/src/coord.rs`, `crates/harness-core/src/coord/` | Coordinator owns transitions and authority |
+| Change durable history | `crates/harness-core/src/event.rs`, `crates/harness-core/src/event/`, `crates/harness-core/src/store.rs`, `crates/harness-core/src/session/`, `crates/harness-core/src/proj/` | Append-only events feed replay projections |
 | Add or modify a CLI command | `crates/harness/src/` | `lib.rs` owns Clap routing; `main.rs` only calls `run_os()` |
 | Add a provider/backend | `crates/harness-providers/src/` | Normalize backend protocol into common stream events |
 | Add or modify tools | `crates/harness-tools/src/` | Registry, validation, execution, edit, LSP, and MCP boundaries |
+| Change code kernels | `crates/harness-eval/src/` | Persistent language sessions; host callbacks cross coordinator policy |
 | Change terminal behavior | `crates/harness-tui/src/` | Runtime I/O, state, view model, rendering, and terminal adapters |
 | Add deterministic fixtures | The owning crate's `tests/` directory | Use existing local provider and tool fixtures; shared temporary workspaces live in `harness-testkit` |
 | Run scoped test suites | `scripts/test-lanes.sh` | Canonical lane runner; gated modes fail closed |
@@ -49,13 +50,13 @@ Reference centrality was not measured; `Refs` records only that limitation.
 
 | Symbol | Type | Location | Refs | Role |
 |--------|------|----------|------|------|
-| `CoordinatorHandle` / `spawn_coordinator` | struct / function | `crates/harness-core/src/coord/` | unmeasured | Async command API and runtime integration hub |
-| `EventEnvelopeV1` / `EventV1` | types | `crates/harness-core/src/event/` | unmeasured | Versioned durable history schema |
-| `HarnessConfig` | struct | `crates/harness-core/src/config/` | unmeasured | Runtime configuration hub |
+| `CoordinatorHandle` / `spawn_coordinator` | struct / function | `crates/harness-core/src/coord.rs` | unmeasured | Async command API and runtime integration hub |
+| `EventEnvelopeV1` / `EventV1` | struct / enum | `crates/harness-core/src/event.rs` | unmeasured | Versioned durable history schema |
+| `HarnessConfig` | struct | `crates/harness-core/src/config.rs` | unmeasured | Runtime configuration hub |
 | `run` / `run_os` | functions | `crates/harness/src/lib.rs` | unmeasured | In-process and operating-system CLI entry points |
-| `Provider` / `ProviderStreamEvent` | trait / enum | `crates/harness-providers/src/lib.rs` | unmeasured | Backend contract and normalized stream vocabulary |
+| `Provider` / `ProviderStreamEvent` | trait / enum | `crates/harness-providers/src/lib.rs`, `crates/harness-providers/src/types.rs` | unmeasured | Backend contract and normalized stream vocabulary (re-exported by `lib.rs`) |
 | `coordinator_registry_with_skills` | function | `crates/harness-tools/src/lib.rs` | unmeasured | Native tool registry; runtime configuration adds MCP tools |
-| `AppState` / `render_app` | struct / function | `crates/harness-tui/src/app.rs`, `ui.rs` | unmeasured | UI state aggregate and pure frame composition |
+| `AppState` / `render_app` | struct / function | `crates/harness-tui/src/app.rs`, `crates/harness-tui/src/ui.rs` | unmeasured | UI state aggregate and pure frame composition |
 | `run_tui_with_options` | function | `crates/harness-tui/src/runtime.rs` | unmeasured | Public terminal runtime entry |
 | `TestWorkspace` | struct | `crates/harness-testkit/src/workspace.rs` | unmeasured | Isolated temporary test workspace |
 
@@ -88,8 +89,8 @@ Reference centrality was not measured; `Refs` records only that limitation.
   `skills/`, `prompts/`, project config and remembered permission grants. After
   successful sign-in, Harness may create a minimal user config with create-new
   semantics if neither user config exists and `HARNESS_CONFIG` and
-  `HARNESS_CONFIG_CONTENT` are unset. This starter is the only config write
-  Harness performs. Startup
+  `HARNESS_CONFIG_CONTENT` are unset. The TUI settings editor also writes
+  supported project settings through `harness_core::config`. Startup
   creates no new home artifacts beyond the existing session directory. Library
   code takes injected paths; tests use temporary home roots.
 

@@ -2,15 +2,16 @@
 
 ## Fetching
 
-`webfetch` fetches text, images, PDFs, and other binary responses over HTTP or HTTPS. Pass `url` and an
-optional `format` of `markdown`, `text`, or `html`. The default is `markdown`.
-`timeout` is in seconds and clamps to 1 through 120, with a default of 30.
+`webfetch` fetches text, images, PDFs, and other binary responses over HTTP or
+HTTPS. Pass `url` and an optional `format` of `markdown`, `text`, or `html`.
+The default is `markdown`. `timeout` is in seconds and clamps to 1 through 120,
+with a default of 30. The deadline covers fetching and conversion.
 
 The coordinator checks the submitted URL and its normalized form before the
-request. Embedded credentials and other URL schemes are rejected. Redirects are
-limited to ten. Each destination must pass the current `webfetch` policy before
-any request reaches it. A destination that needs separate approval must be
-submitted as a new call. Redirects cannot override a deny rule.
+request. Embedded credentials and other URL schemes are rejected. URL fragments
+are removed. Redirects are limited to ten. Each destination must pass the current
+`webfetch` policy before any request reaches it. A destination that needs separate
+approval must be submitted as a new call. Redirects cannot override a deny rule.
 
 The response limit is 5 MiB. Declared lengths and streamed bytes are checked.
 Gzip, Brotli, and deflate responses are decoded by `reqwest`; the streamed limit
@@ -30,11 +31,16 @@ any conversion already in progress.
 
 PNG, JPEG, GIF, and WebP responses become attachments. The coordinator checks
 their metadata, headers, digests, and known credentials before retaining private
-blobs. Journal records do not contain payload bytes. PDFs and other binary responses are retained as private, digest-named artifacts. Results explicitly state that contents were not extracted; provider requests receive the artifact reference rather than the binary payload. Detected credentials reject the entire artifact before any write. This byte scan does not inspect compressed or encrypted document contents.
+blobs. Journal records do not contain payload bytes. PDFs and other binary
+responses are retained as private, digest-named artifacts. Results state that
+contents were not extracted; provider requests receive the artifact reference
+rather than the binary payload. Detected credentials reject the entire artifact
+before any write. This byte scan does not inspect compressed or encrypted
+document contents.
 
-The deterministic HTTP fixture covers conversion, images, binary and PDF retention, credential rejection, character-set decoding,
-gzip decoding and expansion limits, redirects, permission denial, error handling,
-and cancellation.
+The deterministic HTTP fixture covers conversion, images, binary and PDF
+retention, credential rejection, character-set decoding, gzip decoding and
+expansion limits, redirects, permission denial, error handling, and cancellation.
 
 ## Search
 
@@ -45,7 +51,7 @@ within 4,096 bytes.
 
 | Tool | Options |
 | --- | --- |
-| `websearch` | `numResults`: 1–20, default 8. `type`: `auto`, `fast`, or `instant`. `livecrawl`: `fallback` or `preferred`. `contextMaxCharacters`: 1–50,000, default 10,000. |
+| `websearch` | `numResults`: 1 through 20, default 8. `type`: `auto` (default), `fast`, or `instant`. `livecrawl`: `fallback` or `preferred`. `contextMaxCharacters`: 1 through 50,000, default 10,000. Out-of-range numeric values fail rather than clamp. |
 | `codesearch` | `tokensNum`: default 5,000, clamped to 1,000–50,000. This is an approximate output budget of four characters per token. |
 
 Snake-case aliases are accepted for the numeric options. Search output includes
@@ -60,9 +66,11 @@ maps to `maxAgeHours: 0`; `fallback` uses the service default. Exa's current sea
 types replace the obsolete `deep` option. The current contract is documented in
 [Exa's MCP guide](https://exa.ai/docs/get-started/exa-mcp).
 
-Configure `integrations.remote_search` with `endpoint`, optional `auth_token`,
-`require_auth`, `timeout_secs`, `max_retries`, and `retry_backoff_ms`. Tokens use the
-`x-api-key` header. A required but missing token fails before making a request.
+Configure `integrations.remote_search` with `endpoint` (default
+`https://mcp.exa.ai/mcp`), optional `auth_token`, `require_auth` (default false),
+`timeout_secs` (default 30), `max_retries` (default 1), and `retry_backoff_ms`
+(default 250). Tokens use the `x-api-key` header. A required but missing token
+fails before making a request.
 Timeouts clamp to 1–120 seconds per attempt. Only HTTP 429 and 5xx responses are
 retried, up to five retries. Retry delays use `Retry-After` when available, otherwise
 the configured backoff, capped at five seconds. Cancellation interrupts that wait.
@@ -79,8 +87,8 @@ CLI environment values override file configuration:
 | Retries | `HARNESS_REMOTE_SEARCH_MAX_RETRIES` |
 | Backoff | `HARNESS_REMOTE_SEARCH_RETRY_BACKOFF_MS` |
 
-The opt-in external check passed MCP catalog discovery and both native searches
-against the public Exa service. Run it with:
+The opt-in external check exercises MCP catalog discovery and both native
+searches against the public Exa service. It requires network access. Run it with:
 
 ```bash
 HARNESS_MCP_LIVE_SIGNOFF=1 cargo nextest run --profile ci -p harness-tools \

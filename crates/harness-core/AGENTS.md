@@ -1,14 +1,17 @@
 # Core guide
 
 The coordinator owns scheduling, permissions, cancellation, lifecycle, and
-durable event appends. Workers submit results and intents through
-`CoordinatorHandle`. Replay, projections, and readiness are side-effect-free.
+durable event appends. Callers submit intents through `CoordinatorHandle`;
+workers return completions to the coordinator. Replay, projections, and readiness
+are side-effect-free.
 
 | Work | Source |
 | --- | --- |
 | Runtime and commands | `src/coord.rs`, `src/coord/` |
-| Event contracts and storage | `src/event.rs`, `src/event/`, `src/store.rs` |
+| Event contracts and storage | `src/event.rs`, `src/event/`, `src/store.rs`, `src/store/` |
 | Configuration | `src/config.rs`, `src/config/` |
+| Commands and monitors | `src/coord/commands.rs`, `src/coord/commands/` |
+| Edit-mode selection | `src/config/edit.rs`, `src/tool/edit_mode.rs` |
 | Replay and projections | `src/session/`, `src/proj/`, `src/transcript_projection/` |
 | Credentials and integrations | `src/auth/`, `src/integrations/` |
 | Platform enforcement | `src/sandbox/`, `src/process.rs` |

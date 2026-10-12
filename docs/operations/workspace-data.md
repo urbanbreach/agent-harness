@@ -1,8 +1,8 @@
 # Workspace memory, code index and edit attribution
 
 These commands use the working directory selected by `--cwd`. Add `--workspace
-DIR` after `memory`, `code-graph` or `attribution` to select another existing
-directory. Results are JSON.
+DIR` after `memory`, `code-graph`, `attribution`, or `worktree` to select another
+existing directory. Results are JSON.
 
 ## Memory
 
@@ -21,6 +21,12 @@ absent. Writes lock and atomically replace the store, retaining other writers'
 entries. Credential patterns are redacted before storage. Values are limited to
 64 KiB and the store to 4 MiB. A missing key or malformed store returns an error.
 
+`put` replaces an existing key. `search` matches keys and values with ASCII
+case folding; omitting its query lists all entries. Keys are trimmed, limited to
+1,024 bytes, and rejected when they contain controls or recognized credentials.
+Project storage keys are `v2-` followed by the 64-character BLAKE3 digest of the
+canonical absolute UTF-8 workspace path. Symlink aliases use the same key.
+
 ## Code index
 
 ```bash
@@ -31,15 +37,17 @@ harness code-graph query start_run --kind references
 ```
 
 The index lives at `<data-dir>/projects/<project-key>/code-graph-index.json`.
-Builds scan supported source files and honor ignore files. The index contains
-lexical symbol definitions, calls and references. It does not resolve types or
-imports. Use LSP queries when language-server resolution is needed.
+Builds scan `.rs`, `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, and `.go` files and
+honor ignore files. They skip `target`, `node_modules`, `vendor`, `dist`, and
+`build` directories and do not follow symlinks. The index contains lexical symbol
+definitions, calls and references. It does not resolve types or imports. Use LSP
+queries when language-server resolution is needed.
 
 Queries support `symbol_def`, `callers`, `callees` and `references`. Call queries
 exclude plain references. Queries never rebuild the index; a missing or invalid
 index returns a structured unavailable result and a nonzero exit code. Rebuilding
 replaces stale symbols atomically. Limits are 4,096 source files, 1 MiB per file,
-32,768 symbols, 65,536 edges and 16 MiB of serialized index data.
+32,000 symbols, 64,000 edges and 16 MiB of serialized index data.
 
 ## Edit attribution
 
@@ -63,10 +71,12 @@ content. Files outside the run workspace have no attribution entry.
 
 ## In-session input queue
 
-The live TUI still queues follow-up input when Enter is pressed during a running
-turn. Steering input uses Alt+i or Ctrl+Alt+Enter, and interrupted-turn recovery
-can restore queued input. These runtime/composer operations are separate from the
-removed file-backed `prompt-queue` CLI; no command reads or drains its old store.
+During a running turn, Enter steers plain text into that turn. Drafts with file,
+agent, or resource tags or attachments queue instead. Alt+i or Ctrl+Alt+Enter
+queues a follow-up for after the turn. Ctrl+Enter, Ctrl+Shift+Enter, or Alt+r
+cancels and replaces the active prompt. Interrupted-turn recovery can restore
+queued input. These composer operations are separate from the removed file-backed
+`prompt-queue` CLI; no command reads or drains its old store.
 
 ## Worktrees
 

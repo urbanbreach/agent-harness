@@ -1,8 +1,8 @@
 # Core tests
 
 Coordinator cases live beside the implementation in `src/coord/*_tests.rs`.
-Integration targets here exercise credentials, catalog transport, ACP, updates,
-plugins, workspace data, and operator boundaries through public APIs.
+Integration targets here exercise credentials, catalog transport, ACP, foreign
+sessions, subagent contracts, workspace data, and operator boundaries through public APIs.
 
 Use temporary directories, `FakeClock`, scripted providers, and explicit
 notifications. A bounded event wait should identify the owning request and

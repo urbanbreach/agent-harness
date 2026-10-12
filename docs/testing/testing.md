@@ -1,8 +1,8 @@
 # Testing
 
 Use nextest. Backend tests inject providers, clocks, environment lookups and
-workspaces. HTTP fixtures listen only on loopback. Real processes, public services,
-and terminal captures have separate opt-in lanes.
+workspaces. HTTP fixtures listen on loopback. Eval checks may start local
+interpreters. Native signoff, public services and PTY captures have separate lanes.
 
 Before adding a test, find the existing behavior check and extend it when possible.
 Start with a failing assertion for a plausible regression, make it pass, and stop.
@@ -10,9 +10,12 @@ Do not add coverage for getters, derived types, delegation, or impossible states
 
 ## Everyday checks
 
-Install Node.js 24 or newer on `PATH` for the JavaScript eval tests. The eval
-lane also requires the configured Python, Ruby, and Julia interpreters; missing
-requirements fail the lane. No npm packages are needed for the eval runtime.
+Install Node.js 24 or newer on `PATH` for JavaScript eval tests and Python for
+Python eval tests. `scripts/test-lanes.sh eval` opts into the ignored kernel and
+tool-composition tests with `HARNESS_EVAL_SIGNOFF=1`. These use JavaScript and
+Python by default. Set `HARNESS_EVAL_LANGUAGES=js,py,rb,jl` to include Ruby and
+Julia, with those interpreters installed. Missing runtimes fail the selected
+checks. No npm packages are needed for the eval runtime.
 
 ```bash
 python3 scripts/check-test-suite-gates.py --format
@@ -21,9 +24,10 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo nextest run --profile ci --workspace --all-features
 ```
 
-The format gate checks backend Rust without traversing the preserved TUI modules.
-It also enforces files below 500 lines, injected process state, bounded event waits,
-explicit native/live opt-in, snapshot ownership, and credential-free cassettes.
+The format gate checks backend Rust without traversing the retained TUI modules.
+It requires backend files below 500 lines, rejects process-global environment and
+cwd mutation and sleeps in non-native tests, checks native/live opt-in code,
+verifies snapshot source paths and scans cassettes for credential-shaped values.
 Its parser checks run with `--self-test`; `--json` provides a machine-readable report.
 
 Tests that discover configuration need an isolated Harness home to avoid loading
@@ -40,10 +44,11 @@ excludes performance, binary, live, PTY, and native visual targets. An explicit
 ## GitHub Actions
 
 `.github/workflows/ci.yml` runs on pushes, pull requests, and manual dispatches
-using Ubuntu 24.04. It runs both quality gates, workspace formatting and Clippy
-with warnings denied, locked development/release builds, deterministic nextest,
-serial testkit/TUI PTY lanes, CLI binary smoke, and the coverage ratchet. Rust
-comes from `rust-toolchain.toml`; Node.js 24 and Python 3.12 support eval and
+using Ubuntu 24.04. It runs test-suite, branding and release-script checks,
+workspace formatting and Clippy with warnings denied, locked development/release
+builds, deterministic nextest, serial testkit/TUI PTY lanes, CLI binary smoke and
+the coverage ratchet. Rust comes from `rust-toolchain.toml`; Node.js 24 and
+Python 3.12 support eval and
 subprocess fixtures. Gate scripts also require ripgrep. No Clang or Wild install
 is needed. JUnit reports, PTY visuals, coverage, and binaries are retained for
 seven days, including test artifacts on failure. The six-hour performance lane
@@ -103,7 +108,7 @@ MCP stdio, Git worktrees, reflinks, formatting, structural edits, filesystem
 confinement, executable replacement and a real language server. Missing native
 prerequisites fail the lane. Without the opt-in variable, tests return errors.
 
-CI runs the two CLI smoke cases with:
+CI runs all four CLI smoke cases with:
 
 ```bash
 HARNESS_BINARY_SIGNOFF=1 cargo nextest run --profile ci -p harness --test binary_smoke --ignore-default-filter
@@ -124,16 +129,19 @@ scripts/test-lanes.sh perf
 scripts/test-lanes.sh stress-offline --harness-bin target/release/harness
 ```
 
-`perf` runs the preserved release TUI performance tests and the backend loopback
-probe. The probe checks exact streamed output and durable completion, then records
-startup, idle CPU, streaming latency and peak resident memory. `stress-offline`
+`perf` runs all workspace tests selected by the release `perf` profile and the backend
+loopback probe with five repetitions. The probe checks exact streamed output and
+durable completion, then records startup, idle CPU, streaming latency and peak
+resident memory. `stress-offline`
 repeats that fixture twenty times. Both lanes also check 256 completed child
 sessions, retained descriptors and SIGINT cleanup through a local provider. These measurements do not predict network or
 model latency. See [the measured workloads](../performance/backend-rewrite-2026-09-26.md).
 
 Optional `scripts/test-lanes.sh coverage` uses cargo-llvm-cov with nextest and writes
 LCOV plus a line-coverage summary. A missing baseline is recorded on the first run;
-coverage is a diagnostic, not a reason to add low-value tests.
+the lane fails if line coverage, rounded to two decimal places, drops below
+`docs/testing/test-suite-coverage-baseline.txt`. Coverage is not a reason to add
+low-value tests.
 
 ## Offline CLI smoke
 
@@ -154,45 +162,46 @@ anything that needs the deterministic headless UI oracle:
 scripts/test-lanes.sh signoff-pty
 ```
 
-`signoff-pty` is a strict fail-closed lane (no soft `|| true` stages). Missing owners,
-missing `cargo`, stage failures, or dual-binary journey failures fail the run and write
-`pty-lane-verdict.txt`. Silent skip is forbidden.
+`signoff-pty` records every failed stage and returns a nonzero lane status. It
+continues after stage failures and writes `pty-lane-verdict.txt` under
+`signoff-pty/stages/harness_tui_happy_path_pty/artifacts/`. Missing prerequisites
+fail the lane rather than silently skipping it.
 
-This lane runs the PTY E2E tests single-threaded and writes manifest-backed visual evidence under
-the configured artifact root. Legacy committed harness-testkit PTY snapshots were removed during
-T5 slimming; current PTY evidence is generated under `target/pty-visual-artifacts/`, while retained
-committed snapshots are owned by harness-tui deterministic snapshot tests. The harness-tui PTY test
-target is fail-closed behind `HARNESS_TUI_PTY_SIGNOFF=1`, and its test binaries are excluded by the
-workspace nextest default filter, so any direct invocation must pass `--ignore-default-filter` to
-run real tests; without it nextest selects zero tests and exits non-zero. The signoff lane opts into
-the real PTY captures. Do not parallelize PTY signoff.
+The lane runs PTY tests single-threaded and sets `HARNESS_TUI_PTY_SIGNOFF=1`
+for the TUI owners. Many owner functions return without a capture when that
+variable is absent, so a direct test success without it is not signoff. The
+`pty_e2e` binary is excluded by the nextest default filter; direct commands need
+`--ignore-default-filter`. Testkit uses `HARNESS_VISUAL_ARTIFACT_DIR`, defaulting
+to `target/pty-visual-artifacts/`; recorded TUI owners use the stage directories
+listed below. Do not parallelize PTY signoff.
 
-Fail-closed stages (no `|| true`):
+Stages:
 
 | Stage | What it proves |
 |-------|----------------|
-| `pty_prerequisites` | owner files exist; `cargo` on `PATH` (missing owner = FAIL) |
+| `pty_prerequisites` | checks owner files, `cargo`, util-linux `script`, Node.js, npm and `/usr/bin/chromium`; missing prerequisites fail the lane |
 | `harness_testkit_pty_e2e` | testkit PTY E2E + visual artifact provenance |
 | `harness_tui_pty_e2e` | harness-tui PTY E2E under `HARNESS_TUI_PTY_SIGNOFF=1`, including reply-capable emulation and canonical P0-06 artifacts |
-| `harness_tui_p0_01_pty_recorded` | P0-01 full-surface dashboard round-trip: detach, open dashboard over the transcript, resize while owned, close, and restore the detached anchor display column and focus without losing the composer |
-| `harness_tui_p0_02_pty_recorded` | P0-02 dense transcript navigation, reflow, detached-append, and helper lifecycle PTY regression |
-| `harness_tui_p0_03_pty_recorded` | P0-03 boxed markdown, OSC-8, and event-driven streaming-fence PTY regression |
-| `harness_tui_p0_04_pty_recorded` | P0-04 persistent multiline, steering send, follow-up queue, cancel-and-replace, and malformed-input decoder-coherence PTY regression |
-| `harness_tui_p1_01_pty_recorded` | P1-01 slash-command palette with Tab text-accept and required-argument supply PTY regression |
-| `harness_tui_p1_02_pty_recorded` | P1-02 reply-capable native PTY journey for Commands -> Settings chrome, tabs, restoration, stale pointer input, six-cell close target, and 80x24/120x40/160x50 alignment |
-| `harness_tui_p1_03_pty_recorded` | serialized P1-03 native PTY owner for the staged startup reveal: first-seen identity/affordance/changelog ordering in every geometry, reduced-motion freeze on the complete frame, early CJK input during the reveal with double-width cell proof, and Unicode + Basic/Ascii artifacts at 80x24/120x40/160x50 |
-| `harness_tui_p1_04_pty_recorded` | serialized P1-04 native PTY owner for Unicode and Basic/Ascii capability variants, following/detached/resize-burst-final/reduced-motion states, and 80x24/120x40/160x50 artifacts |
+| `harness_tui_p0_01_pty_recorded` | dashboard round-trip restores the detached anchor and focus |
+| `harness_tui_p0_02_pty_recorded` | dense navigation, reflow, detached append and helper cleanup |
+| `harness_tui_p0_03_pty_recorded` | recorded markdown and event-driven streaming fence |
+| `harness_tui_p0_04_pty_recorded` | recorded multiline composer shortcuts |
+| `harness_tui_p1_01_pty_recorded` | slash-command completion and required arguments |
+| `harness_tui_p1_02_pty_recorded` | modal chrome at 80x24, 120x40 and 160x50 |
+| `harness_tui_p1_03_pty_recorded` | records startup-reveal terminal states under the lane-provided artifact directory |
+| `harness_tui_p1_04_pty_recorded` | records responsive-feedback terminal states under the lane-provided artifact directory |
 | `harness_tui_happy_path_pty` | compiled `harness` CLI mock happy path (`pty_happy_path_recorded`) |
-| `p0_06_xterm_tests` | xterm.js structured collector, canonical viewport, runtime-branding, and evidence contract tests in real Chromium |
+| `p0_06_xterm_dependencies` | installs the pinned QA npm dependencies |
+| `p0_06_xterm_tests` | runs `npm test --prefix scripts/qa` (all QA `*.test.mjs` files) |
 | `p1_02_xterm_tests` | dedicated JS owner for the shipped-binary P1-02 scenario, canonical close coordinates, and interaction contract |
 | `p1_03_xterm_tests` | dedicated JS owner for the P1-03 startup-reveal scenario, staged capture contract, and never-blocked input assertion |
 | `p1_04_xterm_tests` | dedicated JS owner for the P1-04 capability, resize ordering, structured-cell, and live-PTY resize contract |
-| `xterm_harness_binary` | validates the shipped Harness build before browser capture; each scenario rebuilds from the recorded clean tree, copies, pre-hashes, executes, and post-hashes an isolated tested binary |
+| `xterm_harness_binary` | builds `harness` before browser capture; each browser scenario separately builds and hashes the executable it runs |
 | `p0_06_xterm_80x24`, `p0_06_xterm_120x40`, `p0_06_xterm_160x50` | the compiled Harness mock TUI driven through a native PTY into xterm.js at each canonical size |
 | `p1_02_xterm_80x24`, `p1_02_xterm_120x40`, `p1_02_xterm_160x50` | `target/debug/harness` driven through util-linux `script` into Chromium+xterm.js; captures modal/tab/breadcrumb/footer states and keyboard/mouse restoration history at each canonical size |
-| `p1_03_xterm_80x24`, `p1_03_xterm_120x40`, `p1_03_xterm_160x50` | the exact compiled P1-03 integration-test owner executed in Chromium+xterm.js with the `p1-03-startup-reveal` unicode contract (welcome-complete and after-input captures including a CJK draft typed after the reveal settles; the sub-second transient frames are proven by the native PTY owner and the insta frame-sequence snapshots, which a browser harness cannot time) at each canonical size |
-| `p1_03_xterm_basic_ascii` | the same P1-03 owner executed with the `basic-ascii` contract (dumb terminal, no color, reduced motion): an ascii draft typed immediately after first paint dismisses the reveal and echoes in the composer |
-| `p1_04_xterm_80x24`, `p1_04_xterm_120x40`, `p1_04_xterm_160x50` | the shipped `harness tui --mock --deterministic` binary driven through util-linux `script` into Chromium+xterm.js with the P1-04 responsive-feedback contract at each canonical size |
+| `p1_03_xterm_80x24`, `p1_03_xterm_120x40`, `p1_03_xterm_160x50` | the copied P1-03 integration-test owner in Chromium+xterm.js; waits for the complete welcome surface, captures it, types a CJK draft and captures the composer |
+| `p1_03_xterm_basic_ascii` | the same owner at 120x40 with a dumb terminal, no color and reduced motion; types an ASCII draft after the `Beta` marker appears |
+| `p1_04_xterm_80x24`, `p1_04_xterm_120x40`, `p1_04_xterm_160x50` | the copied `p1_04_pty_recorded` integration-test owner driven through util-linux `script` into Chromium+xterm.js with the Unicode responsive-feedback contract; each journey ends its resize burst at 120x40 |
 
 The dedicated P1-02 owners can also be run directly:
 
@@ -207,11 +216,29 @@ node scripts/qa/web-terminal-visual-qa.mjs \
   --cols 120 --rows 40
 ```
 
-Repeat the browser command with `80 24` and `160 50` for the other canonical geometries. Prerequisites are Linux PTY support, `cargo`, Node.js 20 or newer with npm, util-linux `script`, and executable `/usr/bin/chromium`; `npm ci --prefix scripts/qa` installs the pinned local xterm.js/Playwright packages. The scenario opens Settings only through Commands, verifies Harness-owned frame/title, Runtime/TUI tabs, breadcrumb, shortcut footer, Tab/Shift+Tab, Escape restoration, stale outside input, and mouse-close restoration. Automated assertions establish interaction and evidence contracts; visual parity still requires reviewing the emitted screenshots.
+Repeat the browser command with `--cols 80 --rows 24` and `--cols 160 --rows 50`
+for the other sizes. Install the pinned xterm.js and Playwright packages with
+`npm ci --prefix scripts/qa`. Prerequisites are Linux PTY support, `cargo`,
+Node.js 20 or newer with npm, util-linux `script` and executable
+`/usr/bin/chromium`. The browser runner needs a clean source tree. Automated
+assertions check interaction and artifact contracts; review the PNGs for visual
+parity.
 
-Each P1-02 and P1-04 xterm stage writes into the lane's ignored `target/test-lanes/.../signoff-pty/stages/<stage>/artifacts/` tree. Evidence includes indexed and final PNGs, `terminal.ansi`, `terminal-ansi.txt`, `terminal.txt`, `buffer.json`, `interactions.json`, `metadata.json`, `harness-binary-provenance.txt`, `artifact-manifest.json`, `PASS.json`, and `cleanup.json`; P1-04 captures also retain per-state buffer/text receipts. The binary receipt ties a just-completed `cargo build -p harness` to a stable clean HEAD/tree sampled before build and after PTY/browser termination, proves the built binary matches the isolated copy before launch, and post-hashes that copy after termination; the receipt itself is manifest-hashed. PASS is refused unless that chain remains unchanged, PTY/browser/profile/temp-root cleanup receipts are complete, visible runtime evidence contains Harness. The lane atomically allocates owner-only security-allowlisted `/tmp/harness-xterm-p1-02-*`, `/tmp/harness-xterm-p1-03-*`, and `/tmp/harness-xterm-p1-04-*` roots and trap-cleans them after evidence is copied without replacing the owned root inode during preparation.
+Browser stages write to `signoff-pty/stages/<stage>/artifacts/` under the lane
+artifact root. Successful captures include PNGs, `terminal.ansi`,
+`terminal-ansi.txt`, `terminal.txt`, `buffer.json`, `interactions.json`,
+`metadata.json`, `harness-binary-provenance.txt`, `artifact-manifest.json`,
+`PASS.json` and `cleanup.json`. The browser runner refuses a dirty source tree.
+It builds and copies the selected executable, checks the source tree again after
+cleanup, and verifies that the executable copy did not change during the run.
 
-The P0-06 owner feeds native PTY output into a reply-capable vt100 emulator and forwards generated cursor-position reports to the child. It asserts cells, cursor position/visibility, alternate-screen transitions, input modes, wrapping, and emulator scrollback. Under the lane-provided absolute `HARNESS_P0_06_ARTIFACT_DIR`, it records before/after ANSI, text, and structured-screen captures at 80x24, 120x40, and 160x50 plus a hash-verified manifest and aggregate cleanup receipt. Native captures truthfully identify the hashed `harness-tui` integration-test executable and its direct production entrypoint, `harness_tui::run_tui_with_options`; they do not relabel that owner binary as the shipped `harness` CLI. The P1-03 native owner writes its `manifest.json`, per-variant/per-size state receipts (`first-paint`, `complete`, `after-input`, `early-input`, `reduced-motion-first-paint`), per-capture `reveal-timeline.json` first-seen ordering receipts, `cleanup.json`, and aggregate `cleanup.json` under the lane-provided absolute `HARNESS_P1_03_ARTIFACT_DIR`; it proves the versioned identity row precedes the affordance rows, which precede the changelog, in every geometry and variant, that reduced motion freezes on the complete frame, that typing CJK text onto the alternate screen during the reveal dismisses the welcome and renders at double width, and that the child is reaped on every exit path. The P1-04 native owner separately writes its `manifest.json`, per-variant/per-size state receipts, `brand.json`, `cleanup.json`, and aggregate `cleanup.json` under the lane-provided absolute `HARNESS_P1_04_ARTIFACT_DIR`; its manifest hashes the actual owner executable and records the native PTY/emulator resize APIs. The P1-04 xterm stages compile, copy, hash, and execute that exact P1-04 integration owner in Chromium at 80x24, 120x40, and 160x50 through `p1-04-responsive-feedback`. They persist screenshot/ANSI/text/structured evidence plus a binary-provenance sidecar, require a newer parsed frame and coherent transcript row before each post-input capture, and fail when collected runtime state lacks Harness branding. The separate `xterm_harness_binary` and P0-06 xterm stages retain shipped `target/debug/harness` build/capture ownership.
+The P0-06 native owner uses a reply-capable vt100 emulator, including cursor-position
+replies, cells, wrapping and scrollback. `HARNESS_P0_06_ARTIFACT_DIR` selects its
+artifact directory. The lane also sets `HARNESS_P1_03_ARTIFACT_DIR` and
+`HARNESS_P1_04_ARTIFACT_DIR` for the recorded startup and responsive-feedback
+owners. Native receipts identify the integration-test executable and production
+TUI entrypoint. Browser receipts identify either the copied CLI or the copied
+integration-test owner; they are not interchangeable.
 
 For a combined deterministic closeout, use:
 
@@ -228,11 +255,9 @@ For a combined deterministic closeout, use:
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR=<dir> cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 --ignore-default-filter --run-ignored only -E 'test(=scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit)'`
 
 
-Snapshot reconciliation note: the `command_palette_renders_without_pty` and
-`tool_lifecycle_rows_stay_ordered_without_pty` snapshots were reconciled to
-match current render behavior (live composer placeholder line and ordered tool
-lifecycle rows). The committed snapshots predated the current output. Updating them did not change
-runtime behavior.
+The committed deterministic snapshots and generated PTY captures have different
+owners. Update a snapshot only after checking the rendered cells and the test
+that records them; a passing PTY lane does not rewrite committed snapshots.
 
 ```bash
 scripts/test-lanes.sh all-deterministic
@@ -298,11 +323,11 @@ DISPLAY=<display> \
 scripts/test-lanes.sh signoff-native
 ```
 
-This lane runs the native visual tests single-threaded. In the current slim T5 surface it fails
-closed unless `HARNESS_NATIVE_VISUAL=1` and `DISPLAY=<display>` are present, and preserves the native
-visual metadata/artifact-root contract for local signoff tooling. Treat native screenshots as local
-visual evidence, not a portable hash oracle. If native prerequisites are unavailable, use `signoff-pty`
-for deterministic UI signoff.
+This lane selects the ignored `native_visual_ghostty_smoke` test single-threaded.
+That test checks only `HARNESS_NATIVE_VISUAL=1` and the presence of `DISPLAY`; it
+does not launch a terminal or capture screenshots. A passing lane is environment
+preflight, not visual signoff. Use `signoff-pty` for deterministic UI checks and
+review the generated screenshots separately.
 
 Current stage command:
 

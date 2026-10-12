@@ -3,8 +3,7 @@
 ## OVERVIEW
 
 State, rendering, terminal, and focused UI-domain implementations for `harness-tui`.
-Score 13: 114 direct files (3), 57 subdirectories (2), 100% Rust (2), `lib.rs` boundary (2),
->30 measured symbols (2), and >10 measured exports (2); reference centrality unmeasured.
+`lib.rs` defines the public module and export boundary; reference centrality is unmeasured.
 
 ## STRUCTURE
 

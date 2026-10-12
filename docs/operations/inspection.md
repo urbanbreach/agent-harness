@@ -12,11 +12,16 @@ limits. It reads credential files without refreshing tokens. It does not contact
 providers, start tools, create a session, or write probe files. A passing report
 does not establish live authentication or operating-system sandbox enforcement.
 Subscriptions without credentials fail the readiness check. Models with unknown
-context or output limits produce a warning and retain unknown values.
+context or output limits produce a warning and retain unknown values. Doctor
+prints its report before returning 1 for a failed check; warnings alone do not
+fail it. Successful commands return 0 and argument parsing errors return 2.
 
 `models` and `models list` show configured models and variants. Text output includes
-each token limit and its provenance. `--json` includes the complete resolved model
-metadata. Explicit configuration remains authoritative. With no provider
+each token limit and its provenance. `--json` writes an array of resolved model
+entries, including optional `cost` rates in USD per million tokens (`input`,
+`output`, `cache_read` and `cache_write`). Prices can come from configuration
+or catalog metadata; a missing price is not a zero price. Explicit configuration
+remains authoritative. With no provider
 entries, stored credentials and API key environment variables select models
 from the embedded catalog, even if a config file sets other defaults. Defining
 any `provider` entry makes the catalog curated: configured providers plus
@@ -61,7 +66,10 @@ Fields within a merged object can come from different layers. Dotted paths
 accept runtime aliases; JSON Pointer paths starting with `/` address exact
 keys, including names containing dots. `settings` reports the typed settings
 registry without reading configuration. Inspection does not create files or
-contact providers.
+contact providers. `show`, `sources`, `explain` and `settings` always print JSON,
+without a `--json` flag. `show` uses `harness-config-effective-v1`; `sources`
+uses `harness-config-sources-v1`; `explain` uses `harness-config-explain-v1`.
+The settings object contains `settings` and `summary`.
 
 The executable loads `.env` without replacing values already in the process
 environment. Global `--debug` writes diagnostic logs to stderr; `--debug-file FILE`
@@ -111,6 +119,35 @@ Repeat `--provider ID` to select providers. `generate` adds low, medium and high
 presets for reasoning models without variants. `probe` adds them only with
 `--emit-reasoning-variants`. Existing variants remain intact.
 
-Generated metadata retains modalities and limit provenance. OpenAI and Anthropic
+Generated metadata retains modalities, prices and limit provenance. OpenAI and Anthropic
 catalogs use their standard API URLs when the source omits one. Other providers
 still require an endpoint compatible with an implemented transport.
+
+## Inspect workspace data
+
+```bash
+harness memory list --workspace ./project
+harness code-graph query CoordinatorHandle --workspace ./project --kind symbol_def
+harness attribution diff src/lib.rs --workspace ./project
+harness attribution blame src/lib.rs --workspace ./project
+```
+
+These commands return JSON. `--workspace` selects an existing directory, resolved
+against `--cwd` or the launch directory. Memory supports `list`, `get KEY`,
+`put KEY VALUE` and `search [QUERY]`. Only `put` writes memory.
+
+`code-graph build` writes the project's code index; `query SYMBOL` reads it.
+Query kinds are `symbol_def` (default), `callers`, `callees` and `references`.
+Build and query use `harness-code-graph-build-v1` and
+`harness-code-graph-query-v1` envelopes. An unavailable query prints its result
+and returns 1; it does not build an index implicitly.
+
+Attribution `diff PATH` and `blame PATH` compare current files with recorded
+edits and redact known credentials in the report. Memory, the index and
+attribution records use the managed project runtime directory, independently
+of `--session-dir`. See [workspace data](workspace-data.md) for their limits,
+storage files and attribution rules.
+
+Saved-session inspection is separate from model readiness. See
+[saved sessions](sessions.md) for `dashboard`, replay, behavior census,
+crash scanning and local support exports.

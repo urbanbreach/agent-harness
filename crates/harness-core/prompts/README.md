@@ -1,7 +1,7 @@
 # Agent prompts
 
-Every model Harness supports gets its own complete system prompt in `models/`,
-written for Harness's tools and runtime. Bundled subagent roles live in `agents/`.
+Harness selects a system-prompt preset from `models/` for each model. Presets
+can be standalone templates or aliases. Bundled subagent roles live in `agents/`.
 The `sonic` agent reuses the task prompt. Role bodies keep their scope, tool
 limits and output fields; shared tool routing, hand-off and completion rules live
 in `subagent.md` rather than being repeated in each role.
@@ -10,7 +10,7 @@ in `subagent.md` rather than being repeated in each role.
 
 | Path | Owns |
 | --- | --- |
-| `models/<preset>.md` | The whole behavioral prompt for one model: identity, intent routing, scope, how to work, verification, hard limits, style, delegation policy. |
+| `models/<preset>.md` | Behavioral prompt for a model version or family, or an alias that extends another preset. |
 | `partials/tools.md` | Tool inventory, specialized-tool routing and the permission facts. Lines appear only for tools the turn actually has. |
 | `partials/delegation.md` | How Harness subagents work: blank-context children, one integration owner, concurrency, notifications. The model file decides when to delegate. |
 | `partials/test-discipline.md` | Test rules shared by the presets that include them. |
@@ -43,18 +43,17 @@ boundaries, so GPT-5.60 does not accidentally receive GPT-5.6 instructions.
 Kimi's rolling coding IDs select K2.7 or K2.8; Mythos aliases select the matching
 Fable preset. `harness models --json` exposes `resolution.prompt_preset`.
 
-Claude Opus 5 and 5.5, Sonnet 5.5, Fable 5 and 5.1, GPT-5.5, GPT-5.6, GPT-6 Astra,
-Kimi K3 and Grok 4.5 to 4.7 have prompts written for that model. Claude Opus 4.x,
-GPT-5 to 5.4, GLM, Kimi K2 and DeepSeek V4 use the default prompt in their family's
-dialect, with version tuning written into the section it governs. Family fallbacks
-(`claude.md`, `gpt.md`, `kimi.md`, `deepseek.md`, `grok.md`) carry the family
-dialect without version tuning, so an unknown version gets no tuning meant for a
-different release. Bare or unknown GPT-6 IDs use `gpt.md` rather than the Astra
-preset. Llama, MiniMax and Mistral have no documented tuning and use `default.md`.
-Gemini adds its own guidance to the default prompt.
+Version-specific entries select the files in the table, including aliases that
+inherit another preset. Family fallbacks include `claude.md`, `gpt.md`,
+`kimi.md`, `deepseek.md`, and `grok.md`. The broad `gpt-5` and `gpt5` markers
+select `gpt-5.md`, so an unknown GPT-5 version can still use that preset.
+Bare or unknown GPT-6 IDs select `gpt-6.md`, which extends `gpt.md`, rather than
+the Astra preset. Llama, MiniMax and Mistral extend `default.md`. Gemini has a
+standalone template. Selection depends on the model name and catalog family,
+not the provider transport.
 
-Each preset names its model and tuning focus in a `${# ... #}` comment at the top
-of the file.
+Standalone presets name their model and tuning focus in a `${# ... #}`
+comment at the top. Alias files contain an `extends` directive instead.
 
 ## Edit without rebuilding
 
@@ -72,11 +71,12 @@ files you want to override. Includes and inheritance use the same precedence
 independently, so a user model template can extend a bundled one and a project
 partial replaces the bundled partial for every model.
 
-Every `##` section of a model file is a block named after its heading in
-snake_case (`intent_gate`, `working_the_task`, `verification`, `style`, ...), the
-opening identity line is the `identity` block, and an empty `extra` block sits
-before the environment section. To adjust one model, extend its file and
-override a block. For example, `.harness/prompts/models/glm-5.3.md`:
+Standalone model templates declare explicit blocks such as `identity`,
+`intent_gate`, `working_the_task`, `verification`, and `style`. These names
+come from template tags, not from parsing Markdown headings. An empty `extra`
+block sits before the environment include. To adjust one model, extend its
+template and override a block. For example,
+`.harness/prompts/models/glm-5.3.md`:
 
 ```markdown
 ${% extends "models/glm.md" %}
@@ -93,13 +93,24 @@ description instead, so the model still receives it exactly once.
 
 Templates use `${% ... %}` blocks, `${{ ... }}` variables and `${# ... #}`
 comments. Block tags on their own line leave no blank line behind, and runs of
-blank lines collapse to one. The variables are `tools` (tool id to callable
-name, or `eval: tool.<name>` for tools reachable only inside eval), `inventory`,
-`model`, `prompt_preset`, `working_directory`, `os_name`, `current_date`,
-`subagent`, `isolated`, `headless`, `max_concurrent`, `limit_behavior`, `eval_guidance` and
-`behavior` (`behavior.command_notifications` and
-`behavior.directory_instructions` mirror the `runtime.behavior` settings, so a
-prompt only describes guidance Harness will actually give).
+blank lines collapse to one. `system_prompt.rs` supplies these bindings:
+
+| Binding | Value |
+| --- | --- |
+| `tools` | Tool ID to callable name; eval-only tools use `eval: tool.<name>`. `tools.by_kind` maps the first reachable tool of each configured kind. |
+| `inventory` | List of callable tool references. |
+| `model`, `prompt_preset` | Active model reference and selected preset. `prompt_preset` is set for the model and child templates after eval guidance renders. |
+| `working_directory`, `os_name`, `shell_path`, `current_date` | Workspace path, compile-target OS, `$SHELL` (empty when unset), and the date before any `T` timestamp separator. |
+| `subagent`, `isolated`, `headless` | Whether this is a child, whether it is isolated, and whether it is a one-shot run. |
+| `max_concurrent`, `limit_behavior` | Child concurrency limit and either `queue` or `are rejected at the concurrency limit`. |
+| `eval_guidance` | Rendered dialect guidance, empty without eval; set after the eval template renders. |
+| `behavior` | `command_notifications` and `directory_instructions` booleans from `runtime.behavior`. Templates describe enabled guidance but do not change runtime settings. |
+| `role_instructions`, `persona_instructions` | Resolved role and persona text. |
+| `params` | Parameter-name maps for reachable tool kinds, derived from their schemas. Execute tools with `run_in_background` also expose the `is_background` alias. |
+| `is_windows`, `has_unix_utilities` | Compile-target platform flags. |
+| `system_reminders_enabled` | Always `true`. |
+| `memory_enabled` | Whether both `memory_search` and `memory_get` tool kinds are reachable. |
+| `agent` | Rendered child role body, set before `subagent.md` renders. |
 
 Harness reloads templates at turn start, after tool execution and when switching
 or falling back to another model. Native children inherit the root agent's
@@ -109,8 +120,9 @@ selected files fail visibly. Files must be UTF-8, at most 256 KiB, and remain
 inside their prompt directory; template includes cannot traverse outside it.
 Startup and inspection do not create prompt directories or copy defaults.
 
-A nonempty `agent.<name>.system_prompt` remains a literal system-body override,
-and the eval routing then goes to the eval tool description. Custom agent
+A nonempty `agent.<name>.system_prompt` is a literal system-body override;
+whitespace-only values do not count. Eval routing then goes to the eval tool
+description. Custom agent
 definitions keep their existing template syntax, `tools.by_kind` and
 schema-derived `params` bindings. Only reachable tools populate those bindings.
 

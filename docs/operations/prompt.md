@@ -54,11 +54,13 @@ repeat old tools or print previous answers. The source must have a completed or
 failed lifecycle and no active writer. Missing history, invalid metadata, changed
 attachment blobs, and unavailable agent profiles cause an error.
 
-`--fork-session` copies a completed history into a new sibling session before
+`--fork-session` copies a stable, finished or failed history into a new sibling session before
 continuing it. The source stays unchanged. `--session-id NAME` selects the new
 directory name for either a fresh session or a fork. It accepts up to 128 ASCII
 letters, digits, dots, underscores, and hyphens, excluding `.` and `..`.
-Existing session directories are not replaced.
+Existing session directories are not replaced. `--session-id` with `--resume`
+requires `--fork-session`; it cannot rename an existing session. For `run`,
+`--fork-session` requires `--session` or `--continue`.
 
 ## Select the model and tools
 
@@ -67,7 +69,7 @@ Existing session directories are not replaced.
 | `--profile NAME` | Select an agent profile for a new session |
 | `--model PROVIDER/MODEL` | Override the selected profile's model |
 | `--variant NAME` | Select a configured model variant |
-| `--reasoning-effort LEVEL` | Override reasoning effort |
+| `--reasoning-effort LEVEL` | Override reasoning effort with `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` |
 | `--thinking` | Request and display ephemeral reasoning summaries |
 | `--max-turns N` | Limit provider iterations, including iterations after tool calls |
 | `--tools read,write` | Restrict each profile to these existing tool IDs |
@@ -106,7 +108,9 @@ options for the same kind.
 The legacy `--sandbox` option selects a permission preset. `readonly` denies edits,
 shell commands, and network operations. `workspace` asks before edits and shell
 commands and denies network operations. `danger` allows those defaults.
-These presets do not provide operating-system confinement.
+These presets do not provide operating-system confinement. `read-only` aliases
+`readonly`, and `full` aliases `danger`. An explicit `--permission-mode` overrides
+the sandbox preset; `--yolo` overrides both.
 
 ## Read and save output
 
@@ -123,6 +127,8 @@ summaries under a `[thinking]` label; they are never journaled.
 Neither JSON mode retains a complete output array in memory.
 Consumers should distinguish `delivery: "live"` fragments from
 `delivery: "durable"` events. The committed assistant message is authoritative.
+Live output includes text fragments and, with `--thinking`, reasoning fragments;
+it is not a dump of every live coordinator event.
 If the subscriber falls behind, output completes from durable history; lost live
 reasoning is not reconstructed.
 

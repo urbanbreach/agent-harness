@@ -1,14 +1,12 @@
 # Eval
 
 `eval` composes tools and processes their results in a persistent local kernel.
-It replaces the former parallel-call tool. Each agent has its own kernels;
-JavaScript and Python are enabled by default, with Ruby and Julia available by
-configuration. Calls on one language run in submission order. Different
-languages can run concurrently.
+Each agent has its own kernels. JavaScript and Python are enabled by default,
+with Ruby and Julia available by configuration. Calls on one language run in
+submission order. Different languages can run concurrently.
 
-Existing agent tool lists should replace `batch` with `eval`. There is no alias
-for the removed tool. Review `permission.eval` when migrating: eval can execute
-local code, so its approval is separate from each nested tool's approval.
+Eval can execute local code. Its `permission.eval` approval is separate from
+each nested tool's approval.
 
 JavaScript requires Node.js 24 or newer on `PATH`. Install the current Node.js
 LTS release and verify it with `node --version`. Harness ships the worker scripts
@@ -35,11 +33,22 @@ must be compiled by the project before import.
 }
 ```
 
-`language`, `code`, and a one-line `summary` are required for a run. `action`
-defaults to `run`. State survives between cells. JavaScript supports imports,
-top-level `await` and `return`; a final expression is displayed automatically.
-Use `reset: true` to clear only the selected language. Reset refuses a running
-or queued kernel.
+`language`, `code`, and a nonempty `summary` are required for a run. `title` is an
+alias for `summary`; whitespace in the summary is collapsed to one line. `action`
+defaults to `run`. Unknown arguments are rejected. State survives between cells.
+JavaScript supports imports, top-level `await` and `return`; a final expression
+is displayed automatically. Use `reset: true` to clear only the selected language.
+Reset refuses a running or queued kernel.
+
+Python is a persistent Python subprocess, not IPython. It supports top-level
+`await` and displays the final expression. Use top-level `await` rather than
+`asyncio.run()`, since the cell already runs in an event loop. Supported shell
+and magic syntax is rewritten by the kernel; IPython APIs are not available.
+Python supports `!command`, `%%bash`, `%%sh`, `%cd`, and `%env`, plus
+the standalone `%load` and `%pip install` commands described below. Other
+magics, including `%time` and `%matplotlib`, are rejected. Shell syntax runs
+directly under eval's local-code authority; use `tool.bash(...)` for the native
+shell tool's permission checks and lifecycle.
 
 `parallel(thunks)` preserves input order and uses four workers by default.
 `pipeline(items, ...stages)` applies stages in order, with a barrier between
@@ -248,14 +257,17 @@ ownership and sends one completion notification. The receipt contains its
 cells. A JavaScript cell that cannot acknowledge cancellation has its worker
 replaced; that clears its globals. Python interruption normally keeps globals.
 
-`timeout` is the cell's own execution budget in seconds (default 300), paused
-during host tool calls. It does not move the detach point. A wall-clock limit
-of 1,800 seconds also includes queue/tool waits; a larger `timeout` raises it.
+`timeout` accepts 1-86,400 seconds, including fractional values. It is the cell's
+own execution budget (default 300), paused during host tool calls. It does not
+move the detach point. A wall-clock limit of 1,800 seconds also includes queue
+and tool waits; a larger `timeout` raises it.
 `on_timeout: "error"` waits for settlement and is the default for noninteractive
 CLI calls. Explicit `"detach"` enables the interactive behavior.
 
-There are at most 15 detached cells per agent and 32 retained cell results, with
-a 32 MiB result budget and 256 MiB retained-image budget. A full agent prompt
+By default, each agent can have 15 detached cells. Completed cells retain at most
+32 results, with a 32 MiB result budget and 256 MiB retained-image budget. The
+newest result and its images remain available even if they exceed those budgets;
+older results or images are evicted first. A full agent prompt
 queue prevents detachment instead of losing a completion notification. Queued
 user input can detach an interactive cell early so the agent can respond.
 

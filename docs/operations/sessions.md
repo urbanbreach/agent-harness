@@ -1,9 +1,12 @@
 # Saved sessions
 
 `dashboard list`, `dashboard recent --limit N` and `dashboard status` provide
-compact views of the same visible session catalog. Add `--json` for structured
-output. Status also reports whether runtime configuration was loaded. These
-commands do not create directories, rebuild indexes or contact providers.
+compact views of the same visible session catalog. Recent defaults to five rows;
+its limit accepts 1 to 10,000. Add `--json` for structured output. List and recent
+include `schema_version`, `session_dir`, `session_count` and `sessions`; recent
+also includes `limit`. Status reports `session_dir`, `session_count` and
+`config_loaded`, without a schema-version field. These commands do not create
+directories, rebuild indexes or contact providers.
 
 ## Snapshot rewind
 
@@ -38,8 +41,9 @@ directories are used as supplied. A session selector is its directory name or
 an explicit directory path.
 
 `<data-dir>` is a nonempty `HARNESS_HOME` used as-is, otherwise `$HOME/.harness`.
-The project key encodes the canonical absolute project path,
-so symlink aliases share a session bucket. See the exact
+The project key is `v2-` plus the full lowercase BLAKE3 digest of the canonical
+absolute UTF-8 project path. It is 67 bytes long, and symlink aliases share a
+session bucket. See the exact
 [storage layout](../architecture/sessions-and-replay.md#storage-layout).
 
 Old project-local sessions are left in place. There is no automatic migration or
@@ -57,10 +61,29 @@ harness sessions inspect --run RUN_ID --json
 harness sessions replay RUN_ID --json
 ```
 
-Listing supports `--profile`, `--search`, `--limit`, `--offset` and `--cursor`.
-Sort orders are `updated_desc`, `updated_asc`, `run_id_asc` and `run_id_desc`.
-Each JSON row includes a cursor for the next page. A cursor becomes invalid when
-its session changes or no longer matches the filters.
+Listing supports `--profile`, `--search`, `--limit` (default 50), `--offset`
+(default 0) and `--cursor`. `--status` accepts `running`, `finished`, `failed`
+or `unavailable`; `--resumable` takes `true` or `false`. Sort orders are
+`updated_desc` (default), `updated_asc`, `run_id_asc` and `run_id_desc`. Limits
+are capped at 10,000 rows. Search is a case-insensitive substring match against
+run ID, title, workspace and profile, not message contents.
+
+JSON list and search output is an array. Each row includes `run_dir` and a cursor
+that starts the next page after that row; `--offset` is then applied. A cursor
+becomes invalid if its journal modification time or directory changes, or the
+row no longer matches the filters.
+
+Inspect returns `run_dir`, `catalog`, `readiness` and `previous_crash`. Check
+`readiness.is_resumable` and `readiness.resume_disabled_reason` before continuing.
+`sessions replay RUN_ID` resolves a selector and prints a run-summary object.
+The top-level `replay --session /absolute/session/path` takes a directory path
+instead; its default output is a one-line summary, and `--json` prints the
+summary object with `run_id` and `total_events`. Replay output has no live
+fragments or `delivery` envelope.
+
+List and search use tab-separated text without `--json`; census has its own
+tables. Other inspection and management actions print JSON even without the
+flag, except `continue`, which opens the TUI.
 
 Missing storage produces an empty list without creating it. Corrupt histories
 remain visible as unavailable entries with a reason. Inspection, search and replay
@@ -78,7 +101,7 @@ inspection, replay, recovery and continuation still validate the selected histor
 
 ```bash
 harness sessions census
-harness sessions census --json --since 2026-10-01 --model codex --limit 100
+harness sessions census --json --since 2026-10-01 --model gpt --limit 100
 ```
 
 Census scans every session directory, including scenario fixtures and child
@@ -93,7 +116,7 @@ printed, and their metrics are excluded.
 `--since` accepts an RFC3339 timestamp or `YYYY-MM-DD` (midnight UTC). It selects
 sessions with at least one recorded event at or after the cutoff, not individual
 events within a session. Sessions without usable timestamps do not match.
-`--model` matches model ids from provider requests, case-insensitively. Both
+`--model` is a case-insensitive substring match on model ids from provider requests. Both
 filters select whole sessions. `--limit` keeps the newest matching sessions by
 recorded event time, breaking ties by run id. With no limit, all matching sessions
 are included.
@@ -161,11 +184,28 @@ parent IDs and depths; `--filter TEXT` selects matching rows.
 Crash scanning reads journals and lock state. Reopen performs explicit recovery
 when needed: it preserves complete records, retains torn bytes for diagnosis, and
 marks interrupted work as having an unknown outcome. It does not retry that work.
-Continue hands a resumable session to the terminal interface.
+Continue hands a resumable session to the terminal interface. `--exit-on-finish`
+asks the interface to exit when its work finishes; `--json` does not turn
+continuation into a headless command.
 
-Discovery reports recognized foreign markers. Import currently accepts supported
-`events.jsonl` histories and creates a separate replay-only session. Discovery of
-another marker does not mean that format can be imported.
+`crash-scan --from DIR` selects a different scan root; the default is session
+storage. Its JSON has `scan_root`, `summary` and `reports`. A missing scan root
+is an error, unlike an empty `sessions list`. Reopen returns `summary` and
+`crash_recovery`; the latter is null when no recovery was needed.
+
+Discovery examines immediate children of `--from`, not a recursive tree. It
+recognizes `events.jsonl`, `session.json`, `rollout.jsonl`, `conversation.json`
+and `transcript.jsonl`, returning `scan_root`, `count` and classified `candidates`.
+The scan allows at most 512 entries and 64 MiB of marker data; JSON descriptors
+are limited to 1 MiB each. A recognized marker does not imply import support.
+
+Import accepts only a nonempty, validated `events.jsonl` history in the supported
+event schema, up to 64 MiB and 65,536 events. It requires exclusive source access,
+validates and copies referenced artifacts, and publishes a separate replay-only
+session under the selected session directory. It leaves the source unchanged.
+The result includes `run_id`, `run_dir`, `event_count`, `source_path`, `format`
+(`events_jsonl_v1`) and `mode_source` (`replay_only`). Imported sessions can be
+inspected and exported, but not continued.
 
 ## Export
 
@@ -216,4 +256,11 @@ including session data. Each inspected journal is limited to 64 MiB.
 Compression streams to a private temporary file beside the output. Publication
 replaces the destination atomically after all checks pass. Outputs must stay
 outside session storage; failures leave an existing archive intact. Source
-histories are never changed.
+histories are never changed. Trace prints the path by default; `--json` returns
+`session_id`, `status`, `local_path` and compressed `bytes`. `--local` is accepted
+and defaults to true; there is no upload path. Wrap always prints JSON with
+`status`, `output` and compressed `bytes`. Both commands accept `-o` for `--output`.
+
+CLI success returns 0, execution errors return 1, and argument parsing errors
+return 2. An unavailable row or a false readiness field is report data, not
+necessarily an execution error. Read the report as well as the exit status.

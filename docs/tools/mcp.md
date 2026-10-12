@@ -28,6 +28,8 @@ Configure servers under `integrations.mcp.servers`:
 Stdio servers accept `env` and `cwd`. Relative working directories resolve against
 the session workspace. HTTP servers accept a `headers` map, including authorization
 headers. Redirects and automatic replay of failed HTTP calls are disabled.
+Server IDs must be 1-80 ASCII letters, numbers, underscores or hyphens.
+`timeout_secs` defaults to 30 and `enabled` defaults to true.
 
 Registry construction, replay, and inspection do not connect to servers. The first
 approved call opens a connection. Later calls in the same run reuse it. Each server
@@ -45,6 +47,10 @@ Each enabled server exposes six operations:
 | `resource.read` | `uri` |
 | `prompts.list` | `{}` |
 | `prompt.get` | `name`, optional string-valued object `arguments` |
+
+The `tool`, `uri`, and `name` arguments must be nonempty strings of at most
+4,096 bytes. Unknown arguments are rejected. Discovered tool names are limited
+to 128 bytes and must be unique within a catalog.
 
 For example, `mcp.local.tool.call` invokes a named tool on `local`. A successful
 `mcp.local.tools.list` also installs the discovered argument schemas. Discovered
@@ -66,17 +72,22 @@ new discovery request; the next approved `tools.list` call refreshes the catalog
 Primary profiles receive the configured server operations during CLI setup.
 Native `task` and `sonic` children inherit permitted MCP operations; the bundled
 research and review specialists exclude MCP. Custom definitions control their own
-MCP inheritance. A profile
-with a server's `tool.call` operation can use its discovered tools. Enabling a tool
-does not grant permission to run it.
+MCP inheritance. A profile with a server's `tool.call` operation can use its
+discovered tools. Enabling a tool does not grant permission to run it.
 
 Generic and direct invocations check both the operation and the named tool. A deny
-on `mcp.local.echo` also blocks `mcp.local.tool.call` with `tool: "echo"`. MCP servers
-run with the authority of their process or remote service; these checks are not an
-OS sandbox.
+on `mcp.local.echo` also blocks `mcp.local.tool.call` with `tool: "echo"`. Every
+operation, including listing tools, also checks transport permission before
+connecting or using an existing connection. HTTP servers require `network`
+permission for their configured endpoint. Stdio servers require `bash` permission
+for the configured command array joined with spaces. Permission to call an MCP
+tool does not bypass either check. MCP servers run with the authority of their
+process or remote service; these checks are not an OS sandbox.
 
-Responses are limited to 1 MiB. Lists stop at 1,024 entries or 32 pages and reject
-repeated cursors. Timeouts must be between 1 and 300 seconds. Cancellation sends an
+Responses are limited to 1 MiB, including all pages of a list. Lists reject more
+than 1,024 entries, repeated cursors, or more than 32 continuation cursors (up to
+33 pages). The pagination error says `MCP pagination repeated or exceeded 32
+pages`. Timeouts must be between 1 and 300 seconds. Cancellation sends an
 MCP cancellation notification. Native shutdown gives the process group a short
 termination period before killing remaining processes and reaping the server.
 

@@ -44,13 +44,52 @@ subscription. Check this first if an exported key seems ignored.
 | The provider rejects credentials | Check the selected account and endpoint. Keep the sanitized error and a support export. |
 | The provider rate-limits requests | Wait or reduce request volume. Check the error category before changing credentials. |
 | A local proxy fails | Compare the configured `baseURL` with the proxy's listening address. |
-| An MCP server is unavailable | Confirm the entry is enabled and its executable exists. Doctor checks configuration; it does not connect to MCP. |
+| An MCP server is unavailable | Confirm the entry is enabled and its executable exists. Doctor does not start or connect to MCP servers. |
 | An LSP operation is unavailable | Read the tool's structured error and check the server executable. Use compiler diagnostics when the server cannot report them. |
 | A tool is denied | Check the tool's permission kind and matching rule order. The last matching rule wins. Inspect the workspace diff if the request involved an edit. |
+| Tools ask on every call after you add a `permission` block | Start the block with `"*": "allow"`. Without a catch-all, tools that have no permission kind of their own (`todowrite`, `skill`, the session tools) ask each time. See [permissions](../permissions/permissions.md). |
 | A provider stream fails | Keep the error category and support bundle. Do not share raw provider payloads. |
-| A session cannot resume | Run `harness sessions inspect <run-id-or-path> --json` and read `resume_disabled_reason`. |
+| A session cannot resume | Run `harness sessions inspect <run-id-or-path> --json` and read `readiness.resume_disabled_reason`. |
 | Replay fails | Check that `events.jsonl` exists and its sequence is valid. Inspect the reported error before attempting recovery. |
 | The TUI renders incorrectly | Retry with `harness tui --mock`. Record the terminal emulator, dimensions, and a screenshot. `Ctrl+p` opens the command palette. |
+
+## Provider error messages
+
+These messages come from the CLI or provider backend. HTTP errors omit raw
+server bodies; keep the status and error category rather than sharing secrets.
+
+| Message | What to do |
+| --- | --- |
+| `use --api-key-stdin to supply an API key without a terminal` | Run `harness auth login <provider> --api-key-stdin` with the key on standard input, or use an interactive terminal. |
+| `API key must contain 1 to 65,536 bytes` | Supply a nonempty key within that limit. Do not put it in command-line arguments. |
+| `provider credential is unavailable` | Check the category and `harness auth list --json`. Stored credentials take precedence over environment and inline keys; an expired OAuth credential must refresh or be replaced with a new login. |
+| `provider returned HTTP 401` or `provider returned HTTP 403` | Check the selected account and `baseURL`, then sign in again with `harness auth login <provider>` if needed. These statuses map to `invalid_credentials`. |
+| `provider returned HTTP 429` | Wait before retrying or switch providers. The category is `rate_limited`; rotating a valid key is not the first step. |
+| `provider connection failed` or `provider stream connection failed` | Check the configured endpoint, DNS, TLS, proxy, and network connection. The category is `transport_failure`. |
+| `provider response is not an event stream` | Check that `baseURL` points to a streaming API endpoint, not a web page, and that the configured `apiMode` matches the server. |
+| `Model is not supported by Codex subscriptions; select a supported model or an API-key provider.` | Choose an allowlisted Codex model from `harness models`, or use a separate API-key provider. A custom `authProvider: "codex"` has the same restriction. |
+| `Claude Code is not installed. Tried:` | Install Claude Code so `claude` is on `PATH`, or set `CLAUDE_CODE_EXECUTABLE` to the binary. A saved subscription credential alone cannot execute a turn. |
+| `credential storage: invalid credential document` | The stored JSON is invalid. Remove the affected credential with `harness auth logout <provider>` and sign in again. Do not share the credential file. |
+| `Credential store is busy:` | Another process holds the lock. Close unused Harness sessions if contention persists; do not delete a live lock. |
+| `The response is incomplete because the provider reached its output limit.` | Ask the model to continue, or increase the configured output limit where the provider supports it. The category is `output_limit_exceeded`. |
+
+An HTTP 404 or 405 can trigger the OpenAI-compatible `auto` mode
+Chat Completions fallback before streaming starts. HTTP 400 does so only for
+a loopback endpoint. Authentication errors and broken streams do not switch
+protocols. Codex always uses Responses.
+
+If an environment key is ignored, check the catalog mode and stored credential
+first. `harness auth list` only reports stored credentials, so `missing` does
+not mean an exported key is unavailable. `harness providers protocols` lists
+HTTP protocols, not connected accounts. Use `harness models --json` and
+`harness doctor --json` for the locally resolved catalog and readiness report.
+
+For Claude subscription account selection, use
+`harness auth claude-account list`, `harness auth claude-account pin <id>`, or
+`harness auth claude-account unpin`. Environment slots
+`CLAUDE_CODE_OAUTH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN_2` through
+`CLAUDE_CODE_OAUTH_TOKEN_16` can enable the provider. A host Claude Code login
+requires an explicitly enabled `anthropic_subscription` provider.
 
 ## Share a support bundle
 

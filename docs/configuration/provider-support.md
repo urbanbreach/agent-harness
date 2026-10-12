@@ -1,8 +1,30 @@
 # Provider support
 
-Harness implements OpenAI-compatible and Anthropic transports. The configured
-provider type selects the backend. Catalog entries describe models; a listed
-model still needs a supported transport, valid credentials, and endpoint access.
+Harness supports OpenAI-compatible HTTP, Anthropic Messages, and Claude
+subscription turns through a locally installed Claude Code binary. The provider
+type selects the backend. A catalog model still needs valid credentials and
+endpoint access.
+
+| Provider ID | Execution path | Credential source |
+| --- | --- | --- |
+| `openai` | Responses or Chat Completions | Stored key or `OPENAI_API_KEY` |
+| `openai-codex` | Codex Responses | Stored `codex` OAuth credential |
+| `github-copilot` | Responses or Chat Completions; Claude uses Messages in automatic mode | Stored device-login credential or `GITHUB_TOKEN` |
+| `anthropic` | Anthropic Messages | Stored key or `ANTHROPIC_API_KEY` |
+| `anthropic-subscription` | Local Claude Code process | Stored account pool or `CLAUDE_CODE_OAUTH_TOKEN` slots |
+| `google` | Google's OpenAI-compatible Chat Completions endpoint | Stored key, `GOOGLE_GENERATIVE_AI_API_KEY`, or `GEMINI_API_KEY` |
+| `openrouter` | OpenAI-compatible HTTP | Stored key or `OPENROUTER_API_KEY` |
+| `mistral` | Configured OpenAI-compatible endpoint | Stored key or configured `MISTRAL_API_KEY` |
+
+These are examples, not a fixed provider allowlist. Automatic discovery uses
+the embedded models.dev IDs, environment names, and endpoints. Entries without
+an endpoint are skipped. The bundled Mistral entry has no endpoint or built-in
+endpoint fallback, so configure its `baseURL` and models explicitly. There is
+no native Google or Mistral SDK transport.
+
+`harness providers protocols` reports the two HTTP protocol families, not
+connected accounts or the Claude Code backend. `harness models` lists the
+resolved catalog, variants, limits, and per-field limit provenance.
 
 ## Execution path
 
@@ -13,8 +35,11 @@ tests require explicit environment settings.
 ## Default model selection
 
 A connected provider uses its first available curated default. Codex and Claude
-subscription have their own lists; the generic list includes
-`claude-sonnet-4-6`. Google prefers `gemini-3.1-pro-preview`, then
+subscription have their own lists. Codex prefers `gpt-6-astra`, then
+`gpt-6-sol`, `gpt-6-luna`, and `gpt-5.5`. Claude subscription prefers
+`claude-opus-5-5`, then `claude-sonnet-5-5` and `claude-fable-5-1`. The generic
+list starts with `gpt-5.4-mini`, `gpt-5.5`, and `claude-sonnet-4-6`.
+Google prefers `gemini-3.1-pro-preview`, then
 `gemini-3-pro-preview`, then `gemini-2.5-pro`. OpenRouter prefers
 `anthropic/claude-sonnet-4.6`, then `openai/gpt-5.5`, then
 `anthropic/claude-sonnet-4.5`.
@@ -27,11 +52,20 @@ but no catalog metadata still gets a default.
 
 ## Codex context profiles
 
-Catalog-derived GPT-5.6 models on the built-in `openai-codex` provider use a 369,384-token maximum input profile. With the default 16,384-token compaction reserve, this exposes the Codex default usable context budget of 353,000 tokens. This applies to the Luna, Terra, and Sol tiers; the nonexistent unsuffixed `gpt-5.6` alias is not exposed. Other OpenAI-compatible providers retain their configured or discovered API limits.
+Codex limits come from configured or catalog metadata, as they do for other
+OpenAI-compatible providers. Runtime discovery does not apply a separate
+GPT-5.6 input-window override. Use `harness models --json` to inspect limits
+and provenance, or define explicit model limits.
 
 ## Codex subscription model availability
 
-Codex authentication accepts only the verified subscription models: `gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, and `gpt-5.5` (verified October 4, 2026). GPT-5.5 remains available until October 14, 2026. Retired models, Pro models, and unknown aliases are filtered from runtime catalogs and rejected before requests reach the network, including for custom provider IDs using `authProvider: "codex"`. Separate API-key providers are unaffected. Account and workspace access can further restrict this list.
+Codex authentication accepts only these subscription models: `gpt-6.1-sol`,
+`gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`,
+`gpt-5.6-luna`, and `gpt-5.5`. The source allowlist records a verification
+date of October 4, 2026. Other IDs are filtered from runtime catalogs and
+rejected before network requests, including custom providers using
+`authProvider: "codex"`. Separate API-key providers are unaffected. There is
+no date-based retirement check; account access can still differ.
 
 Sources: [model availability](https://learn.chatgpt.com/docs/models#deprecated-codex-models), [Spark retirement](https://learn.chatgpt.com/docs/changelog).
 
@@ -40,8 +74,8 @@ Sources: [model availability](https://learn.chatgpt.com/docs/models#deprecated-c
 `gpt-6-astra` is available in the bundled Codex catalog. Select
 `openai-codex/gpt-6-astra` in `/model`, or set it as the top-level `model` in
 an optional `harness.jsonc`. First sign-in may write a starter with the provider's default model.
-The supported reasoning variants are `low`, `medium`, `high`, `xhigh`, and `max`;
-`none`, `minimal`, and Codex's multi-agent `ultra` mode are not offered.
+The supported reasoning variants are `low`, `medium`, `high`, `xhigh`, and `max`.
+The bundled variants do not include `none`, `minimal`, or `ultra`.
 Codex requests without an explicit reasoning effort default to `low` and retain
 the encrypted reasoning-content request option used by the existing Responses
 transport. Explicit reasoning and verbosity settings take precedence.
@@ -54,14 +88,13 @@ working context, add an explicit model limit override:
 "limit": { "context": 1050000, "input": 288384, "output": 128000 }
 ```
 
-With the default `runtime.compaction.reserveTokens` of 16,384, this gives a
-272,000-token compaction threshold: `min(288384, 1050000 - 128000) - 16384`.
-The extra 16,384 input tokens preserve the safety margin; the 128,000-token output
-reserve remains intact. Setting total `context` to 272,000 would instead leave
-only 127,616 tokens after both reserves. Explicit local model entries remain
-authoritative and are not overwritten by catalog refreshes.
-Availability still depends on the account and endpoint;
-`doctor` is offline, so a real prompt is required to verify access.
+With the default `runtime.compaction.reserveTokens` of 16,384, this caps the
+compaction threshold at 272,000 tokens:
+`min(288384, 1050000 - 128000) - 16384`. A lower explicit compaction threshold
+takes precedence. The 128,000-token output reserve remains intact. Setting
+total `context` to 272,000 would leave only 127,616 tokens after both reserves.
+Explicit local model entries are not overwritten by catalog refreshes.
+Availability depends on the account and endpoint; `harness doctor` is offline.
 
 ## GPT-6.1 Sol
 
@@ -75,18 +108,21 @@ include encrypted reasoning content. Explicit settings take precedence.
 Tool calling uses the Responses API; `none` and `minimal` are not supported.
 
 Bundled API limits are 1,050,000 context tokens, 922,000 maximum input tokens,
-and 128,000 maximum output tokens. A custom 288,384-token input limit gives a
-272,000-token compaction threshold with the default 16,384-token reserve.
+and 128,000 maximum output tokens. With the default 16,384-token compaction
+reserve, a custom 288,384-token input limit caps the compaction threshold at
+272,000 tokens. A lower explicit compaction threshold takes precedence.
 Account and workspace rollout still determine access.
 See the [model specifications](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
 and [Codex availability](https://learn.chatgpt.com/docs/models#gpt-61-sol).
 
 ## Known limits
 
-Provider execution requires one of the implemented backend families above. Doctor validates local configuration and credential presence but does not prove authentication because it makes no provider call.
+Provider execution requires one of the implemented backends above. Doctor
+checks local configuration, connected-provider discovery, and model limits.
+It does not prove authentication because it makes no provider call.
 
-Local targets such as Ollama are optional manual checks. They are outside
-`signoff-live`, CI defaults, and the quality gates.
+A local OpenAI-compatible endpoint still needs a configured base URL and model
+definitions. Local protocol fixtures do not establish live account access.
 
 ## Credentials
 
@@ -101,9 +137,27 @@ a live prompt because `harness doctor` stays offline.
 
 ## Model catalog refresh
 
-Ordinary live catalog initialization refreshes model metadata from `https://models.dev/api.json` using a five-minute cache. Harness accepts both the direct models.dev provider map and the generated catalog shape, serves a valid stale cache immediately, and refreshes stale data in the background with an atomic, mode-`0600` cache write. Set `HARNESS_DISABLE_MODELS_FETCH=1` to keep the embedded catalog only; `HARNESS_MODELS_URL` and `HARNESS_MODELS_PATH` override the source and cache location. Without a usable cache, initialization attempts a download and falls back to embedded metadata on failure. Mock TUI model-picker initialization uses the embedded catalog directly and never invokes the environment-backed cache/refresh loader.
+Runtime selection, `harness models list`, and doctor use embedded metadata and
+read the existing Codex cache without fetching or writing it. The live TUI
+login-provider menu loads `https://models.dev/api.json` through a five-minute
+cache. It accepts the direct models.dev map and the generated catalog shape,
+serves valid stale data immediately, and refreshes stale data in the background
+with an atomic, mode-`0600` write. Without a usable cache, it attempts a
+download and falls back to embedded metadata on failure.
 
-For the built-in `openai-codex` provider, refreshed OpenAI model metadata is merged into the configured Codex model list without replacing explicit entries. This lets newly published GPT models appear in `/model` while preserving local variants and provider settings. Only models on the verified subscription allowlist are added; unknown live entries are not assumed to be supported.
+`HARNESS_MODELS_URL` and `HARNESS_MODELS_PATH` override that menu's source and
+cache location. `HARNESS_DISABLE_MODELS_FETCH=1` (or `true`) selects embedded
+data and disables the runtime Codex cache merge. Mock TUI initialization uses
+embedded data directly. `harness models probe` and `harness models generate`
+are separate explicit operations: they fetch their `--url` or the default
+models.dev URL unless `--input` or `--stdin` is supplied. They do not use the
+cache-loader environment overrides. `harness models generated` prints the
+bundled catalog without fetching.
+
+Runtime resolution merges cached OpenAI metadata into providers whose
+credential identity is `codex`, including custom IDs, without replacing
+explicit model entries. Only allowlisted subscription IDs are added. Unknown
+live entries are not assumed to be supported.
 
 ## Resolved model limits
 
@@ -119,15 +173,24 @@ A selectable known model must provide positive context and output values, with o
 | InvalidCredentials | `invalid_credentials` | Provider rejects authentication. | Rotate/check credentials and endpoint. |
 | RateLimited | `rate_limited` | Provider rate or quota limit. | Wait, reduce load, or change account/model. |
 | ContextWindowExceeded | `context_window_exceeded` | Request exceeds model context. | Compact, shorten prompt, or pick a larger context model. |
-| UnsupportedToolCall | `unsupported_tool_call` | Provider/model cannot process requested tool call shape. | Use a tool-capable model or reduce tool request. |
+| OutputLimitExceeded | `output_limit_exceeded` | Generation reaches the output limit. | Ask the model to continue, or increase the output limit. |
+| UnsupportedToolCall | `unsupported_tool_call` | Provider/model cannot process requested tool call shape. | Check the tool schema and model capabilities. |
 | MalformedStream | `malformed_stream` | Stream payload is invalid or incomplete. | Retry and keep event/support bundle evidence. |
 | TransportFailure | `transport_failure` | Timeout, DNS, connection, TLS, or socket failure. | Check network/baseURL/proxy. |
 | Other | `other` | Anything not classified above. | Inspect sanitized provider message and support bundle. |
 
 ## Error reporting
 
-The coordinator stores provider categories in `ProviderRequestFinished.metadata.provider_error_category` with `provider_error_remediation`. Headless `prompt` failures include the serialized category plus provider message in stderr, and the TUI activity/runtime state shows the category with a suggested action.
+The coordinator stores provider categories in
+`ProviderRequestFinished.metadata.provider_error_category` with
+`provider_error_remediation`. HTTP failures use sanitized text such as
+`provider returned HTTP 401`, not raw response bodies. Keep the category and
+support bundle when reporting an error.
 
 ## Model fallback policy
 
-OpenAI-compatible `auto` mode can fall back from the Responses API to Chat Completions when the configured transport reports that the Responses path is unsupported. Eligible provider failures may also advance through an explicitly configured `model_profile.fallback` chain; each switch applies the next typed target atomically, including its model ref, variant settings, and resolved limits.
+OpenAI-compatible `auto` mode falls back from Responses to Chat Completions
+after HTTP 404 or 405, or HTTP 400 from a loopback endpoint, before streaming
+starts. Codex cannot use this fallback. Eligible provider failures can also
+advance through an explicitly configured `model_profile.<name>.fallback`
+chain. A switch applies the next model, variant settings, and resolved limits.

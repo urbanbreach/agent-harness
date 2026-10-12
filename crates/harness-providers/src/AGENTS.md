@@ -7,7 +7,7 @@
 | Chat, Responses, Anthropic encoding | `wire/` |
 | Stream framing | `sse.rs` |
 | Attachments and budgets | `attachment_protocol.rs`, `request_budget/` |
-| Safe fixtures | `mock.rs`, `cassette.rs` |
+| Scripted provider fixtures | `mock.rs` |
 | Claude subscription via Claude Code | `anthropic_subscription/` |
 
 Normalize backend protocols before they leave this crate. Preserve tool-call

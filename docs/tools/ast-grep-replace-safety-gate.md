@@ -1,10 +1,11 @@
 # Structural search and replacement
 
-`ast_grep_search` searches syntax with the installed `ast-grep` CLI.
+`ast_grep_search` searches syntax with the `ast-grep` CLI on `PATH`.
 `ast_grep_replace` uses its JSON replacements to preview or apply edits.
 Both accept `pattern`, `language`, `path` or `paths`, `include`, `exclude`,
-`limit`, and `context`. Replacement also requires `rewrite`; its `mode` defaults
-to `dry_run`. Use `apply` to change files.
+`limit`, and `context`. With no path selection, the root is `.`. Replacement
+requires `rewrite`; its `mode` defaults to `dry_run`. Use `apply` to change files.
+Search rejects `rewrite` and apply mode.
 
 Language is inferred only when the selected readable files have one supported
 language. Supported names are Rust, JavaScript, TypeScript, TSX, JSX, Python,
@@ -19,7 +20,8 @@ files retain their initial read approval. All paths stay within the workspace.
 The CLI reads private temporary copies of approved files, using one worker thread.
 It never receives an update flag or the live workspace paths. Harness verifies
 returned paths, byte ranges, UTF-8 boundaries, matched text, and non-overlapping
-replacements against those copies. Temporary files are removed after the call. Previews retain a redacted `.diff` artifact for the existing TUI renderer.
+replacements against those copies. Temporary files are removed after the call.
+Previews retain a redacted `.diff` artifact for the TUI renderer.
 
 Before apply, the coordinator checks the complete target set against edit policy.
 New targets that need approval use the normal permission prompt, grant scopes,
@@ -33,11 +35,12 @@ and undo path. Writes are sequential; a later I/O failure reports completed file
 | Resource | Limit |
 | --- | --- |
 | Pattern and replacement | 8 KiB each |
+| Path list | At most 256 entries in `paths` (plus optional `path`) |
 | Include or exclude globs | 64 each, 8 KiB per glob |
 | Directory entries | 100,000 per search root |
 | Source files | 200, 8 MiB per file, 32 MiB combined |
 | Matches returned | Default 100; clamped to 1–200 |
-| Context | Clamped to 0–5 lines |
+| Context | Default 0; clamped to 0 through 5 lines |
 | CLI execution | 30 seconds minus discovery time; 512 KiB per output stream |
 | Combined preview diff | 1 MiB |
 

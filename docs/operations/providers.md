@@ -20,10 +20,20 @@ so automatic discovery stays enabled. Exporting an API key alone does not write
 this file. Keep project policy in `<project>/harness.jsonc`; it overrides personal
 defaults. See [config precedence](../configuration/config.md#discovery-and-precedence).
 
-Local HTTP fixtures verify requests, streaming, tool results, login callbacks,
-device polling, refresh and credential redaction. A live Codex prompt using an
-existing stored credential also passed. Fresh interactive login and other live
-accounts were not exercised; see the [verification record](../architecture/backend-rewrite.md).
+Credentials are stored as private JSON files at
+`<home>/credentials/<credential-provider-id>.json`, using atomic writes. For
+Codex, this is `credentials/codex.json`, not `credentials/openai-codex.json`.
+The Claude account pool is in `credentials/anthropic-subscription.json`.
+`harness auth logout <provider>` deletes that stored credential. It does not
+unset environment keys or clear a host Claude Code login.
+
+API-key login defaults to a hidden terminal prompt. Without a terminal, pass
+`--api-key-stdin` and supply the key on standard input. Codex defaults to browser
+login; Copilot defaults to device login. Both
+`harness auth login openai --method browser` and
+`harness auth login openai --method device` store a Codex credential.
+`harness auth login openai --method api-key` stores an OpenAI API key.
+Copilot accepts `--enterprise-url` for an Enterprise domain.
 
 ```bash
 harness auth login codex --method browser
@@ -37,16 +47,68 @@ harness auth logout codex
 `authProvider` selects its credential identity. For example, `authProvider:
 "codex"` uses the same stored account as the built-in subscription provider.
 
-Stored credentials take precedence over environment keys and inline keys. An
-expired stored OAuth credential must refresh successfully; it does not silently
-fall through to another account. Credentials join the run's redaction registry
+For HTTP providers, stored credentials take precedence over environment and
+inline keys. An expired stored OAuth credential must refresh successfully; it
+does not silently fall through to another account. Credentials join the run's redaction registry
 before use. Refresh retains old secrets in that registry so delayed output cannot
 expose them.
 
+## Inspect connections and models
+
+```bash
+harness auth list
+harness auth list --json
+harness providers protocols
+harness models
+harness models list --json
+harness doctor --json
+```
+
+`auth list` reports stored credentials, not environment-key availability or
+live authentication. Its JSON includes credential kind and expiry, never
+tokens. `providers protocols` reports implemented HTTP protocols, not accounts.
+`harness models` lists resolved model selections and token-limit provenance.
+`harness models generated` prints the bundled catalog. `harness models probe`
+reads a catalog and prints filtered provider configuration.
+`harness models generate` writes it, by default to
+`configs/provider-catalog.generated.json`. Neither probes account access.
+Doctor checks local readiness without network requests or file creation.
+
+## Claude subscription accounts
+
+Connect `anthropic-subscription` with browser login or copy-code login. In the
+CLI, `--method device` selects the copy-code flow, not device polling. Every
+turn runs through a local Claude Code binary. Harness does not install it.
+Set `CLAUDE_CODE_EXECUTABLE` to its path, put `claude` on `PATH`, or use its
+standard `~/.local/bin/claude` or `~/.claude/local/claude` install location.
+
+```bash
+harness auth login anthropic-subscription --method browser
+harness auth login anthropic-subscription --method copy-code
+harness auth claude-account list
+harness auth claude-account add
+harness auth claude-account pin <id>
+harness auth claude-account unpin
+harness auth claude-account rename <id> <display-name>
+harness auth claude-account clear-name <id>
+harness auth claude-account remove <id>
+```
+
+The first login uses account ID `default`; later logins can add named accounts.
+Use `claude-account list` to see account sources, status, pins, and the affinity
+selection. Omitting `list` also lists accounts. The TUI has `/claude-account`.
+
+Environment slots `CLAUDE_CODE_OAUTH_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN_2`
+through `CLAUDE_CODE_OAUTH_TOKEN_16` also enable discovery. A host Claude Code
+login alone does not: explicitly configure an `anthropic_subscription` provider
+with `enabled: true` to opt in to the ambient account.
+
 ## Choose a transport
 
-Provider definitions use `type: "openai_compatible"` or `type: "anthropic_messages"`.
-For OpenAI-compatible servers, `apiMode` selects the wire format:
+Provider definitions use `type: "openai_compatible"`, `type: "anthropic_messages"`,
+or `type: "anthropic_subscription"`. The subscription type runs Claude Code
+instead of making HTTP requests from Harness. For OpenAI-compatible servers,
+`apiMode` selects the wire format:
 
 | Value | Requests |
 | --- | --- |
@@ -82,11 +144,9 @@ Copilot requests carry a bearer credential, request initiator and image-use
 headers. The first request for a direct user turn uses the user initiator; tool
 follow-ups, delegated tasks and compaction use the agent initiator. A stored
 Enterprise domain changes the public Copilot host to `copilot-api.DOMAIN`.
-Current Microsoft code sends GitHub OAuth bearer tokens directly to its CAPI
-Responses and Chat endpoints; the rewrite follows that path. In automatic mode,
-Claude models use the native Anthropic Messages endpoint with bearer authentication.
-An explicit base URL can select another service endpoint.
-See [Microsoft's CAPI service implementation](https://github.com/microsoft/vscode/blob/main/src/vs/platform/agentHost/node/shared/copilotApiService.ts).
+Copilot sends its bearer credential directly to the service. In automatic
+mode, Claude models use the native Anthropic Messages endpoint with bearer
+authentication. An explicit base URL can select another service endpoint.
 
 ## Startup and model limits
 
@@ -104,8 +164,11 @@ to `harness auth login`. Project instructions remain authoritative.
 Codex also reads missing, supported model entries from `HARNESS_MODELS_PATH` or
 `<home>/models-cache.json`. Cached entries never replace
 configured models. Invalid caches are ignored. Runtime
-selection does not fetch or write a catalog; the login flow and explicit model
-commands perform refreshes. `HARNESS_DISABLE_MODELS_FETCH=1` selects embedded data.
+selection does not fetch or write a catalog. The live TUI login-provider menu
+uses the refreshable catalog cache; `harness models probe` and
+`harness models generate` fetch explicitly unless given `--input` or `--stdin`.
+`HARNESS_DISABLE_MODELS_FETCH=1` disables the menu fetch and runtime cache merge,
+not those explicit commands.
 Catalog models keep their configured variants and image capabilities. A model
 switch or fallback rebuilds the shared prompt with that model's delegation policy.
 Project instructions, explicit system prompts and command-line rules persist

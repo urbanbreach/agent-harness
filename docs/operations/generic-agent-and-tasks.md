@@ -7,6 +7,43 @@ root; the nearest definition wins. Project and user files can replace built-ins
 with the same name. The built-in types are `task`, `scout`, `reviewer`,
 `security-reviewer` and `sonic`; `task` is the default. Title generation and
 context compaction are internal operations, not selectable agents.
+Here `<home>` is nonempty `HARNESS_HOME`, otherwise `~/.harness`. Outside Git,
+definition discovery searches only the current directory.
+
+| Built-in | Assignment | Default model | Required final-answer fields |
+| --- | --- | --- | --- |
+| `task` | Multi-step work with inherited tools | Parent model | No default schema |
+| `scout` | Repository searches and analysis with an explicit read-only tool list | `@smol` | `summary`, `files`, `architecture` |
+| `reviewer` | Patch review; can delegate to `scout` | `@slow` | `overall_correctness`, `explanation`, `confidence` |
+| `security-reviewer` | Security audit with an explicit read-only tool list | `@slow` | `coverage_summary` |
+| `sonic` | Mechanical changes or data gathering with inherited tools | `@smol` | No default schema |
+
+Both reviewer schemas describe optional `findings`. Scout and sonic default to
+`medium` reasoning effort. Restricted built-ins do not inherit MCP servers.
+All tool access remains subject to parent restrictions and permissions.
+
+An agent file requires a `name` in YAML frontmatter; the Markdown body supplies
+its instructions. For example, `.harness/agents/docs-worker.md`:
+
+```markdown
+---
+name: docs-worker
+description: Update documentation from source evidence
+model: inherit
+variant: high
+tools: [read, grep, glob, edit]
+inheritSkills: true
+discoverSkills: true
+---
+Edit only the assigned documentation. Cite source files for factual changes.
+```
+
+Definition fields use camelCase, including `capabilityMode`, `permissionMode`,
+`maxTurns`, `inheritSkills`, `discoverSkills`, `mcpInheritance`, `mcpServers`,
+`injectDefaultTools`, `declaredTools`, `toolConfig`, and `disallowedTools`.
+`name`, `description`, `model`, `variant`, `effort`, `isolation`, `tools`, and
+`skills` use the spellings shown. `tools` and `disallowedTools` accept a list
+or a comma-separated string. Skill inheritance and discovery default to true.
 
 `task` inherits the parent model. Scout and sonic use `@smol`, while both
 reviewers use `@slow`. Configure `model_roles.smol` and `model_roles.slow` with
@@ -25,6 +62,20 @@ for definition discovery, model selection, inheritance, and concurrency settings
 `subagent_type` and defaults to `background: true`. A background call returns a
 `subagent_id`. With `background: false`, the caller waits for completion; reaching
 the foreground timeout leaves the child running in the background.
+The default foreground wait budget is 600,000 ms, overridden by
+`HARNESS_SUBAGENT_AWAIT_BUDGET_MS`. The `task` alias calls the same operation
+but names its background option `run_in_background`. Optional `tools` narrows
+the child toolset; it cannot add tools. Per-call `model` and `variant` selection
+depends on the resolved tool schema.
+
+Default limits are nesting depth 2 and 32 concurrent children per root session.
+`subagents.max_depth`, `subagents.max_concurrent`, and `subagents.sampling_limit`
+configure them; the sampling limit defaults to the concurrency limit and is
+capped at 512. Limit resolution is environment, config, remote settings, then
+defaults. The environment names are `HARNESS_SUBAGENTS_MAX_DEPTH`,
+`HARNESS_MAX_CONCURRENT_SUBAGENTS`, and `HARNESS_SUBAGENT_SAMPLING_LIMIT`.
+`subagents.limit_behavior` defaults to `queue`; `fail` rejects a spawn at capacity.
+`HARNESS_SUBAGENT_LIMIT_BEHAVIOR` overrides it. A depth violation always fails.
 
 Include the relevant files, constraints, expected output, and required checks in
 the prompt. `isolation: "worktree"` creates an isolated working tree. Alternatively,
@@ -83,7 +134,10 @@ permission policy.
 ## Final answer schemas
 
 `spawn_subagent` and its `task` alias accept an optional `output_schema` JSON
-object. The child receives that schema in its assignment and system prompt.
+object. A caller schema replaces the built-in role contract; without one, scout
+and the reviewers use the contracts listed above. Custom definition files do not
+declare `output_schema`. The child receives the selected schema in its assignment
+and system prompt.
 The coordinator validates its final JSON object, accepting plain JSON, a
 `json` code fence, or the first balanced object in the answer. An invalid answer
 receives a correction for the first problem, clipped to 512 characters, up to
@@ -110,19 +164,17 @@ under the shared project policy. Skills cannot grant tools or override these
 checks. Permission policy is not an operating-system sandbox; see the
 [permission guide](../permissions/permissions.md).
 
-Definitions list startup preloads in `skills`. With `inherit_skills: true`, the
+Definitions list startup preloads in `skills`. With `inheritSkills: true`, the
 child receives its actual spawner's startup catalog. Otherwise, discovery uses
-the child's effective working directory and default roots; `discover_skills:
+the child's effective working directory and default roots; `discoverSkills:
 false` suppresses that discovery. Catalog inspection does not load skill bodies.
 
-**Accepted parity exception:** Reference explicitly preloads definition-listed skills
-even when ordinary skill calls are disabled or denied. Harness keeps shared
-skill permissions for both startup preloads and ordinary calls. Missing, denied,
-disabled, malformed, or unsafe preloads fail preparation before the child runs.
+Harness applies shared skill permissions to startup preloads and ordinary calls.
+Missing, denied, disabled, malformed, or unsafe preloads fail preparation before
+the child runs.
 
-**Accepted clipboard exception:** Child-viewer selection and copy use Harness's
-shared clipboard integration. Unlike Reference, Harness does not write every copied
-selection to a persistent backup file or display that backup path in a toast.
+Child-viewer selection and copy use Harness's shared clipboard integration.
+Copied selections are not written to a persistent backup file.
 Mouse release copies a nonempty selection and keeps it highlighted; Escape
 clears it before closing the viewer. `y` copies the current logical line or visual
 range, clears the selection, and briefly shows `Copied!`.

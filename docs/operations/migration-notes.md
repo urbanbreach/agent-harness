@@ -20,8 +20,33 @@ that are unavailable, followed by changes to internal prototype APIs.
 
 ## Supported migration path
 
-Move local-coding workflows onto the Harness CLI/TUI, event store, provider config, markdown skills, and native tool registry. Keep unsupported upstream product areas inactive in config. Check the [config reference](../configuration/config.md) before carrying over
-compatibility keys. Some accepted keys have no runtime effect.
+Move local-coding workflows onto the Harness CLI/TUI, event store, provider
+config, Markdown skills and native tool registry. Check the
+[config reference](../configuration/config.md) before carrying over compatibility
+keys. Some accepted keys have no runtime effect.
+
+Generated sessions now use `<home>/sessions/<project-key>/<run-id>/`, where
+`<home>` is a nonempty `HARNESS_HOME` or `$HOME/.harness`. The key is `v2-`
+followed by the full lowercase BLAKE3 digest of the canonical absolute UTF-8
+project path. Memory, code indexes and edit attribution use
+`<home>/projects/<project-key>/`; managed worktrees use
+`<home>/worktrees/<project-key>/`. Symlink aliases share the same project key.
+
+Old project-local session directories and legacy `--path--` directories are
+not scanned or moved automatically. `--session-dir DIR`, or a nonempty
+`runtime.session_dir`, selects an old session directory explicitly. Relative
+paths resolve against the selected project directory, not the configuration
+file. The override does not relocate memory, indexes or worktrees. See
+[legacy storage](../architecture/sessions-and-replay.md#legacy-storage) before
+moving data; old keys could combine histories from different projects.
+
+For another installation's session data, `sessions discover --from ROOT`
+classifies immediate children. `sessions import --from SESSION_DIR` accepts
+supported `events.jsonl` histories and creates a separate replay-only session.
+Recognition does not imply that a foreign transcript format is importable.
+Imported sessions cannot be used for live continuation. Use a validated native
+session with `prompt --resume`, `run --session` or `sessions continue` when
+continuation is required. See [saved sessions](sessions.md).
 
 ## Removed command families
 
@@ -63,7 +88,7 @@ revision and explain retired APIs; they are not a map of the replacement backend
 - The provider `leaf` factory is removed; runtime construction remains in CLI bootstrap using the concrete provider configurations.
 - The unused TUI `slash` catalog is removed; `keybindings::slash_commands()` remains authoritative.
 - Unobserved TUI media queues, contextual-tip state, performance samples, and shadow lifecycle transitions are removed. Actual transcript rendering, terminal titles/notifications, input bounds, and `lifecycle_choreography::LifecycleState` remain.
-- The unused file-backed ACP echo transport (`integrations::acp_file`) is removed; stdio ACP and its connection lifecycle remain.
+- The unused file-backed ACP echo transport (`integrations::acp_file`) is removed. The local stdio diagnostic remains, but it only checks a transport exchange, not an ACP task protocol. See [stdio peer diagnostic](operators.md).
 - Unconnected `jujutsu::jj_*` workflow wrappers and `JujutsuWorkflowResult` are removed; Jujutsu detection and diagnostic commands remain.
 - The test-only plugin execution framework (`PluginExecutionSurface`, its sample plugins, and execution/cancellation methods and events) was removed in that earlier cleanup. The descriptor lifecycle was retired with the command families listed above.
 

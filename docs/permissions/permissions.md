@@ -10,20 +10,41 @@ Rules use `allow`, `ask` or `deny`. The last matching rule wins within each poli
 Shared policy and the acting agent's role policy then combine: deny wins, followed
 by ask, then allow. A grant or YOLO mode cannot override a deny.
 
-Permission names are `bash`, `edit`, `read`, `question`, `task`, `webfetch`,
-`websearch`, `codesearch`, `lsp`, `external_directory`, and `doom_loop`. Native
-session and skill tools also check their own IDs. Stdio MCP checks `bash`;
-HTTP MCP checks `network`. The legacy `shell` configuration name maps to `bash`.
+Public permission names are `bash`, `edit`, `read`, `eval`, `network`, `question`,
+`task`, `webfetch`, `websearch`, `codesearch`, `lsp`, `external_directory`, and
+`doom_loop`. The legacy `shell` configuration name maps to `bash`.
+
+| Tool or operation | Permission checks |
+| --- | --- |
+| `read`, `glob`, `grep`, `list` | `read` on the requested path |
+| `edit`, `write`, `apply_patch` | `edit` on affected paths |
+| Structural search or replacement | `read`, plus `edit` when applying changes |
+| `bash` | `bash` on the command and parsed command prefixes |
+| `eval` and eval kernel tools | `eval` |
+| `spawn_subagent` or `task` | The tool ID and `task` on the selected child type |
+| `lsp` | `lsp` and `read`; installation decisions check `lsp` only |
+| LSP rename | `lsp` and `read`, plus `edit` when `apply` is true |
+| `webfetch`, `websearch`, `codesearch` | Their own IDs, not a shared `network` switch |
+| Session, skill and other native tools | Their own IDs unless the tool supplies specific checks |
+| MCP | Transport permission, server operation ID and discovered tool ID |
+
+Stdio MCP transport checks `bash` against its configured command. HTTP transport
+checks `network` against its endpoint. A discovered MCP call also checks its
+tool ID against serialized arguments and `mcp.<server>.tool.call` against the
+remote tool name. Generic MCP calls enforce the discovered tool check too.
+Permission checks run before lazy connection or tool execution.
 
 Omitting `permission`, or using scalar `allow`, allows ordinary operations with
 these defaults:
 
 - Outside-workspace paths and repeated identical calls require approval.
 - Reads matching `*.env` or `*.env.*` require approval; `*.env.example` is allowed.
-- Questions stay denied unless the acting profile enables them.
+- Questions are denied by the shared default; enabling them also requires the acting role to permit them.
 
-Scalar `ask` or `deny` applies across the public permission kinds. Pattern maps
-are available for bash, edit, task, read and external directories:
+Scalar `ask` or `deny` sets defaults across the public permission kinds. Existing
+read rules still take precedence, including the built-in environment-file rules.
+Use a `read` pattern map to change those rules. Pattern maps are available for
+bash, edit, task, read and external directories:
 
 ```jsonc
 {
@@ -34,15 +55,50 @@ are available for bash, edit, task, read and external directories:
 }
 ```
 
-JSON/JSONC source order is significant. Later configuration layers append their
-patterns after inherited entries. Replacing a pattern moves it to the later
-position; a scalar replaces that kind's map. Legacy rule arrays retain their
-explicit order. An unmatched selector defaults to ask.
+Patterns match the entire selector. `*` matches any characters, including path
+separators, and `?` matches one character. Other characters are literal; these
+are not regular expressions or shell glob character classes.
+
+JSON/JSONC source order is significant. Later configuration layers append new
+patterns after inherited entries. Replacing an existing pattern keeps its position;
+a scalar replaces that kind's map. Legacy rule arrays retain their explicit order.
+Explicit pattern rules run after per-kind defaults. If no rule or configured
+default matches, the coordinator asks.
+
+A `permission` object without a `"*"` key has no catch-all, so tools that have
+no permission kind of their own (`todowrite`, `skill`, the session tools) ask on
+every call. Start the object with `"*": "allow"` to keep them allowed. It does
+not loosen the built-in asks for outside paths and repeated calls, or the
+question deny.
 
 Tools denied for every argument are omitted from provider tool lists. A partial
 allowance keeps the tool visible; execution still checks its actual arguments.
 
 ## Approvals and remembered grants
+
+The CLI presets change defaults for `edit`, `bash` and `network` only. They do
+not remove explicit pattern rules, role restrictions, sensitive-read rules or
+the external-directory and repetition checks. `--sandbox` is a permission
+preset, not OS confinement.
+
+| Flag value | Edit | Bash | Network |
+| --- | --- | --- | --- |
+| `--sandbox readonly` (or `read-only`) | deny | deny | deny |
+| `--sandbox workspace` | ask | ask | deny |
+| `--sandbox danger` (or `full`) | allow | allow | allow |
+| `--permission-mode default` | ask | ask | ask |
+| `--permission-mode acceptEdits` | allow | ask | ask |
+| `--permission-mode dontAsk` | deny | deny | deny |
+| `--permission-mode yolo` or `--yolo` | allow | allow | allow |
+
+`--permission-mode` overrides `--sandbox`; `--yolo` overrides both and enables
+session YOLO mode. `--allow` and `--deny` then set individual defaults. Each
+accepts comma-separated names, with deny applied after allow. Accepted names
+are `edit` (aliases `write`, `patch`), `bash` (alias `shell`), `network`,
+`question`, `task`, `read`, `webfetch`, `websearch`, `codesearch`, `lsp`,
+`external_directory` (alias `external`) and `doom_loop` (alias `doom`).
+They accept permission kinds, not command patterns or arbitrary tool IDs.
+`eval` is configured through `permission.eval`, not these two flags.
 
 An ask commits a permission request and waits. A configured timeout expires as a
 denial. Cancellation resolves waiting approvals and prevents the tool from
@@ -58,7 +114,7 @@ choice.
 
 Remembered approvals have run, session or workspace scope. Run grants end with
 the run. Session grants restore from that session's journal. Workspace
-grants use a private `.harness/permission-grants.json` file. Tools cannot
+grants use a private `<project>/.harness/permission-grants.json` file. Tools cannot
 edit that file or managed session storage.
 
 The matcher depends on the approved operation:
@@ -96,20 +152,28 @@ approval. These checks do not provide race-free filesystem confinement.
 
 The caller needs the `spawn_subagent` tool and `task` permission to start a child
 or resume completed child context.
-Each child uses its own role policy and tools under the shared project policy.
-A parent's role restrictions are not copied into the child. Nested eval tool calls
+Native subagents copy the parent's role permission rules into their registration
+and remain subject to the shared project policy. Their tool selection is limited
+by the parent's available toolset and the child definition. Nested eval tool calls
 use the same coordinator checks. Skills provide instructions, not authority.
 See [agents and tasks](../operations/generic-agent-and-tasks.md).
 
 Approving bash permits host commands within the configured shell parser and
 allowlist. Network tools can transmit data to their configured services. Optional
 [OS confinement](../tools/shell.md) remains separate from operator approval.
+For the bash tool, `HARNESS_OS_SANDBOX_POLICY` opts into `workspace_write`,
+`read_only` or `strict`; the default is `off`. Non-off policies require Linux
+Landlock filesystem ABI 5 and `/usr/bin/setpriv`. They restrict the launched
+shell's filesystem access, not networking, and do not confine eval. An unavailable
+confinement mechanism fails the shell launch rather than silently running it
+without confinement.
 
 ## Eval permission
 
 `permission.eval` accepts `allow`, `ask`, or `deny` and defaults to `allow`, like
 `bash`. Eval permits arbitrary local code, imports, subprocesses, and direct
 filesystem/network access from a persistent interpreter. It is not a sandbox.
-The shipped read-only profiles do not include eval. Calls through `tool.<name>`
-still use the caller's normal toolset and permission checks; an eval approval
+Remove eval from the toolset or deny `permission.eval` when arbitrary local code
+is not acceptable. Calls through `tool.<name>` still use the caller's normal
+toolset and permission checks; an eval approval
 does not grant any nested tool permission. See [eval](../tools/eval.md).

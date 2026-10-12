@@ -7,39 +7,83 @@ unsupported.
 | Extension | What it can do | Where to configure it |
 | --- | --- | --- |
 | MCP server | Register concrete tools from an enabled server | `mcp` in runtime config |
-| Markdown skill | Add instructions and declared resources when activated | Configured skill roots |
+| Markdown skill | Add instructions when activated | Configured skill roots |
 | Markdown prompt command | Expand a slash command into an agent prompt | Project `.harness/commands/` or `<home>/commands/` |
 | Native lifecycle hook | Run an allowed command at a coordinator lifecycle point | Runtime hook config |
 
 ## Config-backed MCP
 
-MCP servers are declared in runtime config under `mcp`. Enabled servers register discovered tools through the native registry. Disabled entries remain documented but do not launch.
+MCP servers are declared by name under `mcp` in runtime config. For example:
+
+```jsonc
+{
+  "mcp": {
+    "local": {
+      "transport": "stdio",
+      "command": ["/usr/local/bin/example-mcp", "--stdio"],
+      "env": {},
+      "cwd": ".",
+      "timeout_secs": 30,
+      "enabled": true
+    },
+    "remote": {
+      "transport": "http",
+      "endpoint": "https://example.com/mcp",
+      "headers": {},
+      "timeout_secs": 30,
+      "enabled": false
+    }
+  }
+}
+```
+
+Stdio uses an argument vector, optional `env`, and optional `cwd` resolved against
+the workspace. HTTP uses a Streamable HTTP endpoint and optional `headers`.
+`streamable_http` is an alias for `http`, and `url` is an alias for `endpoint`.
+Endpoints must use HTTP(S), with no embedded credentials or fragment. Both
+transports default to `enabled: true` and `timeout_secs: 30`; timeouts must be
+1 to 300 seconds. Disabled entries do not launch.
+
+Discovered tools have IDs such as `mcp.local.lookup`. Calls require the concrete
+tool permission, `mcp.<server>.tool.call` for the server tool name, and transport
+permission (`bash` for the stdio command or `network` for the HTTP endpoint).
+The generic server tool-call adapter checks the same concrete permission, so it
+cannot bypass a denial. MCP tools do not bypass the coordinator's policy.
 
 ## Markdown skills
 
 Harness ships no skill pack. Default project roots are `.harness/skills` and
-`.agents/skills`; default global roots are `<home>/skills` and
-`$HOME/.agents/skills`. Here `<home>` is `HARNESS_HOME` when nonempty, otherwise
-`~/.harness`.
-Discovery reads frontmatter and compact metadata; full bodies and declared
-`resources` load only when the `skill` tool or a subagent definition preload
-activates them. Skills never grant runtime tools or bypass coordinator
-permissions. See the [skill contract](../configuration/config.md#skill-discovery-and-v1-skill-contract)
+`.agents/skills`; default global roots are `~/.harness/skills` and
+`~/.agents/skills`. These global skill defaults use `HOME`, not `HARNESS_HOME`.
+Set `skills.global_roots` to use another location. For commands and agents,
+`<home>` is nonempty `HARNESS_HOME`, otherwise `~/.harness`.
+Discovery reads frontmatter and compact metadata. Full skill bodies load only
+when the `skill` tool or a subagent definition preload activates them. Skills
+never grant runtime tools or bypass permissions. See the
+[skill contract](../configuration/config.md#skill-discovery-and-v1-skill-contract)
 for discovery order, frontmatter, and activation rules.
 
-Bundled resources use progressive disclosure. The `resources` frontmatter field
-is a comma- or newline-separated list of relative file paths under the skill
-directory. Directories, globs, absolute paths, `..`, and symlink escapes are
-rejected before reading. V1 caps each activation to 5 files, 64 KiB per file, 200
-KiB total loaded bytes, and path depth 4 under the skill root. Loaded resource
-text is redacted and appended to the normal skill activation body. The catalog,
-doctor, and support output expose compact metadata only.
+The `resources` and `mcp` frontmatter strings are retained as deferred metadata.
+Activation does not read resource files or launch declared MCP servers. Put
+instructions in the skill body and configure servers through runtime `mcp`.
+Each skill body and the combined loaded instructions are limited to 1 MiB. The
+`skill` tool accepts `arguments` up to 16 KiB and replaces `$ARGUMENTS` in loaded
+text; the expanded result must also fit 1 MiB. Catalog, doctor, and support output
+expose compact metadata, not full skill bodies.
 
 Harness skill roots rank above `.agents/skills` and `~/.agents/skills`. Duplicate
 skills show as `shadowed` in the catalog. Other assistant roots such as
 `.claude/skills`, `.external-editor/skills` and `.assistant/skills` are not
 searched by default; list them in `skills.project_roots` or
 `skills.global_roots` to import them.
+
+Startup instructions load `<home>/AGENTS.md` first, then one instruction file
+per project directory from the nearest Git root down to the current directory.
+`AGENTS.md` wins over `CLAUDE.md` in the same directory. There is no global
+`CLAUDE.md` fallback. Outside Git, only the current project directory is searched.
+When `runtime.behavior.directory_instructions.enabled` is true, later reads and
+edits attach applicable descendant instruction files; those files still pass
+read-permission checks.
 
 ## Markdown prompt commands
 
@@ -116,9 +160,8 @@ manifest-driven MCP launch, provider decorators, and extension-provided tool
 registration are not supported. MCP tools, skills, Markdown prompt commands and
 lifecycle hooks use the paths above. Lifecycle hooks run through the coordinator.
 
-Executable plugins, upstream plugin compatibility, browser and media automation,
-OAuth MCP, server hosting, session sharing, enterprise administration, cloud
-services, telemetry, and billing remain post-V1.
+OAuth MCP and executable plugin loading are not supported by these extension
+paths. This document describes the supported interfaces, not a release roadmap.
 
 ## Verification requirements
 

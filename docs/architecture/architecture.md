@@ -12,16 +12,19 @@ commits durable events and decides when cancellation or shutdown is complete.
 | `harness-core` | Coordinator, permission policy, configuration, journal, projections, sessions and credentials |
 | `harness-providers` | HTTP transports, request lowering, stream normalization and provider fixtures |
 | `harness-tools` | Native tools, staged file edits, lazy LSP/MCP connections and process cleanup |
+| `harness-eval` | Persistent language kernels, cell lifecycle, output retention and host callbacks |
 | `harness-tui` | Preserved terminal runtime, input, projection and rendering |
 | `harness-testkit` | Shared temporary workspaces and preserved terminal test support |
 
 ## Turn loop
 
-`coord/turn.rs` lowers the agent context into a provider request. It consumes the
-normalized stream, publishes ephemeral progress and commits the completed response.
-Tool calls return through the coordinator's permission and capacity checks. Their
-ordered results join the context before the next provider request. A response
-without tool calls completes the turn.
+`crates/harness-core/src/coord/turn.rs` queues turns and starts workers.
+`coord/turn/request.rs` builds provider requests; `coord/turn/worker.rs` runs
+the request/tool loop. `coord/streaming.rs` and `coord/streaming/` consume the
+normalized stream through coordinator calls, publish ephemeral progress and
+commit the completed response. Tool calls return through the coordinator
+permission and capacity checks. Results join the context in call order before
+the next provider request. A response without tool calls completes the turn.
 
 The loop uses the configured iteration and model budgets. Provider retries cover
 classified transient failures; model fallback updates the active model and prompt
@@ -38,6 +41,19 @@ Interactive runtimes keep journal I/O on the coordinator executor so the termina
 executor can continue handling input. Single-thread callers commit on their own
 executor. Cancelling a run cancels descendants, joins workers, closes native
 sessions and commits a terminal event before releasing journal writers.
+
+The `monitor` tool prepares a command or file watch in
+`crates/harness-tools/src/shell/monitor.rs`. The coordinator owns its background
+task and wakeups in `crates/harness-core/src/coord/commands/monitor.rs`. Command
+monitors use a pseudo-terminal; file monitors poll a path. Matching lines become
+bounded `monitor_event` reminders through `coord/reminders.rs`, subject to
+`runtime.behavior.command_notifications`. Repeated unproductive wakeups pause
+command monitors until they are rearmed or the user submits input.
+
+Eval sessions live in `crates/harness-eval/src/session.rs`. Native integration
+is in `crates/harness-tools/src/eval.rs` and `eval/`; nested tool and provider
+callbacks return through `crates/harness-core/src/coord/eval.rs` and `coord/eval/`.
+Kernels do not authorize host operations or append journal events.
 
 ## Durable history
 
@@ -80,6 +96,12 @@ refuses concurrent editor changes. Shell commands use bounded output, filtered
 environments, process groups and joined cancellation. Optional Linux filesystem
 confinement is separate from application policy.
 
+`edit.mode` and `edit.model_variants` select `apply_patch`, `replace` or
+`hashline` editing for each model. `auto` resolves a model-family preference.
+Selection lives in `crates/harness-core/src/tool/edit_mode.rs` and respects the
+agent editing tools. Tool definitions and read output use the selected mode;
+publication still crosses the coordinator edit boundary.
+
 MCP and LSP connect after an approved request, reuse their session within the run,
 and close on shutdown. Native tools cannot append events or approve themselves.
 See [tools](../tools/native-tool-catalog.md), [permissions](../permissions/permissions.md),
@@ -93,20 +115,27 @@ is offline. Connected credentials augment missing subscription providers without
 replacing configured models. The TUI's compatibility snapshots do not own runtime
 configuration.
 
-Provider boundaries normalize Chat Completions, Responses and Anthropic Messages
-into the same stream vocabulary. Credential storage and refresh are shared;
+HTTP providers normalize Chat Completions, Responses and Anthropic Messages
+into the same stream vocabulary. The Claude subscription provider runs a local
+Claude Code subprocess and can own its conversation and compaction. The
+`Provider::manages_context` contract disables Harness automatic compaction and
+input-budget stopping for those requests. Credential storage and refresh are shared;
 refresh cannot resurrect a logged-out account. Current and rotated secrets remain
 registered with the run's redactor. Support exports scan before publication and
 fail without writing output after a secret finding.
 
 ## Finding the code
 
-- Runtime transitions: `harness-core/src/coord/`
-- Journal and recovery: `harness-core/src/store.rs` and `store/`
-- Replay and catalog: `harness-core/src/session/`, `proj/`, `session_lineage/`
-- CLI bootstrap and prompts: `harness/src/bootstrap.rs`, `runtime_catalog.rs`, `prompt/`
-- Provider wire formats: `harness-providers/src/`
-- Native execution: `harness-tools/src/`
+- Runtime API and transitions: `crates/harness-core/src/coord.rs`, `crates/harness-core/src/coord/`
+- Event contracts: `crates/harness-core/src/event.rs`, `crates/harness-core/src/event/`
+- Configuration: `crates/harness-core/src/config.rs`, `crates/harness-core/src/config/`
+- Journal and recovery: `crates/harness-core/src/store.rs`, `crates/harness-core/src/store/`
+- Replay and catalog: `crates/harness-core/src/session/`, `crates/harness-core/src/proj/`, `crates/harness-core/src/session_lineage/`
+- CLI bootstrap and prompts: `crates/harness/src/bootstrap.rs`, `crates/harness/src/runtime_catalog.rs`, `crates/harness/src/prompt/`
+- Provider contract and events: `crates/harness-providers/src/lib.rs`, `crates/harness-providers/src/types.rs`
+- Native execution and registry: `crates/harness-tools/src/lib.rs`, `crates/harness-tools/src/`
+- Code kernels: `crates/harness-eval/src/`
+- Shared test workspaces: `crates/harness-testkit/src/workspace.rs`
 
 ### Terminal UI
 
@@ -116,32 +145,45 @@ It subscribes to coordinator events in live mode and reads recorded sessions in
 replay mode. Permission dialogs collect decisions, diff views display file
 changes, and the transcript groups related tool and provider output.
 
+`AppState` is defined in `crates/harness-tui/src/app.rs`. Concern-specific
+modules in `app/` update its state. `render_app` in `crates/harness-tui/src/ui.rs`
+composes a frame without submitting intents. `run_tui_with_options` in
+`crates/harness-tui/src/runtime.rs` owns terminal setup, input, live-update
+ingestion, frame output and teardown. CLI live adapters translate UI intents
+into coordinator calls.
+
 ### Terminal presentation
 
-Compaction streams on one status row: an animated accent-colored spinner, a reason label, an Escape
-cancel hint, and the trailing summary preview. Previews are redacted live events, never journaled.
-Generation identities reject late chunks, and replay never resurrects a spinner. Completed checkpoints
-show `[compaction]` and the comma-separated prior token count. Ctrl+Alt+O expands/collapses the Markdown
-summary; the existing Ctrl+O permission action retains its binding.
+Compaction streams on one status row with an animated spinner, a reason label,
+a Ctrl+C cancel hint and the trailing summary preview. Previews are redacted live
+events, never journaled. Generation identities reject late chunks, and replay
+does not restore an active spinner. Completed checkpoints show `[compaction]`
+and the prior token count. Ctrl+Alt+O expands or collapses the Markdown summary.
+The Ctrl+O permission action retains its binding.
+
+Session usage folds completed provider requests by provider and model in
+`crates/harness-tui/src/app/session_usage.rs`. The TUI displays live token speed
+and accumulated session cost using the model catalog prices. A `+` suffix marks
+usage without a known price; `(sub)` marks an OAuth subscription session.
 
 ## Input-first TUI runtime scheduling
 
-Pane focus transitions live in `app/focus.rs`; keyboard and overlay dispatch keep
-their priority in `app/key_interaction.rs`. Startup transitions update the welcome
-selection, and closing Help restores its saved focus. Replay consumes default Tab
-keys before action dispatch, while a remapped reverse-focus action can reach a
-visible terminal pane.
+Pane focus transitions live in `crates/harness-tui/src/app/focus.rs`; keyboard
+and overlay dispatch live in `app/key_interaction.rs`. Startup transitions
+update the welcome selection, and closing Help restores its saved focus. Replay
+consumes default Tab keys before action dispatch, while a remapped reverse-focus
+action can reach a visible terminal pane.
 
-Interactive input has one producer: a terminal-reader thread feeds a bounded 128-event FIFO. The
-runtime arbiter orders fatal writer failure, frame acknowledgement, quit/cancel, terminal input,
-pacer and animation deadlines, then live provider updates. An input quantum is bounded to 16
-terminal envelopes or 2 ms; fairness permits live progress without reordering input. Live work
-retains a 16-update / 2 ms budget boundary. Input and provider bursts share a 4 ms default flush
-cadence, configurable through `HARNESS_TUI_MIN_DRAW_MS` (1 to 100 ms). Resize coalescing also uses
-4 ms. Fast visible motion follows the configured cadence; discrete spinner and background
-glyphs retain their slower wall-clock periods. Scroll gesture classification retains its 80 ms
-window. The writer keeps at most one frame in flight, and completed acknowledgements are
-retired even when telemetry is disabled. Idle state without visible motion parks.
+A terminal-reader thread feeds a bounded 128-event FIFO. The runtime handles
+shutdown, writer failure and reader failure before draining a bounded input
+batch. Each batch contains at most 16 terminal envelopes or 2 ms of input work.
+Live events and due frames get a turn after that batch; submit, resize and click
+events form a paint barrier before provider work. Live updates also have a
+16-update / 2 ms budget. Input and provider bursts share a 4 ms default flush
+cadence, configurable through `HARNESS_TUI_MIN_DRAW_MS` (clamped to 1 to 100 ms).
+The writer keeps at most one frame in flight. The runtime retires frame
+acknowledgements even when telemetry is disabled and waits on channels or the
+next deadline when no work is ready.
 
 On Unix, the reader waits for terminal input, SIGWINCH or its shutdown wake pipe
 without a periodic timeout. Shutdown signals the pipe and joins the owned thread
@@ -151,14 +193,13 @@ Crossterm patch exposes its existing parser and wake pipe without constructing a
 descriptor failures reach the runtime as typed reader errors. Other platforms
 retain the timed reader path.
 
-Runtime scheduling QA exercises typing, wheel input, disclosure open/close, resizes, and semantic
-cancellation while live work remains pending. Its
-Harness-only scheduling sidecar records decisions, depths, preemptions, deadlines, action IDs, and
-cause IDs; it does not contain provider or terminal text. Both runtimes remain observable through
-`external_pty_observed`; only Harness may claim `native_completed_write` after write and flush.
+Local scheduling telemetry records runtime decisions without provider or
+terminal text. Presentation telemetry records frame acknowledgements. During
+shutdown, the runtime stops and joins the reader, drains pending frame output
+and joins the writer before restoring terminal state.
 
-The session CLI and model-visible session tools both consume replay-derived
-projections. Support export adds local-readiness evidence from doctor plus agent
-catalog, native tool catalog, session-tool readiness, route metadata, artifact
-index, redaction manifest, and secret-scan status so failures can be debugged
-without exposing raw credentials.
+The session CLI and model-visible session tools consume replay-derived
+projections. Support export includes configuration, provider and agent summaries,
+the native tool catalog, session-tool readiness and secret-scan status. Its
+readiness scope is local configuration, not proof of provider execution. It omits
+raw tool results and scans for secrets before publication.

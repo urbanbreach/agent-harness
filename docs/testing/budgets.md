@@ -6,7 +6,7 @@ for larger production workloads. Run the performance lane to collect current mea
 | Budget | Current local threshold | Evidence |
 |---|---:|---|
 | backend startup, streaming and idle CPU | measured local workload; no universal timing threshold | `scripts/measure-backend.py` |
-| TUI render | warm 10,000-entry resize p95 below 8.333 ms; frame/resource comparisons measured separately | `cargo nextest run -p harness-tui` and the release perf profile |
+| TUI render | warm 10,000-block resize p95 at most 8.333 ms; frame/resource comparisons measured separately | `crates/harness-tui/src/app/tests/resize_performance_tests.rs`, release `perf` profile |
 | completed child sessions | final descriptor count at most four above startup | `scripts/measure-delegation.py` |
 | binary size | no enforced threshold | no measurement gate yet |
 
@@ -30,8 +30,19 @@ made for them.
 
 ## TUI render budget
 
-The release resize contract requires p95 below the 8.333 ms budget for 120 Hz. Deterministic
-tests also cover startup, overlays, permissions, replay, Unicode geometry, and selection.
+The resize test requires a release build on x86-64 Linux and a p95 of at most
+8,333 microseconds (8.333 ms). It renders 10,000 settled assistant blocks, warms
+up with ten resizes, then measures 100 resizes alternating between 80 and 160
+columns at 40 rows. The detached transcript anchor must survive every resize.
+Run that gate directly with:
+
+```bash
+cargo nextest run --profile perf --release -p harness-tui --lib \
+  perf_resize_to_render_p95_stays_within_one_frame_and_preserves_detached_anchor
+```
+
+Deterministic tests also cover startup, overlays, permissions, replay, Unicode
+geometry and selection.
 `scripts/measure-tui-performance.py` measures complete render/diff/ANSI encoding, CPU time,
 resident memory, and terminal bytes across synthetic workloads. `scripts/measure-tui-runtime.py`
 measures the production event loop and writer through a real PTY, including a slow reader.
@@ -45,9 +56,12 @@ measurement of the built binary and an artifact tied to that build.
 
 ## Perf lane
 
-`scripts/test-lanes.sh perf` runs the preserved release performance tests, builds
-the CLI, then runs the local streaming and delegation probes. It writes commands,
-exit statuses, output and JSON samples beneath the chosen lane artifact directory.
+`scripts/test-lanes.sh perf` runs workspace tests selected by
+`cargo nextest run --profile perf --release --workspace --all-features`, builds
+the CLI, then runs five local streaming samples and the 256-child delegation
+probe. It writes commands, exit statuses, output and JSON samples beneath the
+chosen lane artifact directory. The profile selects test names containing `perf_`;
+ignored tests still need an explicit opt-in to run.
 A failed measurement or failed output/journal assertion fails the lane.
 
 Performance claims must link to measured samples and identify the build. Retained

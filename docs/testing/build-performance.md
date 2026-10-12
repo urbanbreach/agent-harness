@@ -62,11 +62,14 @@ cargo --config .cargo/wild.toml nextest run --profile ci --workspace --all-featu
 ```
 
 The fragment applies only to x86-64 GNU/Linux. Omit `--config` to return to the
-stock linker. Switching linkers causes an initial rebuild. The lane runner and
-CI use the stock linker; all Rust test jobs use nextest, including PTY and binary smoke.
+stock linker. Switching linkers causes an initial rebuild. The lane runner uses
+the stock linker. CI uses nextest for tests, including PTY and binary smoke.
+CI also overrides development and test debug information to `0`; local builds
+keep the line-table default unless overridden.
 
-Release optimization, incremental compilation, and Cargo's default job count
-are unchanged. Release optimization and CI caching were not benchmarked here.
+The Wild fragment changes only the target linker flags. It does not set Cargo
+profiles, incremental compilation or job counts. Release optimization and CI
+caching were not benchmarked here.
 
 ## Results
 
@@ -85,10 +88,12 @@ configuration. These include Cargo and compilation, not just the linker.
 | None | mold | 0.486 | 3.147 | 0.698 |
 | None | Wild | 0.414 | 3.055 | 0.604 |
 
-The selected settings reduced CLI-edit time by 62%, TUI-edit time by 23%, and
-test-recompilation time by 58% relative to full debug information with LLD.
-Disabling debug information entirely was fastest, but saved only another
-0.05–0.13 seconds in these workloads while losing file/line backtraces.
+In these measurements, line tables with Wild reduced CLI-edit time by 62%,
+TUI-edit time by 23%, and test-recompilation time by 58% relative to full debug
+information with LLD. Those are historical comparisons, not measurements of the
+current stock-linker default. Disabling debug information entirely was fastest,
+but saved only another 0.05–0.13 seconds in these workloads while losing
+file/line backtraces.
 
 The CLI binary shrank from 533.9 MiB with full debug information and LLD to
 212.2 MiB with line tables and Wild. With no debug information and Wild it was
@@ -136,9 +141,9 @@ will be removed by `cargo clean`.
 
 ## Validation
 
-The full deterministic run compiled 200 test binaries and ran 4,687 tests:
-4,685 passed, two failed, and 13 were skipped. Both failures reproduce on the
-untouched snapshot using LLD and full debug information:
+At the measured revision, the deterministic run compiled 200 test binaries and
+ran 4,687 tests: 4,685 passed, two failed and 13 were skipped. Both failures
+reproduced on the untouched snapshot using LLD and full debug information:
 
 - `permissions_docs_state_file_workspace_and_network_implications`
 - `sessions_replay_docs_name_session_tools_and_no_side_effect_contract`
@@ -147,10 +152,11 @@ They assert existing documentation wording; no failure unique to Wild was found.
 Logs are `validation.log` and `baseline-failures.log` in the evidence directory.
 Formatting and static test-suite gates passed.
 
-The Wild release build passed with the existing fat-LTO release settings.
-The binary passed `--version`, and its ELF
-comment confirmed Wild 0.10.0. This was a compatibility check, not a comparison
-of release optimization settings.
+The historical Wild release build passed with the fat-LTO settings used at that
+revision. The binary passed `--version`, and its ELF comment confirmed Wild
+0.10.0. That was a compatibility check, not a comparison of release optimization
+settings. The current release profile uses thin LTO, optimization level 3, one
+codegen unit, symbol stripping and line-table debug information (`Cargo.toml`).
 
 The direct Wild configuration also passed all 21 selected tests without the
 benchmark linker wrapper.

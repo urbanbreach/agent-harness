@@ -6,7 +6,7 @@ streams, environment values, providers, clocks, and cancellation tokens.
 
 | Work | Source |
 | --- | --- |
-| Prompt and scenario execution | `src/prompt.rs`, `src/prompt/`, `src/run.rs` |
+| Prompt and scenario execution | `src/prompt.rs`, `src/prompt/`, `src/scenarios.rs` |
 | Runtime construction and models | `src/bootstrap.rs`, `src/runtime_catalog.rs` |
 | Credentials | `src/auth.rs`, `src/auth/` |
 | Sessions and replay | `src/sessions.rs`, `src/sessions/`, `src/replay.rs` |

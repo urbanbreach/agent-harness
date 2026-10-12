@@ -11,22 +11,26 @@ then `GITHUB_REPOSITORY`, in `owner/repo` form. Names are validated and normaliz
 to lowercase. Permission selectors are `owner/repo:operation`, under the tool ID;
 for example, `github.issue` with `acme/project:comment`.
 
-Reads and state changes require `issue_number` or `pull_number`. Comments also
-require a nonblank `body`. Creating a pull request requires `title`, `head`, and
-`base`, with optional `body` and `draft`. Comment and pull request bodies retain
-newlines and are limited to 64 KiB.
+`get`, `comment`, `close`, and `reopen` require a positive `issue_number` or
+`pull_number`, as appropriate for the tool. Lists and pull request creation do
+not require a number. Comments require a nonblank `body`. Creating a pull
+request requires nonblank `title`, `head`, and `base`, with optional `body`
+and `draft`. `title`, `head`, `base`, and every body must fit within 64 KiB.
+Bodies retain newlines.
 
-Lists accept `state` (`open`, `closed`, or `all`), `per_page` (default 20, clamped
-to 1–100), and `page` (default 1). Each call fetches one page. `has_more` reflects
-the next-page link; increment `page` to continue. Issue lists exclude pull
-requests. Their count may therefore be smaller than `per_page`.
+Lists accept `state` (`open`, `closed`, or `all`, default `open`), `per_page`
+(default 20, clamped to 1 through 100), and `page` (default 1; zero becomes 1).
+Each call fetches one page. `has_more` reflects the next-page link; increment
+`page` to continue. Issue lists exclude pull requests. Their count may therefore
+be smaller than `per_page`.
 
 Token precedence is `HARNESS_GITHUB_TOKEN`, `GITHUB_TOKEN`, then `GH_TOKEN`.
 Mutations require a token. Public reads can run anonymously. The API base defaults
-to `https://api.github.com`; `HARNESS_GITHUB_API_BASE_URL` can select an enterprise
-endpoint, including its path prefix. Embedded URL credentials, query parameters,
-and fragments are rejected. Tokens enter the runtime redactor before tool calls.
-CLI setup uses its injected environment lookup.
+to `https://api.github.com`; `HARNESS_GITHUB_API_BASE_URL` can select an HTTP(S)
+enterprise endpoint, including its path prefix. Embedded URL credentials, query
+parameters, and fragments are rejected. These environment settings are captured
+when the tools are registered. Tokens enter the runtime redactor before tool
+calls. CLI setup uses its injected environment lookup.
 
 Calls share the bounded HTTP connection pool with web fetches. Responses are
 limited to 2 MiB after HTTP decompression, with a 30-second deadline. Redirects

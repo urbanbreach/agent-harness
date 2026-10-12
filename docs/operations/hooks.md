@@ -24,10 +24,17 @@ uses command patterns.
 }
 ```
 
+Only `event` and `command` are required. `id` is optional; omitted IDs use the
+event name and one-based configuration index, such as `tool_call_finished_01`.
+`critical` defaults to false, `env` defaults to an empty map, and `timeout_ms`
+defaults to 5,000. `name` and `timeoutMs` are accepted aliases for `id` and
+`timeout_ms`.
+
 Commands are argument vectors; shell syntax requires an explicitly allowed shell.
-The default working directory is the workspace. A configured `cwd` must be
-relative, remain inside the workspace after resolving symlinks, and satisfy any
-configured `cwd_roots`.
+The default working directory is the actor's effective execution directory. A
+configured `cwd` is relative to that directory, must remain inside the run
+workspace after resolving symlinks, and must satisfy any configured `cwd_roots`.
+A child isolated outside the run workspace cannot use hooks there.
 
 ## Stages and failures
 

@@ -68,7 +68,9 @@ in USD per million tokens:
 }
 ```
 
-Cache reads and writes without their own price are billed at the input rate. The
+Prices are rounded to millionths of a USD per million tokens and must fit
+0..4294.967295 at that precision. Cache reads and writes without their own
+price are billed at the input rate. The
 cost reads `$0.047+` when some usage came from a model with no price, and
 `$0.047 (sub)` for a Codex or Copilot sign-in, where the bill isn't per token.
 Narrow terminals drop speed first, then cost.
@@ -88,7 +90,7 @@ the runtime resolve credentials from the secure credential store before falling
 back to `apiKeyEnv` and inline `apiKey`. Stored credentials live outside
 `harness.json{,c}` at `<home>/credentials/{authProvider}.json`, where `<home>`
 is `HARNESS_HOME` or `~/.harness`. They are atomically replaced and use restrictive
-file permissions: POSIX `0600`, and on Windows a protected owner-only DACL.
+file permissions: POSIX `0600`.
 
 ## Public subagents
 
@@ -397,23 +399,481 @@ for those settings instead of mixing them into runtime config.
 | --- | --- |
 | `$schema` | Optional schema URI for editor integration. |
 | `agent` | Generic `default` parent and named subagent tuning. Alternate primary roles and category routes are rejected. |
-| `autoshare` | Upstream-compatible sharing flag; inactive `false` is accepted, active sharing is rejected. |
-| `command` | Configured command objects are accepted only when empty. Use [Markdown command files](../operations/extension-strategy.md#markdown-prompt-commands) for slash prompt templates. |
 | `disabled_providers` | Upstream-compatible provider filter; hides matching configured and authenticated built-in providers from runtime model catalogs. |
 | `enabled_providers` | Upstream-compatible provider allow-list; when non-empty, only matching configured/authenticated built-in providers remain in runtime model catalogs. |
-| `formatter` | Formatter registry. `false` disables formatters; `true` enables all 26 built-in formatters (the default when the key is omitted). An object accepts `enabled`, `experimentalOxfmt`, and named formatter entries such as `<name>: { disabled?, command?, environment?, extensions? }`. Built-in formatter names are `gofmt`, `mix`, `prettier`, `oxfmt`, `biome`, `zig`, `clang-format`, `ktlint`, `ruff`, `air`, `uv`, `rubocop`, `standardrb`, `htmlbeautifier`, `dart`, `ocamlformat`, `terraform`, `latexindent`, `gleam`, `shfmt`, `nixfmt`, `rustfmt`, `pint`, `ormolu`, `cljfmt`, `dfmt`. Formatters are selected by name, not by extension; each built-in formatter declares its own extensions, and an `extensions` override replaces the built-in list. `command` overrides discovery entirely; `environment` merges with the built-in environment (override wins). `$FILE` is substituted with the target file path. When several formatters match a file, they run sequentially in built-in registry declaration order, followed by any custom override-only formatters; failures surface as non-fatal warnings. |
-| `instructions` | Optional inline instructions or instruction file paths prepended before agent prompts. |
-| `lsp` | Upstream-compatible LSP setting; `false` disables harness LSP overrides, object values map to harness LSP servers when possible. |
+| `formatter` | Boolean enablement or an object with `enabled` (default `true`), `experimental_oxfmt` (default `false`) and named formatter overrides. Overrides accept `disabled`, `command`, `environment` and `extensions`. |
+| `instructions` | Inline instructions or file paths appended after the system prompt. |
+| `lsp` | `false` disables LSP. An object accepts `disabled` and named `servers`. |
 | `mcp` | MCP server definitions keyed by server name. |
 | `model` | Default full-capability model reference. |
 | `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback metadata; runtime profile resolution selects the primary target in V1. |
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. Supports scalar `allow`/`ask`/`deny` or per-tool pattern maps. Catch-all deny hides tools from the model; last matching pattern wins. |
 | `provider` | Provider definitions keyed by provider id. |
 | `runtime` | Runtime settings including [session storage](#session-storage), startup approval mode, provider-context compaction settings, provider retry policy, and [behavior guidance](#runtime-behavior-guidance). |
-| `server` | Upstream server configuration; accepted only when empty because server commands are outside this runtime config. |
 | `model_roles` / `modelRoles` | Optional `smol` and `slow` model references for subagent role selectors. |
 | `skills` | Shared skill discovery roots and permission overrides for skill loading. |
+| `edit` | Model-facing edit mode and per-model overrides. |
+| `eval` | Eval languages, routed tools, deadlines, output limits, memory and sandbox settings. |
+| `features` | Subagent messaging, model inheritance and worktree snapshot switches. |
+| `subagents` | Child enablement, limits, model pins, type toggles, roles and personas. |
+| `hooks` | Lifecycle command hooks. |
+| `integrations` | Remote search settings and the alternative `mcp.servers` shape. |
+| `logging` | Log level and optional log file. |
+| `ui` | Runtime presentation defaults and transcript caps; use TUI config for keybindings. |
 
+### Nested key reference
+
+These tables give file-contract defaults before catalog data, bundled profiles or
+runtime resolution supply values. `null` means unset. Aliases on one row are
+alternative spellings, not separate settings. Do not put two spellings in one
+object. Empty object defaults mean that the nested fields use their own defaults.
+
+### Provider fields
+
+The `type` field is required. HTTP provider `options` accepts only the transport fields listed below, not arbitrary request options. Put request options such as `thinking` under a model or variant. Nested non-null scalar options override sibling provider fields; a nonempty nested `apiKeyEnv` replaces the sibling list, and nested headers override matching sibling headers. Provider maps default to `{}`.
+
+`provider.<id>` with `openai_compatible`
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `apiKey` / `api_key` | string | `""` |
+| `apiKeyEnv` / `apiKeyEnvironment` / `api_key_env` | array | `[]` |
+| `apiMode` / `api_mode` | `"responses"`, `"chat_completions"`, `"auto"` | `"auto"` |
+| `authProvider` / `auth_provider` | string or null | `null` |
+| `baseURL` / `baseUrl` / `base_url` | string | `"https://api.openai.com/v1"` |
+| `cacheRetention` / `cache_retention` | `"none"`, `"short"`, `"long"` | `"short"` |
+| `headers` | object | `{}` |
+| `models` | object | `{}` |
+| `name` | string or null | `null` |
+| `options` | object | `{"apiKey":null,"apiKeyEnv":[],"apiMode":null,"authProvider":null,"baseURL":null,"cacheRetention":null,"headers":{},"name":null,"timeoutMs":null}` |
+| `timeoutMs` / `timeout_ms` | integer | `60000` |
+| `type` | `"openai_compatible"` | required |
+
+`provider.<id>` with `anthropic_messages`
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `apiKey` / `api_key` | string | `""` |
+| `apiKeyEnv` / `apiKeyEnvironment` / `api_key_env` | array | `[]` |
+| `baseURL` / `baseUrl` / `base_url` | string | `"https://api.anthropic.com/v1"` |
+| `headers` | object | `{}` |
+| `models` | object | `{}` |
+| `name` | string or null | `null` |
+| `options` | object | `{"apiKey":null,"apiKeyEnv":[],"baseURL":null,"headers":{},"name":null,"timeoutMs":null}` |
+| `timeoutMs` / `timeout_ms` | integer | `60000` |
+| `type` | `"anthropic_messages"` | required |
+
+`provider.<id>` with `anthropic_subscription`
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `appendSystemPrompt` | boolean or null | `null` |
+| `enabled` | boolean or null | `null` |
+| `models` | object | `{}` |
+| `name` | string or null | `null` |
+| `pinnedAccount` | string or null | `null` |
+| `resumeMode` | `"auto"`, `"off"` or null | `null` |
+| `settingSources` | array or null | `null` |
+| `strictMcpConfig` | boolean or null | `null` |
+| `systemPromptFile` | string or null | `null` |
+| `systemPromptMode` | `"preset-append"`, `"full"`, `"override"` or null | `null` |
+| `tokenInjection` | `"oauth-slots"`, `"config-dir"`, `"ambient"` or null | `null` |
+| `type` | `"anthropic_subscription"` | required |
+
+### Model fields
+
+These fields live under `provider.<id>.models.<model>`. Model options are arbitrary JSON. Variant limits and options override the base model. Unset limits are unknown, not zero-capacity limits. `limit.context`, `limit.input` and `limit.output` take precedence over the older context and token-limit fields. Cost requires nonnegative `input` and `output` prices in USD per million tokens; omitted cache prices use the input rate.
+
+Base model
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `cost` | object or null | `null` |
+| `displayName` / `display_name` / `name` | string | `""` |
+| `limit` | object | `{"context":null,"input":null,"output":null}` |
+| `maxInputTokens` / `max_input_tokens` | integer or null | `null` |
+| `maxOutputTokens` / `max_output_tokens` | integer or null | `null` |
+| `metadata` | object | `{"context_window_tokens":null,"family":null,"release_stage":null,"supports_reasoning_summaries":null,"supports_tool_calls":null}` |
+| `modalities` | object | `{"input":[],"output":[]}` |
+| `options` | object | `{}` |
+| `variants` | object | `{}` |
+
+Model limits (`limit`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `context` | integer or null | `null` |
+| `input` | integer or null | `null` |
+| `output` | integer or null | `null` |
+
+Model modalities (`modalities`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `input` | array | `[]` |
+| `output` | array | `[]` |
+
+Model metadata (`metadata`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `contextWindowTokens` / `context_window_tokens` | integer or null | `null` |
+| `family` | string or null | `null` |
+| `releaseStage` / `release_stage` | `"stable"`, `"preview"`, `"deprecated"` or null | `null` |
+| `supportsReasoningSummaries` / `supports_reasoning_summaries` | boolean or null | `null` |
+| `supportsToolCalls` / `supports_tool_calls` | boolean or null | `null` |
+
+Model price (`cost`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `cacheRead` / `cache_read` | number or null | see text |
+| `cacheWrite` / `cache_write` | number or null | see text |
+| `input` | number | required |
+| `output` | number | required |
+
+Named variant (`variants.<name>`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `contextWindowTokens` / `context_window_tokens` | integer or null | `null` |
+| `disabled` | boolean | `false` |
+| `displayName` / `display_name` / `name` | string or null | `null` |
+| `limit` | object | `{"context":null,"input":null,"output":null}` |
+| `maxInputTokens` / `max_input_tokens` | integer or null | `null` |
+| `maxOutputTokens` / `max_output_tokens` | integer or null | `null` |
+| `metadata` | object | `{"description":null,"reasoning_effort":null,"recommended_for":null,"text_verbosity":null}` |
+| `modalities` | object | `{"input":[],"output":[]}` |
+| `options` | object | `{}` |
+
+Variant metadata (`variants.<name>.metadata`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `description` | string or null | `null` |
+| `reasoningEffort` / `reasoning_effort` | `"none"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"max"`, `"xhigh"` or null | `null` |
+| `recommendedFor` / `recommended_for` | string or null | `null` |
+| `textVerbosity` / `text_verbosity` | `"low"`, `"medium"`, `"high"` or null | `null` |
+
+Named selector (`model_profile.<name>`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `fallback` | array | `[]` |
+| `model` | string | `""` |
+| `variant` | string or null | `null` |
+
+Selector fallback entry (`model_profile.<name>.fallback[]`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `model` | string | `""` |
+| `variant` | string or null | `null` |
+
+### Agent profile fields
+
+Fields under `agent.<name>` start with the values below. The shipped `default` profile is then merged with your overrides. `model_ref_explicit` is loader bookkeeping: normalization derives it from whether a model was supplied. Do not set it to select a model. An empty `tools` list uses the runtime toolset; an explicit list restricts it.
+
+Profile
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `color` | string or null | `null` |
+| `description` | string | `""` |
+| `hidden` | boolean | `false` |
+| `maxIters` / `maxSteps` / `max_iters` / `steps` | integer or null | `null` |
+| `mode` | `"primary"`, `"subagent"`, `"all"` | `"all"` |
+| `model` / `modelRef` / `model_ref` | string | `""` |
+| `model_ref_explicit` | boolean | `false` |
+| `name` | string or null | `null` |
+| `options` | object | `{}` |
+| `permission` / `permissions` | `"allow"`, `"ask"`, `"deny"` or JSON value or object | see text |
+| `prompt` / `systemPrompt` / `system_prompt` | string or null | `null` |
+| `temperature` | number or null | `null` |
+| `toolFailureMode` / `tool_failure_mode` | `"fail_turn"`, `"continue_as_tool_message"` | `"continue_as_tool_message"` |
+| `tools` | array or object | see text |
+| `topP` / `top_p` | number or null | `null` |
+| `variant` | string or null | `null` |
+
+### Subagent preset fields
+
+`subagents.models`, `toggle`, `roles` and `personas` default to empty maps. Optional limits default to `null` in the file contract; their resolved defaults and environment precedence are described under public subagents. Roles use optional strings for model, effort, variant, prompt file, capability mode and isolation. Personas use optional strings and lists of input/output descriptors.
+
+Subagent configuration
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `enabled` | boolean | `true` |
+| `limit_behavior` | string or null | `null` |
+| `max_concurrent` | integer or null | `null` |
+| `max_depth` | integer or null | `null` |
+| `models` | object | `{}` |
+| `personas` | object | `{}` |
+| `roles` | object | `{}` |
+| `sampling_limit` | integer or null | `null` |
+| `toggle` | object | `{}` |
+
+Feature switches (`features`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `active_agent_messages` | boolean or null | `null` |
+| `subagent_model_inheritance` | boolean or null | `null` |
+| `subagent_worktree_snapshot` | boolean or null | `null` |
+
+Model roles (`model_roles`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `slow` | string or null | `null` |
+| `smol` | string or null | `null` |
+
+Role (`subagents.roles.<name>`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `default_capability_mode` | string or null | `null` |
+| `default_isolation` | string or null | `null` |
+| `description` | string | `""` |
+| `model` | string or null | `null` |
+| `prompt_file` | string or null | `null` |
+| `reasoning_effort` | string or null | `null` |
+| `variant` | string or null | `null` |
+
+Persona (`subagents.personas.<name>`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `default_isolation` | string or null | `null` |
+| `description` | string or null | `null` |
+| `inputs` | array | `[]` |
+| `instructions` | string or null | `null` |
+| `instructions_file` | string or null | `null` |
+| `model` | string or null | `null` |
+| `outputs` | array | `[]` |
+| `reasoning_effort` | string or null | `null` |
+| `variant` | string or null | `null` |
+
+Persona input or output entry
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `description` | string | required |
+| `io_type` | string | `"file"` |
+| `name` | string | required |
+| `required` | boolean | `false` |
+
+### Other runtime settings
+
+Concurrency counts and approval timeouts must be positive. `runtime.prompt.wait_timeout_ms: null` waits until the turn ends. Deterministic settings default off. Compaction, behavior and provider retries have their own sections below.
+
+Background tasks (`runtime.background_tasks`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `defaultConcurrency` / `default_concurrency` | integer | `4` |
+| `messageStalenessTimeoutMs` / `message_staleness_timeout_ms` | integer | `10000` |
+| `modelConcurrency` / `model_concurrency` | integer | `2` |
+| `providerConcurrency` / `provider_concurrency` | integer | `4` |
+| `staleTimeoutMs` / `stale_timeout_ms` | integer | `30000` |
+
+Approval timeout (`runtime.permissions`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `askTimeoutMs` / `ask_timeout_ms` | integer | `30000` |
+
+Prompt timeout (`runtime.prompt`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `waitTimeoutMs` / `wait_timeout_ms` | integer or null | `null` |
+
+Deterministic mode (`runtime.deterministic`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `enabled` | boolean | `false` |
+| `seed` | integer | `0` |
+
+Presentation (`ui`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `defaultProfile` / `default_profile` | string or null | `null` |
+| `keybindings` | object | `{}` |
+| `maxEventsInMemory` / `max_events_in_memory` | integer | `25000` |
+| `maxTranscriptCharsInMemory` / `max_transcript_chars_in_memory` | integer | `200000` |
+
+Logging (`logging`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `file` | string or null | `null` |
+| `level` | string | `"info"` |
+
+### Eval settings
+
+All four eval deadlines are seconds in 1..86400. Detached-cell capacity and pool width are 1..256. Languages must be a nonempty unique list of `js`, `py`, `rb` or `jl`. Routed IDs must be unique, contain no whitespace, and contain at most 256 entries of 1..256 bytes each; `eval` and `question` stay direct. Output limits allow zero, with maxima of 51200 bytes and 16384 columns. Memory values use MiB and allow zero, with a maximum of 1048576; nonzero thresholds must satisfy watermark <= notice <= ceiling. Sandbox limits are 1..4096 MiB and 1..86400 seconds.
+
+Eval (`eval`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `cell_timeout_seconds` | integer | `30` |
+| `foreground_window_seconds` | integer | `60` |
+| `hard_limit_seconds` | integer | `1800` |
+| `languages` | array | `["js","py"]` |
+| `max_detached_cells` | integer | `15` |
+| `memory` | object | `{"ceiling_mb":2048,"gc_watermark_mb":256,"notice_mb":1024,"retained_images_mb":256,"retained_results_mb":32}` |
+| `output_head_bytes` | integer | `20480` |
+| `output_max_columns` | integer | `768` |
+| `parallel_pool_width` | integer | `4` |
+| `route_tools` | array | `[]` |
+| `run_budget_seconds` | integer | `300` |
+| `sandbox` | object | `{"enabled":false,"memory_limit_mb":64,"timeout_seconds":300}` |
+| `status_events` | boolean | `true` |
+
+Memory (`eval.memory`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `ceiling_mb` | integer | `2048` |
+| `gc_watermark_mb` | integer | `256` |
+| `notice_mb` | integer | `1024` |
+| `retained_images_mb` | integer | `256` |
+| `retained_results_mb` | integer | `32` |
+
+Sandbox (`eval.sandbox`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `enabled` | boolean | `false` |
+| `memory_limit_mb` | integer | `64` |
+| `timeout_seconds` | integer | `300` |
+
+### Integration and extension settings
+
+`mcp` is a server-name map, equivalent to `integrations.mcp.servers`. Do not set both shapes in one config. Each server requires `transport` and its command or endpoint. Hook entries require `event` and `command`; timeout must be 1..300000 ms and cwd must be relative without parent traversal. See [hooks](../operations/hooks.md) for execution policy.
+
+Remote search (`integrations.remote_search`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `authToken` / `auth_token` | string or null | `null` |
+| `endpoint` | string | `"https://mcp.exa.ai/mcp"` |
+| `maxRetries` / `max_retries` | integer | `1` |
+| `requireAuth` / `require_auth` | boolean | `false` |
+| `retryBackoffMs` / `retry_backoff_ms` | integer | `250` |
+| `timeoutSecs` / `timeout_secs` | integer | `30` |
+
+MCP server with `stdio` transport
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `command` | array | required |
+| `cwd` | string or null | `null` |
+| `enabled` | boolean | `true` |
+| `env` / `environment` | object | `{}` |
+| `timeout` / `timeoutSecs` / `timeout_secs` | integer | `30` |
+| `transport` | `"stdio"` | required |
+
+MCP server with `http` transport
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `enabled` | boolean | `true` |
+| `endpoint` / `url` | string | see text |
+| `headers` | object | `{}` |
+| `timeout` / `timeoutSecs` / `timeout_secs` | integer | `30` |
+| `transport` | `"http"`, `"streamable_http"` | required |
+
+Hooks (`hooks`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `lifecycle` | array | `[]` |
+
+Lifecycle hook (`hooks.lifecycle[]`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `command` | array | required |
+| `critical` | boolean | `false` |
+| `cwd` | string or null | `null` |
+| `env` | object | `{}` |
+| `event` | `"run_started"`, `"run_finished"`, `"run_failed"`, `"agent_turn_started"`, `"agent_turn_finished"`, `"tool_call_started"`, `"tool_call_finished"`, `"provider_request_started"`, `"provider_request_finished"`, `"compaction_requested"`, `"compaction_written"`, `"compaction_applied"`, `"compaction_failed"`, `"subagent_spawned"`, `"subagent_finished"`, `"permission_requested"`, `"permission_resolved"` | required |
+| `id` / `name` | string or null | `null` |
+| `timeoutMs` / `timeout_ms` | integer | `5000` |
+
+LSP (`lsp`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `disabled` | boolean | `false` |
+| `servers` | object | `{}` |
+
+LSP server (`lsp.servers.<name>`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `command` | array or null | `null` |
+| `disabled` | boolean | `false` |
+| `env` | object | `{}` |
+| `extensions` | array or null | `null` |
+| `initialization` | JSON value | `null` |
+
+Formatter override (`formatter.<name>`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `command` | array or null | `null` |
+| `disabled` | boolean | `false` |
+| `environment` | object or null | `null` |
+| `extensions` | array or null | `null` |
+
+Formatter registry (`formatter`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `enabled` | boolean | `true` |
+| `experimentalOxfmt` / `experimental_oxfmt` | boolean | `false` |
+| `languages` | object | see text |
+
+`formatter.languages` is a compatibility map from an extension to a formatter
+override. Normalization creates a named override with that one extension.
+Named overrides default to enabled, with command, environment and extensions
+unset so built-in settings can apply.
+
+Skill discovery (`skills`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `disabled` / `disabledIds` | array | `[]` |
+| `globalRoots` / `global_roots` | array | `["~/.harness/skills","~/.agents/skills"]` |
+| `paths` / `projectRoots` / `project_roots` | array | `[".harness/skills",".agents/skills"]` |
+| `permissions` | object | `{}` |
+| `urls` | array | `[]` |
+| `walkToGitRoot` / `walk_to_git_root` | boolean | `true` |
+
+Shell allowlist (`permission.shell_allowlist`)
+
+| Key (aliases on the same row) | Type | Default when omitted |
+| --- | --- | --- |
+| `cwdRoots` / `cwd_roots` | array | `[]` |
+| `executables` | array | `[]` |
+| `mode` / `policyMode` / `policy_mode` | `"permission_patterns"`, `"legacy_executables"` | `"permission_patterns"` |
+
+For `anthropic_subscription`, all optional fields default to unset in config.
+`systemPromptMode` accepts `preset-append`, `full` or `override`; the resolved
+default is `full`. An explicit mode overrides `appendSystemPrompt`; otherwise
+`true` selects `full` and `false` selects `preset-append`. `resumeMode` accepts
+`auto` or `off`; `settingSources` accepts `user`, `project` and `local`;
+`tokenInjection` accepts `oauth-slots`, `config-dir` and `ambient`. Snake_case
+aliases for the camelCase subscription fields are accepted by the loader.
+Environment overrides use `HARNESS_CLAUDE_SDK_OAUTH_` with suffixes `ENABLED`,
+`SYSTEM_PROMPT_MODE`, `SYSTEM_PROMPT_FILE`, `RESUME`, `TOKEN_INJECTION`,
+`SETTING_SOURCES` and `PINNED_ACCOUNT`. Valid environment values win over config.
 ## Session storage
 
 `runtime.session_dir` defaults to an empty string, which means automatic managed
@@ -450,13 +910,13 @@ See [saved sessions](../operations/sessions.md) and the
 
 ## Variable substitution
 
-The harness resolves variable references in config values before parsing. The resolver makes one pass through all values. It does not expand nested
+The harness resolves variable references in string values after parsing JSON and before typed deserialization. The resolver makes one pass through all values. It does not expand nested
 references such as `${VAR:-${OTHER}}` recursively.
 
 | Syntax | Behavior |
 | --- | --- |
 | `{env:VAR}` | Environment variable substitution. Returns an empty string if `VAR` is missing from the environment. |
-| `{file:path}` | File content substitution. The path is resolved relative to the config file directory; absolute paths are used as-is. |
+| `{file:path}` | File content substitution with trailing whitespace removed. The path is resolved relative to the config file directory; absolute paths are used as-is. |
 | `${VAR}` | Shell-style environment variable. If `VAR` is missing from the environment, this produces a config error rather than expanding to an empty string. Use `${VAR:-}` for an explicit empty fallback. |
 | `${VAR:-fallback}` | Environment variable with fallback value. If `VAR` is missing or empty, `fallback` is used. |
 
@@ -589,10 +1049,9 @@ checks. Replay does not enable or change approval mode.
 Later config layers override earlier ones. See the full
 [discovery order](#discovery-and-precedence) below.
 
-JSON objects merge key by key before defaults and required-model validation.
+JSON objects merge key by key before defaults and model validation.
 Omitted sections inherit the earlier value. Arrays replace earlier arrays, except
-`instructions`, which accumulates in layer order. File permission references
-resolve relative to the file that declares them.
+`instructions`, which accumulates in layer order. File substitutions resolve relative to the file that declares them.
 
 JSON `agent` settings tune runtime profiles. Native child definitions use the
 separate `subagents` configuration and Markdown discovery described above;
@@ -604,68 +1063,117 @@ project and user Markdown definitions can replace a built-in with the same name.
 | --- | --- |
 | `$schema` | Optional schema URI for editor integration. |
 | `keybinds` | Supported TUI keybinding overrides. |
-| `confirm_before_rewind` | Ask before rewinding a conversation (default `true`). The rewind panel’s “Yes, and don’t ask again” choice saves `false`. |
+| `confirm_before_rewind` | Ask before rewinding a conversation (default `true`). The rewind panel's "Yes, and don't ask again" choice saves `false`. |
 
 ## TUI default bindings
 
-`tui.json{,c}` `keybinds` overrides use the action ids below. The table records
-the primary shipped binding for each default-bound action; some surfaces also
-keep secondary aliases for compatibility. The input-only alias
-`toggle_operator_sidebar` still maps to `open_status_dialog` so persisted user
-configs keep working; it is not a canonical example or serialization key.
+`keybinds` maps action IDs to one key or one leader sequence. A valid override
+replaces all existing bindings for that action. Unknown action IDs and invalid
+key strings are ignored by the keymap. Comma-separated lists and a configurable
+`leader` field are not supported. The leader is fixed at `Ctrl+x`.
 
-Set the special `leader` key to change the two-step leader prefix. The default
-leader is `Ctrl+x`. Action values can be comma-separated to keep multiple
-bindings, and `<leader>` expands to the configured leader key, for example
-`"switch_model": "<leader>m, ctrl+m"`.
+Use `ctrl+`, `shift+` and `alt+` modifiers (or their initial-capital forms),
+a character, an arrow name, `tab`, `backtab`, `enter`, `esc`, `space`,
+`backspace`, `delete`, `home`, `end`, `pageup`, `pagedown`, `insert`, or
+`f1` through `f12`. Leader sequences accept `<leader>`, `ctrl+x ` or `ctrl+x+`
+before the second key. For example:
 
-| Action | Primary binding | Purpose |
-| --- | --- | --- |
-| `palette` | `Ctrl+p` | Open the command palette. |
-| `new_session` | `Ctrl+x n` | Start a fresh live session. |
-| `resume_session` | `Ctrl+x l` | Continue a prior session. |
-| `switch_model` | `Ctrl+x m` | Open the model switcher. |
-| `open_status_dialog` | `Ctrl+x s` | Open the status dialog. |
-| `open_lineage_browser` | `Ctrl+x g` | Open the lineage browser. |
-| `compact_session` | `Ctrl+x c` | Request session compaction when available. |
-| `help` | `?` | Open the shortcuts/help surface. |
-| `quit` | `q` | Quit the TUI. |
-| `agent_cycle` | `Tab` | Cycle to the next primary agent. |
-| `agent_cycle_reverse` | `Shift-Tab` | Cycle to the previous primary agent. |
-| `focus_next` | `Ctrl+Tab` | Move focus forward. |
-| `focus_prev` | `Ctrl+Shift-Tab` | Move focus backward. |
-| `toggle_terminal_panel` | `4` | Show or hide terminal output. |
-| `toggle_follow` | ` ` | Toggle transcript follow mode. |
-| `close_review_surface` | `1` | Return to the transcript-first session shell. |
-| `session_background` | `Ctrl+b` | Move foreground subagents to the background. |
-| `session_child_first` | `Ctrl+x ↓` | Jump to the first child session. |
-| `session_child_cycle` | `→` | Cycle to the next child session. |
-| `session_child_cycle_reverse` | `←` | Cycle to the previous child session. |
-| `session_parent` | `↑` | Return to the parent session. |
-| `diff_hunk_next` | `Alt+n` | Jump to the next diff hunk. |
-| `diff_hunk_previous` | `Alt+p` | Jump to the previous diff hunk. |
-| `move_down` | `j` | Move down in the active list. |
-| `move_up` | `k` | Move up in the active list. |
-| `submit_prompt` | `Enter` | Submit the prompt. |
-| `insert_newline` | `Shift+Enter` | Insert a prompt newline. |
-| `clear_prompt` | `Esc` | Clear the prompt. |
-| `history_up` | `Up` | Recall the previous prompt history item. |
-| `history_down` | `Down` | Recall the next prompt history item. |
-| `cursor_left` | `Left` | Move the prompt cursor left. |
-| `cursor_right` | `Right` | Move the prompt cursor right. |
-| `backspace` | `Backspace` | Delete before the prompt cursor. |
-| `delete` | `Del` | Delete after the prompt cursor. |
-| `allow_permission` | `Ctrl+y` | Allow a pending permission request. |
-| `yolo_mode` | `Ctrl+o` | Toggle YOLO for this session; opens confirmation when a permission prompt is active. |
-| `deny_permission` | `Ctrl+n` | Deny a pending permission request. |
-| `dismiss_modal` | `Esc` | Dismiss or reject the active modal. |
-| `variant_cycle` | `Shift-Tab` | Cycle the active model variant/reasoning preset. |
-| `toggle_todos` | `Ctrl+t` | Show, focus, or hide the todo pane. |
+```jsonc
+{ "keybinds": { "open_model_switcher": "<leader>m", "toggle_tasks": "alt+g" } }
+```
+
+Bindings depend on focus. Prompt arrows edit the composer or recall history;
+session arrows navigate children and parents. Permission-modal `Ctrl+y` allows
+a request, while composer `Ctrl+y` redoes an edit. In multiline mode, `Enter`
+inserts a newline and `Alt+Enter` submits or steers.
+
+| Action | Shipped bindings |
+| --- | --- |
+| `palette` | Ctrl+p, ? |
+| `help` | Ctrl+x, Ctrl+. |
+| `open_model_switcher` | Ctrl+x m |
+| `open_status_dialog` | Ctrl+x s, F2, Ctrl+, |
+| `open_lineage_browser` | Ctrl+x g |
+| `open_theme_dialog` | Ctrl+x t |
+| `copy_message` | Ctrl+x y |
+| `export_session` | Ctrl+x x |
+| `quit` | q, Ctrl+q |
+| `focus_next` | Tab |
+| `focus_prev` | Ctrl+Shift+Tab |
+| `variant_cycle` | Shift-Tab |
+| `toggle_terminal_panel` | 4 |
+| `toggle_prompt_focus` | Space, i |
+| `close_review_surface` | 1 |
+| `reload` | r |
+| `session_background` | Ctrl+b |
+| `session_child_first` | Ctrl+x Down |
+| `session_child_cycle` | Right |
+| `session_child_cycle_reverse` | Left |
+| `session_parent` | Up |
+| `diff_hunk_next` | Alt+n, Alt+] |
+| `diff_hunk_previous` | Alt+p, Alt+[ |
+| `move_down` | j |
+| `move_up` | k |
+| `submit_prompt` | Enter |
+| `insert_newline` | Shift+Enter, Ctrl+j, Alt+Enter |
+| `interject_prompt` | Alt+i, Ctrl+Alt+Enter |
+| `cancel_and_replace_prompt` | Ctrl+Enter, Ctrl+Shift+Enter, Alt+r |
+| `toggle_multiline` | Alt+m |
+| `clear_prompt` | Esc |
+| `history_up` | Up |
+| `history_down` | Down |
+| `cursor_left` | Left |
+| `cursor_right` | Right |
+| `backspace` | Backspace |
+| `delete` | Delete |
+| `select_char_left` | Shift+Left |
+| `select_char_right` | Shift+Right |
+| `select_word_left` | Ctrl+Shift+Left, Alt+Shift+b |
+| `select_word_right` | Ctrl+Shift+Right, Alt+Shift+f |
+| `select_line` | Shift+Home, Shift+End |
+| `select_all` | Ctrl+a, Ctrl+Shift+a |
+| `move_word_left` | Ctrl+Left, Alt+b |
+| `move_word_right` | Ctrl+Right, Alt+f |
+| `move_line_start` | Home |
+| `move_line_end` | End |
+| `move_buffer_start` | Ctrl+Home |
+| `move_buffer_end` | Ctrl+End |
+| `delete_word_forward` | Alt+d, Ctrl+Delete |
+| `delete_word_backward` | Ctrl+w, Alt+Backspace, Ctrl+Backspace |
+| `delete_line` | Ctrl+Shift+k |
+| `kill_to_line_start` | Ctrl+u |
+| `kill_to_line_end` | Ctrl+k |
+| `undo` | Ctrl+z, Ctrl+- |
+| `redo` | Ctrl+y, Ctrl+Shift+z |
+| `allow_permission` | Ctrl+y |
+| `yolo_mode` | Ctrl+o |
+| `deny_permission` | Ctrl+n |
+| `dismiss_modal` | Esc, Ctrl+c |
+| `toggle_todos` | Ctrl+t |
+| `toggle_tasks` | Ctrl+g |
+| `half_page_down` | Ctrl+d |
+| `first_message` | Ctrl+Home |
+| `last_message` | Ctrl+Alt+g, Ctrl+Alt+End |
+| `next_message` | Ctrl+Alt+n |
+| `previous_message` | Ctrl+Alt+p |
+| `prompt_stash` | Ctrl+s, Alt+s |
+
+These actions are also accepted as override IDs but have no shipped binding:
+`toggle_follow`, `scroll_up`, `scroll_down`, `open_event_log`,
+`revert_workspace`, `toggle_scrollbar`, `open_error_details`, `prompt_stash_pop`,
+`prompt_stash_list`, `open_session_history`, `open_settings`, `open_view_plan`,
+`open_memory_browser` and `open_worktree_picker`.
+
+Input aliases are `toggle_operator_sidebar` for `open_status_dialog`,
+`resume_session` for `open_session_history`, `settings` for `open_settings`,
+`view_plan` and `view-plan` for `open_view_plan`, `memory` for
+`open_memory_browser`, and `worktree` and `switch_worktree` for
+`open_worktree_picker`. Palette command IDs such as `new_session`,
+`switch_model` and `compact_session` are not keybinding action IDs.
 
 TUI prompt history is runtime state, not config. Interactive startup and live
-sessions load and append prompt history at `<session-dir>/tui/prompt-history.json`
-using a versioned JSON schema, so submitted prompts survive process restarts while
-unsent drafts stay in the active composer until submitted or discarded.
+sessions load and append prompt history at `<session-dir>/tui/prompt-history.json`.
+Submitted prompts survive restarts; unsent drafts remain in the active composer.
 
 ## Discovery and precedence
 
@@ -680,6 +1188,10 @@ flowchart LR
     Project --> Inline[HARNESS_CONFIG_CONTENT]
     Inline --> Result[Effective configuration]
 ```
+
+An explicit `--config PATH` replaces runtime file discovery with that one file.
+`HARNESS_CONFIG_CONTENT` still applies afterward, and TUI files still use their
+own discovery. Relative explicit paths use the selected current directory.
 
 Later layers override earlier values. Objects merge; most arrays replace the
 earlier array. `instructions` accumulates. The ordered locations are:
@@ -708,9 +1220,8 @@ a comment explaining that Harness wrote it after the first sign-in and never
 overwrites it, and a comment pointing to `harness models` for choices. It sets
 `"model": "<provider>/<model>"` to the default for the provider just signed in,
 or omits the key if no default can be determined. It has no `provider` entries,
-so automatic provider discovery stays enabled. This is the only config write
-Harness performs. Startup does not create a config or other new home artifacts
-beyond the existing session-directory creation.
+so automatic provider discovery stays enabled. Settings changes can also write the bound runtime or TUI config. Startup does not
+write a starter config.
 
 A config with no `provider` entries may still pin a `provider/model`; validation
 defers that lookup to runtime discovery. A connected pin is preserved. If its
@@ -802,9 +1313,8 @@ Root precedence is deterministic:
    configured order.
 
 The default project roots are `.harness/skills` and `.agents/skills`. The default
-Harness global root is `<home>/skills`: the default `~/.harness/skills` entry
-follows `HARNESS_HOME`. The `~/.agents/skills` entry always uses `$HOME`, not
-`HARNESS_HOME`. These compatibility roots rank below Harness roots, so duplicate
+global roots are `~/.harness/skills` and `~/.agents/skills`. Both expand
+`~` from `$HOME`, not `HARNESS_HOME`. These compatibility roots rank below Harness roots, so duplicate
 skills remain visible as `shadowed` rather than replacing the Harness copy.
 Other assistant roots, including `.claude/skills`, are not searched by default;
 add them explicitly to `skills.project_roots` or `skills.global_roots` if needed.
@@ -865,11 +1375,10 @@ bypass coordinator permission checks. Doctor JSON and support exports consume th
 same compact catalog metadata, report loadable/denied/disabled/malformed/shadowed
 counts, and keep full skill bodies out of readiness surfaces.
 
-Declared resources load only on activation and are appended under
-`## Bundled resources`. Limits are 5 files, 64 KiB per file, 200 KiB total loaded
-bytes, and path depth 4 under the skill directory. Absolute paths, `..`, globs,
-directories, and symlink escapes are rejected before reading. Loaded resource
-text is redacted before it enters skill output.
+Declared resources remain deferred metadata. Activation reads only the
+`SKILL.md` body, with a 1 MiB limit on the file and combined instructions.
+`$ARGUMENTS` expands from the skill call's `arguments` string; expanded output
+must also fit within 1 MiB.
 
 `harness doctor` validates the operator-facing runtime without making provider or
 MCP network calls. It checks provider/model metadata, credential availability
@@ -982,8 +1491,7 @@ Put broad rules before exceptions. The last matching rule wins:
 
 Bash selectors are either an exact command string, a trailing `*` prefix such as
 `cargo nextest run*`, or the `*` catch-all. Edit selectors are either an exact
-workspace-relative path, a trailing `/` path prefix such as `docs/`, or the
-`*` catch-all. Task selectors match the requested subagent name;
+workspace-relative path, glob patterns such as `docs/**`, or the `*` catch-all. Task selectors match the requested subagent name;
 they accept exact names, `*` catch-all, and simple `*` glob patterns such as
 `review-*`. Regex is not supported.
 
@@ -1004,10 +1512,10 @@ enumerate; use an enforced OS sandbox when that access must be confined.
 ## Edit formats
 
 `edit.mode` selects the model-facing edit format for each agent's current model.
-The default, `auto`, follows other coding-agent harnesses: GPT, Codex and o-series
+The default is `auto`. GPT, Codex and o-series
 models get `apply_patch`, which replaces `edit` and `write`; Kimi, DeepSeek,
 MiniMax, MiMo, StepFun and GLM Flash get `replace`, plain old/new string edits,
-because those models tend to mishandle line anchors; every other model gets
+and every other model gets
 `hashline`, line-and-hash anchored edits. Set `hashline`, `replace`, or
 `apply_patch` to force one format. Hash anchors appear in file reads only in
 hashline mode; the other modes read plain file text. If an agent lacks the chosen
@@ -1039,19 +1547,29 @@ Settings writes migrate legacy keys to the canonical shape.
 
 ## Deprecated compatibility behavior
 
-The loader still accepts the previous broad harness-native shape for migration:
+The loader accepts these runtime sections and input aliases:
 
 - `providers`, `agents`, `permissions`
 - `runtime`, `integrations`, `ui`
 - `hooks`, `skills`, `lsp`, `logging`, `hashline_edit`
-- compatibility aliases such as `categories`, `profiles`, `backgroundTask`, `paths`, and `deterministic`
+- `providers`, `agents` and `permissions` as aliases for the singular public names
 - compatibility permission names such as `shell` and `network`
 
 Those deprecated compatibility aliases and keys are compatibility inputs,
-not the canonical public contract. New configs, examples, docs, and
-schema-driven validation should use the harness-centered runtime/TUI split shown
-above. If a canonical key and compatibility alias both appear with conflicting
-values, config loading rejects the file instead of silently choosing one.
+not preferred spellings. New configs and examples should use the runtime/TUI split shown
+above. If a canonical key and its alias both appear in one object, loading rejects the
+file even when their values agree.
+
+The native permission object is also accepted for compatibility. `defaults`
+contains scalar permission modes for `edit`, `shell`, `network`, `question`,
+`task`, `eval`, `webfetch`, `websearch`, `codesearch`, `lsp`, `read`,
+`external_directory` and `doom_loop`. `rules` contains ordered arrays for
+`shell`, `edit`, `task`, `read` and `external_directory`. Each rule requires
+`mode` and `selector`; a selector is `"catch_all"`, `{ "exact": "..." }`,
+`{ "prefix": "..." }` or `{ "glob": "..." }`. Rule arrays default empty
+except the global read rules for environment files. Agent permissions inherit
+when omitted and also accept `todowrite`. `permission["*"]` supplies a scalar
+fallback for unconfigured kinds. Prefer the public scalar and selector-map forms.
 
 ## Validation behavior
 
@@ -1093,6 +1611,7 @@ Compaction settings live under `runtime.compaction`:
 | `autoRetryOverflow` / `auto_retry_overflow` | `true` | Enables the one-shot overflow compaction retry after a provider context-window error. Set `false` to fail immediately. |
 | `structuredSummaryContract` / `structured_summary_contract` | `true` | Requires summaries to carry the Harness sections `Goal`, `Constraints`, `Progress`, `Key Decisions`, `Next Steps`, and `Critical Context`. Set `false` only for legacy heading compatibility. |
 | `estimatedTokenTriggers` / `estimated_token_triggers` | `true` | Enables the explicitly conservative automatic-compaction mode only when all model limits are unknown. This mode is labeled conservative and never claims exact model capacity or a percentage. |
+| `suppress_auto_compaction` / `suppressAutoCompaction` | `false` | Suppress automatic pre-request compaction without disabling manual compaction. |
 | `fallbackInputTokens` / `fallback_input_tokens` | `32768` | Non-exact conservative input cap used only by that all-limits-unknown mode. Set to `0` (or disable `estimatedTokenTriggers`) to leave capacity unknown and automatic pressure undecided. |
 
 For example, merge this into a config that defines the `explore` agent profile:
@@ -1182,7 +1701,7 @@ under `runtime.behavior`:
 | `command_notifications.wake_idle` | `true` | Start a turn for an idle agent when a background command finishes or a monitor event arrives. When off, notices and monitor events wait for the agent's next turn. |
 | `output_contract.max_retries` | `2` | Corrections sent to a subagent whose final answer does not match the `output_schema` its caller passed to `spawn_subagent`. |
 
-In the TUI, keys follow OMP and Senpi. While a turn runs, including while its tools
+While a turn runs, including while its tools
 run, `Enter` (`Alt+Enter` in multiline mode) steers it: the message is journaled as
 `SteeringAccepted` and joins the turn before its next model request, including a
 message that arrives while the turn's last request streams. `Alt+i` or
@@ -1194,7 +1713,7 @@ the order they were sent, instead of running them; they are recorded as cancelle
 with reason `returned to the editor` and left out of the transcript. If a turn ends
 without taking its steering for another reason (it failed, or was cancelled from
 the tasks pane or replaced), the steering starts the next turn. Pending steering is
-not replayed after a crash, which matches both references; a stopping run cancels
+not replayed after a crash; a stopping run cancels
 it like any queued prompt.
 
 Embedders that construct `CoordinatorConfig::new` directly start with every

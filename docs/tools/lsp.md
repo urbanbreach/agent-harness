@@ -26,8 +26,10 @@ Protocol positions in returned results remain 0-based. Unsupported server
 capabilities produce an error. File diagnostics use pull diagnostics when
 available, otherwise published diagnostics for the synchronized document.
 Workspace diagnostics use the server's workspace-pull capability when available.
-Otherwise Harness scans up to 200 files matching that server's extensions and
-requests file diagnostics, or waits for each file's published diagnostics.
+Otherwise Harness scans files matching that server's extensions and requests
+file diagnostics, or waits for each file's published diagnostics. More than
+200 matching files fails with `workspace diagnostics exceeds 200 files; use
+fileDiagnostics` rather than returning a truncated clean result.
 The fallback reports `filesScanned`, `diagnosticCount`, `reports`, `skippedFiles`
 and `complete`. Read or LSP rules that deny another file, or require a separate
 approval, exclude it and set `complete` to false. The initially requested document
@@ -40,6 +42,10 @@ Default commands are `rust-analyzer`, `typescript-language-server --stdio`,
 `pyright-langserver --stdio`, and `gopls`, selected by file extension. The commands
 must be available on `PATH`. Configured servers take precedence over defaults.
 `serverId` selects a particular matching server.
+The query tool also accepts `server_id` as an alias. The rename tool uses
+`serverId` only. The built-in extension sets are `rs` for Rust,
+`ts tsx js jsx mjs cjs` for TypeScript/JavaScript, `py pyi` for Python, and
+`go` for Go. Custom extension entries may include a leading dot.
 
 ```json
 {
@@ -70,12 +76,17 @@ Server requests to apply workspace edits are refused. File edits use the shared
 
 `lsp.rename` previews a semantic rename by default. `apply: true` requests a fresh
 plan from the server and applies it. `prepareRename` is used when advertised.
+`newName` must be nonempty, contain no control characters, and be at most
+1,024 bytes. Unknown arguments are rejected.
 Both forms require read and LSP permission; applying also requires edit permission.
 Every additional file passes coordinator policy before its contents are loaded.
 For multi-file renames, the approved snapshots are synchronized to the server
-and the plan is requested again. Changed target sets require a retry; file
-contents are checked again before writing. Read approval cannot grant edit access. Denials, cancelled approvals, invalid
-ranges and stale file contents stop the operation before publication.
+and the plan is requested again for both previews and applied renames. Secondary
+documents are then closed so later queries do not retain those snapshots.
+Changed target sets fail with `rename targets changed after synchronization;
+retry the rename`. File contents are checked again before writing. Read approval
+cannot grant edit access. Denials, cancelled approvals, invalid ranges and stale
+file contents stop the operation before publication.
 
 The tool accepts `changes` and versioned `documentChanges`, including file create,
 rename and delete operations. It checks UTF-16 boundaries, overlapping ranges,
@@ -115,18 +126,19 @@ queries are disabled.
 ## Resource limits and verification
 
 Each registry allows 16 live servers and runs one LSP call at a time. Each server
-retains hashes and versions for up to 64 documents, rather than keeping their full
+retains hashes and versions for up to 257 documents, rather than keeping their full
 contents. Changed documents use the server's full or incremental synchronization
 mode. The first path in sort order is closed when the document limit is reached.
 
 Source files are limited to 512 KiB. Protocol headers are limited to 8 KiB and
 messages to 4 MiB. Stored diagnostics and combined call-hierarchy output are also
-bounded to 4 MiB. Server operations have a 30-second deadline. Cancellation and
-shutdown terminate the process group and wait for the server to exit.
+bounded to 4 MiB. Incoming and outgoing call queries accept at most 16 prepared
+items and return at most 4,096 entries. Server operations have a 30-second deadline.
+Cancellation and shutdown terminate the process group and wait for the server to exit.
 The workspace fallback stops after 100,000 directory entries, skips symlinks,
 version-control directories, build directories and default Harness storage, and
 joins its filesystem scans before returning. It retains one source buffer at a
-time; the existing 64-document server limit still applies.
+time; the existing 257-document server limit still applies.
 
 The client follows [LSP 3.17 framing and lifecycle rules](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/).
 For rust-analyzer, it waits for the initial

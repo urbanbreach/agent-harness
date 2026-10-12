@@ -5,6 +5,9 @@
 | Actor and lifecycle | `coord/runtime.rs`, `coord/lifecycle.rs` |
 | Provider turns | `coord/turn.rs`, `coord/turn/`, `coord/streaming.rs` |
 | Permissions and tools | `coord/tools.rs`, `coord/grants.rs`, `coord/edit_paths.rs` |
+| Commands and monitor wakeups | `coord/commands.rs`, `coord/commands/monitor.rs`, `coord/reminders.rs` |
+| Eval callbacks and completions | `coord/eval.rs`, `coord/eval/` |
+| Model-specific edit modes | `config/edit.rs`, `tool/edit_mode.rs` |
 | Child ownership and journals | `coord/children.rs`, `coord/child_journals.rs` |
 | Context and compaction | `coord/context.rs`, `coord/history.rs`, `coord/compaction.rs` |
 | Resume and rewind | `coord/resume.rs`, `coord/workspace/` |

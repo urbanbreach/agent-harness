@@ -60,7 +60,7 @@ worktrees individually with `git worktree move` so Git updates its registrations
 ```bash
 harness sessions list
 harness sessions inspect <run-id-or-path>
-harness sessions tree <run-id-or-path>
+harness sessions tree --root <run-id-or-path>
 harness replay --session <path> --json
 ```
 
@@ -125,11 +125,11 @@ workspace files. See [session commands](../operations/sessions.md) for snapshot,
 branch, recovery and export options.
 
 `/rewind` (alias `/undo`, or double Esc on an empty idle prompt within 800 ms)
-opens the Reference-style conversation rewind picker. It lists newest prompts first,
+opens the conversation rewind picker. It lists newest prompts first,
 dims the conversation from the selected prompt, and asks for confirmation by
 default. A running turn must be cancelled first. Rewind removes the selected
 prompt and later conversation from the active projection and provider context,
-restores that prompt’s text to the composer, and shows “Reverted conversation”
+restores that prompt's text to the composer, and shows "Reverted conversation"
 for three seconds. Workspace files stay as they are.
 
 ## Live overlays
@@ -144,8 +144,16 @@ do not dispatch providers or rerun tools.
 
 ## Exports
 
-Support export redacts values, omits provider reasoning and raw payloads, validates
-referenced artifacts, and scans the complete staged result before publication.
-A secret finding prevents output. Archives use bounded input and atomic replacement.
+Support export validates the journal, redacts values, omits provider reasoning
+and raw tool result JSON, and scans keys and string values before publication.
+It does not copy or validate attachment blobs as a backup would. A secret finding
+prevents output. Archives use bounded input and atomic replacement.
 These exports are support evidence; they are not a raw backup of credential or
 attachment storage.
+
+`harness export` writes the active conversation's user and assistant text as
+Markdown. `harness sessions export` writes a JSON support bundle. `harness trace`
+packages sanitized journal, metadata and support files locally; it never uploads
+them. `harness wrap` packages workspace files and can include those diagnostics
+when explicitly configured with in-workspace session storage. See
+[export and archive options](../operations/sessions.md#export).

@@ -7,8 +7,11 @@
   // Choose a connected provider/model only if you want to pin the default.
   // "model": "anthropic/claude-sonnet-4-6",
 
-  // Ask before changing files. Other permissions keep their built-in defaults.
+  // Ask before changing files. "*" keeps every other tool on its built-in
+  // default; without it, tools with no rule of their own (todowrite, skill,
+  // session tools) ask on every call.
   "permission": {
+    "*": "allow",
     "edit": "ask"
   },
 

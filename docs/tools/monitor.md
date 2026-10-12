@@ -15,13 +15,18 @@ All arguments belong to one flat object.
 | Argument | Meaning |
 | --- | --- |
 | `action` | `create` (default) or `rearm`. |
-| `description` | Required for create, 1-200 characters. A short human label for the watch. |
+| `description` | Required for create, 1-200 characters after trimming whitespace. A short human label for the watch. |
 | `command` | Shell command. For create, supply exactly one of `command` or `path`. |
 | `path` | File to watch. The parent directory must exist; symlinks are rejected. |
 | `event` | Path only: `create` (default) or `modify`. |
 | `filter` | Command only: an unanchored, case-sensitive Rust regex. No lookaround or backreferences. Omit it to match every non-empty line. |
 | `timeout_ms` | 1-3,600,000 milliseconds; default 300,000 (five minutes). |
-| `task_id` | Rearm target. Omit it to resume every paused monitor owned by the caller. |
+| `task_id` | Rearm target. Omit it or use a blank string to resume every paused monitor owned by the caller. |
+
+Unknown arguments are rejected. Command watches reject `event`; path watches
+reject `filter`. Send only `action` and an optional `task_id` for rearm.
+That call uses `task` permission for `monitor rearm` and does not launch a new
+command or file watch.
 
 Create text starts `Monitor started with task_id <id>.`. The structured result
 has `type: "Monitor"`, `task_id`, `description`, `command`, `path`, `event`,
@@ -48,9 +53,10 @@ is retained like background commands: an 8 MiB log and a 40,000-character previe
 Timeout kills the process group. A watch cannot answer an interactive prompt.
 
 Path watches require `read` permission on the path. Harness checks every 250 ms.
-`create` waits for a file that was absent when the watch started; an already
-existing file is not a hit. `modify` requires an existing regular file and fires
-when its size, mtime, or inode changes. A hit prints `create <path>` or
+`create` fires when a previously absent file appears. An already existing file
+is not an immediate hit, but deleting and recreating it can trigger the watch.
+`modify` requires an existing regular file and fires when its size, inode, mtime,
+or ctime differs from the initial snapshot. A hit prints `create <path>` or
 `modify <path>`, then completes. These watches do not survive a session restart.
 
 ## Events and limits
@@ -80,6 +86,8 @@ of the transcript, and running monitors are not listed in the tasks pane or the
 (1m3s)`. Elapsed time starts at the oldest watch. The text is capped at 48
 display cells; ` muted` means all watches are paused, and ` 2 muted` means two of
 them are paused.
+Clicking the watching status opens the status dashboard. In ASCII mode, the
+watching marker is `o` instead of `◉`.
 
 ## Wake budget and rearm
 

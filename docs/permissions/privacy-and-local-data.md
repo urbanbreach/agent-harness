@@ -9,9 +9,10 @@ can send data over the network.
 | Action | Network behavior |
 | --- | --- |
 | Live provider turn | Sends the selected context to the configured provider. |
-| MCP tool call | Uses the configured server and transport. |
-| `webfetch`, `websearch`, `codesearch` | Sends a tool request under permission policy. |
-| Live model-catalog initialization | May download metadata from `https://models.dev/api.json`. |
+| MCP tool call | Connects lazily over the configured transport after permission checks. Stdio servers may make their own network requests. |
+| `webfetch`, `websearch`, `codesearch`, GitHub tools | Sends a request to the selected URL or configured service under tool permission policy. |
+| Model-catalog initialization | May download metadata from `https://models.dev/api.json`. |
+| OAuth sign-in or credential refresh | Contacts the authentication endpoints for the selected provider. |
 | Mock TUI model picker | Reads the embedded catalog without a network request. |
 | Replay, session inspection, doctor, support export | Reads local data without provider or MCP requests. |
 
@@ -19,9 +20,14 @@ The model catalog uses a five-minute cache. It serves a valid stale cache while
 refreshing in the background. Without a usable cache, it tries a download and
 falls back to bundled metadata on failure.
 
-Set `HARNESS_DISABLE_MODELS_FETCH=1` to use only the embedded catalog.
-`HARNESS_MODELS_URL` changes the source; `HARNESS_MODELS_PATH` changes the cache
-location.
+Set `HARNESS_DISABLE_MODELS_FETCH=1` (or `true`, case-insensitive) to use only
+the embedded catalog, even if a cache exists. `HARNESS_MODELS_URL` changes the
+source; `HARNESS_MODELS_PATH` changes the cache location. Catalog fetching is
+not a tool call and does not use tool permission approvals.
+
+Provider context can include prompts, instructions, tool arguments and tool
+results. Bash commands, eval code and lifecycle hooks can also use the network.
+A local session directory does not make a live run offline.
 
 ## Storage
 
@@ -41,7 +47,8 @@ Older `--path--` directories are preserved but require
 | Personal agents, commands and prompts | `<home>/agents/`, `<home>/commands/` and `<home>/prompts/` |
 | Global skills | `<home>/skills` and `$HOME/.agents/skills` by default; configured by `skills.global_roots` |
 | Last picked TUI model | `<home>/model.json`, unless `HARNESS_MODEL_SELECTION_STATE_FILE` overrides it |
-| Cached model metadata | `<home>/models-cache.json` |
+| Cached model metadata | `<home>/models-cache.json`, unless `HARNESS_MODELS_PATH` overrides it |
+| TUI prompt history | `<session-dir>/tui/prompt-history.json` |
 | Subscription bindings | `<home>/anthropic-subscription-bindings/` |
 | Authored project agents, commands, skills and prompts | `<project>/.harness/agents/`, `.harness/commands/`, `.harness/skills/`, `.harness/prompts/`; project skills also load from `.agents/skills/` |
 | User instructions | `<home>/AGENTS.md` |
@@ -75,12 +82,20 @@ private disk artifacts contain semantic conversation state, redacted and
 normalized tool arguments, bounded tool results, read-state hashes and usage
 counts. They omit reasoning, raw tool results and complete provider requests.
 Resuming after restart uses that semantic state and never repeats historical tools.
-Support export redacts API keys, bearer tokens, cookies, PEM blocks, provider
-credentials, and hidden prompt or config instruction values. It includes a
-redaction manifest and refuses to write a bundle if the final secret scan fails.
-Use [support export](../architecture/sessions-and-replay.md#cli-inspection)
-instead of sharing raw `events.jsonl`.
+Support export redacts registered credentials and recognized secret patterns,
+including API keys, bearer tokens, cookies and private-key blocks. It removes
+provider stream and reasoning deltas, reasoning parts, thinking summaries and
+signatures, and raw tool output JSON. The bundle includes local configuration,
+metadata, a replay summary, tool readiness and cleaned events. It does not make
+provider or MCP requests. It refuses the export if the final secret scan fails.
+It does not promise to remove arbitrary private prose or project instructions.
+Review the bundle before sharing it.
 
-V1 has no telemetry, cloud analytics, billing, web sharing, or hosted
-collaboration. Review provider and MCP settings before live use. An approved
-shell command can perform host I/O; permission approval is not OS confinement.
+`harness trace` writes a local archive with a cleaned `events.jsonl`, `meta.json`
+and `support.json`. It omits raw artifacts and uses the same redaction and secret
+checks. Use [support export](../operations/sessions.md#export) or a trace archive
+instead of sharing the raw session directory.
+
+Review provider and MCP settings before live use. An approved shell command or
+eval cell can perform host and network I/O. Permission approval is not OS
+confinement, and output redaction does not limit what a provider receives.

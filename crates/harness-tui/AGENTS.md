@@ -3,8 +3,7 @@
 ## OVERVIEW
 
 Ratatui library crate for startup, live-session, replay, and review shells.
-Score 12: >20 files (3), >5 descendant directories (2), >70% Rust (2), crate manifest (1),
-`src/lib.rs` module boundary (2), and >10 measured public exports (2); reference centrality unmeasured.
+`src/lib.rs` defines the public module and export boundary; reference centrality is unmeasured.
 
 ## WHERE TO LOOK
 
@@ -14,6 +13,7 @@ Score 12: >20 files (3), >5 descendant directories (2), >70% Rust (2), crate man
 | Aggregate UI state | `src/app.rs`, `src/app/` | `AppState`, projections, overlays, interaction routing |
 | Frame composition | `src/ui.rs`, `src/ui_*` | Layout-to-render pipeline and transcript surfaces |
 | Terminal runtime | `src/runtime.rs`, `src/terminal/` | Event loop, capability setup, frame output, teardown |
+| Session cost and token speed | `src/app/session_usage.rs`, `src/ui_lifecycle.rs` | Provider usage, model prices and live generation throughput |
 | Layout and theme contracts | `src/layout.rs`, `src/theme.rs`, `src/theme_*` | Breakpoints, geometry, semantic colors, glyph fallback |
 | Public state-machine domains | `src/*/mod.rs` | Facades for composer, dashboard, transcript, input, scheduling |
 | Integration contracts | `tests/` | Rendering, lifecycle, PTY, Unicode, snapshots, side effects |
