@@ -183,6 +183,7 @@ pub(crate) fn build(
         .into_iter()
         .filter(|id| id.starts_with("mcp."))
         .collect();
+    registry.set_edit_config(config.edit.clone());
     result.tool_registry = Arc::new(registry);
     if !config.agents.is_empty() {
         result.agent_profiles = interactive_agent_profiles(config)?;

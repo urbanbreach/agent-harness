@@ -220,8 +220,8 @@ do not select a separate title-generation model.
 
 ## Model prompts
 
-Each model has its own complete system prompt template, ported from the matching
-Senpi preset (the prompts OmO Native uses) and fitted to Harness. Specific model
+Each model has its own complete system prompt template, tuned for that model and
+written for Harness's tools and runtime. Specific model
 versions take precedence over family defaults; catalog `metadata.family`
 supports aliases. `harness models --json` includes `resolution.prompt_preset`.
 The selected eval routing guidance reaches the model once: in the system prompt,
@@ -1001,6 +1001,42 @@ interpreter-mode checks for operators who select it explicitly. Approved
 interpreter code can perform host I/O that lexical shell path scanning cannot
 enumerate; use an enforced OS sandbox when that access must be confined.
 
+## Edit formats
+
+`edit.mode` selects the model-facing edit format for each agent's current model.
+The default, `auto`, follows other coding-agent harnesses: GPT, Codex and o-series
+models get `apply_patch`, which replaces `edit` and `write`; Kimi, DeepSeek,
+MiniMax, MiMo, StepFun and GLM Flash get `replace`, plain old/new string edits,
+because those models tend to mishandle line anchors; every other model gets
+`hashline`, line-and-hash anchored edits. Set `hashline`, `replace`, or
+`apply_patch` to force one format. Hash anchors appear in file reads only in
+hashline mode; the other modes read plain file text. If an agent lacks the chosen
+format's tool, it falls back to the editing tool it has.
+
+```jsonc
+{
+  "edit": {
+    "mode": "auto",
+    "model_variants": {
+      "kimi": "replace",
+      "gpt": "apply_patch"
+    }
+  }
+}
+```
+
+`edit.model_variants` overrides the mode by case-insensitive model-name
+substring. The longest matching key wins; equal lengths fall back to key order.
+Values accept the same four modes, including `auto`. `modelVariants` is an input
+alias for `model_variants`; new files should use snake_case. Settings exposes the
+mode as a choice and the overrides as a JSON object. Saved changes take effect in
+the next session.
+
+Legacy `hashline_edit` and `hashlineEdit` booleans still load. `false` maps to
+`edit.mode: "replace"`; `true` leaves automatic selection unchanged. A file
+cannot contain both a legacy boolean and `edit`, or both legacy spellings.
+Settings writes migrate legacy keys to the canonical shape.
+
 ## Deprecated compatibility behavior
 
 The loader still accepts the previous broad harness-native shape for migration:
@@ -1142,8 +1178,8 @@ under `runtime.behavior`:
 | `stream_guard.max_retries` | `2` | Corrected retries per turn before the turn fails. |
 | `directory_instructions.enabled` | `true` | When the agent reads or edits files under a directory with its own `AGENTS.md` (below the startup instructions), add that file to its context once; compaction and conversation rewind re-arm it. The file is only read when the read policy allows it without asking. |
 | `directory_instructions.max_bytes` | `32768` | Longest instruction file added; longer files are truncated and marked. |
-| `command_notifications.enabled` | `true` | Tell the agent when a background shell command it started finishes, unless it already saw the result. A command that finishes during the turn's last model request continues that turn. |
-| `command_notifications.wake_idle` | `true` | Start a turn for an idle agent when one of its background commands finishes. When off, the notice waits for the agent's next turn. |
+| `command_notifications.enabled` | `true` | Tell the agent when a background shell command it started finishes, unless it already saw the result. Also deliver [monitor events](../tools/monitor.md); when off, no monitor events are delivered. A command that finishes during the turn's last model request continues that turn. |
+| `command_notifications.wake_idle` | `true` | Start a turn for an idle agent when a background command finishes or a monitor event arrives. When off, notices and monitor events wait for the agent's next turn. |
 | `output_contract.max_retries` | `2` | Corrections sent to a subagent whose final answer does not match the `output_schema` its caller passed to `spawn_subagent`. |
 
 In the TUI, keys follow OMP and Senpi. While a turn runs, including while its tools

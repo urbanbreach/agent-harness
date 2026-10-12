@@ -107,8 +107,8 @@ allowlist. Network tools can transmit data to their configured services. Optiona
 
 ## Eval permission
 
-`permission.eval` accepts `allow`, `ask`, or `deny` and defaults to `ask`.
-An approval permits arbitrary local code, imports, subprocesses, and direct
+`permission.eval` accepts `allow`, `ask`, or `deny` and defaults to `allow`, like
+`bash`. Eval permits arbitrary local code, imports, subprocesses, and direct
 filesystem/network access from a persistent interpreter. It is not a sandbox.
 The shipped read-only profiles do not include eval. Calls through `tool.<name>`
 still use the caller's normal toolset and permission checks; an eval approval

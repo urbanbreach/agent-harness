@@ -15,10 +15,12 @@ pub(super) struct Output<'a> {
     writer: &'a mut dyn Write,
     format: Format,
     first: bool,
-    text: StreamText,
     thinking: bool,
     reasoning_section: bool,
     live_enabled: bool,
+    /// Default format prints only the last tool-free assistant message, like print modes in
+    /// other harnesses: opening lines and narration from tool-calling messages stay out of stdout.
+    answer: Option<String>,
 }
 impl<'a> Output<'a> {
     pub fn new(writer: &'a mut dyn Write, format: Format, thinking: bool) -> Self {
@@ -27,9 +29,9 @@ impl<'a> Output<'a> {
             format,
             first: true,
             thinking,
-            text: StreamText::default(),
             reasoning_section: false,
             live_enabled: true,
+            answer: None,
         }
     }
     pub fn event(&mut self, event: &EventEnvelopeV1, task: &str) -> std::io::Result<()> {
@@ -45,35 +47,25 @@ impl<'a> Output<'a> {
             let EventV1::AssistantMessageFinished(message) = &event.payload else {
                 return Ok(());
             };
-            for part in &message.parts {
-                if let AssistantPart::Text { text } = part {
-                    self.finish_text(text)?;
+            if message.tool_call_count == 0 {
+                let text: Vec<&str> = message
+                    .parts
+                    .iter()
+                    .filter_map(|part| match part {
+                        AssistantPart::Text { text } if !text.trim().is_empty() => {
+                            Some(text.as_str())
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                if !text.is_empty() {
+                    self.answer = Some(text.join("\n"));
                 }
             }
         } else {
             self.json("durable", event)?;
-            if matches!(event.payload, EventV1::AssistantMessageFinished(_)) {
-                self.text = StreamText::default();
-            }
         }
         self.writer.flush()
-    }
-    fn finish_text(&mut self, text: &str) -> std::io::Result<()> {
-        self.end_reasoning()?;
-        let prefix = text.get(..self.text.written);
-        let remaining = if prefix
-            .is_some_and(|prefix| blake3::hash(prefix.as_bytes()) == self.text.hash.finalize())
-        {
-            &text[self.text.written..]
-        } else {
-            if self.text.written != 0 {
-                writeln!(self.writer)?;
-            }
-            text
-        };
-        writeln!(self.writer, "{remaining}")?;
-        self.text = StreamText::default();
-        Ok(())
     }
     pub fn live(&mut self, event: LiveEventEnvelope, task: &str) -> std::io::Result<()> {
         if !self.live_enabled || event.correlation_id.as_deref() != Some(task) {
@@ -87,13 +79,11 @@ impl<'a> Output<'a> {
         if delta.is_empty() {
             return Ok(());
         }
-        // The coordinator publishes only safe fragments; track their committed prefix.
-        if !thinking {
-            self.text.written += delta.len();
-            self.text.hash.update(delta.as_bytes());
-        }
-        self.fragment(thinking, delta)?;
-        if self.format != Format::Default {
+        if self.format == Format::Default {
+            if thinking {
+                self.reasoning(delta)?;
+            }
+        } else {
             self.json("live", &event)?;
         }
         self.writer.flush()
@@ -101,15 +91,10 @@ impl<'a> Output<'a> {
     pub fn lagged(&mut self) {
         self.live_enabled = false;
     }
-    fn fragment(&mut self, thinking: bool, text: &str) -> std::io::Result<()> {
-        if self.format != Format::Default {
-            return Ok(());
-        }
-        if thinking && !self.reasoning_section {
+    fn reasoning(&mut self, text: &str) -> std::io::Result<()> {
+        if !self.reasoning_section {
             write!(self.writer, "\n[thinking]\n")?;
             self.reasoning_section = true;
-        } else if !thinking {
-            self.end_reasoning()?;
         }
         self.writer.write_all(text.as_bytes())
     }
@@ -135,6 +120,10 @@ impl<'a> Output<'a> {
         Ok(())
     }
     pub fn finish(&mut self) -> std::io::Result<()> {
+        self.end_reasoning()?;
+        if let Some(answer) = self.answer.take() {
+            writeln!(self.writer, "{answer}")?;
+        }
         if self.format == Format::Json {
             self.writer
                 .write_all(if self.first { b"[]\n" } else { b"]\n" })?;
@@ -143,51 +132,50 @@ impl<'a> Output<'a> {
     }
 }
 
-#[derive(Default)]
-struct StreamText {
-    written: usize,
-    hash: blake3::Hasher,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn lagged_output_uses_the_committed_answer_without_repeating_its_prefix(
+    fn default_output_prints_only_the_last_tool_free_message(
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let live = |delta: &str| -> Result<LiveEventEnvelope, serde_json::Error> {
-            serde_json::from_value(serde_json::json!({
-                "event_id":"live", "run_id":"run", "mono_ms":0,
+        let event = |payload: serde_json::Value| -> Result<serde_json::Value, serde_json::Error> {
+            Ok(serde_json::json!({
+                "schema_version":1, "seq":1, "event_id":"e", "run_id":"run", "mono_ms":0,
                 "actor":{"kind":"worker", "agent_id":"agent"}, "correlation_id":"turn",
-                "payload":{"event_type":"provider_text_delta", "data":{"request_id":"provider", "delta":delta}}
+                "payload":payload
             }))
+        };
+        let message = |tool_call_count: usize, text: &str| {
+            event(
+                serde_json::json!({"event_type":"assistant_message_finished", "data":{
+                    "request_id":"provider", "tool_call_count":tool_call_count,
+                    "parts":[{"kind":"text", "text":text}]
+                }}),
+            )
         };
         let mut bytes = Vec::new();
         let mut output = Output::new(&mut bytes, Format::Default, false);
-        output.live(live("Visible prefix ")?, "turn")?;
-        output.lagged();
-        output.live(live("missing intermediate text ")?, "turn")?;
-        let mut finished = serde_json::to_value(live("")?)?;
-        finished["schema_version"] = 1.into();
-        finished["seq"] = 1.into();
-        finished["payload"] = serde_json::to_value(EventV1::AssistantMessageFinished(
-            harness_core::event::AssistantMessageFinishedEvent {
-                request_id: "provider".into(),
-                tool_call_count: 0,
-                parts: vec![AssistantPart::Text {
-                    text: "Visible prefix and committed ending".into(),
-                }],
-                provenance: None,
-                assistant_message: None,
-            },
-        ))?;
-        output.event(&serde_json::from_value(finished)?, "turn")?;
+        let delta = serde_json::json!({
+            "event_id":"live", "run_id":"run", "mono_ms":0,
+            "actor":{"kind":"worker", "agent_id":"agent"}, "correlation_id":"turn",
+            "payload":{"event_type":"provider_text_delta", "data":{"request_id":"provider", "delta":"Intent: read the file"}}
+        });
+        output.live(serde_json::from_value(delta)?, "turn")?;
+        output.event(
+            &serde_json::from_value(message(1, "Intent: read the file. Reading it now.")?)?,
+            "turn",
+        )?;
+        output.event(
+            &serde_json::from_value(message(0, "Draft answer")?)?,
+            "turn",
+        )?;
+        output.event(
+            &serde_json::from_value(message(0, "Final answer")?)?,
+            "turn",
+        )?;
         output.finish()?;
-        assert_eq!(
-            String::from_utf8(bytes)?,
-            "Visible prefix and committed ending\n"
-        );
+        assert_eq!(String::from_utf8(bytes)?, "Final answer\n");
         Ok(())
     }
 }

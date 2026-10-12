@@ -1,20 +1,10 @@
 # Agent prompts
 
-Every model Harness supports gets its own complete system prompt in `models/`.
-Those prompts are ported from the model presets in
-[Senpi](../../../inspirations/senpi) at `66d003739`, the prompts OmO Native runs on,
-and fitted to Harness's tools and runtime. Senpi is MIT licensed; its notice is
-kept in [LICENSE.upstream](LICENSE.upstream).
-
-The bundled subagent roles in `agents/` and parts of `subagent.md` still adapt
-[Oh My Pi](https://github.com/can1357/oh-my-pi) at
-[`3f000c524cf82279f804ffd7526280cc9a5f25fe`](https://github.com/can1357/oh-my-pi/tree/3f000c524cf82279f804ffd7526280cc9a5f25fe)
-(`agents/{task,scout,reviewer,security-reviewer}.md` and
-`system/subagent-system-prompt.md`). The `sonic` agent reuses the task prompt, as
-upstream does. Agent defaults and spawn restrictions come from `src/task/agents.ts`.
-The role bodies use plain, model-neutral wording while retaining their scope,
-tool limits and output fields. Shared tool routing, hand-off and completion
-rules live in `subagent.md` rather than being repeated in each role.
+Every model Harness supports gets its own complete system prompt in `models/`,
+written for Harness's tools and runtime. Bundled subagent roles live in `agents/`.
+The `sonic` agent reuses the task prompt. Role bodies keep their scope, tool
+limits and output fields; shared tool routing, hand-off and completion rules live
+in `subagent.md` rather than being repeated in each role.
 
 ## Layout
 
@@ -23,16 +13,15 @@ rules live in `subagent.md` rather than being repeated in each role.
 | `models/<preset>.md` | The whole behavioral prompt for one model: identity, intent routing, scope, how to work, verification, hard limits, style, delegation policy. |
 | `partials/tools.md` | Tool inventory, specialized-tool routing and the permission facts. Lines appear only for tools the turn actually has. |
 | `partials/delegation.md` | How Harness subagents work: blank-context children, one integration owner, concurrency, notifications. The model file decides when to delegate. |
-| `partials/test-discipline.md` | Test rules shared by the presets whose Senpi source renders them. |
+| `partials/test-discipline.md` | Test rules shared by the presets that include them. |
 | `partials/environment.md` | OS, working directory, date, active model, project-instruction precedence and skill loading. |
-| `eval/<dialect>.md` | Eval routing for one model dialect. The model file places it once, where its Senpi preset puts the execution-tooling stance. |
+| `eval/<dialect>.md` | Eval routing for one model dialect. The model file places it once. |
 | `subagent.md` | Appended for native children: role, tool use, hand-off rules, completion. |
 | `agents/*.md` | Bundled subagent role bodies. |
 
-There is no shared behavioral base. Two models only share text when Senpi gives
-them the same preset; those files are one-line aliases. Facts that do not depend
-on the model live in the partials, the way Senpi's prompt builder supplies the
-tool section, context files and workstation block to every preset.
+There is no shared behavioral base. Models that use the same preset are one-line
+aliases. Facts that do not depend on the model, such as the tool section, project
+instructions and the environment block, live in the partials.
 
 ## Model presets
 
@@ -54,20 +43,18 @@ boundaries, so GPT-5.60 does not accidentally receive GPT-5.6 instructions.
 Kimi's rolling coding IDs select K2.7 or K2.8; Mythos aliases select the matching
 Fable preset. `harness models --json` exposes `resolution.prompt_preset`.
 
-Where Senpi wrote a full prompt for a model (Claude Opus 5 and 5.5, Sonnet 5.5,
-Fable 5 and 5.1, GPT-5.5, GPT-5.6, GPT-6 Astra, Kimi K3, Grok 4.5 to 4.7), the
-Harness file ports that prompt. Where Senpi adds tuning to its default prompt
-(Claude Opus 4.x, GPT-5 to 5.4, GLM, Kimi K2, DeepSeek V4), the Harness file is
-the ported default prompt in that family's dialect with the tuning written into
-the section it governs. Family fallbacks (`claude.md`, `gpt.md`, `kimi.md`,
-`deepseek.md`, `grok.md`) carry the family dialect without version tuning, so
-an unknown version gets no tuning meant for a different release. Bare or unknown
-GPT-6 IDs use `gpt.md`, as Senpi keeps them off the Astra preset. Llama, MiniMax
-and Mistral have no documented tuning and use `default.md`. Gemini keeps the
-Harness Gemini guidance on top of the default prompt.
+Claude Opus 5 and 5.5, Sonnet 5.5, Fable 5 and 5.1, GPT-5.5, GPT-5.6, GPT-6 Astra,
+Kimi K3 and Grok 4.5 to 4.7 have prompts written for that model. Claude Opus 4.x,
+GPT-5 to 5.4, GLM, Kimi K2 and DeepSeek V4 use the default prompt in their family's
+dialect, with version tuning written into the section it governs. Family fallbacks
+(`claude.md`, `gpt.md`, `kimi.md`, `deepseek.md`, `grok.md`) carry the family
+dialect without version tuning, so an unknown version gets no tuning meant for a
+different release. Bare or unknown GPT-6 IDs use `gpt.md` rather than the Astra
+preset. Llama, MiniMax and Mistral have no documented tuning and use `default.md`.
+Gemini adds its own guidance to the default prompt.
 
-Each preset says what it was ported from, what changed and what was left out in
-a `${# ... #}` comment at the top of the file.
+Each preset names its model and tuning focus in a `${# ... #}` comment at the top
+of the file.
 
 ## Edit without rebuilding
 
@@ -109,7 +96,7 @@ comments. Block tags on their own line leave no blank line behind, and runs of
 blank lines collapse to one. The variables are `tools` (tool id to callable
 name, or `eval: tool.<name>` for tools reachable only inside eval), `inventory`,
 `model`, `prompt_preset`, `working_directory`, `os_name`, `current_date`,
-`subagent`, `isolated`, `max_concurrent`, `limit_behavior`, `eval_guidance` and
+`subagent`, `isolated`, `headless`, `max_concurrent`, `limit_behavior`, `eval_guidance` and
 `behavior` (`behavior.command_notifications` and
 `behavior.directory_instructions` mirror the `runtime.behavior` settings, so a
 prompt only describes guidance Harness will actually give).
@@ -139,7 +126,7 @@ schema-derived `params` bindings. Only reachable tools populate those bindings.
 | `codex.md` | Codex, other OpenAI reasoning models | Bounded rules with a recovery path when cells fail |
 | `default.md` | Everything else | General batching rules |
 
-The texts follow Senpi's execution-tooling stance: independent reads and probes
+All five texts take the same position: independent reads and probes
 go into one cell; edits, side effects and calls that depend on unseen results
 run one at a time and get inspected; a result with a failed item or a truncated
 tail is not evidence. They do not hide tools or grant permissions.
@@ -174,48 +161,54 @@ Definitions, roles, personas, and caller restrictions can narrow these capabilit
 Scouts, reviewers, and security reviewers keep explicit tool lists without
 eval. Task and sonic inherit eval only when their resolved tools and permissions
 allow it.
+Scout, reviewer and security-reviewer also carry default output schemas that
+match their role prompts. The runtime checks their final answers against them and
+sends bounded corrections, as it does for a caller's `output_schema`; a caller's
+schema replaces the role's.
 The `read-only` and `read-write` capability modes exclude full eval because it
 can execute local code; `execute` and `all` permit it when the tool lists and
 permissions also allow it.
 
-## Fitting Senpi's prompts to Harness
+## Behavior shared by every preset
 
-These changes apply to every preset:
-
-- Identity is Harness. The main agent opens each turn with Senpi's terminal
-  routing line, whose stop condition is binding. Children have no routing line;
-  their assignment's completion condition is the stop condition.
-- Senpi's Handoff block (`Ask:`, `For you:`, `Now:`, `Next:`) is not carried;
-  Harness has no parser or view for it. Its content survives as the
-  final-message rule: the outcome in complete sentences, then how it was
-  verified. Fable 5.1 keeps its brief progress line without the labels.
+- Identity is Harness. The main agent opens each turn with a short routing line
+  whose stop condition is binding. Children have no routing line; their
+  assignment's completion condition is the stop condition. In one-shot
+  `harness run`/`prompt` (`headless`), presets print no opening line and set the
+  stop condition silently, because only the final message reaches stdout.
+- The final message gives the outcome in complete sentences, then how it was
+  verified. There is no labeled hand-off block, because Harness has no parser or
+  view for one. Fable 5.1 adds a brief progress line.
 - Asking the user goes through the `question` tool, and only when it is
   available. Todo guidance renders only for the main agent when `todowrite` is
   available. Every tool name in a prompt is rendered from the active tool set.
-- Harness has no `monitor` tool. Background subagents and detached eval cells
-  notify when they finish, and so do background shell commands while
-  `runtime.behavior.command_notifications` is on. Full output is read with
-  `get_command_or_subagent_output`.
-- The user can steer a running turn from the TUI: like OMP and Senpi, Enter
-  while the turn runs sends the message into it, and the follow-up key queues
-  one for after the turn. A steering message joins the turn before its next
-  model request; the environment partial says so. Interrupting the turn returns
-  undelivered steering and follow-ups to the editor. Harness compacts context
+- `monitor` watches command output or a file condition in the background. Its
+  events and background shell completion notices follow
+  `runtime.behavior.command_notifications`; when disabled, wait or retrieve
+  output with `wait_commands_or_subagents` / `get_command_or_subagent_output`.
+  Background subagents and detached eval cells notify when they finish.
+- The user can steer a running turn from the TUI: Enter while the turn runs
+  sends the message into it, and the follow-up key queues one for after the
+  turn. A steering message joins the turn before its next model request; the
+  environment partial says so. Interrupting the turn returns undelivered
+  steering and follow-ups to the editor. Harness compacts context
   automatically.
-- Harness never commits on its own. Senpi rules about commits apply only when
-  the user asks for commits.
+- Harness never commits on its own. Commit rules apply only when the user asks
+  for commits.
 - Children skip the main agent's verification tiers and report shape; the
   hand-off rules in `subagent.md` decide who runs checks.
-- Senpi's "no refusals" clause is dropped. The prompts keep "answer directly,
-  without moralizing or reflexive hedging".
-- Senpi's app and chat surface variants, hook and comment-checker feedback, and
-  Bun-specific test wording are not carried.
+- The prompts ask for direct answers without moralizing or reflexive hedging.
+  None of them tells the model never to refuse.
 
-Oh My OpenAgent's OpenCode edition has its own per-model agent prompts. They
-are under the Sustainable Use License and were read for behavior only; no text
-from them is in this bundle.
+## Provenance
 
-## Verification on 2026-10-08
+The prompt text here was written for Harness from behavior specs. One set of
+authors described each earlier prompt as rules, conditions and template
+structure without its wording. Different authors, who never saw the earlier
+text, wrote these files from those specs. Reviewers then compared old and new
+rule by rule and reported gaps in abstract terms, and the writers closed them.
+
+## Verification on 2026-10-11
 
 The bundled-template test renders all 50 model entry points from the compiled
 defaults four ways: main agent with every tool, main agent with tools reachable
@@ -223,19 +216,59 @@ only through eval, a child without the question and todo tools, and no tools.
 Each rendering must be free of template syntax, carry the eval routing exactly
 once when eval is available, and never name a tool the turn does not have.
 Provider-boundary tests cover model fallback and switching, literal overrides,
-native child roles, project and user precedence, reload, and the eval routing
-falling back to the tool description when a template omits it. Each preset was
-also reviewed against its Senpi source for missing or invented rules.
+native child roles and their output fields, project and user precedence,
+reload, and the eval routing falling back to the tool description when a
+template omits it. The same 200 renderings were also scanned for merged
+paragraphs, headings run into text, doubled spaces and stray punctuation left
+by conditional branches; none remained.
 
-Live CLI runs used the normal bundled prompts with read, list, grep, glob, bash
-and eval exposed, in a fixture repository whose three text files hold 17, 25
-and 45:
+Compared with the earlier text, 1.1% of six-word sequences and 0.3% of
+eight-word sequences in the new files also appear in the old ones. The longest
+shared runs are output field lists, the fixed literals that tests and parsers
+depend on, and stock phrases such as a rule against committing unasked.
 
-| Model | Request | Observed |
-| --- | --- | --- |
-| Claude Opus 5.5 | Total of the numbers in the text files | Routing line with a stop condition, one glob, three reads in one response, answered 87 and stopped |
-| GPT-6.1 Sol | Same | Routing line, one listing, the three reads batched in one eval cell, answered 87 |
-| Claude Sonnet 5.5 | In Finnish: add `d.txt` holding 13 and report the new total | Routing line and reply in Finnish, wrote the file, read all four back, answered 100 and said the sum was computed rather than run |
+Live CLI runs used Claude Opus 5.5 through the configured Claude subscription,
+in a fixture repository whose three text files hold 17, 25 and 45:
+
+| Request | Observed |
+| --- | --- |
+| Total of the numbers in the text files | Routing line with intent, approach and stop condition; one glob, three reads in one response; answered 87 and stopped |
+| Use a scout subagent to find the numbers, then report the total | Routing line; one scout with a complete brief; the scout batched a glob and a listing, then three reads, and returned JSON with `summary` and `files`; the parent answered 87 |
+
+Without an explicit permission rule or YOLO, a headless run denies the subagent
+launch; the model then stopped and asked rather than reading the files itself
+against the request.
+
+### Side by side with the earlier prompts
+
+A binary built from the earlier prompts and one built from these got the same
+six tasks, each in a fresh copy of a small Python project with one failing test:
+explain a function, fix the failing tests, "clean up utils.py", rename a
+function everywhere, delegate an environment-variable search to a scout, and a
+question in Finnish. Claude Haiku 5.5 (`medium`, `claude.md`) and GPT-6 Luna
+(`gpt-6-astra.md`) ran every task four times per version.
+
+| Check | Haiku before | Haiku now | Luna before | Luna now |
+| --- | --- | --- | --- | --- |
+| Explain, fix, rename and scout tasks done correctly | 16/16 | 16/16 | 16/16 | 16/16 |
+| Fix report cites test evidence | 3/4 | 4/4 | 4/4 | 4/4 |
+| "Clean up utils.py" edited instead of proposed | 0/4 | 0/4 | 4/4 | 1/4 |
+| Scout returned its JSON object | 3/4 | 4/4 | 4/4 | 4/4 |
+| Finnish question answered correctly | 4/4 | 4/4 | 2/4 | 4/4 |
+| Finnish reply, opening line included | 3/4 | 3/4 | 4/4 | 0/4 |
+| Opening line states when the work is done | 21/24 | 24/24 | 23/24 | 22/24 |
+| Model calls across all runs | 145 | 135 | 172 | 191 |
+
+The first rewrite lost two behaviors that these runs exposed: Haiku often left
+the done condition out of its opening line, and the scout answered in Markdown
+when the brief described the content it wanted. The default presets now give a
+fill-in opening line, and the scout's output rule says that only an explicit
+format instruction replaces its JSON object. Claude presets use a sentence
+pattern, which models translate. The other presets keep a labelled line,
+because Luna dropped the done condition from a translated sentence; Luna
+therefore keeps the English `Intent:` label in other languages. Luna's cleanup
+runs now mostly follow the rule that a loosely specified cleanup gets a
+proposal first.
 
 These runs check the tested scenarios only. Other models have deterministic
 selection and rendering coverage; prompting cannot guarantee every future tool

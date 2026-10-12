@@ -40,6 +40,8 @@ fn model_aliases_and_bundled_templates_respect_available_capabilities(
         "write",
         "apply_patch",
         "bash",
+        "monitor",
+        "kill_command_or_subagent",
         "lsp",
         "ast_grep_search",
         "ast_grep_replace",
@@ -66,6 +68,11 @@ fn model_aliases_and_bundled_templates_respect_available_capabilities(
         .filter(|tool| !matches!(tool.tool_id.as_str(), "question" | "todowrite"))
         .cloned()
         .collect();
+    let without_monitor: Vec<_> = full
+        .iter()
+        .filter(|tool| tool.tool_id != "monitor")
+        .cloned()
+        .collect();
     let main = PromptSource::default();
     let subagent = PromptSource {
         subagent: true,
@@ -76,11 +83,17 @@ fn model_aliases_and_bundled_templates_respect_available_capabilities(
         configured: Some("Literal prompt.".into()),
         ..PromptSource::default()
     };
+    let headless = PromptSource {
+        headless: true,
+        ..PromptSource::default()
+    };
     let cases = [
         (&main, &full[..], &full[..]),
+        (&main, &without_monitor[..], &without_monitor[..]),
         (&main, &full[..], &full[..1]),
         (&subagent, &child[..], &child[..]),
         (&main, &[][..], &[][..]),
+        (&headless, &full[..], &full[..]),
     ];
     // Exercise the shipped templates, including inheritance, without project overrides.
     for entry in fs::read_dir(concat!(
@@ -126,6 +139,24 @@ fn model_aliases_and_bundled_templates_respect_available_capabilities(
                 }
             }
         }
+        // Every main-agent preset swaps its visible opening line for the one-shot stop rule.
+        let [interactive, one_shot] = [&main, &headless].map(|source| {
+            source.render(&PromptContext {
+                workspace: workspace.path(),
+                model: "fixture:model",
+                prompt_preset: preset,
+                tools: &full,
+                direct_tools: &full,
+                current_date: "2026-10-06",
+                max_concurrent: 2,
+                limit_behavior: Default::default(),
+                behavior: &harness_core::config::BehaviorSettings::default(),
+            })
+        });
+        assert_ne!(
+            interactive?.system, one_shot?.system,
+            "{preset}: no headless branch"
+        );
     }
     Ok(())
 }

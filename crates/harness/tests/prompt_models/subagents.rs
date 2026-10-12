@@ -100,7 +100,13 @@ print('batch complete');"#
         } else if role == "task" {
             script.push(call("read", json!({"path":"evidence.txt"})));
         }
-        script.push(done("{\"summary\":\"Child complete\"}"));
+        // Scout, reviewer and security-reviewer answers are held to their role schemas.
+        script.push(done(&match role {
+            "scout" => json!({"summary":"Child complete","files":[],"architecture":"fixture"}),
+            "reviewer" => json!({"overall_correctness":"correct","explanation":"Child complete","confidence":0.9}),
+            "security-reviewer" => json!({"coverage_summary":"Child complete","findings":[]}),
+            _ => json!({"summary":"Child complete"}),
+        }.to_string()));
         script.push(done("All assignments complete."));
         let provider = Arc::new(MockProvider::script(script));
         let (mut input, mut stdout, mut stderr) = (Cursor::new(Vec::new()), Vec::new(), Vec::new());
@@ -157,11 +163,6 @@ print('batch complete');"#
                 "scout" => &["`summary`", "`files`", "`architecture`", "`report`"],
                 "reviewer" => &["`findings`", "`overall_correctness`", "`line_start`"],
                 "security-reviewer" => &["`coverage_summary`", "`reviewed_paths`", "`rule_id`"],
-                "sonic" => &[
-                    "Only strictly mechanical updates or data collection.",
-                    "`*.md`",
-                    "`subagent_type`",
-                ],
                 _ => &["`*.md`", "`subagent_type`"],
             };
             assert!(

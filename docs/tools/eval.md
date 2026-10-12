@@ -59,6 +59,10 @@ next step requires the model's judgment, inspect the result before planning
 more calls; do not guess paths or arguments to fill a batch. This is prompt
 guidance; direct tool visibility still follows the routing configuration below.
 
+For a long wait or watch, call [monitor](monitor.md) with
+`tool.monitor({...})` rather than holding or detaching a cell. It is directly
+visible by default and can also be listed in `eval.route_tools`.
+
 ### Tool visibility
 
 `eval.route_tools` optionally lists tool IDs or discovery-catalog IDs to remove
@@ -79,7 +83,7 @@ profile's tool list: that list controls authorization for nested calls too.
 | Helper | Behavior |
 | --- | --- |
 | `tool.<name>(args)` | Calls the active native or MCP tool through coordinator permissions, scheduling, cancellation, and journaling. Returns `text`, `details`, `images`, and `hasError`. Recursive eval is rejected. |
-| `tool_schema(name?)` | Returns a tool schema, or the available tool names when omitted. |
+| `tool_schema(name?)` | Returns a tool schema, or the available tool names when omitted. `tool_schema('eval:helpers')` returns the option reference for the helpers below; it is not a tool and does not appear in the list. |
 | `display(value)` | Displays text, JSON, markdown, image bytes, a data URL, or a tool result with images. Images reach the model only when displayed. |
 | `print(...)`, `log(...)`, `phase(...)` | Emits output or progress using the engine's language-specific helpers. |
 | `read(path, offset?, limit?)`, `write(path, content)` | Direct local text I/O, including `local://` files under the agent's session artifacts. These files survive kernel resets and run shutdown. |
@@ -92,9 +96,13 @@ profile's tool list: that list controls authorization for nested calls too.
 
 JavaScript takes an options object and asynchronous helpers are awaited. Python,
 Ruby, and Julia use the same conceptual helpers with language-native keyword
-arguments. Direct code and I/O are not sandboxed. `permission.eval` asks by
-default; nested tool calls still require their own approvals. Read-only agent
+arguments. Direct code and I/O are not sandboxed. `permission.eval` allows by
+default, like `bash`; nested tool calls still require their own approvals. Read-only agent
 profiles omit eval.
+
+The eval tool description ends with a host line: platform, CPU model and usable
+core count of the machine that runs every cell, so the model can size process
+pools and parallel builds and pick platform-correct commands.
 
 ### Kernel-defined tools
 

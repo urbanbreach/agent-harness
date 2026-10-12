@@ -60,8 +60,13 @@ The first public release.
 
 ### Added
 
-- A terminal UI and a headless `harness run` for coding agents, with streamed
-  output, parallel tool calls, steering of a running turn, and cancellation.
+- `monitor` watches command output or a file in the background and wakes the
+  agent with matching lines and the exit, with a live watching status in the
+  footer and pause/rearm when updates get noisy.
+- A terminal UI and a headless `harness run` for coding agents, with parallel
+  tool calls, steering of a running turn, and cancellation. `harness run` and
+  `harness prompt` print only the final answer (or stream events as JSON) and
+  wait for the turn to finish unless `runtime.prompt.wait_timeout_ms` sets a cap.
 - Providers: OpenAI Responses and Chat Completions, any OpenAI-compatible
   endpoint, Anthropic Messages, Codex and GitHub Copilot sign-in, and Claude
   subscriptions through an installed Claude Code.
@@ -77,13 +82,23 @@ The first public release.
 - Tools: read, write, edit (string replace, patches and hashline anchors), bash,
   grep, glob, list, web fetch and search, todos, questions, LSP, ast-grep,
   GitHub, MCP servers over stdio and HTTP, and persistent JavaScript and Python
-  eval.
+  eval. Eval runs without an approval prompt by default, like bash; tools it
+  calls keep their own permission checks. Its description names the host's
+  platform, CPU and core count, and `tool_schema('eval:helpers')` returns the
+  option reference for the advanced helpers.
+- Per-model edit formats. With `edit.mode` left at `auto`, GPT and Codex models
+  edit through `apply_patch`; Kimi, DeepSeek, MiniMax, MiMo, StepFun and GLM Flash
+  use plain string replacement; other models use hashline anchors.
+  `edit.model_variants` overrides the choice by model name, and the legacy
+  `hashline_edit` boolean is still read.
 - A todo pane above the transcript. It opens on its own while the agent's todo
   list has open items, and `Ctrl+t` shows, focuses or hides it.
 - Bundled subagents (`task`, `scout`, `reviewer`, `security-reviewer`, `sonic`)
   with their own permissions under the project policy. Your own agents in
   `~/.harness/agents/` or `.harness/agents/` can add to or replace them, and
   can pick a model `variant`.
+  Scout, reviewer and security-reviewer answers are checked against their role
+  output schemas; a caller's `output_schema` replaces the role's.
 - `model_roles` with `smol` and `slow` models; agents refer to them as `@smol`
   and `@slow`.
 - Custom slash commands from Markdown files in `~/.harness/commands/` and

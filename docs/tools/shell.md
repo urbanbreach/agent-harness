@@ -6,6 +6,10 @@ The parser rejects expansion, substitutions, background jobs, shell definitions
 and commands that bypass its command checks. Executable and working-directory
 allowlists apply when configured. These checks do not form an OS sandbox.
 
+Use [monitor](monitor.md) for a long build, test, server, or log whose output
+will announce a condition. It returns immediately and uses the same command
+permissions and sandbox policy as bash.
+
 ```json
 {"command":"cargo check","description":"Check the workspace","timeout":120000}
 ```

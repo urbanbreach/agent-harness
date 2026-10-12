@@ -52,7 +52,6 @@ def main():
     sysroot = Path(subprocess.check_output(["rustc", "--print", "sysroot"], text=True).strip())
     zig = Path(ziglang.__file__).parent
     notices = {
-        "prompts.txt": ROOT / "crates/harness-core/prompts/LICENSE.upstream",
         "syntax.txt": ROOT / "crates/harness-tui/assets/syntax/LICENSE.upstream",
         "acorn.txt": ROOT / "crates/harness-eval/vendor/ACORN-LICENSE",
         "rust-stdlib.html": sysroot / "share/doc/rust/COPYRIGHT-library.html",

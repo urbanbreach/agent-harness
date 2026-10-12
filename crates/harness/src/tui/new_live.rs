@@ -181,11 +181,6 @@ pub(super) async fn run_new_live_session(
     super::set_pending_prompt_commands_from_settings(settings);
     set_pending_live_launch_metadata(launch_metadata);
     if let Some(config_path) = settings.config_path.clone() {
-        let hashline_edit = settings
-            .config
-            .as_ref()
-            .map(|config| config.hashline_edit)
-            .unwrap_or(true);
         let compaction_enabled = settings
             .config
             .as_ref()
@@ -213,7 +208,6 @@ pub(super) async fn run_new_live_session(
             .unwrap_or(false);
         set_pending_settings_project_config(
             config_path,
-            hashline_edit,
             compaction_enabled,
             compaction_auto_retry_overflow,
             compaction_structured_summary_contract,

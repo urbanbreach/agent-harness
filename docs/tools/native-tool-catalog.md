@@ -18,16 +18,17 @@ release that capacity. Cancellation waits for tool cleanup before shutdown.
 | `write`, `edit` | `edit` | Create or edit UTF-8 files through coordinator-owned mutation checks. |
 | `apply_patch` | `edit` | Apply add, update, or delete patches. Moves remain unsupported. |
 | `bash` | `bash` | Execute an approved command with bounded output, process-group cleanup and optional filesystem confinement. See [shell commands](shell.md). |
+| `monitor` | `bash` for commands; `read` for paths | Watch command lines or a file condition in a coordinator background task. See [monitor](monitor.md) for events, limits, and rearm. |
 | `webfetch` | `webfetch` | Fetch bounded text, images, or binary artifacts. See [web fetching](web.md) for limits. |
 | `websearch`, `codesearch` | Tool ID, matched against the query | Search public pages or code documentation through Exa. See [web tools](web.md). |
 | `github.issue`, `github.pull_request` | Tool ID, matched against `owner/repo:operation` | Read and update issues or pull requests. See [GitHub tools](github.md). |
 | `question` | `question` | Request an operator answer through the coordinator. |
 | `skill` | `skill` | Load configured local skill instructions. Tool hints do not grant permissions. |
 | `spawn_subagent` | `task` | Start a child from a resolved definition, optionally resuming a completed conversation. |
-| `get_command_or_subagent_output`, `wait_commands_or_subagents` | `task` | Read output or wait for owned children and background commands. |
-| `kill_command_or_subagent` | `task` | Cancel an owned child or background command. |
+| `get_command_or_subagent_output`, `wait_commands_or_subagents` | `task` | Read output or wait for owned children, background commands, and monitors. |
+| `kill_command_or_subagent` | `task` | Cancel an owned child, background command, or monitor. |
 | `send_subagent_message` | `task` | Steer, queue a message for, or interject into an authorized agent. |
-| `eval` | `eval` (asks by default), plus each nested call | Persistent code cells, parallel tool composition, structured output, and background execution. See [eval](eval.md). |
+| `eval` | `eval` (allowed by default), plus each nested call | Persistent code cells, parallel tool composition, structured output, and background execution. See [eval](eval.md). |
 | `todoread` | `task` | Read the current run's journaled todo list. |
 | `todowrite` | `task` and `todowrite` | Replace the validated todo list. |
 | `session_list`, `session_read`, `session_search`, `session_info` | Tool ID | Inspect existing session journals. See [session tools](sessions.md). |

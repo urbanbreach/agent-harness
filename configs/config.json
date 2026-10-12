@@ -657,6 +657,49 @@
       },
       "type": "object"
     },
+    "EditConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "model_variants",
+              "modelVariants"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/EditMode",
+          "default": "auto"
+        },
+        "modelVariants": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EditMode"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "model_variants": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EditMode"
+          },
+          "default": {},
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "EditMode": {
+      "enum": [
+        "auto",
+        "hashline",
+        "replace",
+        "apply_patch"
+      ],
+      "type": "string"
+    },
     "EvalConfig": {
       "additionalProperties": false,
       "properties": {
@@ -2504,7 +2547,7 @@
               "type": "null"
             }
           ],
-          "default": "ask"
+          "default": "allow"
         },
         "external_directory": {
           "anyOf": [
@@ -2748,7 +2791,7 @@
             "codesearch": "allow",
             "doom_loop": "ask",
             "edit": "allow",
-            "eval": "ask",
+            "eval": "allow",
             "external_directory": "ask",
             "lsp": "allow",
             "network": "allow",
@@ -3843,16 +3886,24 @@
       ],
       "properties": {
         "waitTimeoutMs": {
-          "default": 30000,
+          "default": null,
+          "description": "Optional cap on how long `harness run`/`prompt` wait for the turn. Unset waits until it ends.",
           "format": "uint64",
           "minimum": 0,
-          "type": "integer"
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "wait_timeout_ms": {
-          "default": 30000,
+          "default": null,
+          "description": "Optional cap on how long `harness run`/`prompt` wait for the turn. Unset waits until it ends.",
           "format": "uint64",
           "minimum": 0,
-          "type": "integer"
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -4655,7 +4706,7 @@
         "prompt": {
           "$ref": "#/$defs/PromptRuntimeConfig",
           "default": {
-            "wait_timeout_ms": 30000
+            "wait_timeout_ms": null
           }
         },
         "providerRetry": {
@@ -5340,48 +5391,16 @@
     {
       "not": {
         "required": [
-          "providers",
-          "provider"
+          "edit",
+          "hashline_edit"
         ]
       }
     },
     {
       "not": {
         "required": [
-          "agents",
-          "agent"
-        ]
-      }
-    },
-    {
-      "not": {
-        "required": [
-          "permissions",
-          "permission"
-        ]
-      }
-    },
-    {
-      "not": {
-        "required": [
-          "model_profile",
-          "modelProfile"
-        ]
-      }
-    },
-    {
-      "not": {
-        "required": [
-          "model_profile",
-          "model_profiles"
-        ]
-      }
-    },
-    {
-      "not": {
-        "required": [
-          "modelProfile",
-          "model_profiles"
+          "edit",
+          "hashlineEdit"
         ]
       }
     },
@@ -5390,14 +5409,6 @@
         "required": [
           "hashline_edit",
           "hashlineEdit"
-        ]
-      }
-    },
-    {
-      "not": {
-        "required": [
-          "model_roles",
-          "modelRoles"
         ]
       }
     }
@@ -5430,6 +5441,13 @@
         "type": "string"
       },
       "type": "array"
+    },
+    "edit": {
+      "$ref": "#/$defs/EditConfig",
+      "default": {
+        "mode": "auto",
+        "model_variants": {}
+      }
     },
     "enabled_providers": {
       "default": [],
@@ -5492,11 +5510,11 @@
       ]
     },
     "hashlineEdit": {
-      "default": true,
+      "deprecated": true,
       "type": "boolean"
     },
     "hashline_edit": {
-      "default": true,
+      "deprecated": true,
       "type": "boolean"
     },
     "hooks": {
@@ -6138,7 +6156,7 @@
           "ask_timeout_ms": 30000
         },
         "prompt": {
-          "wait_timeout_ms": 30000
+          "wait_timeout_ms": null
         },
         "provider_retry": {
           "base_delay_ms": 2000,

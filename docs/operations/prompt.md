@@ -110,10 +110,12 @@ These presets do not provide operating-system confinement.
 
 ## Read and save output
 
-Default output streams assistant text, then completes it from the committed
-message. It withholds incomplete words and possible credentials until they can
-be redacted. A long withheld tail waits for completion. `--thinking` also displays
-reasoning summaries under a `[thinking]` label; they are never journaled.
+Default output prints only the turn's final answer: the last assistant message
+that made no tool calls, after the turn ends. Narration from tool-calling
+messages stays out of standard output, and the bundled prompts skip their visible
+opening line in this mode (they still set a stop condition silently). The printed
+answer is the committed, redacted message. `--thinking` also streams reasoning
+summaries under a `[thinking]` label; they are never journaled.
 
 `--format json` writes an array of live and committed events for the requested turn.
 `--format streaming-json` writes one event per line as it arrives.
@@ -138,8 +140,9 @@ to keep their meaning. Journals larger than 64 MiB are rejected.
 
 Ctrl-C cancels active work through the coordinator and waits for cleanup.
 Interrupted or failed prompts return status 1. Successful prompts return 0.
-Argument parsing errors return 2. The configured `runtime.prompt.wait_timeout_ms`
-is a deadline for the turn, not an inactivity timeout.
+Argument parsing errors return 2. `harness run` and `harness prompt` wait until
+the turn ends, as other print modes do. Set `runtime.prompt.wait_timeout_ms` to cap
+that wait; it is a deadline for the turn, not an inactivity timeout.
 
 In-process callers can supply `CliIo`, environment overrides, a provider, a clock,
 and cancellation through `CliDeps`. Prompt and OAuth execution also work when the

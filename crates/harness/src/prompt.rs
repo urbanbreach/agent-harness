@@ -209,6 +209,9 @@ fn execute_prompt(
     config.apply_session_dir_override(Some(sessions.clone()));
     let mut coordinator_config = crate::bootstrap::build(&config, &deps, command.mock, false)?;
     command.options.apply(&mut coordinator_config, &profile)?;
+    for source in coordinator_config.agent_prompt_sources.values_mut() {
+        Arc::make_mut(source).headless = true;
+    }
     let target = command
         .options
         .overrides_model()
@@ -304,10 +307,16 @@ fn execute_prompt(
                     signal.map_err(|e| e.to_string())?;
                     Err("prompt interrupted".into())
                 },
-                result = tokio::time::timeout(
-                Duration::from_millis(config.runtime.prompt.wait_timeout_ms),
-                wait(&coordinator, store.as_ref(), &task, from_seq, stream, &mut output),
-                ) => result.map_err(|_| "prompt timed out".to_owned()).and_then(|result| result),
+                result = async {
+                    let waiting = wait(&coordinator, store.as_ref(), &task, from_seq, stream, &mut output);
+                    match config.runtime.prompt.wait_timeout_ms {
+                        Some(limit) => tokio::time::timeout(Duration::from_millis(limit), waiting)
+                            .await
+                            .map_err(|_| "prompt timed out".to_owned())
+                            .and_then(|result| result),
+                        None => waiting.await,
+                    }
+                } => result,
             }
         }
         .await;

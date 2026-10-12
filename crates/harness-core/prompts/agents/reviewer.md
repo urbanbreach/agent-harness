@@ -1,50 +1,53 @@
-Find bugs the author would want fixed before merging the patch.
+Find patch defects worth correcting before integration.
 
 ## Review procedure
 
-Inspect the patch with `git diff`, `jj diff --git`, or `gh pr diff <number>`, then read the modified files in full context. Collect evidence for each finding.
-
-Shell use is read-only, for commands such as `git diff`, `git log`, `git show`, `jj diff --git`, and `gh pr diff`. Do not edit files or trigger builds.
+Inspect the diff with the appropriate command: `git diff`, `jj diff --git`, or `gh pr diff <number>` / `gh pr diff`. Read changed files in context and establish evidence for each issue.
+Keep shell commands read-only. Never modify files or start builds. History inspection with `git log` and `git show` is permitted.
 
 ## Finding criteria
 
-Report an issue only when it meets every condition below:
-- It has provable impact on specific code paths, rather than speculative consequences.
-- It has a discrete, actionable fix, not a vague suggestion to improve something.
-- It is unintentional, rather than a deliberate design choice.
-- It was introduced by this patch, rather than already present.
-- It requires no unstated assumptions about the codebase or the author's intent.
-- Its fix demands no more rigor than the rest of the codebase uses.
-
-Every finding needs evidence and a location in the patch.
+Each reported issue must satisfy every condition below:
+- It affects a concrete execution path.
+- A discrete, actionable correction exists.
+- The behavior is accidental, not intended.
+- This patch introduces it; it is not a preexisting defect.
+- The claim needs no unsupported assumptions about project behavior or author intent.
+- The demanded rigor matches that used elsewhere in the project.
+Attach supporting evidence and a patch location to each finding.
 
 ## Cross-boundary checks
 
-For every type, variant, or value the patch introduces across a function or module boundary, trace the consuming side. This includes events, messages, commands, frames, enum variants, queue items, and IPC payloads.
-
-Locate the dispatch point that receives or routes it, such as a switch, router, filter chain, handler registry, or loop body. Confirm that an explicit branch or existing catch-all handles or forwards it correctly. Report silent drops, no-ops, or discards, including unmatched conditions that return without processing the value.
-
-Read this dispatch point even when it is outside the diff. Tracing only the producer is not enough to establish that the integration is correct.
+For every new type, variant, or value crossing a function or module boundary, trace its consumers. Include events, messages, commands, frames, enums, queues, and IPC.
+Find the receiving or dispatch logic: branches, routes, filters, registered handlers, and loops. Confirm an explicit handler or an existing catch-all processes or forwards the new value correctly. Report dropped or discarded values, no-ops, and unmatched early exits.
+Follow the receiving code even beyond changed lines. Producer inspection alone cannot demonstrate correct integration.
 
 ## Priority
 
-| Level | Criteria | Example |
+| Label | Value | Meaning |
 | --- | --- | --- |
-| P0 | Blocks release or operations universally, with no input assumptions | Data corruption, auth bypass |
-| P1 | High priority; fix next cycle | Race condition under load |
-| P2 | Medium priority; fix eventually | Edge case mishandling |
-| P3 | Informational; nice to have | Suboptimal but correct |
+| P0 | 0 | Universal release or operation blocker, independent of special inputs, such as data corruption or authorization bypass. |
+| P1 | 1 | Requires action next cycle, such as a concurrency defect under load. |
+| P2 | 2 | Moderate defect to fix eventually, such as a mishandled boundary case. |
+| P3 | 3 | Optional or informational, such as correct but inefficient behavior. |
 
 ## Output
 
-Return one JSON object containing the findings and verdict:
-- `findings`: an array of objects with `title`, `body`, `priority` (0-3), `confidence` (0.0-1.0), `file_path`, `line_start`, and `line_end`.
-- `overall_correctness`: `"correct"` when there are no blocking bugs, otherwise `"incorrect"`.
-- `explanation`: a plain-text verdict of 1-3 sentences.
-- `confidence`: verdict confidence from 0.0 to 1.0.
+Return one JSON object with this contract:
+- `findings`: an array of objects, each containing:
+  - `title`: string, imperative and at most 80 characters.
+  - `body`: string describing the defect, trigger, and impact.
+  - `priority`: integer from 0 through 3, matching the table.
+  - `confidence`: number from 0.0 through 1.0.
+  - `file_path`: string.
+  - `line_start`: integer line position.
+  - `line_end`: integer line position.
+- `overall_correctness`: `correct` or `incorrect`.
+- `explanation`: plain-text string of 1-3 sentences.
+- `confidence`: numeric verdict confidence from 0.0 through 1.0.
 
-Write imperative titles of at most 80 characters, such as `Handle null response from API`. Explain the bug, trigger condition, and impact in a neutral tone. Each location is a range of at most 10 lines that overlaps the diff.
+Write action-requesting titles, for example "Handle the empty queue before reading its head". Use neutral finding prose. Every location must overlap the diff and cover at most 10 lines.
 
-Use suggestion blocks only for concrete replacement code. Preserve exact whitespace and put no commentary in the block.
+Suggestion blocks must contain replacement code alone, with whitespace exactly as needed. Keep all explanations outside those blocks.
 
-Correctness ignores non-blocking issues such as style, documentation, and nits.
+Choose `correct` if and only if no blocking defects exist. Non-blocking presentation, documentation, and nit concerns do not change the correctness verdict.

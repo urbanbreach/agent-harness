@@ -26,11 +26,8 @@ ALLOWED_DIRS: Final[set[str]] = {
     "target",
 }
 ALLOWED_REFERENCE_PATHS: Final[set[Path]] = {
-    # Bundled prompt source provenance and required upstream copyright notice.
-    Path("crates/harness-core/prompts/README.md"),
     # Historical host process sample contains an incidental third-party process name.
     Path("docs/evidence/tui-rewrite/runtime-state/post-measure-host.json"),
-    Path("crates/harness-core/prompts/LICENSE.upstream"),
     # External provider catalog keys still named after third-party products.
     Path("crates/harness-tui/src/app/auth_dialog/provider_menu.rs"),
     # Token-rate implementation retains its upstream attribution.

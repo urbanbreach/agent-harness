@@ -13,6 +13,7 @@ The [Finnish README](README.fi.md) covers the same setup.
 | [Agents and tasks](operations/generic-agent-and-tasks.md) | Parent and child roles, delegation, and skill loading |
 | [Permissions](permissions/permissions.md) | Rule order, approval prompts, shared policy, and limits |
 | [Native tools](tools/native-tool-catalog.md) | Tool IDs, permissions, output, and prerequisites |
+| [Monitor](tools/monitor.md) | Background command and file watches, event limits, and rearm |
 | [File formatting](tools/formatting.md) | Formatter discovery, overrides, edit receipts and cancellation |
 | [Sessions and replay](architecture/sessions-and-replay.md) | Inspection, resume, branching, and support exports |
 | [Session commands](operations/sessions.md) | Listing, branching, recovery, foreign import, and safe exports |

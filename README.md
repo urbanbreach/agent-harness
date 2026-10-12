@@ -134,6 +134,10 @@ signed-in Codex, GitHub Copilot, and Claude subscription are included.
 | View session branches | `harness sessions tree --root <run-id-or-path>` |
 | Find the source of a setting | `harness config explain model` |
 
+Native tools include file reads and edits, shell commands, search, eval, and
+[monitor](docs/tools/monitor.md) for background command and file watches. See the
+[native tool catalog](docs/tools/native-tool-catalog.md) for the full list.
+
 The parent agent delegates through `spawn_subagent`. Built-ins are `task`,
 `scout`, `reviewer`, `security-reviewer` and `sonic`. Add Markdown definitions
 with YAML frontmatter under `<project>/.harness/agents/` or `<home>/agents/`.

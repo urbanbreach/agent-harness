@@ -75,6 +75,10 @@ async fn prompt_streams_before_completion_without_exposing_split_credentials(
             "runtime":{"prompt":{"wait_timeout_ms":2000}}
         }).to_string())?;
         let ready = Arc::new(Notify::new());
+        // Default output prints only the committed answer, so its provider need not wait for a stream.
+        if format == "default" {
+            ready.notify_one();
+        }
         let bytes = Rc::new(RefCell::new(Vec::new()));
         let mut output = Output {
             bytes: Rc::clone(&bytes),

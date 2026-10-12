@@ -10,7 +10,7 @@ cp "$archive" "$work/assets/"
 (cd "$work/assets" && sha256sum ./*.tar.gz | sed 's|\./||' > SHA256SUMS)
 tar -xzf "$archive" -C "$work/unpacked"
 package="$(find "$work/unpacked" -mindepth 1 -maxdepth 1 -type d)"
-for notice in dependencies.txt prompts.txt syntax.txt acorn.txt rust-stdlib.html musl.txt zig.txt; do
+for notice in dependencies.txt syntax.txt acorn.txt rust-stdlib.html musl.txt zig.txt; do
   test -s "$package/LICENSES/$notice"
 done
 HARNESS_INSTALL_BASE_URL="file://$work/assets" sh "$repo_root/scripts/install.sh" --dir "$work/bin"
