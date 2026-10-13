@@ -8,21 +8,22 @@ from the code. Go through every page in docs/ and fix anything that's out of
 date."
 
 The prompt doesn't mention skills or subagents. In the recorded run the agent
-loads the `unslop` and `ponytail` skills because `AGENTS.md` asks for them,
-splits `docs/` into four sets of pages and gives each set to a `task`
-subagent. While they work, the Subagents pane names each child by its agent
-type and shows its model, tokens per second and cost, and a card shows the
-parent waiting on all four. The children run on Claude Sonnet 5.5 at medium
-effort because that is the `task` model in the config described below; a
-`scout` or `reviewer` would show its own configured model.
+loads the `unslop` skill because `AGENTS.md` asks for it on prose work, splits
+`docs/` into five sets of pages and gives each set to a `task` subagent, then
+sends three more after pages the first round left. While they work, the
+Subagents pane names each child by its agent type and shows its model, tokens
+per second and cost, and a card shows the parent waiting on them. The children
+run on Claude Sonnet 5.5 at medium effort because that is the `task` model in
+the config described below; a `scout` or `reviewer` would show its own
+configured model.
 
 Two things in the recording are scripted input rather than model output. Once
 the wait card appears, the script clicks the first subagent in it, shows that
 child's live transcript for 20 seconds and presses Esc to return. Then it types
-a steering message, "When they're done, sum up the changes in a table with one
+a steering message, "In your final reply, put the changes in a table with one
 row per file.", while the subagents are still working. The agent reads it once
-the wait ends, and the final summary is that table. The whole turn took about
-four minutes. [`harness-tui.png`](harness-tui.png) is the final frame.
+the wait ends, and its final reply is that table. The whole turn took about five
+and a half minutes. [`harness-tui.png`](harness-tui.png) is the final frame.
 Both READMEs use these files.
 
 The checkout is pinned to `ce530837`. Its docs lag the code, and the next

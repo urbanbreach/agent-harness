@@ -19,7 +19,7 @@ const realHome = homedir();
 const harnessHome = process.env.HARNESS_HOME || join(realHome, ".harness");
 const prompt = "The docs have drifted a lot from the code. Go through every page in docs/ and fix anything that's out of date.";
 // Typed while the agent waits on its subagents; it reaches the agent's next request.
-const steer = "When they're done, sum up the changes in a table with one row per file.";
+const steer = "In your final reply, put the changes in a table with one row per file.";
 // A maximized terminal on a 1920x1080 screen: 16px cells are 9.6 by 20 pixels.
 const [cols, rows] = [200, 54];
 // The docs at this commit lag the code; the next commit, 8512d08f, fixed them

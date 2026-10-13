@@ -22,12 +22,12 @@
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="assets/harness-tui.png" />
-    <img src="assets/harness-demo.gif" alt="Harness 1920 × 1080 -päätteessä. Käyttäjä kirjoittaa: The docs have drifted a lot from the code. Go through every page in docs/ and fix anything that's out of date. Agentti lataa unslop- ja ponytail-taidot, jakaa docs/-hakemiston sivut neljään osaan ja antaa jokaisen osan Task-ala-agentille. Subagents-paneeli näyttää jokaisen ala-agentin tyypin, mallin, tokenit sekunnissa ja hinnan, ja kortti kertoo pääagentin odottavan niitä. Käyttäjä avaa yhden ala-agentin, seuraa hetken sen keskustelulokia ja palaa takaisin. Sitten hän pyytää muutokset taulukkona, rivi tiedostoa kohden. Kun ala-agentit ovat valmiita, pääagentti vastaa juuri sellaisella taulukolla. Muutettuja sivuja on kahdeksan, esimerkiksi arkkitehtuuritaulukosta puuttui crate ja tietosuojasivulla oli rikkinäinen ankkuri." />
+    <img src="assets/harness-demo.gif" alt="Harness 1920 × 1080 -päätteessä. Käyttäjä kirjoittaa: The docs have drifted a lot from the code. Go through every page in docs/ and fix anything that's out of date. Agentti lataa unslop-taidon, jakaa docs/-hakemiston sivut viiteen osaan ja antaa jokaisen osan Task-ala-agentille. Myöhemmin se lähettää vielä kolme lisää sivuille, jotka ensimmäiseltä kierrokselta jäivät. Subagents-paneeli näyttää jokaisen ala-agentin tyypin, mallin, tokenit sekunnissa ja hinnan, ja kortti kertoo pääagentin odottavan niitä. Käyttäjä avaa yhden ala-agentin, seuraa hetken sen keskustelulokia ja palaa takaisin. Sitten hän pyytää loppuvastaukseen taulukon, rivi tiedostoa kohden. Kun ala-agentit ovat valmiita, pääagentti vastaa juuri sellaisella taulukolla. Muutettuja sivuja on 18, esimerkiksi arkkitehtuuritaulukosta puuttui crate ja oikeuksien nimistä eval ja network." />
   </picture>
 </p>
 
 <p align="center">
-  <sub>Oikea istunto Claude Sonnet 5.5 -mallilla medium-tasolla, tallennettu päätekäyttöliittymästä 1920×1080-päätteessä. Agentti tekee valintansa itse. Käyttäjä vain avaa yhden ala-agentin ja ohjaa vuoroa yhdellä viestillä. Neljän minuutin ajo näytetään nopeutettuna.<br />
+  <sub>Oikea istunto Claude Sonnet 5.5 -mallilla medium-tasolla, tallennettu päätekäyttöliittymästä 1920×1080-päätteessä. Agentti tekee valintansa itse. Käyttäjä vain avaa yhden ala-agentin ja ohjaa vuoroa yhdellä viestillä. Viiden minuutin ajo näytetään nopeutettuna.<br />
   <a href="assets/harness-tui.png">Still-kuva</a> · <a href="assets/README.md">Näin tallenne tehtiin</a></sub>
 </p>
 
