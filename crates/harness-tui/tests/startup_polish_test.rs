@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use harness_tui::app::{AppState, Focus, LaunchMetadata};
+use harness_core::config::ANTHROPIC_SUBSCRIPTION_BACKEND;
+use harness_tui::app::{AppState, Focus, LaunchMetadata, ModelOption};
 use harness_tui::scheduling::{MotionCadence, MotionPlan};
 use harness_tui::theme::{ColorLevel, GlyphMode};
 use harness_tui::welcome_surface::WelcomeLayout;
@@ -152,6 +153,40 @@ fn startup_identity_sits_on_composer_border_without_padding_field() {
     assert!(startup.contains("Logged in with API key"));
     assert!(!live.contains("model-1 · Demo mode"));
     assert!(!live.contains("Logged in with API key"));
+}
+
+#[test]
+fn picking_a_claude_subscription_model_reports_an_oauth_sign_in() {
+    // arrange
+    let api_key = ModelOption::from_model_ref("default", "mistral:glm");
+    let subscription = ModelOption {
+        provider_backend_label: Some(ANTHROPIC_SUBSCRIPTION_BACKEND.into()),
+        ..ModelOption::from_model_ref("default", "anthropic-subscription:claude-sonnet-5-5")
+    };
+    let mut startup = AppState::new_startup(Vec::new(), None);
+    startup.set_launch_metadata(
+        LaunchMetadata::from_model_option(&api_key)
+            .with_available_models(vec![api_key, subscription]),
+    );
+    let before = startup_text(&startup, 120, 40);
+
+    // act
+    startup.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    startup.handle_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+    for character in "sonnet".chars() {
+        startup.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
+    }
+    startup.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let after = startup_text(&startup, 120, 40);
+
+    // assert
+    assert!(before.contains("Logged in with API key"), "{before}");
+    assert_eq!(
+        startup.launch_metadata().provider(),
+        "anthropic-subscription"
+    );
+    assert!(after.contains("OAuth provider configured"), "{after}");
+    assert!(!after.contains("Logged in with API key"), "{after}");
 }
 
 #[test]

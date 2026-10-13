@@ -162,6 +162,31 @@ fn no_config_tui_with_stored_codex_launches_connected_catalog() {
 }
 
 #[test]
+fn claude_subscription_launch_reports_an_oauth_sign_in() {
+    let temp = tempfile::tempdir().unwrap_or_abort();
+
+    let settings = resolve_live_settings_for_test(
+        &live_tui_command(),
+        None,
+        None,
+        temp.path().to_path_buf(),
+        &isolated_config_context(temp.path().to_path_buf()),
+        LiveSettingsDeps {
+            credential_store: None,
+            env_lookup: &|name| (name == "CLAUDE_CODE_OAUTH_TOKEN").then(|| "test-token".into()),
+            model_selection_path: None,
+        },
+    )
+    .unwrap_or_abort();
+
+    assert_eq!(
+        settings.launch_metadata.provider(),
+        "anthropic-subscription"
+    );
+    assert!(settings.launch_metadata.uses_oauth_authentication());
+}
+
+#[test]
 fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
     let temp = tempfile::tempdir().unwrap_or_abort();
     let home = temp.path().join("data/harness");

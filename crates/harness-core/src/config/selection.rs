@@ -1,5 +1,9 @@
 use super::*;
 
+/// Backend label of models served by the Claude subscription lane, which only
+/// signs in with OAuth.
+pub const ANTHROPIC_SUBSCRIPTION_BACKEND: &str = "Anthropic Subscription";
+
 pub fn resolve_model_selection(
     config: &HarnessConfig,
     selector: &str,
@@ -131,7 +135,7 @@ pub fn resolve_configured_model_metadata(
             match backend {
                 ProviderConfig::OpenAiCompatible(_) => "OpenAI",
                 ProviderConfig::Anthropic(_) => "Anthropic",
-                ProviderConfig::AnthropicSubscription(_) => "Anthropic Subscription",
+                ProviderConfig::AnthropicSubscription(_) => ANTHROPIC_SUBSCRIPTION_BACKEND,
             }
             .into(),
         ),

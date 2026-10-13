@@ -338,9 +338,15 @@ fn uses_oauth_credential(
     config: Option<&HarnessConfig>,
     credential_store: Option<&CredentialStore>,
 ) -> bool {
-    let Some(ProviderConfig::OpenAiCompatible(provider)) =
-        config.and_then(|config| config.providers.get(launch_metadata.provider()))
+    let Some(provider) = config.and_then(|config| config.providers.get(launch_metadata.provider()))
     else {
+        return false;
+    };
+    // The Claude subscription lane only signs in with OAuth.
+    if matches!(provider, ProviderConfig::AnthropicSubscription(_)) {
+        return true;
+    }
+    let ProviderConfig::OpenAiCompatible(provider) = provider else {
         return false;
     };
     let Some(auth_provider) = provider.auth_provider.as_ref() else {

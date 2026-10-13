@@ -64,6 +64,8 @@ The first public release.
   calls no longer pile up under your steering message in the main transcript.
 - Subagents without a persona, role or `[tag]` in their description are named
   after their agent type, such as Task or Scout, instead of "Subagent".
+- A Claude subscription counts as an OAuth sign-in. The start screen used to say
+  "Logged in with API key" for it, and session cost dropped its `(sub)` marker.
 
 ### Added
 

@@ -412,8 +412,11 @@ impl AppState {
             .with_resolved_models(self.launch_metadata.resolved_models().to_vec())
             .with_available_models(self.launch_metadata.available_models().to_vec())
             .with_switchable_profiles(self.launch_metadata.switchable_profiles().to_vec());
-        if selected_model.provider == self.launch_metadata.provider()
-            && self.launch_metadata.uses_oauth_authentication()
+        let subscription = selected_model.provider_backend_label.as_deref()
+            == Some(harness_core::config::ANTHROPIC_SUBSCRIPTION_BACKEND);
+        if subscription
+            || (selected_model.provider == self.launch_metadata.provider()
+                && self.launch_metadata.uses_oauth_authentication())
         {
             launch_metadata = launch_metadata.with_oauth_authentication();
         }
