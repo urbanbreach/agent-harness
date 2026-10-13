@@ -18,17 +18,20 @@ const assets = join(repo, "docs/assets");
 const realHome = homedir();
 const harnessHome = process.env.HARNESS_HOME || join(realHome, ".harness");
 const prompt = "The docs have drifted a lot from the code. Go through every page in docs/ and fix anything that's out of date.";
+// Typed while the agent waits on its subagents; it reaches the agent's next request.
+const steer = "When they're done, sum up the changes in a table with one row per file.";
 // A maximized terminal on a 1920x1080 screen: 16px cells are 9.6 by 20 pixels.
 const [cols, rows] = [200, 54];
 // The docs at this commit lag the code; the next commit, 8512d08f, fixed them
 // by hand. The session sees it as HEAD, so every run starts from real drift.
 const commit = "ce53083797df9eb75426c6ac1c1f5ff9a6363b29";
 // Individual tool cards read better than eval cells, and a cold
-// rust-analyzer only answers "server cancelled the request".
+// rust-analyzer only answers "server cancelled the request". Nobody answers
+// prompts here, so paths outside the checkout and repeated calls fail fast.
 const config = {
   model: process.env.HARNESS_DEMO_MODEL ?? "anthropic-subscription/claude-sonnet-5-5/medium",
   lsp: false,
-  permission: { "*": "allow", eval: "deny" },
+  permission: { "*": "allow", eval: "deny", external_directory: "deny", doom_loop: "deny" },
 };
 const temporary = await mkdtemp(join(tmpdir(), "harness-readme-"));
 // A fake HOME makes the header read ~/agent-harness instead of a temporary path.
@@ -128,22 +131,46 @@ try {
   const live = frames.length;
   let previous = "";
   let sampled = 0;
+  const sample = async (seconds = 0.2) => {
+    const { text } = await terminal.snapshot();
+    const key = text.replace(/[^A-Za-z]/g, "");
+    if (key !== previous && Date.now() - sampled >= 500) {
+      previous = key;
+      sampled = Date.now();
+      await shot(seconds);
+    }
+    return text;
+  };
+  const watch = async (ms, seconds) => {
+    for (const until = Date.now() + ms; Date.now() < until; await delay(130)) await sample(seconds);
+  };
   let delegated = false;
   const deadline = Date.now() + 2_400_000;
   for (;;) {
     assert(Date.now() < deadline, "the demo turn did not finish within forty minutes");
-    const { text } = await terminal.snapshot();
-    const key = text.replace(/[^A-Za-z]/g, "");
-    delegated ||= text.includes("Subagents");
-    if (key !== previous && Date.now() - sampled >= 500) {
-      previous = key;
-      sampled = Date.now();
-      await shot(0.2);
+    const text = await sample();
+    assert(!text.includes("Allow Permission?"), "the demo cannot answer a permission prompt");
+    // Once the agent waits on its subagents, open one, come back and steer.
+    if (!delegated && text.includes("[subagent]")) {
+      delegated = true;
+      await watch(3_000);
+      await terminal.clickText("[subagent]");
+      await terminal.waitForText("q/Esc:back");
+      // The child's view plays slower than the rest so it can be read.
+      await watch(20_000, 0.4);
+      await terminal.key("Escape");
+      await terminal.waitForTextAbsent("q/Esc:back");
+      await watch(2_000);
+      for (const character of steer) {
+        await terminal.type(character);
+        await shot(0.04);
+      }
+      await terminal.key("Enter");
     }
     if (text.includes("Worked for") && text.includes("Enter:send")) break;
     await delay(130);
   }
-  assert(delegated, "the demo must show the agent delegating to subagents");
+  assert(delegated, "the demo must show the agent waiting on subagents");
   // Keep at most 300 live frames: a minute of playback at most.
   const step = Math.max(1, Math.ceil((frames.length - live) / 300));
   frames.splice(live, Infinity, ...frames.slice(live).filter((_, index) => index % step === 0));

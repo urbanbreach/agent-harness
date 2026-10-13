@@ -22,12 +22,12 @@
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="assets/harness-tui.png" />
-    <img src="assets/harness-demo.gif" alt="Harness 1920 × 1080 -päätteessä. Käyttäjä kirjoittaa: The docs have drifted a lot from the code. Go through every page in docs/ and fix anything that's out of date. Agentti lataa unslop-taidon, jakaa docs/-hakemiston sivut viiteen osaan ja antaa jokaisen osan omalle ala-agentilleen. Subagents-paneeli näyttää jokaisen ala-agentin mallin, tokenit sekunnissa ja hinnan, ja kortti kertoo pääagentin odottavan niitä. Kun ne ovat valmiita, pääagentti kokoaa korjaukset, esimerkiksi arkkitehtuuritaulukosta puuttuneen craten ja väärät koodi-indeksin rajat, ja kertoo, mitä jäi tarkistamatta." />
+    <img src="assets/harness-demo.gif" alt="Harness 1920 × 1080 -päätteessä. Käyttäjä kirjoittaa: The docs have drifted a lot from the code. Go through every page in docs/ and fix anything that's out of date. Agentti lataa unslop-taidon, jakaa docs/-hakemiston sivut viiteen osaan ja antaa jokaisen osan omalle ala-agentilleen. Subagents-paneeli näyttää jokaisen ala-agentin mallin, tokenit sekunnissa ja hinnan, ja kortti kertoo pääagentin odottavan niitä. Käyttäjä avaa yhden ala-agentin, seuraa hetken sen keskustelulokia ja palaa takaisin. Sitten hän pyytää muutokset taulukkona, rivi tiedostoa kohden. Kun ala-agentit ovat valmiita, pääagentti vastaa juuri sellaisella taulukolla. Muutettuja sivuja on 11, esimerkiksi arkkitehtuuritaulukosta puuttui crate ja oikeuksien nimistä eval." />
   </picture>
 </p>
 
 <p align="center">
-  <sub>Käsikirjoittamaton istunto Claude Sonnet 5.5 -mallilla medium-tasolla, tallennettu oikeasta päätekäyttöliittymästä 1920×1080-päätteessä. Neljän minuutin ajo näytetään nopeutettuna.<br />
+  <sub>Oikea istunto Claude Sonnet 5.5 -mallilla medium-tasolla, tallennettu päätekäyttöliittymästä 1920×1080-päätteessä. Agentti tekee valintansa itse. Käyttäjä vain avaa yhden ala-agentin ja ohjaa vuoroa yhdellä viestillä. Kolmen minuutin ajo näytetään nopeutettuna.<br />
   <a href="assets/harness-tui.png">Still-kuva</a> · <a href="assets/README.md">Näin tallenne tehtiin</a></sub>
 </p>
 

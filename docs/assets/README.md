@@ -11,10 +11,16 @@ The prompt doesn't mention skills or subagents. In the recorded run the agent
 loads the `unslop` skill because `AGENTS.md` asks for it on prose work, splits
 `docs/` into five sets of pages and gives each set to a subagent. While they
 work, the Subagents pane shows each child's model, tokens per second and cost,
-and a card shows the parent waiting on all five. About four minutes later the
-parent summarizes what the children fixed and what nobody checked.
-[`harness-tui.png`](harness-tui.png) is the final frame. Both READMEs use these
-files.
+and a card shows the parent waiting on all five.
+
+Two things in the recording are scripted input rather than model output. Once
+the wait card appears, the script clicks the first subagent in it, shows that
+child's live transcript for 20 seconds and presses Esc to return. Then it types
+a steering message, "When they're done, sum up the changes in a table with one
+row per file.", while the subagents are still working. The agent reads it once
+the wait ends, and the final summary is that table. The whole turn took a bit
+over three minutes. [`harness-tui.png`](harness-tui.png) is the final frame.
+Both READMEs use these files.
 
 The checkout is pinned to `ce530837`. Its docs lag the code, and the next
 commit, `8512d08f`, fixed them by hand, so the agent has real drift to find
@@ -31,14 +37,17 @@ directory. It differs from a normal session in these ways:
   on a workspace this size.
 - Eval is denied, so the transcript shows individual tool cards instead of
   code cells.
+- Paths outside the checkout and repeated identical calls are denied instead of
+  asking, because nobody is there to answer a permission prompt. The script
+  fails if one appears anyway.
 - Cargo builds, if the agent starts any, go to `target/readme-demo` in this
   repository rather than the temporary directory.
 
 The GIF is a time-lapse. The script takes a frame whenever the screen's text
 changes (timers and token rates aside), at most twice a second, and each frame
-plays for a fifth of a second. Past 300 such frames it keeps only every second,
-third or nth one, so the live part never runs longer than a minute. It is not a
-latency measurement.
+plays for a fifth of a second, or two fifths inside the subagent's view. Past
+300 such frames it keeps only every second, third or nth one, so the live part
+never runs longer than a minute. It is not a latency measurement.
 
 ## Regenerate
 
@@ -62,9 +71,9 @@ The model defaults to `anthropic-subscription/claude-sonnet-5-5/medium`. Set
 about five minutes and uses your provider account.
 
 The script reuses the xterm.js and PTY helpers in
-[`scripts/qa/lib`](../../scripts/qa/lib). It fails unless the agent hands work
-to subagents and the turn finishes. Sonnet sometimes keeps a docs pass to
-itself, so run the script again when that happens. It scans every frame and
+[`scripts/qa/lib`](../../scripts/qa/lib). It fails unless the agent waits on
+subagents and the turn finishes. Sonnet sometimes keeps a docs pass to itself,
+so run the script again when that happens. It scans every frame and
 the raw terminal output for secrets, and replaces the two files only after
 encoding succeeds. Afterwards it removes the temporary checkout and browser
 profile, the edit-attribution directory the run created under your Harness

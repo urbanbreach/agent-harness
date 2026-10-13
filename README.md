@@ -22,12 +22,12 @@
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/harness-tui.png" />
-    <img src="docs/assets/harness-demo.gif" alt="Harness in a 1920 by 1080 terminal. The user types: The docs have drifted a lot from the code. Go through every page in docs/ and fix anything that's out of date. The agent loads the unslop skill, splits docs/ into five sets of pages and hands each set to a subagent. A Subagents pane lists the five children with their model, tokens per second and cost, and a card shows the agent waiting on them. When they finish, it summarizes the fixes, such as a crate missing from the architecture table and wrong code index limits, and lists what it left unverified." />
+    <img src="docs/assets/harness-demo.gif" alt="Harness in a 1920 by 1080 terminal. The user types: The docs have drifted a lot from the code. Go through every page in docs/ and fix anything that's out of date. The agent loads the unslop skill, splits docs/ into five sets of pages and hands each set to a subagent. A Subagents pane lists the five with their model, tokens per second and cost, and a card shows the agent waiting on them. The user opens one subagent to watch its live transcript, goes back and asks for the changes as a table with one row per file. When the subagents finish, the agent answers with that table, covering 11 changed pages such as a crate missing from the architecture table and eval missing from the permission names." />
   </picture>
 </p>
 
 <p align="center">
-  <sub>An unscripted session with Claude Sonnet 5.5 at medium effort, recorded from the real TUI in a 1920×1080 terminal. The four-minute run plays as a time-lapse.<br />
+  <sub>A real session with Claude Sonnet 5.5 at medium effort, recorded from the TUI in a 1920×1080 terminal. The agent's choices are unscripted; the user opens one subagent and sends a steering message. The three-minute run plays as a time-lapse.<br />
   <a href="docs/assets/harness-tui.png">Still image</a> · <a href="docs/assets/README.md">How it was recorded</a></sub>
 </p>
 
