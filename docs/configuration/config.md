@@ -48,8 +48,9 @@ HTTP provider `options.timeoutMs` limits idle reads, including the wait for
 response headers. Each successful read resets the limit, so a progressing stream
 can run longer. Connection setup has a separate limit of at most 30 seconds.
 
-The live TUI shows generation speed and session cost next to context usage in
-the row above the transcript, for example `49.6 tok/s · $0.047 · 9.9K / 192K 5%`.
+The live TUI shows generation speed, session cost and prompt cache hits next to
+context usage in the row above the transcript, for example
+`49.6 tok/s · $0.047 · CH96.4% · 9.9K / 192K 5%`.
 Speed updates while the model streams. It counts streamed text, reasoning and
 tool input at roughly four bytes per token, weights the last minute or so of
 streaming most, and corrects itself to the provider's billed count when each
@@ -58,6 +59,12 @@ through tool runs, and it stays blank until about 200 tokens and four seconds of
 streaming are in. A resumed session starts from its last request's speed. This
 row counts only the main agent; each subagent's row in the Tasks pane shows that
 subagent's speed next to its model, measured the same way.
+
+`CH96.4%` is the share of the main agent's latest prompt that the provider read
+from its cache. Cache writes count as misses. Every request that reports usage
+replaces the reading, so one cache miss shows up right away, and a resumed
+session shows its last request's. The label hides below 10%, which also covers
+providers that never report cache reads.
 
 Cost prices each request when it finishes and saves that amount in the session,
 so later price changes leave past requests alone. Sessions recorded before this
@@ -110,7 +117,7 @@ cache writes last an hour; those bill at twice the input price, and the rest at
 the `cacheWrite` price. An amount reads `$0.047+` when some of its usage came
 from a model with no price, and the label ends in `(sub)` for a Codex or Copilot
 sign-in, where the bill isn't per token. Narrow terminals drop speed first, then
-cost.
+cost, then cache hits.
 
 OpenAI-compatible providers accept `cacheRetention` either beside the provider
 fields or under `options`. The default is `short`: the runtime sends a stable,

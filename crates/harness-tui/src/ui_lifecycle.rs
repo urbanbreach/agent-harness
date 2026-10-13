@@ -274,12 +274,13 @@ pub(super) fn render_live_breadcrumb(
     frame.render_widget(Paragraph::new(line), row);
 }
 
-/// Tok/s, cost and context usage: `42.1 tok/s · $0.123 · 12K / 262K 5%`. Tok/s, then
-/// cost, drop first so the meta stays within half the row.
+/// Tok/s, cost, cache hits and context usage: `42.1 tok/s · $0.123 · CH97.3% · 12K / 262K 5%`.
+/// Tok/s, then cost, then cache hits drop first so the meta stays within half the row.
 fn breadcrumb_meta(app: &AppState, width: usize) -> Option<String> {
     let segments = [
         app.generation_rate_label(None),
         app.session_cost_label(),
+        app.cache_hit_label(),
         breadcrumb_context_meta(app),
     ]
     .into_iter()

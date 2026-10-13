@@ -60,6 +60,8 @@ The first public release.
 
 ### Added
 
+- The breadcrumb above the transcript shows the main agent's latest prompt cache
+  hit rate, such as `CH96.4%`, once it reaches 10%.
 - `monitor` watches command output or a file in the background and wakes the
   agent with matching lines and the exit, with a live watching status in the
   footer and pause/rearm when updates get noisy.

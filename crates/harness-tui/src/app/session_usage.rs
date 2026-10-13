@@ -23,6 +23,9 @@ pub(crate) struct SessionUsage {
     /// The newest event's stream time and when it arrived, so the open request's stream
     /// time keeps running between deltas.
     observed: Option<(u64, Instant)>,
+    /// The percent of this session's latest prompt read from the provider cache, from its
+    /// latest own request with usage; `None` when that prompt was empty.
+    cache_hit_rate: Option<f64>,
 }
 
 /// One agent's generation rate, the open request whose streamed deltas feed it, and the
@@ -157,6 +160,12 @@ impl SessionUsage {
             return;
         };
         let metadata = event.metadata.as_ref();
+        if child.is_none() {
+            // `prompt_tokens` already counts cache reads and writes.
+            let read = metadata.and_then(|m| m.cache_read_tokens).unwrap_or(0);
+            self.cache_hit_rate = (usage.prompt_tokens > 0)
+                .then(|| f64::from(read) / f64::from(usage.prompt_tokens) * 100.0);
+        }
         let meter = self.meter_mut(child);
         if let Some(picodollars) = metadata.and_then(|m| m.cost_picodollars) {
             meter.saved.picodollars += u128::from(picodollars);
@@ -226,6 +235,23 @@ impl AppState {
         });
         let rate = meter.rate.rate(now_ms)?;
         Some(format!("{rate:.1} tok/s"))
+    }
+
+    /// `CH97.3%`: the cache hit rate of this session's latest request, once it reaches 10%.
+    pub(crate) fn cache_hit_label(&self) -> Option<String> {
+        let rate = self
+            .projection
+            .usage
+            .cache_hit_rate
+            .filter(|rate| *rate >= 10.0)?;
+        // Exact ties round up, not to even: 49 cached of 400 reads 12.3%.
+        let tenths = rate * 10.0;
+        let rate = if rate.mul_add(10.0, -tenths) == 0.0 {
+            tenths.round() / 10.0
+        } else {
+            rate
+        };
+        Some(format!("CH{rate:.1}%"))
     }
 
     /// `$0.123` for this session's own requests, then `(+0.045)` for its subagents, nested

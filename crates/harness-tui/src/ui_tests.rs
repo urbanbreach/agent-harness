@@ -203,7 +203,7 @@ fn breadcrumb_rate_updates_live_while_a_request_streams() {
 }
 
 #[test]
-fn resumed_breadcrumb_shows_the_last_request_rate_and_session_cost() {
+fn resumed_breadcrumb_shows_the_last_request_rate_cache_hits_and_session_cost() {
     // Given: a priced model with a long-context tier and a Tuesday 10:00-13:00 UTC peak,
     // and one turn whose two requests straddle 10 s of tool work.
     let config = harness_core::config::load_config_from_str(
@@ -268,11 +268,13 @@ fn resumed_breadcrumb_shows_the_last_request_rate_and_session_cost() {
 
     // Then: the last request's 50 tokens over 1 s. The first request bills 8K one-hour
     // writes at twice the input price; the second bills tier prices at half, off-peak.
+    // Cache hits are the last request's alone: 100%, not the first's 60%.
     let debug = render_debug(&app, 140, 30);
-    assert!(debug.contains("50.0 tok/s · $0.233"), "{debug}");
+    assert!(debug.contains("50.0 tok/s · $0.233 · CH100.0%"), "{debug}");
 
     // When: a request priced as it finished arrives; today's price would bill it $3.
-    let mut saved = finished("req_c", 1_000_000, 0, 0, (0, 0));
+    // 9.99% of its prompt was cached, which rounds to 10.0%.
+    let mut saved = finished("req_c", 1_000_000, 0, 99_900, (0, 0));
     if let EventV1::ProviderRequestFinished(event) = &mut saved
         && let Some(metadata) = event.metadata.as_mut()
     {
@@ -282,9 +284,24 @@ fn resumed_breadcrumb_shows_the_last_request_rate_and_session_cost() {
         app.ingest_event(envelope(seq, "turn_2", payload));
     }
 
-    // Then: it adds its saved $0.001.
+    // Then: it adds its saved $0.001, and cache hits below 10% disappear.
     let debug = render_debug(&app, 140, 30);
-    assert!(debug.contains("$0.234"), "{debug}");
+    assert!(
+        debug.contains("$0.234") && !debug.contains("$0.234 · CH"),
+        "{debug}"
+    );
+
+    // When: 49 of the next 400 prompt tokens are cached, exactly 12.25%.
+    for (seq, payload) in [
+        (7, acme_started("req_d")),
+        (8, finished("req_d", 400, 1, 49, (0, 0))),
+    ] {
+        app.ingest_event(envelope(seq, "turn_3", payload));
+    }
+
+    // Then: the tie rounds up.
+    let debug = render_debug(&app, 140, 30);
+    assert!(debug.contains("CH12.3%"), "{debug}");
 }
 
 #[test]
