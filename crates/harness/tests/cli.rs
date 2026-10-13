@@ -37,7 +37,8 @@ fn openai_login_routes_oauth_to_codex_and_keeps_api_keys_separate(
             .with_current_dir(root.path().into())
             .with_env("HARNESS_HOME", data.to_str().ok_or("data path")?)
             .without_env("HARNESS_CONFIG")
-            .without_env("HARNESS_CONFIG_CONTENT");
+            .without_env("HARNESS_CONFIG_CONTENT")
+            .with_env("HARNESS_DISABLE_MODELS_FETCH", "1");
         let mut args = vec![
             "login".into(),
             "openai".into(),
@@ -93,7 +94,8 @@ fn first_login_writes_starter_config_only_without_user_config(
             .without_env("HARNESS_CONFIG")
             .without_env("HARNESS_CONFIG_CONTENT")
             .without_env("ANTHROPIC_API_KEY")
-            .without_env("HARNESS_TUI_CONFIG");
+            .without_env("HARNESS_TUI_CONFIG")
+            .with_env("HARNESS_DISABLE_MODELS_FETCH", "1");
         let existing = "{\"permission\":\"ask\"}\n";
         match case {
             "existing_json" => {

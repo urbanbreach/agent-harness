@@ -94,6 +94,17 @@ The terminal command serves the unchanged `configs/tui.json`. Releases publish
 these schemas as `harness.schema.json` and `tui.schema.json`; their
 `releases/latest/download/` URLs can be used in an editor's `$schema` setting.
 
+## Refresh the model catalog cache
+
+```bash
+harness models refresh
+```
+
+Downloads `https://models.dev/api.json`, or `HARNESS_MODELS_URL`, into
+`<home>/models-cache.json`, or `HARNESS_MODELS_PATH`, whatever the cache's age,
+and prints the path. A failed download keeps the previous cache. With
+`HARNESS_DISABLE_MODELS_FETCH=1` it downloads nothing and says so.
+
 ## Generate a catalog
 
 ```bash

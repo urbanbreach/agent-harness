@@ -164,11 +164,12 @@ to `harness auth login`. Project instructions remain authoritative.
 Codex also reads missing, supported model entries from `HARNESS_MODELS_PATH` or
 `<home>/models-cache.json`. Cached entries never replace
 configured models. Invalid caches are ignored. Runtime
-selection does not fetch or write a catalog. The live TUI login-provider menu
-uses the refreshable catalog cache; `harness models probe` and
-`harness models generate` fetch explicitly unless given `--input` or `--stdin`.
-`HARNESS_DISABLE_MODELS_FETCH=1` disables the menu fetch and runtime cache merge,
-not those explicit commands.
+selection does not fetch or write a catalog; startup, sign-in and
+`harness models refresh` refresh it, as described in
+[provider support](../configuration/provider-support.md). `harness models probe`
+and `harness models generate` fetch explicitly unless given `--input` or
+`--stdin`. `HARNESS_DISABLE_MODELS_FETCH=1` disables the cache downloads and the
+runtime cache merge, not those explicit commands.
 Catalog models keep their configured variants and image capabilities. A model
 switch or fallback rebuilds the shared prompt with that model's delegation policy.
 Project instructions, explicit system prompts and command-line rules persist

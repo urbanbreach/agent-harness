@@ -129,3 +129,7 @@ The first public release.
   changes leave past requests alone. Configured models without a price take one
   from the downloaded models.dev catalog. Anthropic token counts include cached
   prompt tokens, as OpenAI's already do.
+- The models.dev catalog cache refreshes in the background when the TUI or a
+  `prompt`/`run` session starts and the cache is over two hours old, after every
+  sign-in, and on the new `harness models refresh`. Startup no longer waits for
+  a first download.

@@ -30,7 +30,8 @@ fn tui_auth_backend_runs_same_auth_command_and_redacts_output() {
         .with_current_dir(temp.path().to_path_buf())
         .with_env("HARNESS_HOME", data_home.to_string_lossy())
         .without_env("HARNESS_CONFIG")
-        .without_env("HARNESS_CONFIG_CONTENT");
+        .without_env("HARNESS_CONFIG_CONTENT")
+        .with_env("HARNESS_DISABLE_MODELS_FETCH", "1");
 
     let secret = "tui-auth-backend-secret-value";
     let (message, level) = run_tui_auth_backend_once_with_deps(
@@ -96,7 +97,8 @@ fn tui_auth_backend_streams_output_and_accepts_hidden_stdin() {
         .with_current_dir(temp.path().to_path_buf())
         .with_env("HARNESS_HOME", data_home.to_string_lossy())
         .without_env("HARNESS_CONFIG")
-        .without_env("HARNESS_CONFIG_CONTENT");
+        .without_env("HARNESS_CONFIG_CONTENT")
+        .with_env("HARNESS_DISABLE_MODELS_FETCH", "1");
     let secret = "sk-tui-streamed-stdin-secret";
     let (tx, rx) = live_update_channel();
 

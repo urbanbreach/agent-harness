@@ -11,14 +11,14 @@ can send data over the network.
 | Live provider turn | Sends the selected context to the configured provider. |
 | MCP tool call | Connects lazily over the configured transport after permission checks. Stdio servers may make their own network requests. |
 | `webfetch`, `websearch`, `codesearch`, GitHub tools | Sends a request to the selected URL or configured service under tool permission policy. |
-| Model-catalog initialization | May download metadata from `https://models.dev/api.json`. |
+| Model-catalog refresh | Downloads metadata from `https://models.dev/api.json` at TUI and `prompt`/`run` startup when the cache is older than two hours, after each sign-in, and on `harness models refresh`. |
 | OAuth sign-in or credential refresh | Contacts the authentication endpoints for the selected provider. |
 | Mock TUI model picker | Reads the embedded catalog without a network request. |
 | Replay, session inspection, doctor, support export | Reads local data without provider or MCP requests. |
 
-The model catalog uses a five-minute cache. It serves a valid stale cache while
-refreshing in the background. Without a usable cache, it tries a download and
-falls back to bundled metadata on failure.
+The model catalog cache counts as current for two hours. Startup never waits for
+a download: it uses the cache, or bundled metadata when there is none, and
+refreshes in the background. A failed download keeps the previous cache.
 
 Set `HARNESS_DISABLE_MODELS_FETCH=1` (or `true`, case-insensitive) to use only
 the embedded catalog, even if a cache exists. `HARNESS_MODELS_URL` changes the

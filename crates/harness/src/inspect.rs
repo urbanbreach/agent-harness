@@ -3,6 +3,7 @@ use clap::{Args, Subcommand};
 use harness_core::{
     auth::CredentialStore,
     config::*,
+    provider_catalog::ProviderCatalog,
     redact::{DefaultRedactor, Redactor, SecretRedactor, SecretRegistry},
 };
 use serde_json::{json, Value};
@@ -26,6 +27,8 @@ pub(crate) struct ModelsCommand {
 #[derive(Subcommand)]
 enum ModelsSubcommand {
     List,
+    /// Download the models.dev catalog now, whatever the cache's age.
+    Refresh,
     Generated {
         #[arg(long)]
         output: Option<PathBuf>,
@@ -41,6 +44,28 @@ pub(crate) struct ProvidersCommand {
 #[derive(Subcommand)]
 enum Protocols {
     Protocols,
+}
+
+/// Downloads the models.dev catalog into the cache and returns its path, or `None` when
+/// `HARNESS_DISABLE_MODELS_FETCH` is set or a test injected the provider; a failed download
+/// keeps the previous cache.
+pub(crate) fn refresh_models_catalog(deps: &CliDeps) -> Result<Option<PathBuf>, String> {
+    if deps.provider_override().is_some()
+        || deps
+            .env_var_value("HARNESS_DISABLE_MODELS_FETCH")
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+    {
+        return Ok(None);
+    }
+    let (path, url) = ProviderCatalog::cache_location(&|name| deps.env_var_value(name))
+        .ok_or("set HARNESS_HOME or HOME for the model catalog cache")?;
+    // The blocking catalog client must not create/drop its runtime inside a caller's Tokio runtime.
+    let written = path.clone();
+    std::thread::spawn(move || ProviderCatalog::refresh(&path, &url))
+        .join()
+        .map_err(|_| "catalog refresh stopped unexpectedly")?
+        .map_err(|e| e.to_string())?;
+    Ok(Some(written))
 }
 
 pub(crate) fn configured(
@@ -92,6 +117,13 @@ pub(crate) fn models(
         }
         Some(ModelsSubcommand::Probe(command)) => {
             return crate::models::generate(command, false, io, deps)
+        }
+        Some(ModelsSubcommand::Refresh) => {
+            let message = match refresh_models_catalog(deps)? {
+                Some(path) => format!("refreshed model catalog: {}", path.display()),
+                None => "model catalog downloads are off (HARNESS_DISABLE_MODELS_FETCH)".into(),
+            };
+            return writeln!(io.stdout, "{message}").map_err(|e| e.to_string());
         }
         Some(ModelsSubcommand::List) | None => {}
     }

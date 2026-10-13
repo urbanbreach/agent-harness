@@ -197,6 +197,18 @@ fn execute_prompt(
         }
         resolved.config
     };
+    // As the TUI does at launch: a stale models.dev cache refreshes in the background, and a
+    // finished run waits for it, so a short run still leaves a current cache behind.
+    // Injected test providers never reach the network.
+    let catalog_refresh = (!command.mock && deps.provider_override().is_none())
+        .then(|| {
+            let (path, url) =
+                harness_core::provider_catalog::ProviderCatalog::cache_location(&|name| {
+                    deps.env_var_value(name)
+                })?;
+            harness_core::provider_catalog::ProviderCatalog::refresh_if_stale(&path, &url)
+        })
+        .flatten();
     let profile = command
         .profile
         .clone()
@@ -242,7 +254,7 @@ fn execute_prompt(
         .enable_all()
         .build()
         .map_err(|e| e.to_string())?;
-    runtime.block_on(async {
+    let result = runtime.block_on(async {
         if cancellation.is_cancelled() {
             return Err("prompt interrupted".into());
         }
@@ -331,7 +343,13 @@ fn execute_prompt(
             session::export(&run.events_path, &root.join(path), redactor.as_ref())?;
         }
         Ok(())
-    })
+    });
+    if result.is_ok()
+        && let Some(refresh) = catalog_refresh
+    {
+        let _ = refresh.join();
+    }
+    result
 }
 
 async fn wait_for_shutdown_signal() -> std::io::Result<()> {

@@ -287,7 +287,7 @@ pub(crate) fn execute(
                 store.save(&credential).map_err(|e| e.to_string())?;
                 writeln!(io.stdout, "stored oauth credential for {id}")
                     .map_err(|e| e.to_string())?;
-                write_starter_config_after_login(&id, &store, io, deps);
+                after_login(&id, &store, io, deps);
                 return Ok(());
             }
             if matches!(method, Method::ApiKey) {
@@ -356,18 +356,18 @@ pub(crate) fn execute(
                 writeln!(io.stdout, "stored oauth credential for {id}")
                     .map_err(|e| e.to_string())?;
             }
-            write_starter_config_after_login(&id, &store, io, deps);
+            after_login(&id, &store, io, deps);
         }
     }
     io.stdout.flush().map_err(|e| e.to_string())
 }
 
-fn write_starter_config_after_login(
-    id: &ProviderId,
-    store: &CredentialStore,
-    io: &mut CliIo<'_>,
-    deps: &CliDeps,
-) {
+/// A sign-in can unlock models and prices the cached catalog lacks, so it downloads now
+/// whatever its age, before the starter config picks a model.
+fn after_login(id: &ProviderId, store: &CredentialStore, io: &mut CliIo<'_>, deps: &CliDeps) {
+    if let Err(err) = crate::inspect::refresh_models_catalog(deps) {
+        let _ = writeln!(io.stderr, "could not refresh the model catalog: {err}");
+    }
     match create_starter_config(id, store, deps) {
         Ok(Some(path)) => {
             if let Err(err) = writeln!(io.stdout, "wrote starter config: {}", path.display()) {

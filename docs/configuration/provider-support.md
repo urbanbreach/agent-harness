@@ -138,21 +138,35 @@ a live prompt because `harness doctor` stays offline.
 ## Model catalog refresh
 
 Runtime selection, `harness models list`, and doctor use embedded metadata and
-read the existing Codex cache without fetching or writing it. The live TUI
-login-provider menu loads `https://models.dev/api.json` through a five-minute
-cache. It accepts the direct models.dev map and the generated catalog shape,
-serves valid stale data immediately, and refreshes stale data in the background
-with an atomic, mode-`0600` write. Without a usable cache, it attempts a
-download and falls back to embedded metadata on failure.
+read the existing Codex cache without fetching or writing it.
 
-`HARNESS_MODELS_URL` and `HARNESS_MODELS_PATH` override that menu's source and
-cache location. `HARNESS_DISABLE_MODELS_FETCH=1` (or `true`) selects embedded
-data and disables the runtime Codex cache merge. Mock TUI initialization uses
-embedded data directly. `harness models probe` and `harness models generate`
-are separate explicit operations: they fetch their `--url` or the default
-models.dev URL unless `--input` or `--stdin` is supplied. They do not use the
-cache-loader environment overrides. `harness models generated` prints the
-bundled catalog without fetching.
+Harness downloads `https://models.dev/api.json` into the cache at these
+moments:
+
+- When the TUI starts and when `harness prompt` or `harness run` starts a
+  session, if the cache is missing, unreadable or older than two hours. The
+  download runs in the background and never delays startup; that run keeps the
+  cache it read, or the embedded catalog when there was none, and the next run
+  uses the new download. A `prompt` or `run` that succeeds waits for an
+  unfinished download before exiting, at most the 10-second download timeout.
+- After every successful `harness auth login`, including sign-in from the TUI,
+  whatever the cache's age, so models and prices a new sign-in unlocks appear
+  in the model picker right away.
+- On `harness models refresh`, whatever the cache's age.
+
+A download times out after 10 seconds and is written atomically with mode
+`0600`; a failed one keeps the previous cache. It accepts the direct models.dev
+map and the generated catalog shape. `harness models`, `harness doctor` and
+replay never download.
+
+`HARNESS_MODELS_URL` and `HARNESS_MODELS_PATH` override the source and cache
+location. `HARNESS_DISABLE_MODELS_FETCH=1` (or `true`) turns every download off,
+`harness models refresh` included, and selects embedded data. Mock TUI
+initialization uses embedded data directly. `harness models probe` and
+`harness models generate` are separate explicit operations: they fetch their
+`--url` or the default models.dev URL unless `--input` or `--stdin` is
+supplied. They do not use the cache-loader environment overrides.
+`harness models generated` prints the bundled catalog without fetching.
 
 Runtime resolution merges cached OpenAI metadata into providers whose
 credential identity is `codex`, including custom IDs, without replacing

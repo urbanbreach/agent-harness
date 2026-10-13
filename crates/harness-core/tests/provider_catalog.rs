@@ -177,14 +177,18 @@ async fn catalog_cache_reuses_valid_data_and_preserves_files_on_bad_refresh(
         listener.local_addr()?
     );
     let cache = temp.path().join("models.json");
-    let invalid = temp.path().join("invalid.json");
+    // Refreshes lock the cache's directory, so the second cache gets its own.
+    let invalid = temp.path().join("other/invalid.json");
+    std::fs::create_dir_all(temp.path().join("other"))?;
     std::fs::write(&invalid, "previous-invalid-data")?;
     let valid = r#"{"example":{"models":{"small":{"limit":{"context":1000,"output":200}}}}}"#;
-    let server = async {
+    let (requested, request_seen) = std::sync::mpsc::channel();
+    let server = async move {
         for body in [valid, "invalid-response"] {
             let (mut socket, _) = listener.accept().await?;
             let mut request = [0u8; 4096];
             let _ = socket.read(&mut request).await?;
+            let _ = requested.send(());
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
@@ -193,7 +197,18 @@ async fn catalog_cache_reuses_valid_data_and_preserves_files_on_bad_refresh(
         }
         Ok::<_, std::io::Error>(())
     };
+    let root = temp.path().to_owned();
     let client = tokio::task::spawn_blocking(move || -> Result<(), String> {
+        // A missing cache answers with the bundled catalog at once and downloads behind it.
+        let first = ProviderCatalog::cached(&cache, Some(&url)).map_err(|e| e.to_string())?;
+        assert!(first.provider("anthropic").is_some());
+        request_seen
+            .recv_timeout(Duration::from_secs(4))
+            .map_err(|_| "no background refresh")?;
+        // The refresh holds its directory's lock from before the request until the write.
+        std::fs::File::open(&root)
+            .and_then(|dir| dir.lock())
+            .map_err(|e| e.to_string())?;
         let catalog = ProviderCatalog::cached(&cache, Some(&url)).map_err(|e| e.to_string())?;
         let entry = catalog
             .validated_model("example", "small")
@@ -205,14 +220,8 @@ async fn catalog_cache_reuses_valid_data_and_preserves_files_on_bad_refresh(
             .as_deref()
             .unwrap_or("")
             .contains("private-source"));
-        assert!(ProviderCatalog::cached(&cache, Some(&url))
-            .map_err(|e| e.to_string())?
-            .provider("example")
-            .is_some());
-        assert!(ProviderCatalog::cached(&invalid, Some(&url))
-            .map_err(|e| e.to_string())?
-            .provider("anthropic")
-            .is_some());
+        // A forced refresh that gets a bad answer keeps the previous file.
+        assert!(ProviderCatalog::refresh(&invalid, &url).is_err());
         assert_eq!(
             std::fs::read_to_string(&invalid).map_err(|e| e.to_string())?,
             "previous-invalid-data"
