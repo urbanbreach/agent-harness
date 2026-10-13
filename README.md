@@ -22,12 +22,12 @@
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/harness-tui.png" />
-    <img src="docs/assets/harness-demo.gif" alt="Harness in a terminal. The user types: cargo test is failing, find the root cause and fix it. The agent writes a todo list, runs the tests, reads the crate, explains that parse_duration drops trailing digits, patches src/lib.rs, reruns the tests and reports that all three pass." width="960" />
+    <img src="docs/assets/harness-demo.gif" alt="Harness in a 1920 by 1080 terminal. The user types: The docs have drifted a lot from the code. Go through every page in docs/ and fix anything that's out of date. The agent loads the unslop skill, splits docs/ into five sets of pages and hands each set to a subagent. A Subagents pane lists the five children with their model, tokens per second and cost, and a card shows the agent waiting on them. When they finish, it summarizes the fixes, such as a crate missing from the architecture table and wrong code index limits, and lists what it left unverified." />
   </picture>
 </p>
 
 <p align="center">
-  <sub>An unscripted session with GPT 6.1 Sol, recorded from the real TUI. The one-minute run is sped up and long waits are trimmed.<br />
+  <sub>An unscripted session with Claude Sonnet 5.5 at medium effort, recorded from the real TUI in a 1920×1080 terminal. The four-minute run plays as a time-lapse.<br />
   <a href="docs/assets/harness-tui.png">Still image</a> · <a href="docs/assets/README.md">How it was recorded</a></sub>
 </p>
 

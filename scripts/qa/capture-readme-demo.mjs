@@ -1,8 +1,10 @@
-// Record the README demo: the real TUI fixing a failing test with a signed-in
-// model. See docs/assets/README.md.
+// Record the README demo: the real TUI bringing this repository's docs back in
+// line with its code, with a signed-in model. See docs/assets/README.md.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { copyFile, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,72 +17,26 @@ const repo = fileURLToPath(new URL("../../", import.meta.url));
 const assets = join(repo, "docs/assets");
 const realHome = homedir();
 const harnessHome = process.env.HARNESS_HOME || join(realHome, ".harness");
-const prompt = "cargo test is failing. Find the root cause and fix it.";
-const [cols, rows] = [100, 32];
-// Individual tool cards read better than eval cells in a short clip, and a
-// cold rust-analyzer only answers "server cancelled the request".
-const config = { lsp: false, permission: { "*": "allow", eval: "deny" } };
-if (process.env.HARNESS_DEMO_MODEL) config.model = process.env.HARNESS_DEMO_MODEL;
+const prompt = "The docs have drifted a lot from the code. Go through every page in docs/ and fix anything that's out of date.";
+// A maximized terminal on a 1920x1080 screen: 16px cells are 9.6 by 20 pixels.
+const [cols, rows] = [200, 54];
+// The docs at this commit lag the code; the next commit, 8512d08f, fixed them
+// by hand. The session sees it as HEAD, so every run starts from real drift.
+const commit = "ce53083797df9eb75426c6ac1c1f5ff9a6363b29";
+// Individual tool cards read better than eval cells, and a cold
+// rust-analyzer only answers "server cancelled the request".
+const config = {
+  model: process.env.HARNESS_DEMO_MODEL ?? "anthropic-subscription/claude-sonnet-5-5/medium",
+  lsp: false,
+  permission: { "*": "allow", eval: "deny" },
+};
 const temporary = await mkdtemp(join(tmpdir(), "harness-readme-"));
-// A fake HOME makes the header read ~/tempo instead of a temporary path.
+// A fake HOME makes the header read ~/agent-harness instead of a temporary path.
 const home = join(temporary, "home");
-const workspace = join(home, "tempo");
+const workspace = join(home, "agent-harness");
 const frames = [];
 let terminal;
 let pty;
-
-const files = {
-  ".gitignore": "/target\n",
-  "Cargo.toml": '[package]\nname = "tempo"\nversion = "0.1.0"\nedition = "2024"\n',
-  "src/lib.rs": `//! Parse human durations such as "1h30m", "45s" or "90".
-
-/// Returns the number of seconds in \`input\`. A bare trailing number counts as seconds.
-pub fn parse_duration(input: &str) -> Result<u64, String> {
-    let mut total = 0;
-    let mut digits = String::new();
-    for ch in input.trim().chars() {
-        if ch.is_ascii_digit() {
-            digits.push(ch);
-            continue;
-        }
-        let value: u64 = digits
-            .parse()
-            .map_err(|_| format!("expected a number before '{ch}'"))?;
-        total += value
-            * match ch {
-                'h' => 3600,
-                'm' => 60,
-                's' => 1,
-                _ => return Err(format!("unknown unit '{ch}'")),
-            };
-        digits.clear();
-    }
-    Ok(total)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::parse_duration;
-
-    #[test]
-    fn units() {
-        assert_eq!(parse_duration("1h30m"), Ok(5400));
-        assert_eq!(parse_duration("2h5m10s"), Ok(7510));
-    }
-
-    #[test]
-    fn bare_seconds() {
-        assert_eq!(parse_duration("90"), Ok(90));
-        assert_eq!(parse_duration("1m30"), Ok(90));
-    }
-
-    #[test]
-    fn rejects_unknown_units() {
-        assert!(parse_duration("3d").is_err());
-    }
-}
-`,
-};
 
 async function shot(seconds) {
   const file = join(temporary, `frame-${String(frames.length).padStart(4, "0")}.png`);
@@ -89,26 +45,39 @@ async function shot(seconds) {
 }
 
 // Agent edits are attributed under <home>/projects/<key>. Remove only a
-// directory this run created whose journal holds the fixture's own text.
-async function removeDemoProjectData(before) {
+// directory this run created whose journal records a file as it is in the
+// clone, and the Claude subscription restart binding of each demo session.
+async function removeDemoHomeData(before) {
   const root = join(harnessHome, "projects");
-  const marker = Buffer.from(files["src/lib.rs"].split("\n")[0]).toString("hex");
+  const sha256 = async (path) => createHash("sha256").update(await readFile(path).catch(() => "")).digest("hex");
   for (const name of (await readdir(root).catch(() => [])).filter((entry) => !before.includes(entry))) {
     const journal = await readFile(join(root, name, "edit-attribution.jsonl"), "utf8").catch(() => "");
-    if (journal.includes(marker)) await rm(join(root, name), { recursive: true, force: true });
+    for (const line of journal.split("\n").filter(Boolean)) {
+      const entry = JSON.parse(line);
+      if (entry.content_sha256 !== await sha256(join(workspace, entry.path))) continue;
+      await rm(join(root, name), { recursive: true, force: true });
+      break;
+    }
+  }
+  for (const session of await readdir(join(temporary, "sessions")).catch(() => [])) {
+    await rm(join(harnessHome, "anthropic-subscription-bindings", `${session}.claude-sdk-oauth-binding.json`), { force: true });
   }
 }
 
 const projectsBefore = await readdir(join(harnessHome, "projects")).catch(() => []);
 try {
-  for (const [name, body] of Object.entries(files)) {
-    await mkdir(join(workspace, name, ".."), { recursive: true });
-    await writeFile(join(workspace, name), body);
-  }
+  await mkdir(workspace, { recursive: true });
   const git = (...args) => execFileSync("git", args, { cwd: workspace, stdio: "ignore" });
-  git("init", "-q", "-b", "main");
-  git("-c", "user.name=Harness demo", "-c", "user.email=demo@example.invalid", "add", ".");
-  git("-c", "user.name=Harness demo", "-c", "user.email=demo@example.invalid", "commit", "-qm", "init");
+  git("init", "-q", "-b", "dev");
+  git("fetch", "-q", "--no-tags", repo, commit);
+  git("reset", "-q", "--hard", "FETCH_HEAD");
+  // Skills live outside Git. Bring the ones a session in this checkout sees.
+  for (const [from, to] of [
+    [join(repo, ".harness/skills"), join(workspace, ".harness/skills")],
+    [join(realHome, ".agents/skills"), join(home, ".agents/skills")],
+  ]) {
+    if (existsSync(from)) await cp(from, to, { recursive: true, dereference: true });
+  }
 
   terminal = await openBrowserTerminal({
     browser: process.env.HARNESS_QA_BROWSER ?? "/usr/bin/chromium",
@@ -139,6 +108,8 @@ try {
       HARNESS_MODEL_SELECTION_STATE_FILE: join(temporary, "model.json"),
       CARGO_HOME: process.env.CARGO_HOME ?? join(realHome, ".cargo"),
       RUSTUP_HOME: process.env.RUSTUP_HOME ?? join(realHome, ".rustup"),
+      // Builds of the clone stay on disk and warm between recordings.
+      CARGO_TARGET_DIR: join(repo, "target/readme-demo"),
     },
     onOutput: (bytes) => terminal.write(bytes),
   });
@@ -152,27 +123,35 @@ try {
   for (let index = 0; index < 6; index += 1) await shot(0.1);
   await terminal.key("Enter");
 
-  // Sample the live turn. Long waits keep a short stretch of frames so the
-  // animation stays watchable; letters-only keys ignore timers and token rates.
+  // Sample the live turn whenever its letters change (timers and token rates
+  // aside), at most twice a second. A long session becomes a time-lapse below.
+  const live = frames.length;
   let previous = "";
-  let idle = 0;
-  const deadline = Date.now() + 300_000;
+  let sampled = 0;
+  let delegated = false;
+  const deadline = Date.now() + 2_400_000;
   for (;;) {
-    assert(Date.now() < deadline, "the demo turn did not finish within five minutes");
+    assert(Date.now() < deadline, "the demo turn did not finish within forty minutes");
     const { text } = await terminal.snapshot();
     const key = text.replace(/[^A-Za-z]/g, "");
-    idle = key === previous ? idle + 1 : 0;
-    previous = key;
-    if (idle < 6) await shot(0.12);
-    if (text.includes("Worked for")) break;
+    delegated ||= text.includes("Subagents");
+    if (key !== previous && Date.now() - sampled >= 500) {
+      previous = key;
+      sampled = Date.now();
+      await shot(0.2);
+    }
+    if (text.includes("Worked for") && text.includes("Enter:send")) break;
     await delay(130);
   }
+  assert(delegated, "the demo must show the agent delegating to subagents");
+  // Keep at most 300 live frames: a minute of playback at most.
+  const step = Math.max(1, Math.ceil((frames.length - live) / 300));
+  frames.splice(live, Infinity, ...frames.slice(live).filter((_, index) => index % step === 0));
   await delay(800);
-  for (let index = 0; index < 40; index += 1) await shot(0.1);
+  for (let index = 0; index < 40; index += 1) await shot(0.15);
   const still = await terminal.capture(join(temporary, "harness-tui.png"));
   assert(still.text.includes("Worked for"), "the demo must end on a finished turn");
   assertSecretFree(pty.raw());
-  execFileSync("cargo", ["test", "--quiet"], { cwd: workspace, stdio: "ignore" });
 
   const list = frames.map(({ file, seconds }) => `file '${basename(file)}'\nduration ${seconds}\n`);
   await writeFile(join(temporary, "frames.txt"), `ffconcat version 1.0\n${list.join("")}file '${basename(frames.at(-1).file)}'\n`);
@@ -191,8 +170,8 @@ try {
   finally {
     try { await terminal?.close(); }
     finally {
-      await removeDemoProjectData(projectsBefore);
-      await rm(temporary, { recursive: true, force: true });
+      try { await removeDemoHomeData(projectsBefore); }
+      finally { await rm(temporary, { recursive: true, force: true }); }
     }
   }
 }

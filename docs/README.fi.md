@@ -22,12 +22,12 @@
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="assets/harness-tui.png" />
-    <img src="assets/harness-demo.gif" alt="Harness päätteessä. Käyttäjä kirjoittaa: cargo test is failing, find the root cause and fix it. Agentti laatii tehtävälistan, ajaa testit, lukee craten ja kertoo, että parse_duration jättää lopussa olevat numerot pois. Se korjaa tiedoston src/lib.rs, ajaa testit uudelleen ja ilmoittaa, että kaikki kolme menevät läpi." width="960" />
+    <img src="assets/harness-demo.gif" alt="Harness 1920 × 1080 -päätteessä. Käyttäjä kirjoittaa: The docs have drifted a lot from the code. Go through every page in docs/ and fix anything that's out of date. Agentti lataa unslop-taidon, jakaa docs/-hakemiston sivut viiteen osaan ja antaa jokaisen osan omalle ala-agentilleen. Subagents-paneeli näyttää jokaisen ala-agentin mallin, tokenit sekunnissa ja hinnan, ja kortti kertoo pääagentin odottavan niitä. Kun ne ovat valmiita, pääagentti kokoaa korjaukset, esimerkiksi arkkitehtuuritaulukosta puuttuneen craten ja väärät koodi-indeksin rajat, ja kertoo, mitä jäi tarkistamatta." />
   </picture>
 </p>
 
 <p align="center">
-  <sub>Käsikirjoittamaton istunto GPT 6.1 Sol -mallilla, tallennettu oikeasta päätekäyttöliittymästä. Minuutin mittaista tallennetta on nopeutettu ja pitkiä odotuksia leikattu.<br />
+  <sub>Käsikirjoittamaton istunto Claude Sonnet 5.5 -mallilla medium-tasolla, tallennettu oikeasta päätekäyttöliittymästä 1920×1080-päätteessä. Neljän minuutin ajo näytetään nopeutettuna.<br />
   <a href="assets/harness-tui.png">Still-kuva</a> · <a href="assets/README.md">Näin tallenne tehtiin</a></sub>
 </p>
 
