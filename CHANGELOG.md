@@ -63,6 +63,11 @@ The first public release.
 - `monitor` watches command output or a file in the background and wakes the
   agent with matching lines and the exit, with a live watching status in the
   footer and pause/rearm when updates get noisy.
+- The transcript shows a card while the agent waits on background subagents or
+  commands. Each job gets a row with its status, a duration that ticks every
+  tenth of a second and a preview of its result. Click a subagent's row to open
+  it. A wait that returns with every job still running gives way to the next
+  wait, so repeated polls read as one card.
 - A terminal UI and a headless `harness run` for coding agents, with parallel
   tool calls, steering of a running turn, and cancellation. `harness run` and
   `harness prompt` print only the final answer (or stream events as JSON) and

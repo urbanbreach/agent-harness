@@ -31,6 +31,7 @@ pub(super) fn populate(
             | "question"
             | "eval"
             | "monitor"
+            | super::super::ui_transcript_wait::WAIT_TOOL_ID
     );
     let header = &mut row.header;
     let blocks = &mut row.detail_blocks;

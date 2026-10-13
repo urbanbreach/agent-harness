@@ -653,6 +653,7 @@ pub(in crate::ui) enum TranscriptToolCallDetailBlock {
         show_file_header: bool,
     },
     FileSection(TranscriptToolCallFileSection),
+    Jobs(super::ui_transcript_wait::WaitJobs),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

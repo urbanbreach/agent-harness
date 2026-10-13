@@ -79,7 +79,12 @@ pub(super) fn build_tool_call_section(
             )
             || matches!(
                 tool_call.effective_tool_id(),
-                "edit.hashline_apply" | "apply_patch" | "todo.write" | "todowrite" | "eval"
+                "edit.hashline_apply"
+                    | "apply_patch"
+                    | "todo.write"
+                    | "todowrite"
+                    | "eval"
+                    | super::ui_transcript_wait::WAIT_TOOL_ID
             ));
     // These reference blocks have no animated accent; only commands and task
     // lifecycle rows signal execution with a wave.
@@ -192,6 +197,7 @@ pub(super) fn build_transcript_tool_call_section(
     let generic = content::populate(&mut row, tool, app, visible, stacked_diffs, session_path);
     details::finish(&mut row, tool, app, generic && visible, visible);
     content::subtitle(&mut row.header, tool, app, expanded, session_path);
+    super::ui_transcript_wait::refresh(&mut row, tool, app);
     row.details_preview_visible = show_generic_tool_output && generic && !viewer_only;
     row.rail_motion = tool_rail_motion(tool, app, !row.detail_blocks.is_empty());
     super::ui_transcript_subagent::refresh_status(&mut row, tool, task_row, app);

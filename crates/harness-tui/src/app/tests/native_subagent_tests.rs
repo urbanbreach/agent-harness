@@ -10,6 +10,9 @@ mod activity;
 #[path = "native_child_viewer_tests.rs"]
 mod viewer;
 
+#[path = "native_wait_tests.rs"]
+mod wait;
+
 fn transition(kind: SubagentTransitionKind) -> SubagentTransitionV1 {
     SubagentTransitionV1 {
         payload_version: 1,

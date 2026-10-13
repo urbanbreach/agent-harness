@@ -12,17 +12,20 @@ impl ToolPainter<'_> {
         let theme = self.theme;
         match detail {
             TranscriptToolCallDetailBlock::Recorded(output) => {
-                let width = transcript_surface_content_width(self.width, false)
-                    .saturating_sub(
-                        u16::try_from(surface_prefix_width(TRANSCRIPT_TOOL_BODY_PREFIX))
-                            .unwrap_or(u16::MAX),
-                    )
-                    .max(1);
-                self.prebuilt(
-                    TRANSCRIPT_TOOL_BODY_PREFIX,
-                    self.surface,
-                    output.lines(theme, width, expanded),
-                );
+                let rows = output.lines(theme, self.body_width(), expanded);
+                self.prebuilt(TRANSCRIPT_TOOL_BODY_PREFIX, self.surface, rows);
+            }
+            TranscriptToolCallDetailBlock::Jobs(jobs) => {
+                let (rows, targets): (Vec<_>, Vec<_>) = jobs
+                    .lines(theme, self.body_width(), expanded)
+                    .into_iter()
+                    .unzip();
+                self.prebuilt(TRANSCRIPT_TOOL_BODY_PREFIX, self.surface, rows);
+                let rows = self.render.lines[start..].iter().zip(targets);
+                self.render
+                    .interaction_rows
+                    .extend(rows.map(|(line, target)| bounded_interaction_row(target, line)));
+                return; // Subagent rows add their own interaction rows.
             }
             TranscriptToolCallDetailBlock::ReadOutput { text, start_line } => {
                 self.read(text, *start_line, path, expanded)
@@ -114,6 +117,15 @@ impl ToolPainter<'_> {
             }
         }
         append_noninteractive_rows(&self.render.lines, &mut self.render.interaction_rows, start);
+    }
+
+    fn body_width(&self) -> u16 {
+        transcript_surface_content_width(self.width, false)
+            .saturating_sub(
+                u16::try_from(surface_prefix_width(TRANSCRIPT_TOOL_BODY_PREFIX))
+                    .unwrap_or(u16::MAX),
+            )
+            .max(1)
     }
 
     pub(super) fn prebuilt(&mut self, indent: &str, surface: Color, rows: Vec<Line<'static>>) {

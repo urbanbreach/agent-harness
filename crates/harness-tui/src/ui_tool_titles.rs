@@ -59,6 +59,7 @@ pub(super) fn generic_tool_id(tool_id: &str) -> bool {
                 | "question"
                 | "eval"
                 | "code.lsp"
+                | "wait_commands_or_subagents"
         )
 }
 

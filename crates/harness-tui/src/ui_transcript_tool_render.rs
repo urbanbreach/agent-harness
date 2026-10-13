@@ -234,11 +234,7 @@ pub(super) fn apply_header_hover(line: &mut Line<'static>, expanded: bool, theme
     } else {
         "›"
     };
-    let hover = super::ui_transcript_style::blend_color(
-        theme.surface.shell,
-        theme.markdown.code_background,
-        0.5,
-    );
+    let hover = hover_background(theme);
     line.style = line.style.bg(hover);
     for span in &mut line.spans {
         span.style = span.style.bg(hover);
@@ -253,6 +249,14 @@ pub(super) fn apply_header_hover(line: &mut Line<'static>, expanded: bool, theme
             span.content = format!("{caret}{rest}").into();
         }
     }
+}
+
+pub(super) fn hover_background(theme: &Theme) -> Color {
+    super::ui_transcript_style::blend_color(
+        theme.surface.shell,
+        theme.markdown.code_background,
+        0.5,
+    )
 }
 
 fn paint_tool_completion_rail(

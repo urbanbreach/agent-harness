@@ -145,8 +145,31 @@ impl AppState {
             .saturating_duration_since(self.motion_epoch_started_at);
         self.sampled_motion_elapsed = elapsed;
         let period = Duration::from_millis(crate::scheduling::active_animation_period_ms());
+        let previous = self.transcript_view.transcript_animation_phase;
         self.transcript_view.transcript_animation_phase =
             usize::try_from(elapsed.as_millis() / period.as_millis()).unwrap_or(usize::MAX);
+        self.refresh_live_wait_cards(previous);
+    }
+
+    /// Wait cards bake running durations into the cached transcript, so rebuild
+    /// their turn each tenth of a second. Paint animates their spinners.
+    fn refresh_live_wait_cards(&mut self, previous_phase: usize) {
+        let tenths = |phase: usize| {
+            phase.saturating_mul(
+                usize::try_from(crate::scheduling::ANIMATION_PERIOD_MS).unwrap_or(usize::MAX),
+            ) / 100
+        };
+        if tenths(previous_phase) == tenths(self.transcript_view.transcript_animation_phase) {
+            return;
+        }
+        if let Some(index) = self.activities.iter().position(|activity| {
+            activity.tool_calls.iter().any(|tool| {
+                tool.has_execution_motion()
+                    && tool.effective_tool_id() == "wait_commands_or_subagents"
+            })
+        }) {
+            self.transcript_view.prepared.invalidate_from(index);
+        }
     }
 
     pub fn motion_plan_for_evidence(&self) -> MotionPlan {

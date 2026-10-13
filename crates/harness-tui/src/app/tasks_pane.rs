@@ -134,59 +134,8 @@ impl AppState {
     }
 
     pub(crate) fn task_pane_all_rows(&self) -> Vec<TaskPaneRow> {
-        let mut items = Vec::new();
-        for child in self.subagents.rows.values() {
-            let Some(task) = self.native_subagent_task(&child.parent_tool) else {
-                continue;
-            };
-            if self.tasks_pane.show_done || !task.state.is_terminal() {
-                items.push(TaskPaneRow {
-                    id: child.id.clone(),
-                    group: "Subagents",
-                    title: format!("{} {}", child.label, child.display_description),
-                    activity: self
-                        .activities
-                        .iter()
-                        .find(|entry| Some(&entry.request_id) == task.child_request_id.as_ref())
-                        .map(|activity| self.reported_child_activity(activity)),
-                    model: child.model.clone(),
-                    badge: child.context_badge(),
-                    label: child.label.clone(),
-                    started_ms: child.started_ms,
-                    started_seq: child.first_seq,
-                    state: task.state,
-                    elapsed_ms: self.subagent_elapsed_ms(child),
-                    child: true,
-                    header: false,
-                });
-            }
-        }
-        for task in self
-            .orchestration_visible_rows()
-            .into_iter()
-            .filter(|task| task.queue_key.as_deref() == Some("command"))
-        {
-            if self.tasks_pane.show_done || !task.state.is_terminal() {
-                let title = self.background_task_title(&task);
-                items.push(TaskPaneRow {
-                    id: task.task_id,
-                    group: "Tasks",
-                    title,
-                    activity: None,
-                    model: String::new(),
-                    badge: "",
-                    label: String::new(),
-                    started_ms: task.first_mono_ms,
-                    started_seq: task.first_seq,
-                    state: task.state,
-                    elapsed_ms: task
-                        .timing_elapsed_ms
-                        .unwrap_or_else(|| task.last_mono_ms.saturating_sub(task.first_mono_ms)),
-                    child: false,
-                    header: false,
-                });
-            }
-        }
+        let mut items = self.background_task_rows();
+        items.retain(|item| self.tasks_pane.show_done || !item.state.is_terminal());
         items.sort_by(|a, b| {
             a.group
                 .cmp(b.group)
@@ -223,6 +172,59 @@ impl AppState {
             }
         }
         rows
+    }
+
+    /// Every subagent and background command, settled ones included.
+    pub(crate) fn background_task_rows(&self) -> Vec<TaskPaneRow> {
+        let mut items = Vec::new();
+        for child in self.subagents.rows.values() {
+            let Some(task) = self.native_subagent_task(&child.parent_tool) else {
+                continue;
+            };
+            items.push(TaskPaneRow {
+                id: child.id.clone(),
+                group: "Subagents",
+                title: format!("{} {}", child.label, child.display_description),
+                activity: self
+                    .activities
+                    .iter()
+                    .find(|entry| Some(&entry.request_id) == task.child_request_id.as_ref())
+                    .map(|activity| self.reported_child_activity(activity)),
+                model: child.model.clone(),
+                badge: child.context_badge(),
+                label: child.label.clone(),
+                started_ms: child.started_ms,
+                started_seq: child.first_seq,
+                state: task.state,
+                elapsed_ms: self.subagent_elapsed_ms(child),
+                child: true,
+                header: false,
+            });
+        }
+        for task in self
+            .orchestration_visible_rows()
+            .into_iter()
+            .filter(|task| task.queue_key.as_deref() == Some("command"))
+        {
+            items.push(TaskPaneRow {
+                title: self.background_task_title(&task),
+                id: task.task_id,
+                group: "Tasks",
+                activity: None,
+                model: String::new(),
+                badge: "",
+                label: String::new(),
+                started_ms: task.first_mono_ms,
+                started_seq: task.first_seq,
+                state: task.state,
+                elapsed_ms: task
+                    .timing_elapsed_ms
+                    .unwrap_or_else(|| task.last_mono_ms.saturating_sub(task.first_mono_ms)),
+                child: false,
+                header: false,
+            });
+        }
+        items
     }
 
     pub(crate) fn task_pane_height(&self, height: u16) -> u16 {

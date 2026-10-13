@@ -233,6 +233,23 @@ fn append_tool_subtitle_spans(
             format!("-{removed}"),
             Style::default().fg(theme.terminal_colors.diff_removed_highlight),
         ));
+    } else if tool_id == super::super::ui_transcript_wait::WAIT_TOOL_ID {
+        // Settled counts read in the colors their job rows use.
+        for (index, part) in subtitle.split(" · ").enumerate() {
+            if index > 0 {
+                spans.push(Span::styled(" · ", muted_meta_style(theme)));
+            }
+            let color = if part.ends_with(" done") {
+                theme.status.success
+            } else if part.ends_with(" failed") {
+                theme.status.error
+            } else if part.ends_with(" cancelled") {
+                theme.status.warning
+            } else {
+                theme.text.secondary
+            };
+            spans.push(Span::styled(part.to_owned(), Style::default().fg(color)));
+        }
     } else {
         let style = if matches!(tool_id, "fs.ls" | "list") {
             Style::default().fg(theme.text.secondary)
@@ -312,6 +329,10 @@ pub(super) fn completed_tool_marker(
 fn split_tool_header_title<'a>(title: &'a str, tool_id: &str) -> (&'a str, &'a str) {
     if crate::ui::ui_tool_titles::generic_tool_id(tool_id) {
         return title.split_once(": ").unwrap_or((title, ""));
+    }
+    // Job counts read as one label.
+    if tool_id == super::super::ui_transcript_wait::WAIT_TOOL_ID {
+        return (title, "");
     }
     [
         "Parallel Web Search",

@@ -73,7 +73,8 @@ fn detail_blocks_surface_error(
         TranscriptToolCallDetailBlock::ReadOutput { .. }
         | TranscriptToolCallDetailBlock::StructuredDiff { .. }
         | TranscriptToolCallDetailBlock::Recorded(_)
-        | TranscriptToolCallDetailBlock::InputPreview { .. } => false,
+        | TranscriptToolCallDetailBlock::InputPreview { .. }
+        | TranscriptToolCallDetailBlock::Jobs(_) => false,
     })
 }
 

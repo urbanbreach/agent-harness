@@ -124,6 +124,9 @@ mod ui_transcript_tool_sections;
 #[path = "ui_transcript_subagent.rs"]
 mod ui_transcript_subagent;
 
+#[path = "ui_transcript_wait.rs"]
+mod ui_transcript_wait;
+
 #[path = "ui_transcript_parts.rs"]
 mod ui_transcript_parts;
 

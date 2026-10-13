@@ -26,6 +26,10 @@ pub(crate) enum TranscriptMouseTarget {
     SubagentSession {
         session_id: String,
     },
+    /// A subagent row inside another card, such as a wait's job list.
+    SubagentLink {
+        session_id: String,
+    },
     Tool {
         tool_call_id: String,
     },

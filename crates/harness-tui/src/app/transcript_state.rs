@@ -739,7 +739,8 @@ impl AppState {
             TranscriptMouseTarget::Reasoning { request_id } => {
                 self.toggle_reasoning_expansion(&request_id);
             }
-            TranscriptMouseTarget::SubagentSession { session_id } => {
+            TranscriptMouseTarget::SubagentSession { session_id }
+            | TranscriptMouseTarget::SubagentLink { session_id } => {
                 self.navigate_to_child_session_id(session_id);
             }
             TranscriptMouseTarget::Tool { tool_call_id } => {

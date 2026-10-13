@@ -181,7 +181,10 @@ fn build_turn_section(
         });
 
     let mut ordered_tool_calls: Vec<TranscriptOrderedToolCallSection> = Vec::new();
-    for tool_call in &activity.tool_calls {
+    for (index, tool_call) in activity.tool_calls.iter().enumerate() {
+        if super::ui_transcript_wait::displaced(tool_call, activity.tool_calls.get(index + 1)) {
+            continue;
+        }
         let Some(section) = build_tool_call_section(
             tool_call,
             app,
