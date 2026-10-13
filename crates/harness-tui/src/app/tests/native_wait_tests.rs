@@ -52,7 +52,8 @@ fn result(id: &str, status: &str, output: &str) -> serde_json::Value {
     })
 }
 
-/// A parent with a running background subagent `child` and command `command`.
+/// A parent with a running background `explore` subagent `child`, which has no
+/// persona or role, and a running command `command`.
 fn app_with_running_jobs(session_path: Option<std::path::PathBuf>) -> AppState {
     let mut app = AppState::new_live(session_path, false, None);
     for event in [
@@ -62,7 +63,10 @@ fn app_with_running_jobs(session_path: Option<std::path::PathBuf>) -> AppState {
         envelope(
             4,
             "req_parent",
-            EventV1::NativeSubagentRegistered(Box::new(registration())),
+            EventV1::NativeSubagentRegistered(Box::new(NativeSubagentRegistration {
+                persona: None,
+                ..registration()
+            })),
         ),
         envelope(
             5,
@@ -107,6 +111,8 @@ fn wait_card_lists_awaited_jobs_and_a_later_wait_replaces_a_still_running_poll()
     assert!(live.contains("Waiting on 2 jobs"), "{live}");
     assert!(live.contains("[subagent] child"), "{live}");
     assert!(live.contains("[bash] command"), "{live}");
+    // A child without a persona or role is named after its agent type.
+    assert!(live.contains("Explore Inspect files"), "{live}");
     assert_eq!(polled.matches("Waiting on 2 jobs").count(), 1, "{polled}");
 
     // When: the second wait settles with one success and one failure, then a third wait polls.

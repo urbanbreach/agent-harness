@@ -108,12 +108,17 @@ impl SubagentPresentation {
                     .map_or((None, data.description.as_str()), |(tag, description)| {
                         (Some(tag.trim()), description.trim_start())
                     });
-                let label = [data.persona.as_deref(), data.role.as_deref(), tag]
-                    .into_iter()
-                    .flatten()
-                    .map(str::trim)
-                    .find(|part| !part.is_empty())
-                    .unwrap_or("subagent");
+                let label = [
+                    data.persona.as_deref(),
+                    data.role.as_deref(),
+                    tag,
+                    Some(data.subagent_type.as_str()),
+                ]
+                .into_iter()
+                .flatten()
+                .map(str::trim)
+                .find(|part| !part.is_empty())
+                .unwrap_or("subagent");
                 let mut chars = label.chars();
                 let label = chars.next().map_or(String::new(), |first| {
                     first.to_uppercase().chain(chars).collect()

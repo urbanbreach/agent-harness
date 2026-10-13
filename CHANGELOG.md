@@ -62,6 +62,8 @@ The first public release.
   opened a subagent and came back it followed that subagent's clock.
 - Tool calls stay with the turn that made them after you steer. Subagent tool
   calls no longer pile up under your steering message in the main transcript.
+- Subagents without a persona, role or `[tag]` in their description are named
+  after their agent type, such as Task or Scout, instead of "Subagent".
 
 ### Added
 
