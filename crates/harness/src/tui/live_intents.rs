@@ -122,9 +122,10 @@ async fn request_selected_turn(
     agent_id: String,
     text: String,
     selected_tags: harness_core::file_tag::SelectedPromptTags,
-    attachment_metadata: Vec<harness_core::attachment_transport::AttachmentMetadata>,
+    attachments: &[harness_tui::composer_integration::SubmissionAttachment],
     launch_metadata: &harness_tui::app::LaunchMetadata,
 ) -> Result<String, String> {
+    let attachment_metadata = prompt_attachment_metadata(attachments)?;
     let result = match launch_metadata_model_target(launch_metadata) {
         Some(target) => {
             coordinator
@@ -181,12 +182,88 @@ async fn steer_or_submit(
                     agents: Vec::new(),
                     resources: Vec::new(),
                 },
-                prompt_attachment_metadata(&[])?,
+                &[],
                 launch_metadata,
             )
             .await
         }
     }
+}
+
+/// Starts or steers a turn for a submitted draft and records it for the live agent. A
+/// prompt the run refuses goes back into the editor with the reason, instead of ending
+/// intent handling and silently dropping every later prompt, interrupt and answer.
+async fn send_prompt(
+    coordinator: &CoordinatorHandle,
+    user_actor: &EventActor,
+    target: Option<&LiveAgentTargetState>,
+    updates: &LiveUpdateSender,
+    intent: UiIntent,
+) -> Result<(), String> {
+    let Some(target) = target else {
+        return Ok(());
+    };
+    let Some(agent_id) = target.lock().ok().and_then(|state| state.agent_id.clone()) else {
+        return Ok(());
+    };
+    let (text, sent) = match intent {
+        UiIntent::SubmitPrompt {
+            text,
+            selected_file_tags,
+            selected_agent_tags,
+            selected_resource_tags,
+            attachments,
+            launch_metadata,
+        } => {
+            let selected_tags = harness_core::file_tag::SelectedPromptTags {
+                files: selected_file_tags,
+                agents: selected_agent_tags,
+                resources: selected_resource_tags,
+            };
+            let sent = request_selected_turn(
+                coordinator,
+                user_actor,
+                agent_id,
+                text.clone(),
+                selected_tags,
+                &attachments,
+                &launch_metadata,
+            )
+            .await;
+            (text, sent)
+        }
+        UiIntent::SteerPrompt {
+            text,
+            launch_metadata,
+        } => {
+            let sent = steer_or_submit(
+                coordinator,
+                user_actor,
+                agent_id,
+                text.clone(),
+                &launch_metadata,
+            )
+            .await;
+            (text, sent)
+        }
+        _ => return Ok(()),
+    };
+    match sent {
+        Ok(request_id) => {
+            target
+                .lock()
+                .map_err(|_| "live agent target lock poisoned".to_string())?
+                .last_request_id = Some(request_id);
+        }
+        Err(error) => {
+            let _ = updates.send(LiveUpdate::RestoreQueuedInput(vec![text]));
+            let _ = updates.send(LiveUpdate::OperatorNotice {
+                message: format!("Message not sent: {error}"),
+                level: OperatorNoticeLevel::Error,
+            });
+        }
+    }
+    Ok(())
 }
 
 pub(super) async fn handle_ui_intents(
@@ -250,67 +327,15 @@ pub(super) async fn handle_ui_intents(
                     .await
                     .map_err(|err| err.to_string())?;
             }
-            UiIntent::SubmitPrompt {
-                text,
-                selected_file_tags,
-                selected_agent_tags,
-                selected_resource_tags,
-                attachments,
-                launch_metadata,
-            } => {
-                let Some(target_state) = live_agent_target.as_ref() else {
-                    continue;
-                };
-                let agent_id = target_state
-                    .lock()
-                    .ok()
-                    .and_then(|target| target.agent_id.clone());
-
-                let Some(agent_id) = agent_id else {
-                    continue;
-                };
-                let attachment_metadata = prompt_attachment_metadata(&attachments)?;
-                let selected_tags = harness_core::file_tag::SelectedPromptTags {
-                    files: selected_file_tags,
-                    agents: selected_agent_tags,
-                    resources: selected_resource_tags,
-                };
-                let request_id = request_selected_turn(
+            intent @ (UiIntent::SubmitPrompt { .. } | UiIntent::SteerPrompt { .. }) => {
+                send_prompt(
                     &coordinator,
                     &user_actor,
-                    agent_id,
-                    text,
-                    selected_tags,
-                    attachment_metadata,
-                    &launch_metadata,
+                    live_agent_target.as_ref(),
+                    &live_update_tx,
+                    intent,
                 )
                 .await?;
-                let mut target = target_state
-                    .lock()
-                    .map_err(|_| "live agent target lock poisoned".to_string())?;
-                target.last_request_id = Some(request_id);
-            }
-            UiIntent::SteerPrompt {
-                text,
-                launch_metadata,
-            } => {
-                let Some(target_state) = live_agent_target.as_ref() else {
-                    continue;
-                };
-                let agent_id = target_state
-                    .lock()
-                    .ok()
-                    .and_then(|target| target.agent_id.clone());
-                let Some(agent_id) = agent_id else {
-                    continue;
-                };
-                let turn_id =
-                    steer_or_submit(&coordinator, &user_actor, agent_id, text, &launch_metadata)
-                        .await?;
-                let mut target = target_state
-                    .lock()
-                    .map_err(|_| "live agent target lock poisoned".to_string())?;
-                target.last_request_id = Some(turn_id);
             }
             UiIntent::CompactSession {
                 custom_instructions,
@@ -368,6 +393,15 @@ pub(super) async fn handle_ui_intents(
                     live_agent_target.as_ref(),
                     task_ids,
                     reason,
+                )
+                .await;
+            }
+            UiIntent::WithdrawQueuedInput => {
+                return_queued_input(
+                    &coordinator,
+                    &live_update_tx,
+                    live_agent_target.as_ref(),
+                    true,
                 )
                 .await;
             }
@@ -570,6 +604,43 @@ fn delete_session_notice(run_id: &str, run_dir: &std::path::Path) -> (String, Op
     }
 }
 
+/// Puts the agent's undelivered steering and plain queued follow-ups back in the editor, in
+/// the order they were sent. `report_empty` says so when nothing was waiting.
+async fn return_queued_input(
+    coordinator: &CoordinatorHandle,
+    live_update_tx: &LiveUpdateSender,
+    live_agent_target: Option<&LiveAgentTargetState>,
+    report_empty: bool,
+) {
+    let Some(agent) = live_agent_target.and_then(|target| {
+        target
+            .lock()
+            .ok()
+            .and_then(|target| target.agent_id.clone())
+    }) else {
+        return;
+    };
+    let notice = match coordinator.withdraw_queued_input(agent).await {
+        Ok(texts) if texts.is_empty() => report_empty.then(|| {
+            (
+                "Nothing is waiting to be sent".to_string(),
+                OperatorNoticeLevel::Info,
+            )
+        }),
+        Ok(texts) => {
+            let _ = live_update_tx.send(LiveUpdate::RestoreQueuedInput(texts));
+            None
+        }
+        Err(err) => Some((
+            format!("could not return queued messages: {err}"),
+            OperatorNoticeLevel::Error,
+        )),
+    };
+    if let Some((message, level)) = notice {
+        let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+    }
+}
+
 async fn interrupt_tasks(
     coordinator: &CoordinatorHandle,
     live_update_tx: &LiveUpdateSender,
@@ -579,26 +650,8 @@ async fn interrupt_tasks(
 ) {
     // Like OMP and Senpi, a user interrupt returns queued steering and follow-ups to the
     // editor before the turn stops, so none of them starts a turn on its own.
-    if reason == harness_tui::app::InterruptReason::User
-        && let Some(agent) = live_agent_target.and_then(|target| {
-            target
-                .lock()
-                .ok()
-                .and_then(|target| target.agent_id.clone())
-        })
-    {
-        match coordinator.withdraw_queued_input(agent).await {
-            Ok(texts) if !texts.is_empty() => {
-                let _ = live_update_tx.send(LiveUpdate::RestoreQueuedInput(texts));
-            }
-            Ok(_) => {}
-            Err(err) => {
-                let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                    message: format!("could not return queued messages: {err}"),
-                    level: OperatorNoticeLevel::Error,
-                });
-            }
-        }
+    if reason == harness_tui::app::InterruptReason::User {
+        return_queued_input(coordinator, live_update_tx, live_agent_target, false).await;
     }
     for task_id in task_ids {
         if let Err(err) = coordinator

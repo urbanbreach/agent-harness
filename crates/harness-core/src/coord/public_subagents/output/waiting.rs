@@ -5,6 +5,7 @@ pub(super) enum WaitHint {
     NotRequested,
     Elapsed { requested: u64, waited: u64 },
     ReturnedEarly,
+    Steered,
 }
 
 impl WaitHint {
@@ -25,6 +26,7 @@ impl WaitHint {
         let lead = match self {
             Self::NotRequested => "Use timeout_ms to wait for completion.".into(),
             Self::ReturnedEarly => "Wait returned early because another finished.".into(),
+            Self::Steered => "Wait returned early because the user sent a message.".into(),
             Self::Elapsed { requested, waited } => {
                 if requested > waited {
                     format!(
@@ -56,6 +58,7 @@ pub(super) async fn wait_subscriptions(
     timeout: u64,
     cancellation: CancellationToken,
     interject: Option<watch::Receiver<u64>>,
+    steering: crate::coord::SteeringArrival,
 ) -> Result<WaitHint, CoordinatorError> {
     if timeout == 0 {
         return Ok(if any {
@@ -105,6 +108,7 @@ pub(super) async fn wait_subscriptions(
         biased;
         () = cancellation.cancelled() => Err(CoordinatorError::Cancelled("wait cancelled".into())),
         () = interrupted => Err(CoordinatorError::Cancelled("wait interrupted by a subagent interject".into())),
+        () = steering.arrived() => Ok(WaitHint::Steered),
         result = tokio::time::timeout_at(deadline, pending) => {
             match result {
                 Ok(result) => {

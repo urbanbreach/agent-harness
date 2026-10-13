@@ -85,7 +85,7 @@ pub(super) fn build_assistant_parts(
                         event.seq,
                         TranscriptAssistantPart::User(TranscriptUserMessageSection {
                             text: data.text.clone(),
-                            queued: false,
+                            badge: None,
                             wall_clock: timestamp.map(crate::time_format::wall_clock_12h),
                             expanded_wall_clock: timestamp
                                 .map(crate::time_format::wall_clock_hover_detail),

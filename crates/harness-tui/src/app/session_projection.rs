@@ -960,6 +960,10 @@ impl SessionProjection {
         }
 
         entry.request_id = request_id.to_string();
+        // A steering echo that becomes a turn of its own waits like any queued prompt.
+        if entry.status == ActivityStatus::Done {
+            entry.status = ActivityStatus::Queued;
+        }
         if entry.first_seq == 0 {
             entry.first_seq = seq;
         }

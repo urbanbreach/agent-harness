@@ -236,7 +236,7 @@ fn answer_phase_collapses_reasoning_expanded_while_running() {
 }
 
 #[test]
-fn steering_user_row_stays_in_turn_output_order_after_settlement(
+fn steering_rows_show_pending_until_delivered_and_keep_turn_output_order(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use harness_core::event::{
         ActorKind, AssistantMessageFinishedEvent, EventActor, LiveEventEnvelope, LiveEventV1,
@@ -296,6 +296,15 @@ fn steering_user_row_stays_in_turn_output_order_after_settlement(
         .activities
         .iter()
         .all(|activity| activity.status != ActivityStatus::Queued));
+    // Until the turn takes it, the steering row says it is still on its way.
+    let pending = build_transcript_sections(&app);
+    assert_eq!(
+        pending
+            .last()
+            .and_then(|turn| turn.user_message.as_ref())
+            .and_then(|message| message.badge),
+        Some("STEERING")
+    );
     app.ingest_event(event(
         5,
         "running",
@@ -321,6 +330,12 @@ fn steering_user_row_stays_in_turn_output_order_after_settlement(
         }),
     ));
     live_text(&mut app, "next_request", 7, "after steering");
+    // This one misses the turn; it stays a steering row until the run requeues it.
+    app.handle_paste("late sentinel");
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
     for settled in [false, true] {
         if settled {
             commit(&mut app, 7, "next_request", "after steering");
@@ -351,7 +366,7 @@ fn steering_user_row_stays_in_turn_output_order_after_settlement(
                 }),
             ));
         }
-        assert_eq!(app.activities.len(), 1);
+        assert_eq!(app.activities.len(), 2);
         assert_eq!(app.queued_prompt_count, 0);
         let sections = build_transcript_sections(&app);
         let turn = sections.first().ok_or("missing turn")?;
@@ -394,7 +409,7 @@ fn steering_user_row_stays_in_turn_output_order_after_settlement(
             .iter()
             .flat_map(|surface| &surface.lines)
             .flat_map(|line| &line.spans)
-            .any(|span| span.content.contains("QUEUED")));
+            .any(|span| span.content.contains("QUEUED") || span.content.contains("STEERING")));
     }
     app.ingest_event(event(
         10,
@@ -405,9 +420,10 @@ fn steering_user_row_stays_in_turn_output_order_after_settlement(
         }),
     ));
     assert_eq!(app.activities.len(), 2);
+    let late = app.activities.back().ok_or("missing late turn")?;
     assert_eq!(
-        app.activities.back().ok_or("missing late turn")?.request_id,
-        "late_message"
+        (late.request_id.as_str(), late.status),
+        ("late_message", ActivityStatus::Streaming)
     );
     Ok(())
 }

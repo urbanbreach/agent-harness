@@ -46,6 +46,8 @@ pub enum Action {
     InterjectPrompt,
     /// Cancel the active turn and submit the current prompt immediately
     CancelAndReplacePrompt,
+    /// Return pending steering and queued follow-ups to the editor; the turn keeps running
+    DequeuePrompt,
     InsertNewline,
     ToggleMultiline,
     /// Clear the prompt
@@ -174,6 +176,7 @@ action_ids! {
     SubmitPrompt => "submit_prompt",
     InterjectPrompt => "interject_prompt",
     CancelAndReplacePrompt => "cancel_and_replace_prompt",
+    DequeuePrompt => "dequeue_prompt",
     InsertNewline => "insert_newline",
     ToggleMultiline => "toggle_multiline",
     ClearPrompt => "clear_prompt",
@@ -666,6 +669,10 @@ impl KeyMap {
         keymap.bind(
             KeyBinding::new(KeyCode::Char('r'), KeyModifiers::ALT),
             Action::CancelAndReplacePrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Up, KeyModifiers::ALT),
+            Action::DequeuePrompt,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Esc, KeyModifiers::NONE),

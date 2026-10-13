@@ -152,6 +152,7 @@ define_command_metadata! {
     ("submit_prompt", "Submit prompt", "Submit the current prompt; while a turn runs, plain text steers it"),
     ("interject_prompt", "follow-up", "Queue the draft as a follow-up that runs after the active turn"),
     ("cancel_and_replace_prompt", "cancel & replace", "Cancel the active turn and submit the draft"),
+    ("dequeue_prompt", "edit queued", "Return pending steering and queued follow-ups to the editor without stopping the turn"),
     ("insert_newline", "Insert newline", "Insert newline"),
     ("toggle_multiline", "Toggle multiline input", "Toggle persistent multiline composer mode"),
     ("clear_prompt", "Clear prompt", "Clear prompt"),
@@ -257,6 +258,7 @@ pub(super) const fn help_category(action: Action) -> Option<HelpCategory> {
         Action::InsertNewline
         | Action::InterjectPrompt
         | Action::CancelAndReplacePrompt
+        | Action::DequeuePrompt
         | Action::ToggleMultiline
         | Action::ClearPrompt
         | Action::HistoryUp

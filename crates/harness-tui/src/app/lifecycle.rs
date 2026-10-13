@@ -164,6 +164,9 @@ pub enum UiIntent {
         text: String,
         launch_metadata: LaunchMetadata,
     },
+    /// Takes pending steering and plain queued follow-ups back into the editor, in the
+    /// order they were sent, without stopping the running turn.
+    WithdrawQueuedInput,
     CompactSession {
         custom_instructions: Option<String>,
     },

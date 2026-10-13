@@ -525,7 +525,8 @@ impl TranscriptTurnSection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptUserMessageSection {
     pub(super) text: String,
-    pub(super) queued: bool,
+    /// Label shown under a message that has not reached the model yet.
+    pub(super) badge: Option<&'static str>,
     pub(super) wall_clock: Option<String>,
     pub(super) expanded_wall_clock: Option<String>,
     pub(super) wall_clock_hovered: bool,

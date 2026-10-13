@@ -26,8 +26,9 @@ their command completes.
 Set `run_in_background: true` (alias `is_background`) or `block_until_ms: 0`
 to start a coordinator-owned background command. Any `block_until_ms` value
 uses this path; positive values wait up to that budget, capped at one hour,
-before returning a completed result or a background handle. Background execution
-defaults to a ten-hour timeout when `timeout` is omitted; an explicit timeout
+before returning a completed result or a background handle. User steering ends
+the wait early with the background handle; the command keeps running. Background
+execution defaults to a ten-hour timeout when `timeout` is omitted; an explicit timeout
 still has the one-hour maximum.
 
 Background results contain `task_id` and `output_file`. Use

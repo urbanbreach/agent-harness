@@ -159,19 +159,6 @@ impl CoordinatorHandle {
         .await
     }
 
-    pub async fn eval_has_steering(&self, parent: String) -> Result<bool, CoordinatorError> {
-        self.call(move |s| {
-            s.check_eval(&parent)?;
-            Ok(s.running[&parent]
-                .actor
-                .agent_id
-                .as_ref()
-                .and_then(|id| s.agents.get(id))
-                .is_some_and(|a| !a.queue.is_empty()))
-        })
-        .await
-    }
-
     pub async fn retain_eval_output(
         &self,
         parent: String,

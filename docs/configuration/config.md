@@ -1197,6 +1197,7 @@ inserts a newline and `Alt+Enter` submits or steers.
 | `insert_newline` | Shift+Enter, Ctrl+j, Alt+Enter |
 | `interject_prompt` | Alt+i, Ctrl+Alt+Enter |
 | `cancel_and_replace_prompt` | Ctrl+Enter, Ctrl+Shift+Enter, Alt+r |
+| `dequeue_prompt` | Alt+Up |
 | `toggle_multiline` | Alt+m |
 | `clear_prompt` | Esc |
 | `history_up` | Up |
@@ -1783,17 +1784,26 @@ under `runtime.behavior`:
 While a turn runs, including while its tools
 run, `Enter` (`Alt+Enter` in multiline mode) steers it: the message is journaled as
 `SteeringAccepted` and joins the turn before its next model request, including a
-message that arrives while the turn's last request streams. `Alt+i` or
+message that arrives while the turn's last request streams. Until then the
+transcript marks it `STEERING`. A tool that would keep the message waiting returns
+early, as its own timeout would. A foreground `spawn_subagent` moves the child to
+the background, `wait_commands_or_subagents` and `get_command_or_subagent_output`
+return with the work still running, `bash` with `block_until_ms` leaves its
+command running in the background, and an interactive `eval` cell detaches.
+Follow-ups and background notifications never end these waits. `Alt+i` or
 `Ctrl+Alt+Enter` queues a follow-up that runs after the turn instead. When the
 agent is idle, both submit a normal prompt; a draft with tags or attachments
-always queues, since steering carries plain text only. Interrupting the turn with
-`Ctrl+c` returns undelivered steering and plain queued follow-ups to the editor, in
-the order they were sent, instead of running them; they are recorded as cancelled
-with reason `returned to the editor` and left out of the transcript. If a turn ends
-without taking its steering for another reason (it failed, or was cancelled from
-the tasks pane or replaced), the steering starts the next turn. Pending steering is
-not replayed after a crash; a stopping run cancels
-it like any queued prompt.
+always queues, since steering carries plain text only. A message the run refuses,
+such as one over 1 MiB, goes back to the editor with the reason.
+
+`Alt+Up` takes undelivered steering and plain queued follow-ups back into the
+editor, in the order they were sent, and the turn keeps running. Interrupting the
+turn with `Ctrl+c` does the same before the turn stops. Either way they are
+recorded as cancelled with reason `returned to the editor` and left out of the
+transcript. If a turn ends without taking its steering for another reason (it
+failed, or was cancelled from the tasks pane or replaced), the steering starts the
+next turns, ahead of follow-ups queued behind it. Pending steering is not replayed
+after a crash; a stopping run cancels it like any queued prompt.
 
 Embedders that construct `CoordinatorConfig::new` directly start with every
 guard off and opt in by setting `CoordinatorConfig::behavior`.

@@ -260,11 +260,11 @@ fn assemble_user_surface_lines(
             );
         }
     }
-    if user_msg.queued {
+    if let Some(badge) = user_msg.badge {
         lines.push(user_surface_line(
             TRANSCRIPT_USER_BODY_PREFIX,
             vec![Span::styled(
-                " QUEUED ".to_string(),
+                format!(" {badge} "),
                 Style::default()
                     .fg(selected_foreground_for_badge(agent_accent, theme))
                     .bg(agent_accent)
@@ -1594,7 +1594,7 @@ mod tests {
             request_id: "request-selected-user".to_string(),
             user_message: Some(super::super::TranscriptUserMessageSection {
                 text: "Selected prompt".to_string(),
-                queued: false,
+                badge: None,
                 wall_clock: None,
                 expanded_wall_clock: None,
                 wall_clock_hovered: false,
@@ -1653,7 +1653,7 @@ mod tests {
         let lines = build_user_surface_lines(
             &super::super::TranscriptUserMessageSection {
                 text: "界".to_string(),
-                queued: false,
+                badge: None,
                 wall_clock: Some("12:34 PM".to_string()),
                 expanded_wall_clock: Some("12:34:56 | Aug 14".to_string()),
                 wall_clock_hovered: false,

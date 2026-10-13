@@ -74,8 +74,9 @@ content. Files outside the run workspace have no attribution entry.
 During a running turn, Enter steers plain text into that turn. Drafts with file,
 agent, or resource tags or attachments queue instead. Alt+i or Ctrl+Alt+Enter
 queues a follow-up for after the turn. Ctrl+Enter, Ctrl+Shift+Enter, or Alt+r
-cancels and replaces the active prompt. Interrupted-turn recovery can restore
-queued input. These composer operations are separate from the removed file-backed
+cancels and replaces the active prompt. Alt+Up returns pending steering and plain
+follow-ups to the editor without stopping the turn, and interrupted-turn recovery
+restores them too. These composer operations are separate from the removed file-backed
 `prompt-queue` CLI; no command reads or drains its old store.
 
 ## Worktrees

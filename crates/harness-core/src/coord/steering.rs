@@ -3,11 +3,14 @@
 //! Steering joins the running turn before its next provider request instead of waiting for
 //! the turn to end. Acceptance is journaled before the caller hears back. A message that
 //! arrives too late for the turn becomes a queued turn, so nothing the user sent is lost;
-//! only a stopping or rewinding run cancels it, as it does every queued prompt.
+//! only a stopping or rewinding run cancels it, as it does every queued prompt. Long waits
+//! inside a turn watch [`SteeringArrival`] and end early, as their timeout would, so the
+//! message does not sit behind them.
 use super::reminders::Steering;
 use super::runtime::JobKind;
 use super::*;
 use std::collections::VecDeque;
+use tokio::sync::watch;
 
 /// Where a steering message went.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +20,28 @@ pub enum SteerOutcome {
     /// No turn is running; nothing was recorded, so the caller submits a normal prompt
     /// with its own model selection, tags, and attachments.
     Idle,
+}
+
+/// Resolves once user steering waits for an agent's turn. Taken from the coordinator, it
+/// also covers steering accepted before the wait began.
+pub struct SteeringArrival {
+    pending: bool,
+    signal: Option<watch::Receiver<()>>,
+}
+
+impl SteeringArrival {
+    /// Never resolves for a caller without an agent.
+    pub async fn arrived(self) {
+        if self.pending {
+            return;
+        }
+        let Some(mut signal) = self.signal else {
+            return std::future::pending().await;
+        };
+        if signal.changed().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    }
 }
 
 /// Steering messages waiting for one turn; the turn's own prompt is limited to 1 MiB too.
@@ -33,6 +58,16 @@ impl CoordinatorHandle {
     ) -> Result<SteerOutcome, CoordinatorError> {
         let (agent, text) = (agent.into(), text.into());
         self.call(move |s| s.steer(actor, &agent, text)).await
+    }
+
+    /// Watches for steering sent to the agent's running turn, so a tool that blocks inside
+    /// that turn can return early and let the message reach the model.
+    pub async fn steering_arrival(
+        &self,
+        agent: Option<String>,
+    ) -> Result<SteeringArrival, CoordinatorError> {
+        self.call(move |s| Ok(s.steering_arrival(agent.as_deref())))
+            .await
     }
 
     /// After the user interrupts a turn, returns the input still waiting for the agent so
@@ -90,6 +125,9 @@ impl Runtime {
                         text: prompt.text,
                         seq: accepted.seq,
                     });
+                if let Some(signal) = self.steering_signals.get(agent) {
+                    signal.send_replace(());
+                }
                 Ok(SteerOutcome::Steering {
                     message_id,
                     turn_id,
@@ -99,6 +137,27 @@ impl Runtime {
                 "too many steering messages are waiting for the running turn".into(),
             )),
             None => Ok(SteerOutcome::Idle),
+        }
+    }
+
+    pub(super) fn steering_arrival(&mut self, agent: Option<&str>) -> SteeringArrival {
+        let Some(agent) = agent else {
+            return SteeringArrival {
+                pending: false,
+                signal: None,
+            };
+        };
+        SteeringArrival {
+            pending: self
+                .steering
+                .get(agent)
+                .is_some_and(|pending| !pending.is_empty()),
+            signal: Some(
+                self.steering_signals
+                    .entry(agent.to_owned())
+                    .or_insert_with(|| watch::Sender::new(()))
+                    .subscribe(),
+            ),
         }
     }
 
@@ -154,13 +213,15 @@ impl Runtime {
         Ok(delivered)
     }
 
-    /// Steering that missed its turn starts the next turns, in the order it was sent.
-    /// Called while the agent is still busy, so the finished turn's bookkeeping completes
-    /// before any of them starts. A run that is stopping or rewinding cancels them instead.
+    /// Steering that missed its turn starts the next turns, in the order it was sent and
+    /// ahead of follow-ups queued behind that turn. Called while the agent is still busy, so
+    /// the finished turn's bookkeeping completes before any of them starts. A run that is
+    /// stopping or rewinding cancels them instead.
     pub(super) fn requeue_steering(&mut self, agent: &str) -> Result<(), CoordinatorError> {
         let Some(pending) = self.steering.remove(agent) else {
             return Ok(());
         };
+        let mut requeued = 0;
         for steering in pending {
             let id = steering.id.clone();
             let queued = self.queue_turn(
@@ -175,7 +236,7 @@ impl Runtime {
                 None,
             );
             match queued {
-                Ok(_) => {}
+                Ok(_) => requeued += 1,
                 Err(
                     error @ (CoordinatorError::Stopping
                     | CoordinatorError::Invalid(_)
@@ -194,6 +255,10 @@ impl Runtime {
                 }
                 Err(error) => return Err(error),
             }
+        }
+        // The agent is busy, so queue_turn only appended; nothing started or woke meanwhile.
+        if let Some(state) = self.agents.get_mut(agent) {
+            state.queue.rotate_right(requeued);
         }
         Ok(())
     }

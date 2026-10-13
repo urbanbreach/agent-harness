@@ -50,7 +50,7 @@ impl From<SpawnSubagentResult> for ToolResult {
                     } else {
                         ""
                     };
-                    format!("Subagent took longer than the foreground budget and was moved to the background to keep the conversation responsive. It is still running{notification}.\nsubagent_id: {subagent_id}\ndescription: {description}\n\n{result_line}")
+                    format!("Subagent was moved to the background to keep the conversation responsive. It is still running{notification}.\nsubagent_id: {subagent_id}\ndescription: {description}\n\n{result_line}")
                 } else {
                     format!("Subagent started in background.\nsubagent_id: {subagent_id}\ndescription: {description}\n\n{result_line}")
                 };
@@ -369,6 +369,7 @@ impl CoordinatorHandle {
         let background = input.background;
         let description = input.description.clone();
         let waiter = tool.clone();
+        let parent = actor.agent_id.clone();
         let mut subscription = self
             .call(move |s| s.admit_native_subagent(actor, tool, input, fork, checkpoint))
             .await?;
@@ -387,6 +388,7 @@ impl CoordinatorHandle {
         let cancellation = subscription.cancellation.clone();
         let budget =
             Duration::from_millis(milliseconds("HARNESS_SUBAGENT_AWAIT_BUDGET_MS", 600_000));
+        let steering = self.steering_arrival(parent).await?;
         let terminal = async {
             loop {
                 let snapshot = subscription.updates.borrow_and_update().clone();
@@ -416,24 +418,30 @@ impl CoordinatorHandle {
                     .map_err(|_| CoordinatorError::Closed)?;
             }
         };
-        let result = tokio::select! {
+        let finished = tokio::select! {
             biased;
             () = cancellation.cancelled() => {
                 let cancelled_id = id.clone();
                 self.call(move |s| s.cancel_native_foreground(&cancelled_id)).await?;
-                Err(CoordinatorError::Cancelled("Subagent was cancelled".into()))
+                Some(Err(CoordinatorError::Cancelled("Subagent was cancelled".into())))
             }
-            result = tokio::time::timeout(budget, terminal) => match result {
-                Ok(result) => result,
-                Err(_) => {
-                    let demoted_id = id.clone();
-                    self.call(move |s| s.demote_native_subagent(&demoted_id)).await?;
-                    Ok(SpawnSubagentResult::Background {
-                        subagent_id: id.clone(), description, auto_backgrounded: true,
-                        continue_parent_work,
-                        notified_on_completion,
-                    })
-                }
+            result = tokio::time::timeout(budget, terminal) => result.ok(),
+            // Steering ends the wait as the budget does, so the message reaches the model now.
+            () = steering.arrived() => None,
+        };
+        let result = match finished {
+            Some(result) => result,
+            None => {
+                let demoted_id = id.clone();
+                self.call(move |s| s.demote_native_subagent(&demoted_id))
+                    .await?;
+                Ok(SpawnSubagentResult::Background {
+                    subagent_id: id.clone(),
+                    description,
+                    auto_backgrounded: true,
+                    continue_parent_work,
+                    notified_on_completion,
+                })
             }
         };
         self.call(move |s| s.detach_native_spawn_waiter(&id, &waiter))

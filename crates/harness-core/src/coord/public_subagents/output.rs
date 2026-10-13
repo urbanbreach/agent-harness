@@ -86,21 +86,23 @@ impl CoordinatorHandle {
             Vec<Subscription>,
             CancellationToken,
             Option<watch::Receiver<u64>>,
+            crate::coord::SteeringArrival,
         ),
         CoordinatorError,
     > {
         let owner = actor.clone();
         let waiter = tool.clone();
-        let (cancellation, interject) = self
+        let (cancellation, interject, steering) = self
             .call(move |s| {
                 let job = s.authenticated_native_tool(&owner, &waiter, false)?;
+                let cancellation = job.cancellation.clone();
+                let agent = owner.agent_id.as_deref();
                 Ok((
-                    job.cancellation.clone(),
-                    owner
-                        .agent_id
-                        .as_ref()
+                    cancellation,
+                    agent
                         .and_then(|agent| s.native_subagents.get(agent))
                         .map(|child| child.wait_interrupt.subscribe()),
+                    s.steering_arrival(agent),
                 ))
             })
             .await?;
@@ -135,7 +137,7 @@ impl CoordinatorHandle {
                 Subscription::Subagent,
             ));
         }
-        Ok((subscriptions, cancellation, interject))
+        Ok((subscriptions, cancellation, interject, steering))
     }
 
     pub async fn get_command_or_subagent_output(
@@ -160,17 +162,24 @@ impl CoordinatorHandle {
             ));
         }
         let timeout = input.timeout_ms.unwrap_or(0);
-        let (subscriptions, cancellation, interject) = self
+        let (subscriptions, cancellation, interject, steering) = self
             .native_query_subscriptions(actor.clone(), tool_call_id.clone(), &ids, timeout > 0)
             .await?;
-        let wait =
-            wait_subscriptions(&subscriptions, false, timeout, cancellation, interject).await;
+        let wait = wait_subscriptions(
+            &subscriptions,
+            false,
+            timeout,
+            cancellation,
+            interject,
+            steering,
+        )
+        .await;
         self.complete_native_wait(actor.clone(), &ids, &tool_call_id, wait.is_ok())
             .await?;
         let hint = wait?;
         // Watch observations must be refreshed after wait-any too; an admission
         // transition can replace the attempt before the query reply is built.
-        let (latest, _, _) = self
+        let (latest, ..) = self
             .native_query_subscriptions(actor.clone(), tool_call_id, &ids, false)
             .await?;
         for subscription in &latest {
@@ -245,7 +254,7 @@ impl CoordinatorHandle {
                 .filter(|value| *value > 0)
                 .unwrap_or(30_000)
         };
-        let (subscriptions, cancellation, interject) = self
+        let (subscriptions, cancellation, interject, steering) = self
             .native_query_subscriptions(
                 actor.clone(),
                 tool_call_id.clone(),
@@ -253,11 +262,19 @@ impl CoordinatorHandle {
                 timeout > 0,
             )
             .await?;
-        let wait = wait_subscriptions(&subscriptions, any, timeout, cancellation, interject).await;
+        let wait = wait_subscriptions(
+            &subscriptions,
+            any,
+            timeout,
+            cancellation,
+            interject,
+            steering,
+        )
+        .await;
         self.complete_native_wait(actor.clone(), &input.task_ids, &tool_call_id, wait.is_ok())
             .await?;
         let hint = wait?;
-        let (latest, _, _) = self
+        let (latest, ..) = self
             .native_query_subscriptions(actor.clone(), tool_call_id, &input.task_ids, false)
             .await?;
         for subscription in &latest {

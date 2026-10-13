@@ -78,7 +78,7 @@ mod runtime;
 mod steering;
 mod streaming;
 mod subagents;
-pub use steering::SteerOutcome;
+pub use steering::{SteerOutcome, SteeringArrival};
 #[cfg(test)]
 mod subagents_tests;
 #[cfg(test)]

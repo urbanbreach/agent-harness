@@ -202,9 +202,10 @@ permissions also allow it.
 - The user can steer a running turn from the TUI: Enter while the turn runs
   sends the message into it, and the follow-up key queues one for after the
   turn. A steering message joins the turn before its next model request; the
-  environment partial says so. Interrupting the turn returns undelivered
-  steering and follow-ups to the editor. Harness compacts context
-  automatically.
+  environment partial says so. Long waits in tools (foreground subagents, task
+  waits, blocking `bash`, eval cells) return early when steering arrives.
+  Interrupting the turn or pressing Alt+Up returns undelivered steering and
+  follow-ups to the editor. Harness compacts context automatically.
 - Harness never commits on its own. Commit rules apply only when the user asks
   for commits.
 - Children skip the main agent's verification tiers and report shape; the

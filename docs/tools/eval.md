@@ -268,8 +268,9 @@ By default, each agent can have 15 detached cells. Completed cells retain at mos
 32 results, with a 32 MiB result budget and 256 MiB retained-image budget. The
 newest result and its images remain available even if they exceed those budgets;
 older results or images are evicted first. A full agent prompt
-queue prevents detachment instead of losing a completion notification. Queued
-user input can detach an interactive cell early so the agent can respond.
+queue prevents detachment instead of losing a completion notification. User
+steering detaches an interactive cell early so the agent can respond; queued
+follow-ups and background notifications do not.
 
 ## Output and configuration
 

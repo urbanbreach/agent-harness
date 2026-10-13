@@ -66,6 +66,13 @@ The first public release.
   after their agent type, such as Task or Scout, instead of "Subagent".
 - A Claude subscription counts as an OAuth sign-in. The start screen used to say
   "Logged in with API key" for it, and session cost dropped its `(sub)` marker.
+- Steering moves a running eval cell to the background so the agent reads your
+  message. A queued follow-up or a finished background subagent used to do this
+  instead, while steering waited for the cell to end.
+- Steering that misses its turn runs before follow-ups you queued after it.
+- A message the run refuses, such as one over 1 MiB, goes back to the editor
+  with the reason. It used to disappear, and the TUI then dropped every later
+  prompt, interrupt and permission answer.
 
 ### Added
 
@@ -79,6 +86,13 @@ The first public release.
   tenth of a second and a preview of its result. Click a subagent's row to open
   it. A wait that returns with every job still running gives way to the next
   wait, so repeated polls read as one card.
+- Steering ends long waits early. A foreground subagent moves to the
+  background, `wait_commands_or_subagents` and `get_command_or_subagent_output`
+  return with the work still running, and `bash` with `block_until_ms` leaves
+  its command running in the background.
+- Steering you sent shows a `STEERING` badge until the turn takes it.
+- `Alt+Up` returns pending steering and queued follow-ups to the editor without
+  stopping the turn.
 - A terminal UI and a headless `harness run` for coding agents, with parallel
   tool calls, steering of a running turn, and cancellation. `harness run` and
   `harness prompt` print only the final answer (or stream events as JSON) and

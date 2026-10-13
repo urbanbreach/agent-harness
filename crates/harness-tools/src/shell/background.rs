@@ -40,6 +40,10 @@ pub(super) async fn run(
         .map_err(|error| ToolError::Execution(error.to_string()))?
         .ok_or_else(|| ToolError::Execution("admitted command disappeared".into()))?;
     if block_until_ms > 0 && !subscription.snapshot.is_terminal() {
+        let steering = coordinator
+            .steering_arrival(actor.agent_id.clone())
+            .await
+            .map_err(|error| ToolError::Execution(error.to_string()))?;
         let waited = tokio::select! {
             biased;
             () = cancellation.cancelled() => None,
@@ -51,6 +55,8 @@ pub(super) async fn run(
                 .await
                 .map(|result| result.map(|snapshot| snapshot.clone()))
             } => Some(waited),
+            // Steering ends the window as its timeout does; the command keeps running.
+            () = steering.arrived() => Some(Ok(Ok(subscription.updates.borrow().clone()))),
         };
         match waited {
             None => {

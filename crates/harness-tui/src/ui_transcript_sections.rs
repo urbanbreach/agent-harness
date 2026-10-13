@@ -169,7 +169,16 @@ fn build_turn_section(
                 .filter(|_| timestamps_visible);
             TranscriptUserMessageSection {
                 text: user_msg.text.clone(),
-                queued: queued_user_message,
+                // Only the local echo of steering is done without a request id; delivery
+                // folds it into its turn and a missed turn gives it one.
+                badge: if queued_user_message {
+                    Some("QUEUED")
+                } else if activity.request_id.is_empty() && activity.status == ActivityStatus::Done
+                {
+                    Some("STEERING")
+                } else {
+                    None
+                },
                 wall_clock: timestamp.map(crate::time_format::wall_clock_12h),
                 expanded_wall_clock: timestamp.map(crate::time_format::wall_clock_hover_detail),
                 wall_clock_hovered: matches!(

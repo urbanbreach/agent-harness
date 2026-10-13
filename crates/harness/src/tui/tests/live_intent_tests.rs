@@ -705,7 +705,7 @@ fn live_ui_router_records_model_switch_without_switching_workflow() {
 }
 
 #[tokio::test]
-async fn steering_intent_reaches_running_turn_next_provider_request(
+async fn steering_intents_reach_the_running_turn_or_return_to_the_editor(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use harness_core::tool::{
         Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult,
@@ -812,26 +812,45 @@ async fn steering_intent_reaches_running_turn_next_provider_request(
         providers: None,
         launch_selection: None,
     };
-    let send = |text: &str| {
+    let steer = |text: &str| UiIntent::SteerPrompt {
+        text: text.into(),
+        launch_metadata: LaunchMetadata::default(),
+    };
+    let send = |intents: Vec<UiIntent>| {
         let (tx, rx) = mpsc::unbounded_channel();
-        tx.send(UiIntent::SteerPrompt {
-            text: text.into(),
-            launch_metadata: LaunchMetadata::default(),
-        })
-        .map_err(|_| "intent channel closed")?;
+        for intent in intents {
+            tx.send(intent).map_err(|_| "intent channel closed")?;
+        }
         drop(tx);
         Ok::<_, &str>(rx)
     };
-    let (updates, _rx) = live_update_channel();
+    // A message the run refuses returns to the editor, a dequeued one returns without
+    // stopping the turn, and later input still reaches the turn.
+    let oversized = "x".repeat(1024 * 1024 + 1);
+    let (updates, returned) = live_update_channel();
     handle_ui_intents(
         coordinator.clone(),
-        send("steering sentinel")?,
+        send(vec![
+            steer(&oversized),
+            steer("withdrawn sentinel"),
+            UiIntent::WithdrawQueuedInput,
+            steer("steering sentinel"),
+        ])?,
         user_actor(),
         Some(Arc::clone(&target)),
         updates,
         auth.clone(),
     )
     .await?;
+    let returned: Vec<_> = returned.try_iter().collect();
+    assert!(matches!(
+        returned.as_slice(),
+        [
+            LiveUpdate::RestoreQueuedInput(refused),
+            LiveUpdate::OperatorNotice { level: harness_tui::OperatorNoticeLevel::Error, .. },
+            LiveUpdate::RestoreQueuedInput(dequeued),
+        ] if refused == &[oversized] && dequeued == &["withdrawn sentinel"]
+    ));
     assert_eq!(
         target
             .lock()
@@ -874,11 +893,15 @@ async fn steering_intent_reaches_running_turn_next_provider_request(
         .messages
         .iter()
         .any(|message| message.content == "step completed"));
+    assert!(!requests[1]
+        .messages
+        .iter()
+        .any(|message| message.content == "withdrawn sentinel"));
 
     let (updates, _rx) = live_update_channel();
     handle_ui_intents(
         coordinator.clone(),
-        send("idle sentinel")?,
+        send(vec![steer("idle sentinel")])?,
         user_actor(),
         Some(Arc::clone(&target)),
         updates,

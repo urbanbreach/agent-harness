@@ -132,7 +132,14 @@ impl Tool for EvalTool {
         let mut settled = None;
         let mut detached = false;
         let mut cancelled = false;
-        let mut steering = tokio::time::interval(Duration::from_millis(250));
+        let mut deadline = tokio::time::interval(Duration::from_millis(250));
+        let steering = ctx
+            .coordinator
+            .steering_arrival(ctx.actor.agent_id.clone())
+            .await
+            .map_err(failure)?
+            .arrived();
+        tokio::pin!(steering);
         let mut steered = false;
         let outcome = async { loop {
             tokio::select! {
@@ -190,13 +197,14 @@ impl Tool for EvalTool {
                     }
                 }
                 result = calls.join_next(), if !calls.is_empty() => { let (call, result) = result.ok_or_else(|| failure("eval bridge stopped"))?.map_err(failure)?; cancellations.remove(&call); result?; }
-                _ = steering.tick() => {
+                // Steering moves a running cell to the background so the turn reaches its next request.
+                () = &mut steering, if !control && !detached && !steered && !cancelled => {
+                    steered = true; host.send(json!({"type":"steer","id":id})).await?;
+                }
+                _ = deadline.tick(), if cancel_deadline.is_some() => {
                     if cancel_deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
                         host.terminate();
                         break Err(failure("eval kernel did not acknowledge cancellation; runtime terminated"));
-                    }
-                    if !control && !detached && !steered && !cancelled && ctx.coordinator.eval_has_steering(id.clone()).await.map_err(failure)? {
-                        steered = true; host.send(json!({"type":"steer","id":id})).await?;
                     }
                 }
             }

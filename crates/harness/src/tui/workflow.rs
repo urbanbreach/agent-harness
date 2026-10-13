@@ -140,6 +140,7 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::BackgroundForegroundSubagents)
         | Some(UiIntent::DemoteForegroundChildTask { .. })
         | Some(UiIntent::InterruptSession { .. })
+        | Some(UiIntent::WithdrawQueuedInput)
         | Some(UiIntent::CancelSubagent { .. })
         | Some(UiIntent::InspectCommand { .. })
         | Some(UiIntent::ForkSession { .. })
@@ -199,6 +200,7 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         | UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::SteerPrompt { .. }
+        | UiIntent::WithdrawQueuedInput
         | UiIntent::OpenAuthManager { .. }
         | UiIntent::AuthBackendInput { .. }
         | UiIntent::CancelCompaction { .. }
@@ -229,6 +231,7 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
             | UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
             | UiIntent::SteerPrompt { .. }
+            | UiIntent::WithdrawQueuedInput
             | UiIntent::OpenAuthManager { .. }
             | UiIntent::AuthBackendInput { .. }
             | UiIntent::CancelCompaction { .. }

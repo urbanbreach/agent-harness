@@ -34,8 +34,10 @@ Ratatui library crate for startup, live-session, replay, and review shells.
 Plain Enter steers a running turn when the draft is plain text. Alt+i and
 Ctrl+Alt+Enter queue a separate follow-up after the active turn. Both actions
 submit normally when idle; tagged or attached drafts fall back to queueing
-during an active turn. Steering rows stay inside the running activity in output
-order; a message that misses its turn starts a turn of its own.
+during an active turn. A steering echo carries a `STEERING` badge until the turn
+takes it; then the row stays inside the running activity in output order. A
+message that misses its turn starts a turn of its own. Alt+Up returns pending
+steering and plain follow-ups to the editor without stopping the turn.
 
 ## Monitor presentation
 

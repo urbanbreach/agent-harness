@@ -63,6 +63,8 @@ pub(super) struct Runtime {
     pub command_notices: BTreeMap<String, super::commands::CommandNoticeBacklog>,
     /// User messages sent into an agent's running turn, drained before each request.
     pub steering: BTreeMap<String, VecDeque<super::reminders::Steering>>,
+    /// Wakes waits inside an agent's turn when steering is accepted for it.
+    pub steering_signals: BTreeMap<String, tokio::sync::watch::Sender<()>>,
     /// Directory instruction files already added to each agent's context since its last compaction.
     pub instructions_seen: BTreeMap<String, std::collections::BTreeSet<PathBuf>>,
     pub monitor_wakes: super::commands::MonitorWakes,
@@ -194,6 +196,7 @@ impl Runtime {
             pending_reminders: BTreeMap::new(),
             command_notices: BTreeMap::new(),
             steering: BTreeMap::new(),
+            steering_signals: BTreeMap::new(),
             instructions_seen: BTreeMap::new(),
             monitor_wakes: Default::default(),
         }

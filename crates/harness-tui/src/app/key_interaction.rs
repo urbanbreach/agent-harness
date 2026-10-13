@@ -587,6 +587,7 @@ impl AppState {
                     | Action::SubmitPrompt
                     | Action::InterjectPrompt
                     | Action::CancelAndReplacePrompt
+                    | Action::DequeuePrompt
                     | Action::InsertNewline
             )
         {
@@ -645,6 +646,7 @@ impl AppState {
                 Action::SubmitPrompt
                 | Action::InterjectPrompt
                 | Action::CancelAndReplacePrompt
+                | Action::DequeuePrompt
                 | Action::InsertNewline
                 | Action::ToggleMultiline
                 | Action::ClearPrompt
@@ -698,6 +700,10 @@ impl AppState {
             }
             Action::InterjectPrompt => {
                 self.submit_follow_up_prompt();
+                return;
+            }
+            Action::DequeuePrompt => {
+                self.emit_ui_intent(UiIntent::WithdrawQueuedInput);
                 return;
             }
             Action::CancelAndReplacePrompt => {

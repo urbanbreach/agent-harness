@@ -64,7 +64,8 @@ for definition discovery, model selection, inheritance, and concurrency settings
 `spawn_subagent` requires `prompt` and `description`. It accepts an optional
 `subagent_type` and defaults to `background: true`. A background call returns a
 `subagent_id`. With `background: false`, the caller waits for completion; reaching
-the foreground timeout leaves the child running in the background.
+the foreground timeout, or the user steering the caller's turn, leaves the child
+running in the background.
 The default foreground wait budget is 600,000 ms, overridden by
 `HARNESS_SUBAGENT_AWAIT_BUDGET_MS`. The `task` alias calls the same operation
 but names its background option `run_in_background`. Optional `tools` narrows
@@ -193,7 +194,7 @@ a fresh child.
 | Tool | Behavior |
 | --- | --- |
 | `get_command_or_subagent_output` | Read `task_ids`, optionally waiting up to `timeout_ms`. Returns status, output, timing, and truncation metadata for owned children or background commands. |
-| `wait_commands_or_subagents` | Wait for `task_ids` with `mode: "wait_any"` or `"wait_all"` and optional `timeout_ms`. A timeout leaves work running. |
+| `wait_commands_or_subagents` | Wait for `task_ids` with `mode: "wait_any"` or `"wait_all"` and optional `timeout_ms`. A timeout leaves work running. User steering ends this wait, and a `get_command_or_subagent_output` wait, early in the same way. |
 | `kill_command_or_subagent` | Cancel the selected `task_id` through the coordinator and its cleanup path. |
 | `send_subagent_message` | Send `text` to an authorized `subagent_id` using `delivery: "steer"`, `"queue"`, or `"interject"`; omission selects steering. Admission and quota failures return structured outcomes. |
 
