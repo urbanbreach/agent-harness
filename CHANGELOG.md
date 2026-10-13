@@ -57,6 +57,11 @@ The first public release.
   from legacy provider-completion metadata.
 - Concurrent credential managers and Harness processes share an OAuth refresh
   lock. Logout can still invalidate a refresh in progress.
+- The live status timer keeps counting while the main agent waits on subagents.
+  It used to restart whenever a subagent sent a new request, and after you
+  opened a subagent and came back it followed that subagent's clock.
+- Tool calls stay with the turn that made them after you steer. Subagent tool
+  calls no longer pile up under your steering message in the main transcript.
 
 ### Added
 

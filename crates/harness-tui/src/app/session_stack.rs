@@ -3,6 +3,7 @@ use crate::UnwrapOrAbort;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use harness_core::event::{first_lineage_parent_session_id, EventEnvelopeV1, EventV1};
 use harness_core::proj::{inspect_resume_plan, load_run_metadata};
@@ -56,6 +57,9 @@ pub(super) struct SessionViewSnapshot {
     tasks: super::tasks_pane::TasksPaneState,
     todo: super::todo_pane::TodoPaneState,
     focus: Focus,
+    live_turn_started_at: Option<Instant>,
+    live_turn_phase_started_at: Option<Instant>,
+    live_turn_request_id: Option<String>,
 }
 
 impl AppState {
@@ -326,6 +330,9 @@ impl AppState {
                 tasks: std::mem::take(&mut self.tasks_pane),
                 todo: std::mem::take(&mut self.todo_pane),
                 focus: self.focus,
+                live_turn_started_at: self.live_turn_started_at,
+                live_turn_phase_started_at: self.live_turn_phase_started_at,
+                live_turn_request_id: self.live_turn_request_id.take(),
             }),
         })
     }
@@ -343,6 +350,10 @@ impl AppState {
             self.transcript_outline = view.outline;
             self.tasks_pane = view.tasks;
             self.todo_pane = view.todo;
+            // The child view ran its own clock; the parent's turn keeps its timing.
+            self.live_turn_started_at = view.live_turn_started_at;
+            self.live_turn_phase_started_at = view.live_turn_phase_started_at;
+            self.live_turn_request_id = view.live_turn_request_id;
             self.refresh_todo_items();
             self.sync_tasks_pane(true);
             self.invalidate_transcript_after_durable_event();

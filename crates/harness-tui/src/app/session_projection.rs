@@ -1129,6 +1129,17 @@ impl SessionProjection {
             .collect()
     }
 
+    /// Events a delegated child emits while another session is in view.
+    pub(super) fn event_from_hidden_child(
+        &self,
+        event: &EventEnvelopeV1,
+        current_session_id: Option<&str>,
+    ) -> bool {
+        super::child_session::event_agent_id(&event.actor, event.stream_key.as_deref()).is_some_and(
+            |agent| self.child_agent_ids.contains(agent) && current_session_id != Some(agent),
+        )
+    }
+
     fn activity_index_for_provider_event(
         &mut self,
         event: &EventEnvelopeV1,

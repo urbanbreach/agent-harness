@@ -326,6 +326,30 @@ fn coordinator_turn_stays_steerable_after_its_request_finishes_for_tools(
         matches!(intents.lock().map_err(|_| "intent lock poisoned")?.as_slice(),
         [UiIntent::SteerPrompt { text, .. }] if text == "steer during tools")
     );
+
+    // The turn's next tool call belongs to the turn, not to the steering echo.
+    app.ingest_event(envelope(
+        7,
+        "turn-5",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tool-after-steer".into(),
+            tool_id: "bash".into(),
+            args_summary: r#"{"command":"cargo test"}"#.into(),
+            args_digest: "digest-after-steer".into(),
+            metadata: None,
+        }),
+    ));
+    let owner = app
+        .activities
+        .iter()
+        .find(|activity| {
+            activity
+                .tool_calls
+                .iter()
+                .any(|tool| tool.tool_call_id == "tool-after-steer")
+        })
+        .ok_or("tool call was dropped")?;
+    assert_eq!(owner.request_id, "turn-5");
     Ok(())
 }
 

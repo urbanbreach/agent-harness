@@ -184,4 +184,15 @@ fn live_wait_card_clock_ticks_between_events_and_its_subagent_rows_open_the_chil
     // Then: the prepared row shows the new elapsed time and the click opens the child.
     assert!(line.contains("1.5s"), "{line}");
     assert_eq!(app.current_session_id(), Some("child"));
+
+    // When: the user returns to the parent a second later.
+    app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(1_000));
+
+    // Then: the parent's wait clock kept running instead of adopting the child's.
+    assert_eq!(app.current_session_id(), Some("parent"));
+    assert_eq!(
+        app.live_turn_phase_elapsed_ms_for("req_parent"),
+        Some(2_500)
+    );
 }

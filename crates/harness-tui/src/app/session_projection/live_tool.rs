@@ -4,20 +4,20 @@ impl SessionProjection {
     pub(super) fn update_live_tool_event(&mut self, event: &EventEnvelopeV1) -> bool {
         match &event.payload {
             EventV1::ToolCallRequested(data) => {
-                let target_corr_id = event.correlation_id.clone();
-                let use_back = self
-                    .activities
-                    .back()
-                    .is_none_or(|entry| target_corr_id.is_none() || entry.request_id.is_empty());
-
-                let entry = if use_back {
-                    self.activities.back_mut()
-                } else if let Some(corr) = &target_corr_id {
-                    self.activity_index_for_correlation(corr)
-                        .and_then(|index| self.activities.get_mut(index))
-                } else {
-                    None
-                };
+                let index = event
+                    .correlation_id
+                    .as_deref()
+                    .and_then(|correlation| self.activity_index_for_correlation(correlation))
+                    .or_else(|| {
+                        // A new prompt's tool calls can arrive before its echo learns the request id.
+                        let use_back = self.activities.back().is_some_and(|entry| {
+                            event.correlation_id.is_none() || entry.request_id.is_empty()
+                        });
+                        use_back
+                            .then(|| self.activities.len().checked_sub(1))
+                            .flatten()
+                    });
+                let entry = index.and_then(|index| self.activities.get_mut(index));
 
                 if let Some(entry) = entry {
                     if entry.transcript_text.is_empty() && entry.tool_calls.is_empty() {

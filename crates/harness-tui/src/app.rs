@@ -1881,6 +1881,13 @@ impl AppState {
             }
             return;
         }
+        // A hidden child's requests run on its own clock, not the visible turn's.
+        if self
+            .projection
+            .event_from_hidden_child(event, self.current_session_id())
+        {
+            return;
+        }
         match &event.payload {
             EventV1::UserMessageSubmitted(data) => {
                 if !self.live_turn_timing_owned_by_other_request(data.request_id.as_str()) {

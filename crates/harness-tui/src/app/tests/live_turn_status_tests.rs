@@ -525,9 +525,19 @@ pub(super) fn live_historical_restore_rearms_streaming_turn_clocks() {
 }
 
 pub(super) fn hidden_delegated_child_cannot_steal_rendered_parent_clock() {
-    // Given: a visible parent and hidden delegated child are both streaming.
+    // Given: a visible parent turn and hidden delegated child are both streaming.
     let (mut app, clock) = live_app_with_clock();
     app.session_path = Some(PathBuf::from("/tmp/parent"));
+    app.ingest_event(envelope(
+        0,
+        "turn_parent",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_parent".into(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+            metadata: None,
+        }),
+    ));
     app.ingest_event(provider_started(1, "req_parent", "default", "gpt-5.4-mini"));
     app.ingest_event(envelope(
         2,
@@ -559,6 +569,43 @@ pub(super) fn hidden_delegated_child_cannot_steal_rendered_parent_clock() {
     let screen = render_text(&app, 140, 40);
     let row = status_row(&screen, "Thinking…");
     assert!(row.contains("Thinking… 0.5s"), "status row: {row:?}");
+
+    // When: the parent's message ends while its turn waits, and the child starts another request.
+    app.ingest_event(envelope(
+        6,
+        "req_parent",
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req_parent".into(),
+            finish_reason: "tool_use".to_string(),
+            output_digest: None,
+            usage: None,
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        7,
+        "req_parent",
+        EventV1::AssistantMessageFinished(harness_core::event::AssistantMessageFinishedEvent {
+            request_id: "req_parent".into(),
+            tool_call_count: 1,
+            parts: Vec::new(),
+            provenance: None,
+            assistant_message: None,
+        }),
+    ));
+    advance_clock(&clock, Duration::from_millis(1_000));
+    let mut child_next = provider_started(8, "req_agent_spawned_2", "default", "gpt-5.4-mini");
+    child_next.actor = EventActor::new(ActorKind::Worker, Some("child".to_string()));
+    app.ingest_event(child_next);
+    advance_clock(&clock, Duration::from_millis(500));
+
+    // Then: the parent's waiting clock keeps counting from the end of its request.
+    let screen = render_text(&app, 140, 40);
+    let row = status_row(&screen, "Waiting for response…");
+    assert!(
+        row.contains("Waiting for response… 1.5s"),
+        "status row: {row:?}"
+    );
 }
 
 pub(super) fn hidden_delegated_child_activation_does_not_steal_detached_page_flip() {
