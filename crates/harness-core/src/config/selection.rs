@@ -158,7 +158,7 @@ pub fn resolve_configured_model_metadata(
             .or_else(|| definition.options.get("thinking"))
             .cloned(),
         supports_reasoning_summaries: resolution.capabilities.supports_reasoning_summaries,
-        cost: definition.cost,
+        cost: definition.cost.clone(),
         resolution,
     })
 }

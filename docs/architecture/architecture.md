@@ -161,10 +161,16 @@ does not restore an active spinner. Completed checkpoints show `[compaction]`
 and the prior token count. Ctrl+Alt+O expands or collapses the Markdown summary.
 The Ctrl+O permission action retains its binding.
 
-Session usage folds completed provider requests by provider and model in
-`crates/harness-tui/src/app/session_usage.rs`. The TUI displays live token speed
-and accumulated session cost using the model catalog prices. A `+` suffix marks
-usage without a known price; `(sub)` marks an OAuth subscription session.
+The coordinator prices each provider request as it finishes, from the model
+catalog and the request's start time, and saves the amount as
+`cost_picodollars` on `ProviderRequestFinished`. Session usage in
+`crates/harness-tui/src/app/session_usage.rs` adds saved amounts by agent and
+reprices only requests recorded without one, with today's catalog. It displays
+live token speed, the main agent's spend and its subagents' spend; a `+` suffix
+marks usage without a known price and `(sub)` marks an OAuth subscription
+session. `configs/pricing-overrides.json` holds peak schedules models.dev cannot
+express. Each applies, while the catalog is parsed, only while models.dev still
+lists the price it was checked against; otherwise it adds a catalog diagnostic.
 
 ## Input-first TUI runtime scheduling
 

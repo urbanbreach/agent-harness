@@ -288,13 +288,27 @@ fn connected_subscriptions_extend_explicit_config_without_replacing_its_model(
         return Err("wrong provider".into());
     };
     let explicit_astra = codex.models["gpt-6-astra"].clone();
+    let priced = codex.models["gpt-5.5"].cost.clone();
+    assert!(explicit_astra.cost.is_none() && priced.is_some());
     codex.models.remove("gpt-6-sol");
+    config.providers.insert(
+        "claude".into(),
+        ProviderConfig::AnthropicSubscription(AnthropicSubscriptionProviderConfig {
+            models: anthropic_subscription_models(),
+            ..Default::default()
+        }),
+    );
     let cache = root.path().join("catalog.json");
     std::fs::write(
         &cache,
         r#"{"openai":{"models":{
-            "gpt-6-astra":{"limit":{"context":10000,"output":200}},
+            "gpt-6-astra":{"limit":{"context":10000,"output":200},"cost":{"input":10,"output":50}},
+            "gpt-5.5":{"limit":{"context":10000,"output":200},"cost":{"input":9,"output":9}},
             "gpt-6-sol":{"limit":{"context":22222,"output":4444}}
+        }},"anthropic":{"models":{
+            "claude-opus-5-5":{"limit":{"context":10000,"output":200},"cost":{"input":4,"output":20}}
+        }},"local":{"models":{
+            "chosen":{"limit":{"context":10000,"output":200},"cost":{"input":1.4,"output":4.4}}
         }}}"#,
     )?;
     let result =
@@ -303,10 +317,30 @@ fn connected_subscriptions_extend_explicit_config_without_replacing_its_model(
         })?;
     let models = result.config.providers[BUILTIN_CODEX_PROVIDER_ID].models();
     assert_eq!(models["gpt-6-sol"].limit.context, Some(22222));
+    // Cached prices fill only a missing `cost`; the rest of an explicit model stays.
+    let cost = |input: f64, output: f64| {
+        ModelCost::try_from(ModelCostRates {
+            input,
+            output,
+            cache_read: None,
+            cache_write: None,
+            tiers: Vec::new(),
+            time_based: None,
+        })
+    };
     assert_eq!(
         serde_json::to_value(&models["gpt-6-astra"])?,
-        serde_json::to_value(explicit_astra)?
+        serde_json::to_value(ModelConfig {
+            cost: Some(cost(10.0, 50.0)?),
+            ..explicit_astra
+        })?
     );
+    assert_eq!(models["gpt-5.5"].cost, priced);
+    let claude = result.config.providers["claude"].models();
+    assert_eq!(claude["claude-opus-5-5"].cost, Some(cost(4.0, 20.0)?));
+    // A configured provider takes prices from the catalog provider with its id.
+    let local = result.config.providers["local"].models();
+    assert_eq!(local["chosen"].cost, Some(cost(1.4, 4.4)?));
     assert_eq!(result.config.agents["default"].model_ref, "local:chosen");
     Ok(())
 }

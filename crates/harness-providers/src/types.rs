@@ -174,6 +174,10 @@ pub struct ProviderStreamFinishedMetadata {
     pub output_limit_reached: bool,
     pub cache_read_tokens: Option<u32>,
     pub cache_write_tokens: Option<u32>,
+    /// The part of `cache_write_tokens` cached for one hour instead of five minutes. A plain
+    /// count fits the padding, keeping `ProviderStreamEvent` within its size budget.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cache_write_1h_tokens: u32,
     pub assistant_message_id: Option<String>,
     pub thinking: Option<ProviderStreamThinkingMetadata>,
     /// Complete settled normalized reasoning, when the transport can supply it.
@@ -186,6 +190,10 @@ pub struct ProviderStreamFinishedMetadata {
     /// What a pooled, session-keeping backend reports beyond the response itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_report: Option<Box<ProviderSessionReport>>,
+}
+
+fn is_zero(count: &u32) -> bool {
+    *count == 0
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

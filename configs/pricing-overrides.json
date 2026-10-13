@@ -1,0 +1,28 @@
+[
+  {
+    "provider": "deepseek",
+    "models": ["deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"],
+    "source": "https://api-docs.deepseek.com/quick_start/pricing (checked 2026-10-13)",
+    "verified_against": { "input": 0.15, "output": 0.6, "cache_read": 0.003 },
+    "time_based": {
+      "off_peak_multiplier": 0.5,
+      "peak_windows": [
+        { "weekdays": [1, 2, 3, 4, 5], "start_minute": 60, "end_minute": 240 },
+        { "weekdays": [1, 2, 3, 4, 5], "start_minute": 360, "end_minute": 600 }
+      ]
+    }
+  },
+  {
+    "provider": "deepseek",
+    "models": ["deepseek-v4-pro"],
+    "source": "https://api-docs.deepseek.com/quick_start/pricing (checked 2026-10-13)",
+    "verified_against": { "input": 0.66, "output": 1.98, "cache_read": 0.022 },
+    "time_based": {
+      "off_peak_multiplier": 0.5,
+      "peak_windows": [
+        { "weekdays": [1, 2, 3, 4, 5], "start_minute": 60, "end_minute": 240 },
+        { "weekdays": [1, 2, 3, 4, 5], "start_minute": 360, "end_minute": 600 }
+      ]
+    }
+  }
+]

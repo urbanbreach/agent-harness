@@ -1602,6 +1602,14 @@
               "cacheWrite"
             ]
           }
+        },
+        {
+          "not": {
+            "required": [
+              "time_based",
+              "timeBased"
+            ]
+          }
         }
       ],
       "description": "Token prices in USD per million tokens, the unit config files and models.dev use.",
@@ -1647,6 +1655,35 @@
           "format": "double",
           "minimum": 0,
           "type": "number"
+        },
+        "tiers": {
+          "description": "Long-context prices, in models.dev's shape.",
+          "items": {
+            "$ref": "#/$defs/ModelCostTier"
+          },
+          "type": "array"
+        },
+        "timeBased": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelCostSchedule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Peak hours bill these prices; other hours multiply them by `off_peak_multiplier`."
+        },
+        "time_based": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelCostSchedule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Peak hours bill these prices; other hours multiply them by `off_peak_multiplier`."
         }
       },
       "required": [
@@ -1654,6 +1691,272 @@
         "output"
       ],
       "type": "object"
+    },
+    "ModelCostPeakWindow": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "start_minute"
+              ]
+            },
+            {
+              "required": [
+                "startMinute"
+              ]
+            }
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "start_minute",
+              "startMinute"
+            ]
+          }
+        },
+        {
+          "anyOf": [
+            {
+              "required": [
+                "end_minute"
+              ]
+            },
+            {
+              "required": [
+                "endMinute"
+              ]
+            }
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "end_minute",
+              "endMinute"
+            ]
+          }
+        }
+      ],
+      "description": "UTC minutes of the day, start inclusive and end exclusive, on each listed weekday\n(0 = Sunday).",
+      "properties": {
+        "endMinute": {
+          "format": "uint16",
+          "maximum": 1440,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "end_minute": {
+          "format": "uint16",
+          "maximum": 1440,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "startMinute": {
+          "format": "uint16",
+          "maximum": 1439,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start_minute": {
+          "format": "uint16",
+          "maximum": 1439,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "weekdays": {
+          "items": {
+            "format": "uint8",
+            "maximum": 6,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "weekdays"
+      ],
+      "type": "object"
+    },
+    "ModelCostSchedule": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "off_peak_multiplier"
+              ]
+            },
+            {
+              "required": [
+                "offPeakMultiplier"
+              ]
+            }
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "off_peak_multiplier",
+              "offPeakMultiplier"
+            ]
+          }
+        },
+        {
+          "anyOf": [
+            {
+              "required": [
+                "peak_windows"
+              ]
+            },
+            {
+              "required": [
+                "peakWindows"
+              ]
+            }
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "peak_windows",
+              "peakWindows"
+            ]
+          }
+        }
+      ],
+      "description": "Peak hours in UTC and the price multiplier for every other hour. A request's start time\ndecides its whole price.",
+      "properties": {
+        "offPeakMultiplier": {
+          "format": "double",
+          "minimum": 0,
+          "type": "number"
+        },
+        "off_peak_multiplier": {
+          "format": "double",
+          "minimum": 0,
+          "type": "number"
+        },
+        "peakWindows": {
+          "items": {
+            "$ref": "#/$defs/ModelCostPeakWindow"
+          },
+          "type": "array"
+        },
+        "peak_windows": {
+          "items": {
+            "$ref": "#/$defs/ModelCostPeakWindow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "ModelCostTier": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "cache_read",
+              "cacheRead"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "cache_write",
+              "cacheWrite"
+            ]
+          }
+        }
+      ],
+      "description": "Prices for a whole request whose prompt, cached tokens included, exceeds `tier.size`.",
+      "properties": {
+        "cacheRead": {
+          "format": "double",
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cacheWrite": {
+          "format": "double",
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cache_read": {
+          "format": "double",
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cache_write": {
+          "format": "double",
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "input": {
+          "format": "double",
+          "minimum": 0,
+          "type": "number"
+        },
+        "output": {
+          "format": "double",
+          "minimum": 0,
+          "type": "number"
+        },
+        "tier": {
+          "$ref": "#/$defs/ModelCostTierBound"
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "tier"
+      ],
+      "type": "object"
+    },
+    "ModelCostTierBound": {
+      "additionalProperties": false,
+      "properties": {
+        "size": {
+          "description": "Prompt tokens a request must exceed to bill at this tier.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "$ref": "#/$defs/ModelCostTierKind"
+        }
+      },
+      "required": [
+        "type",
+        "size"
+      ],
+      "type": "object"
+    },
+    "ModelCostTierKind": {
+      "enum": [
+        "context"
+      ],
+      "type": "string"
     },
     "ModelLimitConfig": {
       "additionalProperties": false,

@@ -42,6 +42,13 @@ pub struct ProviderRequestFinishedMetadata {
     pub provider_stop_reason: Option<String>,
     pub cache_read_tokens: Option<u32>,
     pub cache_write_tokens: Option<u32>,
+    /// The part of `cache_write_tokens` cached for one hour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h_tokens: Option<u32>,
+    /// The request's cost in picodollars (1e-12 USD), priced when it finished, so later
+    /// price changes leave it alone. None when its model had no known price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_picodollars: Option<u64>,
     pub assistant_message: Option<ProviderAssistantMessageMetadata>,
     pub thinking: Option<ProviderThinkingMetadata>,
     pub provider_error_category: Option<ProviderErrorCategory>,

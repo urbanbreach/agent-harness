@@ -1,8 +1,8 @@
-//! Session cost, folded once per finished provider request, and live generation throughput.
+//! Session cost, priced per finished provider request, and live generation throughput.
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use harness_core::config::BilledTokens;
+use harness_core::config::{BilledTokens, ResolvedModelCatalogEntry};
 use harness_core::event::{ProviderRequestFinishedEvent, ProviderRequestStartedEvent};
 
 use super::AppState;
@@ -16,37 +16,91 @@ const MIN_SEED_SPAN_MS: u64 = 100;
 pub(crate) struct SessionUsage {
     /// Provider, model and start time of requests still in flight.
     started: BTreeMap<String, RequestStart>,
-    /// Billed tokens by provider and model; a request with no recorded start has empty keys.
-    by_model: BTreeMap<(String, String), BilledTokens>,
-    /// Generation rate of this session's own requests.
+    /// This session's own requests.
     own: Meter,
-    /// Generation rate of each subagent, by child id.
+    /// Each subagent's requests, by child id.
     children: BTreeMap<String, Meter>,
     /// The newest event's stream time and when it arrived, so the open request's stream
     /// time keeps running between deltas.
     observed: Option<(u64, Instant)>,
 }
 
-/// A generation-rate meter and the open request whose streamed deltas feed it.
+/// One agent's generation rate, the open request whose streamed deltas feed it, and the
+/// spend of its finished requests.
 #[derive(Default)]
 struct Meter {
     rate: token_rate::TokenRateMeter,
     request: Option<String>,
+    /// Requests priced when they finished.
+    saved: Spend,
+    /// Requests recorded without a price, repriced at today's prices: kept per request, with
+    /// its start in Unix milliseconds, because a long prompt reprices its whole request and
+    /// peak hours price by start time. A request with no recorded start has empty keys.
+    billed: BTreeMap<(String, String), Vec<(BilledTokens, Option<i64>)>>,
+}
+
+impl Meter {
+    fn spend(&self, models: &[ResolvedModelCatalogEntry]) -> Spend {
+        let mut spend = self.saved;
+        for ((provider, model), requests) in &self.billed {
+            let cost = models
+                .iter()
+                .find(|entry| entry.provider == *provider && entry.model == *model)
+                .and_then(|entry| entry.cost.as_ref());
+            for (tokens, started_at_ms) in requests {
+                match cost.and_then(|cost| cost.picodollars(tokens, *started_at_ms)) {
+                    Some(picodollars) => {
+                        spend.picodollars += picodollars;
+                        spend.priced = true;
+                    }
+                    None => spend.unpriced = true,
+                }
+            }
+        }
+        spend
+    }
+}
+
+/// Priced spend, and whether any usage had a price or lacked one.
+#[derive(Clone, Copy, Default)]
+struct Spend {
+    picodollars: u128,
+    priced: bool,
+    unpriced: bool,
+}
+
+impl Spend {
+    fn add(self, other: Self) -> Self {
+        Self {
+            picodollars: self.picodollars + other.picodollars,
+            priced: self.priced || other.priced,
+            unpriced: self.unpriced || other.unpriced,
+        }
+    }
+
+    /// `0.123`, with `+` when part of the usage has no price.
+    fn amount(&self) -> String {
+        let mills = (self.picodollars + 500_000_000) / 1_000_000_000;
+        let partial = if self.unpriced { "+" } else { "" };
+        format!("{}.{:03}{partial}", mills / 1000, mills % 1000)
+    }
 }
 
 struct RequestStart {
     provider: String,
     model: String,
     mono_ms: u64,
+    started_at_ms: Option<i64>,
 }
 
 impl SessionUsage {
-    /// `child` names the subagent that sent the request, `None` for this session's own.
-    /// Historical requests only price and seed.
+    /// `child` names the subagent that sent the request, `None` for this session's own;
+    /// `ts` is the event's RFC 3339 time. Historical requests only price and seed.
     pub(crate) fn request_started(
         &mut self,
         event: &ProviderRequestStartedEvent,
         mono_ms: u64,
+        ts: Option<&str>,
         child: Option<&str>,
         historical: bool,
     ) {
@@ -56,12 +110,14 @@ impl SessionUsage {
             meter.rate.begin(mono_ms);
             meter.request = Some(request_id.clone());
         }
+        let started_at_ms = ts.and_then(harness_core::clock::rfc3339_unix_ms);
         self.started.insert(
             request_id,
             RequestStart {
                 provider: event.provider_id.clone(),
                 model: event.model_id.clone(),
                 mono_ms,
+                started_at_ms,
             },
         );
     }
@@ -101,12 +157,26 @@ impl SessionUsage {
             return;
         };
         let metadata = event.metadata.as_ref();
-        let model = start.map_or_else(Default::default, |start| (start.provider, start.model));
-        self.by_model.entry(model).or_default().add(
+        let meter = self.meter_mut(child);
+        if let Some(picodollars) = metadata.and_then(|m| m.cost_picodollars) {
+            meter.saved.picodollars += u128::from(picodollars);
+            meter.saved.priced = true;
+            return;
+        }
+        let (model, started_at_ms) = start.map_or_else(Default::default, |start| {
+            ((start.provider, start.model), start.started_at_ms)
+        });
+        let tokens = BilledTokens::new(
             usage,
             metadata.and_then(|m| m.cache_read_tokens).unwrap_or(0),
             metadata.and_then(|m| m.cache_write_tokens).unwrap_or(0),
+            metadata.and_then(|m| m.cache_write_1h_tokens).unwrap_or(0),
         );
+        meter
+            .billed
+            .entry(model)
+            .or_default()
+            .push((tokens, started_at_ms));
     }
 
     fn meter_mut(&mut self, child: Option<&str>) -> &mut Meter {
@@ -158,40 +228,42 @@ impl AppState {
         Some(format!("{rate:.1} tok/s"))
     }
 
-    /// `$0.123` across every model the session used. `+` marks usage without a known
-    /// price; `(sub)` marks a subscription sign-in, which is not billed per token.
+    /// `$0.123` for this session's own requests, then `(+0.045)` for its subagents, nested
+    /// ones included. `+` after an amount marks usage without a known price; `(sub)` marks a
+    /// subscription sign-in, which is not billed per token.
     pub(crate) fn session_cost_label(&self) -> Option<String> {
         let models = self.launch_metadata.resolved_models();
-        let mut picodollars = 0u128;
-        let mut priced = false;
-        let mut unpriced = false;
-        for ((provider, model), tokens) in &self.projection.usage.by_model {
-            let cost = models
-                .iter()
-                .find(|entry| entry.provider == *provider && entry.model == *model)
-                .and_then(|entry| entry.cost);
-            match cost {
-                Some(cost) => {
-                    picodollars += cost.picodollars(tokens);
-                    priced = true;
-                }
-                None => unpriced = true,
-            }
-        }
-        if !priced {
+        let usage = &self.projection.usage;
+        let own = usage.own.spend(models);
+        let children = usage
+            .children
+            .values()
+            .map(|meter| meter.spend(models))
+            .fold(Spend::default(), Spend::add);
+        if !own.priced && !children.priced {
             return None;
         }
-        let mills = (picodollars + 500_000_000) / 1_000_000_000;
-        let partial = if unpriced { "+" } else { "" };
+        let subagents = if children.priced || children.unpriced {
+            format!(" (+{})", children.amount())
+        } else {
+            String::new()
+        };
         let subscription = if self.launch_metadata.uses_oauth_authentication() {
             " (sub)"
         } else {
             ""
         };
-        Some(format!(
-            "${}.{:03}{partial}{subscription}",
-            mills / 1000,
-            mills % 1000
-        ))
+        Some(format!("${}{subagents}{subscription}", own.amount()))
+    }
+
+    /// `$0.045` for subagent `child`'s own requests, once any of them has a price.
+    pub(crate) fn subagent_cost_label(&self, child: &str) -> Option<String> {
+        let spend = self
+            .projection
+            .usage
+            .children
+            .get(child)?
+            .spend(self.launch_metadata.resolved_models());
+        spend.priced.then(|| format!("${}", spend.amount()))
     }
 }

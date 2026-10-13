@@ -204,17 +204,20 @@ fn breadcrumb_rate_updates_live_while_a_request_streams() {
 
 #[test]
 fn resumed_breadcrumb_shows_the_last_request_rate_and_session_cost() {
-    // Given: a priced model and one turn whose two requests straddle 10 s of tool work.
+    // Given: a priced model with a long-context tier and a Tuesday 10:00-13:00 UTC peak,
+    // and one turn whose two requests straddle 10 s of tool work.
     let config = harness_core::config::load_config_from_str(
         r#"{"providers":{"acme":{"type":"openai_compatible","baseURL":"https://acme.test/v1","models":{"m1":{
             "limit":{"context":200000,"output":8000},
-            "cost":{"input":3,"output":15,"cacheRead":0.3,"cacheWrite":3.75}}}}}}"#,
+            "cost":{"input":3,"output":15,"cacheRead":0.3,"cacheWrite":3.75,
+                "tiers":[{"input":6,"output":30,"cacheRead":0.6,"tier":{"type":"context","size":150000}}],
+                "timeBased":{"offPeakMultiplier":0.5,"peakWindows":[{"weekdays":[2],"startMinute":600,"endMinute":780}]}}}}}}}"#,
     )
     .unwrap_or_abort();
     let entry =
         harness_core::config::resolve_configured_model_metadata(&config, "acme", "m1", None)
             .unwrap_or_abort();
-    let finished = |request: &str, prompt: u32, completion: u32, read: u32, write: u32| {
+    let finished = |request: &str, prompt: u32, completion: u32, read: u32, writes: (u32, u32)| {
         EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
             request_id: request.into(),
             finish_reason: "stop".to_string(),
@@ -226,20 +229,31 @@ fn resumed_breadcrumb_shows_the_last_request_rate_and_session_cost() {
             }),
             metadata: Some(harness_core::event::ProviderRequestFinishedMetadata {
                 cache_read_tokens: Some(read),
-                cache_write_tokens: Some(write),
+                cache_write_tokens: Some(writes.0),
+                cache_write_1h_tokens: Some(writes.1),
                 ..Default::default()
             }),
         })
     };
+    // 2026-02-03 is a Tuesday; the second request starts as the peak ends.
     let events = (1_u64..)
         .zip([
-            (1_000, acme_started("req_a")),
-            (3_000, finished("req_a", 100_000, 100, 60_000, 20_000)),
-            (13_000, acme_started("req_b")),
-            (14_000, finished("req_b", 100_000, 50, 100_000, 0)),
+            (1_000, "2026-02-03T12:00:00Z", acme_started("req_a")),
+            (
+                3_000,
+                "2026-02-03T12:00:02Z",
+                finished("req_a", 100_000, 100, 60_000, (20_000, 8_000)),
+            ),
+            (13_000, "2026-02-03T13:00:00Z", acme_started("req_b")),
+            (
+                14_000,
+                "2026-02-03T13:00:01Z",
+                finished("req_b", 200_000, 50, 200_000, (0, 0)),
+            ),
         ])
-        .map(|(seq, (mono_ms, payload))| EventEnvelopeV1 {
+        .map(|(seq, (mono_ms, ts, payload))| EventEnvelopeV1 {
             mono_ms,
+            ts: Some(ts.into()),
             ..envelope(seq, "turn_1", payload)
         })
         .collect::<Vec<_>>();
@@ -252,9 +266,25 @@ fn resumed_breadcrumb_shows_the_last_request_rate_and_session_cost() {
     // When: the turn arrives from a resumed history.
     app.replace_events(events);
 
-    // Then: the last request's 50 tokens over 1 s; cache tokens bill at cache prices.
+    // Then: the last request's 50 tokens over 1 s. The first request bills 8K one-hour
+    // writes at twice the input price; the second bills tier prices at half, off-peak.
     let debug = render_debug(&app, 140, 30);
-    assert!(debug.contains("50.0 tok/s · $0.185"), "{debug}");
+    assert!(debug.contains("50.0 tok/s · $0.233"), "{debug}");
+
+    // When: a request priced as it finished arrives; today's price would bill it $3.
+    let mut saved = finished("req_c", 1_000_000, 0, 0, (0, 0));
+    if let EventV1::ProviderRequestFinished(event) = &mut saved
+        && let Some(metadata) = event.metadata.as_mut()
+    {
+        metadata.cost_picodollars = Some(1_000_000_000);
+    }
+    for (seq, payload) in [(5, acme_started("req_c")), (6, saved)] {
+        app.ingest_event(envelope(seq, "turn_2", payload));
+    }
+
+    // Then: it adds its saved $0.001.
+    let debug = render_debug(&app, 140, 30);
+    assert!(debug.contains("$0.234"), "{debug}");
 }
 
 #[test]

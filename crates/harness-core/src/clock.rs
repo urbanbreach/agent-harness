@@ -21,6 +21,15 @@ impl Determinism {
     }
 }
 
+/// Unix milliseconds of an RFC 3339 time.
+pub fn rfc3339_unix_ms(time: &str) -> Option<i64> {
+    let since = humantime::parse_rfc3339(time)
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    i64::try_from(since.as_millis()).ok()
+}
+
 #[derive(Debug)]
 pub struct RealClock(Instant);
 

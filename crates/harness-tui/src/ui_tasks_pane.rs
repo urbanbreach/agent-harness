@@ -161,13 +161,20 @@ pub(super) fn render(frame: &mut Frame, app: &AppState, area: Rect, theme: &Them
         let base = Style::default();
         let running = !row.state.is_terminal();
         let (icon, color) = task_icon(app, row, theme);
-        let rate = row
-            .child
-            .then(|| app.generation_rate_label(Some(&row.id)))
+        let meta: String = if row.child {
+            [
+                app.generation_rate_label(Some(&row.id)),
+                app.subagent_cost_label(&row.id),
+            ]
+            .into_iter()
             .flatten()
-            .map_or_else(String::new, |rate| format!("{rate} "));
+            .map(|label| label + " ")
+            .collect()
+        } else {
+            String::new()
+        };
         let right = format!(
-            "{}{}{rate}{} [↗]{}",
+            "{}{}{meta}{} [↗]{}",
             collapse_inline_whitespace(&row.model),
             if row.model.is_empty() { "" } else { " " },
             crate::app::subagents::duration_label(row.elapsed_ms),

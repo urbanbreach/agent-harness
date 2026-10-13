@@ -191,16 +191,21 @@ pub(crate) fn default_model_for_provider<'a>(
         })
 }
 
+/// Adds cached Codex models, and prices configured models without a `cost` from the cached
+/// models.dev catalog by provider and model id. Codex and Anthropic subscription models
+/// take OpenAI's and Anthropic's prices.
 fn merge_cached_models(
     config: &mut HarnessConfig,
     store: Option<&CredentialStore>,
     lookup: &dyn Fn(&str) -> Option<String>,
 ) {
-    if !config
-        .providers
-        .iter()
-        .any(|(id, p)| p.credential_provider(id) == Some(ProviderId::codex()))
-    {
+    let codex = |id: &str, provider: &ProviderConfig| {
+        matches!(provider, ProviderConfig::OpenAiCompatible(_))
+            && provider.credential_provider(id) == Some(ProviderId::codex())
+    };
+    if !config.providers.iter().any(|(id, provider)| {
+        codex(id, provider) || provider.models().values().any(|m| m.cost.is_none())
+    }) {
         return;
     }
     if lookup("HARNESS_DISABLE_MODELS_FETCH")
@@ -215,22 +220,42 @@ fn merge_cached_models(
     let Some(catalog) = path.and_then(|p| ProviderCatalog::from_path(&p).ok()) else {
         return;
     };
-    let Some(source) = catalog.provider("openai") else {
-        return;
-    };
+    for warning in catalog
+        .diagnostics()
+        .iter()
+        .filter(|d| config.providers.contains_key(&d.provider))
+    {
+        tracing::warn!(provider = %warning.provider, model = %warning.model, "{}", warning.message);
+    }
     for (id, provider) in &mut config.providers {
-        if provider.credential_provider(id) != Some(ProviderId::codex()) {
+        let is_codex = codex(id, provider);
+        let source = match provider {
+            _ if is_codex => "openai",
+            ProviderConfig::AnthropicSubscription(_) => "anthropic",
+            _ => id.as_str(),
+        };
+        let Some(cached) = catalog.provider(source) else {
             continue;
-        }
-        if let ProviderConfig::OpenAiCompatible(provider) = provider {
-            for (id, model) in &source.models {
+        };
+        let models = match provider {
+            ProviderConfig::OpenAiCompatible(provider) => &mut provider.models,
+            ProviderConfig::Anthropic(provider) => &mut provider.models,
+            ProviderConfig::AnthropicSubscription(provider) => &mut provider.models,
+        };
+        if is_codex {
+            for (id, model) in &cached.models {
                 if harness_providers::codex_model_allowed(id) {
-                    provider
-                        .models
+                    models
                         .entry(id.clone())
                         .or_insert_with(|| model.definition.clone());
                 }
             }
+        }
+        for (id, model) in models.iter_mut().filter(|(_, model)| model.cost.is_none()) {
+            model.cost = cached
+                .models
+                .get(id)
+                .and_then(|cached| cached.definition.cost.clone());
         }
     }
 }

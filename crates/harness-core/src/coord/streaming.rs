@@ -66,12 +66,12 @@ pub(super) async fn complete(
     let request_digest = digest(&serde_json::to_string(&request)?);
     let (owner, task_id, selected) = (actor.clone(), task.to_owned(), selection.clone());
     let (provider_name, model_name) = (provider_id.clone(), model_id.clone());
-    let id = handle
+    let (id, started_at_ms) = handle
         .call(move |s| {
             s.check_task(&task_id)?;
             let id = s.id("provider")?;
             let agent_id = owner.agent_id.clone();
-            s.emit_hooked(
+            let started = s.emit_hooked(
                 owner,
                 Some(task_id.clone()),
                 EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
@@ -99,7 +99,11 @@ pub(super) async fn complete(
                 }
                 s.record_selection(&agent_id)?;
             }
-            Ok(id)
+            let started_at_ms = started
+                .ts
+                .as_deref()
+                .and_then(crate::clock::rfc3339_unix_ms);
+            Ok((id, started_at_ms))
         })
         .await?;
     request.context.request_id = Some(id.clone());
@@ -177,6 +181,25 @@ pub(super) async fn complete(
                 }) => (*category, remediation.clone()),
                 _ => (None, None),
             };
+            let cache_write_1h_tokens =
+                metadata.map(|m| m.cache_write_1h_tokens).filter(|n| *n > 0);
+            let cost_picodollars = usage.as_ref().and_then(|usage| {
+                let tokens = crate::config::BilledTokens::new(
+                    usage,
+                    metadata.and_then(|m| m.cache_read_tokens).unwrap_or(0),
+                    metadata.and_then(|m| m.cache_write_tokens).unwrap_or(0),
+                    cache_write_1h_tokens.unwrap_or(0),
+                );
+                let picodollars = s
+                    .config
+                    .model_catalog
+                    .iter()
+                    .find(|entry| entry.provider == provider_id && entry.model == model_id)?
+                    .cost
+                    .as_ref()?
+                    .picodollars(&tokens, started_at_ms)?;
+                u64::try_from(picodollars).ok()
+            });
             let finished = ProviderRequestFinishedMetadata {
                 turn_id: Some(task.clone()),
                 provider_response_id: response_id.clone(),
@@ -184,6 +207,8 @@ pub(super) async fn complete(
                 provider_cache_id: metadata.and_then(|m| m.provider_cache_id.clone()),
                 cache_read_tokens: metadata.and_then(|m| m.cache_read_tokens),
                 cache_write_tokens: metadata.and_then(|m| m.cache_write_tokens),
+                cache_write_1h_tokens,
+                cost_picodollars,
                 provider_stop_reason: Some(finish_reason.clone()),
                 provider_error_category,
                 provider_error_remediation,

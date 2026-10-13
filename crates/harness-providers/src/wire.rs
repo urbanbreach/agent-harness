@@ -398,4 +398,30 @@ mod tests {
         assert!(broken.frame("[DONE]").is_err());
         Ok(())
     }
+
+    #[test]
+    fn anthropic_usage_keeps_one_hour_cache_writes() -> Result<(), &'static str> {
+        let mut decoder = StreamDecoder::new(Protocol::Anthropic);
+        let mut events = Vec::new();
+        for frame in [
+            json!({"type":"message_start","message":{"usage":{"input_tokens":1,"cache_creation_input_tokens":5,
+                "cache_creation":{"ephemeral_5m_input_tokens":2,"ephemeral_1h_input_tokens":3},"output_tokens":0}}}),
+            json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}),
+            json!({"type":"message_stop"}),
+        ] {
+            events.extend(decoder.frame(&frame.to_string())?);
+        }
+        assert!(matches!(
+            events.last(),
+            Some(ProviderStreamEvent::DoneWithMetadata {
+                metadata: Some(crate::ProviderStreamFinishedMetadata {
+                    cache_write_tokens: Some(5),
+                    cache_write_1h_tokens: 3,
+                    ..
+                }),
+                ..
+            })
+        ));
+        Ok(())
+    }
 }

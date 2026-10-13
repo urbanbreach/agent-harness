@@ -39,6 +39,7 @@ pub struct Usage {
     pub output: u32,
     pub cache_read: u32,
     pub cache_write: u32,
+    pub cache_write_1h: u32,
 }
 
 /// The assistant output a turn builds, as senpi's `AssistantMessage` accumulates it.
@@ -90,6 +91,9 @@ impl StreamState {
         }
         if let Some(n) = count(&usage["cache_creation_input_tokens"]) {
             self.usage.cache_write = n;
+        }
+        if let Some(n) = count(&usage["cache_creation"]["ephemeral_1h_input_tokens"]) {
+            self.usage.cache_write_1h = n;
         }
     }
 
@@ -306,6 +310,7 @@ impl StreamState {
                 ),
                 cache_read_tokens: self.usage_seen.then_some(self.usage.cache_read),
                 cache_write_tokens: self.usage_seen.then_some(self.usage.cache_write),
+                cache_write_1h_tokens: self.usage.cache_write_1h,
                 usage_complete: self.usage_seen.then_some(true),
                 ..ProviderStreamFinishedMetadata::default()
             }),
@@ -369,7 +374,8 @@ mod tests {
         state.apply(&json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 7}}), &custom);
         state.apply_success_result(&json!({
             "stop_reason": "end_turn",
-            "usage": {"input_tokens": 9, "cache_read_input_tokens": 20, "cache_creation_input_tokens": 3, "output_tokens": 8}
+            "usage": {"input_tokens": 9, "cache_read_input_tokens": 20, "cache_creation_input_tokens": 3,
+                "cache_creation": {"ephemeral_5m_input_tokens": 1, "ephemeral_1h_input_tokens": 2}, "output_tokens": 8}
         }));
         assert_eq!(state.stop_reason, "toolUse");
         assert_eq!(
@@ -380,5 +386,15 @@ mod tests {
                 total_tokens: 40,
             })
         );
+        assert!(matches!(
+            state.done(),
+            Event::DoneWithMetadata {
+                metadata: Some(ProviderStreamFinishedMetadata {
+                    cache_write_1h_tokens: 2,
+                    ..
+                }),
+                ..
+            }
+        ));
     }
 }

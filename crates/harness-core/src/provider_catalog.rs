@@ -1,5 +1,5 @@
 use crate::config::{
-    ModelConfig, ModelCost, ModelCostRates, ModelLimitConfig, ModelLimitError,
+    ModelConfig, ModelCost, ModelCostRates, ModelCostTier, ModelLimitConfig, ModelLimitError,
     ModelLimitProvenance, ModelMetadataConfig, ModelModalitiesConfig, ModelVariantConfig,
     ResolvedModelLimits,
 };
@@ -148,7 +148,13 @@ impl ProviderCatalog {
             let mut models = BTreeMap::new();
             for (model, value) in raw.models {
                 match parse_model(&value, generated, source, &model, &format!("{id}:{model}")) {
-                    Ok(entry) => {
+                    Ok(mut entry) => {
+                        let warning = apply_peak_schedule(&id, &model, &mut entry.definition.cost);
+                        diagnostics.extend(warning.map(|message| CatalogDiagnostic {
+                            provider: id.clone(),
+                            model: model.clone(),
+                            message,
+                        }));
                         models.insert(model, entry);
                     }
                     Err(message) => diagnostics.push(CatalogDiagnostic {
@@ -337,19 +343,95 @@ fn parse_model(
         definition,
     })
 }
-/// models.dev prices, top-level or under `options.modelsDev`; partial prices stay unknown.
+/// models.dev prices, top-level or under `options.modelsDev`; partial prices stay unknown,
+/// and so does a price with a tier this parser does not understand.
 fn catalog_cost(raw: &RawModel) -> Option<ModelCost> {
     let cost = Some(&raw.cost)
         .filter(|cost| !cost.is_null())
         .or_else(|| raw.options.pointer("/modelsDev/cost"))?;
-    let rate = |key: &str| cost.get(key).and_then(serde_json::Value::as_f64);
+    let rate = |value: &serde_json::Value, key: &str| value.get(key)?.as_f64();
+    let tiers = match cost.get("tiers") {
+        None => Vec::new(),
+        Some(tiers) => tiers
+            .as_array()?
+            .iter()
+            .map(|tier| {
+                Some(ModelCostTier {
+                    input: rate(tier, "input")?,
+                    output: rate(tier, "output")?,
+                    cache_read: rate(tier, "cache_read"),
+                    cache_write: rate(tier, "cache_write"),
+                    tier: serde_json::from_value(tier.get("tier")?.clone()).ok()?,
+                })
+            })
+            .collect::<Option<_>>()?,
+    };
     ModelCost::try_from(ModelCostRates {
-        input: rate("input")?,
-        output: rate("output")?,
-        cache_read: rate("cache_read"),
-        cache_write: rate("cache_write"),
+        input: rate(cost, "input")?,
+        output: rate(cost, "output")?,
+        cache_read: rate(cost, "cache_read"),
+        cache_write: rate(cost, "cache_write"),
+        tiers,
+        time_based: None,
     })
     .ok()
+}
+/// A peak schedule models.dev cannot express, checked against the price it lists.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PeakSchedule {
+    provider: String,
+    models: Vec<String>,
+    /// Where the schedule was read, and when.
+    source: String,
+    /// The off-peak price models.dev listed when the schedule was checked.
+    verified_against: ModelCostRates,
+    time_based: crate::config::ModelCostSchedule,
+}
+
+/// Applies a bundled peak schedule from `configs/pricing-overrides.json`. models.dev lists
+/// such a model's off-peak price, so the peak price is that over the off-peak multiplier.
+/// A listed price that no longer matches the checked one keeps the listed price and returns
+/// a warning instead, rather than scaling a price that may already be the peak one.
+fn apply_peak_schedule(
+    provider: &str,
+    model: &str,
+    cost: &mut Option<ModelCost>,
+) -> Option<String> {
+    static SCHEDULES: LazyLock<Vec<PeakSchedule>> = LazyLock::new(|| {
+        serde_json::from_str(include_str!("../../../configs/pricing-overrides.json"))
+            .unwrap_or_default()
+    });
+    let schedule = SCHEDULES
+        .iter()
+        .find(|s| s.provider == provider && s.models.iter().any(|m| m == model))?;
+    let listed = ModelCostRates::from(cost.clone()?);
+    let checked = ModelCost::try_from(schedule.verified_against.clone()).map(ModelCostRates::from);
+    let multiplier = schedule.time_based.off_peak_multiplier;
+    if checked.as_ref() != Ok(&listed) || multiplier <= 0.0 {
+        return Some(format!(
+            "listed price differs from the one its peak schedule was checked against; \
+             billing the listed price at all hours until the schedule is checked again \
+             against {}",
+            schedule.source
+        ));
+    }
+    let peak = |usd: f64| usd / multiplier;
+    let scheduled = ModelCost::try_from(ModelCostRates {
+        input: peak(listed.input),
+        output: peak(listed.output),
+        cache_read: listed.cache_read.map(peak),
+        cache_write: listed.cache_write.map(peak),
+        tiers: Vec::new(),
+        time_based: Some(schedule.time_based.clone()),
+    });
+    match scheduled {
+        Ok(scheduled) => {
+            *cost = Some(scheduled);
+            None
+        }
+        Err(error) => Some(error),
+    }
 }
 pub fn checked_catalog_limits(
     context: Option<u64>,

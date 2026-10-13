@@ -1044,8 +1044,13 @@ impl SessionProjection {
             .map(String::as_str);
         match &event.payload {
             EventV1::ProviderRequestStarted(data) => {
-                self.usage
-                    .request_started(data, event.mono_ms, child, historical);
+                self.usage.request_started(
+                    data,
+                    event.mono_ms,
+                    event.ts.as_deref(),
+                    child,
+                    historical,
+                );
             }
             EventV1::ProviderRequestFinished(data) => {
                 self.usage

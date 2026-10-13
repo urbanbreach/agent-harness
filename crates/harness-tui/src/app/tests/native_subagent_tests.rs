@@ -267,6 +267,114 @@ fn streaming_child_reads_its_own_rate_on_its_task_row() {
 }
 
 #[test]
+fn subagent_spend_reads_beside_own_spend_and_on_the_childs_task_row() {
+    // Given: a priced model, a running child, and a grandchild the child spawned.
+    let config = harness_core::config::load_config_from_str(
+        r#"{"providers":{"acme":{"type":"openai_compatible","baseURL":"https://acme.test/v1",
+            "models":{"m1":{"cost":{"input":2,"output":10}}}}}}"#,
+    )
+    .unwrap_or_abort();
+    let entry =
+        harness_core::config::resolve_configured_model_metadata(&config, "acme", "m1", None)
+            .unwrap_or_abort();
+    let mut app = AppState::new_live(None, false, None);
+    app.set_frame_area(Rect::new(0, 0, 120, 40));
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("default", "acme:m1").with_resolved_models(vec![entry]),
+    );
+    let actor = |id: &str| EventActor::new(ActorKind::Worker, Some(id.into()));
+    let request = |seq, agent: &str, correlation: &str, id: &str, prompt, completion| {
+        [
+            envelope_with_actor(
+                seq,
+                correlation,
+                actor(agent),
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: id.into(),
+                    provider_id: "acme".into(),
+                    model_id: "m1".into(),
+                    prompt_summary: "inspect".into(),
+                    request_digest: "digest".into(),
+                    metadata: None,
+                }),
+            ),
+            envelope_with_actor(
+                seq + 1,
+                correlation,
+                actor(agent),
+                EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                    request_id: id.into(),
+                    finish_reason: "stop".into(),
+                    output_digest: None,
+                    usage: Some(harness_providers::CompletionUsage {
+                        prompt_tokens: prompt,
+                        completion_tokens: completion,
+                        total_tokens: prompt + completion,
+                    }),
+                    metadata: None,
+                }),
+            ),
+        ]
+    };
+    let events = [
+        run_started(1),
+        agent_spawned(2, "parent", "default"),
+        envelope(
+            3,
+            "req_parent",
+            EventV1::NativeSubagentRegistered(Box::new(registration())),
+        ),
+        envelope(
+            4,
+            "req_child",
+            EventV1::SubagentTransition(Box::new(transition(SubagentTransitionKind::Spawned))),
+        ),
+        child_agent_spawned(5, "grandchild", "explore", "child"),
+    ];
+
+    // When: parent, child and grandchild each finish one request.
+    for event in events
+        .into_iter()
+        .chain(request(
+            10,
+            "parent",
+            "req_parent",
+            "prov_parent",
+            100_000,
+            500,
+        ))
+        .chain(request(
+            20,
+            "child",
+            "req_child",
+            "prov_child",
+            10_000,
+            2_000,
+        ))
+        .chain(request(
+            30,
+            "grandchild",
+            "req_grand",
+            "prov_grand",
+            5_000,
+            500,
+        ))
+    {
+        app.ingest_event(event);
+    }
+
+    // Then: the parent's own $0.205 reads first, the child and grandchild's $0.055 after it,
+    // and the child's row carries only its own $0.040.
+    let root = render_text(&app, 120, 40);
+    assert!(root.contains("$0.205 (+0.055)"), "{root}");
+    let row = root
+        .lines()
+        .find(|line| line.contains("child-model"))
+        .unwrap_or_abort();
+    assert!(row.contains(" $0.040 "), "{row}");
+}
+
+#[test]
 fn eval_spawn_after_a_child_turn_starts_stays_in_the_parent_turn() {
     let temp = tempfile::tempdir().unwrap_or_abort();
     let mut app = AppState::new_live(Some(temp.path().join("parent")), false, None);

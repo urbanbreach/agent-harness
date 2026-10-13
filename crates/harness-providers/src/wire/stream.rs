@@ -235,6 +235,9 @@ impl StreamDecoder {
         if let Some(n) = value.get("cache_creation_input_tokens") {
             self.metadata.cache_write_tokens = Some(count(n)?);
         }
+        if let Some(n) = value.pointer("/cache_creation/ephemeral_1h_input_tokens") {
+            self.metadata.cache_write_1h_tokens = count(n)?;
+        }
         Ok(())
     }
 

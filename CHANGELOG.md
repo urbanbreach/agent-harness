@@ -117,7 +117,15 @@ The first public release.
   `harness.schema.json` and `tui.schema.json`.
 - A live tokens-per-second readout and a session cost counter beside the
   context meter in the TUI. The speed updates while the model streams and
-  settles to billed counts. Each subagent's row in the Tasks pane shows its own
-  speed next to its model. Costs use models.dev prices for catalog models and
-  an optional `cost` on custom models. Anthropic token counts include cached
+  settles to billed counts. The cost shows the main agent's spend and, after
+  it, the spend of all its subagents, nested ones included. Each subagent's row
+  in the Tasks pane shows its own speed and spend next to its model. Costs use
+  models.dev prices for catalog models and an optional `cost` on custom models;
+  a request whose prompt passes a long-context tier bills entirely at that
+  tier's prices, and `cost.timeBased` bills off-peak requests a share of the
+  peak price. DeepSeek's peak schedule is built in and switches itself off when
+  models.dev's DeepSeek price changes. Anthropic one-hour cache writes bill at
+  twice the input price. Each request's cost is saved when it finishes, so price
+  changes leave past requests alone. Configured models without a price take one
+  from the downloaded models.dev catalog. Anthropic token counts include cached
   prompt tokens, as OpenAI's already do.

@@ -96,6 +96,7 @@ async fn run(
     enabled: bool,
     max_retries: u32,
     billed_usage: Option<CompletionUsage>,
+    model_catalog: &[crate::config::ResolvedModelCatalogEntry],
 ) -> Result<Outcome, Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let inner = Arc::new(MockProvider::script(scripts));
@@ -106,6 +107,7 @@ async fn run(
         aborted: Arc::clone(&aborted),
         billed_usage,
     });
+    config.model_catalog = model_catalog.into();
     config.behavior.stream_guard.enabled = enabled;
     config.behavior.stream_guard.max_retries = max_retries;
     config.provider_retry.max_retries = 5;
@@ -181,6 +183,7 @@ async fn stream_guard_aborts_text_and_reasoning_then_retries_with_recorded_corre
             true,
             1,
             billed_usage.clone(),
+            &[],
         )
         .await?;
         assert_eq!(outcome.failure, None);
@@ -290,6 +293,7 @@ async fn stream_guard_retry_exhaustion_fails_the_turn_without_provider_retry(
             true,
             max_retries,
             Some(BILLED_USAGE),
+            &[],
         )
         .await?;
         let attempts = max_retries as usize + 1;
@@ -330,7 +334,7 @@ async fn stream_guard_retry_exhaustion_fails_the_turn_without_provider_retry(
 #[tokio::test]
 async fn disabled_stream_guard_lets_the_same_looping_stream_finish(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let outcome = run(vec![looping(false)], false, 1, Some(BILLED_USAGE)).await?;
+    let outcome = run(vec![looping(false)], false, 1, Some(BILLED_USAGE), &[]).await?;
     assert_eq!(outcome.failure, None);
     assert_eq!(outcome.requests.len(), 1);
     assert_eq!(outcome.aborted, 0);
@@ -343,5 +347,36 @@ async fn disabled_stream_guard_lets_the_same_looping_stream_finish(
     assert!(outcome.events.iter().any(|event| matches!(&event.payload,
         EventV1::TaskCompleted(e) if e.result_summary.contains(PASSAGE)
     )));
+    Ok(())
+}
+
+#[tokio::test]
+async fn finished_requests_keep_the_cost_their_model_had_then(
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Given: the request's model at $2 input and $10 output per million tokens.
+    let config = crate::config::load_config_from_str(
+        r#"{"providers":{"mock":{"type":"openai_compatible","baseURL":"https://mock.test/v1",
+            "models":{"default":{"cost":{"input":2,"output":10}}}}}}"#,
+    )?;
+    let entry = crate::config::resolve_configured_model_metadata(&config, "mock", "default", None)?;
+    let script = vec![
+        Stream::TextDelta("done".into()),
+        Stream::Done {
+            usage: Some(BILLED_USAGE),
+        },
+    ];
+
+    // When: the request finishes.
+    let outcome = run(vec![script], false, 1, None, &[entry]).await?;
+
+    // Then: its finish records 7 input and 3 output tokens' cost, 14 + 30 millionths of $1.
+    let cost = outcome
+        .events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ProviderRequestFinished(e) => e.metadata.as_ref()?.cost_picodollars,
+            _ => None,
+        });
+    assert_eq!(cost, Some(44_000_000));
     Ok(())
 }

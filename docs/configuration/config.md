@@ -57,25 +57,60 @@ request ends. The clock only runs while a request is open, so the reading holds
 through tool runs, and it stays blank until about 200 tokens and four seconds of
 streaming are in. A resumed session starts from its last request's speed. This
 row counts only the main agent; each subagent's row in the Tasks pane shows that
-subagent's speed next to its model, measured the same way. Cost
-adds up every request in the session, subagents included, priced by model.
-Catalog models take their prices from models.dev. For a custom model, set `cost`
-in USD per million tokens:
+subagent's speed next to its model, measured the same way.
+
+Cost prices each request when it finishes and saves that amount in the session,
+so later price changes leave past requests alone. Sessions recorded before this
+have no saved amounts and are priced at today's prices. The breadcrumb shows the
+main agent's spend, then everything its subagents spent, nested subagents
+included: `$0.660 (+0.040)`. Each subagent's row in the Tasks pane shows that
+subagent's own spend. Catalog models take their prices from models.dev. A
+configured model without a `cost` takes its price, long-context tiers included,
+from the last downloaded models.dev catalog: the provider with the same id,
+OpenAI's for Codex and Anthropic's for the Anthropic subscription.
+
+models.dev lists DeepSeek's off-peak prices, and Harness carries DeepSeek's peak
+hours in `configs/pricing-overrides.json`, with the off-peak price they were
+checked against. While models.dev still lists that price, peak requests bill it
+divided by the off-peak multiplier. When models.dev lists another price,
+Harness bills it at every hour and logs a warning with `--debug` until the
+schedule is checked again. For a custom model, set `cost` in USD per million
+tokens:
 
 ```jsonc
 "models": {
   "my-model": {
-    "cost": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 }
+    "cost": {
+      "input": 2, "output": 10, "cacheRead": 0.1,
+      "tiers": [
+        { "input": 4, "output": 15, "cacheRead": 0.2, "tier": { "type": "context", "size": 272000 } }
+      ],
+      "timeBased": {
+        "offPeakMultiplier": 0.5,
+        "peakWindows": [{ "weekdays": [1, 2, 3, 4, 5], "startMinute": 60, "endMinute": 240 }]
+      }
+    }
   }
 }
 ```
 
+A request whose prompt, cached tokens included, exceeds a tier's `size` bills
+entirely at that tier's prices, output too. With several tiers the largest
+exceeded `size` wins. `tiers` uses models.dev's shape, so entries can be copied
+from its catalog. With `timeBased`, the prices above are peak prices. A request
+that starts outside every peak window bills `offPeakMultiplier` times its peak
+price. Windows are UTC: `weekdays` counts from 0 for Sunday, `startMinute` is
+included and `endMinute`, at most 1440, is not. A scheduled model's requests
+without a recorded start time count as unpriced.
+
 Prices are rounded to millionths of a USD per million tokens and must fit
 0..4294.967295 at that precision. Cache reads and writes without their own
-price are billed at the input rate. The
-cost reads `$0.047+` when some usage came from a model with no price, and
-`$0.047 (sub)` for a Codex or Copilot sign-in, where the bill isn't per token.
-Narrow terminals drop speed first, then cost.
+price are billed at the input rate of the same tier. Anthropic reports which
+cache writes last an hour; those bill at twice the input price, and the rest at
+the `cacheWrite` price. An amount reads `$0.047+` when some of its usage came
+from a model with no price, and the label ends in `(sub)` for a Codex or Copilot
+sign-in, where the bill isn't per token. Narrow terminals drop speed first, then
+cost.
 
 OpenAI-compatible providers accept `cacheRetention` either beside the provider
 fields or under `options`. The default is `short`: the runtime sends a stable,
