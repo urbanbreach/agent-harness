@@ -2,6 +2,9 @@ pub use harness_providers::ProviderRetryFailure;
 use harness_providers::{CompletionUsage, ProviderErrorCategory};
 use serde::{Deserialize, Serialize};
 
+/// Request id prefix of a code kernel's `completion()` call, as opposed to a conversation turn.
+pub const EVAL_COMPLETION_REQUEST_PREFIX: &str = "eval-completion";
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProviderRequestStartedMetadata {

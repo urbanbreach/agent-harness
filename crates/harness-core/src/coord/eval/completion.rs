@@ -141,7 +141,7 @@ impl CoordinatorHandle {
         let request_id = self
             .call(move |s| {
                 s.check_eval(&task)?;
-                let id = s.id("eval-completion")?;
+                let id = s.id(crate::event::EVAL_COMPLETION_REQUEST_PREFIX)?;
                 s.emit_hooked(
                     owner,
                     Some(task.clone()),

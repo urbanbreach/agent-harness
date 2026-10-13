@@ -160,7 +160,10 @@ impl SessionUsage {
             return;
         };
         let metadata = event.metadata.as_ref();
-        if child.is_none() {
+        // Only conversation turns move the rate; a code kernel's `completion()` is a side prompt.
+        if child.is_none()
+            && !request_id.starts_with(harness_core::event::EVAL_COMPLETION_REQUEST_PREFIX)
+        {
             // `prompt_tokens` already counts cache reads and writes.
             let read = metadata.and_then(|m| m.cache_read_tokens).unwrap_or(0);
             self.cache_hit_rate = (usage.prompt_tokens > 0)

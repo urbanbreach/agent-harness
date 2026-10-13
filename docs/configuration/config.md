@@ -61,10 +61,11 @@ row counts only the main agent; each subagent's row in the Tasks pane shows that
 subagent's speed next to its model, measured the same way.
 
 `CH96.4%` is the share of the main agent's latest prompt that the provider read
-from its cache. Cache writes count as misses. Every request that reports usage
-replaces the reading, so one cache miss shows up right away, and a resumed
-session shows its last request's. The label hides below 10%, which also covers
-providers that never report cache reads.
+from its cache. Code kernel `completion()` calls don't count. Cache writes count
+as misses. Every request that reports usage replaces the reading, so one cache
+miss shows up right away, and a resumed session shows its last request's. The
+label hides below 10%, which also covers providers that never report cache
+reads.
 
 Cost prices each request when it finishes and saves that amount in the session,
 so later price changes leave past requests alone. Sessions recorded before this

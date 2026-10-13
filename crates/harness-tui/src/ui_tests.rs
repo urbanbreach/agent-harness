@@ -291,15 +291,18 @@ fn resumed_breadcrumb_shows_the_last_request_rate_cache_hits_and_session_cost() 
         "{debug}"
     );
 
-    // When: 49 of the next 400 prompt tokens are cached, exactly 12.25%.
+    // When: 49 of the next 400 prompt tokens are cached, exactly 12.25%, then a code
+    // kernel's uncached `completion()` call finishes.
     for (seq, payload) in [
         (7, acme_started("req_d")),
         (8, finished("req_d", 400, 1, 49, (0, 0))),
+        (9, acme_started("eval-completion-9")),
+        (10, finished("eval-completion-9", 5_000, 1, 0, (0, 0))),
     ] {
         app.ingest_event(envelope(seq, "turn_3", payload));
     }
 
-    // Then: the tie rounds up.
+    // Then: the tie rounds up, and the side prompt leaves the turn's rate alone.
     let debug = render_debug(&app, 140, 30);
     assert!(debug.contains("CH12.3%"), "{debug}");
 }
