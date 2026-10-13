@@ -25,10 +25,20 @@ const [cols, rows] = [200, 54];
 // The docs at this commit lag the code; the next commit, 8512d08f, fixed them
 // by hand. The session sees it as HEAD, so every run starts from real drift.
 const commit = "ce53083797df9eb75426c6ac1c1f5ff9a6363b29";
+// Your gitignored project config chooses each subagent's model and adds its
+// providers and MCP servers. The demo chooses the main model, so the config's
+// own main-agent pin is dropped.
+const projectConfig = ["harness.jsonc", "harness.json"].map((name) => join(repo, name)).find(existsSync);
+const project = projectConfig ? parseJsonc(await readFile(projectConfig, "utf8")) : {};
+delete project.agent?.default;
+// With a provider map, a model set in config must come from a provider it
+// names, so the Claude subscription joins the map for the main model.
+if (project.provider) project.provider["anthropic-subscription"] ??= { type: "anthropic_subscription" };
 // Individual tool cards read better than eval cells, and a cold
 // rust-analyzer only answers "server cancelled the request". Nobody answers
 // prompts here, so paths outside the checkout and repeated calls fail fast.
 const config = {
+  ...project,
   model: process.env.HARNESS_DEMO_MODEL ?? "anthropic-subscription/claude-sonnet-5-5/medium",
   lsp: false,
   permission: { "*": "allow", eval: "deny", external_directory: "deny", doom_loop: "deny" },
@@ -45,6 +55,12 @@ async function shot(seconds) {
   const file = join(temporary, `frame-${String(frames.length).padStart(4, "0")}.png`);
   await terminal.screenshot(file);
   frames.push({ file, seconds });
+}
+
+// JSONC to JSON: strings stay; comments and commas before a closing bracket go.
+function parseJsonc(text) {
+  const pattern = /("(?:\\.|[^"\\])*")|\/\/[^\n]*|\/\*[\s\S]*?\*\/|,(?=\s*(?:(?:\/\/[^\n]*|\/\*[\s\S]*?\*\/)\s*)*[}\]])/g;
+  return JSON.parse(text.replace(pattern, (_, kept) => kept ?? ""));
 }
 
 // Agent edits are attributed under <home>/projects/<key>. Remove only a
