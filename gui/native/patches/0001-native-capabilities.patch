@@ -1,0 +1,1121 @@
+diff --git i/packages/native/src/custom_elements/input.rs w/packages/native/src/custom_elements/input.rs
+index 0f98401..4815372 100644
+--- i/packages/native/src/custom_elements/input.rs
++++ w/packages/native/src/custom_elements/input.rs
+@@ -71,7 +71,6 @@ const INPUT_KEY_CONTEXT: &str = "GpuixInput";
+ const TEXTAREA_KEY_CONTEXT: &str = "GpuixTextarea";
+ const TEXTAREA_SUBMIT_KEY_CONTEXT: &str = "GpuixTextareaSubmit";
+ const CARET_BLINK_MS: u64 = 500;
+-const CARET_WIDTH: Pixels = px(2.0);
+ const DRAG_SCROLL_FRAME_MS: u64 = 16;
+ const UNDO_COALESCE: Duration = Duration::from_millis(700);
+ const UNDO_LIMIT: usize = 200;
+@@ -93,8 +92,8 @@ fn clipboard_text(item: ClipboardItem) -> Option<String> {
+ 
+ // Chrome paints the caret at line height, not font size. Firefox uses the em
+ // square after you type. Match Chrome so a 14/20 composer bar is 20px tall.
+-fn caret_rect(origin: Point<Pixels>, line_height: Pixels) -> Bounds<Pixels> {
+-    Bounds::new(origin, size(CARET_WIDTH, line_height))
++fn caret_rect(origin: Point<Pixels>, line_height: Pixels, width: Pixels) -> Bounds<Pixels> {
++    Bounds::new(origin, size(width, line_height))
+ }
+ 
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+@@ -283,6 +282,22 @@ fn word_navigation_uses_alt() -> bool {
+     cfg!(target_os = "macos")
+ }
+ 
++
++pub enum InputOperation {
++    SetSelection { start: usize, end: usize },
++    ReplaceSelection(String),
++    Command(InputCommand),
++    SetSelectionListener(Option<EventCallback>),
++}
++
++pub enum InputCommand {
++    Cut,
++    Copy,
++    Paste,
++    SelectAll,
++    Undo,
++    Redo,
++}
+ pub struct InputFactory;
+ 
+ impl CustomElementFactory for InputFactory {
+@@ -347,6 +362,7 @@ impl CustomElement for TextEditorElement {
+             .cloned()
+             .unwrap_or_else(|| cx.focus_handle());
+         let emits_change = ctx.events.contains("change");
++        let emits_selection_change = ctx.events.contains("selectionChange");
+         let emits_submit = ctx.events.contains("submit");
+         let emits_key_down = ctx.events.contains("keyDown");
+         let emits_key_up = ctx.events.contains("keyUp");
+@@ -362,14 +378,21 @@ impl CustomElement for TextEditorElement {
+                 let min_rows = self.min_rows;
+                 let max_rows = self.max_rows;
+                 let caret_color = self.theme.caret;
++                let selection_wash = self.theme.selection_wash;
++                let placeholder_color = self.theme.placeholder;
++                let caret_width = px(self.theme.caret_width);
+                 let callback = callback.clone();
+                 let id = ctx.id;
+                 let cursor = value.len();
++                let selection_utf16 = value.encode_utf16().count();
+                 let state_focus_handle = focus_handle.clone();
+                 cx.new(move |cx| TextEditorState {
+                     element_id: id,
+                     callback,
+                     emits_change,
++                    emits_selection_change,
++                    last_selection: selection_utf16..selection_utf16,
++                    selection_listener: None,
+                     emits_submit,
+                     emits_key_down,
+                     emits_key_up,
+@@ -399,6 +422,9 @@ impl CustomElement for TextEditorElement {
+                     content_width: 0.0,
+                     display_is_placeholder: false,
+                     caret_color,
++                    selection_wash,
++                    placeholder_color,
++                    caret_width,
+                     blink_anchor: cx.background_executor().now(),
+                     blink_task: None,
+                     pending_values: VecDeque::new(),
+@@ -413,6 +439,7 @@ impl CustomElement for TextEditorElement {
+         state.update(cx, |state, cx| {
+             state.callback = callback;
+             state.emits_change = emits_change;
++            state.emits_selection_change = emits_selection_change;
+             if state.emits_submit != emits_submit {
+                 state.emits_submit = emits_submit;
+                 cx.notify();
+@@ -423,8 +450,15 @@ impl CustomElement for TextEditorElement {
+             state.read_only = self.read_only;
+             state.min_rows = self.min_rows.max(1);
+             state.max_rows = self.max_rows.max(state.min_rows);
+-            if state.caret_color != self.theme.caret {
++            if state.caret_color != self.theme.caret
++                || state.selection_wash != self.theme.selection_wash
++                || state.placeholder_color != self.theme.placeholder
++                || state.caret_width != px(self.theme.caret_width)
++            {
+                 state.caret_color = self.theme.caret;
++                state.selection_wash = self.theme.selection_wash;
++                state.placeholder_color = self.theme.placeholder;
++                state.caret_width = px(self.theme.caret_width);
+                 cx.notify();
+             }
+             if prop_changed {
+@@ -545,13 +579,56 @@ impl CustomElement for TextEditorElement {
+ 
+     fn supported_events(&self) -> &'static [&'static str] {
+         &[
+-            "change", "submit", "click", "keyDown", "keyUp", "focus", "blur", "fileDrop",
++            "change", "selectionChange", "submit", "click", "keyDown", "keyUp", "focus", "blur", "fileDrop",
+         ]
+     }
+ 
+     fn destroy(&mut self) {
+         self.state = None;
+     }
++
++    fn input_operation(
++        &mut self,
++        operation: InputOperation,
++        window: &mut Window,
++        cx: &mut Context<crate::renderer::GpuixView>,
++    ) -> Result<(), String> {
++        let state = self.state.as_ref()
++            .ok_or_else(|| "Native input has not rendered".to_string())?;
++        state.update(cx, |state, cx| {
++            match operation {
++                InputOperation::SetSelectionListener(callback) => {
++                    state.selection_listener = callback;
++                }
++                InputOperation::SetSelection { start, end } => {
++                    state.marked_range = None;
++                    state.last_edit = None;
++                    state.set_selected_text_range(start.min(end)..start.max(end), window, cx);
++                }
++                InputOperation::ReplaceSelection(text) => {
++                    // Keep each imperative replacement separate from adjacent typing.
++                    state.last_edit = None;
++                    state.marked_range = None;
++                    let range = state.range_to_utf16(&state.selected_range);
++                    state.replace_text_in_range(Some(range), &text, window, cx);
++                    state.last_edit = None;
++                }
++                InputOperation::Command(command) => {
++                    state.last_edit = None;
++                    match command {
++                        InputCommand::Cut => state.cut(&Cut, window, cx),
++                        InputCommand::Copy => state.copy(&Copy, window, cx),
++                        InputCommand::Paste => state.paste(&Paste, window, cx),
++                        InputCommand::SelectAll => state.select_all(&SelectAll, window, cx),
++                        InputCommand::Undo => state.undo(&Undo, window, cx),
++                        InputCommand::Redo => state.redo(&Redo, window, cx),
++                    }
++                    state.last_edit = None;
++                }
++            }
++        });
++        Ok(())
++    }
+ }
+ 
+ #[derive(Clone)]
+@@ -638,6 +715,9 @@ struct TextEditorState {
+     element_id: u64,
+     callback: Option<EventCallback>,
+     emits_change: bool,
++    emits_selection_change: bool,
++    last_selection: Range<usize>,
++    selection_listener: Option<EventCallback>,
+     emits_submit: bool,
+     emits_key_down: bool,
+     emits_key_up: bool,
+@@ -667,6 +747,9 @@ struct TextEditorState {
+     content_width: f32,
+     display_is_placeholder: bool,
+     caret_color: gpui::Hsla,
++    selection_wash: gpui::Hsla,
++    placeholder_color: gpui::Hsla,
++    caret_width: Pixels,
+     blink_anchor: Instant,
+     blink_task: Option<Task<()>>,
+     pending_values: VecDeque<String>,
+@@ -678,6 +761,20 @@ struct TextEditorState {
+ impl TextEditorState {
+     fn reset_blink(&mut self, cx: &Context<Self>) {
+         self.blink_anchor = cx.background_executor().now();
++        let selection = self.range_to_utf16(&self.selected_range);
++        if self.last_selection != selection {
++            if self.emits_selection_change {
++                emit_event_full(&self.callback, self.element_id, "selectionChange", |payload| {
++                    payload.selection_start = Some(selection.start as f64);
++                    payload.selection_end = Some(selection.end as f64);
++                });
++            }
++            emit_event_full(&self.selection_listener, self.element_id, "selectionChange", |payload| {
++                payload.selection_start = Some(selection.start as f64);
++                payload.selection_end = Some(selection.end as f64);
++            });
++            self.last_selection = selection;
++        }
+     }
+ 
+     fn caret_shown(&mut self, window: &Window, cx: &mut Context<Self>) -> bool {
+@@ -747,6 +844,9 @@ impl TextEditorState {
+             }
+             emit_event_full(&self.callback, self.element_id, "change", |payload| {
+                 payload.value = Some(self.content.clone());
++                let selection = self.range_to_utf16(&self.selected_range);
++                payload.selection_start = Some(selection.start as f64);
++                payload.selection_end = Some(selection.end as f64);
+             });
+         }
+     }
+@@ -1397,7 +1497,7 @@ impl TextEditorState {
+         // request_layout instead.
+         self.line_height = style.line_height_in_pixels(rem_size);
+         let color = if is_placeholder {
+-            gpui::rgba(0x8f8f8fff).into()
++            self.placeholder_color
+         } else {
+             style.color
+         };
+@@ -1469,8 +1569,8 @@ impl TextEditorState {
+                     let cursor_left = f32::from(cursor.x);
+                     if cursor_left < self.scroll_left {
+                         self.scroll_left = cursor_left;
+-                    } else if cursor_left + 2.0 > self.scroll_left + viewport_width {
+-                        self.scroll_left = cursor_left + 2.0 - viewport_width;
++                    } else if cursor_left + f32::from(self.caret_width) > self.scroll_left + viewport_width {
++                        self.scroll_left = cursor_left + f32::from(self.caret_width) - viewport_width;
+                     }
+                 }
+             }
+@@ -1482,7 +1582,7 @@ impl TextEditorState {
+             0.0
+         } else {
+             self.scroll_left
+-                .clamp(0.0, (self.content_width + 2.0 - viewport_width).max(0.0))
++                .clamp(0.0, (self.content_width + f32::from(self.caret_width) - viewport_width).max(0.0))
+         };
+     }
+ }
+@@ -1596,6 +1696,7 @@ impl EntityInputHandler for TextEditorState {
+                     ..range.start + utf16_offset_to_utf8(&replacement, selected.end)
+             })
+             .unwrap_or_else(|| range.start + replacement.len()..range.start + replacement.len());
++        self.selection_reversed = false;
+         self.follow_cursor = true;
+         self.reset_blink(cx);
+         self.emit_change();
+@@ -1617,6 +1718,7 @@ impl EntityInputHandler for TextEditorState {
+                 bounds.top() + start.y - px(self.scroll_top),
+             ),
+             self.line_height,
++            self.caret_width,
+         ))
+     }
+ 
+@@ -1635,7 +1737,9 @@ impl EntityInputHandler for TextEditorState {
+         _: &mut Window,
+         cx: &mut Context<Self>,
+     ) {
+-        self.selected_range = self.range_from_utf16(&range_utf16);
++        self.selected_range = self.range_from_utf16(
++            &(range_utf16.start.min(range_utf16.end)..range_utf16.start.max(range_utf16.end)),
++        );
+         self.selection_reversed = false;
+         self.follow_cursor = true;
+         self.reset_blink(cx);
+@@ -1810,6 +1914,7 @@ impl gpui::Element for EditorTextElement {
+                 caret_rect(
+                     point(origin.x + caret_point.x, origin.y + caret_point.y),
+                     input.line_height,
++                    input.caret_width,
+                 ),
+                 input.caret_color,
+             ));
+@@ -1817,7 +1922,7 @@ impl gpui::Element for EditorTextElement {
+             input.point_for_index(input.selected_range.start),
+             input.point_for_index(input.selected_range.end),
+         ) {
+-            let color = gpui::rgba(0x7c86ff59);
++            let color = input.selection_wash;
+             if start.y == end.y {
+                 selection.push(fill(
+                     Bounds::from_corners(
+@@ -2037,7 +2142,7 @@ mod tests {
+ 
+     #[test]
+     fn caret_matches_the_line_height() {
+-        let bounds = caret_rect(point(px(10.0), px(4.0)), px(20.0));
++        let bounds = caret_rect(point(px(10.0), px(4.0)), px(20.0), px(2.0));
+         assert_eq!(bounds.origin, point(px(10.0), px(4.0)));
+         assert_eq!(bounds.size, size(px(2.0), px(20.0)));
+     }
+diff --git i/packages/native/src/custom_elements/mod.rs w/packages/native/src/custom_elements/mod.rs
+index 158269f..dd6cc12 100644
+--- i/packages/native/src/custom_elements/mod.rs
++++ w/packages/native/src/custom_elements/mod.rs
+@@ -19,6 +19,7 @@ pub mod diff;
+ pub mod img;
+ pub mod input;
+ pub mod markdown;
++pub mod rich_text;
+ 
+ // ── Render context ───────────────────────────────────────────────────
+ 
+@@ -48,6 +49,8 @@ pub struct CustomRenderContext<'a> {
+     pub selectable: bool,
+     /// Inherited selection wash colour.
+     pub selection_wash: gpui::Hsla,
++    pub font: gpui::Font,
++    pub color: gpui::Hsla,
+     /// `highlight` declared by the nearest ancestor, unresolved.
+     ///
+     /// A native element generates its text during `render()`, so the retained
+@@ -227,6 +230,16 @@ pub trait CustomElement: 'static {
+     /// Clean up resources (GPUI entities, subscriptions, etc.)
+     fn destroy(&mut self);
+ 
++    /// Perform a native editor operation without routing through keyboard focus.
++    fn input_operation(
++        &mut self,
++        _operation: input::InputOperation,
++        _window: &mut gpui::Window,
++        _cx: &mut gpui::Context<crate::renderer::GpuixView>,
++    ) -> Result<(), String> {
++        Err("Element is not a native input".to_string())
++    }
++
+     /// Current live GPU image on `<img>`, if any.
+     fn live_image(&self) -> Option<std::sync::Arc<gpui::RenderImage>> {
+         None
+@@ -303,6 +316,7 @@ impl CustomElementEntry {
+ pub struct CustomElementRegistry {
+     factories: HashMap<String, Box<dyn CustomElementFactory>>,
+     instances: HashMap<u64, CustomElementEntry>,
++    pending_inputs: HashMap<u64, Vec<input::InputOperation>>,
+ }
+ 
+ impl CustomElementRegistry {
+@@ -310,6 +324,7 @@ impl CustomElementRegistry {
+         Self {
+             factories: HashMap::new(),
+             instances: HashMap::new(),
++            pending_inputs: HashMap::new(),
+         }
+     }
+ 
+@@ -324,6 +339,7 @@ impl CustomElementRegistry {
+         registry.register(Box::new(code::CodeFactory));
+         registry.register(Box::new(diff::DiffFactory));
+         registry.register(Box::new(markdown::MarkdownFactory));
++        registry.register(Box::new(rich_text::RichTextFactory));
+         registry
+     }
+ 
+@@ -367,6 +383,7 @@ impl CustomElementRegistry {
+     ) -> gpui::AnyElement {
+         use gpui::IntoElement;
+ 
++        let pending = self.pending_inputs.remove(&ctx.id);
+         let Some(entry) = self.get_or_create(ctx.id, element_type) else {
+             log::warn!("Unknown element type: {element_type}");
+             return gpui::Empty.into_any_element();
+@@ -384,7 +401,31 @@ impl CustomElementRegistry {
+             events: &filtered,
+             ..ctx
+         };
+-        entry.element.render(ctx, window, cx)
++        let rendered = entry.element.render(ctx, window, cx);
++        if let Some(operations) = pending {
++            for operation in operations {
++                if let Err(error) = entry.element.input_operation(operation, window, cx) {
++                    log::error!("Native input operation failed: {error}");
++                }
++            }
++        }
++        rendered
++    }
++
++    pub(crate) fn input_operation(
++        &mut self,
++        id: u64,
++        operation: input::InputOperation,
++        window: &mut gpui::Window,
++        cx: &mut gpui::Context<crate::renderer::GpuixView>,
++    ) -> Result<(), String> {
++        let Some(entry) = self.instances.get_mut(&id) else {
++            self.pending_inputs.entry(id).or_default().push(operation);
++            window.refresh();
++            cx.notify();
++            return Ok(());
++        };
++        entry.element.input_operation(operation, window, cx)
+     }
+ 
+     /// Store a decoded image on an `<img>` host node, creating the adapter if needed.
+@@ -401,6 +442,7 @@ impl CustomElementRegistry {
+ 
+     /// Called when React destroys an element.
+     pub fn destroy(&mut self, id: u64) {
++        self.pending_inputs.remove(&id);
+         if let Some(mut entry) = self.instances.remove(&id) {
+             entry.element.destroy();
+         }
+diff --git i/packages/native/src/custom_elements/rich_text.rs w/packages/native/src/custom_elements/rich_text.rs
+new file mode 100644
+index 0000000..0904e0b
+--- /dev/null
++++ w/packages/native/src/custom_elements/rich_text.rs
+@@ -0,0 +1,99 @@
++use gpui::{prelude::*, SharedString, TextRun};
++use serde::Deserialize;
++use super::{CustomElement, CustomElementFactory, CustomRenderContext};
++
++#[derive(Clone, Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct Run {
++    start: usize,
++    end: usize,
++    color: Option<String>,
++    font_family: Option<String>,
++    font_weight: Option<crate::style::FontWeightValue>,
++    italic: Option<bool>,
++    underline: Option<Decoration>,
++    strikethrough: Option<Decoration>,
++    background: Option<String>,
++    wash: Option<Wash>,
++}
++#[derive(Clone, Deserialize)]
++struct Decoration { color: Option<String>, thickness: Option<f32>, wavy: Option<bool> }
++#[derive(Clone, Deserialize)]
++#[serde(rename_all = "camelCase")]
++struct Wash { color: String, radius: Option<f32>, pad_x: Option<f32>, inset_y: Option<f32> }
++
++pub struct RichTextFactory;
++impl CustomElementFactory for RichTextFactory {
++    fn element_type(&self) -> &str { "rich-text" }
++    fn create(&self, _: u64) -> Box<dyn CustomElement> { Box::<RichText>::default() }
++}
++#[derive(Default)]
++struct RichText { text: SharedString, runs: Vec<Run> }
++
++// A UTF-16 offset within a surrogate pair resolves to that scalar's beginning.
++fn byte_offset(text: &str, offset: usize) -> usize {
++    let mut units = 0;
++    for (byte, ch) in text.char_indices() {
++        if units + ch.len_utf16() > offset { return byte; }
++        units += ch.len_utf16();
++    }
++    text.len()
++}
++fn color(value: Option<&str>) -> Option<gpui::Hsla> {
++    value.and_then(crate::color::parse_color_rgba).map(Into::into)
++}
++impl CustomElement for RichText {
++    fn render(&mut self, ctx: CustomRenderContext, _window: &mut gpui::Window, _: &mut gpui::Context<crate::renderer::GpuixView>) -> gpui::AnyElement {
++        let base_font = ctx.font.clone();
++        let base_color = ctx.color;
++        let ranges: Vec<_> = self.runs.iter().map(|run| (byte_offset(&self.text, run.start)..byte_offset(&self.text, run.end), run)).collect();
++        let mut boundaries = vec![0, self.text.len()];
++        for (range, _) in &ranges { boundaries.extend([range.start, range.end]); }
++        boundaries.sort_unstable();
++        boundaries.dedup();
++        let runs = boundaries.windows(2).filter(|pair| pair[0] < pair[1]).map(|pair| {
++            let mut result = TextRun { len: pair[1] - pair[0], font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None };
++            for (range, run) in &ranges {
++                if range.start > pair[0] || range.end < pair[1] { continue; }
++                if let Some(value) = color(run.color.as_deref()) { result.color = value; }
++                if let Some(family) = &run.font_family { result.font.family = family.clone().into(); }
++                if let Some(weight) = &run.font_weight { result.font.weight = crate::renderer::parse_font_weight(weight); }
++                if let Some(italic) = run.italic { result.font.style = if italic { gpui::FontStyle::Italic } else { gpui::FontStyle::Normal }; }
++                if let Some(decoration) = &run.underline { result.underline = Some(gpui::UnderlineStyle { color: color(decoration.color.as_deref()), thickness: gpui::px(decoration.thickness.unwrap_or(1.0)), wavy: decoration.wavy.unwrap_or(false) }); }
++                if let Some(decoration) = &run.strikethrough { result.strikethrough = Some(gpui::StrikethroughStyle { color: color(decoration.color.as_deref()), thickness: gpui::px(decoration.thickness.unwrap_or(1.0)) }); }
++                if let Some(value) = color(run.background.as_deref()) { result.background_color = Some(value); }
++            }
++            result
++        }).collect();
++        let washes: Vec<_> = ranges.iter().filter_map(|(range, run)| run.wash.clone().map(|wash| (range.clone(), wash))).collect();
++        let mut text = crate::text::SelectableText::new(ctx.id, 0, self.text.clone().into(), Some(runs), ctx.selection.clone(), ctx.selection_wash);
++        text.selectable = ctx.selectable;
++        text.highlight = ctx.highlight_set.clone().map(crate::text::HighlightSource::Native);
++        text.pointer_events = Some((ctx.event_callback.clone(), ctx.events.clone()));
++        text.extra_wash = Some(Box::new(move |layout, window| {
++            for (range, wash) in &washes {
++                if let Some(color) = color(Some(&wash.color)) {
++                    for rect in crate::text::range_rects(layout, range, wash.pad_x.unwrap_or(2.0), wash.inset_y.unwrap_or(2.0)) {
++                        window.paint_quad(gpui::quad(rect, gpui::px(wash.radius.unwrap_or(3.0)), color, gpui::px(0.0), gpui::transparent_black(), gpui::BorderStyle::default()));
++                    }
++                }
++            }
++        }));
++        let container = gpui::div().id(SharedString::from(format!("rich-text-{}", ctx.id)));
++        // Pointer events are hit-tested against StyledText rather than the outer box.
++        let mut surface_ctx = ctx;
++        let events = surface_ctx.events.iter().filter(|event| !matches!(event.as_str(), "click" | "mouseDown" | "mouseMove")).cloned().collect();
++        surface_ctx.events = &events;
++        super::custom_surface(container, &surface_ctx).child(crate::text::selectable_text(text)).into_any_element()
++    }
++    fn set_prop(&mut self, key: &str, value: serde_json::Value) {
++        match key {
++            "text" => self.text = value.as_str().unwrap_or_default().into(),
++            "runs" => self.runs = serde_json::from_value(value).unwrap_or_default(),
++            _ => {}
++        }
++    }
++    fn supported_props(&self) -> &'static [&'static str] { &["text", "runs"] }
++    fn supported_events(&self) -> &'static [&'static str] { &["click", "mouseDown", "mouseMove", "mouseEnter", "mouseLeave", "fileDrop"] }
++    fn destroy(&mut self) {}
++}
+diff --git i/packages/native/src/desktop_api.rs w/packages/native/src/desktop_api.rs
+new file mode 100644
+index 0000000..6effe57
+--- /dev/null
++++ w/packages/native/src/desktop_api.rs
+@@ -0,0 +1,204 @@
++use gpui::{ClipboardEntry, ClipboardItem, Decorations, ResizeEdge, WindowAppearance, WindowDecorations};
++use napi::bindgen_prelude::Buffer;
++use napi::{Error, Result, Status};
++use napi_derive::napi;
++
++use crate::renderer::GpuixRenderer;
++
++#[napi(object)]
++pub struct ClipboardImage {
++    pub mime: String,
++    pub data: Buffer,
++}
++
++#[napi(object)]
++pub struct WindowTiling {
++    pub top: bool,
++    pub left: bool,
++    pub right: bool,
++    pub bottom: bool,
++}
++
++#[napi(object)]
++pub struct NativeWindowDecorations {
++    pub kind: String,
++    pub tiling: WindowTiling,
++}
++
++#[napi(object)]
++pub struct NativeWindowControls {
++    pub fullscreen: bool,
++    pub maximize: bool,
++    pub minimize: bool,
++    pub window_menu: bool,
++}
++
++#[napi]
++impl GpuixRenderer {
++    /// Override native chrome appearance, or follow the system.
++    /// GPUI applies this app-wide on macOS; other platforms leave it unchanged.
++    #[napi]
++    pub fn set_window_appearance(&self, appearance: String) -> Result<()> {
++        let appearance = match appearance.as_str() {
++            "light" => Some(WindowAppearance::Light),
++            "dark" => Some(WindowAppearance::Dark),
++            "system" => None,
++            _ => {
++                return Err(Error::new(
++                    Status::InvalidArg,
++                    "Window appearance must be light, dark, or system",
++                ));
++            }
++        };
++        self.with_native_window(move |window, cx| {
++            cx.set_window_appearance(appearance);
++            window.refresh();
++        })
++    }
++
++    /// Set the logical-pixel size used for rem units in this window.
++    #[napi]
++    pub fn set_rem_size(&self, size: f64) -> Result<()> {
++        let size = size as f32;
++        if !size.is_finite() || size <= 0.0 {
++            return Err(Error::new(
++                Status::InvalidArg,
++                "Rem size must be a positive finite logical-pixel value",
++            ));
++        }
++        self.with_native_window(move |window, _cx| {
++            window.set_rem_size(gpui::px(size));
++            window.refresh();
++        })
++    }
++
++    /// Replace the platform clipboard with plain text.
++    #[napi]
++    pub fn write_clipboard_text(&self, text: String) -> Result<()> {
++        self.with_native_window(move |_window, cx| {
++            cx.write_to_clipboard(ClipboardItem::new_string(text));
++        })
++    }
++
++    /// Read the platform clipboard's text using GPUI's clipboard conversion.
++    #[napi]
++    pub fn read_clipboard_text(&self) -> Result<Option<String>> {
++        self.with_native_window(|_window, cx| {
++            cx.read_from_clipboard().and_then(|item| item.text())
++        })
++    }
++
++    /// Return the first clipboard image in its original encoded format.
++    #[napi]
++    pub fn read_clipboard_image(&self) -> Result<Option<ClipboardImage>> {
++        let image = self.with_native_window(|_window, cx| {
++            cx.read_from_clipboard().and_then(|item| {
++                item.into_entries().find_map(|entry| match entry {
++                    ClipboardEntry::Image(image) => Some(image),
++                    _ => None,
++                })
++            })
++        })?;
++        Ok(image.map(|image| ClipboardImage {
++            mime: image.format.mime_type().to_owned(),
++            data: image.bytes.into(),
++        }))
++    }
++
++    /// Query the actual decoration mode and compositor-reported tiled edges.
++    #[napi]
++    pub fn window_decorations(&self) -> Result<NativeWindowDecorations> {
++        self.with_native_window(|window, _cx| {
++            let (kind, tiling) = match window.window_decorations() {
++                Decorations::Server => ("server", gpui::Tiling::default()),
++                Decorations::Client { tiling } => ("client", tiling),
++            };
++            NativeWindowDecorations {
++                kind: kind.to_owned(),
++                tiling: WindowTiling {
++                    top: tiling.top,
++                    left: tiling.left,
++                    right: tiling.right,
++                    bottom: tiling.bottom,
++                },
++            }
++        })
++    }
++
++    /// Request client decorations, or server decorations when disabled.
++    /// The compositor decides the actual mode returned by windowDecorations.
++    #[napi]
++    pub fn request_client_decorations(&self, enabled: bool) -> Result<()> {
++        self.with_native_window(move |window, _cx| {
++            window.request_decorations(if enabled {
++                WindowDecorations::Client
++            } else {
++                WindowDecorations::Server
++            });
++        })
++    }
++
++    /// Begin the platform's interactive move operation.
++    #[napi]
++    pub fn start_window_move(&self) -> Result<()> {
++        self.with_native_window(|window, _cx| window.start_window_move())
++    }
++
++    /// Begin an interactive resize on n, s, e, w, ne, nw, se, or sw.
++    #[napi]
++    pub fn start_window_resize(&self, edge: String) -> Result<()> {
++        let edge = match edge.as_str() {
++            "n" => ResizeEdge::Top,
++            "s" => ResizeEdge::Bottom,
++            "e" => ResizeEdge::Right,
++            "w" => ResizeEdge::Left,
++            "ne" => ResizeEdge::TopRight,
++            "nw" => ResizeEdge::TopLeft,
++            "se" => ResizeEdge::BottomRight,
++            "sw" => ResizeEdge::BottomLeft,
++            _ => {
++                return Err(Error::new(
++                    Status::InvalidArg,
++                    "Resize edge must be n, s, e, w, ne, nw, se, or sw",
++                ));
++            }
++        };
++        self.with_native_window(move |window, _cx| window.start_window_resize(edge))
++    }
++
++    #[napi]
++    pub fn is_window_maximized(&self) -> Result<bool> {
++        self.with_native_window(|window, _cx| window.is_maximized())
++    }
++
++    /// Query the controls supported by the platform for this window.
++    #[napi]
++    pub fn window_controls(&self) -> Result<NativeWindowControls> {
++        self.with_native_window(|window, _cx| {
++            let controls = window.window_controls();
++            NativeWindowControls {
++                fullscreen: controls.fullscreen,
++                maximize: controls.maximize,
++                minimize: controls.minimize,
++                window_menu: controls.window_menu,
++            }
++        })
++    }
++
++    #[napi]
++    pub fn is_window_active(&self) -> Result<bool> {
++        self.with_native_window(|window, _cx| window.is_window_active())
++    }
++
++    /// Query the current appearance, reducing vibrant variants to light/dark.
++    #[napi]
++    pub fn window_appearance(&self) -> Result<String> {
++        self.with_native_window(|window, _cx| {
++            match window.appearance() {
++                WindowAppearance::Light | WindowAppearance::VibrantLight => "light",
++                WindowAppearance::Dark | WindowAppearance::VibrantDark => "dark",
++            }
++            .to_owned()
++        })
++    }
++}
+diff --git i/packages/native/src/element_tree.rs w/packages/native/src/element_tree.rs
+index 1b0bdd2..945fa25 100644
+--- i/packages/native/src/element_tree.rs
++++ w/packages/native/src/element_tree.rs
+@@ -8,6 +8,18 @@
+ #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+ use napi_derive::napi;
+ 
++#[cfg(not(target_family = "wasm"))]
++pub type PointerIndex = napi::bindgen_prelude::Either<f64, napi::bindgen_prelude::Null>;
++#[cfg(target_family = "wasm")]
++pub type PointerIndex = Option<f64>;
++
++pub(crate) fn pointer_index(index: Option<f64>) -> PointerIndex {
++    #[cfg(not(target_family = "wasm"))]
++    { index.map_or(napi::bindgen_prelude::Either::B(napi::bindgen_prelude::Null), napi::bindgen_prelude::Either::A) }
++    #[cfg(target_family = "wasm")]
++    { index }
++}
++
+ /// Event payload sent back to JS when a user interacts with an element.
+ #[derive(Debug, Clone)]
+ #[cfg_attr(
+@@ -101,6 +113,13 @@ pub struct EventPayload {
+     /// absent when the selection is empty).
+     pub value: Option<String>,
+ 
++    /// UTF-16 offset hit by a rich-text pointer event.
++    pub char_index: PointerIndex,
++
++    /// UTF-16 selection endpoints for native input change and selectionChange.
++    pub selection_start: Option<f64>,
++    pub selection_end: Option<f64>,
++
+     /// Line number on the pre-change side. Populated for: `<diff>` lineClick.
+     pub old_line: Option<f64>,
+ 
+@@ -162,6 +181,9 @@ impl Default for EventPayload {
+             touch_phase: None,
+             hovered: None,
+             value: None,
++            char_index: pointer_index(None),
++            selection_start: None,
++            selection_end: None,
+             old_line: None,
+             new_line: None,
+             start_index: None,
+diff --git i/packages/native/src/input_api.rs w/packages/native/src/input_api.rs
+new file mode 100644
+index 0000000..338e338
+--- /dev/null
++++ w/packages/native/src/input_api.rs
+@@ -0,0 +1,80 @@
++//! Imperative native-editor operations use JavaScript UTF-16 offsets.
++
++use std::sync::Arc;
++
++use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
++use napi::{Error, Result};
++use napi_derive::napi;
++
++use crate::custom_elements::input::{InputCommand, InputOperation};
++use crate::element_tree::EventPayload;
++use crate::renderer::EventCallback;
++use crate::renderer::GpuixRenderer;
++
++fn index(value: f64, name: &str) -> Result<usize> {
++    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > 9_007_199_254_740_991.0 {
++        return Err(Error::from_reason(format!("{name} must be a nonnegative safe integer")));
++    }
++    Ok(value as usize)
++}
++
++#[napi]
++impl GpuixRenderer {
++    /// Subscribe directly, bypassing framework-level document-selection routing.
++    /// Passing null removes the listener; unmounting also releases it.
++    #[napi]
++    pub fn set_input_selection_listener(
++        &self,
++        id: f64,
++        callback: Option<ThreadsafeFunction<EventPayload>>,
++    ) -> Result<()> {
++        let callback = callback.map(|callback| {
++            Arc::new(move |payload: EventPayload| {
++                callback.call(Ok(payload), ThreadsafeFunctionCallMode::NonBlocking);
++            }) as EventCallback
++        });
++        self.apply_input_operation(id, InputOperation::SetSelectionListener(callback))
++    }
++
++    /// Set a mounted input's selection using UTF-16 code-unit offsets.
++    #[napi]
++    pub fn input_set_selection(&self, id: f64, start: f64, end: f64) -> Result<()> {
++        self.apply_input_operation(id, InputOperation::SetSelection {
++            start: index(start, "start")?,
++            end: index(end, "end")?,
++        })
++    }
++
++    /// Replace the current selection as one independent undoable edit.
++    #[napi]
++    pub fn input_replace_selection(&self, id: f64, text: String) -> Result<()> {
++        self.apply_input_operation(id, InputOperation::ReplaceSelection(text))
++    }
++
++    /// Execute an editing command on the addressed input, regardless of focus.
++    #[napi]
++    pub fn input_command(&self, id: f64, name: String) -> Result<()> {
++        let command = match name.as_str() {
++            "cut" => InputCommand::Cut,
++            "copy" => InputCommand::Copy,
++            "paste" => InputCommand::Paste,
++            "selectAll" => InputCommand::SelectAll,
++            "undo" => InputCommand::Undo,
++            "redo" => InputCommand::Redo,
++            _ => return Err(Error::from_reason(format!("Unknown input command: {name}"))),
++        };
++        self.apply_input_operation(id, InputOperation::Command(command))
++    }
++}
++
++impl GpuixRenderer {
++    fn apply_input_operation(&self, id: f64, operation: InputOperation) -> Result<()> {
++        let id = index(id, "id")? as u64;
++        self.with_native_view(move |view, window, cx| {
++            let is_input = view.tree.lock().map_err(|_| "Native tree lock poisoned".to_string())?
++                .elements.get(&id).is_some_and(|element| matches!(element.element_type.as_str(), "input" | "textarea"));
++            if !is_input { return Err(format!("Native input {id} does not exist")); }
++            view.custom_registry.input_operation(id, operation, window, cx)
++        })?.map_err(Error::from_reason)
++    }
++}
+diff --git i/packages/native/src/lib.rs w/packages/native/src/lib.rs
+index c5f4fa1..05fe77f 100644
+--- i/packages/native/src/lib.rs
++++ w/packages/native/src/lib.rs
+@@ -18,6 +18,10 @@ mod automation;
+ mod color;
+ mod custom_elements;
+ mod diff;
++#[cfg(not(target_family = "wasm"))]
++mod desktop_api;
++#[cfg(not(target_family = "wasm"))]
++mod input_api;
+ mod element_tree;
+ mod markdown;
+ mod motion;
+diff --git i/packages/native/src/renderer.rs w/packages/native/src/renderer.rs
+index cc780fc..3542161 100644
+--- i/packages/native/src/renderer.rs
++++ w/packages/native/src/renderer.rs
+@@ -392,6 +392,8 @@ enum ClockControl {
+ #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+ enum UiCommand {
+     Invalidate,
++    NativeWindow(Box<dyn FnOnce(&mut gpui::Window, &mut gpui::App) + Send>),
++    NativeView(Box<dyn FnOnce(&mut GpuixView, &mut gpui::Window, &mut gpui::Context<GpuixView>) + Send>),
+     ActivateWindow,
+     MinimizeWindow,
+     ZoomWindow,
+@@ -517,6 +519,9 @@ async fn run_ui_commands(
+     while let Some(command) = commands.next().await {
+         let result = match command {
+             UiCommand::Invalidate => refresh_ui_window(window, cx),
++            UiCommand::NativeWindow(update) => gpui::AnyWindowHandle::from(window)
++                .update(cx, move |_view, window, cx| update(window, cx)),
++            UiCommand::NativeView(update) => window.update(cx, move |view, window, cx| update(view, window, cx)),
+             UiCommand::ActivateWindow => window.update(cx, |_view, window, cx| {
+                 cx.activate(true);
+                 window.activate_window();
+@@ -921,6 +926,41 @@ pub struct GpuixRenderer {
+     ui_running: Arc<AtomicBool>,
+ }
+ 
++#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
++impl GpuixRenderer {
++    pub(crate) fn with_native_window<R: Send + 'static>(
++        &self,
++        update: impl FnOnce(&mut gpui::Window, &mut gpui::App) -> R + Send + 'static,
++    ) -> Result<R> {
++        #[cfg(target_os = "macos")]
++        return update_window_without_view(update);
++        #[cfg(not(target_os = "macos"))]
++        {
++            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
++            self.send_ui_command(UiCommand::NativeWindow(Box::new(move |window, cx| {
++                let _ = sender.send(update(window, cx));
++            })))?;
++            receiver.recv().map_err(|_| Error::from_reason("The GPUI window closed"))
++        }
++    }
++
++    pub(crate) fn with_native_view<R: Send + 'static>(
++        &self,
++        update: impl FnOnce(&mut GpuixView, &mut gpui::Window, &mut gpui::Context<GpuixView>) -> R + Send + 'static,
++    ) -> Result<R> {
++        #[cfg(target_os = "macos")]
++        return update_window(update);
++        #[cfg(not(target_os = "macos"))]
++        {
++            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
++            self.send_ui_command(UiCommand::NativeView(Box::new(move |view, window, cx| {
++                let _ = sender.send(update(view, window, cx));
++            })))?;
++            receiver.recv().map_err(|_| Error::from_reason("The GPUI window closed"))
++        }
++    }
++}
++
+ #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+ #[napi]
+ impl GpuixRenderer {
+@@ -4210,6 +4250,8 @@ pub(crate) struct Inherited {
+     pub selectable: bool,
+     /// Selection wash colour for this subtree.
+     pub selection_wash: gpui::Hsla,
++    pub font: gpui::Font,
++    pub color: gpui::Hsla,
+     /// The nearest ancestor's `highlight`, resolved. `None` in every app that
+     /// does not use search. It carries the declaring element id, which is what
+     /// a virtual-list row re-resolves against: that row is built after the root
+@@ -4258,6 +4300,8 @@ impl Inherited {
+         Self {
+             selectable: true,
+             selection_wash: wash,
++            font: gpui::font(theme.font_sans.clone()),
++            color: theme.text,
+             highlight: None,
+         }
+     }
+@@ -4265,6 +4309,9 @@ impl Inherited {
+     /// Apply the inheritable parts of `style` for the subtree below it.
+     fn descend(mut self, style: Option<&StyleDesc>) -> Self {
+         let Some(style) = style else { return self };
++        if let Some(family) = &style.font_family { self.font.family = family.clone().into(); }
++        if let Some(weight) = &style.font_weight { self.font.weight = parse_font_weight(weight); }
++        if let Some(color) = style.color.as_deref().and_then(crate::color::parse_color_rgba) { self.color = color.into(); }
+         match style.user_select.as_deref() {
+             Some("none") => self.selectable = false,
+             Some("text") | Some("auto") => self.selectable = true,
+@@ -5183,6 +5230,8 @@ pub(crate) fn build_element(
+                 selection: ctx.selection.clone(),
+                 selectable: inherited.selectable,
+                 selection_wash: inherited.selection_wash,
++                font: inherited.font.clone(),
++                color: inherited.color,
+                 highlight_set: inherited.highlight.clone(),
+                 props: element.custom_props(),
+             };
+diff --git i/packages/native/src/text/paint.rs w/packages/native/src/text/paint.rs
+index 23005b0..cd06471 100644
+--- i/packages/native/src/text/paint.rs
++++ w/packages/native/src/text/paint.rs
+@@ -219,6 +219,7 @@ pub struct SelectableText {
+     /// that must never merge with its neighbour, which is every custom element.
+     pub group: Option<u64>,
+     pub highlight: Option<HighlightSource>,
++    pub pointer_events: Option<(Option<crate::renderer::EventCallback>, std::collections::HashSet<String>)>,
+ }
+ 
+ impl SelectableText {
+@@ -243,6 +244,7 @@ impl SelectableText {
+             selectable: true,
+             group: None,
+             highlight: None,
++            pointer_events: None,
+         }
+     }
+ }
+@@ -263,6 +265,7 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
+         selectable,
+         group,
+         highlight,
++        pointer_events,
+     } = opts;
+     let key = selection_key(element_id, sub);
+ 
+@@ -275,6 +278,9 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
+     let underlay = canvas(
+         |_, _, _| (),
+         move |_, _, window, _| {
++            if let Some((callback, events)) = &pointer_events {
++                register_pointer_events(window, &layout, element_id, &text, callback, events);
++            }
+             if let Some(paint) = &extra_wash {
+                 paint(&layout, window);
+             }
+@@ -331,6 +337,45 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
+         .into_any_element()
+ }
+ 
++fn register_pointer_events(
++    window: &mut Window,
++    layout: &TextLayout,
++    id: u64,
++    text: &SharedString,
++    callback: &Option<crate::renderer::EventCallback>,
++    events: &std::collections::HashSet<String>,
++) {
++    macro_rules! listen {
++        ($kind:literal, $ty:ty, $event:ident, $payload:ident, $filter:expr, $extra:block) => {
++            if events.contains($kind) {
++                let (layout, text, callback) = (layout.clone(), text.clone(), callback.clone());
++                window.on_mouse_event(move |$event: &$ty, phase, _, _| {
++                    if phase != gpui::DispatchPhase::Bubble || !layout.bounds().contains(&$event.position) || !($filter) { return; }
++                    crate::renderer::emit_event_full(&callback, id, $kind, |$payload| {
++                        $payload.char_index = crate::element_tree::pointer_index(layout.index_for_position($event.position).ok().map(|byte| utf16_offset(&text, byte) as f64));
++                        $payload.x = Some(f32::from($event.position.x) as f64);
++                        $payload.y = Some(f32::from($event.position.y) as f64);
++                        $payload.modifiers = Some($event.modifiers.into());
++                        $extra
++                    });
++                });
++            }
++        };
++    }
++    listen!("click", gpui::MouseUpEvent, event, payload, event.button == gpui::MouseButton::Left, {
++        payload.button = Some(0);
++        payload.click_count = Some(event.click_count as u32);
++        payload.is_right_click = Some(false);
++    });
++    listen!("mouseDown", gpui::MouseDownEvent, event, payload, true, {
++        payload.button = Some(crate::renderer::mouse_button_to_u32(event.button));
++        payload.click_count = Some(event.click_count as u32);
++    });
++    listen!("mouseMove", gpui::MouseMoveEvent, event, payload, true, {
++        payload.pressed_button = event.pressed_button.map(crate::renderer::mouse_button_to_u32);
++    });
++}
++
+ /// Paint one run's highlight washes and log their geometry.
+ fn paint_highlight_washes(
+     layout: &TextLayout,
+diff --git i/packages/native/src/theme.rs w/packages/native/src/theme.rs
+index e952167..6ed05ce 100644
+--- i/packages/native/src/theme.rs
++++ w/packages/native/src/theme.rs
+@@ -455,6 +455,12 @@ pub struct Theme {
+     pub accent: Hsla,
+     /// Text-editor caret.
+     pub caret: Hsla,
++    /// Native editor selection background.
++    pub selection_wash: Hsla,
++    /// Native editor placeholder text.
++    pub placeholder: Hsla,
++    /// Native editor caret width in logical pixels.
++    pub caret_width: f32,
+     /// Inline-code text, violet-300.
+     pub code_text: Hsla,
+     /// Rounded wash behind inline code, violet-400 at 12%.
+@@ -488,6 +494,9 @@ impl Theme {
+             text_dim: grey(0x98),
+             accent: oklch(0.673, 0.182, 276.935),
+             caret: oklch(0.673, 0.182, 276.935),
++            selection_wash: gpui::rgba(0x7c86ff59).into(),
++            placeholder: grey(0x8f),
++            caret_width: 2.0,
+             code_text: oklch(0.811, 0.111, 293.571),
+             code_wash: with_alpha(oklch(0.702, 0.183, 293.541), 0.12),
+             diff_add: oklch(0.765, 0.177, 163.223),
+@@ -511,6 +520,9 @@ impl Theme {
+             text_dim: neutral(0.50),
+             accent: oklch(0.511, 0.262, 276.966),
+             caret: oklch(0.511, 0.262, 276.966),
++            selection_wash: with_alpha(oklch(0.511, 0.262, 276.966), 0.22),
++            placeholder: neutral(0.439),
++            caret_width: 2.0,
+             code_text: oklch(0.491, 0.27, 292.581),
+             code_wash: with_alpha(oklch(0.541, 0.281, 293.009), 0.10),
+             diff_add: oklch(0.596, 0.145, 163.225),
+@@ -536,6 +548,11 @@ impl Theme {
+         set(&mut self.text_dim, &o.text_dim);
+         set(&mut self.accent, &o.accent);
+         set(&mut self.caret, &o.caret);
++        set(&mut self.selection_wash, &o.selection_wash);
++        set(&mut self.placeholder, &o.placeholder);
++        if let Some(width) = o.caret_width.filter(|width| width.is_finite() && *width > 0.0 && *width <= f32::MAX as f64) {
++            self.caret_width = width as f32;
++        }
+         set(&mut self.code_text, &o.code_text);
+         set(&mut self.code_wash, &o.code_wash);
+         set(&mut self.diff_add, &o.diff_add);
+@@ -652,6 +669,9 @@ pub struct ThemeOverride {
+     pub text_dim: Option<String>,
+     pub accent: Option<String>,
+     pub caret: Option<String>,
++    pub selection_wash: Option<String>,
++    pub placeholder: Option<String>,
++    pub caret_width: Option<f64>,
+     pub code_text: Option<String>,
+     pub code_wash: Option<String>,
+     pub diff_add: Option<String>,

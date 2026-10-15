@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds the GPUIX native addon used by the desktop GUI.
 #
-# The JavaScript side comes from the published @gpuix/* 0.10.0 packages. This
-# script compiles the matching native crate with the patches in ./patches and
+# JavaScript packages and native code use the same pinned GPUIX checkout. This
+# script compiles the native crate with the patches in ./patches and
 # writes dist/gpuix-native.linux-x64-gnu.node, which the GUI loads through
 # NAPI_RS_NATIVE_LIBRARY_PATH.
 set -euo pipefail
@@ -11,11 +11,11 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Outside the repository: a checkout under it would join the Cargo workspace.
 src="${HARNESS_GUI_NATIVE_SRC:-${XDG_CACHE_HOME:-$HOME/.cache}/harness-gui-native}"
 
-# @gpuix/native@0.10.0 and the GPUI fork it pins.
+# Matching GPUIX source and its GPUI fork pin.
 GPUIX_URL=https://github.com/remorses/gpuix
-GPUIX_REV=9fcd628863e354e9c58019fc3bf38981a1e64158
+GPUIX_REV=6a5c7c142ac32f9eb0caefe0121be995cfc18631
 ZED_URL=https://github.com/remorses/zed
-ZED_REV=81c99f816b4a5f69d3c014774068034c24d1d7af
+ZED_REV=c2e9f882030ca95cee55d206512a0a3ee6cd72b0
 
 fetch() {
   local dir=$1 url=$2 rev=$3
@@ -38,10 +38,37 @@ for patch in "$here"/patches/*.patch; do
   git -C "$src/gpuix" apply --whitespace=nowarn "$patch"
 done
 
+bun install --cwd "$src/gpuix" --ignore-scripts
+bun run --cwd "$src/gpuix/packages/native" build:js
+bun run --cwd "$src/gpuix/packages/react" build
+
+# Copy only published runtime files, never the Rust target directory.
+bun -e '
+const fs = require("node:fs");
+const path = require("node:path");
+const [source, destination] = process.argv.slice(1);
+for (const name of ["native", "react"]) {
+  const sourceDir = path.join(source, "packages", name);
+  const targetDir = path.join(destination, name);
+  const manifest = JSON.parse(fs.readFileSync(path.join(sourceDir, "package.json"), "utf8"));
+  fs.rmSync(targetDir, { recursive: true, force: true });
+  fs.mkdirSync(targetDir, { recursive: true });
+  for (const entry of manifest.files) {
+    const from = path.join(sourceDir, entry);
+    if (fs.existsSync(from)) fs.cpSync(from, path.join(targetDir, entry), { recursive: true });
+  }
+  if (manifest.dependencies?.["@gpuix/native"]) manifest.dependencies["@gpuix/native"] = "file:../native";
+  fs.writeFileSync(path.join(targetDir, "package.json"), JSON.stringify(manifest, null, 2) + "\n");
+}
+' "$src/gpuix" "$here/../vendor/gpuix"
+
 cargo build --release --no-default-features \
   --manifest-path "$src/gpuix/packages/native/Cargo.toml"
 
 mkdir -p "$here/dist"
+# Replace atomically so an already-running renderer keeps its mapped addon intact.
 cp "$src/gpuix/packages/native/target/release/libgpuix_native.so" \
+  "$here/dist/gpuix-native.linux-x64-gnu.node.new"
+mv "$here/dist/gpuix-native.linux-x64-gnu.node.new" \
   "$here/dist/gpuix-native.linux-x64-gnu.node"
 echo "built $here/dist/gpuix-native.linux-x64-gnu.node"
