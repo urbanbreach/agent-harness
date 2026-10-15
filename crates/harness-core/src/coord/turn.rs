@@ -1,10 +1,12 @@
 use super::{runtime::*, *};
 use harness_providers::MessageRole;
 use std::mem;
+pub(in crate::coord) mod fork;
 mod guidance;
 mod request;
 mod skills;
 mod worker;
+pub(in crate::coord) use fork::counter_for;
 
 pub(super) struct Turn {
     pub id: String,
@@ -34,16 +36,22 @@ pub(super) struct Worker {
     skill_metadata: Option<String>,
     skill_preload_names: Vec<String>,
     skill_preloads: Option<Vec<(String, String)>>,
-    registry: Arc<crate::tool::ToolRegistry>,
-    permissions: (PermissionPolicy, PermissionPolicy),
+    pub(super) registry: Arc<crate::tool::ToolRegistry>,
+    pub(super) permissions: (PermissionPolicy, PermissionPolicy),
     pub(super) actor: EventActor,
     pub(super) session: String,
     pub(super) cancellation: CancellationToken,
     pub(super) turn: Turn,
     fallbacks: std::collections::VecDeque<ResolvedModelTarget>,
-    retry: crate::config::ProviderRetryRuntimeConfig,
+    pub(super) retry: crate::config::ProviderRetryRuntimeConfig,
     pub(super) behavior: crate::config::BehaviorSettings,
     pub(super) guidance: guidance::Guidance,
+    /// Prices context text for the active model; rebuilt when the model changes.
+    pub(super) counter: Arc<harness_compaction::tokenizer::Counter>,
+    /// Root-chain compaction settings captured when this worker spawned.
+    pub(super) overlay: super::compaction::state::CompactionOverlay,
+    pub(super) parked: super::compaction::state::ParkedSet,
+    pub(super) notes: super::compaction::state::NotesState,
 }
 impl Runtime {
     pub fn queue_turn(
@@ -164,25 +172,22 @@ impl Runtime {
     pub fn queue_compaction(
         &mut self,
         agent_id: &str,
-        manual: super::compaction::Manual,
+        mut manual: super::compaction::Manual,
     ) -> Result<(), CoordinatorError> {
         self.accepting()?;
         let agent = self
             .agents
             .get(agent_id)
             .ok_or_else(|| CoordinatorError::UnknownAgent(agent_id.into()))?;
-        if !agent.busy
-            && agent.queue.is_empty()
-            && (!self.config.compaction.enabled
-                || super::compaction::plan::Plan::new(
-                    &agent.messages,
-                    &self.config.compaction,
-                    self.config.compaction.keep_recent_tokens,
-                    manual.through.as_deref(),
-                )?
-                .is_none())
+        let running = self.running.iter().find_map(|(id, job)| match &job.kind {
+            super::runtime::JobKind::Turn { agent } if agent == agent_id => Some(id.clone()),
+            _ => None,
+        });
+        // Idle maintenance waits while the agent still owns work that will wake it.
+        if matches!(manual.kind, super::compaction::ManualKind::Idle)
+            && self.owns_pending_work(agent_id)
         {
-            let _ = manual.reply.send(Ok(ManualCompactionOutcome::NoOp));
+            manual.reply.noop("Agent is busy");
             return Ok(());
         }
         self.check_turn_capacity(agent_id)?;
@@ -191,8 +196,22 @@ impl Runtime {
             agent.settings.clone(),
             agent.target.clone(),
         );
+        // A manual pass interrupts a running conversation turn and resumes it afterwards;
+        // a running maintenance pass is never interrupted by another.
+        let interrupt = running.filter(|id| !id.starts_with("compact-"));
         let id = self.id("compact")?;
-        self.emit(
+        // Whether a provider stream was actually open: a prompt still in setup is not.
+        let streaming = interrupt
+            .as_deref()
+            .is_some_and(|turn| self.manual_claims.was_streaming(agent_id, turn));
+        // Ownership comes first, before the interrupted turn is aborted, so nothing that
+        // arrives during teardown can slip past the pass.
+        if manual.kind.owns_pass() {
+            self.begin_manual_pass(agent_id, &id, streaming, manual.suppress)?;
+        } else {
+            manual.interrupted = streaming;
+        }
+        let scheduled = self.emit(
             EventActor::new(ActorKind::Worker, Some(agent_id.into())),
             Some(id.clone()),
             EventV1::TaskScheduled(TaskScheduledEvent {
@@ -201,27 +220,41 @@ impl Runtime {
                 queue_key: Some(agent_id.into()),
                 metadata: None,
             }),
-        )?;
+        );
+        if let Err(error) = scheduled {
+            self.manual_claims.end(agent_id, &id, false, false);
+            return Err(error);
+        }
+        let turn = Turn {
+            id,
+            model,
+            settings,
+            target,
+            prompt: super::prompt::Prompt::default(),
+            user_initiated: false,
+            seq: 0,
+            manual: Some(manual),
+            inherited_selection: true,
+        };
         if let Some(agent) = self.agents.get_mut(agent_id) {
-            agent.queue.push_back(Turn {
-                id,
-                model,
-                settings,
-                target,
-                prompt: super::prompt::Prompt::default(),
-                user_initiated: false,
-                seq: 0,
-                manual: Some(manual),
-                inherited_selection: true,
-            });
+            if interrupt.is_some() {
+                agent.queue.push_front(turn);
+            } else {
+                agent.queue.push_back(turn);
+            }
+        }
+        if let Some(id) = interrupt {
+            self.cancel(&id, "interrupted for context maintenance")?;
         }
         self.start_next(agent_id)
     }
-    /// Removes the agent's queued plain user prompts (no tags, attachments, or wake role) and
-    /// returns `(seq, id, text)` for each, leaving every other queued turn in order.
-    pub(super) fn take_queued_plain_prompts(
+    /// Removes the agent's queued plain user prompts (no tags, attachments, or wake role;
+    /// with `rich`, tags and attachments are allowed) and returns `(seq, id, text)` for each,
+    /// leaving every other queued turn in order.
+    pub(super) fn take_queued_user_prompts(
         &mut self,
         agent_id: &str,
+        rich: bool,
     ) -> Vec<(u64, String, String)> {
         let Some(agent) = self.agents.get_mut(agent_id) else {
             return Vec::new();
@@ -233,10 +266,11 @@ impl Runtime {
                 && turn.manual.is_none()
                 && !turn.prompt.reminder_wake
                 && turn.prompt.child_completion.is_none()
-                && turn.prompt.attachments.is_empty()
-                && tags.files.is_empty()
-                && tags.agents.is_empty()
-                && tags.resources.is_empty();
+                && (rich
+                    || (turn.prompt.attachments.is_empty()
+                        && tags.files.is_empty()
+                        && tags.agents.is_empty()
+                        && tags.resources.is_empty()));
             if plain {
                 taken.push((turn.seq, turn.id, turn.prompt.text));
             } else {
@@ -259,6 +293,7 @@ impl Runtime {
         let tool_scope = self.tool_scope(Some(agent_id));
         let workspace =
             self.execution_cwd(&EventActor::new(ActorKind::Worker, Some(agent_id.into())))?;
+        let overlay = self.compaction_overlay(agent_id);
         if self
             .agents
             .get(agent_id)
@@ -312,12 +347,17 @@ impl Runtime {
             );
         let fallbacks = fallbacks[after..].iter().cloned().collect();
         agent.busy = true;
+        // An actual turn is starting: nothing the agent was owed remains owed.
+        if turn.manual.is_none() {
+            self.manual_claims.note_turn_started(agent_id);
+        }
         agent.info.model_ref = turn.model.clone();
         agent.target = turn.target.clone();
         agent.settings = turn.settings.clone();
         let messages = mem::take(&mut agent.messages);
         let actor = EventActor::new(ActorKind::Worker, Some(agent_id.into()));
         let cancellation = CancellationToken::new();
+        let turn_model = turn.model.clone();
         let worker = Worker {
             tool_scope: tool_scope.clone(),
             handle,
@@ -398,6 +438,10 @@ impl Runtime {
             retry: self.config.provider_retry.clone(),
             behavior: self.config.behavior.clone(),
             guidance: guidance::Guidance::default(),
+            counter: counter_for(self.config.provider.as_ref(), &turn_model),
+            overlay,
+            parked: self.parked.get(agent_id).cloned().unwrap_or_default(),
+            notes: self.notes.get(agent_id).cloned().unwrap_or_default(),
         };
         let id = worker.turn.id.clone();
         self.record_selection(agent_id)?;

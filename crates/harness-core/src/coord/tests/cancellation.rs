@@ -9,6 +9,12 @@ const ABORTED_USAGE: harness_providers::CompletionUsage = harness_providers::Com
     prompt_tokens: 7,
     completion_tokens: 3,
     total_tokens: 10,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    context_tokens: None,
+    reasoning_tokens: None,
 };
 struct PendingStream(Arc<AtomicUsize>);
 impl tokio_stream::Stream for PendingStream {
@@ -181,7 +187,7 @@ async fn cancellation_removes_queued_turns_and_drops_the_active_provider_stream(
     Ok(())
 }
 
-/// Senpi's `model_select` and `thinking_level_select`: each pick reaches providers once, at the pick.
+/// Model and reasoning picks each reach providers once, at the pick.
 #[tokio::test]
 async fn model_and_reasoning_picks_are_announced_to_providers(
 ) -> Result<(), Box<dyn std::error::Error>> {

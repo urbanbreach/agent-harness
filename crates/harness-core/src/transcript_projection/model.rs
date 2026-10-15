@@ -9,6 +9,8 @@ pub struct TranscriptProjection {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub compaction_checkpoints: Vec<CompactionCheckpointProjection>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_prunes: Vec<crate::event::ContextPrunedEvent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<TranscriptArtifactRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub session_lineage: Vec<SessionLineageProjection>,

@@ -32,7 +32,7 @@ pub(super) fn eval_dialect(preset: &str) -> &'static str {
         "gpt"
     } else if preset.starts_with("claude")
         || preset.starts_with("glm")
-        // V4.1 Flash takes the Claude execution-tooling stance, as in Senpi's preset.
+        // V4.1 Flash takes the Claude execution-tooling stance.
         || preset == "deepseek-v4.1-flash"
     {
         "claude"

@@ -58,13 +58,17 @@ impl CanonicalSession {
                 }
             }
             EventV1::SessionCompaction(data) => {
-                let kept = data.first_kept_entry_id.clone().or_else(|| {
-                    self.active
-                        .iter()
-                        .find(|(seq, _)| *seq >= data.first_kept_event_seq)
-                        .map(|(_, id)| id.clone())
-                });
-                let Some(kept) = kept else { return };
+                // A compaction that kept nothing points at its own entry.
+                let kept = data
+                    .first_kept_entry_id
+                    .clone()
+                    .or_else(|| {
+                        self.active
+                            .iter()
+                            .find(|(seq, _)| *seq >= data.first_kept_event_seq)
+                            .map(|(_, id)| id.clone())
+                    })
+                    .unwrap_or_else(|| id.clone());
                 SessionEntryPayload::CompactionSummary {
                     summary: data.summary.clone(),
                     first_kept_entry_id: kept,
@@ -76,11 +80,22 @@ impl CanonicalSession {
                         read_files: data.read_files.clone(),
                         modified_files: data.modified_files.clone(),
                         current_intent: data.current_intent.clone(),
+                        from_hook: data.from_hook,
+                        details: data.details.clone(),
+                        preserve_data: data.preserve_data.clone(),
                     })),
                 }
             }
+            EventV1::ContextPruned(_) => return,
+            // An empty branch summary contributes no entry.
+            EventV1::BranchSummary(data) if data.summary.trim().is_empty() => return,
             EventV1::BranchSummary(data) => SessionEntryPayload::BranchSummary {
                 summary: data.summary.clone(),
+                from_event_seq: Some(data.from_event_seq),
+                read_files: data.read_files.clone(),
+                modified_files: data.modified_files.clone(),
+                from_hook: data.from_hook,
+                details: data.details.clone(),
             },
             EventV1::SessionTitleUpdated(data) => SessionEntryPayload::SessionMetadata {
                 title: Some(data.title.clone()),

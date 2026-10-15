@@ -2,12 +2,27 @@ use super::{
     context::{Context, Entry},
     *,
 };
-use harness_providers::{AssistantToolCall, CompletionMessage, MessageRole};
+use harness_providers::{AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole};
 use std::collections::{HashMap, HashSet};
 pub(super) const INTERRUPTED_TOOL_RESULT: &str =
     "Execution was interrupted. Its outcome is unknown; inspect current state before retrying.";
+mod boundary;
+mod edits;
+mod fold;
+mod provenance;
+mod restore;
+pub(in crate::coord) use crate::transcript_projection::{
+    latest_compaction, reader_view, ActiveCompaction,
+};
+pub(in crate::coord) use boundary::{
+    compaction_entry, history_rewrite_at_ms, materialize_patches, native_payload,
+};
+pub(in crate::coord) use edits::apply_edits;
+pub(in crate::coord) use restore::derive_images;
+use restore::*;
 
-/// Provider context comes from settled records, grouped by turn rather than arrival time.
+/// Provider context from settled records. Provider-native replay state is not attached, so a
+/// native replacement-history compaction falls back to the previous readable boundary.
 pub(super) fn messages(
     events: &[EventEnvelopeV1],
     agent: &str,
@@ -15,259 +30,114 @@ pub(super) fn messages(
     system_prompt: &str,
     run_dir: &std::path::Path,
 ) -> Result<Context, CoordinatorError> {
+    rebuild(events, agent, primary, system_prompt, run_dir, None)
+}
+
+/// Provider context from settled records, grouped by turn rather than arrival time. With a
+/// `request` naming the live provider and model, a stored native payload that belongs to
+/// them is imported and replays instead of the originals it already covers.
+pub(super) fn rebuild(
+    events: &[EventEnvelopeV1],
+    agent: &str,
+    primary: bool,
+    system_prompt: &str,
+    run_dir: &std::path::Path,
+    request: Option<&CompletionRequest>,
+) -> Result<Context, CoordinatorError> {
     let events = crate::conversation_rewind::active_events(events);
-    let mut turns: Vec<Vec<Entry>> = Vec::new();
-    let mut users: HashMap<String, usize> = HashMap::new();
-    let mut providers = HashMap::new();
-    let mut tools = HashMap::new();
-    let mut started = HashSet::new();
-    let mut cancelled = HashSet::new();
-    let mut legacy_text: HashMap<String, String> = HashMap::new();
-    let mut summaries = Vec::new();
-    let mut request_seqs: Vec<(String, u64)> = Vec::new();
-    let mut contexts = HashMap::new();
-    for event in events.iter().filter(|e| {
-        e.actor
-            .agent_id
-            .as_deref()
-            .map_or(primary, |id| id == agent)
-    }) {
-        match &event.payload {
-            EventV1::UserMessageSubmitted(e) => {
-                // Messages delivered into a running turn correlate to that turn, not themselves.
-                let running = event
-                    .correlation_id
-                    .as_deref()
-                    .filter(|turn| *turn != e.request_id.as_str())
-                    .and_then(|turn| users.get(turn))
-                    .copied();
-                if let Some(index) = running {
-                    let turn = request_seqs[index].0.clone();
-                    turns[index].push(user_entry(&e.text, event.seq, turn));
-                    continue;
-                }
-                users.insert(e.request_id.to_string(), turns.len());
-                request_seqs.push((e.request_id.to_string(), event.seq));
-                turns.push(vec![user_entry(
-                    &e.text,
-                    event.seq,
-                    e.request_id.to_string(),
-                )]);
-            }
-            EventV1::RuntimeReminder(e) => {
-                if let Some(index) = users.get(e.request_id.as_str()).copied() {
-                    let turn = request_seqs[index].0.clone();
-                    turns[index].push(user_entry(&e.text, event.seq, turn));
-                } else {
-                    // A reminder opens a wake turn that has no submitted user message.
-                    users.insert(e.request_id.to_string(), turns.len());
-                    request_seqs.push((e.request_id.to_string(), event.seq));
-                    turns.push(vec![user_entry(
-                        &e.text,
-                        event.seq,
-                        e.request_id.to_string(),
-                    )]);
-                }
-            }
-            EventV1::PromptAttachmentsSubmitted(e) => {
-                if let Some(turn) = users
-                    .get(e.request_id.as_str())
-                    .and_then(|index| turns.get_mut(*index))
-                    && let Some(user) = turn.first_mut()
-                {
-                    user.attachments.clone_from(&e.attachments);
-                }
-            }
-            EventV1::ArtifactWritten(e) => {
-                if let Some(request) = e.metadata.get("prompt_context") {
-                    contexts.insert(request.clone(), e);
-                }
-            }
-            EventV1::TaskCancelled(e) if e.task_scope != Some(TaskTerminalScope::ToolCall) => {
-                cancelled.insert(e.task_id.to_string());
-            }
-            EventV1::ProviderRequestStarted(e) => {
-                let turn = e
-                    .metadata
-                    .as_ref()
-                    .and_then(|m| m.turn_id.as_ref())
-                    .or(event.correlation_id.as_ref())
-                    .and_then(|id| users.get(id))
-                    .copied()
-                    .or_else(|| turns.len().checked_sub(1));
-                if let Some(turn) = turn {
-                    if let Some((id, _)) = request_seqs.get(turn) {
-                        started.insert(id.clone());
-                    }
-                    providers.insert(e.request_id.to_string(), turn);
-                }
-            }
-            EventV1::ProviderStreamDelta(e) => {
-                legacy_text
-                    .entry(e.request_id.to_string())
-                    .or_default()
-                    .push_str(&e.delta);
-            }
-            EventV1::AssistantMessageFinished(e) => {
-                let Some(index) = providers.get(e.request_id.as_str()).copied().or_else(|| {
-                    event
-                        .correlation_id
-                        .as_ref()
-                        .and_then(|id| users.get(id))
-                        .copied()
-                }) else {
-                    continue;
-                };
-                let mut message = CompletionMessage::text(MessageRole::Assistant, "");
-                let mut calls = Vec::new();
-                let mut results = Vec::new();
-                for part in &e.parts {
-                    match part {
-                        crate::session::AssistantPart::Text { text } => {
-                            message.content.push_str(text)
-                        }
-                        crate::session::AssistantPart::ToolCall(call) => {
-                            let provider_id = call
-                                .provider_tool_call_id
-                                .clone()
-                                .unwrap_or_else(|| call.tool_call_id.to_string());
-                            tools.insert(
-                                call.tool_call_id.to_string(),
-                                (index, turns[index].len() + 1 + results.len()),
-                            );
-                            // Reserve call order, including an explicit unknown result for interrupted tools.
-                            results.push(Entry {
-                                attachments: Vec::new(),
-                                settled_reasoning: Vec::new(),
-                                raw_tool_result: None,
-                                seq: event.seq,
-                                turn: Some(request_seqs[index].0.clone()),
-                                message: CompletionMessage {
-                                    continuation: None,
-                                    role: MessageRole::Tool,
-                                    content: INTERRUPTED_TOOL_RESULT.into(),
-                                    tool_call_id: Some(provider_id.clone()),
-                                    name: Some(call.tool_id.clone()),
-                                    assistant_tool_calls: None,
-                                },
-                            });
-                            calls.push(AssistantToolCall {
-                                tool_call_id: provider_id,
-                                function_name: call.tool_id.clone(),
-                                arguments_json: canonical_arguments(&call.args_summary),
-                            });
-                        }
-                        crate::session::AssistantPart::Reasoning { .. } => {}
-                    }
-                }
-                if e.parts.is_empty() {
-                    message.content = legacy_text
-                        .remove(e.request_id.as_str())
-                        .unwrap_or_default();
-                }
-                message.assistant_tool_calls = (!calls.is_empty()).then_some(calls);
-                turns[index].push(Entry {
-                    attachments: Vec::new(),
-                    settled_reasoning: Vec::new(),
-                    raw_tool_result: None,
-                    message,
-                    seq: event.seq,
-                    turn: Some(request_seqs[index].0.clone()),
-                });
-                turns[index].extend(results);
-            }
-            EventV1::ToolCallFinished(e) => {
-                if let Some((turn, result)) = tools.remove(e.tool_call_id.as_str()) {
-                    turns[turn][result].attachments = e
-                        .metadata
-                        .as_ref()
-                        .map(|m| m.attachments.clone())
-                        .unwrap_or_default();
-                    let summary = e.output_summary.clone().unwrap_or_else(|| match e.status {
-                        ToolCallStatus::Succeeded => "Tool completed.".into(),
-                        ToolCallStatus::Failed => "Tool execution failed.".into(),
-                    });
-                    let message = &mut turns[turn][result].message;
-                    message.content = crate::tool::provider_text(
-                        message.name.as_deref().unwrap_or_default(),
-                        summary,
-                        e.output_json.clone(),
-                    );
-                }
-            }
-            EventV1::SessionCompaction(e) if e.agent_id == agent => {
-                summaries.push(e);
-            }
-            _ => {}
-        }
-    }
+    let fold::Folded {
+        mut entries,
+        compactions,
+        tool_ids,
+        contexts,
+    } = fold::fold(&events, agent, primary);
     let mut output = Context::new(system_prompt);
     output.unavailable = Some(crate::subagent::FinalizedStateUnavailable::LegacySummaryOnly);
-    if let Some(summary) = summaries.last() {
-        output.push(
-            CompletionMessage::text(
-                MessageRole::User,
-                format!("Conversation summary:\n{}", summary.summary),
-            ),
-            0,
-            None,
-        );
+    let mut recovered = None;
+    let mut summary = None;
+    if let Some(selected) = boundary::select(&compactions, request, run_dir) {
+        let recorded = &compactions[selected.index];
+        recovered = recover_request(&entries, recorded, selected.start);
+        entries.retain(|entry| entry.seq >= selected.start);
+        summary = Some((recorded, selected.payload));
     }
-    let boundary = summaries
-        .last()
-        .map(|summary| {
-            summary
-                .first_kept_request_id
-                .as_ref()
-                .map(|id| users.get(id).copied())
-                .unwrap_or_else(|| {
-                    request_seqs
-                        .iter()
-                        .position(|(_, seq)| *seq >= summary.first_kept_event_seq)
-                })
-                .ok_or_else(|| {
-                    CoordinatorError::Invalid(
-                        "compaction retention boundary is missing from history".into(),
-                    )
-                })
-        })
-        .transpose()?;
-    for (index, ((id, _), turn)) in request_seqs.into_iter().zip(turns).enumerate() {
-        if cancelled.contains(&id) && !started.contains(&id) {
-            continue;
-        }
-        if boundary.is_some_and(|first| index < first) {
-            continue;
-        }
-        output.entries.extend(turn.into_iter().filter(|entry| {
-            boundary.is_none_or(|first| index != first)
-                || summaries
-                    .last()
-                    .is_none_or(|summary| entry.seq >= summary.first_kept_event_seq)
-        }));
+    apply_pruned_events(&mut entries, &events, agent, &tool_ids);
+    if let Some((recorded, payload)) = summary {
+        let rewrite_at = history_rewrite_at_ms(&entries, 0);
+        output
+            .entries
+            .push(boundary::summary(recorded, payload, rewrite_at));
+        boundary::seed_reader_views(&output.render_caches, recorded.seq, &recorded.patches);
     }
+    output.entries.extend(entries);
+    derive_images(&mut output.entries);
     super::prompt::restore_content(&mut output, run_dir, &contexts)?;
+    if let Some(mut request) = recovered {
+        super::prompt::restore_entries(std::slice::from_mut(&mut request), run_dir, &contexts)?;
+        super::compaction::notes::insert_recovered_request(&mut output, request);
+    }
+    if let Some(revision) = super::compaction::notes::latest_notebook(&events, agent) {
+        super::compaction::notes::inject_notebook(&mut output, &revision);
+    }
     Ok(output)
 }
-fn user_entry(text: &str, seq: u64, turn: String) -> Entry {
-    Entry {
-        message: CompletionMessage::text(MessageRole::User, text),
-        seq,
-        turn: Some(turn),
-        attachments: Vec::new(),
-        settled_reasoning: Vec::new(),
-        raw_tool_result: None,
+
+/// The newest authoritative request before a notes rollover that the kept suffix does not
+/// already hold; it is appended after the summary.
+fn recover_request(
+    originals: &[Entry],
+    recorded: &fold::Recorded<'_>,
+    start: u64,
+) -> Option<Entry> {
+    if !super::compaction::notes::is_rollover(recorded.event.details.as_ref()) {
+        return None;
     }
+    let before: Vec<Entry> = originals
+        .iter()
+        .filter(|entry| entry.seq < recorded.seq && entry.message.role == MessageRole::User)
+        .cloned()
+        .collect();
+    let first_kept = before
+        .iter()
+        .position(|entry| entry.seq >= start)
+        .unwrap_or(before.len());
+    let index = super::compaction::notes::recover_authoritative_request(&before, first_kept)?;
+    before.into_iter().nth(index)
 }
-fn canonical_arguments(summary: &str) -> String {
-    serde_json::from_str::<serde_json::Value>(summary)
-        .ok()
-        .filter(serde_json::Value::is_object)
-        .map_or_else(
-            || "{}".into(),
-            |mut value| {
-                value.sort_all_objects();
-                value.to_string()
-            },
-        )
+
+/// Every settled entry of the agent in journal order, ignoring all compactions. Attachment
+/// bytes are not loaded; see [`hydrate_original`].
+pub(in crate::coord) fn original_entries(
+    events: &[EventEnvelopeV1],
+    agent: &str,
+    primary: bool,
+) -> Vec<Entry> {
+    let events = crate::conversation_rewind::active_events(events);
+    let fold::Folded {
+        mut entries,
+        tool_ids,
+        ..
+    } = fold::fold(&events, agent, primary);
+    apply_pruned_events(&mut entries, &events, agent, &tool_ids);
+    derive_images(&mut entries);
+    entries
+}
+
+/// Loads the attachment bytes and selected context of one entry from [`original_entries`].
+pub(in crate::coord) fn hydrate_original(
+    entry: &mut Entry,
+    events: &[EventEnvelopeV1],
+    run_dir: &std::path::Path,
+) -> Result<(), CoordinatorError> {
+    let contexts: HashMap<String, &ArtifactWrittenEvent> = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::ArtifactWritten(written) => written
+                .metadata
+                .get("prompt_context")
+                .map(|request| (request.clone(), written)),
+            _ => None,
+        })
+        .collect();
+    super::prompt::restore_entries(std::slice::from_mut(entry), run_dir, &contexts)
 }

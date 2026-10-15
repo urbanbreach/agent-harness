@@ -10,18 +10,16 @@ impl harness_providers::Provider for BudgetedSummaryProvider {
         &self,
         request: harness_providers::CompletionRequest,
     ) -> harness_providers::ProviderEventStream {
-        if request
-            .messages
-            .first()
-            .is_some_and(|message| message.content.starts_with("Summarize this conversation"))
-        {
+        if request.messages.first().is_some_and(|message| {
+            message.content == harness_compaction::prompts::summarization_system_prompt()
+        }) {
             let final_chunk = request.messages[1].content.contains("END_OLD");
             let text = if final_chunk {
                 SUMMARY.to_owned()
             } else {
                 let padding = "abc "
                     .repeat(request.max_tokens.unwrap_or_default().saturating_sub(256) as usize);
-                SUMMARY.replace("## Progress\n", &format!("## Progress\n{padding}\n"))
+                format!("{SUMMARY}\n{padding}")
             };
             self.summaries.lock().await.push(request);
             Box::pin(tokio_stream::iter(answer(text)))
@@ -58,9 +56,11 @@ async fn compaction_bounds_intermediate_summaries_to_the_next_input_budget(
     let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
     config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
     config.agent_model_targets.insert("default".into(), target);
-    config.compaction.keep_recent_tokens = 1;
-    config.compaction.reserve_tokens = 0;
-    config.compaction.suppress_auto_compaction = true;
+    config.compaction.keep_recent_tokens = 100;
+    config.compaction.reserve_tokens = Some(5_000);
+    config.compaction.enabled = false;
+    config.compaction.method_order = vec![CompactionMethod::Soft];
+    config.compaction.async_enabled = false;
     let coordinator = spawn_coordinator(
         config,
         Arc::new(FakeClock::new()),
@@ -84,12 +84,23 @@ async fn compaction_bounds_intermediate_summaries_to_the_next_input_budget(
     ));
     let summaries = provider.summaries.lock().await;
     assert!(summaries.len() > 1);
-    for request in &summaries[..summaries.len() - 1] {
-        assert!(request.max_tokens.is_some_and(|cap| cap < 4096));
+    for request in summaries.iter() {
+        let input: u32 = request
+            .messages
+            .iter()
+            .map(|m| {
+                harness_compaction::tokenizer::Counter::byte_estimating(None).count_text(&m.content)
+            })
+            .sum();
+        assert!(input + request.max_tokens.unwrap_or_default() < 12_288);
+        assert!(request.max_tokens.is_some_and(|cap| cap <= 4_000));
     }
     assert_eq!(
-        summaries.last().ok_or("missing final summary")?.max_tokens,
-        Some(8192)
+        summaries
+            .last()
+            .ok_or("missing display summary")?
+            .max_tokens,
+        Some(512)
     );
     drop(summaries);
     let turn = coordinator

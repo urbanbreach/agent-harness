@@ -1,6 +1,9 @@
 use serde::Serialize;
 use std::sync::LazyLock;
 
+mod copy;
+pub use copy::{setting_copy, SettingCopy};
+
 macro_rules! ids {
     ($($name:ident),*) => {$(
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -98,6 +101,8 @@ fn definition(
                 | "edit.model_variants"
                 | "runtime.compaction.model_thresholds"
                 | "runtime.compaction.agent_thresholds"
+                | "runtime.compaction.remote_models"
+                | "runtime.compaction.summary_models"
                 | "subagents"
                 | "subagents.models"
                 | "subagents.toggle"
@@ -136,13 +141,21 @@ static REGISTRY: LazyLock<Vec<SettingDefinition>> = LazyLock::new(|| {
         "features.subagent_worktree_snapshot" => "false",
     ).to_vec();
     entries.extend(entries!("harness.", Runtime;
-        "runtime.yolo" => "false", "runtime.compaction.enabled" => "true", "runtime.compaction.reserve_tokens" => "16384",
+        "runtime.yolo" => "false", "runtime.compaction.enabled" => "true", "runtime.compaction.reserve_tokens" => "null",
         "runtime.compaction.keep_recent_tokens" => "20000", "runtime.compaction.threshold_percent", "runtime.compaction.threshold_tokens",
         "runtime.compaction.model_thresholds" => "{}", "runtime.compaction.agent_thresholds" => "{}", "runtime.compaction.fallback_input_tokens" => "32768",
-        "runtime.compaction.auto_retry_overflow" => "true", "runtime.compaction.structured_summary_contract" => "true", "runtime.compaction.estimated_token_triggers" => "true",
+        "runtime.compaction.auto_retry_overflow" => "true", "runtime.compaction.estimated_token_triggers" => "true",
+        "runtime.compaction.mid_turn_enabled" => "true", "runtime.compaction.method_order" => "[\"remote\",\"archive\",\"handoff\",\"shake\",\"soft\"]", "runtime.compaction.model_thresholds_enabled" => "true",
+        "runtime.compaction.auto_continue" => "true", "runtime.compaction.async_enabled" => "true", "runtime.compaction.handoff_save_to_disk" => "false", "runtime.compaction.remote_streaming_v2_enabled" => "true",
+        "runtime.compaction.remote_enabled" => "true", "runtime.compaction.remote_models" => "{}", "runtime.compaction.base_window_tokens",
+        "runtime.compaction.remote_endpoint", "runtime.compaction.v2_retained_message_budget" => "64000", "runtime.compaction.idle_enabled" => "false", "runtime.compaction.idle_threshold_tokens" => "200000", "runtime.compaction.idle_timeout_seconds" => "300",
+        "runtime.compaction.supersede_reads" => "true", "runtime.compaction.drop_useless" => "true", "runtime.compaction.context_promotion" => "false", "runtime.compaction.promotion_targets" => "{}", "runtime.compaction.summary_model", "runtime.compaction.summary_models" => "{}",
+        "runtime.compaction.retry.enabled" => "true", "runtime.compaction.retry.max_retries" => "10", "runtime.compaction.retry.base_delay_ms" => "500",
+        "runtime.compaction.notes_windows" => "false",
+        "runtime.compaction.archive.shape" => "auto", "runtime.compaction.archive.system_prompt" => "none", "runtime.compaction.archive.tool_results" => "false", "runtime.compaction.branch_summary.enabled" => "false", "runtime.compaction.branch_summary.reserve_tokens" => "16384",
         "runtime.deterministic.enabled" => "false", "runtime.session_dir" => "",
     ));
-    entries.extend(entries!("harness.tui.", Tui; "confirm_before_rewind" => "true", "keybinds" => "{}", "$schema"));
+    entries.extend(entries!("harness.tui.", Tui; "confirm_before_rewind" => "true", "collapse_compacted_history" => "true", "keybinds" => "{}", "$schema"));
     entries
 });
 pub fn settings_registry() -> &'static [SettingDefinition] {

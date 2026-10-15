@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
+mod entry_meta;
 mod history;
 mod lifecycle;
 mod output;
@@ -12,6 +13,7 @@ pub(crate) mod output_contract;
 mod schema;
 mod state;
 mod wire;
+pub use entry_meta::*;
 pub use history::*;
 pub use schema::spawn_subagent_schema;
 pub(crate) use state::read_finalized_payload;

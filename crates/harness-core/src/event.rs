@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 mod compaction;
+mod lifecycle;
 mod provider;
 mod reminder;
 mod subagent_progress;
@@ -7,6 +8,7 @@ mod task;
 mod tool;
 mod workspace;
 pub use compaction::*;
+pub use lifecycle::*;
 pub use provider::*;
 pub use reminder::*;
 pub use subagent_progress::*;
@@ -60,6 +62,16 @@ pub enum LiveEventV1 {
     RuntimeWarning {
         message: String,
     },
+    /// A user-visible notice with an explicit source and severity.
+    RuntimeNotice {
+        source: NoticeSource,
+        severity: NoticeSeverity,
+        message: String,
+    },
+    /// Start or end of one compaction pass.
+    CompactionLifecycle(CompactionLifecycleEvent),
+    /// The footer's view of automatic compaction for one agent.
+    CompactionStatus(CompactionStatusEvent),
     /// A monitor stopped or resumed delivering its matching lines.
     MonitorState {
         task_id: String,
@@ -70,6 +82,8 @@ pub enum LiveEventV1 {
         generation: u64,
         trigger_reason: String,
         preview: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stage: Option<CompactionStage>,
     },
     ProviderRetrying {
         turn_id: crate::ids::RequestId,
@@ -120,6 +134,10 @@ pub enum ActorKind {
     System,
 }
 
+#[allow(
+    clippy::large_enum_variant,
+    reason = "durable journal enum; compaction records carry their archive and native metadata inline, and boxing would change every pattern and constructor"
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event_type", content = "data", rename_all = "snake_case")]
 pub enum EventV1 {
@@ -148,7 +166,10 @@ pub enum EventV1 {
     CompactionApplied(CompactionAppliedEvent),
     CompactionFailed(CompactionFailedEvent),
     SessionCompaction(SessionCompactionEvent),
+    ContextPruned(ContextPrunedEvent),
     BranchSummary(BranchSummaryEvent),
+    CompactionPatched(CompactionPatchedEvent),
+    ContextNotes(ContextNotesEvent),
     ToolCallRequested(ToolCallRequestedEvent),
     ToolCallStarted(ToolCallStartedEvent),
     ToolCallFinished(ToolCallFinishedEvent),
@@ -216,8 +237,11 @@ impl EventV1 {
             Self::CompactionFailed(..) => "compaction_failed",
             Self::SessionCompaction(..) => "session_compaction",
             Self::BranchSummary(..) => "branch_summary",
+            Self::CompactionPatched(..) => "compaction_patched",
+            Self::ContextNotes(..) => "context_notes",
             Self::ToolCallRequested(..) => "tool_call_requested",
             Self::ToolCallStarted(..) => "tool_call_started",
+            Self::ContextPruned(..) => "context_pruned",
             Self::ToolCallFinished(..) => "tool_call_finished",
             Self::EvalCellFinished(..) => "eval_cell_finished",
             Self::PermissionRequested(..) => "permission_requested",

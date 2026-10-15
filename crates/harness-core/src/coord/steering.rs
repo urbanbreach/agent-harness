@@ -77,7 +77,20 @@ impl CoordinatorHandle {
         agent: impl Into<String>,
     ) -> Result<Vec<String>, CoordinatorError> {
         let agent = agent.into();
-        self.call(move |s| s.withdraw_queued_input(&agent)).await
+        self.call(move |s| s.withdraw_queued_input(&agent, false))
+            .await
+    }
+
+    /// Takes back everything the user queued for the agent, prompts with tags or
+    /// attachments included, so a failed delivery the caller restores from its own copy
+    /// leaves nothing behind that would run a second time. Returns the texts.
+    pub async fn withdraw_accepted_input(
+        &self,
+        agent: impl Into<String>,
+    ) -> Result<Vec<String>, CoordinatorError> {
+        let agent = agent.into();
+        self.call(move |s| s.withdraw_queued_input(&agent, true))
+            .await
     }
 }
 
@@ -163,8 +176,12 @@ impl Runtime {
 
     /// Takes back the user input still waiting for the agent: undelivered steering and
     /// queued plain prompts, in the order the user sent them. Each is recorded as
-    /// cancelled; prompts with tags or attachments stay queued.
-    fn withdraw_queued_input(&mut self, agent: &str) -> Result<Vec<String>, CoordinatorError> {
+    /// cancelled; prompts with tags or attachments stay queued unless `rich` asks for them.
+    fn withdraw_queued_input(
+        &mut self,
+        agent: &str,
+        rich: bool,
+    ) -> Result<Vec<String>, CoordinatorError> {
         let mut withdrawn: Vec<_> = self
             .steering
             .remove(agent)
@@ -172,7 +189,7 @@ impl Runtime {
             .into_iter()
             .map(|steering| (steering.seq, steering.id, steering.text))
             .collect();
-        withdrawn.extend(self.take_queued_plain_prompts(agent));
+        withdrawn.extend(self.take_queued_user_prompts(agent, rich));
         withdrawn.sort_by_key(|(seq, ..)| *seq);
         for (_, id, _) in &withdrawn {
             self.emit(

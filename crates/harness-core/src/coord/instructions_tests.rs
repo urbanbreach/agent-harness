@@ -65,8 +65,8 @@ fn configuration(root: &Path, provider: &Arc<MockProvider>) -> CoordinatorConfig
     config.behavior.directory_instructions.enabled = true;
     config.behavior.directory_instructions.max_bytes = 1024;
     config.compaction.keep_recent_tokens = 1;
-    config.compaction.reserve_tokens = 0;
-    config.compaction.suppress_auto_compaction = true;
+    config.compaction.reserve_tokens = Some(0);
+    config.compaction.enabled = false;
     let mut profile = crate::agent::AgentProfile::fallback("default");
     profile.toolset = vec!["read_paths".into()];
     config.agent_profiles.insert("default".into(), profile);
@@ -175,11 +175,14 @@ async fn directory_instructions_reach_provider_once_survive_resume_and_rearm_aft
             touch("resumed", json!(["sub/file"])),
             super::super::compaction_tests::answer("recent answer ".repeat(1000)),
             super::super::compaction_tests::answer(super::super::compaction_tests::SUMMARY),
+            super::super::compaction_tests::answer("Rewrite checkpoint"),
             touch("compacted", json!(["sub/file"])),
             super::super::compaction_tests::answer("done"),
         ]));
         let mut config = configuration(root, &provider);
         config.behavior.directory_instructions.enabled = enabled;
+        config.compaction.method_order = vec![harness_compaction::CompactionMethod::Soft];
+        config.compaction.keep_recent_tokens = 4_000;
         config.instruction_paths = vec![root.join("sub/../AGENTS.md")];
         let coordinator = spawn(config.clone());
         let run = coordinator.start_run("instructions", root).await?;
@@ -238,16 +241,19 @@ async fn directory_instructions_reach_provider_once_survive_resume_and_rearm_aft
         turn(&resumed, &agent).await?;
         assert_eq!(recorded(&run.events_path)?.len(), 2 * usize::from(enabled));
         let requests = provider.captured_requests().await;
-        assert_eq!(requests.len(), 8);
         assert_eq!(
-            requests[7]
+            requests
+                .last()
+                .ok_or("missing final request")?
                 .messages
                 .iter()
                 .filter(|m| m.content.contains("SUB_UPDATED"))
                 .count(),
             usize::from(enabled)
         );
-        assert!(!requests[7]
+        assert!(!requests
+            .last()
+            .ok_or("missing final request")?
             .messages
             .iter()
             .any(|m| m.content.contains("STARTUP_ONLY")));

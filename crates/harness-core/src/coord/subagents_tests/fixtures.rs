@@ -6,6 +6,7 @@ pub(super) fn settled_metadata(reasoning: &str) -> Stream {
             prompt_tokens: 12,
             completion_tokens: 3,
             total_tokens: 15,
+            ..Default::default()
         }),
         metadata: Some(ProviderStreamFinishedMetadata {
             settled_reasoning: Some(vec![reasoning.into()]),

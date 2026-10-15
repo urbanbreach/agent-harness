@@ -42,10 +42,17 @@ defaults! {
     OutputContractSettings { max_retries: 2 }
     ProviderRetryRuntimeConfig { max_retries: 2, base_delay_ms: 2_000, max_delay_ms: 30_000 }
     CompactionSettings {
-        enabled: true, threshold_percent: None, threshold_tokens: None, model_thresholds: BTreeMap::new(), agent_thresholds: BTreeMap::new(),
-        reserve_tokens: 16_384, keep_recent_tokens: 20_000, auto_retry_overflow: true, structured_summary_contract: true,
-        estimated_token_triggers: true, fallback_input_tokens: 32_768, split_oversized_turns: false, suppress_auto_compaction: false
+        enabled: true, mid_turn_enabled: true, method_order: CompactionMethod::DEFAULT_ORDER.to_vec(),
+        threshold_percent: None, threshold_tokens: None, model_thresholds: BTreeMap::new(), model_thresholds_enabled: true, agent_thresholds: BTreeMap::new(),
+        reserve_tokens: None, keep_recent_tokens: 20_000, auto_retry_overflow: true, estimated_token_triggers: true, fallback_input_tokens: 32_768,
+        auto_continue: true, async_enabled: true, handoff_save_to_disk: false, remote_streaming_v2_enabled: true, remote_enabled: true, remote_endpoint: None, v2_retained_message_budget: 64_000,
+        idle_enabled: false, idle_threshold_tokens: 200_000, idle_timeout_seconds: 300, supersede_reads: true, drop_useless: true, context_promotion: false, promotion_targets: BTreeMap::new(),
+        summary_model: None, summary_models: BTreeMap::new(), base_window_tokens: None, remote_models: BTreeMap::new(), retry: CompactionRetrySettings::default(), notes_windows: false,
+        archive: ArchiveSettings::default(), branch_summary: BranchSummarySettings::default()
     }
+    CompactionRetrySettings { enabled: true, max_retries: 10, base_delay_ms: 500 }
+    ArchiveSettings { shape: "auto".into(), system_prompt: ArchiveSystemPrompt::None, tool_results: false }
+    BranchSummarySettings { enabled: false, reserve_tokens: 16_384 }
     ProfileConfig {
         name: None, description: String::new(), system_prompt: None, model_ref: String::new(), model_ref_explicit: false, variant: None,
         temperature: None, top_p: None, mode: AgentMode::All, hidden: false, color: None, options: BTreeMap::new(), permissions: None,
@@ -58,7 +65,7 @@ defaults! {
     }
     PermissionsConfig { defaults: PermissionDefaultsConfig::default(), fallback: None, rules: default_permission_rule_set_with_read_env(), shell_allowlist: ShellAllowlist::default() }
     SkillsConfig { project_roots: vec![".harness/skills".into(), ".agents/skills".into()], global_roots: vec!["~/.harness/skills".into(), "~/.agents/skills".into()], urls: Vec::new(), disabled: Vec::new(), walk_to_git_root: true, permissions: BTreeMap::new() }
-    LifecycleHookConfig { id: None, event: HookLifecycleEvent::ToolCallStarted, command: Vec::new(), cwd: None, timeout_ms: 5_000, critical: false, env: BTreeMap::new() }
+    LifecycleHookConfig { id: None, event: HookLifecycleEvent::ToolCallStarted, command: Vec::new(), cwd: None, timeout_ms: None, critical: false, env: BTreeMap::new() }
     FormatterConfig { enabled: true, experimental_oxfmt: false, overrides: BTreeMap::new() }
     RemoteSearchConfig { endpoint: "https://mcp.exa.ai/mcp".into(), auth_token: None, require_auth: false, timeout_secs: 30, max_retries: 1, retry_backoff_ms: 250 }
     OpenAiCompatibleProviderConfig {

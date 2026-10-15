@@ -51,6 +51,13 @@ impl Runtime {
         correlation: Option<String>,
         payload: EventV1,
     ) -> Result<EventEnvelopeV1, CoordinatorError> {
+        // A turn that opened a provider stream is past prompt setup: a manual pass that
+        // aborts it interrupted real work and owes it a resume.
+        if matches!(payload, EventV1::ProviderRequestStarted(_))
+            && let (Some(agent), Some(turn)) = (actor.agent_id.as_deref(), correlation.as_deref())
+        {
+            self.manual_claims.note_stream_started(agent, turn);
+        }
         if self.config.hook_runtime_config.hooks.lifecycle.is_empty() {
             return self.emit(actor, correlation, payload);
         }

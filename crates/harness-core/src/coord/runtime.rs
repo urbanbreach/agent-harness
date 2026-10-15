@@ -43,6 +43,7 @@ pub(super) struct Runtime {
         crate::conversation_rewind::RewindPoint,
         Reply<crate::conversation_rewind::RewindPoint>,
     )>,
+    pub rewind_summary: Option<Result<BranchSummaryEvent, CoordinatorError>>,
     pub counter: u64,
     pub last_seq: u64,
     pub tool_state: crate::tool::ToolRunState,
@@ -52,6 +53,10 @@ pub(super) struct Runtime {
     pub stopped_sessions: std::collections::BTreeSet<String>,
     pub killed_agents: std::collections::BTreeSet<String>,
     pub compacting: BTreeMap<String, (u64, CancellationToken)>,
+    /// Background speculative summaries, one slot per agent.
+    pub speculation: BTreeMap<String, super::compaction::Speculation>,
+    /// `agent\0model` keys whose provider-native compaction failed permanently.
+    pub native_failed: std::collections::BTreeSet<String>,
     pub edits: BTreeMap<String, super::edits::PendingEdit>,
     pub snapshots: BTreeMap<String, super::workspace::Snapshot>,
     /// The last model and settings announced per agent, so each pick reaches providers once.
@@ -68,6 +73,12 @@ pub(super) struct Runtime {
     /// Directory instruction files already added to each agent's context since its last compaction.
     pub instructions_seen: BTreeMap<String, std::collections::BTreeSet<PathBuf>>,
     pub monitor_wakes: super::commands::MonitorWakes,
+    /// Contexts a compaction already failed to shrink, per agent.
+    pub parked: BTreeMap<String, super::compaction::state::ParkedSet>,
+    pub manual_claims: super::compaction::state::ManualClaims,
+    pub notes: BTreeMap<String, super::compaction::state::NotesState>,
+    /// The last compaction status published per agent, so only changes reach the footer.
+    pub compaction_status: BTreeMap<String, crate::event::CompactionStatusEvent>,
 }
 pub(super) struct Agent {
     pub info: AgentRuntimeInfo,
@@ -180,6 +191,7 @@ impl Runtime {
             stopping: None,
             fault,
             rewind: None,
+            rewind_summary: None,
             counter: 0,
             last_seq: 0,
             tool_state: Default::default(),
@@ -191,6 +203,8 @@ impl Runtime {
             edits: BTreeMap::new(),
             snapshots: BTreeMap::new(),
             compacting: BTreeMap::new(),
+            speculation: BTreeMap::new(),
+            native_failed: std::collections::BTreeSet::new(),
             selections: BTreeMap::new(),
             todos: Default::default(),
             pending_reminders: BTreeMap::new(),
@@ -199,6 +213,10 @@ impl Runtime {
             steering_signals: BTreeMap::new(),
             instructions_seen: BTreeMap::new(),
             monitor_wakes: Default::default(),
+            parked: BTreeMap::new(),
+            manual_claims: Default::default(),
+            notes: BTreeMap::new(),
+            compaction_status: BTreeMap::new(),
         }
     }
     pub async fn run(mut self, mut rx: mpsc::Receiver<Command>, shutdown: CancellationToken) {
@@ -366,9 +384,10 @@ impl Runtime {
             }
             let reply = match &mut job.kind {
                 JobKind::Tool { reply, .. } => reply.take(),
-                JobKind::Turn { .. } | JobKind::Command | JobKind::SubagentPreparation { .. } => {
-                    None
-                }
+                JobKind::Turn { .. }
+                | JobKind::Command
+                | JobKind::BranchSummary
+                | JobKind::SubagentPreparation { .. } => None,
             };
             if let Some(reply) = reply {
                 let _ = reply.send(Err(CoordinatorError::Invalid(message.clone())));
@@ -399,6 +418,7 @@ impl Runtime {
         if !matches!(
             payload,
             LiveEventV1::CompactionProgress { preview: None, .. }
+                | LiveEventV1::CompactionStatus(_)
         ) {
             self.check_task(&task)?;
         }
@@ -429,46 +449,6 @@ impl Runtime {
             Err(CoordinatorError::Cancelled(id.into()))
         } else {
             Ok(())
-        }
-    }
-    fn worker_failed(&mut self, error: tokio::task::JoinError) {
-        let Some((id, job)) = self
-            .running
-            .iter()
-            .find(|(_, j)| j.join_id == Some(error.id()))
-        else {
-            return;
-        };
-        let lost_context = matches!(job.kind, JobKind::Turn { .. });
-        let message = "worker stopped unexpectedly";
-        let failure = CoordinatorError::Invalid(message.into());
-        let completion = match job.kind {
-            JobKind::Turn { .. } => Completion::Turn {
-                id: id.clone(),
-                messages: Context::default(),
-                result: Err(failure),
-            },
-            JobKind::Tool { .. } => Completion::Tool {
-                id: id.clone(),
-                result: Err(failure),
-                instructions: Vec::new(),
-            },
-            JobKind::Command => Completion::Command {
-                id: id.clone(),
-                result: Err(failure),
-            },
-            JobKind::SubagentPreparation { .. } => Completion::SubagentPrepared {
-                id: id.clone(),
-                result: Err(failure),
-            },
-        };
-        if lost_context {
-            self.fault = Some(message.into());
-        }
-        let _ = self.finished(completion);
-        if lost_context && self.stopping.is_none() {
-            let (reply, _) = oneshot::channel();
-            let _ = self.stop(Some(message.into()), reply);
         }
     }
 }

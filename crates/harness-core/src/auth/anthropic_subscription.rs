@@ -14,7 +14,7 @@ use harness_providers::anthropic_subscription::{
 use regex::Regex;
 use std::sync::{Arc, LazyLock};
 
-/// `4102444800000` (2100-01-01), the sentinel expiry senpi stores.
+/// `4102444800000` (2100-01-01), the sentinel expiry for non-expiring credentials.
 pub const SENTINEL_EXPIRES_AT: &str = "2100-01-01T00:00:00Z";
 
 pub fn pool_from_credential(credential: &StoredCredential) -> AccountPool {

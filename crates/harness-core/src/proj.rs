@@ -137,15 +137,53 @@ fn validate_history<'a>(
             }
             _ => {}
         }
+        if let EventV1::ContextPruned(pruned) = &event.payload {
+            for edit in &pruned.edits {
+                let seq = match edit {
+                    crate::event::ContextEdit::TextRange { start, end, .. } if start > end => {
+                        return Err(ProjectionError("invalid pruned text range".into()))
+                    }
+                    crate::event::ContextEdit::TextRange { seq, .. }
+                    | crate::event::ContextEdit::DropReasoning { seq, .. }
+                    | crate::event::ContextEdit::DropAttachments { seq, .. } => Some(*seq),
+                    crate::event::ContextEdit::ToolResult { seq, .. } => *seq,
+                };
+                if seq.is_some_and(|seq| seq == 0 || seq >= event.seq) {
+                    return Err(ProjectionError(
+                        "pruned context target is missing from earlier history".into(),
+                    ));
+                }
+            }
+        }
         if let EventV1::SessionCompaction(compaction) = &event.payload {
             let boundary = compaction.first_kept_event_seq;
             let invalid_turn = compaction
                 .first_kept_request_id
                 .as_deref()
                 .is_some_and(|id| users.get(id).is_none_or(|seq| *seq > boundary));
-            if boundary == 0 || boundary >= event.seq || invalid_turn {
+            // A compaction that keeps nothing points its boundary at itself.
+            if boundary == 0 || boundary > event.seq || invalid_turn {
                 return Err(ProjectionError(
                     "compaction retention boundary is missing from earlier history".into(),
+                ));
+            }
+        }
+        if let Some(target) = match &event.payload {
+            EventV1::CompactionPatched(patch) => Some(patch.compaction_seq),
+            EventV1::SessionCompaction(compaction) => compaction.supersedes_seq,
+            _ => None,
+        } {
+            let earlier_compaction = target
+                .checked_sub(1)
+                .and_then(|seq| usize::try_from(seq).ok())
+                .and_then(|i| events.get(i))
+                .is_some_and(|earlier| {
+                    earlier.seq < event.seq
+                        && matches!(earlier.payload, EventV1::SessionCompaction(_))
+                });
+            if !earlier_compaction {
+                return Err(ProjectionError(
+                    "compaction patch or supersession target is not an earlier compaction".into(),
                 ));
             }
         }

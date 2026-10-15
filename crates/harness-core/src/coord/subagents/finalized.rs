@@ -49,6 +49,7 @@ impl Runtime {
                     attachments: e.attachments.clone(),
                     settled_reasoning: e.settled_reasoning.clone(),
                     raw_tool_result: e.raw_tool_result.clone(),
+                    meta: Some(super::meta::capture(e)),
                 })
                 .collect(),
             model_request: messages.model_request.clone(),

@@ -18,6 +18,7 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::{CancellationToken, DropGuard};
+mod branch_summary;
 mod child_journals;
 mod children;
 mod commands;
@@ -36,7 +37,11 @@ mod eval;
 mod failure_tests;
 #[cfg(test)]
 mod fallback_tests;
-pub use compaction::ManualCompactionOutcome;
+pub use compaction::{
+    CancelReason, CompactionError, CompactionErrorKind, HandoffRejection, ManualCompactionOptions,
+    ManualCompactionOutcome, ManualRejection, NotesRevision, NotesSaved, NotesTicket, ResumeClaim,
+    ShakeOutcome,
+};
 #[cfg(test)]
 mod compaction_tests;
 mod completion;
@@ -244,7 +249,15 @@ pub enum CoordinatorError {
     #[error("cancelled: {0}")]
     Cancelled(String),
     #[error("compaction cancelled for {agent_id}")]
-    CompactionCancelled { agent_id: String },
+    CompactionCancelled {
+        agent_id: String,
+        reason: CancelReason,
+    },
+    /// A manual compaction or handoff was refused, or found nothing to do.
+    #[error("{0}")]
+    CompactionRejected(ManualRejection),
+    #[error(transparent)]
+    Compaction(CompactionError),
     /// The stream guard stopped a degenerate response; the worker may retry with a correction.
     #[error("response stopped by the stream guard: {0}")]
     StreamGuard(StreamGuardFailure),
@@ -254,6 +267,8 @@ pub enum CoordinatorError {
         category: Option<harness_providers::ProviderErrorCategory>,
         remediation: Option<String>,
         retry_after_ms: Option<u64>,
+        /// Status, headers, bounded redacted body and any usage the failed response reported.
+        envelope: Option<Box<harness_providers::ProviderErrorEnvelope>>,
     },
     #[error("{0}")]
     Invalid(String),

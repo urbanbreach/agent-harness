@@ -23,6 +23,73 @@ pub(super) struct Steering {
     pub seq: u64,
 }
 
+/// One piece of input the worker places in context before a request, with its provenance.
+#[derive(Debug, Clone)]
+pub(in crate::coord) struct TurnInput {
+    pub seq: u64,
+    pub text: String,
+    pub origin: harness_compaction::Origin,
+    pub note: Option<harness_compaction::NoteKind>,
+}
+
+impl TurnInput {
+    /// A message the user sent into the running turn.
+    pub(in crate::coord) fn user(seq: u64, text: String) -> Self {
+        Self {
+            seq,
+            text,
+            origin: harness_compaction::Origin::User,
+            note: None,
+        }
+    }
+
+    /// A message from the parent or a peer agent.
+    pub(in crate::coord) fn peer(seq: u64, text: String) -> Self {
+        Self {
+            seq,
+            text,
+            origin: harness_compaction::Origin::Agent,
+            note: Some(harness_compaction::NoteKind::Peer),
+        }
+    }
+
+    /// Guidance authored by the harness.
+    pub(in crate::coord) fn reminder(seq: u64, text: String, kind: RuntimeReminderKind) -> Self {
+        Self {
+            seq,
+            text,
+            origin: harness_compaction::Origin::Host,
+            note: Some(note_kind(kind)),
+        }
+    }
+
+    /// A finished child's result delivered to its parent.
+    pub(in crate::coord) fn child_completion(seq: u64, text: String) -> Self {
+        Self {
+            seq,
+            text,
+            origin: harness_compaction::Origin::Host,
+            note: Some(harness_compaction::NoteKind::ChildCompletion),
+        }
+    }
+}
+
+/// Reminders stay user-role notes; this is the kind compaction sees on their entries.
+pub(in crate::coord) fn note_kind(kind: RuntimeReminderKind) -> harness_compaction::NoteKind {
+    use harness_compaction::NoteKind;
+    match kind {
+        RuntimeReminderKind::CompactionResume => NoteKind::CompactionResume,
+        RuntimeReminderKind::LengthStop => NoteKind::LengthStop,
+        RuntimeReminderKind::NotesWindow => NoteKind::NotesWindow,
+        RuntimeReminderKind::CommandCompleted | RuntimeReminderKind::MonitorEvent => NoteKind::Wake,
+        RuntimeReminderKind::TodoContinuation
+        | RuntimeReminderKind::LoopGuard
+        | RuntimeReminderKind::StreamGuard
+        | RuntimeReminderKind::DirectoryInstructions
+        | RuntimeReminderKind::OutputContract => NoteKind::Reminder,
+    }
+}
+
 /// Wraps reminder text in the tag models treat as runtime guidance, escaping nested tags
 /// so quoted tool output cannot close the wrapper early.
 pub(super) fn wrap(text: &str) -> String {
@@ -76,11 +143,13 @@ impl Runtime {
         true
     }
 
+    /// Emits every queued reminder and returns it with its note kind, so the worker can
+    /// record where each context entry came from.
     pub(super) fn drain_pending_reminders(
         &mut self,
         agent: &str,
         request: &str,
-    ) -> Result<Vec<(u64, String)>, CoordinatorError> {
+    ) -> Result<Vec<TurnInput>, CoordinatorError> {
         let Some(pending) = self.pending_reminders.remove(agent) else {
             return Ok(Vec::new());
         };
@@ -95,13 +164,10 @@ impl Runtime {
             {
                 continue;
             }
-            emitted.push(self.emit_reminder(
-                agent,
-                request,
-                reminder.kind,
-                &reminder.body,
-                reminder.source,
-            )?);
+            let kind = reminder.kind;
+            let (seq, text) =
+                self.emit_reminder(agent, request, kind, &reminder.body, reminder.source)?;
+            emitted.push(TurnInput::reminder(seq, text, kind));
         }
         self.sync_command_notices(agent);
         Ok(emitted)
@@ -137,6 +203,7 @@ impl Runtime {
                         .insert(PathBuf::from(source));
                 }
             }
+            EventV1::ContextPruned(_) => {}
             EventV1::SessionCompaction(compaction) => {
                 self.instructions_seen.remove(&compaction.agent_id);
             }

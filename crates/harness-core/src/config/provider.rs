@@ -41,7 +41,7 @@ pub enum SubscriptionSettingSource {
     Local,
 }
 
-/// Settings of the `anthropic-subscription` lane; unset fields keep senpi's defaults.
+/// Settings of the `anthropic-subscription` lane; unset fields keep the lane defaults.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct AnthropicSubscriptionProviderConfig {
@@ -112,7 +112,7 @@ impl AnthropicSubscriptionProviderConfig {
     }
 }
 
-/// The models the lane serves: senpi's `anthropic` model table (see `configs/anthropic-subscription-models.json`).
+/// The models the lane serves (see `configs/anthropic-subscription-models.json`).
 pub fn anthropic_subscription_models() -> BTreeMap<String, ModelConfig> {
     serde_json::from_str(include_str!(
         "../../../../configs/anthropic-subscription-models.json"

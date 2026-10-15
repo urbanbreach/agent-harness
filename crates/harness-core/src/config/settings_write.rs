@@ -3,8 +3,11 @@ use super::ordered::OrderedValue;
 use super::*;
 use serde_json::{json, Value};
 use std::fs::{self, File, OpenOptions};
+mod migrate;
 mod rewind;
+mod tui_flags;
 pub use rewind::*;
+pub use tui_flags::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SettingWriteError {
@@ -50,6 +53,42 @@ pub enum SettingEditorKind {
 }
 pub fn setting_editor_kind(id: &str) -> Option<SettingEditorKind> {
     match id {
+        "runtime.compaction.enabled"
+        | "runtime.compaction.mid_turn_enabled"
+        | "runtime.compaction.model_thresholds_enabled"
+        | "runtime.compaction.auto_continue"
+        | "runtime.compaction.async_enabled"
+        | "runtime.compaction.handoff_save_to_disk"
+        | "runtime.compaction.remote_streaming_v2_enabled"
+        | "runtime.compaction.idle_enabled"
+        | "runtime.compaction.supersede_reads"
+        | "runtime.compaction.drop_useless"
+        | "runtime.compaction.context_promotion"
+        | "runtime.compaction.auto_retry_overflow"
+        | "runtime.compaction.estimated_token_triggers"
+        | "runtime.compaction.remote_enabled"
+        | "runtime.compaction.notes_windows"
+        | "runtime.compaction.retry.enabled"
+        | "runtime.compaction.archive.tool_results"
+        | "runtime.compaction.branch_summary.enabled" => Some(SettingEditorKind::Boolean),
+        "runtime.compaction.method_order"
+        | "runtime.compaction.model_thresholds"
+        | "runtime.compaction.agent_thresholds"
+        | "runtime.compaction.remote_models"
+        | "runtime.compaction.summary_models"
+        | "runtime.compaction.promotion_targets" => Some(SettingEditorKind::Json),
+        "runtime.compaction.remote_endpoint"
+        | "runtime.compaction.summary_model"
+        | "runtime.compaction.archive.shape" => Some(SettingEditorKind::String),
+        "runtime.compaction.threshold_percent"
+        | "runtime.compaction.threshold_tokens"
+        | "runtime.compaction.v2_retained_message_budget"
+        | "runtime.compaction.idle_threshold_tokens"
+        | "runtime.compaction.idle_timeout_seconds"
+        | "runtime.compaction.base_window_tokens"
+        | "runtime.compaction.retry.max_retries"
+        | "runtime.compaction.retry.base_delay_ms"
+        | "runtime.compaction.branch_summary.reserve_tokens" => Some(SettingEditorKind::Integer),
         "runtime.yolo"
         | "subagents.enabled"
         | "features.active_agent_messages"
@@ -62,6 +101,9 @@ pub fn setting_editor_kind(id: &str) -> Option<SettingEditorKind> {
         | "subagents.max_concurrent"
         | "subagents.sampling_limit" => Some(SettingEditorKind::Integer),
         "runtime.session_dir" => Some(SettingEditorKind::String),
+        "runtime.compaction.archive.system_prompt" => {
+            Some(SettingEditorKind::Choice(&["none", "agents_md", "all"]))
+        }
         "permission.bash" => Some(SettingEditorKind::Choice(&["ask", "allow", "deny"])),
         "subagents.limit_behavior" => Some(SettingEditorKind::Choice(&["queue", "fail"])),
         "edit.mode" => Some(SettingEditorKind::Choice(&[
@@ -77,8 +119,8 @@ pub fn setting_editor_kind(id: &str) -> Option<SettingEditorKind> {
 // These settings retain dedicated live toggles.
 const TOGGLES: &[&str] = &[
     "runtime.compaction.enabled",
+    "runtime.compaction.mid_turn_enabled",
     "runtime.compaction.auto_retry_overflow",
-    "runtime.compaction.structured_summary_contract",
     "runtime.compaction.estimated_token_triggers",
     "runtime.deterministic.enabled",
 ];
@@ -122,8 +164,10 @@ pub fn read_project_setting_value(
             .pointer(&format!("/{}", entry.setting_id.0.replace('.', "/")))
             .and_then(|value| match value {
                 Value::String(text) => Some(text.clone()),
-                Value::Bool(_) | Value::Number(_) => Some(value.to_string()),
-                _ => None,
+                Value::Bool(_) | Value::Number(_) | Value::Object(_) | Value::Array(_) => {
+                    Some(value.to_string())
+                }
+                Value::Null => None,
             }));
     }
     effective(&raw, path, entry.setting_id.0).map(Some)
@@ -183,6 +227,7 @@ fn update(path: &Path, id: &str, value: Option<Value>) -> Result<String, Setting
     let mut edited = raw.json()?;
     edit::normalize_compat(&mut edited)?;
     let keys = setting_path(&mut edited, id)?;
+    migrate::threshold_numbers(&mut edited);
     replace(&mut edited, &keys, value)?;
     let raw = raw.replace(edited);
     // Resolve references only in the validation copy. Persist the authored values.
@@ -350,7 +395,7 @@ macro_rules! toggles {
 toggles! {
     "runtime.compaction.enabled" => read_effective_compaction_enabled, write_project_compaction_enabled, reset_project_compaction_enabled;
     "runtime.compaction.auto_retry_overflow" => read_effective_compaction_auto_retry_overflow, write_project_compaction_auto_retry_overflow, reset_project_compaction_auto_retry_overflow;
-    "runtime.compaction.structured_summary_contract" => read_effective_compaction_structured_summary_contract, write_project_compaction_structured_summary_contract, reset_project_compaction_structured_summary_contract;
+    "runtime.compaction.mid_turn_enabled" => read_effective_compaction_mid_turn_enabled, write_project_compaction_mid_turn_enabled, reset_project_compaction_mid_turn_enabled;
     "runtime.compaction.estimated_token_triggers" => read_effective_compaction_estimated_token_triggers, write_project_compaction_estimated_token_triggers, reset_project_compaction_estimated_token_triggers;
     "runtime.deterministic.enabled" => read_effective_deterministic_enabled, write_project_deterministic_enabled, reset_project_deterministic_enabled;
 }

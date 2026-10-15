@@ -1,6 +1,26 @@
+use super::super::compaction::{
+    delivered_content, drop_orphan_tool_use, terminal_text_answer, Continuation,
+    ContinuationSource, Site,
+};
+use super::super::reminders::TurnInput;
+use super::guidance::push_input;
 use super::*;
-use harness_providers::{AssistantToolCall, CompletionMessage, MessageRole};
+use harness_compaction::{NoteKind, Origin, Stop};
+use harness_providers::{CompletionMessage, MessageRole};
 use std::mem;
+
+mod tools;
+
+/// What post-turn maintenance leaves for the stop handling that follows it.
+#[derive(Default)]
+struct PostTurn {
+    /// History changed (a commit, a rewrite or a promotion).
+    changed: bool,
+    /// The pass owns the next call: it scheduled a continuation or paused on purpose.
+    owns_next_call: bool,
+    /// Append the compaction-resume reminder and keep looping.
+    resume: bool,
+}
 
 impl Worker {
     pub(super) async fn run(mut self, mut messages: super::super::context::Context) -> Completion {
@@ -24,9 +44,9 @@ impl Worker {
             .await;
         if let Err(error) = started {
             if let Some(manual) = self.turn.manual.take() {
-                let _ = manual
+                manual
                     .reply
-                    .send(Err(CoordinatorError::Invalid(error.to_string())));
+                    .fail(CoordinatorError::Invalid(error.to_string()));
             }
             return Completion::Turn {
                 id: self.turn.id,
@@ -42,20 +62,7 @@ impl Worker {
             };
         }
         if let Some(manual) = self.turn.manual.take() {
-            let outcome = self
-                .compact(
-                    &mut messages,
-                    manual.through.as_deref(),
-                    &manual.reason,
-                    manual.instructions.as_deref(),
-                    None,
-                )
-                .await;
-            let result = outcome
-                .as_ref()
-                .map(|_| "Context compaction finished.".into())
-                .map_err(|e| CoordinatorError::Invalid(e.to_string()));
-            let _ = manual.reply.send(outcome);
+            let result = self.run_manual(&mut messages, manual).await;
             return Completion::Turn {
                 id: self.turn.id,
                 messages,
@@ -70,6 +77,12 @@ impl Worker {
             if !context.is_empty() {
                 text.push_str(&format!("\n\nSelected context:\n{context}"));
             }
+            let mut origin = if self.turn.prompt.native_subagent {
+                Origin::Agent
+            } else {
+                Origin::User
+            };
+            let mut note = None;
             if let Some(completion) = self.turn.prompt.child_completion.clone() {
                 let parent = self.actor.agent_id.clone().unwrap_or_default();
                 let request = self.turn.id.clone();
@@ -84,7 +97,10 @@ impl Worker {
                 };
                 self.turn.seq = seq;
                 text = wake_text;
+                origin = Origin::Host;
+                note = Some(NoteKind::ChildCompletion);
             }
+            let at_ms = self.event_ms().await?;
             if self.turn.prompt.reminder_wake {
                 let parent = self.actor.agent_id.clone().unwrap_or_default();
                 let request = self.turn.id.clone();
@@ -98,12 +114,8 @@ impl Worker {
                 if reminders.is_empty() {
                     return Ok(String::new());
                 }
-                for (seq, text) in reminders {
-                    messages.push(
-                        CompletionMessage::text(MessageRole::User, text),
-                        seq,
-                        Some(&self.turn.id),
-                    );
+                for input in reminders {
+                    push_input(&mut messages, &self.turn.id, input, at_ms);
                 }
             }
             let parent = self.actor.agent_id.clone().unwrap_or_default();
@@ -116,20 +128,20 @@ impl Worker {
                 })
                 .await?;
             for (seq, text) in completions {
-                messages.push(
-                    CompletionMessage::text(MessageRole::User, text),
-                    seq,
-                    Some(&self.turn.id),
-                );
+                let input = TurnInput::child_completion(seq, text);
+                push_input(&mut messages, &self.turn.id, input, at_ms);
             }
             if !self.turn.prompt.reminder_wake {
-                messages.push(
-                    CompletionMessage::text(MessageRole::User, text),
-                    self.turn.seq,
-                    Some(&self.turn.id),
-                );
+                let input = TurnInput {
+                    seq: self.turn.seq,
+                    text,
+                    origin,
+                    note,
+                };
+                push_input(&mut messages, &self.turn.id, input, at_ms);
                 if let Some(entry) = messages.entries.last_mut() {
                     entry.attachments = mem::take(&mut self.turn.prompt.attachments);
+                    super::super::history::derive_images(std::slice::from_mut(entry));
                 }
             }
             self.converse(&mut messages, &mut dispatched).await
@@ -138,6 +150,9 @@ impl Worker {
         if result.is_err() && !dispatched {
             messages.discard_turn(&self.turn.id);
         }
+        // A promotion lasts one turn; failing to restore must not hide the turn's result.
+        let _ = self.restore_operator_model().await;
+        self.sync_compaction_status(&messages).await;
         Completion::Turn {
             id: self.turn.id,
             messages,
@@ -166,32 +181,7 @@ impl Worker {
                 ));
             }
             iteration += 1;
-            let (request_id, response) = loop {
-                match self.dispatch(messages, dispatched).await {
-                    Err(error @ CoordinatorError::Provider { .. }) => {
-                        let next = self.fallbacks.pop_front().ok_or(error)?;
-                        self.turn.model = next.model_ref.clone();
-                        self.turn.settings = (&next).into();
-                        self.turn.target = Some(next);
-                        self.update_prompt(messages)?;
-                    }
-                    Err(CoordinatorError::StreamGuard(failure)) => {
-                        messages
-                            .usage
-                            .push(crate::subagent::FinalizedProviderUsage {
-                                request_id: failure.request_id.clone(),
-                                attempt_id: self.turn.id.clone(),
-                                model_ref: self.turn.model.clone(),
-                                usage: failure.usage.clone(),
-                                thinking: None,
-                                usage_complete: failure.usage_complete,
-                                settled_reasoning: None,
-                            });
-                        self.retry_after_stream_guard(failure, messages).await?;
-                    }
-                    result => break result?,
-                }
-            };
+            let (request_id, response) = self.provider_response(messages, dispatched).await?;
             let reported_native_usage = self.native && response.usage.is_some();
             if self.native
                 && let Some(usage) = &response.usage
@@ -199,11 +189,15 @@ impl Worker {
                 messages.native_context_usage = Some(crate::subagent::SubagentContextUsage {
                     total_tokens: u64::from(usage.total_tokens),
                     estimate_after_last_response: None,
-                    estimate_at_last_response: super::super::context::native_tokens(
+                    estimate_at_last_response: super::super::context::native_tokens_with(
                         &messages.entries,
+                        &self.counter,
                     ),
                 });
             }
+            let output_tokens = response.usage.as_ref().map_or(0, |u| u.completion_tokens);
+            let limited = response.output_limited();
+            let parts = response.item_parts();
             let calls = response.calls;
             if let Some(request) = response.logical_request {
                 messages.model_request = Some(Box::new(request));
@@ -218,12 +212,28 @@ impl Worker {
                     request_id: request_id.clone(),
                     attempt_id: self.turn.id.clone(),
                     model_ref: self.turn.model.clone(),
-                    usage: response.usage,
+                    usage: response.usage.clone(),
                     thinking: response.thinking,
                     usage_complete: response.usage_complete,
                     settled_reasoning: response.settled_reasoning.clone(),
                 });
-            messages.push(
+            if limited
+                && matches!(
+                    self.length_recovery(
+                        messages,
+                        &response.text,
+                        !calls.is_empty(),
+                        output_tokens,
+                        response.usage.as_ref(),
+                    )
+                    .await?,
+                    super::super::compaction::LengthAction::Retry
+                )
+            {
+                continue;
+            }
+            let at_ms = self.event_ms().await?;
+            messages.push_timed(
                 CompletionMessage {
                     continuation: response.continuation,
                     role: MessageRole::Assistant,
@@ -234,167 +244,169 @@ impl Worker {
                 },
                 response.event_seq,
                 Some(&self.turn.id),
+                at_ms,
             );
+            let model = self.active_model();
             if let Some(entry) = messages.entries.last_mut() {
+                entry.parts = parts;
                 entry.settled_reasoning = response.settled_reasoning.unwrap_or_default();
+                entry.usage = response.usage;
+                entry.model = Some(model);
+                if limited {
+                    entry.stop = Stop::Truncated;
+                }
+            }
+            if delivered_content(&response.text, !calls.is_empty(), false) {
+                self.guidance.length_recoveries = 0;
             }
             if reported_native_usage {
-                let estimate = super::super::context::native_tokens(&messages.entries);
+                let estimate =
+                    super::super::context::native_tokens_with(&messages.entries, &self.counter);
                 if let Some(usage) = &mut messages.native_context_usage {
                     usage.estimate_after_last_response = estimate;
                 }
             }
             if calls.is_empty() {
-                if self.continue_after_stop(&response.text, messages).await? {
+                if self.after_final_answer(&response.text, messages).await? {
                     continue;
                 }
                 return Ok(response.text);
             }
+            let batch_from = messages.entries.len();
             self.run_tools(&request_id, response.event_seq, calls.clone(), messages)
                 .await?;
             self.after_tools(&calls, messages).await?;
+            self.explicit_new_context(messages, batch_from).await?;
             self.update_prompt(messages)?;
         }
     }
-    async fn run_tools(
-        &self,
-        request: &str,
-        message_seq: u64,
-        calls: Vec<AssistantToolCall>,
+    /// One provider response, switching to the next fallback model when a request fails and
+    /// recording stream-guard retries.
+    async fn provider_response(
+        &mut self,
         messages: &mut super::super::context::Context,
-    ) -> Result<(), CoordinatorError> {
-        let owner = self.actor.agent_id.clone().unwrap_or_default();
-        let model = self.turn.model.clone();
-        let settings = self.turn.settings.clone();
+        dispatched: &mut bool,
+    ) -> Result<(String, super::super::streaming::Response), CoordinatorError> {
+        loop {
+            match self.dispatch(messages, dispatched).await {
+                Err(error @ CoordinatorError::Provider { .. }) => {
+                    let next = self.fallbacks.pop_front().ok_or(error)?;
+                    self.turn.model = next.model_ref.clone();
+                    self.turn.settings = (&next).into();
+                    self.turn.target = Some(next);
+                    self.update_prompt(messages)?;
+                }
+                Err(CoordinatorError::StreamGuard(failure)) => {
+                    messages
+                        .usage
+                        .push(crate::subagent::FinalizedProviderUsage {
+                            request_id: failure.request_id.clone(),
+                            attempt_id: self.turn.id.clone(),
+                            model_ref: self.turn.model.clone(),
+                            usage: failure.usage.clone(),
+                            thinking: None,
+                            usage_complete: failure.usage_complete,
+                            settled_reasoning: None,
+                        });
+                    self.retry_after_stream_guard(failure, messages).await?;
+                }
+                result => return result,
+            }
+        }
+    }
+
+    /// The model answered without tool calls. Terminal maintenance runs before any automatic
+    /// continuation, so a deliberate dead-end pause also suppresses todo reminders. Returns
+    /// true when the turn goes on.
+    async fn after_final_answer(
+        &mut self,
+        text: &str,
+        messages: &mut super::super::context::Context,
+    ) -> Result<bool, CoordinatorError> {
+        let terminal = messages.entries.last().is_some_and(terminal_text_answer);
+        let post = self.post_turn_maintenance(messages, terminal).await?;
+        if post.resume {
+            drop_orphan_tool_use(messages);
+            self.remind(
+                RuntimeReminderKind::CompactionResume,
+                harness_compaction::prompts::auto_continue_prompt().to_owned(),
+                None,
+                messages,
+            )
+            .await?;
+            if post.changed {
+                self.reinject_todos(messages).await?;
+            }
+            self.update_prompt(messages)?;
+            return Ok(true);
+        }
+        self.continue_after_stop(text, messages, post.owns_next_call)
+            .await
+    }
+    /// Epoch milliseconds from the coordinator clock; `None` when it has no wall time.
+    pub(in crate::coord) async fn event_ms(&self) -> Result<Option<u64>, CoordinatorError> {
         self.handle
-            .call(move |runtime| {
-                let agent = runtime
-                    .agents
-                    .get_mut(&owner)
-                    .ok_or(CoordinatorError::UnknownAgent(owner))?;
-                agent.info.model_ref = model;
-                agent.settings = settings;
-                Ok(())
+            .call(|s| {
+                Ok(s.clock
+                    .system_time_rfc3339_millis()
+                    .as_deref()
+                    .and_then(crate::clock::rfc3339_unix_ms)
+                    .and_then(|ms| u64::try_from(ms).ok()))
             })
-            .await?;
-        self.handle
-            .capture_active_context(self.actor.clone(), self.turn.id.clone(), messages.clone())
-            .await?;
-        let mut workers = tokio::task::JoinSet::new();
-        for (index, call) in calls.iter().enumerate() {
-            let (handle, actor, parent) = (
-                self.handle.clone(),
-                self.actor.clone(),
-                self.turn.id.clone(),
-            );
-            let id = format!("{request}-tool-{index}");
-            let call = call.clone();
-            workers.spawn(async move {
-                let result = match serde_json::from_str(&call.arguments_json) {
-                    Ok(args) => {
-                        handle
-                            .execute_tool(actor, Some(parent), Some(id), call.function_name, args)
-                            .await
-                    }
-                    Err(error) => Err(CoordinatorError::Json(error)),
-                };
-                (index, result)
-            });
+            .await
+    }
+    /// `provider/model` of the target this turn currently talks to.
+    fn active_model(&self) -> std::sync::Arc<str> {
+        match &self.turn.target {
+            Some(target) => format!("{}/{}", target.provider, target.model).into(),
+            None => self.turn.model.replacen(':', "/", 1).into(),
         }
-        let mut outputs = BTreeMap::new();
-        while let Some(result) = workers.join_next().await {
-            let (index, output) = result.map_err(|_| {
-                CoordinatorError::Invalid("tool dispatch stopped unexpectedly".into())
-            })?;
-            outputs.insert(index, output);
+    }
+    /// Post-turn maintenance runs after the answer is delivered. Its failures leave the
+    /// answer standing; a synthetic resume is the only way it keeps the turn going.
+    async fn post_turn_maintenance(
+        &mut self,
+        messages: &mut super::super::context::Context,
+        terminal_text_answer: bool,
+    ) -> Result<PostTurn, CoordinatorError> {
+        let mut post = PostTurn::default();
+        if self.provider.manages_context(&self.request(messages)) {
+            return Ok(post);
         }
-        let mut failed = false;
-        for (index, call) in calls.into_iter().enumerate() {
-            let output = outputs
-                .remove(&index)
-                .ok_or_else(|| CoordinatorError::Invalid("tool output missing".into()))?;
-            let (text, attachments, dispatch_error) = match output {
-                Ok(output) => {
-                    failed |= output.is_error();
-                    (
-                        crate::tool::provider_text(
-                            &call.function_name,
-                            output.display_text,
-                            output.structured_json,
-                        ),
-                        output.attachments,
-                        None,
-                    )
-                }
-                Err(error) => {
-                    failed = true;
-                    (
-                        format!("Tool error: {error}"),
-                        Vec::new(),
-                        Some(error.to_string()),
-                    )
-                }
-            };
-            let raw_id = format!("{request}-tool-{index}");
-            let owner = self.actor.agent_id.clone();
-            let raw = self
-                .handle
-                .call(move |s| match s.raw_tool_results.remove(&raw_id) {
-                    Some((agent, output)) if owner.as_deref() == Some(&agent) => {
-                        let (output, error) = match output {
-                            Ok(output) => (Some(output), None),
-                            Err(error) => (None, Some(error)),
-                        };
-                        Ok(Some(crate::subagent::FinalizedToolResult {
-                            tool_call_id: raw_id,
-                            provider_tool_call_id: None,
-                            output,
-                            error,
-                        }))
-                    }
-                    Some(_) => Err(CoordinatorError::PermissionDenied(
-                        "raw tool result owner mismatch".into(),
-                    )),
-                    None => Ok(
-                        dispatch_error.map(|error| crate::subagent::FinalizedToolResult {
-                            tool_call_id: raw_id,
-                            provider_tool_call_id: None,
-                            output: None,
-                            error: Some(error),
-                        }),
-                    ),
-                })
-                .await?;
-            if raw.is_none() {
-                messages.unavailable = Some(crate::subagent::FinalizedStateUnavailable::Incomplete);
-            }
-            let provider_call_id = call.tool_call_id.clone();
-            messages.push(
-                CompletionMessage {
-                    continuation: None,
-                    role: MessageRole::Tool,
-                    content: text,
-                    name: Some(call.function_name),
-                    tool_call_id: Some(call.tool_call_id),
-                    assistant_tool_calls: None,
+        let generation = self.guidance.input_generation;
+        let maintained = match self
+            .threshold_maintenance(
+                messages,
+                Site::PostTurn {
+                    terminal_text_answer,
                 },
-                message_seq,
-                Some(&self.turn.id),
-            );
-            if let Some(entry) = messages.entries.last_mut() {
-                entry.attachments = attachments;
-                entry.raw_tool_result = raw.map(|mut raw| {
-                    raw.provider_tool_call_id = Some(provider_call_id);
-                    raw
-                });
+            )
+            .await
+        {
+            Err(error) if self.cancellation.is_cancelled() => return Err(error),
+            Err(error) => {
+                self.warn(format!("Auto-compaction failed: {error}"))
+                    .await?;
+                return Ok(post);
             }
+            Ok(maintained) => maintained,
+        };
+        post.changed = maintained.changed;
+        post.owns_next_call =
+            maintained.continuation_scheduled || maintained.synthetic_resume || maintained.blocked;
+        if maintained.synthetic_resume {
+            // The pass decided to resume; confirm nothing queued or arrived meanwhile.
+            let source = ContinuationSource::AfterPass {
+                suppress: false,
+                auto_continue: true,
+                terminal_text_answer: false,
+                blocked: false,
+            };
+            post.resume = matches!(
+                self.schedule_continuation(source, generation).await?,
+                Continuation::Resume
+            );
         }
-        if self.cancellation.is_cancelled() {
-            return Err(CoordinatorError::Cancelled(self.turn.id.clone()));
-        }
-        if failed && self.profile.tool_failure_mode == crate::config::ToolFailureMode::FailTurn {
-            return Err(CoordinatorError::Invalid("tool execution failed".into()));
-        }
-        Ok(())
+        Ok(post)
     }
 }

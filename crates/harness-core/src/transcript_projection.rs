@@ -1,11 +1,18 @@
 //! A single pass over settled events, shared by replay and incremental UI updates.
 use crate::{attachment_transport::AttachmentMetadata, event::*};
 use std::collections::HashMap;
+mod active;
+mod cards;
 mod compaction;
 mod messages;
 mod model;
 mod operations;
 mod parts;
+pub use active::{event_time_ms, latest_compaction, reader_view, warning_of, ActiveCompaction};
+pub use cards::{
+    collapsed_window, compaction_cards, CollapsedWindow, CompactionCard, CompactionCardKind,
+    SUPERSEDED_SHORT, SUPERSEDED_SUMMARY,
+};
 pub use model::*;
 pub use parts::*;
 

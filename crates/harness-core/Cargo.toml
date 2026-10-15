@@ -41,7 +41,10 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["net"] }
 tokio-stream.workspace = true
 tokio-util.workspace = true
+tracing = "0.1"
 harness-providers = { path = "../harness-providers" }
+harness-compaction = { path = "../harness-compaction" }
+harness-tokenizer = { path = "../harness-tokenizer" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock = "0.4.7"

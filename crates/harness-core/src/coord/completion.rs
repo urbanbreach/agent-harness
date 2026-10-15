@@ -4,13 +4,17 @@ impl Runtime {
     pub fn finished(&mut self, completion: Completion) -> Result<(), CoordinatorError> {
         let id = match &completion {
             Completion::Turn { id, .. }
+            | Completion::BranchSummary { id, .. }
             | Completion::Tool { id, .. }
             | Completion::Command { id, .. }
             | Completion::SubagentPrepared { id, .. } => id,
         };
         let agent = self.running.get(id).and_then(|job| match &job.kind {
             JobKind::Turn { agent } => Some(agent.clone()),
-            JobKind::Tool { .. } | JobKind::Command | JobKind::SubagentPreparation { .. } => None,
+            JobKind::Tool { .. }
+            | JobKind::Command
+            | JobKind::BranchSummary
+            | JobKind::SubagentPreparation { .. } => None,
         });
         let result = self.finish_completion(completion);
         if let Err(error) = &result {
@@ -31,6 +35,9 @@ impl Runtime {
     }
     fn finish_completion(&mut self, completion: Completion) -> Result<(), CoordinatorError> {
         let (id, messages, mut result, instructions) = match completion {
+            Completion::BranchSummary { id, result } => {
+                return self.finish_branch_summary(id, result)
+            }
             Completion::Turn {
                 id,
                 messages,
@@ -49,6 +56,7 @@ impl Runtime {
         let Some(mut job) = self.running.remove(&id) else {
             return Ok(());
         };
+        self.settle_manual_task(&id);
         let detached_eval = self.detached_evals.remove(&id);
         self.finish_eval_pool_submission(&id)?;
         if job.cancellation.is_cancelled() {
@@ -148,7 +156,9 @@ impl Runtime {
         let (agent, reply) = match job.kind {
             JobKind::Turn { agent } => (Some(agent), None),
             JobKind::Tool { reply, .. } => (None, reply),
-            JobKind::Command | JobKind::SubagentPreparation { .. } => (None, None),
+            JobKind::Command | JobKind::BranchSummary | JobKind::SubagentPreparation { .. } => {
+                (None, None)
+            }
         };
         if let Some(reply) = reply {
             let response = match &written {

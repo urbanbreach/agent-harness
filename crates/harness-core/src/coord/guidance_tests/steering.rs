@@ -370,8 +370,40 @@ async fn interrupt_returns_steering_and_plain_follow_ups_in_send_order(
         return Err("the running turn did not accept steering".into());
     };
 
+    let tagged = coordinator
+        .request_agent_turn_with_model_and_selected_tags_and_attachments(
+            user(),
+            agent.clone(),
+            "@default tagged follow-up.",
+            crate::file_tag::SelectedPromptTags {
+                files: Vec::new(),
+                agents: vec![crate::file_tag::SelectedAgentTag {
+                    name: "default".into(),
+                    source: crate::file_tag::FileTagSource {
+                        start: 0,
+                        end: 8,
+                        value: "@default".into(),
+                    },
+                }],
+                resources: Vec::new(),
+            },
+            Vec::new(),
+            None,
+            None,
+        )
+        .await?;
     let returned = coordinator.withdraw_queued_input(agent.clone()).await?;
     assert_eq!(returned, ["Follow-up after the turn.", "Steer this turn."]);
+    // A prompt with tags stays queued for an interrupt; rolling back a failed delivery
+    // takes it too, so it cannot run a second time.
+    assert_eq!(
+        coordinator.withdraw_accepted_input(agent.clone()).await?,
+        ["@default tagged follow-up."]
+    );
+    assert_eq!(
+        terminal(&coordinator, &tagged).await?.as_deref(),
+        Some(RETURNED_TO_EDITOR_REASON)
+    );
     coordinator.cancel_task(&turn, "interrupted").await?;
     release.notify_one();
     assert!(terminal(&coordinator, &turn).await?.is_some());

@@ -1,5 +1,7 @@
 use super::*;
 
+mod compaction;
+
 #[test]
 fn settings_writes_validate_before_commit_and_keep_raw_references(
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -112,6 +114,8 @@ fn settings_writes_validate_before_commit_and_keep_raw_references(
         32768
     );
     [
+        ("runtime.compaction.mid_turn_enabled", "false", "true"),
+        ("runtime.compaction.reserve_tokens", "4096", "null"),
         ("subagents.enabled", "false", "true"),
         ("subagents.max_depth", "2", "1"),
         ("subagents.max_concurrent", "8", "32"),

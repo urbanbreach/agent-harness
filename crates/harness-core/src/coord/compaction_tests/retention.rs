@@ -7,17 +7,37 @@ async fn compaction_keeps_recent_turns_and_restores_the_same_context_after_resum
         let temp = tempfile::tempdir()?;
         let provider = Arc::new(MockProvider::script([
             answer("old answer ".repeat(1000)),
-            answer("latest answer"),
-            answer("Incomplete summary without sections."),
+            // A manual pass records the provider's last reported usage as tokens before.
+            vec![
+                Stream::TextDelta("latest answer".into()),
+                Stream::Done {
+                    usage: Some(harness_providers::CompletionUsage {
+                        prompt_tokens: 6_000,
+                        completion_tokens: 10,
+                        total_tokens: 6_010,
+                        ..Default::default()
+                    }),
+                },
+            ],
+            vec![Stream::Error {
+                message: "summary unavailable".into(),
+                category: None,
+                remediation: None,
+                retry_after_ms: None,
+                envelope: None,
+            }],
             answer(SUMMARY),
+            answer("Rewrite checkpoint"),
             answer("after compaction"),
             answer("after resume"),
         ]));
         let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
         config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
-        config.compaction.keep_recent_tokens = 1;
-        config.compaction.reserve_tokens = 0;
-        config.compaction.suppress_auto_compaction = true;
+        config.compaction.keep_recent_tokens = 100;
+        config.compaction.reserve_tokens = Some(0);
+        config.compaction.enabled = false;
+        config.compaction.method_order = vec![CompactionMethod::Soft];
+        config.compaction.async_enabled = false;
         let mut registry = crate::tool::ToolRegistry::new();
         registry.register(Arc::new(CompactionTodos));
         config.tool_registry = Arc::new(registry);
@@ -58,8 +78,10 @@ async fn compaction_keeps_recent_turns_and_restores_the_same_context_after_resum
         assert!(matches!(
             coordinator
                 .compact_agent_context_with_instructions(agent.clone(), None, "manual", None)
-                .await?,
-            ManualCompactionOutcome::NoOp
+                .await,
+            Err(CoordinatorError::CompactionRejected(
+                super::super::compaction::ManualRejection::SessionTooSmall
+            ))
         ));
         for (index, prompt) in ["old request ".repeat(1000), "latest request".into()]
             .into_iter()
@@ -105,22 +127,16 @@ async fn compaction_keeps_recent_turns_and_restores_the_same_context_after_resum
             )
             .await?;
         assert!(
-            matches!(outcome, ManualCompactionOutcome::Compacted { tokens_before, tokens_after, .. } if tokens_after < tokens_before)
+            matches!(outcome, ManualCompactionOutcome::Compacted { tokens_before, tokens_after, .. } if tokens_after < tokens_before),
+            "{outcome:?}"
         );
         assert!(std::fs::read(&run.events_path)?.starts_with(&before));
         let requests = provider.captured_requests().await;
-        assert_eq!(requests.len(), 4);
+        assert_eq!(requests.len(), 5);
         assert!(requests[3].tools.is_none());
-        assert_eq!(requests[3].max_tokens, Some(8192));
-        assert_eq!(
-            requests[3]
-                .attachments
-                .values()
-                .flatten()
-                .next()
-                .ok_or("summary lost attachment")?
-                .bytes()?,
-            b"Remember the attachment when summarizing."
+        assert!(
+            requests[3].attachments.is_empty(),
+            "summary generation is text-only"
         );
         assert!(requests[3]
             .messages
@@ -135,19 +151,19 @@ async fn compaction_keeps_recent_turns_and_restores_the_same_context_after_resum
             .await?;
         super::history_tests::settled(&coordinator, &turn).await?;
         let requests = provider.captured_requests().await;
-        assert!(requests[4]
+        assert!(requests[5]
             .messages
             .iter()
             .any(|m| m.content.contains(SUMMARY)));
-        assert!(requests[4]
+        assert!(requests[5]
             .messages
             .iter()
             .any(|m| m.content == "latest answer"));
-        assert!(!requests[4]
+        assert!(!requests[5]
             .messages
             .iter()
             .any(|m| m.content.contains(&"old request ".repeat(1000))));
-        assert!(requests[4].attachments.is_empty());
+        assert!(requests[5].attachments.is_empty());
         coordinator.stop_run().await?;
         let history_dir = if child_session {
             config.session_dir.join(&agent)
@@ -169,15 +185,9 @@ async fn compaction_keeps_recent_turns_and_restores_the_same_context_after_resum
                 _ => None,
             })
             .ok_or("missing compaction summary")?;
-        assert!(summary.contains("## User Requests (verbatim)"));
-        assert!(summary.contains("old request "));
-        assert!(summary.contains("[truncated]"));
-        assert!(summary.contains("latest request"));
-        assert!(!summary.contains("## Current Todo List"));
-        assert!(requests[4]
-            .messages
-            .iter()
-            .any(|message| message.content == format!("Conversation summary:\n{summary}")));
+        assert!(requests[5].messages.iter().any(
+            |message| message.content == summary_message(Some(CompactionMethod::Soft), summary)
+        ));
         assert!(!events.iter().any(|e| matches!(&e.payload, EventV1::AssistantMessageFinished(a) if a.parts.iter().any(|p| matches!(p, crate::session::AssistantPart::Text {text} if text == SUMMARY)))));
         let mut invalid = events.clone();
         for event in &mut invalid {
@@ -209,15 +219,19 @@ async fn compaction_keeps_recent_turns_and_restores_the_same_context_after_resum
             .await?;
         super::history_tests::settled(&resumed, &turn).await?;
         let requests = provider.captured_requests().await;
-        assert!(requests[5]
+        assert_eq!(
+            &requests[6].messages[..requests[5].messages.len()],
+            requests[5].messages
+        );
+        assert!(requests[6]
             .messages
             .iter()
-            .any(|m| m.content == format!("Conversation summary:\n{summary}")));
-        assert!(requests[5]
+            .any(|m| m.content == summary_message(Some(CompactionMethod::Soft), summary)));
+        assert!(requests[6]
             .messages
             .iter()
             .any(|m| m.content == "latest answer"));
-        assert!(!requests[5]
+        assert!(!requests[6]
             .messages
             .iter()
             .any(|m| m.content.contains(&"old request ".repeat(1000))));
@@ -247,42 +261,34 @@ impl crate::tool::Tool for CompactionTodos {
     }
 }
 
-struct AppendixRedactor;
-impl crate::redact::Redactor for AppendixRedactor {
-    fn redact_text(&self, text: &str) -> String {
-        let text = crate::redact::Redactor::redact_text(&DefaultRedactor::default(), text);
-        if text.contains("## User Requests (verbatim)") {
-            text.replace("appendix-redaction-sentinel", "[REDACTED]")
-        } else {
-            text
-        }
-    }
-}
-
 #[tokio::test]
 async fn compaction_preserves_bounded_requests_steering_and_current_todos(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let mut script = vec![answer("old answer ".repeat(3000))];
     script.extend((1..28).map(|_| answer("settled")));
-    script.extend([answer(SUMMARY), answer("continued")]);
-    let provider = Arc::new(MockProvider::script(script));
+    script.push(answer("continued"));
+    let provider = Arc::new(super::maintenance::RoutedSummaries {
+        turns: MockProvider::script(script),
+        summaries: MockProvider::script(std::iter::repeat_n(answer(SUMMARY), 4)),
+    });
     let mut registry = crate::tool::ToolRegistry::new();
     registry.register(Arc::new(CompactionTodos));
     let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
     config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
     config.tool_registry = Arc::new(registry);
     config.permission_policy = PermissionPolicy::allow_all();
-    config.compaction.keep_recent_tokens = 1;
-    config.compaction.reserve_tokens = 0;
-    config.compaction.suppress_auto_compaction = true;
+    config.compaction.keep_recent_tokens = 100;
+    config.compaction.reserve_tokens = Some(0);
+    config.compaction.enabled = false;
+    config.compaction.method_order = vec![CompactionMethod::Soft];
     let mut profile = crate::agent::AgentProfile::fallback("default");
     profile.toolset = vec!["todowrite".into()];
     config.agent_profiles.insert("default".into(), profile);
     let coordinator = spawn_coordinator(
         config,
         Arc::new(FakeClock::new()),
-        Arc::new(AppendixRedactor),
+        Arc::new(DefaultRedactor::default()),
     );
     let run = coordinator.start_run("verbatim", temp.path()).await?;
     let agent = coordinator
@@ -367,6 +373,10 @@ async fn compaction_preserves_bounded_requests_steering_and_current_todos(
             Ok(())
         })
         .await?;
+    let owner = agent.clone();
+    let todos_before = coordinator
+        .call(move |s| Ok(s.root_todo_items(&owner)))
+        .await?;
     assert!(matches!(
         coordinator
             .compact_agent_context(agent.clone(), None, "manual")
@@ -381,41 +391,47 @@ async fn compaction_preserves_bounded_requests_steering_and_current_todos(
             _ => None,
         })
         .ok_or("missing compaction summary")?;
-    assert!(summary.contains(FIRST));
-    assert!(summary.contains(RECENT));
-    assert!(!summary.contains("obsolete request"));
-    assert!(!summary.contains("delivery-only sentinel"));
-    assert!(!summary.contains("other-agent sentinel"));
-    assert!(!summary.contains("runtime-only sentinel"));
-    assert!(!summary.contains("completion-wake sentinel"));
-    assert_eq!(summary.matches("[truncated]").count(), 10);
-    assert!(!summary.contains(&"λ".repeat(2001)));
-    assert!(!summary.contains("appendix-redaction-sentinel"));
-    assert!(summary.contains("Credential check: [REDACTED]"));
-    let appendix = summary
-        .split_once("## User Requests (verbatim)")
-        .ok_or("missing requests")?
-        .1;
-    assert!(appendix.len() < 13 * 1024);
-    for item in [
-        "[in_progress] Finish the parser",
-        "[pending] Add integration coverage",
-        "[completed] Choose a format",
-    ] {
-        assert!(summary.contains(item));
+    let requests = provider.summaries.captured_requests().await;
+    let summaries: Vec<_> = requests
+        .iter()
+        .filter(|request| {
+            request.messages.first().is_some_and(|m| {
+                m.content == harness_compaction::prompts::summarization_system_prompt()
+            })
+        })
+        .collect();
+    assert!(!summaries.is_empty(), "missing summary requests");
+    assert!(summaries
+        .iter()
+        .any(|r| r.messages[1].content.contains(FIRST)));
+    assert!(summaries
+        .iter()
+        .any(|r| r.messages[1].content.contains(RECENT)));
+    for request in summaries {
+        let input = &request.messages[1].content;
+        assert!(!input.contains("other-agent sentinel"));
+        assert!(
+            harness_compaction::tokenizer::Counter::byte_estimating(None).count_text(input)
+                < harness_compaction::request::summary_input_budget(None, 0)
+        );
     }
+    let owner = agent.clone();
+    let todos_after = coordinator
+        .call(move |s| Ok(s.root_todo_items(&owner)))
+        .await?;
+    assert_eq!(todos_before, todos_after);
     let turn = coordinator
         .request_agent_turn(EventActor::new(ActorKind::User, None), agent, "continue")
         .await?;
     super::history_tests::settled(&coordinator, &turn).await?;
-    let requests = provider.captured_requests().await;
+    let requests = provider.turns.captured_requests().await;
     let next = requests
         .last()
         .ok_or("missing provider request after compaction")?;
     assert!(next
         .messages
         .iter()
-        .any(|message| message.content == format!("Conversation summary:\n{summary}")));
+        .any(|message| message.content == summary_message(Some(CompactionMethod::Soft), summary)));
     coordinator.stop_run().await?;
     Ok(())
 }

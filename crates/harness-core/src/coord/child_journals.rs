@@ -261,9 +261,47 @@ fn translate_cutoffs(
     run: &str,
     child: &str,
 ) -> Result<(), EventStoreError> {
+    if let EventV1::ContextPruned(pruned) = payload {
+        let mut sequences = std::collections::HashMap::new();
+        for event in JournalReader::open(
+            journal.file_path(),
+            std::fs::metadata(journal.file_path())?.len(),
+        )? {
+            let event = event?;
+            if let Some(source) = source_sequence(&event.event_id, run, child) {
+                sequences.insert(source, event.seq);
+            }
+        }
+        for edit in &mut pruned.edits {
+            match edit {
+                crate::event::ContextEdit::ToolResult { seq: Some(seq), .. }
+                | crate::event::ContextEdit::TextRange { seq, .. }
+                | crate::event::ContextEdit::DropReasoning { seq, .. }
+                | crate::event::ContextEdit::DropAttachments { seq, .. } => {
+                    *seq = sequences.get(seq).copied().ok_or(EventStoreError::Invalid(
+                        "pruned context target is missing from child history",
+                    ))?;
+                }
+                crate::event::ContextEdit::ToolResult { .. } => {}
+            }
+        }
+        return Ok(());
+    }
+    if let EventV1::SessionCompaction(compaction) = payload {
+        for seq in [
+            &mut compaction.provider_replay_through_seq,
+            &mut compaction.supersedes_seq,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            translate_sequence(seq, true, journal, run, child)?;
+        }
+    }
     let (cutoff, inclusive) = match payload {
         EventV1::SessionCompaction(e) => (&mut e.first_kept_event_seq, false),
         EventV1::BranchSummary(e) => (&mut e.from_event_seq, true),
+        EventV1::CompactionPatched(e) => (&mut e.compaction_seq, true),
         EventV1::CompactionRequested(e) => (&mut e.through_seq, true),
         EventV1::CompactionWritten(e) => (&mut e.through_seq, true),
         EventV1::CompactionApplied(e) => (&mut e.through_seq, true),
@@ -273,6 +311,15 @@ fn translate_cutoffs(
         },
         _ => return Ok(()),
     };
+    translate_sequence(cutoff, inclusive, journal, run, child)
+}
+fn translate_sequence(
+    cutoff: &mut u64,
+    inclusive: bool,
+    journal: &Journal,
+    run: &str,
+    child: &str,
+) -> Result<(), EventStoreError> {
     let mut translated = if inclusive { 0 } else { journal.next_seq()? };
     // Compaction is rare; scan its child journal instead of retaining a sequence map per event.
     for event in JournalReader::open(

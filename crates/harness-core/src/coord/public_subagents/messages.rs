@@ -73,12 +73,12 @@ impl CoordinatorHandle {
     /// Subagent messages come first, then user steering, then coordinator reminders.
     /// Steering waits until the turn has sent a request: a turn discarded before its
     /// first request would take the steering with it, so it is requeued instead.
-    pub async fn drain_turn_inputs(
+    pub(in crate::coord) async fn drain_turn_inputs(
         &self,
         actor: EventActor,
         request_id: String,
         steering: bool,
-    ) -> Result<Vec<(u64, String)>, CoordinatorError> {
+    ) -> Result<Vec<crate::coord::reminders::TurnInput>, CoordinatorError> {
         self.call(move |s| {
             s.check_task(&request_id)?;
             let job = &s.running[&request_id];
@@ -90,9 +90,17 @@ impl CoordinatorHandle {
             let agent = actor.agent_id.as_deref().ok_or_else(|| {
                 CoordinatorError::PermissionDenied("message drain requires an agent".into())
             })?;
-            let mut inputs = s.drain_native_subagent_messages(agent, &request_id)?;
+            let mut inputs: Vec<_> = s
+                .drain_native_subagent_messages(agent, &request_id)?
+                .into_iter()
+                .map(|(seq, text)| crate::coord::reminders::TurnInput::peer(seq, text))
+                .collect();
             if steering {
-                inputs.extend(s.drain_steering(agent, &request_id)?);
+                inputs.extend(
+                    s.drain_steering(agent, &request_id)?
+                        .into_iter()
+                        .map(|(seq, text)| crate::coord::reminders::TurnInput::user(seq, text)),
+                );
             }
             inputs.extend(s.drain_pending_reminders(agent, &request_id)?);
             Ok(inputs)

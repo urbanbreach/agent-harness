@@ -2,6 +2,16 @@ use super::*;
 use std::collections::HashSet;
 use tokio_stream::StreamExt;
 
+/// Where streamed text goes while a request runs.
+pub(in crate::coord) enum Live<'a> {
+    /// Nothing is shown live.
+    Off,
+    /// A main-turn response: text, reasoning and tool input stream to the UI.
+    Turn,
+    /// A compaction request: text streams into the compaction preview only.
+    Preview(&'a crate::coord::compaction::Progress),
+}
+
 pub(in crate::coord) async fn read(
     handle: &CoordinatorHandle,
     provider: &dyn Provider,
@@ -10,11 +20,12 @@ pub(in crate::coord) async fn read(
     request_id: &str,
     request: CompletionRequest,
     cancel: &CancellationToken,
-    emit_live: bool,
+    live_mode: Live<'_>,
     stream_guard_enabled: bool,
     progress: &mut bool,
     aborted_usage: &mut Option<CompletionUsage>,
 ) -> Result<Response, CoordinatorError> {
+    let emit_live = matches!(live_mode, Live::Turn);
     let redactor = handle.call(|s| Ok(Arc::clone(&s.redactor))).await?;
     let mut display = LiveOutput::default();
     let aliases: BTreeMap<_, _> = request
@@ -70,7 +81,10 @@ pub(in crate::coord) async fn read(
             Stream::TextDelta(delta) => {
                 *progress |= !delta.is_empty();
                 bytes = bytes.saturating_add(delta.len());
-                response.text.push_str(&delta);
+                response.push_text(&delta);
+                if let Live::Preview(preview) = &live_mode {
+                    preview.preview(&redactor.redact_text(&delta)).await?;
+                }
                 Some(LiveEventV1::ProviderTextDelta {
                     request_id: request_id.into(),
                     delta,
@@ -78,6 +92,7 @@ pub(in crate::coord) async fn read(
             }
             Stream::ReasoningDelta(delta) => {
                 *progress |= !delta.is_empty();
+                response.push_reasoning(&delta);
                 bytes = bytes.saturating_add(delta.len());
                 Some(LiveEventV1::ProviderReasoningDelta {
                     request_id: request_id.into(),
@@ -131,7 +146,7 @@ pub(in crate::coord) async fn read(
                     ));
                 }
                 unfinished.remove(&tool_call_id);
-                response.calls.push(AssistantToolCall {
+                response.push_call(AssistantToolCall {
                     tool_call_id,
                     function_name: aliases
                         .get(&function_name)
@@ -150,8 +165,9 @@ pub(in crate::coord) async fn read(
                 response.usage_complete = usage.is_some()
                     && metadata.as_ref().and_then(|m| m.usage_complete) == Some(true);
                 response.usage = usage;
-                response.settled_reasoning =
-                    metadata.as_ref().and_then(|m| m.settled_reasoning.clone());
+                response.set_settled_reasoning(
+                    metadata.as_ref().and_then(|m| m.settled_reasoning.clone()),
+                );
                 response.thinking = metadata.as_ref().and_then(|m| m.thinking.clone());
                 response.continuation = metadata.as_ref().and_then(|m| m.continuation.clone());
                 response.metadata = metadata;
@@ -162,14 +178,17 @@ pub(in crate::coord) async fn read(
                 category,
                 remediation,
                 retry_after_ms,
+                envelope,
             } => {
                 return Err(CoordinatorError::Provider {
                     message,
                     category,
                     remediation,
                     retry_after_ms,
+                    envelope,
                 })
             }
+            Stream::TextBlockEnd => None,
             Stream::Notice(message) => {
                 // Shown even for requests that stream nothing live (compaction summaries).
                 let (actor, task) = (actor.clone(), task.to_owned());

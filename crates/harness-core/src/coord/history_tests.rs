@@ -3,6 +3,8 @@ use crate::{clock::FakeClock, redact::DefaultRedactor, tool::ToolRegistry};
 use harness_providers::{mock::MockProvider, ProviderStreamEvent as Stream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio_stream::StreamExt;
+mod live;
+mod replay;
 
 pub(super) async fn settled(
     coordinator: &CoordinatorHandle,
@@ -214,6 +216,7 @@ async fn split_compaction_retains_complete_tool_pairs_after_resume(
         call("kept-call", "recent call".into()),
         answer("done"),
         answer(SUMMARY),
+        answer("Turn prefix memory"),
         answer("continued"),
         answer("resumed"),
     ]));
@@ -224,9 +227,9 @@ async fn split_compaction_retains_complete_tool_pairs_after_resume(
     if let Some(profile) = config.agent_profiles.get_mut("default") {
         profile.toolset = vec!["count".into()];
     }
-    config.compaction.split_oversized_turns = true;
-    config.compaction.keep_recent_tokens = 40;
-    config.compaction.suppress_auto_compaction = true;
+    config.compaction.keep_recent_tokens = 200;
+    config.compaction.enabled = false;
+    config.compaction.method_order = vec![harness_compaction::CompactionMethod::Soft];
     let coordinator = spawn_coordinator(
         config.clone(),
         Arc::new(FakeClock::new()),
@@ -262,7 +265,7 @@ async fn split_compaction_retains_complete_tool_pairs_after_resume(
         .await?;
     settled(&coordinator, &next).await?;
     let requests = provider.captured_requests().await;
-    let kept = &requests[4].messages;
+    let kept = &requests[5].messages;
     assert_eq!(kept.len(), 5);
     assert!(kept[0].content.contains(SUMMARY));
     assert_eq!(
@@ -285,13 +288,115 @@ async fn split_compaction_retains_complete_tool_pairs_after_resume(
         .resume_run(run.run_id.to_string(), "resumed")
         .await?;
     let next = resumed
-        .request_agent_turn(EventActor::new(ActorKind::User, None), agent, "resume")
+        .request_agent_turn(
+            EventActor::new(ActorKind::User, None),
+            agent.clone(),
+            "resume",
+        )
         .await?;
     settled(&resumed, &next).await?;
     let requests = provider.captured_requests().await;
-    assert_eq!(&requests[5].messages[..5], kept);
+    assert_eq!(&requests[6].messages[..5], kept);
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     resumed.stop_run().await?;
+    let mut events = crate::store::read_events(&run.events_path)?;
+    let summary_event = events
+        .iter()
+        .find(|event| matches!(event.payload, EventV1::SessionCompaction(_)))
+        .ok_or("summary missing")?
+        .clone();
+    let mut legacy = serde_json::to_value(&summary_event)?;
+    let data = legacy
+        .get_mut("payload")
+        .and_then(|payload| payload.get_mut("data"))
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or("event data missing")?;
+    for field in [
+        "short_summary",
+        "method",
+        "warning",
+        "provider_replay_through_seq",
+        "native",
+        "archive",
+    ] {
+        data.remove(field);
+    }
+    let decoded: EventEnvelopeV1 = serde_json::from_str(&serde_json::to_string(&legacy)?)?;
+    assert!(
+        matches!(decoded.payload, EventV1::SessionCompaction(ref summary) if summary.method.is_none() && summary.native.is_none())
+    );
+    let internal_call = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(tool) => Some(tool.tool_call_id.to_string()),
+            _ => None,
+        })
+        .nth(1)
+        .ok_or("kept result missing")?;
+    let user_seq = events
+        .iter()
+        .rev()
+        .find_map(|event| {
+            matches!(event.payload, EventV1::UserMessageSubmitted(_)).then_some(event.seq)
+        })
+        .ok_or("user missing")?;
+    let mut prune = events.last().ok_or("history missing")?.clone();
+    prune.seq += 1;
+    prune.event_id = "prune-rebuild".into();
+    prune.actor.agent_id = Some(agent.clone());
+    prune.payload = EventV1::ContextPruned(crate::event::ContextPrunedEvent {
+        agent_id: agent.clone(),
+        kind: crate::event::PruneKindRecord::Shake,
+        tokens_saved: 10,
+        artifact_path: None,
+        warning: None,
+        edits: vec![
+            crate::event::ContextEdit::ToolResult {
+                seq: None,
+                tool_call_id: internal_call,
+                text: "Result elided".into(),
+                pruned_at_ms: 10,
+                drop_attachments: Default::default(),
+            },
+            crate::event::ContextEdit::TextRange {
+                seq: user_seq,
+                start: 0,
+                end: 6,
+                text: "patched".into(),
+                elided_output_tokens: Default::default(),
+            },
+        ],
+    });
+    events.push(prune);
+    let mut native = summary_event;
+    native.seq = events.last().ok_or("history missing")?.seq + 1;
+    native.event_id = "native-rebuild".into();
+    if let EventV1::SessionCompaction(summary) = &mut native.payload {
+        summary.native = Some(crate::event::NativeCompactionMeta {
+            lane: "openai_v2".into(),
+            provider_id: None,
+            model_id: None,
+            api: Default::default(),
+            payload: Default::default(),
+        });
+    }
+    events.push(native);
+    let rebuilt = super::history::messages(&events, &agent, true, "", &run.run_dir)?;
+    let state = rebuilt
+        .entries
+        .first()
+        .and_then(|entry| entry.compaction.as_ref())
+        .ok_or("summary state missing")?;
+    assert!(state.summary.contains(SUMMARY));
+    assert!(state.native.is_none());
+    assert!(rebuilt
+        .entries
+        .iter()
+        .any(|entry| entry.message.content == "Result elided" && entry.tool.pruned));
+    assert!(rebuilt
+        .entries
+        .iter()
+        .any(|entry| entry.message.content == "patched"));
     Ok(())
 }
 

@@ -178,73 +178,122 @@ async fn tool_media_reaches_the_provider_and_survives_resume_without_reexecution
 }
 
 #[tokio::test]
-async fn chunked_compaction_sends_each_attachment_with_its_owner_only_once(
+async fn compaction_omits_summarized_images_and_keeps_recent_images_with_their_owner_after_resume(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use super::compaction_tests::{answer, SUMMARY};
     let root = tempfile::tempdir()?;
-    // JSON escaping makes the summary transcript larger than the original request.
-    let provider = Arc::new(MockProvider::script(
-        [answer("\"".repeat(8000)), answer("recent reply")]
-            .into_iter()
-            .chain(std::iter::repeat_n(answer(SUMMARY), 20)),
-    ));
+    let provider = Arc::new(MockProvider::script([
+        answer("old answer ".repeat(800)),
+        answer("recent reply"),
+        answer(SUMMARY),
+        answer(SUMMARY),
+        answer("Image checkpoint"),
+        answer("continued"),
+        answer("resumed"),
+    ]));
     let mut config = CoordinatorConfig::new(root.path().join("sessions"));
     config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
-    config.compaction.keep_recent_tokens = 1;
-    config.compaction.reserve_tokens = 0;
-    config.compaction.fallback_input_tokens = 5000;
-    config.compaction.suppress_auto_compaction = true;
+    // An image prices at 12,000 tokens on this model, so the recent turn needs that much.
+    config.compaction.keep_recent_tokens = 13_000;
+    config.compaction.reserve_tokens = Some(0);
+    config.compaction.enabled = false;
+    config.compaction.method_order = vec![harness_compaction::CompactionMethod::Soft];
+    let settings = crate::config::load_config_from_str(
+        r#"{ model: 'local/gpt-4.1', provider: { local: {
+        type: 'openai_compatible', baseUrl: 'https://example.invalid',
+        models: { 'gpt-4.1': { limit: { context: 16000, output: 1000 } } }
+    } } }"#,
+    )?;
+    config.agent_model_targets.insert(
+        "default".into(),
+        crate::config::resolve_model_selection(&settings, "local/gpt-4.1", None)?.primary,
+    );
+    config.compaction.async_enabled = false;
+    let mut profile = crate::agent::AgentProfile::fallback("default");
+    profile.model_ref = "local:gpt-4.1".into();
+    config.agent_profiles.insert("default".into(), profile);
     let coordinator = spawn_coordinator(
-        config,
+        config.clone(),
         Arc::new(FakeClock::new()),
         Arc::new(DefaultRedactor::default()),
     );
-    coordinator.start_run("chunked media", root.path()).await?;
+    let run = coordinator
+        .start_run("compacted images", root.path())
+        .await?;
     let actor = EventActor::new(ActorKind::User, None);
     let agent = coordinator
         .spawn_agent_idle(actor.clone(), "default", None)
         .await?;
-    let first = coordinator
-        .request_agent_turn_with_model_and_selected_tags_and_attachments(
-            actor.clone(),
-            &agent,
-            format!("first attachment owner {}", "\"".repeat(8000)),
-            crate::file_tag::SelectedPromptTags::default(),
-            vec![crate::attachment_transport::AttachmentMetadata::from_bytes(
-                "one-note",
-                "text/plain",
+    for (prompt, id) in [
+        (
+            format!("old image owner {}", "old request ".repeat(800)),
+            "old-image",
+        ),
+        ("recent image owner".into(), "recent-image"),
+    ] {
+        let turn = coordinator
+            .request_agent_turn_with_model_and_selected_tags_and_attachments(
+                actor.clone(),
+                &agent,
+                prompt,
+                crate::file_tag::SelectedPromptTags::default(),
+                vec![crate::attachment_transport::AttachmentMetadata::from_bytes(
+                    id,
+                    "image/png",
+                    None,
+                    &base64::Engine::decode(&base64::engine::general_purpose::STANDARD, IMAGE)?,
+                    None,
+                )],
                 None,
-                b"Only belongs to the first entry.",
                 None,
-            )],
-            None,
-            None,
-        )
-        .await?;
-    super::history_tests::settled(&coordinator, &first).await?;
-    let recent = coordinator
-        .request_agent_turn(actor, &agent, "recent request")
-        .await?;
-    super::history_tests::settled(&coordinator, &recent).await?;
+            )
+            .await?;
+        super::compaction_tests::settled(&coordinator, &turn).await?;
+    }
     coordinator
         .compact_agent_context(&agent, None, "manual")
         .await?;
     let requests = provider.captured_requests().await;
-    let chunks = &requests[2..];
-    assert!(chunks.len() > 1, "fixture must require chunking");
-    let attached: Vec<_> = chunks
-        .iter()
-        .filter(|r| !r.attachments.is_empty())
-        .collect();
-    assert_eq!(
-        attached.len(),
-        1,
-        "attachments must not be copied into every chunk"
+    let summaries = &requests[2..];
+    assert!(
+        summaries.len() > 2,
+        "fixture must fold multiple history windows"
     );
-    assert!(attached[0].messages[1]
-        .content
-        .contains("first attachment owner"));
-    assert_eq!(attached[0].attachments[&1][0].id, "one-note");
+    assert!(summaries.iter().all(|r| r.attachments.is_empty()));
+    assert!(summaries
+        .iter()
+        .flat_map(|r| &r.messages)
+        .all(|m| !m.content.contains(IMAGE) && !m.content.contains("data:image")));
+    let turn = coordinator
+        .request_agent_turn(actor.clone(), &agent, "continue")
+        .await?;
+    super::compaction_tests::settled(&coordinator, &turn).await?;
+    let requests = provider.captured_requests().await;
+    let next = requests.last().ok_or("missing continuation")?;
+    let (owner, images) = next.attachments.iter().next().ok_or("recent image lost")?;
+    assert_eq!(next.attachments.len(), 1);
+    assert_eq!(next.messages[*owner].content, "recent image owner");
+    assert_eq!(images.len(), 1);
+    assert_eq!(images[0].id, "recent-image");
+    let kept = next.messages.clone();
     coordinator.stop_run().await?;
+    let resumed = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    resumed
+        .resume_run(run.run_id.to_string(), "images resumed")
+        .await?;
+    let turn = resumed.request_agent_turn(actor, &agent, "resume").await?;
+    super::compaction_tests::settled(&resumed, &turn).await?;
+    let requests = provider.captured_requests().await;
+    let next = requests.last().ok_or("missing resumed request")?;
+    assert_eq!(&next.messages[..kept.len()], kept);
+    let (owner, images) = next.attachments.iter().next().ok_or("resumed image lost")?;
+    assert_eq!(next.messages[*owner].content, "recent image owner");
+    assert_eq!(images.len(), 1);
+    assert_eq!(images[0].id, "recent-image");
+    resumed.stop_run().await?;
     Ok(())
 }

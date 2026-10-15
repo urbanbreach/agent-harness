@@ -224,11 +224,10 @@ impl Runtime {
             });
             let (agent, turn) = queued.ok_or_else(|| CoordinatorError::UnknownTask(id.into()))?;
             if let Some(manual) = turn.manual {
-                let _ = manual
-                    .reply
-                    .send(Err(CoordinatorError::CompactionCancelled {
-                        agent_id: agent.clone(),
-                    }));
+                manual.reply.fail(CoordinatorError::CompactionCancelled {
+                    agent_id: agent.clone(),
+                    reason: super::CancelReason::Manual,
+                });
             }
             self.emit(
                 EventActor::new(ActorKind::Worker, Some(agent)),

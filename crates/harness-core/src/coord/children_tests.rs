@@ -129,6 +129,7 @@ fn done(text: &str) -> Vec<Stream> {
                 prompt_tokens: 11,
                 completion_tokens: 3,
                 total_tokens: 14,
+                ..Default::default()
             }),
             metadata: Some(ProviderStreamFinishedMetadata {
                 usage_complete: Some(true),
@@ -156,6 +157,8 @@ pub(super) fn configuration(temp: &Path, provider: Arc<dyn Provider>) -> Coordin
     config.permission_policy = PermissionPolicy::allow_all();
     config.provider_model_concurrency = 1;
     config.tool_concurrency = 1;
+    // Children run the same post-turn maintenance as roots; these fixtures script no summaries.
+    config.compaction.enabled = false;
     let mut parent = AgentProfile::fallback("default");
     parent.toolset = config.tool_registry.tool_ids();
     config.agent_profiles.insert("default".into(), parent);

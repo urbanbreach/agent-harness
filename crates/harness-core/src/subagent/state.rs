@@ -23,6 +23,9 @@ pub struct FinalizedConversationItem {
     pub settled_reasoning: Vec<String>,
     #[serde(default, skip_serializing)]
     pub raw_tool_result: Option<FinalizedToolResult>,
+    /// Facts a semantic restore needs: timing, stop, origin, usage, compaction state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<FinalizedItemMeta>,
 }
 
 /// Actual native tool output, captured before the presentation size/redaction pass.

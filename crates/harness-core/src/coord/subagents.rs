@@ -7,6 +7,7 @@ mod cancellation;
 mod context_helpers;
 mod finalized;
 mod lifecycle;
+mod meta;
 
 pub(super) use context_helpers::{current_context, restored_context};
 

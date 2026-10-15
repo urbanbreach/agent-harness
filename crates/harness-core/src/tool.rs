@@ -33,6 +33,11 @@ pub struct ArtifactRef {
 }
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolResult {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub useless: bool,
+    /// The result is an internal recovery artifact that reducers must not rewrite.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub source_artifact: bool,
     pub display_text: String,
     pub structured_json: Option<Value>,
     pub artifacts: Vec<ArtifactRef>,

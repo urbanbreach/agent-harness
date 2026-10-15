@@ -11,16 +11,24 @@ pub(in crate::coord) fn restored_context(
 ) -> Result<Context, CoordinatorError> {
     let mut context = Context::new(system_prompt);
     context.semantic = state.fidelity == FinalizedStateFidelity::Semantic;
+    let model = crate::agent::AgentModelRef::parse(&state.source_model);
+    let request = harness_providers::CompletionRequest {
+        provider_id: Some(model.provider_id),
+        model_id: model.model_id,
+        ..Default::default()
+    };
     for item in &state.conversation_items {
-        context.entries.push(Entry {
-            message: item.message.clone(),
-            seq: item.event_seq,
-            turn: item.turn_id.clone(),
-            attachments: item.attachments.clone(),
-            settled_reasoning: item.settled_reasoning.clone(),
-            raw_tool_result: item.raw_tool_result.clone(),
-        });
+        let mut entry = Entry::new(item.message.clone(), item.event_seq, item.turn_id.clone());
+        entry.attachments = item.attachments.clone();
+        entry.settled_reasoning = item.settled_reasoning.clone();
+        entry.raw_tool_result = item.raw_tool_result.clone();
+        if let Some(meta) = &item.meta {
+            super::meta::restore(&mut entry, meta, run_dir, &request);
+        }
+        context.entries.push(entry);
     }
+    super::meta::settle_rewrite_marks(&mut context.entries);
+    super::super::history::derive_images(&mut context.entries);
     context.usage = state.usage.clone();
     context.native_context_usage = state.native_context_usage;
     context.model_request = state.model_request.clone();
@@ -38,7 +46,10 @@ pub(in crate::coord) fn current_context(
     run_dir: &Path,
 ) -> Result<Context, CoordinatorError> {
     if historical.entries.iter().any(|entry| {
-        entry.message.role != harness_providers::MessageRole::System && entry.turn.is_none()
+        entry.message.role != harness_providers::MessageRole::System
+            && entry.turn.is_none()
+            && entry.compaction.is_none()
+            && entry.branch_summary.is_none()
     }) {
         return Ok(historical);
     }

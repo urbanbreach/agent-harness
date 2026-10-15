@@ -274,6 +274,7 @@ impl Runtime {
                 output_summary: Some(text.clone()),
                 output_json: json,
                 metadata: Some(ToolCallMetadata {
+                    useless: result.as_ref().is_ok_and(|r| r.useless && !r.is_error()),
                     attachments: result
                         .as_ref()
                         .map(|r| r.attachments.clone())

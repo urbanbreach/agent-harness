@@ -235,6 +235,18 @@ impl Runtime {
         *deadline = Some(deadline.map_or(at, |current| current.min(at)));
     }
 
+    /// Whether a monitor `agent` owns still holds lines or an exit report waiting for its
+    /// collection window. Another agent's open window does not count.
+    pub(in crate::coord) fn monitor_pending_for(&self, agent: &str) -> bool {
+        self.commands.values().any(|command| {
+            command.snapshot.owner_agent_id.as_deref() == Some(agent)
+                && command
+                    .monitor
+                    .as_ref()
+                    .is_some_and(|monitor| monitor.pending())
+        })
+    }
+
     pub(super) fn feed_monitor(&mut self, id: &str, text: &str) {
         if self
             .commands
@@ -479,17 +491,4 @@ impl Runtime {
 }
 
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn plain_keeps_what_a_terminal_shows() {
-        for (raw, shown) in [
-            ("\u{1b}[32mPASS\u{1b}[0m tests::ok  ", "PASS tests::ok"),
-            ("10%\r55%\r100% done\r", "100% done"),
-            ("\u{1b}]0;title\u{7}ready\ton 3000", "ready on 3000"),
-            ("", ""),
-        ] {
-            assert_eq!(super::plain(raw), shown);
-        }
-        assert!(super::plain(&"x".repeat(5000)).ends_with('…'));
-    }
-}
+mod tests;

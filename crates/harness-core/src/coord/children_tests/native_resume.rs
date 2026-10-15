@@ -99,12 +99,12 @@ async fn native_new_identity_resume_pins_state_and_same_identity_message_wake(
         original.usage.as_slice()
     );
     let requests = provider.captured_requests().await;
-    let source_seed = requests[0].messages[0].content.len() as u64 / 4;
+    let source_seed = requests[0].messages[0].content.len().div_ceil(4) as u64;
     let resume_seed = requests[1]
         .messages
         .iter()
         .take(requests[1].messages.len() - 1)
-        .map(|message| message.content.len() as u64 / 4)
+        .map(|message| message.content.len().div_ceil(4) as u64)
         .sum::<u64>();
     assert_eq!(
         original

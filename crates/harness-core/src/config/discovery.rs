@@ -287,6 +287,7 @@ pub struct PublicTuiConfig {
     #[serde(rename = "keybinds", alias = "keybindings")]
     pub keybindings: BTreeMap<String, String>,
     pub confirm_before_rewind: Option<bool>,
+    pub collapse_compacted_history: Option<bool>,
 }
 
 #[cfg(test)]

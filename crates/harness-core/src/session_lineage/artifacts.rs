@@ -12,6 +12,7 @@ pub(crate) fn copy(
 ) -> Result<usize, SessionLineageError> {
     let mut references: BTreeMap<String, (Option<String>, Option<u64>)> = BTreeMap::new();
     let mut finalized_digests = BTreeMap::new();
+    let mut native = std::collections::BTreeSet::new();
     let mut add = |path: &str, digest: Option<&str>, bytes| -> Result<(), SessionLineageError> {
         if path.len() > 4096
             || path.chars().any(char::is_control)
@@ -115,7 +116,16 @@ pub(crate) fn copy(
             }
         }
         match &event.payload {
-            EventV1::ArtifactWritten(e) => add(&e.path, Some(&e.digest), Some(e.bytes))?,
+            EventV1::ArtifactWritten(e) => {
+                // Only the store's canonical name counts, so a tag alone cannot skip a scan.
+                if e.metadata.get("kind").map(String::as_str)
+                    == Some(crate::event::NATIVE_ARTIFACT_KIND)
+                    && e.path == format!("artifacts/native-{}.bin", e.digest)
+                {
+                    native.insert(e.path.clone());
+                }
+                add(&e.path, Some(&e.digest), Some(e.bytes))?;
+            }
             EventV1::ToolCallFinished(e) => {
                 for artifact in e.metadata.iter().flat_map(|m| &m.artifact_refs) {
                     add(&artifact.path, artifact.digest.as_deref(), None)?;
@@ -147,18 +157,30 @@ pub(crate) fn copy(
                 "artifact path must stay under artifacts/".into(),
             ));
         }
-        let body = crate::store::read_private_bytes(&source.join(relative), 16 * 1024 * 1024)?
+        // Native compaction payloads are opaque provider state that only lives in private
+        // session artifacts: they have their own size cap, stay outside the shared total and
+        // skip the credential scan their random bytes would trip. The digest still binds them.
+        let opaque = native.contains(path);
+        let limit = if opaque {
+            harness_providers::COMPACTION_PAYLOAD_BYTE_LIMIT as u64
+        } else {
+            16 * 1024 * 1024
+        };
+        let body = crate::store::read_private_bytes(&source.join(relative), limit)?
             .ok_or_else(|| SessionLineageError::Invalid("referenced artifact is missing".into()))?;
         let count = body.len() as u64;
-        total += count;
+        if !opaque {
+            total += count;
+        }
         if total > 64 * 1024 * 1024 {
             return Err(SessionLineageError::Invalid(
                 "artifacts exceed 64 MiB in total".into(),
             ));
         }
-        if crate::redact::DefaultRedactor::default()
-            .secret_finding_count(&String::from_utf8_lossy(&body))
-            > 0
+        if !opaque
+            && crate::redact::DefaultRedactor::default()
+                .secret_finding_count(&String::from_utf8_lossy(&body))
+                > 0
         {
             return Err(SessionLineageError::Invalid(
                 "artifact contains a credential; no session was published".into(),
@@ -186,7 +208,7 @@ pub(crate) fn copy(
             )));
         }
         let destination = child.join(relative);
-        if let Some(existing) = crate::store::read_private_bytes(&destination, 16 * 1024 * 1024)? {
+        if let Some(existing) = crate::store::read_private_bytes(&destination, limit)? {
             if existing != body {
                 return Err(SessionLineageError::Invalid(format!(
                     "destination artifact differs: {path}"

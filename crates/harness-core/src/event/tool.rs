@@ -30,6 +30,11 @@ pub struct EventArtifactRef {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ToolCallMetadata {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub useless: bool,
+    /// The result is an internal recovery artifact that reducers must not rewrite.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub source_artifact: bool,
     pub canonical_tool_id: Option<String>,
     pub alias_source_tool_id: Option<String>,
     pub lineage: Option<TaskLineageMetadata>,

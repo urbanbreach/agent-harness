@@ -9,6 +9,12 @@ const BILLED_USAGE: CompletionUsage = CompletionUsage {
     prompt_tokens: 7,
     completion_tokens: 3,
     total_tokens: 10,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    context_tokens: None,
+    reasoning_tokens: None,
 };
 
 /// A scripted provider whose abort handshake retains billed usage.

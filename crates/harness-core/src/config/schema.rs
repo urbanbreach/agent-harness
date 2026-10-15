@@ -1,6 +1,8 @@
 use super::HarnessConfig;
 use serde_json::{json, Value};
 
+mod compaction;
+
 /// The file format, including shorthand expanded before deserialization.
 pub fn config_json_schema() -> Value {
     let mut schema = schemars::schema_for!(HarnessConfig).to_value();
@@ -25,7 +27,11 @@ pub fn config_json_schema() -> Value {
         ("RuntimeConfig", "background_tasks backgroundTasks;session_dir sessionDir;provider_retry providerRetry"),
         ("BackgroundTaskSettings", "defaultConcurrency default_concurrency;providerConcurrency provider_concurrency;modelConcurrency model_concurrency;staleTimeoutMs stale_timeout_ms;messageStalenessTimeoutMs message_staleness_timeout_ms"),
         ("ProviderRetryRuntimeConfig", "max_retries maxRetries;base_delay_ms baseDelayMs;max_delay_ms maxDelayMs"),
-        ("CompactionSettings", "threshold_percent thresholdPercent;threshold_tokens thresholdTokens;model_thresholds modelThresholds;agent_thresholds agentThresholds;reserve_tokens reserveTokens;keep_recent_tokens keepRecentTokens;auto_retry_overflow autoRetryOverflow;structured_summary_contract structuredSummaryContract;estimated_token_triggers estimatedTokenTriggers;fallback_input_tokens fallbackInputTokens;split_oversized_turns splitOversizedTurns;suppress_auto_compaction suppressAutoCompaction"),
+        ("CompactionSettings", "threshold_percent thresholdPercent;threshold_tokens thresholdTokens;model_thresholds modelThresholds;agent_thresholds agentThresholds;reserve_tokens reserveTokens;keep_recent_tokens keepRecentTokens;auto_retry_overflow autoRetryOverflow;estimated_token_triggers estimatedTokenTriggers;fallback_input_tokens fallbackInputTokens;mid_turn_enabled midTurnEnabled;method_order methodOrder;model_thresholds_enabled modelThresholdsEnabled;auto_continue autoContinue;async_enabled asyncEnabled;handoff_save_to_disk handoffSaveToDisk;remote_streaming_v2_enabled remoteStreamingV2Enabled;remote_endpoint remoteEndpoint;v2_retained_message_budget v2RetainedMessageBudget;idle_enabled idleEnabled;idle_threshold_tokens idleThresholdTokens;idle_timeout_seconds idleTimeoutSeconds;supersede_reads supersedeReads;drop_useless dropUseless;context_promotion contextPromotion;promotion_targets promotionTargets;summary_model summaryModel;branch_summary branchSummary;remote_enabled remoteEnabled;base_window_tokens baseWindowTokens;remote_models remoteModels;summary_models summaryModels;notes_windows notesWindows"),
+        ("CompactionRetrySettings", "max_retries maxRetries;base_delay_ms baseDelayMs"),
+        ("ArchiveSettings", "system_prompt systemPrompt;tool_results toolResults"),
+        ("RemoteModelSettings", "v2_streaming_enabled v2StreamingEnabled;v2_endpoint v2Endpoint"),
+        ("BranchSummarySettings", "reserve_tokens reserveTokens"),
         ("RuntimePermissionsConfig", "ask_timeout_ms askTimeoutMs"),
         ("PromptRuntimeConfig", "wait_timeout_ms waitTimeoutMs"),
         ("UiConfig", "default_profile defaultProfile;maxEventsInMemory max_events_in_memory;maxTranscriptCharsInMemory max_transcript_chars_in_memory"),
@@ -41,6 +47,7 @@ pub fn config_json_schema() -> Value {
             aliases(def, fields);
         }
     }
+    compaction::overrides(defs);
     if let Some(variants) = defs["McpServerConfig"]["oneOf"].as_array_mut() {
         for variant in variants {
             if variant["properties"]["transport"]["const"] == "http" {

@@ -203,10 +203,26 @@ pub(super) fn restore_content(
     run_dir: &Path,
     contexts: &std::collections::HashMap<String, &ArtifactWrittenEvent>,
 ) -> Result<(), CoordinatorError> {
+    // Archive frames of a summary stay metadata only; a request reads the ones it selects.
+    if context.entries.iter().any(|e| e.compaction.is_some()) {
+        context.frame_source = Some(Arc::new(super::context::RunDirFrames::new(
+            run_dir.to_path_buf(),
+        )));
+    }
+    restore_entries(&mut context.entries, run_dir, contexts)
+}
+
+/// Loads attachment bytes and the selected context of user messages. Summary entries are
+/// skipped: their frames resolve lazily and a missing one is not a restore error.
+pub(super) fn restore_entries(
+    entries: &mut [super::context::Entry],
+    run_dir: &Path,
+    contexts: &std::collections::HashMap<String, &ArtifactWrittenEvent>,
+) -> Result<(), CoordinatorError> {
     use harness_providers::attachment_protocol::{MAX_ATTACHMENTS, MAX_REQUEST_ATTACHMENT_BYTES};
-    let (count, size) = context
-        .entries
+    let (count, size) = entries
         .iter()
+        .filter(|e| e.compaction.is_none())
         .flat_map(|e| &e.attachments)
         .fold((0usize, 0u64), |(count, size), a| {
             (count.saturating_add(1), size.saturating_add(a.size))
@@ -216,7 +232,7 @@ pub(super) fn restore_content(
             "restored attachments exceed the request limit".into(),
         ));
     }
-    for entry in &mut context.entries {
+    for entry in entries.iter_mut().filter(|e| e.compaction.is_none()) {
         hydrate(&mut entry.attachments, run_dir)?;
         if entry.message.role != harness_providers::MessageRole::User {
             continue;

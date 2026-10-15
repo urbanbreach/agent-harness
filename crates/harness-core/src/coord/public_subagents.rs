@@ -30,7 +30,7 @@ pub enum SpawnSubagentResult {
         continue_parent_work: bool,
         notified_on_completion: bool,
     },
-    Completed(SpawnSubagentOutput),
+    Completed(Box<SpawnSubagentOutput>),
 }
 
 impl From<SpawnSubagentResult> for ToolResult {
@@ -394,7 +394,7 @@ impl CoordinatorHandle {
                 let snapshot = subscription.updates.borrow_and_update().clone();
                 if snapshot.terminal {
                     return match snapshot.completed {
-                        Some(output) => Ok(SpawnSubagentResult::Completed(output)),
+                        Some(output) => Ok(SpawnSubagentResult::Completed(Box::new(output))),
                         None => Err(native_invalid(
                             snapshot
                                 .error

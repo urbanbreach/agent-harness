@@ -15,7 +15,7 @@ fn hook(event: Hook, script: &str) -> LifecycleHookConfig {
         event,
         command: vec!["/bin/sh".into(), "-c".into(), script.into()],
         cwd: None,
-        timeout_ms: 1000,
+        timeout_ms: Some(1000),
         critical: true,
         env: BTreeMap::new(),
     }
@@ -127,12 +127,20 @@ async fn compaction_hooks_cover_request_failure_write_and_apply_without_replayin
     config.provider = Arc::new(MockProvider::script([
         answer("old ".repeat(2000)),
         answer("recent"),
-        answer("bad summary"),
+        vec![harness_providers::ProviderStreamEvent::Error {
+            message: "summary unavailable".into(),
+            category: None,
+            remediation: None,
+            retry_after_ms: None,
+            envelope: None,
+        }],
         answer(super::compaction_tests::SUMMARY),
+        answer("Rewrite checkpoint"),
     ]));
-    config.compaction.keep_recent_tokens = 1;
-    config.compaction.reserve_tokens = 0;
-    config.compaction.suppress_auto_compaction = true;
+    config.compaction.keep_recent_tokens = 100;
+    config.compaction.reserve_tokens = Some(0);
+    config.compaction.enabled = false;
+    config.compaction.method_order = vec![harness_compaction::CompactionMethod::Soft];
     config.hook_runtime_config.shell_allowlist.executables = vec!["/bin/sh".into()];
     config.hook_runtime_config.hooks.lifecycle = [
         Hook::CompactionRequested,
@@ -205,7 +213,7 @@ async fn hook_policy_suppression_and_timeout_fail_closed_without_failing_noncrit
         let mut check = hook(Hook::ToolCallStarted, script);
         check.critical = false;
         if case == "timeout" {
-            check.timeout_ms = 40;
+            check.timeout_ms = Some(40);
         }
         if case == "outside" {
             check.cwd = Some("outside".into());

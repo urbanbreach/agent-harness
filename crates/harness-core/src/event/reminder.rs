@@ -32,6 +32,12 @@ pub enum RuntimeReminderKind {
     OutputContract,
     /// Output lines or the exit of a running monitor.
     MonitorEvent,
+    /// A manual compaction interrupted the turn; the agent resumes from the compacted state.
+    CompactionResume,
+    /// The previous response spent its output budget on reasoning and was discarded.
+    LengthStop,
+    /// Near-threshold notice to update the persistent notes before the context window rolls over.
+    NotesWindow,
 }
 
 impl RuntimeReminderKind {
@@ -44,6 +50,9 @@ impl RuntimeReminderKind {
             Self::CommandCompleted => "command_completed",
             Self::OutputContract => "output_contract",
             Self::MonitorEvent => "monitor_event",
+            Self::CompactionResume => "compaction_resume",
+            Self::LengthStop => "length_stop",
+            Self::NotesWindow => "notes_window",
         }
     }
 }

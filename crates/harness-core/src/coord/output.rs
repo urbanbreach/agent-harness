@@ -170,6 +170,29 @@ impl Runtime {
         };
         self.write_blob(actor, tool, extension, safe.as_bytes(), BTreeMap::new())
     }
+    /// Stores the original text of shaken regions as a redacted `.txt` recovery artifact
+    /// tagged `kind: shake`. The saved document is the redacted text, so recovering a region
+    /// never reveals a secret the journal would have redacted.
+    pub fn write_shake_artifact(
+        &mut self,
+        actor: &EventActor,
+        tool: Option<&str>,
+        text: &str,
+    ) -> Result<ArtifactRef, CoordinatorError> {
+        if text.len() > 8 * 1024 * 1024 {
+            return Err(CoordinatorError::Invalid(
+                "shake artifact exceeds 8 MiB".into(),
+            ));
+        }
+        let safe = self.redactor.redact_text(text);
+        self.write_blob(
+            actor,
+            tool,
+            "txt",
+            safe.as_bytes(),
+            BTreeMap::from([("kind".into(), "shake".into())]),
+        )
+    }
     pub fn write_blob(
         &mut self,
         actor: &EventActor,

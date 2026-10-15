@@ -85,63 +85,50 @@ impl Worker {
         }
         Ok(())
     }
-    fn request(&self, messages: &super::super::context::Context) -> CompletionRequest {
+    pub(in crate::coord) fn request(
+        &self,
+        messages: &super::super::context::Context,
+    ) -> CompletionRequest {
         let model = crate::agent::AgentModelRef::parse(&self.turn.model);
         // Request-only projection: source locations and catalog configuration
         // never enter conversation buffers, finalized state, or durable events.
         let mut request_messages = messages.messages();
         let mut attachments = messages.attachments();
-        if let Some(metadata) = &self.skill_metadata {
-            let after_system = request_messages
-                .iter()
-                .take_while(|message| message.role == MessageRole::System)
-                .count();
-            request_messages.insert(
-                after_system,
-                harness_providers::CompletionMessage::text(MessageRole::System, metadata),
-            );
-            attachments = attachments
-                .into_iter()
-                .map(|(index, media)| (index + usize::from(index >= after_system), media))
-                .collect();
-        }
-        if let Some(preloads) = &self.skill_preloads
-            && !preloads.is_empty()
-        {
-            request_messages.insert(
-                0,
-                harness_providers::CompletionMessage::text(
-                    MessageRole::System,
-                    preloads
-                        .iter()
-                        .map(|(_, body)| body.as_str())
-                        .collect::<Vec<_>>()
-                        .join("\n\n"),
-                ),
-            );
-            attachments = attachments
-                .into_iter()
-                .map(|(index, media)| (index + 1, media))
-                .collect();
-        }
+        let mut message_content = std::collections::BTreeMap::new();
+        self.project_archives(
+            messages,
+            &model,
+            &mut request_messages,
+            &mut attachments,
+            &mut message_content,
+        );
+        self.insert_skill_system(
+            &mut request_messages,
+            &mut attachments,
+            &mut message_content,
+        );
+        self.apply_inline_imaging(
+            messages,
+            &model,
+            &mut request_messages,
+            &mut attachments,
+            &mut message_content,
+        );
+        // Times pair with entries only while the projections kept one message per entry.
+        let message_times_ms = if request_messages.len() == messages.entries.len() {
+            messages.entries.iter().map(|entry| entry.at_ms).collect()
+        } else {
+            Vec::new()
+        };
         CompletionRequest {
             provider_id: Some(model.provider_id),
             model_id: model.model_id,
             messages: request_messages,
-            attachments,
-            temperature: self.profile.temperature,
-            max_tokens: self
-                .turn
-                .target
-                .as_ref()
-                .and_then(|t| t.limits.max_output_tokens()),
-            variant: self.turn.settings.variant.clone(),
-            reasoning_effort: self.turn.settings.reasoning_effort.clone(),
-            text_verbosity: self.turn.settings.text_verbosity.clone(),
-            reasoning_summary: self.turn.settings.reasoning_summary.clone(),
-            thinking: self.turn.settings.thinking.clone(),
-            tools: (!self.tools.is_empty()).then(|| self.tools.clone()),
             context: ProviderRequestContext {
+                has_media: attachments
+                    .values()
+                    .flatten()
+                    .any(|a| a.mime.starts_with("image/")),
                 working_directory: Some(self.workspace.clone()),
                 session_id: Some(self.session.clone()),
                 request_id: Some(self.turn.id.clone()),
@@ -157,12 +144,23 @@ impl Worker {
                 },
                 cache_retention: self.profile.cache_retention,
                 main_turn: true,
-                has_media: messages
-                    .entries
-                    .iter()
-                    .flat_map(|e| &e.attachments)
-                    .any(|a| a.mime.starts_with("image/")),
+                cache_key: None,
             },
+            attachments,
+            message_content,
+            message_times_ms,
+            temperature: self.profile.temperature,
+            max_tokens: self
+                .turn
+                .target
+                .as_ref()
+                .and_then(|t| t.limits.max_output_tokens()),
+            variant: self.turn.settings.variant.clone(),
+            reasoning_effort: self.turn.settings.reasoning_effort.clone(),
+            text_verbosity: self.turn.settings.text_verbosity.clone(),
+            reasoning_summary: self.turn.settings.reasoning_summary.clone(),
+            thinking: self.turn.settings.thinking.clone(),
+            tools: (!self.tools.is_empty()).then(|| self.tools.clone()),
             stream: true,
             ..Default::default()
         }
@@ -222,259 +220,9 @@ impl Worker {
         })
         .map_err(|e| CoordinatorError::Invalid(e.to_string()))
     }
+}
 
-    pub(super) async fn dispatch(
-        &self,
-        messages: &mut super::super::context::Context,
-        dispatched: &mut bool,
-    ) -> Result<(String, super::super::streaming::Response), CoordinatorError> {
-        let automatic = self.compaction.enabled && !self.compaction.suppress_auto_compaction;
-        let (mut prepared, mut retried) = (false, false);
-        let mut first_failure = None;
-        let mut retry = ProviderRequestRetryMetadata {
-            attempt: 0,
-            max_attempts: self.retry.max_retries.saturating_add(1),
-            delay_ms: Some(0),
-            category: None,
-            failure: None,
-        };
-        loop {
-            let request = self.request(messages);
-            let budget = self.request_budget(&request)?;
-            // senpi's compaction lane policy: when the backend compacts its own resident session,
-            // automatic compaction and the input-budget stop stand down; manual compaction and
-            // overflow recovery (the provider decides which overflows are ours) still run.
-            let native_context = self.provider.manages_context(&request);
-            if self.native {
-                let id = self.turn.id.clone();
-                let owner = self.actor.agent_id.clone().unwrap_or_default();
-                let tokens = messages.native_estimated_tokens();
-                let window = self
-                    .turn
-                    .target
-                    .as_ref()
-                    .and_then(|target| target.limits.context_window.tokens)
-                    .map(u64::from);
-                self.handle
-                    .call(move |runtime| {
-                        runtime.check_task(&id)?;
-                        let agent = runtime
-                            .agents
-                            .get_mut(&owner)
-                            .ok_or(CoordinatorError::UnknownAgent(owner))?;
-                        agent.native_context_tokens = tokens;
-                        agent.native_context_window = window;
-                        Ok(())
-                    })
-                    .await?;
-            }
-            if automatic
-                && !native_context
-                && !prepared
-                && self
-                    .compaction_threshold(&budget)
-                    .is_some_and(|threshold| budget.occupied_input_tokens >= threshold)
-            {
-                prepared = true;
-                if matches!(
-                    self.compact(messages, None, "threshold", None, Some(&budget))
-                        .await?,
-                    ManualCompactionOutcome::Compacted { .. }
-                ) {
-                    continue;
-                }
-            }
-            if budget.requires_compaction == Some(true) && !native_context {
-                return Err(CoordinatorError::Invalid("context exceeds its input budget; compact the conversation or shorten the prompt".into()));
-            }
-            let permit = tokio::select! {
-                biased;
-                () = self.cancellation.cancelled() => return Err(CoordinatorError::Cancelled(self.turn.id.clone())),
-                permit = Arc::clone(&self.permits).acquire_owned() => permit.map_err(|_| CoordinatorError::Closed)?,
-            };
-            let selection = self.selection(&request)?;
-            *dispatched = true;
-            let mut progress = false;
-            let result = super::super::streaming::complete(
-                &self.handle,
-                self.provider.as_ref(),
-                &self.actor,
-                &self.turn.id,
-                request,
-                selection,
-                budget,
-                &self.cancellation,
-                retry,
-                self.behavior.stream_guard.enabled,
-                &mut progress,
-            )
-            .await;
-            drop(permit);
-            if automatic
-                && self.compaction.auto_retry_overflow
-                && !retried
-                && matches!(
-                    &result,
-                    Err(CoordinatorError::Provider {
-                        category: Some(ProviderErrorCategory::ContextWindowExceeded),
-                        ..
-                    })
-                )
-            {
-                retried = true;
-                prepared = true;
-                if matches!(
-                    self.compact(messages, None, "overflow", None, Some(&budget))
-                        .await?,
-                    ManualCompactionOutcome::Compacted { .. }
-                ) {
-                    continue;
-                }
-            }
-            let Err(error) = result else {
-                return result;
-            };
-            if matches!(error, CoordinatorError::StreamGuard(_)) {
-                return Err(error);
-            }
-            if let Some((category, delay_ms)) = self.retry_delay(&error, retry.attempt, progress) {
-                if let CoordinatorError::Provider {
-                    category, message, ..
-                } = &error
-                {
-                    retry.failure = Some(harness_providers::ProviderRetryFailure::from_error(
-                        *category, message,
-                    ));
-                }
-                first_failure.get_or_insert(error);
-                retry.attempt += 1;
-                retry.category = Some(category);
-                retry.delay_ms = Some(delay_ms);
-                self.retry_backoff(retry, delay_ms).await?;
-                continue;
-            }
-            return Err(if matches!(error, CoordinatorError::Provider { .. }) {
-                first_failure.unwrap_or(error)
-            } else {
-                error
-            });
-        }
-    }
-    async fn retry_backoff(
-        &self,
-        retry: ProviderRequestRetryMetadata,
-        delay_ms: u64,
-    ) -> Result<(), CoordinatorError> {
-        let (actor, turn_id) = (self.actor.clone(), self.turn.id.clone());
-        self.handle
-            .call(move |runtime| {
-                runtime.live(
-                    actor,
-                    turn_id.clone(),
-                    LiveEventV1::ProviderRetrying {
-                        turn_id: turn_id.into(),
-                        retry,
-                    },
-                )
-            })
-            .await?;
-        let deadline = tokio::time::Instant::now()
-            .checked_add(std::time::Duration::from_millis(delay_ms))
-            .ok_or_else(|| {
-                CoordinatorError::Invalid("provider retry delay exceeds clock range".into())
-            })?;
-        tokio::select! {
-            biased;
-            () = self.cancellation.cancelled() => return Err(CoordinatorError::Cancelled(self.turn.id.clone())),
-            () = tokio::time::sleep_until(deadline) => {}
-        }
-        Ok(())
-    }
-    fn retry_delay(
-        &self,
-        error: &CoordinatorError,
-        attempt: u32,
-        progress: bool,
-    ) -> Option<(ProviderErrorCategory, u64)> {
-        let CoordinatorError::Provider {
-            category: Some(category),
-            retry_after_ms,
-            ..
-        } = error
-        else {
-            return None;
-        };
-        if progress
-            || attempt >= self.retry.max_retries
-            || !matches!(
-                category,
-                ProviderErrorCategory::RateLimited | ProviderErrorCategory::TransportFailure
-            )
-        {
-            return None;
-        }
-        let exponential = self
-            .retry
-            .base_delay_ms
-            .saturating_mul(1_u64 << attempt.min(63));
-        Some((
-            *category,
-            retry_after_ms
-                .unwrap_or(exponential)
-                .min(self.retry.max_delay_ms),
-        ))
-    }
-    pub(in crate::coord) fn compaction_threshold(
-        &self,
-        budget: &crate::RequestBudget,
-    ) -> Option<u32> {
-        use crate::config::CompactionThreshold;
-        let maximum = budget.maximum_input_tokens?;
-        let hard = maximum
-            .saturating_sub(self.compaction.reserve_tokens)
-            .max(1);
-        let setting = self
-            .compaction
-            .agent_thresholds
-            .get(&self.profile.name)
-            .or_else(|| self.compaction.model_thresholds.get(&self.turn.model))
-            .copied()
-            .or_else(|| {
-                self.compaction
-                    .threshold_tokens
-                    .map(|tokens| CompactionThreshold::Tokens { tokens })
-            })
-            .or_else(|| {
-                self.compaction
-                    .threshold_percent
-                    .map(CompactionThreshold::Percent)
-            });
-        let capacity = self
-            .turn
-            .target
-            .as_ref()
-            .and_then(|t| t.limits.context_window_tokens());
-        let soft = match (setting, capacity) {
-            (Some(CompactionThreshold::Tokens { tokens }), _) => tokens.get(),
-            (Some(CompactionThreshold::Percent(percent)), Some(window)) => {
-                fraction(window, percent.get())
-            }
-            (None, Some(window)) => fraction(
-                window,
-                match window {
-                    0..=16_000 => 45,
-                    16_001..=32_000 => 50,
-                    32_001..=64_000 => 55,
-                    64_001..=128_000 => 60,
-                    128_001..=512_000 => 70,
-                    _ => 80,
-                },
-            ),
-            _ => hard,
-        };
-        Some(soft.min(hard))
-    }
-}
-fn fraction(window: u32, percent: u8) -> u32 {
-    u32::try_from((u64::from(window) * u64::from(percent)).div_ceil(100)).unwrap_or(u32::MAX)
-}
+mod dispatch;
+mod inline;
+mod projection;
+mod system;

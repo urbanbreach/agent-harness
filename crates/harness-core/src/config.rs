@@ -1,4 +1,5 @@
 //! Configuration contracts and model selection.
+pub use harness_compaction::{CompactionMethod, ManualMode, ShakeMode};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -16,6 +17,7 @@ mod limits;
 mod loader;
 mod models;
 mod normalize;
+mod numbers;
 mod ordered;
 mod permissions;
 mod profiles;
@@ -26,12 +28,14 @@ mod resolved;
 mod runtime;
 mod schema;
 mod selection;
+mod selectors;
 mod settings_registry;
 #[cfg(test)]
 mod settings_tests;
 mod settings_write;
 mod skills;
 mod subagents;
+mod threshold;
 pub use crate::perm::PermissionAction as PermissionMode;
 pub use defaults::{default_permission_rule_set_with_read_env, default_read_env_permission_rules};
 pub use discovery::*;
@@ -54,6 +58,7 @@ pub use settings_registry::*;
 pub use settings_write::*;
 pub use skills::*;
 pub use subagents::*;
+pub use threshold::*;
 
 const fn yes() -> bool {
     true
@@ -112,36 +117,6 @@ pub struct HarnessConfig {
     pub model_roles: ModelRolesConfig,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(try_from = "u8", into = "u8")]
-#[schemars(!try_from)]
-pub struct CompactionThresholdPercent(#[schemars(range(min = 1, max = 100))] u8);
-impl TryFrom<u8> for CompactionThresholdPercent {
-    type Error = &'static str;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        if (1..=100).contains(&value) {
-            Ok(Self(value))
-        } else {
-            Err("compaction percentage must be 1..100")
-        }
-    }
-}
-impl From<CompactionThresholdPercent> for u8 {
-    fn from(value: CompactionThresholdPercent) -> Self {
-        value.0
-    }
-}
-impl CompactionThresholdPercent {
-    pub const fn get(self) -> u8 {
-        self.0
-    }
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
-pub enum CompactionThreshold {
-    Percent(CompactionThresholdPercent),
-    Tokens { tokens: NonZeroU32 },
-}
 pub type CompactionRuntimeConfig = CompactionSettings;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -273,12 +248,12 @@ mod tests {
         }"#,
         )?;
         assert_eq!(config.agents["default"].model_ref, "local:test");
-        assert!(config.runtime.compaction.structured_summary_contract);
+        assert!(config.runtime.compaction.mid_turn_enabled);
         assert!(
             load_config_from_str("{runtime:{compaction:{}}}")?
                 .runtime
                 .compaction
-                .structured_summary_contract
+                .mid_turn_enabled
         );
         assert_eq!(
             config

@@ -72,6 +72,14 @@ pub enum ProjectedPermissionState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ProjectedCompactionPart {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<crate::event::CompactionMethod>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub short_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive: Option<crate::event::ArchiveRecord>,
     pub checkpoint_id: Option<String>,
     pub agent_id: String,
     pub status: CompactionCheckpointStatus,
@@ -167,6 +175,9 @@ pub struct CompactionCheckpointProjection {
     pub preserved_turns: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifact: Option<TranscriptArtifactRef>,
+    /// The earlier compaction this rescue record replaces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes_seq: Option<u64>,
     pub provenance: ProvenanceRange,
 }
 

@@ -26,6 +26,10 @@ pub(super) fn apply(
             });
             return;
         }
+        EventV1::ContextPruned(data) => {
+            output.context_prunes.push(data.clone());
+            return;
+        }
         EventV1::SessionCompaction(data) => {
             checkpoint.agent_id.clone_from(&data.agent_id);
             checkpoint.status = CompactionCheckpointStatus::SessionCompacted;
@@ -33,11 +37,17 @@ pub(super) fn apply(
             checkpoint.trigger_reason = Some(data.trigger_reason.clone());
             checkpoint.tokens_before = Some(data.tokens_before);
             checkpoint.tokens_after_estimate = data.tokens_after;
+            checkpoint.supersedes_seq = data.supersedes_seq;
             part.summary = Some(data.summary.clone());
+            part.method = data.method;
+            part.short_summary.clone_from(&data.short_summary);
+            part.warning.clone_from(&data.warning);
+            part.archive.clone_from(&data.archive);
             part.read_files.clone_from(&data.read_files);
             part.modified_files.clone_from(&data.modified_files);
             part.from_hook = Some(data.from_hook);
         }
+        EventV1::BranchSummary(data) if data.summary.trim().is_empty() => return,
         EventV1::BranchSummary(data) => {
             checkpoint.agent_id.clone_from(&data.agent_id);
             checkpoint.status = CompactionCheckpointStatus::BranchSummary;

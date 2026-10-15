@@ -4,8 +4,20 @@ use harness_providers::{
     ProviderSessionEvent, ProviderStreamEvent as Stream, ProviderStreamFinishedMetadata,
 };
 
+/// One ordered block of a streamed response. Reasoning stays live-only: the journal event
+/// skips it, so a restored entry has none.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum ResponsePart {
+    Text(String),
+    Reasoning(String),
+    /// Index into the response's calls.
+    Call(usize),
+}
+
 #[derive(Default)]
 pub(super) struct Response {
+    /// Text and call blocks in arrival order; adjacent text deltas are merged.
+    pub parts: Vec<ResponsePart>,
     pub text: String,
     pub continuation: Option<Box<harness_providers::ProviderContinuation>>,
     pub calls: Vec<AssistantToolCall>,
@@ -19,12 +31,82 @@ pub(super) struct Response {
 }
 
 impl Response {
+    /// Appends streamed text, merging it into a trailing text block.
+    pub fn push_text(&mut self, delta: &str) {
+        self.text.push_str(delta);
+        match self.parts.last_mut() {
+            Some(ResponsePart::Text(text)) => text.push_str(delta),
+            _ if delta.is_empty() => {}
+            _ => self.parts.push(ResponsePart::Text(delta.to_owned())),
+        }
+    }
+
+    pub fn push_reasoning(&mut self, delta: &str) {
+        match self.parts.last_mut() {
+            Some(ResponsePart::Reasoning(text)) => text.push_str(delta),
+            _ if delta.is_empty() => {}
+            _ => self.parts.push(ResponsePart::Reasoning(delta.to_owned())),
+        }
+    }
+
+    /// Records the settled reasoning blocks and makes the reasoning parts carry exactly
+    /// them. With as many blocks as streamed reasoning parts each replaces its own; with a
+    /// different count all blocks sit at the first reasoning position, or at the start when
+    /// none streamed. Unsettled reasoning leaves no reasoning parts.
+    pub fn set_settled_reasoning(&mut self, settled: Option<Vec<String>>) {
+        let streamed = self
+            .parts
+            .iter()
+            .filter(|part| matches!(part, ResponsePart::Reasoning(_)))
+            .count();
+        let blocks = settled.clone().unwrap_or_default();
+        let first = self
+            .parts
+            .iter()
+            .position(|part| matches!(part, ResponsePart::Reasoning(_)))
+            .unwrap_or(0);
+        if streamed == blocks.len() {
+            let mut blocks = blocks.into_iter();
+            for part in &mut self.parts {
+                if let (ResponsePart::Reasoning(text), Some(block)) = (part, blocks.next()) {
+                    *text = block;
+                }
+            }
+        } else {
+            self.parts
+                .retain(|part| !matches!(part, ResponsePart::Reasoning(_)));
+            let at = first.min(self.parts.len());
+            self.parts
+                .splice(at..at, blocks.into_iter().map(ResponsePart::Reasoning));
+        }
+        self.settled_reasoning = settled;
+    }
+
+    /// The blocks as an entry carries them.
+    pub fn item_parts(&self) -> Vec<harness_compaction::ItemPart<'static>> {
+        // Reasoning that never settled is not part of the entry, matching its empty
+        // `settled_reasoning`.
+        let settled = self.settled_reasoning.is_some();
+        self.parts
+            .iter()
+            .filter_map(|part| match part {
+                ResponsePart::Text(text) => Some(harness_compaction::ItemPart::text(text.clone())),
+                ResponsePart::Reasoning(text) if settled => {
+                    Some(harness_compaction::ItemPart::reasoning(text.clone()))
+                }
+                ResponsePart::Reasoning(_) => None,
+                ResponsePart::Call(index) => Some(harness_compaction::ItemPart::Call(*index)),
+            })
+            .collect()
+    }
+
+    pub fn push_call(&mut self, call: AssistantToolCall) {
+        self.parts.push(ResponsePart::Call(self.calls.len()));
+        self.calls.push(call);
+    }
+
     pub fn ensure_complete(&self) -> Result<(), CoordinatorError> {
-        if self
-            .metadata
-            .as_ref()
-            .is_some_and(|m| m.output_limit_reached)
-        {
+        if self.output_limited() {
             let category = harness_providers::ProviderErrorCategory::OutputLimitExceeded;
             return Err(CoordinatorError::Provider {
                 message:
@@ -33,9 +115,16 @@ impl Response {
                 category: Some(category),
                 remediation: Some(category.remediation().into()),
                 retry_after_ms: None,
+                envelope: None,
             });
         }
         Ok(())
+    }
+    /// The provider stopped because it exhausted the output budget.
+    pub fn output_limited(&self) -> bool {
+        self.metadata
+            .as_ref()
+            .is_some_and(|m| m.output_limit_reached)
     }
 }
 
@@ -137,7 +226,7 @@ pub(super) async fn complete(
         &id,
         request,
         cancel,
-        true,
+        read::Live::Turn,
         stream_guard_enabled,
         progress,
         &mut aborted_usage,
@@ -234,24 +323,31 @@ pub(super) async fn complete(
             )?;
             let mut response = response?;
             let mut parts = Vec::new();
-            if !response.text.is_empty() {
-                parts.push(crate::session::AssistantPart::Text {
-                    text: response.text.clone(),
-                });
-            }
-            for (index, call) in response.calls.iter().enumerate() {
-                let args: serde_json::Value = serde_json::from_str(&call.arguments_json)?;
-                parts.push(crate::session::AssistantPart::ToolCall(
-                    crate::session::AssistantToolCall {
-                        tool_call_id: format!("{request_id}-tool-{index}").into(),
-                        provider_tool_call_id: Some(call.tool_call_id.clone()),
-                        tool_id: call.function_name.clone(),
-                        args_summary: crate::redact::redact_value(s.redactor.as_ref(), &args)
-                            .to_string(),
-                        args_digest: digest(&call.arguments_json),
-                        provider_call_id: Some(request_id.clone()),
-                    },
-                ));
+            for part in &response.parts {
+                match part {
+                    ResponsePart::Text(text) if !text.is_empty() => {
+                        parts.push(crate::session::AssistantPart::Text { text: text.clone() });
+                    }
+                    ResponsePart::Text(_) | ResponsePart::Reasoning(_) => {}
+                    ResponsePart::Call(index) => {
+                        let call = &response.calls[*index];
+                        let args: serde_json::Value = serde_json::from_str(&call.arguments_json)?;
+                        parts.push(crate::session::AssistantPart::ToolCall(
+                            crate::session::AssistantToolCall {
+                                tool_call_id: format!("{request_id}-tool-{index}").into(),
+                                provider_tool_call_id: Some(call.tool_call_id.clone()),
+                                tool_id: call.function_name.clone(),
+                                args_summary: crate::redact::redact_value(
+                                    s.redactor.as_ref(),
+                                    &args,
+                                )
+                                .to_string(),
+                                args_digest: digest(&call.arguments_json),
+                                provider_call_id: Some(request_id.clone()),
+                            },
+                        ));
+                    }
+                }
             }
             let event = s.emit(
                 actor,
@@ -273,7 +369,6 @@ pub(super) async fn complete(
                 }),
             )?;
             response.event_seq = event.seq;
-            response.ensure_complete()?;
             Ok(response)
         })
         .await?;
@@ -281,7 +376,7 @@ pub(super) async fn complete(
 }
 
 mod read;
-pub(super) use read::read;
+pub(super) use read::{read, Live};
 mod guard;
 mod live_output;
 #[cfg(test)]

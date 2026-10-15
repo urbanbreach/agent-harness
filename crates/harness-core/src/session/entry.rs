@@ -61,6 +61,17 @@ pub enum SessionEntryPayload {
     },
     BranchSummary {
         summary: String,
+        /// Journal sequence the branch returned from.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from_event_seq: Option<u64>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        read_files: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        modified_files: Vec<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        from_hook: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        details: Option<Value>,
     },
     CustomPersistedState {
         key: String,
@@ -83,6 +94,13 @@ pub struct CompactionPreservedState {
     pub modified_files: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_intent: Option<UiIntentReceivedEvent>,
+    /// A hook produced the summary instead of a summarizer.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub from_hook: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<Value>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub preserve_data: std::collections::BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Copy)]

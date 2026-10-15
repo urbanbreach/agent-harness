@@ -158,26 +158,110 @@ pub struct ProviderRetryRuntimeConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct CompactionSettings {
     pub enabled: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mid_turn_enabled: bool,
+    // Unknown entries are dropped, the first duplicate wins and a non-array means the default.
+    #[serde(deserialize_with = "numbers::method_order")]
+    pub method_order: Vec<CompactionMethod>,
+    // A percentage above 0 and at most 100, as a number or an `N%` string. `-1` means unset.
+    #[serde(deserialize_with = "numbers::threshold_percent")]
     pub threshold_percent: Option<CompactionThresholdPercent>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "numbers::threshold_tokens")]
     pub threshold_tokens: Option<NonZeroU32>,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "selectors::model_thresholds")]
     pub model_thresholds: BTreeMap<String, CompactionThreshold>,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub model_thresholds_enabled: bool,
+    #[serde(deserialize_with = "selectors::agent_thresholds")]
     pub agent_thresholds: BTreeMap<String, CompactionThreshold>,
-    #[serde(alias = "reserveTokens")]
-    pub reserve_tokens: u32,
-    #[serde(alias = "keepRecentTokens")]
+    #[serde(deserialize_with = "numbers::reserve_tokens")]
+    pub reserve_tokens: Option<u32>,
+    #[serde(deserialize_with = "numbers::token_count")]
     pub keep_recent_tokens: u32,
+    pub auto_continue: bool,
+    pub async_enabled: bool,
+    pub handoff_save_to_disk: bool,
+    pub remote_streaming_v2_enabled: bool,
+    // Provider-native compaction as a whole. Only a literal `false` disables it.
+    pub remote_enabled: bool,
+    #[serde(deserialize_with = "numbers::endpoint")]
+    pub remote_endpoint: Option<String>,
+    // Finite numbers are floored, then clamped into the token range, so negatives become 0.
+    #[serde(deserialize_with = "numbers::clamped_u32")]
+    pub v2_retained_message_budget: u32,
+    pub idle_enabled: bool,
+    // Finite numbers are floored, then clamped into the token range, so negatives become 0.
+    #[serde(deserialize_with = "numbers::clamped_u32")]
+    pub idle_threshold_tokens: u32,
+    // Finite numbers are floored, then clamped to zero or more seconds.
+    #[serde(deserialize_with = "numbers::clamped_u64")]
+    pub idle_timeout_seconds: u64,
+    pub supersede_reads: bool,
+    pub drop_useless: bool,
+    pub context_promotion: bool,
+    pub promotion_targets: BTreeMap<String, String>,
+    pub summary_model: Option<String>,
+    // Summary model per `provider/model` selector, preferred over `summary_model`.
+    #[serde(deserialize_with = "selectors::summary_models")]
+    pub summary_models: BTreeMap<String, String>,
     pub auto_retry_overflow: bool,
-    #[serde(alias = "structuredSummaryContract")]
-    pub structured_summary_contract: bool,
     pub estimated_token_triggers: bool,
-    #[serde(alias = "fallbackInputTokens")]
+    #[serde(deserialize_with = "numbers::token_count")]
     pub fallback_input_tokens: u32,
-    pub split_oversized_turns: bool,
-    pub suppress_auto_compaction: bool,
+    // Window that percentage thresholds scale from instead of the model's own window.
+    #[serde(deserialize_with = "numbers::base_window_tokens")]
+    pub base_window_tokens: Option<u32>,
+    // Provider-native compaction overrides per `provider/model` selector.
+    #[serde(deserialize_with = "selectors::remote_models")]
+    pub remote_models: BTreeMap<String, RemoteModelSettings>,
+    pub retry: CompactionRetrySettings,
+    pub notes_windows: bool,
+    pub archive: ArchiveSettings,
+    pub branch_summary: BranchSummarySettings,
+}
+
+// Provider-native compaction settings for one model selector. Unset fields defer to the
+// provider's own rules.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct RemoteModelSettings {
+    pub enabled: Option<bool>,
+    pub api: Option<String>,
+    pub endpoint: Option<String>,
+    pub model: Option<String>,
+    pub v2_streaming_enabled: Option<bool>,
+    pub v2_endpoint: Option<String>,
+}
+
+// Automatic retry of a failed compaction request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct CompactionRetrySettings {
+    pub enabled: bool,
+    pub max_retries: u32,
+    pub base_delay_ms: u64,
+}
+
+// Which system prompt text archive frames carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ArchiveSystemPrompt {
+    None,
+    AgentsMd,
+    All,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct ArchiveSettings {
+    pub shape: String,
+    pub system_prompt: ArchiveSystemPrompt,
+    pub tool_results: bool,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct BranchSummarySettings {
+    pub enabled: bool,
+    #[serde(deserialize_with = "numbers::token_count")]
+    pub reserve_tokens: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Eq)]
@@ -239,11 +323,49 @@ pub(super) fn normalize_aliases(value: &mut serde_json::Value) -> Result<(), Con
                 ("reserveTokens", "reserve_tokens"),
                 ("keepRecentTokens", "keep_recent_tokens"),
                 ("autoRetryOverflow", "auto_retry_overflow"),
-                ("structuredSummaryContract", "structured_summary_contract"),
                 ("estimatedTokenTriggers", "estimated_token_triggers"),
                 ("fallbackInputTokens", "fallback_input_tokens"),
-                ("splitOversizedTurns", "split_oversized_turns"),
-                ("suppressAutoCompaction", "suppress_auto_compaction"),
+                ("midTurnEnabled", "mid_turn_enabled"),
+                ("methodOrder", "method_order"),
+                ("modelThresholdsEnabled", "model_thresholds_enabled"),
+                ("autoContinue", "auto_continue"),
+                ("asyncEnabled", "async_enabled"),
+                ("handoffSaveToDisk", "handoff_save_to_disk"),
+                ("remoteStreamingV2Enabled", "remote_streaming_v2_enabled"),
+                ("remoteEndpoint", "remote_endpoint"),
+                ("v2RetainedMessageBudget", "v2_retained_message_budget"),
+                ("idleEnabled", "idle_enabled"),
+                ("idleThresholdTokens", "idle_threshold_tokens"),
+                ("idleTimeoutSeconds", "idle_timeout_seconds"),
+                ("supersedeReads", "supersede_reads"),
+                ("dropUseless", "drop_useless"),
+                ("contextPromotion", "context_promotion"),
+                ("promotionTargets", "promotion_targets"),
+                ("summaryModel", "summary_model"),
+                ("branchSummary", "branch_summary"),
+                ("remoteEnabled", "remote_enabled"),
+                ("baseWindowTokens", "base_window_tokens"),
+                ("remoteModels", "remote_models"),
+                ("summaryModels", "summary_models"),
+                ("notesWindows", "notes_windows"),
+            ][..],
+        ),
+        (
+            "/runtime/compaction/branch_summary",
+            &[("reserveTokens", "reserve_tokens")][..],
+        ),
+        (
+            "/runtime/compaction/retry",
+            &[
+                ("maxRetries", "max_retries"),
+                ("baseDelayMs", "base_delay_ms"),
+            ][..],
+        ),
+        (
+            "/runtime/compaction/archive",
+            &[
+                ("systemPrompt", "system_prompt"),
+                ("toolResults", "tool_results"),
             ][..],
         ),
         (
@@ -269,6 +391,18 @@ pub(super) fn normalize_aliases(value: &mut serde_json::Value) -> Result<(), Con
         {
             for (old, new) in aliases {
                 normalize::rename(fields, old, new)?;
+            }
+        }
+    }
+    // Model selectors are dynamic keys, so their entries are canonicalized one by one.
+    if let Some(models) = value
+        .pointer_mut("/runtime/compaction/remote_models")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        for model in models.values_mut() {
+            if let Some(fields) = model.as_object_mut() {
+                normalize::rename(fields, "v2StreamingEnabled", "v2_streaming_enabled")?;
+                normalize::rename(fields, "v2Endpoint", "v2_endpoint")?;
             }
         }
     }

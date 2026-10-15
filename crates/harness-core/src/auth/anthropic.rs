@@ -36,7 +36,7 @@ fn error(message: impl Into<String>) -> AnthropicOAuthError {
     AnthropicOAuthError(message.into())
 }
 
-/// Token material in senpi's `OAuthCredential` shape; `expires` is epoch milliseconds.
+/// OAuth token material; `expires` is epoch milliseconds.
 #[derive(Clone, PartialEq, Eq)]
 pub struct AnthropicOAuthCredential {
     pub access: String,

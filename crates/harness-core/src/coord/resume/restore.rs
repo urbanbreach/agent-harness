@@ -10,6 +10,7 @@ impl Runtime {
     ) -> Result<BTreeMap<String, Agent>, CoordinatorError> {
         let active = crate::conversation_rewind::active_events(events);
         let mut agents = BTreeMap::new();
+        let mut spawn_models = BTreeMap::new();
         let primary = active.iter().find_map(|e| match &e.payload {
             EventV1::AgentSpawned(e) if e.parent_agent_id.is_none() => Some(e.agent_id.as_str()),
             _ => None,
@@ -63,14 +64,16 @@ impl Runtime {
                 let mut messages = if e.parent_agent_id.is_some() {
                     super::super::context::Context::default()
                 } else {
-                    super::super::history::messages(
+                    super::super::history::rebuild(
                         events,
                         &e.agent_id,
                         primary == Some(e.agent_id.as_str()),
                         &profile.system_prompt,
                         run_dir,
+                        Some(&native_request(&info.model_ref)),
                     )?
                 };
+                spawn_models.insert(e.agent_id.clone(), info.model_ref.clone());
                 messages.unavailable =
                     Some(crate::subagent::FinalizedStateUnavailable::LegacySummaryOnly);
                 agents.insert(
@@ -149,6 +152,29 @@ impl Runtime {
             {
                 agent.target = None;
                 agent.settings = AgentModelSettings::default();
+            }
+        }
+        // A model switched after the spawn decides which native payload can replay.
+        for (id, agent) in &mut agents {
+            if agent.info.parent_agent_id.is_none()
+                && agent.finalized.is_none()
+                && spawn_models.get(id) != Some(&agent.info.model_ref)
+                && active.iter().any(|event| {
+                    matches!(&event.payload, EventV1::SessionCompaction(c)
+                        if c.agent_id == *id
+                            && c.native.as_ref().is_some_and(|n| n.payload.is_some()))
+                })
+            {
+                agent.messages = super::super::history::rebuild(
+                    events,
+                    id,
+                    primary == Some(id.as_str()),
+                    &agent.profile.system_prompt,
+                    run_dir,
+                    Some(&native_request(&agent.info.model_ref)),
+                )?;
+                agent.messages.unavailable =
+                    Some(crate::subagent::FinalizedStateUnavailable::LegacySummaryOnly);
             }
         }
         Ok(agents)
@@ -296,5 +322,15 @@ impl Runtime {
             _ => {}
         }
         Ok(())
+    }
+}
+
+/// The request whose provider and model decide which stored native payload may replay.
+fn native_request(model_ref: &str) -> harness_providers::CompletionRequest {
+    let model = crate::agent::AgentModelRef::parse(model_ref);
+    harness_providers::CompletionRequest {
+        provider_id: Some(model.provider_id),
+        model_id: model.model_id,
+        ..Default::default()
     }
 }

@@ -248,43 +248,60 @@ fn live_forks_close_pending_work_and_lineage_trees_handle_cycles(
 }
 
 #[test]
-fn forks_refuse_secret_artifacts_even_when_their_digests_are_valid(
+fn forks_refuse_secret_artifacts_but_copy_native_compaction_payloads(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let temp = tempfile::tempdir()?;
-    let source = temp.path().join("source");
-    std::fs::create_dir_all(source.join("artifacts"))?;
+    // Opaque provider state can look like a credential by chance; only the store's canonical
+    // native artifact is exempt from the scan, never a kind tag on another path.
     let bytes = b"api_key=do-not-copy-this";
-    std::fs::write(source.join("artifacts/output.txt"), bytes)?;
-    let events = vec![
-        event(
-            1,
-            EventV1::ArtifactWritten(ArtifactWrittenEvent {
-                path: "artifacts/output.txt".into(),
-                digest: blake3::hash(bytes).to_hex().to_string(),
-                bytes: bytes.len() as u64,
-                tool_call_id: None,
-                tool_metadata: None,
-                metadata: Default::default(),
-            }),
-        ),
-        event(
-            2,
-            EventV1::RunFinished(RunFinishedEvent {
-                summary: "done".into(),
-            }),
-        ),
-    ];
-    let stable = validate_tui_fork_stable_prefix(&events, 2)?;
-    assert!(
-        materialize_child_session(ChildSessionMaterializationRequest {
+    let digest = blake3::hash(bytes).to_hex().to_string();
+    let native = format!("artifacts/native-{digest}.bin");
+    for (path, tagged, copies) in [
+        ("artifacts/output.txt".to_owned(), false, false),
+        ("artifacts/output.txt".to_owned(), true, false),
+        (native.clone(), true, true),
+    ] {
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(source.join("artifacts"))?;
+        std::fs::write(source.join(&path), bytes)?;
+        let metadata = if tagged {
+            [("kind".to_owned(), NATIVE_ARTIFACT_KIND.to_owned())].into()
+        } else {
+            Default::default()
+        };
+        let events = vec![
+            event(
+                1,
+                EventV1::ArtifactWritten(ArtifactWrittenEvent {
+                    path: path.clone(),
+                    digest: digest.clone(),
+                    bytes: bytes.len() as u64,
+                    tool_call_id: None,
+                    tool_metadata: None,
+                    metadata,
+                }),
+            ),
+            event(
+                2,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "done".into(),
+                }),
+            ),
+        ];
+        let stable = validate_tui_fork_stable_prefix(&events, 2)?;
+        let child = materialize_child_session(ChildSessionMaterializationRequest {
             source_run_dir: &source,
             events: &events,
             stable_prefix: &stable,
             source_kind: ChildSessionMaterializationSourceKind::TuiStableInMemorySnapshot,
-        })
-        .is_err()
-    );
-    assert_eq!(std::fs::read_dir(temp.path())?.count(), 1);
-    assert_eq!(std::fs::read(source.join("artifacts/output.txt"))?, bytes);
+        });
+        assert_eq!(child.is_ok(), copies, "{path} tagged={tagged}");
+        if let Ok(child) = child {
+            assert_eq!(std::fs::read(child.child_run_dir.join(&path))?, bytes);
+        } else {
+            assert_eq!(std::fs::read_dir(temp.path())?.count(), 1);
+        }
+        assert_eq!(std::fs::read(source.join(&path))?, bytes);
+    }
     Ok(())
 }

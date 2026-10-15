@@ -1,39 +1,61 @@
 use super::*;
 use crate::{clock::FakeClock, redact::DefaultRedactor};
+use harness_compaction::{prompts::summary_message, CompactionMethod};
 use harness_providers::{mock::MockProvider, ProviderStreamEvent as Stream};
 
 mod budget;
+mod commit;
+mod continuation;
+mod maintenance;
+mod maintenance_triggers;
+mod methods;
 mod retention;
+mod speculation;
+mod triggers;
 
 pub(super) const SUMMARY: &str = "## Goal\nFinish the rewrite.\n## Constraints\nKeep the UI unchanged.\n## Progress\nThe first step is complete.\n## Key Decisions\nUse bounded queues.\n## Next Steps\nContinue the work.\n## Critical Context\nThe recent turn is retained below.";
 pub(super) fn answer(text: impl Into<String>) -> Vec<Stream> {
     vec![Stream::TextDelta(text.into()), Stream::Done { usage: None }]
 }
+pub(super) async fn settled(
+    coordinator: &CoordinatorHandle,
+    id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use tokio_stream::StreamExt;
+    let mut events = coordinator.event_store().await?.subscribe(1)?;
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        while let Some(event) = events.next().await {
+            match event?.payload {
+                EventV1::TaskCompleted(event) if event.task_id.as_str() == id => return Ok(()),
+                EventV1::TaskCancelled(event) if event.task_id.as_str() == id => {
+                    return Err::<(), Box<dyn std::error::Error>>(
+                        std::io::Error::other(event.reason).into(),
+                    )
+                }
+                _ => {}
+            }
+        }
+        Err(std::io::Error::other("turn did not settle").into())
+    })
+    .await?
+}
 
 #[tokio::test]
-async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
+async fn automatic_compaction_obeys_gates_and_stops_overflow_retries_when_no_cut_remains(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use harness_providers::ProviderErrorCategory::ContextWindowExceeded;
     for mode in [
         "threshold",
-        "retention_budget",
         "overflow",
         "disabled",
-        "suppressed",
         "retry_disabled",
         "second_overflow",
-        "native_context",
         "truncated_summary",
     ] {
         let temp = tempfile::tempdir()?;
-        // A backend that compacts its own session (senpi's lane policy) stands harness
-        // auto-compaction and the input-budget stop down.
-        let native = mode == "native_context";
+        let overflow = mode != "threshold";
+        let enabled = !matches!(mode, "disabled" | "retry_disabled");
         let truncated = mode == "truncated_summary";
-        let large = mode == "retention_budget" || native;
-        let overflow = !matches!(mode, "threshold" | "retention_budget" | "native_context");
-        let enabled = !matches!(mode, "disabled" | "suppressed" | "retry_disabled");
-        let compacts = enabled && !native;
         let mut script = vec![answer("old answer ".repeat(1000)), answer("latest answer")];
         if overflow {
             script.push(vec![Stream::categorized_error(
@@ -41,7 +63,7 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
                 ContextWindowExceeded,
             )]);
         }
-        if compacts {
+        if enabled {
             script.push(if truncated {
                 vec![
                     Stream::TextDelta(SUMMARY.into()),
@@ -56,6 +78,7 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
             } else {
                 answer(SUMMARY)
             });
+            script.push(answer("Rewrite checkpoint"));
         }
         script.push(if mode == "second_overflow" {
             vec![Stream::categorized_error(
@@ -67,18 +90,15 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
         });
         let provider = Arc::new(MockProvider::script(script));
         let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
-        config.provider = if native {
-            Arc::new(NativeContext(Arc::clone(&provider)))
-        } else {
-            Arc::clone(&provider) as Arc<dyn harness_providers::Provider>
-        };
-        config.compaction.keep_recent_tokens = if large { 20_000 } else { 1 };
-        config.compaction.fallback_input_tokens = 8_000;
-        config.compaction.reserve_tokens = 0;
+        config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
+        config.compaction.method_order = vec![CompactionMethod::Soft];
+        config.compaction.async_enabled = false;
+        config.compaction.keep_recent_tokens = 100;
+        config.compaction.reserve_tokens = Some(0);
+        config.compaction.fallback_input_tokens = 32_000;
         config.compaction.threshold_tokens =
             std::num::NonZeroU32::new(if overflow { u32::MAX } else { 5_000 });
-        config.compaction.enabled = mode != "disabled";
-        config.compaction.suppress_auto_compaction = mode == "suppressed";
+        config.compaction.enabled = false;
         config.compaction.auto_retry_overflow = mode != "retry_disabled";
         let coordinator = spawn_coordinator(
             config,
@@ -87,84 +107,50 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
         );
         let run = coordinator.start_run(mode, temp.path()).await?;
         let agent = coordinator
-            .spawn_agent_idle(EventActor::new(ActorKind::User, None), "default", None)
+            .spawn_agent_idle(handle::system(), "default", None)
             .await?;
         for prompt in ["old request ".repeat(1000), "latest request".into()] {
             let turn = coordinator
-                .request_agent_turn(
-                    EventActor::new(ActorKind::User, None),
-                    agent.clone(),
-                    prompt,
-                )
+                .request_agent_turn(handle::system(), &agent, prompt)
                 .await?;
             super::history_tests::settled(&coordinator, &turn).await?;
         }
+        coordinator
+            .call(move |s| {
+                s.config.compaction.enabled = mode != "disabled";
+                Ok(())
+            })
+            .await?;
         let turn = coordinator
-            .request_agent_turn(
-                EventActor::new(ActorKind::User, None),
-                agent.clone(),
-                if large {
-                    "new prompt ".repeat(1200)
-                } else {
-                    "continue".into()
-                },
-            )
+            .request_agent_turn(handle::system(), &agent, "continue")
             .await?;
         let result = super::history_tests::settled(&coordinator, &turn).await;
         assert_eq!(
             result.is_ok(),
-            enabled && mode != "second_overflow" && !truncated,
+            enabled && mode != "second_overflow",
             "{mode}: {result:?}"
         );
-        if mode == "disabled" {
-            assert_eq!(
-                coordinator
-                    .compact_agent_context(agent.clone(), None, "manual")
-                    .await?,
-                ManualCompactionOutcome::NoOp
-            );
-        }
-        if truncated {
-            let retained = coordinator
-                .call(move |s| Ok(s.agents[&agent].messages.messages()))
-                .await?;
-            assert!(retained
-                .iter()
-                .any(|m| m.content == "old answer ".repeat(1000)));
-            assert!(!retained.iter().any(|m| m.content.contains(SUMMARY)));
-        }
         coordinator.stop_run().await?;
         let events = crate::store::read_events(&run.events_path)?;
-        if overflow {
-            assert!(events.iter().any(|e| matches!(&e.payload,
-                EventV1::ProviderRequestFinished(e) if e.metadata.as_ref()
-                    .and_then(|m| m.provider_error_category) == Some(ContextWindowExceeded))));
-        }
-        assert_eq!(
-            events
-                .iter()
-                .filter(|e| matches!(e.payload, EventV1::SessionCompaction(_)))
-                .count(),
-            usize::from(compacts && !truncated),
-            "{mode}"
-        );
-        assert_eq!(
-            provider.call_count(),
-            if compacts {
-                4 + usize::from(overflow) - usize::from(truncated)
-            } else {
-                3
-            },
-            "{mode}"
-        );
-        if compacts && !truncated {
+        let compactions: Vec<_> = events
+            .iter()
+            .filter_map(|e| match &e.payload {
+                EventV1::SessionCompaction(c) => Some(c),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(compactions.len(), usize::from(enabled), "{mode}");
+        if enabled {
+            let summary = compactions[0];
+            assert_eq!(summary.method, Some(CompactionMethod::Soft));
+            assert_eq!(summary.short_summary.as_deref(), Some("Rewrite checkpoint"));
             let requests = provider.captured_requests().await;
-            let final_request = requests.last().ok_or("missing continuation")?;
+            let final_request = requests.last().ok_or("missing retry")?;
             assert!(
                 final_request
                     .messages
                     .iter()
-                    .any(|m| m.content.contains(SUMMARY)),
+                    .any(|m| m.content == summary_message(summary.method, &summary.summary)),
                 "{mode}"
             );
             assert!(
@@ -182,22 +168,17 @@ async fn automatic_compaction_obeys_gates_and_retries_overflow_only_once(
                 "{mode}"
             );
         }
+        assert_eq!(
+            provider.call_count(),
+            if enabled {
+                5 + usize::from(overflow)
+            } else {
+                3
+            },
+            "{mode}"
+        );
     }
     Ok(())
-}
-
-struct NativeContext(Arc<MockProvider>);
-#[async_trait::async_trait]
-impl harness_providers::Provider for NativeContext {
-    async fn stream_completion(
-        &self,
-        request: harness_providers::CompletionRequest,
-    ) -> harness_providers::ProviderEventStream {
-        self.0.stream_completion(request).await
-    }
-    fn manages_context(&self, _: &harness_providers::CompletionRequest) -> bool {
-        true
-    }
 }
 
 struct SummaryGate {
@@ -231,14 +212,16 @@ async fn cancelling_active_and_queued_compaction_keeps_history_and_unblocks_prom
             answer(SUMMARY),
             answer("continued"),
             answer(SUMMARY),
+            answer("Rewrite checkpoint"),
             answer("after successful compaction"),
         ]),
         entered: tokio::sync::Notify::new(),
     });
     let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
     config.provider = Arc::clone(&provider) as Arc<dyn harness_providers::Provider>;
-    config.compaction.keep_recent_tokens = 1;
-    config.compaction.suppress_auto_compaction = true;
+    config.compaction.keep_recent_tokens = 100;
+    config.compaction.enabled = false;
+    config.compaction.method_order = vec![CompactionMethod::Soft];
     let coordinator = spawn_coordinator(
         config,
         Arc::new(FakeClock::new()),
@@ -264,18 +247,15 @@ async fn cancelling_active_and_queued_compaction_keeps_history_and_unblocks_prom
     let active =
         tokio::spawn(async move { handle.compact_agent_context(id, None, "manual").await });
     tokio::time::timeout(Duration::from_secs(3), provider.entered.notified()).await?;
-    let (handle, id) = (coordinator.clone(), agent.clone());
-    let queued =
-        tokio::spawn(async move { handle.compact_agent_context(id, None, "manual").await });
-    let mut events = store.subscribe(1)?;
-    tokio::time::timeout(Duration::from_secs(3), async {
-        let mut compactions = 0;
-        while let Some(event) = events.next().await {
-            if matches!(event?.payload, EventV1::TaskScheduled(e) if e.state == TaskScheduleState::Queued && e.task_id.as_str().starts_with("compact-")) { compactions += 1; }
-            if compactions == 2 { return Ok::<_, EventStoreError>(()); }
-        }
-        Err(EventStoreError::Invalid("queued compaction disappeared"))
-    }).await??;
+    // A second manual pass while one owns the agent is rejected outright.
+    assert!(matches!(
+        coordinator
+            .compact_agent_context(agent.clone(), None, "manual")
+            .await,
+        Err(CoordinatorError::CompactionRejected(
+            super::compaction::ManualRejection::InProgress
+        ))
+    ));
     let cancelled = coordinator
         .request_agent_turn(
             EventActor::new(ActorKind::User, None),
@@ -294,7 +274,7 @@ async fn cancelling_active_and_queued_compaction_keeps_history_and_unblocks_prom
         )
         .await?;
     coordinator.cancel_compaction(agent.clone()).await?;
-    for task in [active, queued] {
+    for task in [active] {
         assert!(matches!(
             tokio::time::timeout(Duration::from_secs(3), task).await??,
             Err(CoordinatorError::CompactionCancelled { .. })
@@ -340,7 +320,7 @@ async fn cancelling_active_and_queued_compaction_keeps_history_and_unblocks_prom
     super::history_tests::settled(&coordinator, &next).await?;
     coordinator.stop_run().await?;
     let requests = provider.provider.captured_requests().await;
-    assert_eq!(requests.len(), 6);
+    assert_eq!(requests.len(), 7);
     assert!(requests[3]
         .messages
         .iter()
@@ -354,6 +334,6 @@ async fn cancelling_active_and_queued_compaction_keeps_history_and_unblocks_prom
         .ok_or("missing continuation")?
         .messages
         .iter()
-        .any(|message| message.content == format!("Conversation summary:\n{summary}")));
+        .any(|message| message.content == summary_message(Some(CompactionMethod::Soft), summary)));
     Ok(())
 }

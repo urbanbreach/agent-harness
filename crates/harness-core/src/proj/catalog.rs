@@ -77,7 +77,11 @@ pub fn project_session_catalog_entry<'a>(
                 None
             }
             EventV1::ArtifactWritten(e) => {
-                artifacts.insert(e.path.as_str());
+                if e.metadata.get("kind").map(String::as_str)
+                    != Some(crate::event::NATIVE_ARTIFACT_KIND)
+                {
+                    artifacts.insert(e.path.as_str());
+                }
                 None
             }
             EventV1::ToolCallRequested(e) => e.metadata.as_ref().and_then(|m| m.lineage.as_ref()),

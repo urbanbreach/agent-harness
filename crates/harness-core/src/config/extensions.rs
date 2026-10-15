@@ -24,18 +24,33 @@ pub struct LifecycleHookConfig {
     pub command: Vec<String>,
     #[serde(default)]
     pub cwd: Option<String>,
-    #[serde(default = "hook_timeout", alias = "timeoutMs")]
-    pub timeout_ms: u64,
+    /// Milliseconds a hook may run. Unset means 30000 for compaction events and 5000 for
+    /// every other event.
+    #[serde(default, alias = "timeoutMs")]
+    pub timeout_ms: Option<u64>,
     #[serde(default)]
     pub critical: bool,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
 }
-const fn hook_timeout() -> u64 {
-    5000
-}
 
 impl LifecycleHookConfig {
+    /// The configured timeout, else 30 s for the compaction events (summarizing may wait on
+    /// a model) and 5 s for every other event.
+    pub const fn effective_timeout_ms(&self) -> u64 {
+        match self.timeout_ms {
+            Some(ms) => ms,
+            None => match self.event {
+                HookLifecycleEvent::CompactionRequested
+                | HookLifecycleEvent::CompactionSummarizing
+                | HookLifecycleEvent::CompactionWritten
+                | HookLifecycleEvent::CompactionApplied
+                | HookLifecycleEvent::CompactionFailed => 30_000,
+                _ => 5_000,
+            },
+        }
+    }
+
     pub(crate) fn validate(&self) -> Result<(), ConfigError> {
         use std::path::Component;
         if self.command.is_empty()
@@ -43,7 +58,9 @@ impl LifecycleHookConfig {
                 .command
                 .iter()
                 .any(|s| s.is_empty() || s.contains('\0'))
-            || !(1..=300_000).contains(&self.timeout_ms)
+            || self
+                .timeout_ms
+                .is_some_and(|ms| !(1..=300_000).contains(&ms))
             || self.id.as_ref().is_some_and(|s| {
                 s.trim().is_empty() || s.len() > 256 || s.chars().any(char::is_control)
             })
@@ -86,6 +103,7 @@ pub enum HookLifecycleEvent {
     ProviderRequestStarted,
     ProviderRequestFinished,
     CompactionRequested,
+    CompactionSummarizing,
     CompactionWritten,
     CompactionApplied,
     CompactionFailed,
@@ -149,6 +167,7 @@ impl HookLifecycleEvent {
             Self::ProviderRequestStarted => "provider_request_started",
             Self::ProviderRequestFinished => "provider_request_finished",
             Self::CompactionRequested => "compaction_requested",
+            Self::CompactionSummarizing => "compaction_summarizing",
             Self::CompactionWritten => "compaction_written",
             Self::CompactionApplied => "compaction_applied",
             Self::CompactionFailed => "compaction_failed",

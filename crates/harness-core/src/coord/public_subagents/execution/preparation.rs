@@ -88,6 +88,10 @@ impl Runtime {
                 },
             ),
         };
+        let counter = super::super::super::turn::fork::counter_for(
+            self.config.provider.as_ref(),
+            &child.registration.model,
+        );
         let mut context = Context::new(&system_prompt);
         let mut copied = None;
         if let Some(source) = &child.source_state {
@@ -98,19 +102,23 @@ impl Runtime {
                 &self.info()?.run_dir,
             )?;
             let window = self.native_model_window(&source.source_model);
-            let percent = self
+            // Thousandths of a percent keep decimal thresholds exact in integer math.
+            let milli_percent = self
                 .config
                 .compaction
                 .threshold_percent
-                .map_or(95, |p| u64::from(p.get()).min(95));
-            let limit = window.saturating_mul(percent) / 100;
+                .and_then(|p| {
+                    num_traits::ToPrimitive::to_u64(&(p.get().min(95.0) * 1000.0).round())
+                })
+                .unwrap_or(95_000);
+            let limit = window.saturating_mul(milli_percent) / 100_000;
             if source.conversation_items.is_empty()
                 || window == 0
-                || u64::from(context.tokens()) > limit
+                || u64::from(context.tokens_with(&counter)) > limit
             {
                 return Err(native_invalid(format!(
                     "Cannot resume from subagent '{}': source transcript (~{} tokens) exceeds the resume limit ({limit} of {window} tokens). Compact the source first, or resume on a model with a larger context window.",
-                    child.registration.source.as_deref().unwrap_or(agent), context.tokens(),
+                    child.registration.source.as_deref().unwrap_or(agent), context.tokens_with(&counter),
                 )));
             }
             copied = Some(source);
@@ -119,17 +127,18 @@ impl Runtime {
                 fork,
                 &system_prompt,
                 self.native_model_window(&child.registration.model),
+                &counter,
             );
         }
         if child.registration.source.as_deref() != Some(agent) {
             context.native_context_usage =
-                super::super::super::context::native_tokens(&context.entries).map(|total_tokens| {
-                    crate::subagent::SubagentContextUsage {
+                super::super::super::context::native_tokens_with(&context.entries, &counter).map(
+                    |total_tokens| crate::subagent::SubagentContextUsage {
                         total_tokens,
                         estimate_at_last_response: Some(total_tokens),
                         estimate_after_last_response: Some(total_tokens),
-                    }
-                });
+                    },
+                );
         }
         let fork_reads = child.fork_read_state.clone();
         let actor = EventActor::new(ActorKind::Worker, Some(agent.into()));
@@ -285,7 +294,12 @@ impl Runtime {
     }
 }
 
-fn fork_context(source: &Context, system: &str, window: u64) -> Context {
+fn fork_context(
+    source: &Context,
+    system: &str,
+    window: u64,
+    counter: &harness_compaction::tokenizer::Counter,
+) -> Context {
     let coherent = source.entries.last().is_some_and(|entry| {
         entry.message.role == MessageRole::Assistant
             && entry
@@ -295,7 +309,10 @@ fn fork_context(source: &Context, system: &str, window: u64) -> Context {
                 .is_none_or(Vec::is_empty)
     });
     let mut result = source.clone();
-    if coherent && window > 0 && u64::from(source.tokens()) <= window.saturating_mul(80) / 100 {
+    if coherent
+        && window > 0
+        && u64::from(source.tokens_with(counter)) <= window.saturating_mul(80) / 100
+    {
         result
             .entries
             .retain(|entry| entry.message.role != MessageRole::System);
