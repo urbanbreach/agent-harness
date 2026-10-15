@@ -290,6 +290,37 @@ fn runtime_notices_become_transcript_rows_and_statuses_coalesce() {
 }
 
 #[test]
+fn claude_code_compaction_leaves_a_transcript_row() {
+    let (mut app, _) = live_app();
+    app.ingest_event(run_started(1));
+    app.ingest_event(envelope(
+        2,
+        "req",
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req".into(),
+            finish_reason: "stop".into(),
+            output_digest: None,
+            usage: None,
+            metadata: Some(ProviderRequestFinishedMetadata {
+                native_compactions: vec![harness_providers::ProviderNativeCompaction {
+                    pre_tokens: Some(76_242),
+                    post_tokens: Some(8_869),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+        }),
+    ));
+    assert_eq!(
+        last_notice(&app),
+        Some((
+            TranscriptNoticeKind::Status,
+            "Claude Code compacted this conversation (76K → 8.9K tokens)"
+        ))
+    );
+}
+
+#[test]
 fn manual_command_outcomes_are_presented_by_kind() {
     use TranscriptNoticeKind::{Error, Status, Warning};
     let done = |saved: Option<&str>| CompactionCommandOutcome::Done {

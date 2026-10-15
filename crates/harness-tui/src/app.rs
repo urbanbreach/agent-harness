@@ -1839,6 +1839,7 @@ impl AppState {
             self.reconcile_permission_focus(permission_was_pending);
             self.reconcile_interrupt_request();
             self.retarget_local_transcript_page_flip(&event);
+            self.note_native_compactions(&event);
         }
         if page_flip_target.is_some()
             && let Some(activity_first_seq) = self.transcript_page_flip_activity_first_seq(&event)

@@ -360,13 +360,18 @@ async fn aborts_settle_and_session_events_follow_lane_hooks(
     Ok(())
 }
 
-/// Lane policy: Claude Code's own compactions are recorded and announced, an overflow of
-/// the harness's full re-send is the harness's to compact, and one inside the resident session
-/// is reported with manual-compaction guidance instead.
+/// Lane policy: Claude Code compacts a resident session against the catalog window, its own
+/// compactions are recorded and announced, an overflow of the harness's full re-send is the
+/// harness's to compact, and one inside the resident session is reported with
+/// manual-compaction guidance instead.
 #[tokio::test]
 async fn native_compactions_are_recorded_and_overflow_ownership_follows_the_lane(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let fake = Fake::new("text")?;
+    let mut fake = Fake::new("text")?;
+    // Below Claude Code's 100K floor, which it would otherwise ignore for the model's own.
+    fake.provider = fake
+        .provider
+        .with_context_windows([("claude-opus-5-5".to_owned(), 50_000)].into());
     let session = "native-context-test";
     let first: Vec<_> = fake
         .provider
@@ -374,6 +379,15 @@ async fn native_compactions_are_recorded_and_overflow_ownership_follows_the_lane
         .await
         .collect()
         .await;
+    let settings = fake.log()?.iter().find_map(|line| {
+        let argv = line["argv"].as_array()?;
+        let at = argv.iter().position(|arg| arg == "--settings")?;
+        serde_json::from_str::<serde_json::Value>(argv.get(at + 1)?.as_str()?).ok()
+    });
+    assert_eq!(
+        settings.map(|settings| settings["autoCompactWindow"].clone()),
+        Some(100_000.into())
+    );
     assert!(first.contains(&Event::Notice(
         "Claude Code compacted this conversation (180K tokens before)".into()
     )));

@@ -28,6 +28,10 @@ The first public release.
   the TUI's cached runtime configuration.
 - Signing in refreshes model discovery for subagents in the current session as
   well as future sessions.
+- Claude subscription sessions compact at the model's catalog window. Claude
+  Code used to compact only at its own window, so the context meter could pass
+  100% without any compaction. Its compactions now leave a transcript row
+  instead of only a two-second toast.
 - `cacheRetention: "long"` sends the documented extended-retention request to
   direct OpenAI endpoints.
 - MCP requests respect `network` and `bash` transport permissions, including

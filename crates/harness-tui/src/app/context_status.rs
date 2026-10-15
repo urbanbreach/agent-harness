@@ -6,7 +6,8 @@ use harness_core::event::SpeculationState;
 
 use super::AppState;
 pub(crate) use value::{
-    AutoState, ContextInputs, ContextSeverity, ContextStatus, ContextSymbols, PublishedAuto,
+    format_tokens, AutoState, ContextInputs, ContextSeverity, ContextStatus, ContextSymbols,
+    PublishedAuto,
 };
 
 impl AppState {

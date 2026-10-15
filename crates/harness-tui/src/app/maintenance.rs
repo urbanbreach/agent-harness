@@ -1,10 +1,13 @@
 //! Maintenance lifecycle as the UI sees it: loader label while a pass runs, the outcome
 //! branch when it ends, and the queue flush that follows the transition.
+use super::context_status::format_tokens;
 use super::notices::TranscriptNoticeKind;
 use super::ActiveContextUsage;
 use super::AppState;
 use crate::{CompactionCommandKind, CompactionCommandOutcome};
-use harness_core::event::{CompactionLifecycleEvent, CompactionMethod, CompactionStatusEvent};
+use harness_core::event::{
+    CompactionLifecycleEvent, CompactionMethod, CompactionStatusEvent, EventEnvelopeV1, EventV1,
+};
 use std::collections::BTreeMap;
 
 /// One pass between its lifecycle start and end.
@@ -254,6 +257,31 @@ impl AppState {
         }
         self.bump_transcript_render_epoch();
         self.sync_transcript_state(false);
+    }
+
+    /// Claude Code compacts a resident session itself. The journal records it on the
+    /// finished request; without this row only a two-second toast would show it.
+    pub(crate) fn note_native_compactions(&mut self, event: &EventEnvelopeV1) {
+        let EventV1::ProviderRequestFinished(finish) = &event.payload else {
+            return;
+        };
+        for compaction in finish.metadata.iter().flat_map(|m| &m.native_compactions) {
+            let tokens = match (compaction.pre_tokens, compaction.post_tokens) {
+                (Some(before), Some(after)) => {
+                    format!(
+                        " ({} → {} tokens)",
+                        format_tokens(before),
+                        format_tokens(after)
+                    )
+                }
+                (Some(before), None) => format!(" ({} tokens before)", format_tokens(before)),
+                _ => String::new(),
+            };
+            self.push_transcript_notice(
+                TranscriptNoticeKind::Status,
+                format!("Claude Code compacted this conversation{tokens}"),
+            );
+        }
     }
 }
 

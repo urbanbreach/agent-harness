@@ -103,6 +103,13 @@ through `CLAUDE_CODE_OAUTH_TOKEN_16` also enable discovery. A host Claude Code
 login alone does not: explicitly configure an `anthropic_subscription` provider
 with `enabled: true` to opt in to the ambient account.
 
+In a resumed main session Claude Code owns the context, so Harness skips its own
+automatic compaction and the input-budget stop. Claude Code compacts the session
+against the model's catalog window, passed as its `autoCompactWindow` setting.
+Claude Code only accepts 100K to 1M, so a smaller window is raised to 100K. Each
+compaction leaves a transcript row such as `Claude Code compacted this
+conversation (76K → 8.9K tokens)`.
+
 ## Choose a transport
 
 Provider definitions use `type: "openai_compatible"`, `type: "anthropic_messages"`,

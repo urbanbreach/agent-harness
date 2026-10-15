@@ -262,11 +262,14 @@ impl Provider for AnthropicSubscriptionProvider {
             {
                 raise_calibration(id, estimated, reported);
             }
+            let resident = request.context.main_turn && settings.resume_mode != Some(ResumeMode::Off) && session_id.is_some();
             let builder: OptionsBuilder = {
                 let (context, settings, cwd, agent_dir, model, sdk_tools, executable, session_id, reasoning) = (
                     Arc::clone(&context), settings.clone(), cwd.clone(), agent_dir.clone(), request.model_id.clone(),
                     resolved.sdk_tools.clone(), run.executable.clone(), session_id.clone(), request.reasoning_effort.clone(),
                 );
+                // Claude Code compacts a resident session itself; elsewhere the harness does.
+                let auto_compact_window = context_window.filter(|_| resident);
                 Arc::new(move |auth_lane| {
                     let (mut options, guidance) = build_query_options(&QueryOptionsInput {
                         model: &model,
@@ -280,6 +283,7 @@ impl Provider for AnthropicSubscriptionProvider {
                         tools: &sdk_tools,
                         executable: &executable,
                         session_id: session_id.as_deref(),
+                        auto_compact_window,
                     })?;
                     if let Some(guidance) = guidance {
                         tracing::warn!(guidance, "claude_sdk_oauth_deprecation");
@@ -303,7 +307,6 @@ impl Provider for AnthropicSubscriptionProvider {
                 cancel: cancel.clone(),
                 report: Arc::clone(&report),
             };
-            let resident = request.context.main_turn && settings.resume_mode != Some(ResumeMode::Off) && session_id.is_some();
             if request.context.main_turn && !resident {
                 emit_continuity_observation(&ContinuityObservation {
                     kind: "disabled",

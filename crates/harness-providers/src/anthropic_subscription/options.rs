@@ -280,6 +280,8 @@ pub struct QueryOptionsInput<'a> {
     pub tools: &'a [String],
     pub executable: &'a Path,
     pub session_id: Option<&'a str>,
+    /// The catalog window Claude Code compacts a resident session against.
+    pub auto_compact_window: Option<u64>,
 }
 
 /// `buildAnthropicSubscriptionQueryOptions`; guidance diagnostics are returned alongside.
@@ -351,6 +353,10 @@ pub fn build_query_options(
         fork_session: false,
         session_id: None,
     };
+    if let Some(window) = input.auto_compact_window {
+        // Claude Code silently ignores a window outside 100K..=1M and falls back to the model's.
+        options.settings["autoCompactWindow"] = window.clamp(100_000, 1_000_000).into();
+    }
     if strict {
         options.set_extra_arg("strict-mcp-config", None);
     }
