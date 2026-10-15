@@ -2,8 +2,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod compaction;
 mod continuation;
-pub use continuation::ProviderContinuation;
+pub use compaction::{CompactionCredential, NativeLaneSettings, RemoteModelOverride};
+pub use continuation::{
+    ContinuationExport, ProviderContinuation, COMPACTION_PAYLOAD_BYTE_LIMIT,
+    CONTINUATION_BYTE_LIMIT,
+};
 
 pub type ProviderId = String;
 pub type ModelId = String;
@@ -116,6 +121,9 @@ pub struct ProviderRequestContext {
     pub cache_retention: CacheRetention,
     /// A coordinator main turn, not an auxiliary request (compaction, evaluation).
     pub main_turn: bool,
+    /// Prompt-cache identity when it differs from `session_id`; side requests keep the
+    /// main session's key while routing under their own session id.
+    pub cache_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -127,6 +135,14 @@ pub struct CompletionRequest {
     /// Attachment payloads are transient; serde records only their metadata.
     pub attachments:
         std::collections::BTreeMap<usize, Vec<crate::attachment_protocol::AttachmentMetadata>>,
+    /// Request-only ordered text and attachment slots, replacing the message body.
+    #[serde(skip)]
+    pub message_content: std::collections::BTreeMap<usize, Vec<MessageContentPart>>,
+    /// Request-only wall-clock time of the event behind each message, parallel to `messages`;
+    /// `None` where unknown. Empty when the caller has no times. Signed-summary file metadata
+    /// is scheduled against these.
+    #[serde(skip)]
+    pub message_times_ms: Vec<Option<u64>>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub variant: Option<String>,
@@ -140,12 +156,29 @@ pub struct CompletionRequest {
     pub stream: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MessageContentPart {
+    Text(String),
+    /// Index into this message's attachment list.
+    Attachment(usize),
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CompletionUsage {
     /// Every prompt token, including cache reads and writes, on every protocol.
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
+    /// Uncached input tokens as the provider reports them separately.
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub cache_read_tokens: u32,
+    pub cache_write_tokens: u32,
+    /// Context occupancy the provider reported explicitly; an explicit zero is kept.
+    pub context_tokens: Option<u32>,
+    /// Reasoning tokens when the provider reports them as a separate number.
+    pub reasoning_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -216,6 +249,10 @@ pub struct ProviderNativeCompaction {
     pub post_tokens: Option<u64>,
 }
 
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the finished-metadata variant is built once per response; boxing it would touch every stream decoder and consumer for no measurable gain"
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProviderStreamEvent {
     Start,
@@ -223,6 +260,9 @@ pub enum ProviderStreamEvent {
         metadata: Option<ProviderStreamStartMetadata>,
     },
     TextDelta(String),
+    /// A text content block completed; the next `TextDelta` starts a new block. Emitted where
+    /// the wire separates blocks (Anthropic, Responses); consumers that do not care ignore it.
+    TextBlockEnd,
     ReasoningDelta(String),
     ToolCallDelta {
         tool_call_id: String,
@@ -246,6 +286,8 @@ pub enum ProviderStreamEvent {
         category: Option<crate::ProviderErrorCategory>,
         remediation: Option<String>,
         retry_after_ms: Option<u64>,
+        /// HTTP status, response headers and a bounded redacted body, when the failure had them.
+        envelope: Option<Box<crate::ProviderErrorEnvelope>>,
     },
     /// A user-visible note about the request, such as an account switch.
     Notice(String),
@@ -273,9 +315,21 @@ pub enum ProviderSessionEvent {
     /// The user changed the reasoning level for the session's next turns.
     ReasoningSelected { session_id: String },
     /// The session's history was replaced by a compaction summary.
-    Compacted { session_id: String },
+    Compacted {
+        session_id: String,
+        descriptor: Option<CompactionDescriptor>,
+    },
     /// The session's history was rewound to an earlier point.
     Rewound { session_id: String },
     /// The session stopped; no further requests follow.
     Closed { session_id: String, reason: String },
+}
+
+/// Which compaction pass replaced a session's history, for providers that track it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactionDescriptor {
+    pub operation_id: String,
+    pub trigger: String,
+    pub reason: String,
+    pub phase: String,
 }

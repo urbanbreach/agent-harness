@@ -1,4 +1,5 @@
 use crate::CompletionRequest;
+use harness_tokenizer::Counter;
 use serde::{Deserialize, Serialize};
 mod images;
 pub(crate) use images::check_limits as check_image_limits;
@@ -57,8 +58,6 @@ pub enum ProviderRequestCostError {
     PendingPromptNotUser { pending_prompt_index: usize },
     #[error("unsupported attachment at message {message_index}: {mime}")]
     UnsupportedAttachment { message_index: usize, mime: String },
-    #[error("image budget is unknown for the selected model")]
-    UnknownImageBudget,
     #[error("invalid attachment: {0}")]
     InvalidAttachment(&'static str),
     #[error("request exceeds 128 tool definitions; reduce the profile's toolset")]
@@ -82,6 +81,16 @@ pub(crate) fn request_budget_semantics(
     request: &CompletionRequest,
     pending_prompt_index: usize,
     protocol: crate::Protocol,
+) -> Result<ProviderBudgetSemantics, ProviderRequestCostError> {
+    request_budget_semantics_at(request, pending_prompt_index, protocol, None)
+}
+
+/// Budget semantics for the deployment at `host` (`None` = the built-in endpoint).
+pub(crate) fn request_budget_semantics_at(
+    request: &CompletionRequest,
+    pending_prompt_index: usize,
+    protocol: crate::Protocol,
+    host: Option<&str>,
 ) -> Result<ProviderBudgetSemantics, ProviderRequestCostError> {
     use crate::{MessageRole, Protocol};
     if request
@@ -110,23 +119,22 @@ pub(crate) fn request_budget_semantics(
             })
         }
     }
+    let counter = request_counter(request, protocol);
     let mut cost = ProviderRequestCost::default();
     for (index, message) in request.messages.iter().enumerate() {
-        let bytes = message.assistant_tool_calls.iter().flatten().try_fold(
-            message.content.len(),
-            |sum, call| {
-                sum.checked_add(call.arguments_json.len())
-                    .ok_or(ProviderRequestCostError::ArithmeticOverflow)
-            },
-        )?;
-        let bytes = bytes
-            .checked_add(
-                message
-                    .continuation
-                    .as_ref()
-                    .filter(|s| s.matches(request, protocol))
-                    .map_or(0, |s| s.byte_len()),
-            )
+        let calls = message.assistant_tool_calls.iter().flatten();
+        let text = counter.count_fragments(std::iter::once(message.content.as_str()).chain(
+            calls.flat_map(|call| [call.function_name.as_str(), call.arguments_json.as_str()]),
+        ));
+        // Provider continuations ride the wire as opaque bytes and cannot be tokenized.
+        let opaque = message
+            .continuation
+            .as_ref()
+            .filter(|s| s.matches(request, protocol))
+            .map_or(0, |s| s.byte_len().div_ceil(4));
+        let tokens = u32::try_from(opaque)
+            .ok()
+            .and_then(|opaque| text.checked_add(opaque))
             .ok_or(ProviderRequestCostError::ArithmeticOverflow)?;
         let component = if message.role == MessageRole::System {
             &mut cost.system_tokens
@@ -136,16 +144,15 @@ pub(crate) fn request_budget_semantics(
             &mut cost.history_tokens
         };
         *component = component
-            .checked_add(estimate_tokens(bytes)?)
+            .checked_add(tokens)
             .ok_or(ProviderRequestCostError::ArithmeticOverflow)?;
     }
     if let Some(tools) = &request.tools {
-        let bytes = serde_json::to_vec(tools)
-            .map_err(|_| ProviderRequestCostError::ToolSchemaSerialization)?
-            .len();
-        cost.tools_tokens = estimate_tokens(bytes)?;
+        let schema = serde_json::to_string(tools)
+            .map_err(|_| ProviderRequestCostError::ToolSchemaSerialization)?;
+        cost.tools_tokens = counter.count_text(&schema);
     }
-    crate::attachment_protocol::validate_request(request, protocol)
+    crate::attachment_protocol::validate_request_at(request, protocol, host)
         .map_err(|e| ProviderRequestCostError::InvalidAttachment(e.0))?;
     for (index, attachments) in &request.attachments {
         for attachment in attachments {
@@ -156,17 +163,9 @@ pub(crate) fn request_budget_semantics(
                 }
             })?;
             let tokens = if attachment.mime == "text/plain" {
-                estimate_tokens(bytes.len())?
+                counter.count_text(&String::from_utf8_lossy(bytes))
             } else {
-                let dimensions =
-                    crate::attachment_protocol::image_dimensions(&attachment.mime, bytes).map_err(
-                        |_| ProviderRequestCostError::UnsupportedAttachment {
-                            message_index: *index,
-                            mime: attachment.mime.clone(),
-                        },
-                    )?;
-                images::tokens(&request.model_id, dimensions)
-                    .ok_or(ProviderRequestCostError::UnknownImageBudget)?
+                images::tokens(&counter, attachment, bytes)
             };
             cost.attachments_tokens = cost
                 .attachments_tokens
@@ -201,9 +200,14 @@ pub(crate) fn request_budget_semantics(
     })
 }
 
-fn estimate_tokens(bytes: usize) -> Result<u32, ProviderRequestCostError> {
-    // ponytail: byte estimates are approximate; use model tokenizers when exact admission is required.
-    u32::try_from(bytes.div_ceil(4)).map_err(|_| ProviderRequestCostError::ArithmeticOverflow)
+/// The pricing domain of the model that will read `request`.
+fn request_counter(request: &CompletionRequest, protocol: crate::Protocol) -> Counter {
+    Counter::new(Some(crate::token_reader::reader_for(
+        request,
+        &request.model_id,
+        protocol,
+        None,
+    )))
 }
 
 #[cfg(test)]
@@ -245,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn image_budgets_use_resolution_and_keep_unknown_models_unavailable(
+    fn image_budgets_follow_the_reader_rule_and_fall_back_for_unknown_models(
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::attachment_protocol::AttachmentMetadata;
         use base64::Engine;
@@ -266,7 +270,7 @@ mod tests {
             )],
         );
         for (protocol, model, expected) in [
-            (crate::Protocol::Chat, "gpt-4o", 255),
+            (crate::Protocol::Chat, "gpt-4o", 2),
             (crate::Protocol::Responses, "gpt-5.4-mini", 2),
             (crate::Protocol::Anthropic, "claude-sonnet-4-5-20250929", 1),
         ] {
@@ -292,26 +296,16 @@ mod tests {
             before
         );
         request.model_id = "future-unknown-model".into();
-        assert!(generic_request_budget_semantics(&request, 0)
-            .is_err_and(|e| e.to_string().contains("unknown")));
+        assert_eq!(
+            generic_request_budget_semantics(&request, 0)?
+                .request_cost
+                .attachments_tokens,
+            2
+        );
         request.attachments.get_mut(&0).ok_or("missing image")?[0].dimensions = Some(
             crate::attachment_protocol::AttachmentDimensions::new(500, 500),
         );
         assert!(crate::wire::encode(&request, crate::Protocol::Chat).is_err());
-        for (model, width, height, expected) in [
-            ("gpt-4o", 4096, 2048, 1105),
-            ("gpt-4o", 2048, 2048, 765),
-            ("gpt-5.4", 1024, 1024, 1229),
-            ("claude-opus-4-7-20250929", 4000, 2000, 4784),
-        ] {
-            assert_eq!(
-                images::tokens(
-                    model,
-                    crate::attachment_protocol::AttachmentDimensions::new(width, height)
-                ),
-                Some(expected)
-            );
-        }
         Ok(())
     }
 }

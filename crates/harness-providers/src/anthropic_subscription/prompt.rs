@@ -10,7 +10,7 @@ pub use images::*;
 mod dedupe;
 pub use dedupe::*;
 
-/// senpi message content: a string, or `{type:"text"|"image", ...}` entries.
+/// Message content: a string, or `{type:"text"|"image", ...}` entries.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Content {
     Text(String),
@@ -51,7 +51,7 @@ pub enum LaneMessage {
     },
 }
 
-/// senpi `Context`, derived from a harness request.
+/// Lane context, derived from a harness request.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LaneContext {
     pub system_prompt: Option<String>,

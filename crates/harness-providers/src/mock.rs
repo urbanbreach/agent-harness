@@ -11,6 +11,9 @@ pub struct MockProvider {
     turns: Mutex<Option<VecDeque<Vec<ProviderStreamEvent>>>>,
     captured: Mutex<VecDeque<CompletionRequest>>,
     calls: AtomicUsize,
+    /// Text returned by a scripted provider-native compaction; `None` offers no lanes.
+    native: Option<String>,
+    native_calls: AtomicUsize,
 }
 
 impl MockProvider {
@@ -32,10 +35,53 @@ impl MockProvider {
     pub async fn captured_requests(&self) -> Vec<CompletionRequest> {
         self.captured.lock().await.iter().cloned().collect()
     }
+    /// Offers the OpenAI V1 native compaction lane and answers it with `summary`.
+    pub fn with_native_compaction(mut self, summary: impl Into<String>) -> Self {
+        self.native = Some(summary.into());
+        self
+    }
+    pub fn native_call_count(&self) -> usize {
+        self.native_calls.load(Ordering::Relaxed)
+    }
 }
 
 #[async_trait::async_trait]
 impl Provider for MockProvider {
+    fn native_compaction_lanes(
+        &self,
+        _request: &CompletionRequest,
+        _settings: &crate::NativeLaneSettings,
+    ) -> Vec<crate::NativeCompactionLane> {
+        self.native
+            .as_ref()
+            .map(|_| vec![crate::NativeCompactionLane::OpenAiV1])
+            .unwrap_or_default()
+    }
+    async fn native_compact(
+        &self,
+        request: crate::NativeCompactionRequest,
+        _cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<crate::NativeCompactionResult, crate::NativeCompactionError> {
+        let summary = self
+            .native
+            .clone()
+            .ok_or_else(|| crate::NativeCompactionError::new("native compaction unavailable"))?;
+        self.native_calls.fetch_add(1, Ordering::Relaxed);
+        let replay = crate::ProviderContinuation::new(
+            crate::wire::Protocol::Responses,
+            serde_json::json!([{"type": "compaction", "encrypted_content": "mock"}]),
+        )
+        .map_err(crate::NativeCompactionError::new)?;
+        Ok(crate::NativeCompactionResult {
+            lane: crate::NativeCompactionLane::OpenAiV1,
+            summary: Some(summary),
+            replay: Box::new(replay),
+            used_tokens: u32::try_from(request.request.messages.len()).unwrap_or(u32::MAX),
+            usage: None,
+            snapshot_through_seq: None,
+            short_summary: None,
+        })
+    }
     async fn stream_completion(&self, request: CompletionRequest) -> ProviderEventStream {
         let events = if let Some(turns) = self.turns.lock().await.as_mut() {
             turns

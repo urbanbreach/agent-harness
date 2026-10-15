@@ -42,7 +42,7 @@ pub struct Usage {
     pub cache_write_1h: u32,
 }
 
-/// The assistant output a turn builds, as senpi's `AssistantMessage` accumulates it.
+/// The assistant output a turn builds.
 #[derive(Debug, Default)]
 pub struct StreamState {
     blocks: Vec<Block>,
@@ -293,6 +293,11 @@ impl StreamState {
             prompt_tokens,
             completion_tokens: self.usage.output,
             total_tokens: prompt_tokens.saturating_add(self.usage.output),
+            input_tokens: self.usage.input,
+            output_tokens: self.usage.output,
+            cache_read_tokens: self.usage.cache_read,
+            cache_write_tokens: self.usage.cache_write,
+            ..Default::default()
         })
     }
 
@@ -350,7 +355,7 @@ static NON_OVERFLOW: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     ])
 });
 
-/// senpi `isContextOverflow` for an error message.
+/// Whether an error message reports a context overflow.
 pub fn is_context_overflow(message: &str) -> bool {
     OVERFLOW.iter().any(|re| re.is_match(message))
         && !NON_OVERFLOW.iter().any(|re| re.is_match(message))
@@ -384,6 +389,11 @@ mod tests {
                 prompt_tokens: 32,
                 completion_tokens: 8,
                 total_tokens: 40,
+                input_tokens: 9,
+                output_tokens: 8,
+                cache_read_tokens: 20,
+                cache_write_tokens: 3,
+                ..Default::default()
             })
         );
         assert!(matches!(

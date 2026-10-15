@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 mod anthropic;
 mod continuation;
+mod failure;
 
 #[derive(Default)]
 struct ToolCall {
@@ -32,12 +33,16 @@ pub(crate) struct StreamDecoder {
     chat_reasoning_available: bool,
     anthropic_thinking: BTreeMap<u64, ThinkingBlock>,
     anthropic_content: BTreeMap<u64, Value>,
+    /// Anthropic content blocks that carry text, so their stop becomes a block boundary.
+    anthropic_text: std::collections::BTreeSet<u64>,
     chat_extra_content: Option<Value>,
     continuation_bytes: usize,
     anthropic_reasoning_bytes: usize,
     anthropic_reasoning_unavailable: bool,
     pub done: bool,
     stopped: bool,
+    /// The classified error a failed stream reported, for the transport to prefer.
+    failure: Option<Event>,
 }
 
 impl StreamDecoder {
@@ -54,12 +59,14 @@ impl StreamDecoder {
             chat_reasoning_available: true,
             anthropic_thinking: BTreeMap::new(),
             anthropic_content: BTreeMap::new(),
+            anthropic_text: std::collections::BTreeSet::new(),
             chat_extra_content: None,
             continuation_bytes: 0,
             anthropic_reasoning_bytes: 0,
             anthropic_reasoning_unavailable: false,
             done: false,
             stopped: false,
+            failure: None,
         }
     }
 
@@ -78,7 +85,7 @@ impl StreamDecoder {
             return Err("provider event must be an object");
         }
         if value.get("error").is_some() || value["type"] == "error" {
-            return Err("provider reported a stream error");
+            return Err(self.record_failure(&value, "provider reported a stream error"));
         }
         match self.protocol {
             Protocol::Chat => self.chat(&value),
@@ -156,6 +163,7 @@ impl StreamDecoder {
             "response.output_text.delta" => {
                 events.push(Event::TextDelta(text(value, "delta")?.into()))
             }
+            "response.output_text.done" => events.push(Event::TextBlockEnd),
             "response.reasoning_summary_text.delta" => {
                 events.push(Event::ReasoningDelta(text(value, "delta")?.into()))
             }
@@ -191,13 +199,19 @@ impl StreamDecoder {
                     self.metadata.provider_stop_reason = Some("max_output_tokens".into());
                 } else if value["type"] != "response.completed" || response["status"] != "completed"
                 {
-                    return Err("response is incomplete");
+                    self.record_usage(&response["usage"], "input_tokens", "output_tokens")
+                        .ok();
+                    return Err(self.record_failure(value, "response is incomplete"));
                 }
                 self.metadata.provider_response_id = response["id"].as_str().map(str::to_owned);
                 self.record_usage(&response["usage"], "input_tokens", "output_tokens")?;
                 return self.finish();
             }
-            "response.failed" => return Err("response is incomplete"),
+            "response.failed" => {
+                self.record_usage(&value["response"]["usage"], "input_tokens", "output_tokens")
+                    .ok();
+                return Err(self.record_failure(value, "response is incomplete"));
+            }
             _ => {}
         }
         Ok(events)
@@ -237,6 +251,12 @@ impl StreamDecoder {
         }
         if let Some(n) = value.pointer("/cache_creation/ephemeral_1h_input_tokens") {
             self.metadata.cache_write_1h_tokens = count(n)?;
+        }
+        if let Some(n) = value
+            .pointer("/output_tokens_details/reasoning_tokens")
+            .or_else(|| value.pointer("/completion_tokens_details/reasoning_tokens"))
+        {
+            usage.reasoning_tokens = Some(count(n)?);
         }
         Ok(())
     }
@@ -282,6 +302,7 @@ impl StreamDecoder {
             && let Some(usage) = self.usage.as_mut()
         {
             // Anthropic reports `input_tokens` without cache reads and writes.
+            usage.input_tokens = usage.prompt_tokens;
             let cached = [
                 self.metadata.cache_read_tokens,
                 self.metadata.cache_write_tokens,
@@ -296,6 +317,21 @@ impl StreamDecoder {
                 .prompt_tokens
                 .checked_add(usage.completion_tokens)
                 .ok_or("usage overflow")?;
+        }
+        let (read, write) = (
+            self.metadata.cache_read_tokens.unwrap_or(0),
+            self.metadata.cache_write_tokens.unwrap_or(0),
+        );
+        if let Some(usage) = self.usage.as_mut() {
+            usage.cache_read_tokens = read;
+            usage.cache_write_tokens = write;
+            usage.output_tokens = usage.completion_tokens;
+            if self.protocol != Protocol::Anthropic {
+                // OpenAI-family prompt counts include the cached part.
+                usage.input_tokens = usage
+                    .prompt_tokens
+                    .saturating_sub(read.saturating_add(write));
+            }
         }
         self.metadata.settled_reasoning = match self.protocol {
             Protocol::Chat if self.chat_reasoning_available => Some(

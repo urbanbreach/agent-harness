@@ -178,7 +178,7 @@ pub fn supports_adaptive_thinking(model: &str) -> bool {
     includes_marker(model, &ADAPTIVE_THINKING_MODEL_MARKERS)
 }
 
-/// Harness reasoning effort as senpi's `ThinkingLevel`; `None` turns reasoning off.
+/// Harness reasoning effort as a thinking level; `None` turns reasoning off.
 pub fn thinking_level(effort: Option<&str>) -> Option<&str> {
     effort.filter(|e| matches!(*e, "minimal" | "low" | "medium" | "high" | "xhigh" | "max"))
 }

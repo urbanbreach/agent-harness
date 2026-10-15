@@ -202,7 +202,7 @@ pub fn custom_tool_servers(tools: &[ToolDef]) -> Vec<CustomTool> {
 }
 
 /// Inlines local `$ref`s: harness tool schemas come from schemars (`$defs`), while the
-/// conversion below, like senpi's, reads inline schemas only.
+/// conversion below reads inline schemas only.
 fn inline_refs(schema: &Value, root: &Value, depth: usize) -> Value {
     match schema {
         Value::Object(map) => {
@@ -245,7 +245,7 @@ fn inline_refs(schema: &Value, root: &Value, depth: usize) -> Value {
     }
 }
 
-/// JSON Schema exactly as the MCP SDK emits it for senpi's zod shape conversion.
+/// JSON Schema exactly as the MCP SDK emits it for a zod shape.
 pub fn input_schema(parameters: &Value) -> Value {
     let mut schema = object_schema(&inline_refs(parameters, parameters, 0));
     if let Some(object) = schema.as_object_mut() {

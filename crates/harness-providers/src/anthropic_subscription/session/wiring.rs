@@ -80,7 +80,7 @@ pub fn handle_session_event(event: &ProviderSessionEvent, store: Option<&Binding
                 keep_binding_then_close(&entry, "thinking_level_selected");
             }
         }
-        ProviderSessionEvent::Compacted { session_id } => {
+        ProviderSessionEvent::Compacted { session_id, .. } => {
             record_pending_fork(session_id, "compaction");
             invalidate_binding(session_id, store, "compaction");
         }

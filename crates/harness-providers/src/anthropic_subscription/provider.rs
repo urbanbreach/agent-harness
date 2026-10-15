@@ -122,7 +122,7 @@ fn tool_watch_note(context: &LaneContext, custom: &BTreeMap<String, String>) -> 
     (!notes.is_empty()).then(|| notes.join("\n\n"))
 }
 
-/// senpi `parseCompactBoundaryMessage`, reduced to what the harness records.
+/// A `compact_boundary` message, reduced to what the harness records.
 fn native_compaction(message: &serde_json::Value) -> crate::ProviderNativeCompaction {
     let metadata = &message["compact_metadata"];
     crate::ProviderNativeCompaction {
@@ -181,11 +181,22 @@ static CALIBRATION_RESTORED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mu
 
 #[async_trait::async_trait]
 impl Provider for AnthropicSubscriptionProvider {
+    fn endpoint_host(&self, _request: &CompletionRequest) -> Option<String> {
+        Some("api.anthropic.com".to_owned())
+    }
+    fn token_reader(&self, request: &CompletionRequest) -> Option<harness_tokenizer::Reader> {
+        Some(crate::token_reader::reader_for(
+            request,
+            &request.model_id,
+            crate::Protocol::Anthropic,
+            Some("api.anthropic.com"),
+        ))
+    }
     async fn stream_completion(&self, request: CompletionRequest) -> ProviderEventStream {
         self.stream_completion_abortable(request, CancellationToken::new())
             .await
     }
-    /// senpi's `isSdkNativeCompactionLane`: a resident main turn's context is Claude Code's.
+    /// A resident main turn's context is Claude Code's.
     fn manages_context(&self, request: &CompletionRequest) -> bool {
         let settings = match &self.environment {
             Some(environment) => self
@@ -229,7 +240,7 @@ impl Provider for AnthropicSubscriptionProvider {
         let binding_store = agent_dir
             .as_deref()
             .map(|dir| Arc::new(BindingStore::new(dir)));
-        // Senpi's abort signal: the lanes interrupt Claude Code, settle, and the stream ends `Aborted`.
+        // On abort the lanes interrupt Claude Code, settle, and the stream ends `Aborted`.
         let cancel = abort.child_token();
         let report = Arc::new(Mutex::new(LaneReport::default()));
         Box::pin(async_stream::stream! {
@@ -352,7 +363,7 @@ impl Provider for AnthropicSubscriptionProvider {
                             yield event;
                         }
                     }
-                    // senpi mirrors Claude Code's own compactions into the session history.
+                    // Claude Code's own compactions are mirrored into the session history.
                     Some("system") if message["subtype"] == "compact_boundary" => {
                         let compaction = native_compaction(&message);
                         yield Event::Notice(match compaction.pre_tokens {

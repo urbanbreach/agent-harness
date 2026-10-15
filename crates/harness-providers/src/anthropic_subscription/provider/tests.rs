@@ -231,10 +231,10 @@ async fn resident_session_plans_tools_and_sends_results_as_a_delta(
     Ok(())
 }
 
-/// senpi's abort settles the interrupted turn before the stream ends, so the next turn reuses
+/// An abort settles the interrupted turn before the stream ends, so the next turn reuses
 /// the process; leaving the lane closes it, and compaction drops the restart binding.
 #[tokio::test]
-async fn aborts_settle_and_session_events_follow_senpi_hooks(
+async fn aborts_settle_and_session_events_follow_lane_hooks(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let fake = Fake::new("slow")?;
     let session = "abort-and-events-test";
@@ -269,7 +269,7 @@ async fn aborts_settle_and_session_events_follow_senpi_hooks(
     assert!(again.contains(&Event::TextDelta("ok".into())), "{again:?}");
     assert_eq!(fake.spawns()?, 1);
 
-    // senpi's model_select inside the lane switches the live query in place.
+    // A model selection inside the lane switches the live query in place.
     fake.provider
         .session_event(&ProviderSessionEvent::ModelSelected {
             session_id: session.into(),
@@ -354,12 +354,13 @@ async fn aborts_settle_and_session_events_follow_senpi_hooks(
     fake.provider
         .session_event(&ProviderSessionEvent::Compacted {
             session_id: session.into(),
+            descriptor: None,
         });
     assert!(bindings.read(session).is_none());
     Ok(())
 }
 
-/// senpi's lane policy: Claude Code's own compactions are recorded and announced, an overflow of
+/// Lane policy: Claude Code's own compactions are recorded and announced, an overflow of
 /// the harness's full re-send is the harness's to compact, and one inside the resident session
 /// is reported with manual-compaction guidance instead.
 #[tokio::test]

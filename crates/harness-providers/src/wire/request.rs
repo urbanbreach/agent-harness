@@ -1,8 +1,19 @@
 use super::Protocol;
 use crate::{CacheRetention, CompletionRequest, MessageRole, ToolChoice};
 use serde_json::{json, Value};
+mod messages;
+use messages::messages;
 
 pub(crate) fn encode(req: &CompletionRequest, protocol: Protocol) -> Result<Value, &'static str> {
+    encode_at(req, protocol, None)
+}
+
+/// Encodes for the deployment at `host` (`None` = the provider's built-in endpoint).
+pub(crate) fn encode_at(
+    req: &CompletionRequest,
+    protocol: Protocol,
+    host: Option<&str>,
+) -> Result<Value, &'static str> {
     if req
         .tools
         .as_ref()
@@ -10,7 +21,7 @@ pub(crate) fn encode(req: &CompletionRequest, protocol: Protocol) -> Result<Valu
     {
         return Err("request exceeds 128 tool definitions");
     }
-    crate::attachment_protocol::validate_request(req, protocol).map_err(|e| e.0)?;
+    crate::attachment_protocol::validate_request_at(req, protocol, host).map_err(|e| e.0)?;
     if req.model_id.trim().is_empty() || req.max_tokens == Some(0) {
         return Err("model and positive output limit are required");
     }
@@ -19,6 +30,15 @@ pub(crate) fn encode(req: &CompletionRequest, protocol: Protocol) -> Result<Valu
         .is_some_and(|n| !n.is_finite() || !(0.0..=2.0).contains(&n))
     {
         return Err("invalid temperature");
+    }
+    for &index in req.message_content.keys() {
+        if req
+            .messages
+            .get(index)
+            .is_none_or(|m| !matches!(m.role, MessageRole::User | MessageRole::Tool))
+        {
+            return Err("ordered content requires a user or tool message");
+        }
     }
     let messages = messages(req, protocol)?;
     let mut body = json!({"model":req.model_id,"stream":true});
@@ -70,9 +90,13 @@ pub(crate) fn encode(req: &CompletionRequest, protocol: Protocol) -> Result<Valu
         }
         anthropic_thinking(&mut body, req)?;
     } else if req.context.cache_retention != CacheRetention::None
-        && let Some(session) = &req.context.session_id
+        && let Some(key) = req
+            .context
+            .cache_key
+            .as_ref()
+            .or(req.context.session_id.as_ref())
     {
-        body["prompt_cache_key"] = session.clone().into();
+        body["prompt_cache_key"] = key.clone().into();
     }
     add_tools(&mut body, req, protocol)?;
     Ok(body)
@@ -141,184 +165,6 @@ fn add_tools(
     Ok(())
 }
 
-fn messages(req: &CompletionRequest, protocol: Protocol) -> Result<Vec<Value>, &'static str> {
-    let mut result = Vec::new();
-    let mut pending = std::collections::BTreeSet::new();
-    let mut tool_media = Vec::new();
-    for (index, message) in req.messages.iter().enumerate() {
-        let attached = req.attachments.get(&index).map_or(&[][..], Vec::as_slice);
-        let continuation = message
-            .continuation
-            .as_deref()
-            .filter(|s| message.role == MessageRole::Assistant && s.matches(req, protocol));
-        let role = match message.role {
-            MessageRole::System => "system",
-            MessageRole::User => "user",
-            MessageRole::Assistant => "assistant",
-            MessageRole::Tool => "tool",
-        };
-        if protocol == Protocol::Anthropic && message.role == MessageRole::System {
-            continue;
-        }
-        if message.role == MessageRole::Tool {
-            let id = message
-                .tool_call_id
-                .as_ref()
-                .ok_or("tool result lacks a call id")?;
-            if !pending.remove(id) {
-                return Err("tool result has no matching call");
-            }
-            match protocol {
-                Protocol::Chat => {
-                    result.push(json!({"role":role,"tool_call_id":id,"content":message.content}));
-                    if !attached.is_empty() {
-                        tool_media.extend(content_blocks(
-                            &format!("Attachments returned by tool call {id}."),
-                            attached,
-                            protocol,
-                        )?);
-                    }
-                    if pending.is_empty() && !tool_media.is_empty() {
-                        result
-                            .push(json!({"role":"user","content":std::mem::take(&mut tool_media)}));
-                    }
-                }
-                Protocol::Responses | Protocol::Anthropic => {
-                    let content = if attached.is_empty() {
-                        Value::String(message.content.clone())
-                    } else {
-                        content_blocks(&message.content, attached, protocol)?.into()
-                    };
-                    if protocol == Protocol::Responses {
-                        result.push(
-                            json!({"type":"function_call_output","call_id":id,"output":content}),
-                        );
-                        continue;
-                    }
-                    let block = json!({"type":"tool_result","tool_use_id":id,"content":content});
-                    if let Some(Value::Array(content)) = result
-                        .last_mut()
-                        .filter(|v| v["role"] == "user")
-                        .and_then(|v| v.get_mut("content"))
-                    {
-                        content.push(block);
-                    } else {
-                        result.push(json!({"role":"user","content":[block]}));
-                    }
-                }
-            }
-            continue;
-        }
-        if !pending.is_empty() {
-            return Err("assistant tool calls lack results");
-        }
-        let mut calls = Vec::new();
-        for call in message.assistant_tool_calls.iter().flatten() {
-            if message.role != MessageRole::Assistant
-                || call.tool_call_id.is_empty()
-                || !pending.insert(&call.tool_call_id)
-            {
-                return Err("invalid assistant tool call");
-            }
-            let args: Value =
-                serde_json::from_str(&call.arguments_json).map_err(|_| "invalid tool arguments")?;
-            if !args.is_object() {
-                return Err("tool arguments must be an object");
-            }
-            let name = req
-                .tools
-                .iter()
-                .flatten()
-                .find(|tool| tool.tool_id == call.function_name)
-                .map_or_else(
-                    || crate::tool_function_name(&call.function_name),
-                    |tool| tool.function_name.clone(),
-                );
-            calls.push(match protocol {
-                Protocol::Chat => {
-                    let mut item = json!({"id":call.tool_call_id,"type":"function","function":{"name":name,"arguments":call.arguments_json}});
-                    if let Some(extra) = continuation.and_then(|s| s.data["tool_calls"].get(&call.tool_call_id)) {
-                        item["extra_content"] = extra.clone();
-                    }
-                    item
-                },
-                Protocol::Responses => json!({"type":"function_call","call_id":call.tool_call_id,"name":name,"arguments":call.arguments_json}),
-                Protocol::Anthropic => json!({"type":"tool_use","id":call.tool_call_id,"name":name,"input":args}),
-            });
-        }
-        let attached = req.attachments.get(&index).filter(|a| !a.is_empty());
-        let mut content = content_blocks(
-            &message.content,
-            attached.map_or(&[], Vec::as_slice),
-            protocol,
-        )?;
-        match protocol {
-            Protocol::Chat => result.push(chat_message(
-                message,
-                calls,
-                content,
-                attached.is_some(),
-                continuation,
-            )),
-            Protocol::Responses => {
-                if !message.content.is_empty() || calls.is_empty() {
-                    result.push(json!({"role":role,"content":if attached.is_some() { Value::Array(content) } else { Value::String(message.content.clone()) }}));
-                }
-                result.extend(calls);
-            }
-            Protocol::Anthropic => {
-                content.extend(calls);
-                let content = if let Some(state) =
-                    continuation.filter(|_| message.role == MessageRole::Assistant)
-                {
-                    state.data.clone()
-                } else {
-                    Value::Array(content)
-                };
-                result.push(json!({"role":role,"content":content}));
-            }
-        }
-    }
-    if !pending.is_empty() {
-        return Err("assistant tool calls lack results");
-    }
-    Ok(result)
-}
-
-fn content_blocks(
-    text: &str,
-    attachments: &[crate::attachment_protocol::AttachmentMetadata],
-    protocol: Protocol,
-) -> Result<Vec<Value>, &'static str> {
-    use base64::Engine;
-    if attachments.is_empty() && protocol != Protocol::Anthropic {
-        return Ok(Vec::new());
-    }
-    let text_type = if protocol == Protocol::Responses {
-        "input_text"
-    } else {
-        "text"
-    };
-    let mut content = Vec::new();
-    if !text.is_empty() {
-        content.push(json!({"type":text_type,"text":text}));
-    }
-    for attachment in attachments {
-        let bytes = attachment.bytes().map_err(|e| e.0)?;
-        if attachment.mime == "text/plain" {
-            content.push(json!({"type":text_type,"text":std::str::from_utf8(bytes).map_err(|_| "text attachment is not UTF-8")?}));
-            continue;
-        }
-        let data = base64::engine::general_purpose::STANDARD.encode(bytes);
-        content.push(match protocol {
-            Protocol::Chat => json!({"type":"image_url","image_url":{"url":format!("data:{};base64,{data}",attachment.mime)}}),
-            Protocol::Responses => json!({"type":"input_image","image_url":format!("data:{};base64,{data}",attachment.mime)}),
-            Protocol::Anthropic => json!({"type":"image","source":{"type":"base64","media_type":attachment.mime,"data":data}}),
-        });
-    }
-    Ok(content)
-}
-
 fn anthropic_thinking(body: &mut Value, req: &CompletionRequest) -> Result<(), &'static str> {
     let effort = match req.reasoning_effort.as_deref() {
         Some("minimal") => Some("low"),
@@ -381,36 +227,4 @@ fn anthropic_thinking(body: &mut Value, req: &CompletionRequest) -> Result<(), &
         }
     }
     Ok(())
-}
-
-fn chat_message(
-    message: &crate::CompletionMessage,
-    calls: Vec<Value>,
-    content: Vec<Value>,
-    attached: bool,
-    continuation: Option<&crate::ProviderContinuation>,
-) -> Value {
-    let role = match message.role {
-        MessageRole::System => "system",
-        MessageRole::User => "user",
-        MessageRole::Assistant => "assistant",
-        MessageRole::Tool => "tool",
-    };
-    let mut item = json!({"role":role,"content":message.content});
-    if attached {
-        item["content"] = content.into();
-    }
-    if let Some(extra) = continuation
-        .and_then(|s| s.data.get("extra_content"))
-        .filter(|v| !v.is_null())
-    {
-        item["extra_content"] = extra.clone();
-    }
-    if let Some(name) = &message.name {
-        item["name"] = name.clone().into();
-    }
-    if !calls.is_empty() {
-        item["tool_calls"] = calls.into();
-    }
-    item
 }

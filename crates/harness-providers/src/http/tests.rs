@@ -123,6 +123,15 @@ async fn http_stream_reports_truncation_and_keeps_server_errors_private(
             )),
         }
         assert!(!format!("{events:?}").contains("secret-server-body"));
+        if status.starts_with("401") {
+            // The envelope keeps the failure's status and body for callers that classify it.
+            assert!(matches!(
+                events.last(),
+                Some(ProviderStreamEvent::Error { envelope: Some(envelope), .. })
+                    if envelope.status == Some(401)
+                        && envelope.body.as_deref() == Some("secret-server-body")
+            ));
+        }
         server.await??;
     }
     assert!(HttpProvider::new(

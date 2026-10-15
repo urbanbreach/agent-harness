@@ -25,6 +25,9 @@ impl StreamDecoder {
             },
             "content_block_delta" => match value["delta"]["type"].as_str() {
                 Some("text_delta") => {
+                    if let Some(index) = value["index"].as_u64() {
+                        self.anthropic_text.insert(index);
+                    }
                     events.push(Event::TextDelta(text(&value["delta"], "text")?.into()))
                 }
                 Some("thinking_delta") => {
@@ -42,6 +45,12 @@ impl StreamDecoder {
                 _ => {}
             },
             "content_block_stop" => {
+                if value["index"]
+                    .as_u64()
+                    .is_some_and(|index| self.anthropic_text.remove(&index))
+                {
+                    events.push(Event::TextBlockEnd);
+                }
                 if let Some(index) = value["index"].as_u64()
                     && let Some(block) = self.anthropic_thinking.get_mut(&index)
                 {

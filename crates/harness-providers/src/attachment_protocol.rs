@@ -1,3 +1,6 @@
+mod limits;
+pub use limits::{host_edge_limit, image_limits, ImageLimits};
+
 use serde::{Deserialize, Serialize};
 use std::{fmt, sync::Arc};
 
@@ -41,6 +44,9 @@ pub struct AttachmentMetadata {
     pub size: u64,
     pub dimensions: Option<AttachmentDimensions>,
     pub content_ref: String,
+    /// Image detail hint for providers that take one (`auto`, `low`, `high`, `original`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
     #[serde(skip)]
     bytes: Option<Arc<[u8]>>,
 }
@@ -58,6 +64,7 @@ impl AttachmentMetadata {
             size,
             dimensions,
             content_ref: content_ref.into(),
+            detail: None,
             bytes: None,
         }
     }
@@ -108,6 +115,7 @@ impl fmt::Debug for AttachmentMetadata {
             .field("size", &self.size)
             .field("dimensions", &self.dimensions)
             .field("content_ref", &self.content_ref)
+            .field("detail", &self.detail)
             .finish()
     }
 }
@@ -118,6 +126,7 @@ impl PartialEq for AttachmentMetadata {
             && self.size == other.size
             && self.dimensions == other.dimensions
             && self.content_ref == other.content_ref
+            && self.detail == other.detail
     }
 }
 impl Eq for AttachmentMetadata {}
@@ -223,7 +232,27 @@ pub(crate) fn validate_request(
     request: &crate::CompletionRequest,
     protocol: crate::Protocol,
 ) -> Result<(), AttachmentProtocolError> {
-    let (mut count, mut total) = (0, 0usize);
+    validate_request_at(request, protocol, None)
+}
+
+/// Validates attachments against the deployment the request will reach. `host` is the
+/// endpoint host; `None` means the provider's built-in endpoint.
+pub(crate) fn validate_request_at(
+    request: &crate::CompletionRequest,
+    protocol: crate::Protocol,
+    host: Option<&str>,
+) -> Result<(), AttachmentProtocolError> {
+    let limits = image_limits(
+        request.provider_id.as_deref().unwrap_or_default(),
+        &request.model_id,
+        host,
+    );
+    // Images may use the host's whole allowance; the universal ceiling still applies to
+    // hosts that allow less than it and to text attachments.
+    let image_cap = limits
+        .total_images
+        .max(u32::try_from(MAX_ATTACHMENTS).unwrap_or(u32::MAX));
+    let (mut count, mut images, mut base64_bytes) = (0usize, 0u32, 0u64);
     for (index, attachments) in &request.attachments {
         if request
             .messages
@@ -235,10 +264,17 @@ pub(crate) fn validate_request(
             ));
         }
         for attachment in attachments {
-            count += 1;
             let bytes = attachment.bytes()?;
-            total = total.saturating_add(bytes.len());
-            if count > MAX_ATTACHMENTS || total > MAX_REQUEST_ATTACHMENT_BYTES {
+            base64_bytes = base64_bytes.saturating_add((bytes.len() as u64).div_ceil(3) * 4);
+            if attachment.mime.starts_with("image/") {
+                images = images.saturating_add(1);
+            } else {
+                count += 1;
+            }
+            if count > MAX_ATTACHMENTS
+                || images > image_cap
+                || base64_bytes > limits.per_request_bytes
+            {
                 return Err(AttachmentProtocolError("request attachment limit exceeded"));
             }
             if attachment.mime.starts_with("image/") {

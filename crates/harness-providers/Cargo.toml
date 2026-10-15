@@ -10,6 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+harness-tokenizer = { path = "../harness-tokenizer" }
 async-stream = "0.3"
 async-trait = "0.1"
 base64 = "0.23"

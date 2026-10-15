@@ -1,5 +1,9 @@
 //! Provider requests and streamed responses. Wire formats stay in this crate.
+mod envelope;
+pub use envelope::{ProviderErrorEnvelope, ERROR_BODY_LIMIT};
 mod error;
+mod native_compaction;
+pub use native_compaction::*;
 mod retry_failure;
 pub use retry_failure::ProviderRetryFailure;
 pub mod mock;
@@ -7,6 +11,7 @@ mod router;
 pub use router::ProviderRouter;
 pub mod attachment_protocol;
 mod sse;
+mod token_reader;
 mod types;
 mod wire;
 pub use wire::Protocol;
@@ -22,6 +27,36 @@ pub use request_budget::*;
 
 #[async_trait::async_trait]
 pub trait Provider: Send + Sync {
+    fn native_compaction_lanes(
+        &self,
+        _request: &CompletionRequest,
+        _settings: &NativeLaneSettings,
+    ) -> Vec<NativeCompactionLane> {
+        Vec::new()
+    }
+    /// Credentials for a compaction side request to a configured endpoint.
+    ///
+    /// `None` means credentials are unavailable and the candidate must be skipped;
+    /// `Some(CompactionCredential::default())` means the provider needs no authentication.
+    /// A provider that does not implement lookup reads as keyless.
+    async fn compaction_credential(
+        &self,
+        _request: &CompletionRequest,
+        _cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<Option<CompactionCredential>, NativeCompactionError> {
+        Ok(Some(CompactionCredential::default()))
+    }
+    /// How many trailing content blocks a provider-side prompt cache looks back over.
+    fn cache_lookback_blocks(&self, _request: &CompletionRequest) -> Option<u32> {
+        None
+    }
+    async fn native_compact(
+        &self,
+        _request: NativeCompactionRequest,
+        _cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<NativeCompactionResult, NativeCompactionError> {
+        Err(NativeCompactionError::new("native compaction unsupported"))
+    }
     fn request_budget_semantics(
         &self,
         request: &CompletionRequest,
@@ -44,6 +79,16 @@ pub trait Provider: Send + Sync {
     /// harness stands its automatic compaction and input-budget stop down for it.
     fn manages_context(&self, _request: &CompletionRequest) -> bool {
         false
+    }
+    /// The model identity and wire facts that price this request's tokens, or `None` when the
+    /// provider cannot tell (the caller then infers the reader from the model name).
+    fn token_reader(&self, _request: &CompletionRequest) -> Option<harness_tokenizer::Reader> {
+        None
+    }
+    /// Host of the endpoint this request reaches, or `None` for the provider's built-in
+    /// endpoint. Deployment image caps depend on it.
+    fn endpoint_host(&self, _request: &CompletionRequest) -> Option<String> {
+        None
     }
     /// Providers signed in after startup. A router routes to them from the next request.
     fn add_providers(
@@ -76,8 +121,50 @@ pub fn end_on_abort(
     })
 }
 
+/// Anthropic's prompt cache matches a prefix that ends within this many blocks of a breakpoint.
+const ANTHROPIC_CACHE_LOOKBACK_BLOCKS: u32 = 20;
+
 #[async_trait::async_trait]
 impl Provider for HttpProvider {
+    fn endpoint_host(&self, _request: &CompletionRequest) -> Option<String> {
+        self.endpoint.host_str().map(str::to_owned)
+    }
+    fn token_reader(&self, request: &CompletionRequest) -> Option<harness_tokenizer::Reader> {
+        Some(token_reader::reader_for(
+            request,
+            &request.model_id,
+            self.protocol(request),
+            self.endpoint.host_str(),
+        ))
+    }
+    fn native_compaction_lanes(
+        &self,
+        request: &CompletionRequest,
+        settings: &NativeLaneSettings,
+    ) -> Vec<NativeCompactionLane> {
+        self.compaction_lanes(request, settings)
+    }
+    async fn native_compact(
+        &self,
+        request: NativeCompactionRequest,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<NativeCompactionResult, NativeCompactionError> {
+        self.compact_native(request, cancel).await
+    }
+    async fn compaction_credential(
+        &self,
+        _request: &CompletionRequest,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<Option<CompactionCredential>, NativeCompactionError> {
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Err(NativeCompactionError::new("Remote compaction cancelled")),
+            credential = self.resolve_compaction_credential() => credential,
+        }
+    }
+    fn cache_lookback_blocks(&self, request: &CompletionRequest) -> Option<u32> {
+        (self.protocol(request) == Protocol::Anthropic).then_some(ANTHROPIC_CACHE_LOOKBACK_BLOCKS)
+    }
     fn request_budget_semantics(
         &self,
         request: &CompletionRequest,

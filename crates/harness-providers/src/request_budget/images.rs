@@ -1,4 +1,5 @@
 use crate::attachment_protocol::AttachmentDimensions;
+use harness_tokenizer::{image_size_from_bytes, Counter, ImageDetail, ImageSize};
 
 const ORIGINAL_MODELS: &[&str] = &[
     "gpt-6-astra",
@@ -47,89 +48,26 @@ fn matches_model(model: &str, names: &[&str]) -> bool {
     })
 }
 
-/// Conservative upper estimates for default image detail. Unknown models remain unavailable.
-/// Sources: developers.openai.com/api/docs/guides/images-vision and
-/// platform.claude.com/docs/en/build-with-claude/vision, checked 2026-09-26.
-pub(super) fn tokens(model: &str, dimensions: AttachmentDimensions) -> Option<u32> {
-    let matches = |names: &[&str]| matches_model(model, names);
-    let (mut width, mut height) = (u64::from(dimensions.width), u64::from(dimensions.height));
-    let patches = |size: u64| width.div_ceil(size) * height.div_ceil(size);
-    let patch_cost = |cap: u64, multiplier: u64| {
-        u32::try_from((patches(32).min(cap) * multiplier).div_ceil(100)).ok()
-    };
-    if matches(ORIGINAL_MODELS) {
-        let count = original_patches(dimensions);
-        if count > 30_000 {
-            return None;
-        }
-        return u32::try_from((count * 120).div_ceil(100)).ok();
-    }
-    if matches(&["gpt-5.5"]) {
-        return patch_cost(10_000, 120);
-    }
-    if matches(&["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"]) {
-        return patch_cost(2500, 120);
-    }
-    if matches(&["gpt-5.2", "gpt-5-mini"]) {
-        return patch_cost(6144, 120);
-    }
-    if matches(&["gpt-4.1-mini"]) {
-        return patch_cost(6144, 162);
-    }
-    if matches(&["gpt-4.1-nano"]) {
-        return patch_cost(1536, 246);
-    }
-    if matches(&["gpt-5-nano"]) {
-        return patch_cost(1536, 150);
-    }
-    if matches(&["o4-mini"]) {
-        return patch_cost(1536, 172);
-    }
-    if matches(&[
-        "claude-opus-4-7",
-        "claude-sonnet-4-7",
-        "claude-opus-5",
-        "claude-opus-5-5",
-    ]) {
-        return u32::try_from(patches(28).min(4784)).ok();
-    }
-    if matches(&[
-        "claude-3-5-sonnet",
-        "claude-3-7-sonnet",
-        "claude-sonnet-4",
-        "claude-opus-4",
-        "claude-opus-4-1",
-        "claude-sonnet-4-5",
-        "claude-opus-4-5",
-        "claude-sonnet-4-6",
-        "claude-opus-4-6",
-        "claude-haiku-4-5",
-    ]) {
-        return u32::try_from(patches(28).min(1568)).ok();
-    }
-    let (base, tile) = if matches(&["gpt-4o-mini"]) {
-        (2833, 5667)
-    } else if matches(&["gpt-4o", "gpt-4.1", "chatgpt-4o-latest"]) {
-        (85, 170)
-    } else if matches(&["gpt-5", "gpt-5.1"]) {
-        (70, 140)
-    } else if matches(&["o1", "o1-pro", "o3"]) {
-        (75, 150)
-    } else {
-        return None;
-    };
-    for long_edge in [true, false] {
-        let (edge, limit) = if long_edge {
-            (width.max(height), 2048)
-        } else {
-            (width.min(height), 768)
-        };
-        if edge > limit {
-            width = (width * limit).div_ceil(edge);
-            height = (height * limit).div_ceil(edge);
-        }
-    }
-    u32::try_from(base + tile * width.div_ceil(512) * height.div_ceil(512)).ok()
+/// Ordinary image price under the request model's rule. Dimensions come from the attachment
+/// metadata when present, else from a bounded header probe; unreadable headers price as the
+/// maximum image.
+pub(super) fn tokens(
+    counter: &Counter,
+    attachment: &crate::attachment_protocol::AttachmentMetadata,
+    bytes: &[u8],
+) -> u32 {
+    let size = attachment.dimensions.map_or_else(
+        || image_size_from_bytes(bytes),
+        |dimensions| ImageSize {
+            width: dimensions.width,
+            height: dimensions.height,
+        },
+    );
+    let detail = attachment
+        .detail
+        .as_deref()
+        .and_then(ImageDetail::from_name);
+    counter.image_tokens(Some(size), detail)
 }
 
 fn date_suffix(s: &str) -> bool {

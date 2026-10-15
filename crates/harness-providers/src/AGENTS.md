@@ -31,3 +31,17 @@ remain explicit.
 
 Never persist wire payloads, credentials, query values, or provider reasoning.
 Use local HTTP fixtures for protocol checks and nextest for execution.
+Native compaction uses the ordinary HTTP transport identity. Responses tries streaming
+replacement before the compact endpoint; Anthropic signed summaries require a capable
+model and supported route. `NativeCompactionRequest.context_window` is per-request;
+unknown or zero windows skip fit rejection. Native payloads stay in non-serializable
+`ProviderContinuation`; summary user messages replay them only for the originating
+provider. Failed native attempts do not invoke ordinary completion; the coordinator may
+use a configured custom endpoint. Custom summaries are portable readable boundaries.
+Anthropic replay keeps file metadata separate from the signed block and emits it after
+the retained tail at a tool-pair-safe boundary. Custom endpoints have separate Chat
+Completions and summarizer formats.
+Long native cache keys use a bounded BLAKE3 identity rather than a runtime-specific
+hash. Token fitting uses the workspace byte estimate and a fixed image allowance;
+it does not load a provider tokenizer. The custom endpoint API returns summary text
+only, so endpoint-provided display metadata is not retained.

@@ -131,7 +131,7 @@ pub struct EntryState {
     pump_started: bool,
     pub synced_prefix_hash: Option<String>,
     pub sent_count: usize,
-    /// The hashes `recordSyncedStream` last recorded (senpi's `sentHashesByEntry`).
+    /// The hashes `recordSyncedStream` last recorded.
     pub sent_hashes: Option<Vec<String>>,
     pub assistant_uuid_by_index: BTreeMap<usize, String>,
     pub tainted_reason: Option<String>,

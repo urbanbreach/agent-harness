@@ -36,6 +36,46 @@ impl ProviderRouter {
 }
 #[async_trait::async_trait]
 impl Provider for ProviderRouter {
+    fn native_compaction_lanes(
+        &self,
+        request: &CompletionRequest,
+        settings: &crate::NativeLaneSettings,
+    ) -> Vec<crate::NativeCompactionLane> {
+        self.get(request.provider_id.as_deref())
+            .map_or_else(Vec::new, |p| p.native_compaction_lanes(request, settings))
+    }
+    async fn compaction_credential(
+        &self,
+        request: &CompletionRequest,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<Option<crate::CompactionCredential>, crate::NativeCompactionError> {
+        match self.get(request.provider_id.as_deref()) {
+            Some(provider) => provider.compaction_credential(request, cancel).await,
+            None => Ok(None),
+        }
+    }
+    fn cache_lookback_blocks(&self, request: &CompletionRequest) -> Option<u32> {
+        self.get(request.provider_id.as_deref())
+            .and_then(|p| p.cache_lookback_blocks(request))
+    }
+    fn endpoint_host(&self, request: &crate::CompletionRequest) -> Option<String> {
+        self.get(request.provider_id.as_deref())
+            .and_then(|p| p.endpoint_host(request))
+    }
+    fn token_reader(&self, request: &CompletionRequest) -> Option<harness_tokenizer::Reader> {
+        self.get(request.provider_id.as_deref())
+            .and_then(|p| p.token_reader(request))
+    }
+    async fn native_compact(
+        &self,
+        request: crate::NativeCompactionRequest,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<crate::NativeCompactionResult, crate::NativeCompactionError> {
+        let provider = self
+            .get(request.request.provider_id.as_deref())
+            .ok_or_else(|| crate::NativeCompactionError::new("provider unavailable"))?;
+        provider.native_compact(request, cancel).await
+    }
     fn request_budget_semantics(
         &self,
         request: &CompletionRequest,

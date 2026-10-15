@@ -83,7 +83,7 @@ pub struct AuthLaneInput {
     pub report: Arc<std::sync::Mutex<LaneReport>>,
 }
 
-/// The serving account's label, shown only for a pool of several (senpi's footer rule), and
+/// The serving account's label, shown only for a pool of several, and
 /// account switches to announce.
 #[derive(Debug, Default)]
 pub struct LaneReport {

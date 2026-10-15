@@ -10,17 +10,17 @@ use std::{sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct HttpProvider {
-    client: reqwest::Client,
-    endpoint: reqwest::Url,
-    protocol: Protocol,
-    credentials: Option<Arc<dyn ProviderCredentialSource>>,
-    headers: reqwest::header::HeaderMap,
-    auth_profile: Option<crate::ProviderAuthProfile>,
+    pub(crate) client: reqwest::Client,
+    pub(crate) endpoint: reqwest::Url,
+    pub(crate) protocol: Protocol,
+    pub(crate) credentials: Option<Arc<dyn ProviderCredentialSource>>,
+    pub(crate) headers: reqwest::header::HeaderMap,
+    pub(crate) auth_profile: Option<crate::ProviderAuthProfile>,
     chat_fallback: bool,
 }
 
 impl HttpProvider {
-    fn protocol(&self, request: &CompletionRequest) -> Protocol {
+    pub(crate) fn protocol(&self, request: &CompletionRequest) -> Protocol {
         if self.chat_fallback
             && self.auth_profile == Some(crate::ProviderAuthProfile::GithubCopilot)
             && request.model_id.starts_with("claude-")
@@ -35,10 +35,11 @@ impl HttpProvider {
         request: &CompletionRequest,
         pending: usize,
     ) -> Result<crate::ProviderBudgetSemantics, crate::ProviderRequestCostError> {
-        let mut budget = crate::request_budget::request_budget_semantics(
+        let mut budget = crate::request_budget::request_budget_semantics_at(
             request,
             pending,
             self.protocol(request),
+            self.endpoint.host_str(),
         )?;
         if self.auth_profile == Some(crate::ProviderAuthProfile::Codex) {
             budget.output_cap_disposition = crate::ProviderOutputCapDisposition::ProviderControlled;
@@ -106,7 +107,31 @@ impl HttpProvider {
         protocol: Protocol,
         token: Option<&crate::ProviderBearerToken>,
     ) -> Result<reqwest::Response, (&'static str, Category)> {
-        let mut body = encode(request, protocol).map_err(|e| (e, Category::UnsupportedToolCall))?;
+        let mut sanitized;
+        let request = if protocol == Protocol::Anthropic
+            && request.messages.iter().any(|m| {
+                m.continuation
+                    .as_deref()
+                    .is_some_and(|s| s.data["type"] == "anthropicCompaction")
+            })
+            && !crate::native_compaction::supported_anthropic(&self.endpoint)
+        {
+            sanitized = request.clone();
+            for message in &mut sanitized.messages {
+                if message
+                    .continuation
+                    .as_deref()
+                    .is_some_and(|s| s.data["type"] == "anthropicCompaction")
+                {
+                    message.continuation = None;
+                }
+            }
+            &sanitized
+        } else {
+            request
+        };
+        let mut body = crate::wire::encode_at(request, protocol, self.endpoint.host_str())
+            .map_err(|e| (e, Category::UnsupportedToolCall))?;
         let mut headers = self.headers.clone();
         let mut endpoint = self.endpoint.clone();
         if protocol != self.protocol {
@@ -120,6 +145,17 @@ impl HttpProvider {
                 "/chat/completions"
             };
             endpoint.set_path(&format!("{base}{suffix}"));
+        }
+        if protocol == Protocol::Anthropic
+            && request.messages.iter().any(|m| {
+                m.continuation.as_deref().is_some_and(|s| {
+                    s.provider_id == request.provider_id && s.data["type"] == "anthropicCompaction"
+                })
+            })
+            && crate::native_compaction::anthropic_capable(&request.model_id)
+        {
+            crate::native_compaction::route_anthropic_beta(&mut body, &mut headers, &endpoint)
+                .map_err(|_| ("invalid beta header", Category::Other))?;
         }
         if let Some(token) = token {
             headers.remove("authorization");
@@ -195,30 +231,7 @@ impl HttpProvider {
                 };
             }
             if !response.status().is_success() {
-                let status = response.status().as_u16();
-                let retry_after = response.headers().get("retry-after").and_then(|v| v.to_str().ok())
-                    .and_then(|s| s.parse::<u64>().ok()).map(|n| n.saturating_mul(1000));
-                let mut category = match status {
-                    401 | 403 => Category::InvalidCredentials,
-                    429 => Category::RateLimited,
-                    500..=599 => Category::TransportFailure,
-                    _ => Category::Other,
-                };
-                if status == 400 || status == 413 {
-                    let mut bytes = Vec::new();
-                    while let Ok(Some(chunk)) = response.chunk().await {
-                        if bytes.len() + chunk.len() > 65_536 { break; }
-                        bytes.extend_from_slice(&chunk);
-                    }
-                    if let Ok(error) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                        let code = error.pointer("/error/code").and_then(|v| v.as_str()).unwrap_or("");
-                        let message = error.pointer("/error/message").and_then(|v| v.as_str()).unwrap_or("");
-                        if matches!(code, "context_length_exceeded" | "prompt_too_long") || message.contains("prompt is too long") {
-                            category = Category::ContextWindowExceeded;
-                        }
-                    }
-                }
-                yield Event::categorized_error_with_retry_after_ms(format!("provider returned HTTP {status}"), category, retry_after);
+                yield failure::event(response, token.as_ref()).await;
                 return;
             }
             let is_sse = response.headers().get("content-type").is_none_or(|value|
@@ -247,7 +260,10 @@ impl HttpProvider {
                             }
                             yield event;
                         },
-                        Err(error) => { yield Event::categorized_error(error, Category::MalformedStream); return; }
+                        Err(error) => {
+                            yield decoder.take_failure().unwrap_or_else(|| Event::categorized_error(error, Category::MalformedStream));
+                            return;
+                        }
                     }
                     if decoder.done { return; }
                 }
@@ -259,5 +275,6 @@ impl HttpProvider {
 
 #[cfg(test)]
 mod cache_tests;
+mod failure;
 #[cfg(test)]
 mod tests;

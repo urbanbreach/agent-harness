@@ -75,7 +75,17 @@ impl ProviderStreamEvent {
             category: Some(category),
             remediation: Some(category.remediation().into()),
             retry_after_ms,
+            envelope: None,
         }
+    }
+
+    /// Attaches the failed response's status, headers and body.
+    #[must_use]
+    pub fn with_envelope(mut self, value: crate::ProviderErrorEnvelope) -> Self {
+        if let Self::Error { envelope, .. } = &mut self {
+            *envelope = Some(Box::new(value));
+        }
+        self
     }
 }
 
