@@ -11,6 +11,7 @@ use super::profile_log;
 #[derive(Clone)]
 pub(super) struct LiveCoordinatorConfigWarmup {
     state: Arc<tokio::sync::Mutex<(std::path::PathBuf, LiveCoordinatorConfigWarmupState)>>,
+    mock_provider: Option<Arc<dyn harness_providers::Provider>>,
 }
 
 enum LiveCoordinatorConfigWarmupState {
@@ -38,11 +39,20 @@ impl LiveCoordinatorConfigWarmup {
         };
 
         Self {
+            mock_provider: None,
             state: Arc::new(tokio::sync::Mutex::new((
                 settings.workspace_root.clone(),
                 state,
             ))),
         }
+    }
+
+    pub(super) fn with_mock_provider(
+        mut self,
+        provider: Arc<dyn harness_providers::Provider>,
+    ) -> Self {
+        self.mock_provider = Some(provider);
+        self
     }
 
     pub(super) async fn coordinator_config(
@@ -52,7 +62,11 @@ impl LiveCoordinatorConfigWarmup {
     ) -> Result<CoordinatorConfig, String> {
         if demo_mode {
             profile_log::profile_handoff("warmup.use_demo_config");
-            return Ok(demo_coordinator_config(settings));
+            let mut config = demo_coordinator_config(settings);
+            if let Some(provider) = &self.mock_provider {
+                config.provider = Arc::clone(provider);
+            }
+            return Ok(config);
         }
 
         let mut cached = self.state.lock().await;

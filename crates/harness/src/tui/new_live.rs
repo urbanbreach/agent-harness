@@ -65,7 +65,7 @@ pub(super) async fn run_new_worktree_live_session(
         selected.workspace_root = path;
         selected
     } else {
-        prepare_worktree_live_settings(settings, name.as_deref())?
+        prepare_worktree_live_settings(settings, name.as_deref(), None)?
     };
     profile_handoff(&format!(
         "new_worktree_live.created {}",
@@ -84,6 +84,7 @@ pub(super) async fn run_new_worktree_live_session(
 pub(super) fn prepare_worktree_live_settings(
     settings: &LiveSettings,
     name: Option<&str>,
+    base_branch: Option<&str>,
 ) -> Result<LiveSettings, String> {
     use harness_core::cow_worktree::apply_cow_worktree_fastpath;
     use harness_core::workspace::WorkspaceEnvironment;
@@ -102,7 +103,7 @@ pub(super) fn prepare_worktree_live_settings(
         data_dir: &settings.data_dir,
         worktree_parent: None,
         slug: name,
-        start_point: None,
+        start_point: base_branch,
     })
     .map_err(|err| format!("failed to create worktree: {err}"))?;
 

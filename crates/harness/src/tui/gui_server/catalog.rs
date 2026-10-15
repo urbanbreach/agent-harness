@@ -92,7 +92,7 @@ async fn models(server: &Server, params: &Value) -> Result<Value, String> {
         model_entry(&option)
     });
     Ok(
-        json!({"current": current, "models": metadata.available_models().iter().map(model_entry).collect::<Vec<_>>(), "profiles": metadata.switchable_profiles()}),
+        json!({"current": current, "models": metadata.available_models().iter().map(model_entry).collect::<Vec<_>>(), "profiles": metadata.switchable_profiles(), "defaultAccessMode":if settings.yolo {"full"} else {"supervised"}}),
     )
 }
 

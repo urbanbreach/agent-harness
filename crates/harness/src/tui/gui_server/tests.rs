@@ -52,7 +52,7 @@ async fn gui_server_round_trip_persists_and_resumes_conversation(
         .config_load_context();
     let (client, server) = tokio::io::duplex(1024 * 1024);
     let (reader, writer) = tokio::io::split(server);
-    let server = tokio::spawn(serve(reader, writer, true, None, None, context));
+    let server = tokio::spawn(serve(reader, writer, true, None, None, None, context));
     let (reader, writer) = tokio::io::split(client);
     let mut client = Client {
         reader: BufReader::new(reader).lines(),

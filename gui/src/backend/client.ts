@@ -59,7 +59,16 @@ export class BackendClient implements Backend {
   private statusListeners = new Set<() => void>();
   private status: BackendStatus = { state: 'connecting', reconnectable: false };
   private stderr = '';
-  constructor(private readonly command = [process.env.HARNESS_BIN || 'harness', 'gui-server']) {
+  constructor(
+    private readonly command = [
+      process.env.HARNESS_BIN || 'harness',
+      'gui-server',
+      ...(process.env.HARNESS_GUI_MOCK === '1' ? ['--mock'] : []),
+      ...(process.env.HARNESS_GUI_MOCK_SCRIPT
+        ? ['--mock-script', process.env.HARNESS_GUI_MOCK_SCRIPT]
+        : []),
+    ],
+  ) {
     this.start();
   }
   getStatus = () => this.status;

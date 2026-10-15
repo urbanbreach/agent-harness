@@ -17,6 +17,17 @@ test('fixture instances are deterministic and mutations never modify the authore
     const first = await a.call('session.create', { cwd: '/fixture/demo' });
     const second = await b.call('session.create', { cwd: '/fixture/demo' });
     expect(first).toEqual(second);
+    const skill = (await a.call('skills.list', {})).skills[0]!;
+    await a.call('skills.setEnabled', { id: skill.id, enabled: false });
+    expect((await a.call('skills.list', {})).skills[0]!.enabled).toBe(false);
+    expect((await b.call('skills.list', {})).skills[0]!.enabled).toBe(true);
+    const blob = { mime: 'text/plain', dataBase64: Buffer.from('abc').toString('base64') };
+    const { digest } = await a.call('blobs.put', blob);
+    expect(digest).toBe(
+      'attachment:blake3:6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85',
+    );
+    expect(await a.call('blobs.get', { digest })).toEqual(blob);
+    expect(await b.call('blobs.get', { digest })).toBeNull();
     const updates: string[] = [];
     const delivered = Promise.withResolvers<void>();
     b.subscribe((message) => {

@@ -1,3 +1,42 @@
+import type {
+  Skill,
+  UsageHistory,
+  SubscriptionUsage,
+  MemoryEntry,
+  MemoryList,
+  PlanEntry,
+  ForeignDiscovery,
+  ForeignImport,
+  SessionTree,
+} from './extensions';
+export type {
+  Skill,
+  SkillInstall,
+  UsageAggregate,
+  UsageHistory,
+  SubscriptionUsage,
+  MemoryEntry,
+  MemoryList,
+  PlanEntry,
+  ForeignCandidate,
+  ForeignDiscovery,
+  ForeignImport,
+  SessionTree,
+} from './extensions';
+import type {
+  ToggleState,
+  TrustState,
+  DoctorReport,
+  ConfigSources,
+  SessionInfo,
+} from './extensions';
+export type {
+  ToggleState,
+  TrustState,
+  DoctorReport,
+  ConfigSources,
+  SessionInfo,
+} from './extensions';
 import type { EventEnvelopeV1, LiveEventEnvelope } from '../model/harness-events';
 export type { EventEnvelopeV1, LiveEventEnvelope } from '../model/harness-events';
 
@@ -132,7 +171,12 @@ export type ModelEntry = {
   contextWindow?: number;
   description?: string;
 };
-export type ModelCatalog = { current: ModelEntry | null; models: ModelEntry[]; profiles: string[] };
+export type ModelCatalog = {
+  current: ModelEntry | null;
+  models: ModelEntry[];
+  profiles: string[];
+  defaultAccessMode?: AccessMode;
+};
 export type Command = {
   name: string;
   description: string;
@@ -162,6 +206,45 @@ export type Setting = {
 type Rpc<P, R> = { params: P; result: R };
 export type Methods = {
   'app.initialize': Rpc<{ cwd?: string }, Initialize>;
+  'blobs.put': Rpc<{ mime: string; dataBase64: string }, { digest: string }>;
+  'blobs.get': Rpc<{ digest: string }, { mime: string; dataBase64: string } | null>;
+  'projects.scratch': Rpc<{ prompt: string }, { cwd: string }>;
+  'llm.complete': Rpc<
+    { cwd: string; prompt: string; system?: string; model?: string },
+    { text: string; model: string; provider: string }
+  >;
+  'skills.list': Rpc<{ cwd?: string }, { skills: Skill[]; errors: string[] }>;
+  'skills.read': Rpc<{ cwd?: string; id: string }, { id: string; body: string }>;
+  'skills.setEnabled': Rpc<
+    { cwd?: string; id: string; enabled: boolean },
+    { id: string; enabled: boolean; changed: number }
+  >;
+  'skills.trash': Rpc<{ cwd?: string; id: string }, { id: string; trashed: number }>;
+  'usage.history': Rpc<{ cwd?: string; from: string; to: string }, UsageHistory>;
+  'usage.subscription': Rpc<{ cwd?: string; provider: string }, SubscriptionUsage>;
+  'memory.list': Rpc<{ cwd: string }, MemoryList>;
+  'memory.search': Rpc<{ cwd: string; query: string }, MemoryList>;
+  'memory.get': Rpc<{ cwd: string; key: string }, MemoryEntry>;
+  'memory.delete': Rpc<{ cwd: string; key: string }, { deleted: boolean }>;
+  'plans.list': Rpc<{ cwd: string }, { plans: PlanEntry[] }>;
+  'plans.read': Rpc<{ cwd: string; path: string }, { path: string; content: string }>;
+  'history.prompts': Rpc<{ cwd: string }, { prompts: string[] }>;
+  'sessions.discoverForeign': Rpc<{ cwd: string; from: string }, ForeignDiscovery>;
+  'sessions.importForeign': Rpc<{ cwd: string; from: string }, ForeignImport>;
+  'sessions.exportMarkdown': Rpc<{ runDir: string; dest: string }, { dest: string; bytes: number }>;
+  'sessions.trace': Rpc<
+    { runDir: string; dest: string },
+    { session_id: string; status: 'exported'; local_path: string; bytes: number }
+  >;
+  'sessions.tree': Rpc<{ cwd: string }, SessionTree>;
+  'toggles.get': Rpc<{ cwd: string }, ToggleState>;
+  'toggles.set': Rpc<{ cwd: string; id: string; enabled: boolean }, ToggleState>;
+  'trust.check': Rpc<{ cwd: string }, TrustState>;
+  'trust.set': Rpc<{ cwd: string; trusted: boolean }, never>;
+  'app.doctor': Rpc<{ cwd: string }, DoctorReport>;
+  'app.configSources': Rpc<{ cwd: string }, ConfigSources>;
+  'app.releaseNotes': Rpc<Record<string, never>, { version: string; markdown: string }>;
+  'session.info': Rpc<{ sessionId: string }, SessionInfo>;
   'state.read': Rpc<{ name: string }, Json>;
   'state.write': Rpc<{ name: string; value: Json }, null>;
   'sessions.list': Rpc<{ cwd: string }, SessionRow[]>;
@@ -179,7 +262,7 @@ export type Methods = {
       cwd: string;
       selection?: ModelSelection;
       accessMode?: AccessMode;
-      worktree?: { name?: string };
+      worktree?: { name?: string; baseBranch?: string };
     },
     SessionHandle
   >;

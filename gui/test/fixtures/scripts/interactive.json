@@ -1,0 +1,41 @@
+[
+  [
+    { "kind": "text", "text": "Working on the scripted request…" },
+    { "kind": "reasoning", "text": "Preparing a controlled local operation.", "delayMs": 6000 },
+    {
+      "kind": "tool",
+      "id": "mock-bash-1",
+      "toolId": "bash",
+      "args": { "command": "printf 'scripted mock operation\\n'" }
+    },
+    { "kind": "stop" }
+  ],
+  [
+    { "kind": "text", "text": "The controlled operation has settled.", "delayMs": 3000 },
+    { "kind": "stop" }
+  ],
+  [
+    {
+      "kind": "tool",
+      "id": "mock-question-1",
+      "toolId": "question",
+      "args": {
+        "questions": [
+          {
+            "header": "Next step",
+            "question": "Which task should we do next?",
+            "options": [
+              { "label": "Review", "description": "Inspect the changes" },
+              { "label": "Test", "description": "Run scoped checks" }
+            ],
+            "multiple": false,
+            "custom": true
+          }
+        ]
+      },
+      "delayMs": 2000
+    },
+    { "kind": "stop" }
+  ],
+  [{ "kind": "text", "text": "Your answer was received." }, { "kind": "stop" }]
+]

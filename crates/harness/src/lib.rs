@@ -87,6 +87,8 @@ enum Commands {
     GuiServer {
         #[arg(long)]
         mock: bool,
+        #[arg(long, hide = true)]
+        mock_script: Option<PathBuf>,
     },
     /// Manage provider credentials and authentication.
     Auth(auth::AuthCommand),
@@ -173,8 +175,9 @@ where
     });
     let result = match command {
         Commands::Gui => tui::gui_server::launch(),
-        Commands::GuiServer { mock } => tui::gui_server::execute(
+        Commands::GuiServer { mock, mock_script } => tui::gui_server::execute(
             mock || cli.mock,
+            mock_script,
             cli.config,
             cli.session_dir,
             deps.config_load_context(),
