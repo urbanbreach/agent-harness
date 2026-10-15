@@ -23,7 +23,7 @@ impl AppState {
         ContextSymbols::for_mode(self.theme().glyph_mode() == crate::theme::GlyphMode::Ascii)
     }
 
-    /// Status text such as `◫ 42.0%/200K`.
+    /// Status text such as `42.0%/200K`.
     pub fn runtime_context_budget_text(&self) -> Option<String> {
         self.context_status()
             .map(|status| status.text(&self.context_symbols()))

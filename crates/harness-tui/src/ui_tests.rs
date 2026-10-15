@@ -77,7 +77,7 @@ fn idle_context_budget_renders_in_breadcrumb_without_footer_counter() {
 
         // Then: the breadcrumb shows the percentage and the footer has no duplicate.
         assert!(
-            debug.contains("◫ 90.6%/128K") && !debug.contains("ctx ~"),
+            debug.contains("90.6%/128K") && !debug.contains("ctx ~"),
             "context budget belongs in the breadcrumb at width {width}\n{debug}"
         );
     }
@@ -97,7 +97,7 @@ fn clear_confirmation_keeps_context_budget_disclosure_stable() {
 
     // assert
     assert!(
-        debug.contains("◫ 75.0%/128K") && debug.contains("Esc:press again to clear"),
+        debug.contains("75.0%/128K") && debug.contains("Esc:press again to clear"),
         "confirmation must take over only the footer while context remains stable\n{debug}"
     );
 }
@@ -116,9 +116,9 @@ fn breadcrumb_context_segment_sheds_gauge_then_auto_icon_within_half_the_row() {
 
     // When: the breadcrumb meta is built for narrowing rows, in both glyph sets.
     for (ascii, row, expected) in [
-        (false, 200, "⟲ ◫ 65.6%/128K ███████╎┃░"),
-        (false, 40, "⟲ ◫ 65.6%/128K"),
-        (false, 26, "◫ 65.6%/128K"),
+        (false, 200, "⟲ 65.6%/128K ███████╎┃░"),
+        (false, 40, "⟲ 65.6%/128K"),
+        (false, 22, "65.6%/128K"),
         (true, 200, "[A] ctx: 65.6%/128K #######:|-"),
         (true, 40, "[A] ctx: 65.6%/128K"),
         (true, 30, "ctx: 65.6%/128K"),

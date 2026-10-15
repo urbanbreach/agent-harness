@@ -74,7 +74,7 @@ pub(crate) struct ContextSymbols {
 
 impl ContextSymbols {
     pub(crate) const UNICODE: Self = Self {
-        context: "◫",
+        context: "",
         auto: "⟲",
         speculation: "╎",
         compaction: "┃",
@@ -215,8 +215,8 @@ impl ContextStatus {
         self.window.map(|window| format_tokens(u64::from(window)))
     }
 
-    /// Status segment: `◫ 42.0%/200K`, window alone while usage is unknown, `◫ 900/?` while
-    /// the window is unknown.
+    /// Status segment: `42.0%/200K`, window alone while usage is unknown, `900/?` while
+    /// the window is unknown. ASCII mode prefixes `ctx:`.
     pub(crate) fn text(&self, symbols: &ContextSymbols) -> String {
         let body = match (self.percent, self.context_total(), self.inputs.used_tokens) {
             (Some(percent), Some(total), _) => format!("{percent:.1}%/{total}"),
@@ -224,7 +224,11 @@ impl ContextStatus {
             (_, None, Some(used)) => format!("{}/?", format_tokens(u64::from(used))),
             (_, None, None) => String::new(),
         };
-        format!("{} {body}", symbols.context)
+        if symbols.context.is_empty() {
+            body
+        } else {
+            format!("{} {body}", symbols.context)
+        }
     }
 
     /// Fixed-width bar with the threshold and speculation boundaries drawn over the fill.
@@ -295,12 +299,12 @@ mod tests {
     fn status_text_covers_percent_window_only_and_unknown_window() {
         // (used, window, expected unicode text, expected context_total)
         let cases = [
-            (Some(84_000), Some(200_000), "◫ 42.0%/200K", Some("200K")),
-            (None, Some(200_000), "◫ 200K", Some("200K")),
-            (Some(0), Some(200_000), "◫ 0.0%/200K", Some("200K")),
-            (Some(900), None, "◫ 900/?", None),
-            (Some(900), Some(0), "◫ 900/?", None),
-            (Some(48_573), None, "◫ 49K/?", None),
+            (Some(84_000), Some(200_000), "42.0%/200K", Some("200K")),
+            (None, Some(200_000), "200K", Some("200K")),
+            (Some(0), Some(200_000), "0.0%/200K", Some("200K")),
+            (Some(900), None, "900/?", None),
+            (Some(900), Some(0), "900/?", None),
+            (Some(48_573), None, "49K/?", None),
         ];
         for (used, window, text, total) in cases {
             let status = ContextStatus::new(inputs(used, window), &ContextSymbols::UNICODE)

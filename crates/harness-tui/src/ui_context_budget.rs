@@ -200,10 +200,10 @@ mod tests {
         let unicode = chrome(inputs(84_000), &ContextSymbols::UNICODE, 0);
         assert_eq!(
             unicode.plain(ContextDetail::Full),
-            "⟲ ◫ 42.0%/200K ████░░░╎┃░"
+            "⟲ 42.0%/200K ████░░░╎┃░"
         );
-        assert_eq!(unicode.plain(ContextDetail::NoGauge), "⟲ ◫ 42.0%/200K");
-        assert_eq!(unicode.plain(ContextDetail::TextOnly), "◫ 42.0%/200K");
+        assert_eq!(unicode.plain(ContextDetail::NoGauge), "⟲ 42.0%/200K");
+        assert_eq!(unicode.plain(ContextDetail::TextOnly), "42.0%/200K");
         let ascii = chrome(inputs(84_000), &ContextSymbols::ASCII, 0);
         assert_eq!(
             ascii.plain(ContextDetail::Full),

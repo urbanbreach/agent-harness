@@ -54,11 +54,11 @@
  },
  "claude-haiku-5-5": {
   "limit": {
-   "context": 1000000,
-   "output": 128000
+   "context": 100000,
+   "output": 32000
   },
   "metadata": {
-   "contextWindowTokens": 1000000,
+   "contextWindowTokens": 100000,
    "family": "claude-haiku",
    "supportsToolCalls": true
   },

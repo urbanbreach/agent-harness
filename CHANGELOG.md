@@ -97,7 +97,7 @@ The first public release.
   the context bar when the pass commits. Archived turns recede behind a divider
   labelled with the method and the token savings. Reduced-motion settings keep a
   static card.
-- The breadcrumb's context segment reads `◫ 42.0%/200K`, colours by pressure
+- The breadcrumb's context segment reads `42.0%/200K`, colours by pressure
   (yellow, purple, red), shows `⟲` while automatic compaction is on and draws a
   gauge with the compaction threshold and the background-summary start. It
   sheds the gauge, then `⟲`, as the row narrows.

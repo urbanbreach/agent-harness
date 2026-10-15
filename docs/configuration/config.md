@@ -50,9 +50,9 @@ can run longer. Connection setup has a separate limit of at most 30 seconds.
 
 The live TUI shows generation speed, session cost and prompt cache hits next to
 context usage in the row above the transcript, for example
-`49.6 tok/s · $0.047 · CH96.4% · ⟲ ◫ 5.2%/192K ░░░░░░░╎┃░`.
+`49.6 tok/s · $0.047 · CH96.4% · ⟲ 5.2%/192K ░░░░░░░╎┃░`.
 The context segment shows the share of the model's context window in use and the
-window size, for example `◫ 42.0%/200K`. While usage is unknown, as right after a
+window size, for example `42.0%/200K`. While usage is unknown, as right after a
 compaction, only the window shows; while the window is unknown it reads
 `900/?`. The text turns yellow at 50% of the window or 150K tokens, purple at 70%
 or 270K and red at 90% or 500K, whichever comes first. `⟲` appears while

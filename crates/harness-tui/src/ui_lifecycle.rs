@@ -304,7 +304,7 @@ impl BreadcrumbMeta {
     }
 }
 
-/// Tok/s, cost, cache hits and context: `42.1 tok/s · $0.123 · CH97.3% · ⟲ ◫ 42.0%/200K ██╎┃`.
+/// Tok/s, cost, cache hits and context: `42.1 tok/s · $0.123 · CH97.3% · ⟲ 42.0%/200K ██╎┃`.
 /// The meta stays within half the row: the gauge drops first, then the auto-compaction icon,
 /// then tok/s, cost and cache hits.
 pub(super) fn breadcrumb_meta(app: &AppState, width: usize) -> Option<BreadcrumbMeta> {
@@ -789,8 +789,8 @@ mod breadcrumb_token_meta_tests {
 
     #[test]
     fn pack_breadcrumb_line_right_aligns_token_meta() {
-        let packed = pack_breadcrumb_line("  git:main ~/proj", Some("◫ 4.6%/262K"), 40);
-        assert!(packed.ends_with("◫ 4.6%/262K"), "packed={packed:?}");
+        let packed = pack_breadcrumb_line("  git:main ~/proj", Some("4.6%/262K"), 40);
+        assert!(packed.ends_with("4.6%/262K"), "packed={packed:?}");
         assert_eq!(super::super::display_width(&packed), 40);
         assert!(
             packed.contains("main") || packed.contains("proj"),
@@ -806,7 +806,7 @@ mod breadcrumb_token_meta_tests {
             packed.starts_with("  "),
             "left breadcrumb retained when meta absent: {packed:?}"
         );
-        assert!(!packed.contains("◫ 4.6%/262K"), "packed={packed:?}");
+        assert!(!packed.contains("4.6%/262K"), "packed={packed:?}");
     }
 
     #[test]

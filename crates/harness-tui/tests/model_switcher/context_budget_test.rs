@@ -83,7 +83,7 @@ fn context_budget_snapshot_known_capacity_drives_status_segment() {
     let label = live.runtime_context_budget_text();
 
     // assert: usage is a one-decimal percentage of the model's 128,000 token context window.
-    assert_eq!(label, Some("◫ 46.9%/128K".to_string()));
+    assert_eq!(label, Some("46.9%/128K".to_string()));
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn context_budget_snapshot_unknown_capacity_avoids_percentage() {
     let label = replay.runtime_context_budget_text();
 
     // assert: unknown capacity shows the used tokens over `?` and no percentage.
-    assert_eq!(label, Some("◫ 321/?".to_string()));
+    assert_eq!(label, Some("321/?".to_string()));
     assert!(!label.unwrap_or_abort().contains('%'));
 }
 
@@ -139,7 +139,7 @@ fn context_budget_snapshot_conservative_avoids_percentage() {
     let label = live.runtime_context_budget_text();
 
     // assert: a conservative guess is not a window, so there is no percentage.
-    assert_eq!(label, Some("◫ 400/?".to_string()));
+    assert_eq!(label, Some("400/?".to_string()));
     assert!(!label.unwrap_or_abort().contains('%'));
 }
 
@@ -163,7 +163,7 @@ fn context_budget_snapshot_latest_request_sequence_wins_across_root_and_child() 
     // assert: event sequence, not ingestion order or actor kind, selects the snapshot.
     assert_eq!(
         live.runtime_context_budget_text(),
-        Some("◫ 35.0%/2K".to_string())
+        Some("35.0%/2K".to_string())
     );
 }
 
@@ -202,7 +202,7 @@ fn context_budget_snapshot_replay_uses_request_event_before_persisted_bootstrap(
     // assert: replay uses the event snapshot before the metadata bootstrap.
     assert_eq!(
         replay.runtime_context_budget_text(),
-        Some("◫ 777/?".to_string())
+        Some("777/?".to_string())
     );
 }
 
@@ -227,7 +227,7 @@ fn runtime_context_after_model_switch_keeps_snapshot_until_next_request() {
     // assert: current-runtime budget evidence remains active until another request starts.
     assert_eq!(
         live.runtime_context_budget_text(),
-        Some("◫ 50.0%/1.2K".to_string())
+        Some("50.0%/1.2K".to_string())
     );
 }
 
@@ -271,8 +271,5 @@ fn context_budget_snapshot_refreshing_precedes_latest_snapshot() {
     });
 
     // assert: usage is unknown until the next response, so only the window shows (not 0%).
-    assert_eq!(
-        live.runtime_context_budget_text(),
-        Some("◫ 1.2K".to_string())
-    );
+    assert_eq!(live.runtime_context_budget_text(), Some("1.2K".to_string()));
 }
