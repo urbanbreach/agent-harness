@@ -11,6 +11,7 @@ async fn completion_and_agent_helpers_use_the_native_provider_and_task_boundarie
                     prompt_tokens: 12,
                     completion_tokens: 3,
                     total_tokens: 15,
+                    ..Default::default()
                 }),
                 metadata: Some(harness_providers::ProviderStreamFinishedMetadata {
                     output_limit_reached: matches!(index, 2 | 3),

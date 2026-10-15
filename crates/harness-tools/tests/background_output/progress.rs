@@ -45,6 +45,7 @@ impl harness_providers::Provider for ProgressProvider {
                         prompt_tokens: 8000,
                         completion_tokens: 1000,
                         total_tokens: 9000,
+                        ..Default::default()
                     }),
                     metadata: Some(ProviderStreamFinishedMetadata {
                         usage_complete: Some(true),
@@ -63,7 +64,7 @@ impl harness_providers::Provider for ProgressProvider {
                 .messages
                 .iter()
                 .filter(|message| message.role == harness_providers::MessageRole::Tool)
-                .map(|message| message.content.len() as u64 / 4)
+                .map(|message| (message.content.len() as u64).div_ceil(4))
                 .sum(),
             Ordering::SeqCst,
         );

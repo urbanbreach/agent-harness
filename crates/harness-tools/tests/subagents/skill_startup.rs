@@ -65,6 +65,7 @@ fn settled_completion() -> Stream {
             prompt_tokens: 10,
             completion_tokens: 2,
             total_tokens: 12,
+            ..Default::default()
         }),
         metadata: Some(harness_providers::ProviderStreamFinishedMetadata {
             usage_complete: Some(true),

@@ -72,7 +72,7 @@ async fn command_completion_notices_deliver_busy_idle_and_leftover_results_witho
                     event: HookLifecycleEvent::AgentTurnStarted,
                     command: vec!["/bin/sh".into(), "-c".into(), "test ! -f fail-wake".into()],
                     cwd: None,
-                    timeout_ms: 1000,
+                    timeout_ms: Some(1000),
                     critical: true,
                     env: Default::default(),
                 });

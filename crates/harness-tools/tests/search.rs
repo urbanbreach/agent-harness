@@ -54,6 +54,22 @@ async fn workspace_search_preserves_modes_caps_and_path_permissions(
     );
     coordinator.start_run("search", &root).await?;
     let actor = || EventActor::new(ActorKind::User, None);
+    for (tool, args) in [
+        ("glob", json!({"pattern":"**/*.missing"})),
+        ("grep", json!({"pattern":"absent-pattern", "path":"a.rs"})),
+        (
+            "ast_grep_search",
+            json!({"pattern":"console.log($X)","language":"javascript","include":["**/*.missing"]}),
+        ),
+    ] {
+        let empty = coordinator
+            .execute_agent_tool_call(actor(), None, tool, args)
+            .await?;
+        assert!(
+            empty.useless,
+            "{tool} empty result must carry semantic metadata"
+        );
+    }
     let glob = coordinator
         .execute_agent_tool_call(
             actor(),
@@ -62,6 +78,7 @@ async fn workspace_search_preserves_modes_caps_and_path_permissions(
             json!({"pattern":"**/*.rs", "limit":1}),
         )
         .await?;
+    assert!(!glob.useless);
     let glob = glob.structured_json.ok_or("missing glob metadata")?;
     assert_eq!(glob["paths"].as_array().ok_or("missing paths")?.len(), 1);
     assert_eq!(glob["truncated"], true);

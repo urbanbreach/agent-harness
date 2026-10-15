@@ -18,21 +18,21 @@ struct GlobArgs {
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct GrepArgs {
-    pattern: String,
-    path: Option<PathBuf>,
+pub(crate) struct GrepArgs {
+    pub(crate) pattern: String,
+    pub(crate) path: Option<PathBuf>,
     include: Option<String>,
     #[serde(default)]
-    literal: bool,
-    limit: Option<usize>,
-    context: Option<usize>,
-    head_limit: Option<usize>,
+    pub(crate) literal: bool,
+    pub(crate) limit: Option<usize>,
+    pub(crate) context: Option<usize>,
+    pub(crate) head_limit: Option<usize>,
     #[serde(default)]
-    output_mode: Mode,
+    pub(crate) output_mode: Mode,
 }
 #[derive(Clone, Copy, Deserialize, JsonSchema, Default, PartialEq)]
 #[serde(rename_all = "snake_case")]
-enum Mode {
+pub(crate) enum Mode {
     #[default]
     Content,
     FilesWithMatches,
@@ -41,7 +41,7 @@ enum Mode {
 fn parse<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, ToolError> {
     serde_json::from_value(value).map_err(|e| ToolError::InvalidArguments(e.to_string()))
 }
-fn limit(value: Option<usize>) -> Result<usize, ToolError> {
+pub(crate) fn limit(value: Option<usize>) -> Result<usize, ToolError> {
     let value = value.unwrap_or(100);
     if !(1..=1000).contains(&value) {
         return Err(ToolError::InvalidArguments(
@@ -88,6 +88,14 @@ impl Tool for SearchTool {
             Self::Glob => parse::<GlobArgs>(value.clone())?.path,
             Self::Grep => parse::<GrepArgs>(value.clone())?.path,
         };
+        if matches!(self, Self::Grep)
+            && path
+                .as_deref()
+                .and_then(std::path::Path::to_str)
+                .is_some_and(|path| path.starts_with("history://"))
+        {
+            return Ok(Vec::new());
+        }
         Ok(vec![path.unwrap_or_else(|| ".".into())])
     }
     fn permission_requests(&self, args: &Value) -> Vec<(String, String)> {
@@ -175,16 +183,21 @@ fn find_files(ctx: &ToolContext, args: GlobArgs) -> Result<ToolResult, ToolError
                 .into_owned()
         })
         .collect();
-    Ok(ToolResult::structured(
+    let mut result = ToolResult::structured(
         paths.join("\n"),
         json!({"paths":paths, "total_count":total, "truncated":total > cap}),
-    ))
+    );
+    result.useless = total == 0;
+    Ok(result)
 }
 fn search_text(
     ctx: &ToolContext,
     executor: &tokio::runtime::Handle,
     args: GrepArgs,
 ) -> Result<ToolResult, ToolError> {
+    if let Some(route) = args.path.as_deref().and_then(crate::history_route::parse) {
+        return crate::history_route::grep(ctx, route, args);
+    }
     let root =
         ctx.resolve_workspace_path(args.path.as_deref().unwrap_or(std::path::Path::new(".")))?;
     let cap = limit(args.limit)?;
@@ -288,13 +301,19 @@ fn search_text(
     if skipped > 0 || truncated {
         display.push_str(&format!("[Search incomplete: {skipped} files skipped for policy, format, size, or read errors; output truncated: {truncated}.]\n"));
     }
-    Ok(ToolResult::structured(
+    let mut result = ToolResult::structured(
         display,
         json!({"files":found,"scanned_matches":total,"total_count":if skipped > 0 || truncated { None } else { Some(total) },"skipped_files":skipped,"truncated":truncated}),
-    ))
+    );
+    result.useless = total == 0;
+    Ok(result)
 }
 
-fn matching_lines(text: &str, pattern: &regex::Regex, cap: usize) -> (usize, Vec<usize>) {
+pub(crate) fn matching_lines(
+    text: &str,
+    pattern: &regex::Regex,
+    cap: usize,
+) -> (usize, Vec<usize>) {
     let mut count = 0;
     let mut hits = Vec::new();
     for (index, line) in text.lines().enumerate() {
@@ -308,7 +327,7 @@ fn matching_lines(text: &str, pattern: &regex::Regex, cap: usize) -> (usize, Vec
     }
     (count, hits)
 }
-fn render_matches(
+pub(crate) fn render_matches(
     display: &mut String,
     name: &str,
     text: &str,

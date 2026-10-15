@@ -178,12 +178,27 @@ impl Tool for LspTool {
         }
         #[cfg(unix)]
         {
+            let empty_query = matches!(
+                args.operation,
+                Operation::GoToDefinition
+                    | Operation::GoToImplementation
+                    | Operation::FindReferences
+                    | Operation::DocumentSymbol
+                    | Operation::WorkspaceSymbol
+            );
             let response = self.query(&context, args).await?;
-            Ok(ToolResult::structured(
+            let useless = empty_query
+                && (response.data["result"].is_null()
+                    || response.data["result"]
+                        .as_array()
+                        .is_some_and(Vec::is_empty));
+            let mut result = ToolResult::structured(
                 serde_json::to_string_pretty(&response.data["result"])
                     .map_err(|_| failure("invalid LSP result"))?,
                 response.data,
-            ))
+            );
+            result.useless = useless;
+            Ok(result)
         }
     }
     async fn close_run(&self, run_id: &str) -> Result<(), ToolError> {

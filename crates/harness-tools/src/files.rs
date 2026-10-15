@@ -105,6 +105,13 @@ impl Tool for FileTool {
             Self::Edit => parse::<edit::EditArgs>(args.clone())?.path,
             Self::List => parse::<ListArgs>(args.clone())?.path,
         };
+        if matches!(self, Self::Read)
+            && path.to_str().is_some_and(|path| {
+                path.starts_with("artifact://") || path.starts_with("history://")
+            })
+        {
+            return Ok(Vec::new());
+        }
         Ok(vec![path])
     }
     fn permission_requests(&self, args: &Value) -> Vec<(String, String)> {
@@ -125,7 +132,24 @@ impl Tool for FileTool {
                 return Err(ToolError::Cancelled);
             }
             match tool {
-                Self::Read => read(&context, parse(args)?),
+                Self::Read => {
+                    let args: ReadArgs = parse(args)?;
+                    if let Some(route) = crate::history_route::parse(&args.path) {
+                        return crate::history_route::read(
+                            &context,
+                            route,
+                            args.offset,
+                            args.limit,
+                        );
+                    }
+                    let recovery = args
+                        .path
+                        .to_str()
+                        .is_some_and(|path| path.starts_with("artifact://"));
+                    let mut result = read(&context, args)?;
+                    result.source_artifact = recovery;
+                    Ok(result)
+                }
                 Self::Write => edit::write(&context, parse(args)?),
                 Self::Edit => edit::edit(&context, parse(args)?),
                 Self::List => list(&context, parse(args)?),
@@ -165,7 +189,15 @@ fn read(ctx: &ToolContext, args: ReadArgs) -> Result<ToolResult, ToolError> {
             "offset and limit must be positive".into(),
         ));
     }
-    let path = ctx.resolve_workspace_path(&args.path)?;
+    let artifact = args
+        .path
+        .to_str()
+        .and_then(|path| path.strip_prefix("artifact://"));
+    let path = if let Some(relative) = artifact {
+        resolve_artifact(&ctx.artifacts_dir, relative)?
+    } else {
+        ctx.resolve_workspace_path(&args.path)?
+    };
     let bytes = bytes(&path)?;
     if let Some(mime) = crate::media::mime(&bytes) {
         if mime == "application/pdf" {
@@ -182,7 +214,9 @@ fn read(ctx: &ToolContext, args: ReadArgs) -> Result<ToolResult, ToolError> {
     let text = String::from_utf8(bytes).map_err(|_| {
         ToolError::InvalidArguments("file is not UTF-8 text, PDF, or a supported image".into())
     })?;
-    ctx.tool_state.record_read(&path, digest(&text))?;
+    if artifact.is_none() {
+        ctx.tool_state.record_read(&path, digest(&text))?;
+    }
     let mut output = String::new();
     let mut displayed = 0;
     let mut anchors = Vec::new();
@@ -220,8 +254,28 @@ fn read(ctx: &ToolContext, args: ReadArgs) -> Result<ToolResult, ToolError> {
     }
     Ok(ToolResult::structured(
         output,
-        json!({"path": args.path, "offset": args.offset, "lines": displayed, "anchors":anchors, "truncated": truncated}),
+        json!({"path": args.path, "offset": args.offset, "lines": displayed, "totalLines":text.lines().count(), "anchors":anchors, "truncated": truncated, "meta":{"source":{"type":if artifact.is_some() {"internal"} else {"file"},"value":args.path}}}),
     ))
+}
+fn resolve_artifact(root: &Path, relative: &str) -> Result<PathBuf, ToolError> {
+    let path = Path::new(relative);
+    if relative.is_empty()
+        || path
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err(ToolError::InvalidArguments(
+            "artifact path must be a nonempty relative path without traversal".into(),
+        ));
+    }
+    let root = root.canonicalize()?;
+    let path = root.join(path).canonicalize()?;
+    if !path.starts_with(&root) {
+        return Err(ToolError::InvalidArguments(
+            "artifact path escapes the run artifact directory".into(),
+        ));
+    }
+    Ok(path)
 }
 fn digest(text: &str) -> String {
     blake3::hash(text.as_bytes()).to_hex().to_string()

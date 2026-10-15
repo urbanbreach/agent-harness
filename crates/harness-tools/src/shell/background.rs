@@ -135,7 +135,7 @@ pub(super) async fn run(
         result.task_id
     );
     let hint = "Use get_command_or_subagent_output with task_ids to retrieve output and status.";
-    Ok(ToolResult::structured(
+    let mut output = ToolResult::structured(
         format!("{summary}\n{hint}"),
         json!({
             "type":"Background",
@@ -147,5 +147,7 @@ pub(super) async fn run(
             "summary":summary,
             "retrieval_hint":hint,
         }),
-    ))
+    );
+    output.useless = result.status == "running";
+    Ok(output)
 }

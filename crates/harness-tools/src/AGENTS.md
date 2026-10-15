@@ -12,6 +12,7 @@ large results spill through the coordinator's private artifact path.
 | Formatting and language servers | `formatters.rs`, `formatters/`, `lsp.rs`, `lsp/` |
 | Delegation and code execution | `subagents.rs`, `eval.rs`, `eval/` |
 | Skills and sessions | `skills.rs`, `skills/`, `sessions.rs`, `sessions/` |
+| Notes-backed context windows | `context_notes.rs` (notebook and new-window tools), `history_route.rs` (`history://current/full` for read and grep) |
 | Network tools | `web.rs`, `mcp.rs`, `mcp/remote_search.rs`, `github.rs` |
 
 The coordinator checks permissions and owns cancellation, edits, and durable

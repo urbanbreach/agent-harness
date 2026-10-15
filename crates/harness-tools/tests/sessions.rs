@@ -127,16 +127,16 @@ async fn session_tools_project_bounded_redacted_history_without_changing_it(
         "PRIVATE_REASONING",
         "RAW_ARGUMENTS",
     ] {
-        let result = handle
+        let output = handle
             .execute_agent_tool_call(
                 actor.clone(),
                 None,
                 "session_search",
                 json!({"session":"source","query":query,"limit":1,"context_limit":5}),
             )
-            .await?
-            .structured_json
-            .ok_or("missing search")?;
+            .await?;
+        let result = output.structured_json.ok_or("missing search")?;
+        assert_eq!(output.useless, result["total_count"] == 0, "{query}");
         if query == "café" {
             assert_eq!(result["returned_count"], 1);
             assert!(result["truncated"].as_bool().unwrap_or_default());

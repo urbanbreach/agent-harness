@@ -15,147 +15,10 @@ use tokio_stream::StreamExt;
 
 #[path = "files/edit_modes.rs"]
 mod edit_modes;
+#[path = "files/external_directory.rs"]
+mod external_directory;
 #[path = "files/finalized_state.rs"]
 mod finalized_state;
-
-#[tokio::test]
-async fn remembered_external_directory_allows_file_lifecycle_across_tools(
-) -> Result<(), Box<dyn std::error::Error>> {
-    let temp = tempfile::tempdir()?;
-    let root = temp.path().join("workspace");
-    let outside = temp.path().join("outside");
-    fs::create_dir(&root)?;
-    fs::create_dir(&outside)?;
-    let file = outside.join("sample.txt");
-    let denied = outside.join("denied.txt");
-    let sibling = temp.path().join("unapproved.txt");
-    let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
-    config.yolo_on_start = true;
-    config.tool_registry = Arc::new(harness_tools::coordinator_registry(
-        ShellAllowlist::default(),
-    ));
-    config.permission_policy = PermissionPolicy::from_rules(vec![
-        PermissionRule {
-            permission: "*".into(),
-            pattern: "*".into(),
-            action: PermissionAction::Ask,
-        },
-        PermissionRule {
-            permission: "edit".into(),
-            pattern: denied.to_string_lossy().into_owned().into(),
-            action: PermissionAction::Deny,
-        },
-    ])?;
-    let coordinator = spawn_coordinator(
-        config,
-        Arc::new(FakeClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    coordinator
-        .start_run("external file lifecycle", &root)
-        .await?;
-    let mut events = coordinator.subscribe_new_events().await?;
-    let patch = format!(
-        "*** Begin Patch\n*** Delete File: {}\n*** End Patch",
-        file.display()
-    );
-    for (tool, args, approval, succeeds) in [
-        (
-            "list",
-            json!({"path":outside}),
-            Some(PermissionDecision::Allow),
-            true,
-        ),
-        (
-            "write",
-            json!({"filePath":file,"content":"created\n"}),
-            None,
-            true,
-        ),
-        ("read", json!({"filePath":file}), None, true),
-        (
-            "edit",
-            json!({"filePath":file,"oldString":"created","newString":"edited"}),
-            None,
-            true,
-        ),
-        ("read", json!({"filePath":file}), None, true),
-        ("apply_patch", json!({"patchText":patch}), None, true),
-        (
-            "write",
-            json!({"filePath":denied,"content":"blocked"}),
-            None,
-            false,
-        ),
-        (
-            "write",
-            json!({"filePath":sibling,"content":"blocked"}),
-            Some(PermissionDecision::Deny),
-            false,
-        ),
-    ] {
-        let task = coordinator
-            .request_tool_call(EventActor::new(ActorKind::User, None), None, tool, args)
-            .await?;
-        let mut requested = false;
-        loop {
-            let event = tokio::time::timeout(std::time::Duration::from_secs(5), events.next())
-                .await?
-                .ok_or("missing tool completion")??;
-            match event.payload {
-                EventV1::PermissionRequested(permission)
-                    if permission
-                        .tool_call_id
-                        .as_ref()
-                        .is_some_and(|id| id.as_str() == task) =>
-                {
-                    assert_eq!(permission.kind, "external_directory");
-                    assert!(!requested, "duplicate approval for {tool}");
-                    requested = true;
-                    let decision =
-                        approval.ok_or("unexpected approval inside the remembered directory")?;
-                    coordinator
-                        .resolve_permission_with_grant_scope(
-                            permission.permission_id,
-                            decision,
-                            None,
-                            (decision == PermissionDecision::Allow)
-                                .then_some(PermissionGrantScope::Session),
-                        )
-                        .await?;
-                }
-                EventV1::ToolCallFinished(result) if result.tool_call_id.as_str() == task => {
-                    assert_eq!(
-                        result.status,
-                        if succeeds {
-                            ToolCallStatus::Succeeded
-                        } else {
-                            ToolCallStatus::Failed
-                        },
-                        "{tool}: {:?}",
-                        result.output_summary
-                    );
-                    assert_eq!(
-                        requested,
-                        approval.is_some(),
-                        "{tool}: directory scope changed"
-                    );
-                    break;
-                }
-                _ => {}
-            }
-        }
-        match tool {
-            "write" if succeeds => assert_eq!(fs::read_to_string(&file)?, "created\n"),
-            "edit" => assert_eq!(fs::read_to_string(&file)?, "edited\n"),
-            "apply_patch" => assert!(!file.exists()),
-            _ => {}
-        }
-    }
-    assert!(!denied.exists() && !sibling.exists());
-    coordinator.stop_run().await?;
-    Ok(())
-}
 
 #[tokio::test]
 async fn file_edits_require_current_reads_and_obey_external_path_policy(
@@ -461,5 +324,70 @@ async fn file_edits_require_current_reads_and_obey_external_path_policy(
             .join(edit.diff_rel_path.as_ref().ok_or("missing edit diff")?),
     )?;
     assert!(diff.contains("-alpha") && diff.contains("+gamma"));
+    Ok(())
+}
+#[tokio::test]
+async fn artifact_reads_are_paged_complete_and_confined() -> Result<(), Box<dyn std::error::Error>>
+{
+    let temp = tempfile::tempdir()?;
+    let root = temp.path().join("workspace");
+    fs::create_dir(&root)?;
+    let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
+    config.yolo_on_start = true;
+    config.tool_registry = Arc::new(harness_tools::coordinator_registry(
+        ShellAllowlist::default(),
+    ));
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = coordinator.start_run("artifact recovery", &root).await?;
+    fs::create_dir_all(&run.artifacts_dir)?;
+    fs::write(run.artifacts_dir.join("shake.txt"), "first\nsecond\n")?;
+    fs::write(temp.path().join("private.txt"), "private")?;
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(
+        temp.path().join("private.txt"),
+        run.artifacts_dir.join("escape.txt"),
+    )?;
+    for (args, truncated, fragment) in [
+        (json!({"path":"artifact://shake.txt"}), false, "first"),
+        (
+            json!({"path":"artifact://shake.txt","offset":2}),
+            false,
+            "second",
+        ),
+        (
+            json!({"path":"artifact://shake.txt","limit":1}),
+            true,
+            "first",
+        ),
+    ] {
+        let result = coordinator
+            .execute_agent_tool_call(EventActor::new(ActorKind::User, None), None, "read", args)
+            .await?;
+        assert!(result.display_text.contains(fragment));
+        assert!(result.source_artifact, "artifact reads are recovery reads");
+        let metadata = result.structured_json.ok_or("missing read metadata")?;
+        assert_eq!(metadata["truncated"], truncated);
+        assert_eq!(metadata["totalLines"], 2);
+    }
+    for path in [
+        "artifact://../private.txt",
+        "artifact:///etc/passwd",
+        "artifact://escape.txt",
+    ] {
+        assert!(coordinator
+            .execute_agent_tool_call(
+                EventActor::new(ActorKind::User, None),
+                None,
+                "read",
+                json!({"path":path})
+            )
+            .await
+            .is_err());
+    }
+    coordinator.stop_run().await?;
     Ok(())
 }

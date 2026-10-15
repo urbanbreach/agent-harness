@@ -214,6 +214,17 @@ fn check_count(count: usize) -> Result<(), ToolError> {
 }
 
 fn output_result(value: GetCommandOrSubagentOutputValue) -> Result<ToolResult, ToolError> {
+    let useless = match &value {
+        GetCommandOrSubagentOutputValue::Result(result) => result.status == "running",
+        GetCommandOrSubagentOutputValue::MultiResult(multi) => {
+            !multi.results.is_empty()
+                && multi
+                    .results
+                    .iter()
+                    .all(|result| result.status == "running")
+        }
+        GetCommandOrSubagentOutputValue::TaskNotFound(_) => false,
+    };
     let text = match &value {
         GetCommandOrSubagentOutputValue::Result(result) => result.to_prompt_text(),
         GetCommandOrSubagentOutputValue::TaskNotFound(message) => message.clone(),
@@ -238,6 +249,7 @@ fn output_result(value: GetCommandOrSubagentOutputValue) -> Result<ToolResult, T
     let missing = matches!(value, GetCommandOrSubagentOutputValue::TaskNotFound(_));
     let mut result = structured(text, value)?;
     mark_not_found(&mut result, missing);
+    result.useless = useless && !result.is_error();
     Ok(result)
 }
 
@@ -270,5 +282,45 @@ fn message_text(output: &SendSubagentMessageOutput) -> String {
         ),
         Output::ChannelClosed => "Message was not accepted because the subagent channel closed.".into(),
         _ => format!("{output:?}"),
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use harness_core::subagent::{
+        GetCommandOrSubagentOutputResult, GetCommandOrSubagentOutputResults,
+    };
+    #[test]
+    fn only_nonempty_all_running_snapshots_are_useless() -> Result<(), ToolError> {
+        for (statuses, expected) in [
+            (vec![], false),
+            (vec!["running"], true),
+            (vec!["running", "running"], true),
+            (vec!["running", "completed"], false),
+            (vec!["cancelled"], false),
+        ] {
+            let results = statuses
+                .into_iter()
+                .map(|status| GetCommandOrSubagentOutputResult {
+                    status: status.into(),
+                    ..Default::default()
+                })
+                .collect();
+            let output = output_result(GetCommandOrSubagentOutputValue::MultiResult(
+                GetCommandOrSubagentOutputResults {
+                    mode: "all".into(),
+                    results,
+                    summary: String::new(),
+                },
+            ))?;
+            assert_eq!(output.useless, expected);
+        }
+        assert!(
+            !output_result(GetCommandOrSubagentOutputValue::TaskNotFound(
+                "missing".into()
+            ))?
+            .useless
+        );
+        Ok(())
     }
 }

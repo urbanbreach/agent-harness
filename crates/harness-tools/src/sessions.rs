@@ -96,11 +96,27 @@ impl Tool for SessionTool {
             result["source"] = "event_replay".into();
             result["redacted"] = true.into();
             harness_core::redact::redact_in_place(ctx.redactor.as_ref(), &mut result);
-            Ok(ToolResult::structured(result.to_string(), result))
+            let mut output = ToolResult::structured(result.to_string(), result.clone());
+            output.useless = tool_search_is_empty(tool, &result);
+            Ok(output)
         })
         .await
         .map_err(invalid)?
     }
+}
+/// A search with no hits carries no information, unless every session it tried failed to
+/// load: that is a failure the model should see, not an empty answer.
+fn tool_search_is_empty(tool: SessionTool, result: &Value) -> bool {
+    if !matches!(tool, SessionTool::Search) {
+        return false;
+    }
+    let count = |key: &str| result.get(key).and_then(Value::as_u64).unwrap_or(0);
+    let errors = result
+        .get("errors")
+        .and_then(Value::as_array)
+        .map_or(0, |errors| errors.len() as u64);
+    count("total_count") == 0
+        && (count("searched_session_count") == 0 || errors < count("searched_session_count"))
 }
 fn parse<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, ToolError> {
     serde_json::from_value(value).map_err(invalid)

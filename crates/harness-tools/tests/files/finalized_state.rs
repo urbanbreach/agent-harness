@@ -113,6 +113,7 @@ async fn finalized_actor_reads_copy_privately_but_native_edits_share_serializati
             prompt_tokens: 10,
             completion_tokens: 2,
             total_tokens: 12,
+            ..Default::default()
         }),
         metadata: Some(ProviderStreamFinishedMetadata {
             settled_reasoning: Some(Vec::new()),

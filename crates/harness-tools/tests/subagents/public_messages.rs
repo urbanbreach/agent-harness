@@ -21,6 +21,7 @@ async fn public_messages_enforce_limits_and_ownership_wake_the_same_child_and_re
             prompt_tokens: 12,
             completion_tokens: 3,
             total_tokens: 15,
+            ..Default::default()
         }),
         metadata: Some(ProviderStreamFinishedMetadata {
             settled_reasoning: Some(Vec::new()),

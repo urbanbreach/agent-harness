@@ -26,6 +26,7 @@ fn done(reasoning: Vec<String>) -> Stream {
             prompt_tokens: 12,
             completion_tokens: 3,
             total_tokens: 15,
+            ..Default::default()
         }),
         metadata: Some(ProviderStreamFinishedMetadata {
             settled_reasoning: Some(reasoning),

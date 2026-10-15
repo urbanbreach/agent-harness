@@ -377,7 +377,7 @@ fn execute(ctx: &ToolContext, args: Args) -> Result<ToolResult, ToolError> {
     result["completed_files"] = json!(completed);
     result["is_error"] = warning.is_some().into();
     result["error"] = json!(warning);
-    Ok(ToolResult::structured_with_artifacts(
+    let mut output = ToolResult::structured_with_artifacts(
         format!(
             "{} structural matches; {} files changed.\n{}{}",
             hits.len(),
@@ -387,5 +387,7 @@ fn execute(ctx: &ToolContext, args: Args) -> Result<ToolResult, ToolError> {
         ),
         result,
         artifacts,
-    ))
+    );
+    output.useless = count == 0 && !output.is_error();
+    Ok(output)
 }
