@@ -2,6 +2,8 @@
 members = [
     "crates/harness",
     "crates/harness-core",
+    "crates/harness-compaction",
+    "crates/harness-tokenizer",
     "crates/harness-providers",
     "crates/harness-tools",
     "crates/harness-eval",
@@ -329,6 +331,13 @@ single_match_else = "allow"
 
 [profile.dev]
 debug = "line-tables-only"
+
+# Token counting runs pure loops over large texts; unoptimized it dominates test time.
+[profile.dev.package.harness-tokenizer]
+opt-level = 3
+
+[profile.dev.package.tokenizers]
+opt-level = 3
 
 [profile.release]
 opt-level = 3

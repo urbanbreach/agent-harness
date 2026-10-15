@@ -1,0 +1,24 @@
+[package]
+name = "harness-tokenizer"
+description = "Token counting, model identity classification and image size probing for context accounting"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+base64 = "0.23"
+ruzstd = "0.8"
+rustc-hash = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokenizers = { version = "0.22", default-features = false, features = ["unstable_wasm"] }
+unicode-general-category = "1"
+unicode-normalization = "0.1"
+unicode-script = "0.5"
+
+[lints]
+workspace = true

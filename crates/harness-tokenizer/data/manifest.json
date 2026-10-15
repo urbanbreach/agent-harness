@@ -1,0 +1,102 @@
+{
+  "ctok_revision": "df3b59b5e645289a5eadc8e24036b99d39c333c4",
+  "assets": [
+    {
+      "file": "o200k_base.bin.zst",
+      "encodings": "O200k",
+      "source_url": "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken",
+      "upstream_name": "o200k_base.tiktoken",
+      "upstream_bytes": 3613922,
+      "upstream_sha256": "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d",
+      "license": "MIT",
+      "payload_bytes": 1597672,
+      "payload_sha256": "d175208eb9d8f4dbe9de559d0c4347a697743429abd8c5bda65566196deb93bf",
+      "packed_bytes": 876237,
+      "packed_sha256": "794a39fa7fb5fd6c293f8c6adfe27dc931709dcf068aae5a8bfe56831bf9f3d5"
+    },
+    {
+      "file": "kimi_k2.bin.zst",
+      "encodings": "KimiK2",
+      "source_url": "https://huggingface.co/moonshotai/Kimi-K3/resolve/main/tiktoken.model",
+      "upstream_name": "tiktoken.model",
+      "upstream_bytes": 2795286,
+      "upstream_sha256": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103",
+      "license": "Kimi K3 License",
+      "payload_bytes": 1269574,
+      "payload_sha256": "a0b62d394be1d1d19e67ecbb155b7cec6fa5806c59508e9b6af79acc12d89ef8",
+      "packed_bytes": 727156,
+      "packed_sha256": "e7acfa9f80bdfe087680eccaac7857bb2a72543630163de673b90e6e19b23e62"
+    },
+    {
+      "file": "qwen3.bin.zst",
+      "encodings": "Qwen3",
+      "source_url": "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/main/tokenizer.json",
+      "upstream_name": "tokenizer.json",
+      "upstream_bytes": 12809320,
+      "upstream_sha256": "0997f410c57a1f4e53b09e4be8f4a172d90edd9564368fb0847030937229b9f3",
+      "license": "Apache-2.0",
+      "payload_bytes": 1740251,
+      "payload_sha256": "5c5987d91bd677957217d2608b11ea891ec31a146699bf41037f4742e62c5339",
+      "packed_bytes": 902511,
+      "packed_sha256": "9b8940cc178b47d95aea1af1971a65df49d58270d979e1342f9004fdb0fa8f92",
+      "canonical_json_bytes": 9089356,
+      "canonical_json_sha256": "ae50d65939a34a089eaf1e541c15c8a7d866079a5fe9a1d35454e0aa88577753"
+    },
+    {
+      "file": "deepseek3.bin.zst",
+      "encodings": "DeepSeekV3",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash/resolve/main/tokenizer.json",
+      "upstream_name": "tokenizer.json",
+      "upstream_bytes": 6367146,
+      "upstream_sha256": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf",
+      "license": "MIT",
+      "payload_bytes": 895873,
+      "payload_sha256": "df522cc2b589277006fbd0d1ba0eed60fc14787429c6a0e963e20e644530beeb",
+      "packed_bytes": 440704,
+      "packed_sha256": "fa592923f802c3a9396f414168e1794a1728808e8a2415937dab595c0d0f15e9",
+      "canonical_json_bytes": 4363807,
+      "canonical_json_sha256": "3ad46a8c78edf140516eb696f948ae6e7c3522ec64993b219833145e2e9951d0"
+    },
+    {
+      "file": "glm5.bin.zst",
+      "encodings": "Glm5",
+      "source_url": "https://huggingface.co/zai-org/GLM-5/resolve/main/tokenizer.json",
+      "upstream_name": "tokenizer.json",
+      "upstream_bytes": 20217442,
+      "upstream_sha256": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d",
+      "license": "MIT (model card declaration)",
+      "payload_bytes": 2252911,
+      "payload_sha256": "3d141e3a9ae0d902c3b2862a73dd8a9f1d2b7a5b5929935d42c241037f22ccb6",
+      "packed_bytes": 1156424,
+      "packed_sha256": "9ce313068878322defcbd4f0e084ffe6ad93c0dda4c38912278c6affb5020443",
+      "canonical_json_bytes": 8683422,
+      "canonical_json_sha256": "f73933d2e4b633ce5a75f049a68b339790c52b966025e895aae0a0eda67d5cda"
+    },
+    {
+      "file": "ctok_v3.json.zst",
+      "encodings": "ClaudeV3",
+      "source_url": "https://raw.githubusercontent.com/sanderland/ctok/df3b59b5e645289a5eadc8e24036b99d39c333c4/ctok/data/pieces_v3.json",
+      "upstream_name": "ctok/data/pieces_v3.json",
+      "upstream_bytes": 3627645,
+      "upstream_sha256": "45cfe22c2dc3bd6277e074bc6848d6578adab99cda76db52f7d788c79821437a",
+      "license": "MIT",
+      "payload_bytes": 583145,
+      "payload_sha256": "ec0bf0011b2003fef897d6ee15a4c156de7656eaa76bc719850d032000633309",
+      "packed_bytes": 104935,
+      "packed_sha256": "60edac546a1bb6b29674a726d31f6b95805c974da2fb38530636b80de0a05dcf"
+    },
+    {
+      "file": "ctok_v4_7.json.zst",
+      "encodings": "ClaudeV47, ClaudeV5, ClaudeV5Sonnet",
+      "source_url": "https://raw.githubusercontent.com/sanderland/ctok/df3b59b5e645289a5eadc8e24036b99d39c333c4/ctok/data/pieces_v4_7.json",
+      "upstream_name": "ctok/data/pieces_v4_7.json",
+      "upstream_bytes": 1083151,
+      "upstream_sha256": "4c3baace1160eb2b2bf59e5b1f9f33730e77b250f074a2ee96a2d2d1c683e739",
+      "license": "MIT",
+      "payload_bytes": 143067,
+      "payload_sha256": "0521805d693baf3a86d62ea3898217001f3595ac81ca5e65f2985091dfde819c",
+      "packed_bytes": 31580,
+      "packed_sha256": "402d247aaa35214701c69468f68a37b5c232d98acf01e5887ae623ee99274010"
+    }
+  ]
+}

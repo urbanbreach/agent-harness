@@ -1,0 +1,1 @@
+Resume the latest user intent. Inspect the retained messages for the newest request and give it priority over plans in the earlier summary. Continue unfinished work from the preserved state; if nothing remains, acknowledge completion briefly without inventing new work.

@@ -1,0 +1,26 @@
+[package]
+name = "harness-compaction"
+description = "Pure context-compaction algorithms: cut points, budgets, summaries, reducers and image archives"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+harness-providers = { path = "../harness-providers" }
+harness-tokenizer = { path = "../harness-tokenizer" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+thiserror.workspace = true
+image = { version = "0.25", default-features = false, features = ["png"] }
+png = "0.18"
+regex = "1"
+unicode-normalization = "0.1"
+fontdue = "0.9"
+
+[lints]
+workspace = true
