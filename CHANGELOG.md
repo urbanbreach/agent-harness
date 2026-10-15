@@ -19,7 +19,8 @@ The first public release.
 - Keep finalized provider requests, reasoning and raw tool results in memory;
   persist semantic state for continuation after restart.
 - Anthropic reasoning variants enable thinking, and Anthropic and Gemini keep
-  signed continuation state across tool calls without writing it to disk.
+  signed continuation state across tool calls in memory, outside the journal.
+  Provider-native compaction payloads are stored separately (see Added).
 - Release archives and installed binaries include third-party license notices.
 - Closing a login dialog cancels OAuth and releases its callback listener.
   Late results from a previous login cannot change a newly opened dialog.
@@ -76,6 +77,120 @@ The first public release.
 
 ### Added
 
+- Context maintenance rebuilt as an ordered chain of methods: provider-native
+  remote compaction, an image archive of older history for vision models, a
+  handoff document written by the live model, shake (heavy output moved to a
+  recoverable artifact) and a summary. `runtime.compaction.method_order` picks
+  the order. Compaction now also runs after a final answer, between tool
+  batches, after provider overflow (up to three passes), after output-limit
+  stops and, when `idle_enabled` is set, after idle time. Automatic failures
+  are warnings instead of failed turns, and a pass that frees too little pauses
+  instead of looping.
+- Background summaries start shortly before the threshold and commit instantly
+  when it is crossed. Superseded reads and uneventful tool results are pruned
+  before measuring.
+- `/compact [remote|archive|soft] [focus]`, `/handoff [focus]` and
+  `/shake [elide|images|thinking]`. A manual pass interrupts a running turn and
+  resumes it afterwards.
+- An animated compaction card shows what is being compacted, streams the
+  summary as it is written, prints archive frames as a film strip and collapses
+  the context bar when the pass commits. Archived turns recede behind a divider
+  labelled with the method and the token savings. Reduced-motion settings keep a
+  static card.
+- The breadcrumb's context segment reads `◫ 42.0%/200K`, colours by pressure
+  (yellow, purple, red), shows `⟲` while automatic compaction is on and draws a
+  gauge with the compaction threshold and the background-summary start. It
+  sheds the gauge, then `⟲`, as the row narrows.
+- Optional branch summaries when rewinding a conversation
+  (`runtime.compaction.branch_summary.enabled`).
+- The settings overlay names the compaction rows (Auto-Compact, Compaction
+  Threshold, Idle Compaction Delay and so on) and offers choice menus for the
+  method order, percentage and token thresholds, idle limits, archive system
+  prompt and archive shape. Every menu starts with a Default entry that removes
+  the key, and a value outside the list stays selectable as `Custom: <value>`.
+  Appearance gains Collapse Compacted History.
+- Ctrl+T in the model switcher edits the compaction threshold of the selected
+  model: `80%`, `f150000` (fixed tokens), `200K` (base window) or an empty line
+  to reset. The editor saves to `runtime.compaction.model_thresholds`, refuses a
+  fixed trigger above the model window, flags a base window at or above it and
+  previews where compaction would start.
+- The default compaction threshold is the window minus the larger of 15% and
+  `reserve_tokens`, capped by the input budget. The old 45% to 80% tiers are gone.
+  `split_oversized_turns`, `structured_summary_contract` and
+  `suppress_auto_compaction` are no longer accepted.
+- A response cut off by the output limit is kept with a warning when it
+  delivered text or tool calls; `harness prompt` and `harness run` print turn
+  warnings on stderr after the answer.
+- Token counts come from each model's own vocabulary where Harness bundles one
+  (OpenAI o200k, four Claude generations, Qwen3, DeepSeek, Kimi and GLM), counted
+  offline by the new `harness-tokenizer` crate. Other models count at four bytes
+  per token, or with o200k when `HARNESS_TOKENIZER_ACCURATE=1`. The vocabularies
+  ship with their license notices.
+- Summaries serialize the transcript in the tool-call dialect of the summarizing
+  model's family (XML, Anthropic, Harmony, Gemini, Gemma, GLM, DeepSeek, Kimi,
+  Qwen3 or MiniMax). Unknown models get XML.
+- The archive method falls back to the bundled Silver font for text its bitmap
+  fonts cannot draw, so CJK history is archived instead of refused. With
+  `archive.shape` on `auto`, the shape follows the model and switches to
+  `silver16-bw` for text that needs Silver.
+- `archive.system_prompt` (`none`, `agents_md` or `all`) and
+  `archive.tool_results` send the system prompt, the repository rules or large
+  tool results to vision models as images in the outgoing request only; the
+  stored context does not change. Tokens saved by tool-result swaps are
+  appended to `inline-savings.jsonl` in the Harness home.
+- A model that does not read archived reasoning gets a reasoning-free view of
+  the archive, saved once as a `compaction_patched` journal record. The original
+  archive stays readable when you switch back.
+- Provider-native compaction payloads are saved as private (0600) artifacts named
+  `native-<blake3>.bin` and referenced from the journal by digest. They never
+  enter `events.jsonl`, support exports or trace archives. After a restart a
+  payload is reused only for the same provider, model and API; otherwise resume
+  falls back to the previous readable compaction.
+- Automatic summaries retry under `runtime.compaction.retry` (`enabled`,
+  `max_retries`, `base_delay_ms`) and move to the next model when the wait would
+  pass 30 seconds. `summary_models` picks a summarizer per live model; after it
+  the walk tries the live model, `@smol`, `@slow` and the largest-window model
+  in the catalog.
+- `context_promotion` switches to the larger model only when that model's
+  provider has a usable credential. Otherwise compaction runs.
+- A manual pass resumes the turn it interrupted only after it commits or finds
+  nothing to compact. A second `/compact` or `/handoff` while one is running is
+  rejected with `Compaction already in progress`.
+- `handoff_save_to_disk` writes the redacted handoff of an automatic pass to
+  `handoff-<UTC time>.md` in the session's artifacts directory.
+- Compaction hooks can print one JSON object on stdout. `compaction_requested`
+  can cancel the pass or supply the whole compaction, `compaction_summarizing`
+  adds context lines, a replacement prompt and data to preserve, and
+  `compaction_applied` reports the saved entry. A handler that fails or times out
+  contributes nothing, and only a `critical` hook stops the pass.
+- `remote_endpoint` summaries authenticate with the summarizing model's provider
+  key when the endpoint path ends in `/chat/completions`; other endpoints get no
+  credentials. `remote_enabled` turns provider-native compaction off as a whole,
+  and `remote_models` overrides its lane, API, endpoint and model per selector.
+- With `notes_windows` on, a full window rolls over instead of being summarized.
+  The agent keeps up to 16 KiB of notes with the `context_notes` tool, starts a
+  fresh window with `new_context` and can read the whole branch at
+  `history://current/full` through `read` and `grep`.
+- Pruning leaves skill output alone and shake leaves artifact recovery reads
+  alone. `session_search` flags a search with no hits as useless so compaction
+  can drop it. A provider rejection for request size or image count is told
+  apart from token overflow.
+- Compacted history collapses behind the latest summary.
+  `collapse_compacted_history` in `tui.jsonc` turns that off. Ctrl+Alt+K
+  (`toggle_collapsed_history`) toggles it and Ctrl+Alt+O
+  (`toggle_compaction_details`) expands the focused summary. `interrupt_turn` can
+  bind a key that interrupts a turn or compaction; Ctrl+C stays the built-in
+  interrupt key.
+- The transcript shows compaction start and end, skipped and failed passes, and
+  runtime notices as rows. Slash commands that find nothing to do print a
+  warning row instead of a status banner.
+- The footer's auto-compaction icon, threshold marker and speculation marker
+  follow the coordinator's per-agent status, including per-model thresholds and
+  a running or armed background summary. Before the first status arrives the
+  footer shows neither.
+- A bare number in `model_thresholds` is a base window and in `agent_thresholds`
+  a token count. Write percentages as `"80%"`; settings writes convert old
+  values from 1 to 100.
 - The breadcrumb above the transcript shows the main agent's latest prompt cache
   hit rate, such as `CH96.4%`, once it reaches 10%.
 - `monitor` watches command output or a file in the background and wakes the
@@ -90,7 +205,8 @@ The first public release.
   background, `wait_commands_or_subagents` and `get_command_or_subagent_output`
   return with the work still running, and `bash` with `block_until_ms` leaves
   its command running in the background.
-- Steering you sent shows a `STEERING` badge until the turn takes it.
+- Steering and queued follow-ups wait in a pending band above the status row,
+  grouped as `Steering` then `After yield`, until the turn takes them.
 - `Alt+Up` returns pending steering and queued follow-ups to the editor without
   stopping the turn.
 - A terminal UI and a headless `harness run` for coding agents, with parallel
