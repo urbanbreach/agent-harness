@@ -96,6 +96,63 @@ Permission checks use the current policy and registered agent identity. Stored
 credentials and newly refreshed credentials are redacted from historical output
 before it is exported or returned to a model.
 
+## Compaction records
+
+A committed pass appends one `SessionCompaction` event. It carries the summary,
+the method, the first kept event sequence (`first_kept_event_seq`, the event's own
+sequence when nothing was kept), token counts, file lists, an optional `warning`,
+hook `details` and `preserve_data`, `from_hook`, `operation_id` and, for a native
+pass, a `native` block with the lane, provider, model, wire API and payload
+reference. Archive frames are metadata only (path, digest, size, grid); the
+images live in private attachment artifacts. Nothing in the event is edited later.
+
+`CompactionPatched` records amend an earlier compaction by `compaction_seq`.
+A `warning` patch attaches a warning found after the commit, such as a dead-end
+recovery or an oversized kept tail; the newest one wins. A `reader_view` patch
+holds the reasoning-free summary and archive for one reader key. Resume hands the
+newest view per key to the request caches, and a model that does not read
+archived reasoning uses it, while the original summary and archive stay intact for
+readers that do.
+
+A rescue that has to write a second boundary sets `supersedes_seq` on the new
+compaction. The superseded compaction no longer shows as its own card, and
+supersession is per agent, so a child's compaction never replaces the root's.
+
+`ContextNotes` records are revisions of an agent's notebook: `agent_id`, a
+`version` (only `1` exists) and the redacted `text`, at most 16,384 UTF-8 bytes.
+An empty text clears the notebook. The newest valid revision on the active fold
+is the notebook; an oversized or unknown-version record never shadows an earlier
+valid one, and a rewind past a revision restores the one before it. A save is
+refused if the branch changed (rewind, agent stop or disabling the setting)
+between starting and appending it.
+
+Provider-native compaction payloads are the one provider-originated state that
+reaches disk. Commit writes the payload as `artifacts/native-<blake3>.bin`, a
+private (0600) file, then appends an `ArtifactWritten` event with metadata
+`kind: native_compaction` and the `SessionCompaction` event that references it
+by path, digest and size. The file is limited to 32 MiB. A load succeeds only when
+the path is the canonical name for the digest, the file opens as private storage
+(symlinks are refused) with the recorded size and BLAKE3 digest, the content parses, the
+recorded wire API matches, and the payload belongs to the live provider and
+model. Anything else counts as unreadable.
+
+Rebuilding a context after resume or fork picks the newest readable boundary. A
+compaction that replaced history through an OpenAI native lane is readable only
+when its payload loads for the live provider, model and API; if it does not, the
+previous readable compaction applies and the originals that boundary kept return
+to the context. Every other compaction is readable from its summary text alone.
+`provider_replay_through_seq` records the last journal event a native snapshot
+covers. When a payload is attached, only entries after that sequence replay; the
+rest of the history is the payload. Entries are kept by sequence number against the
+boundary, so a turn that continues past a compaction that kept nothing survives,
+and a missing kept boundary never fails replay. Resume of a child restores the
+same boundary through the same loader.
+
+Support exports and trace archives drop `native_compaction` artifact records and
+the `native.payload` reference. The session catalog does not count the payload
+files as artifacts. Choosing a boundary reads local files only; replay never
+contacts a provider.
+
 ## Forks and children
 
 Fork and clone create a new session from a validated stable prefix. They copy
@@ -144,8 +201,9 @@ do not dispatch providers or rerun tools.
 
 ## Exports
 
-Support export validates the journal, redacts values, omits provider reasoning
-and raw tool result JSON, and scans keys and string values before publication.
+Support export validates the journal, redacts values, omits provider reasoning,
+raw tool result JSON and native compaction payloads, and scans keys and string values
+before publication.
 It does not copy or validate attachment blobs as a backup would. A secret finding
 prevents output. Archives use bounded input and atomic replacement.
 These exports are support evidence; they are not a raw backup of credential or

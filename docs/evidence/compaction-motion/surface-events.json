@@ -1,0 +1,2943 @@
+[
+  {
+    "at_ms": 100,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-1",
+        "run_id": "surface-capture",
+        "mono_ms": 100,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_status",
+          "data": {
+            "agent_id": "fixture",
+            "auto": true,
+            "threshold_tokens": 160000,
+            "speculation_tokens": 140000,
+            "speculation": "idle"
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 100,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-1",
+        "run_id": "surface-capture",
+        "mono_ms": 100,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-1",
+        "payload": {
+          "event_type": "user_message_submitted",
+          "data": {
+            "request_id": "turn-1",
+            "text": "Sketch the retry policy for the sync worker."
+          }
+        },
+        "schema_version": 1,
+        "seq": 1
+      }
+    }
+  },
+  {
+    "at_ms": 100,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-2",
+        "run_id": "surface-capture",
+        "mono_ms": 100,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-1",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-1",
+            "state": "queued",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 2
+      }
+    }
+  },
+  {
+    "at_ms": 100,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-3",
+        "run_id": "surface-capture",
+        "mono_ms": 100,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-1",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-1",
+            "state": "started",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 3
+      }
+    }
+  },
+  {
+    "at_ms": 160,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-4",
+        "run_id": "surface-capture",
+        "mono_ms": 160,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-1",
+        "payload": {
+          "event_type": "provider_request_started",
+          "data": {
+            "request_id": "provider-1",
+            "provider_id": "mock",
+            "model_id": "default",
+            "prompt_summary": "Sketch the retry policy for the sync worker.",
+            "request_digest": "digest-1",
+            "metadata": {
+              "context_budget": {
+                "status": "estimated",
+                "requested_output_tokens": null,
+                "reserved_output_tokens": null,
+                "maximum_input_tokens": 200000,
+                "safety_margin_tokens": 0,
+                "compaction_threshold_tokens": 160000,
+                "components": {
+                  "system_tokens": 4000,
+                  "tools_tokens": 6000,
+                  "history_tokens": 50000,
+                  "attachments_tokens": 0,
+                  "framing_tokens": 0,
+                  "pending_prompt_tokens": 0
+                },
+                "occupied_input_tokens": 60000,
+                "remaining_input_tokens": 100000,
+                "requires_compaction": false,
+                "output_cap_disposition": "unspecified_unknown_limit"
+              }
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 4
+      }
+    }
+  },
+  {
+    "at_ms": 220,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-5",
+        "run_id": "surface-capture",
+        "mono_ms": 220,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-1",
+        "payload": {
+          "event_type": "provider_request_finished",
+          "data": {
+            "request_id": "provider-1",
+            "finish_reason": "stop"
+          }
+        },
+        "schema_version": 1,
+        "seq": 5
+      }
+    }
+  },
+  {
+    "at_ms": 220,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-6",
+        "run_id": "surface-capture",
+        "mono_ms": 220,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-1",
+        "payload": {
+          "event_type": "assistant_message_finished",
+          "data": {
+            "request_id": "provider-1",
+            "parts": [
+              {
+                "kind": "text",
+                "text": "First sketch: exponential backoff from 200 ms, doubling to a thirty second cap, three attempts per batch."
+              }
+            ],
+            "tool_call_count": 0
+          }
+        },
+        "schema_version": 1,
+        "seq": 6
+      }
+    }
+  },
+  {
+    "at_ms": 220,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-7",
+        "run_id": "surface-capture",
+        "mono_ms": 220,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-1",
+        "payload": {
+          "event_type": "task_completed",
+          "data": {
+            "task_id": "turn-1",
+            "result_summary": "First sketch: exponential backoff from 200 ms, doubling to a thirty second cap, three attempts per batch.",
+            "result_digest": "result-1",
+            "metadata": {
+              "lineage": null,
+              "task_scope": "agent_turn",
+              "timing": null,
+              "hook_executions": []
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 7
+      }
+    }
+  },
+  {
+    "at_ms": 340,
+    "frame_id": 0
+  },
+  {
+    "at_ms": 340,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-8",
+        "run_id": "surface-capture",
+        "mono_ms": 340,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-2",
+        "payload": {
+          "event_type": "user_message_submitted",
+          "data": {
+            "request_id": "turn-2",
+            "text": "Add jitter and a cap to the backoff."
+          }
+        },
+        "schema_version": 1,
+        "seq": 8
+      }
+    }
+  },
+  {
+    "at_ms": 340,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-9",
+        "run_id": "surface-capture",
+        "mono_ms": 340,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-2",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-2",
+            "state": "queued",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 9
+      }
+    }
+  },
+  {
+    "at_ms": 340,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-10",
+        "run_id": "surface-capture",
+        "mono_ms": 340,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-2",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-2",
+            "state": "started",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 10
+      }
+    }
+  },
+  {
+    "at_ms": 400,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-11",
+        "run_id": "surface-capture",
+        "mono_ms": 400,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-2",
+        "payload": {
+          "event_type": "provider_request_started",
+          "data": {
+            "request_id": "provider-2",
+            "provider_id": "mock",
+            "model_id": "default",
+            "prompt_summary": "Add jitter and a cap to the backoff.",
+            "request_digest": "digest-2",
+            "metadata": {
+              "context_budget": {
+                "status": "estimated",
+                "requested_output_tokens": null,
+                "reserved_output_tokens": null,
+                "maximum_input_tokens": 200000,
+                "safety_margin_tokens": 0,
+                "compaction_threshold_tokens": 160000,
+                "components": {
+                  "system_tokens": 4000,
+                  "tools_tokens": 6000,
+                  "history_tokens": 100000,
+                  "attachments_tokens": 0,
+                  "framing_tokens": 0,
+                  "pending_prompt_tokens": 0
+                },
+                "occupied_input_tokens": 110000,
+                "remaining_input_tokens": 50000,
+                "requires_compaction": false,
+                "output_cap_disposition": "unspecified_unknown_limit"
+              }
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 11
+      }
+    }
+  },
+  {
+    "at_ms": 460,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-12",
+        "run_id": "surface-capture",
+        "mono_ms": 460,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-2",
+        "payload": {
+          "event_type": "provider_request_finished",
+          "data": {
+            "request_id": "provider-2",
+            "finish_reason": "stop"
+          }
+        },
+        "schema_version": 1,
+        "seq": 12
+      }
+    }
+  },
+  {
+    "at_ms": 460,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-13",
+        "run_id": "surface-capture",
+        "mono_ms": 460,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-2",
+        "payload": {
+          "event_type": "assistant_message_finished",
+          "data": {
+            "request_id": "provider-2",
+            "parts": [
+              {
+                "kind": "text",
+                "text": "Added full jitter and a thirty second ceiling: sleep is min(cap, random(0, base * 2^n))."
+              }
+            ],
+            "tool_call_count": 0
+          }
+        },
+        "schema_version": 1,
+        "seq": 13
+      }
+    }
+  },
+  {
+    "at_ms": 460,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-14",
+        "run_id": "surface-capture",
+        "mono_ms": 460,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-2",
+        "payload": {
+          "event_type": "task_completed",
+          "data": {
+            "task_id": "turn-2",
+            "result_summary": "Added full jitter and a thirty second ceiling: sleep is min(cap, random(0, base * 2^n)).",
+            "result_digest": "result-2",
+            "metadata": {
+              "lineage": null,
+              "task_scope": "agent_turn",
+              "timing": null,
+              "hook_executions": []
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 14
+      }
+    }
+  },
+  {
+    "at_ms": 580,
+    "frame_id": 1
+  },
+  {
+    "at_ms": 580,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-15",
+        "run_id": "surface-capture",
+        "mono_ms": 580,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-3",
+        "payload": {
+          "event_type": "user_message_submitted",
+          "data": {
+            "request_id": "turn-3",
+            "text": "Which tests cover the cap?"
+          }
+        },
+        "schema_version": 1,
+        "seq": 15
+      }
+    }
+  },
+  {
+    "at_ms": 580,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-16",
+        "run_id": "surface-capture",
+        "mono_ms": 580,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-3",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-3",
+            "state": "queued",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 16
+      }
+    }
+  },
+  {
+    "at_ms": 580,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-17",
+        "run_id": "surface-capture",
+        "mono_ms": 580,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-3",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-3",
+            "state": "started",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 17
+      }
+    }
+  },
+  {
+    "at_ms": 640,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-18",
+        "run_id": "surface-capture",
+        "mono_ms": 640,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-3",
+        "payload": {
+          "event_type": "provider_request_started",
+          "data": {
+            "request_id": "provider-3",
+            "provider_id": "mock",
+            "model_id": "default",
+            "prompt_summary": "Which tests cover the cap?",
+            "request_digest": "digest-3",
+            "metadata": {
+              "context_budget": {
+                "status": "estimated",
+                "requested_output_tokens": null,
+                "reserved_output_tokens": null,
+                "maximum_input_tokens": 200000,
+                "safety_margin_tokens": 0,
+                "compaction_threshold_tokens": 160000,
+                "components": {
+                  "system_tokens": 4000,
+                  "tools_tokens": 6000,
+                  "history_tokens": 140000,
+                  "attachments_tokens": 0,
+                  "framing_tokens": 0,
+                  "pending_prompt_tokens": 0
+                },
+                "occupied_input_tokens": 150000,
+                "remaining_input_tokens": 10000,
+                "requires_compaction": false,
+                "output_cap_disposition": "unspecified_unknown_limit"
+              }
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 18
+      }
+    }
+  },
+  {
+    "at_ms": 700,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-19",
+        "run_id": "surface-capture",
+        "mono_ms": 700,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-3",
+        "payload": {
+          "event_type": "provider_request_finished",
+          "data": {
+            "request_id": "provider-3",
+            "finish_reason": "stop"
+          }
+        },
+        "schema_version": 1,
+        "seq": 19
+      }
+    }
+  },
+  {
+    "at_ms": 700,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-20",
+        "run_id": "surface-capture",
+        "mono_ms": 700,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-3",
+        "payload": {
+          "event_type": "assistant_message_finished",
+          "data": {
+            "request_id": "provider-3",
+            "parts": [
+              {
+                "kind": "text",
+                "text": "Two tests cover it: backoff_respects_cap and jitter_stays_inside_window."
+              }
+            ],
+            "tool_call_count": 0
+          }
+        },
+        "schema_version": 1,
+        "seq": 20
+      }
+    }
+  },
+  {
+    "at_ms": 700,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-21",
+        "run_id": "surface-capture",
+        "mono_ms": 700,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-3",
+        "payload": {
+          "event_type": "task_completed",
+          "data": {
+            "task_id": "turn-3",
+            "result_summary": "Two tests cover it: backoff_respects_cap and jitter_stays_inside_window.",
+            "result_digest": "result-3",
+            "metadata": {
+              "lineage": null,
+              "task_scope": "agent_turn",
+              "timing": null,
+              "hook_executions": []
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 21
+      }
+    }
+  },
+  {
+    "at_ms": 820,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-2",
+        "run_id": "surface-capture",
+        "mono_ms": 820,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_status",
+          "data": {
+            "agent_id": "fixture",
+            "auto": true,
+            "threshold_tokens": 160000,
+            "speculation_tokens": 140000,
+            "speculation": "armed"
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 920,
+    "frame_id": 2
+  },
+  {
+    "at_ms": 920,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-3",
+        "run_id": "surface-capture",
+        "mono_ms": 920,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_status",
+          "data": {
+            "agent_id": "fixture",
+            "auto": true,
+            "threshold_tokens": 160000,
+            "speculation_tokens": 140000,
+            "speculation": "running"
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 1020,
+    "frame_id": 3
+  },
+  {
+    "at_ms": 1520,
+    "frame_id": 4
+  },
+  {
+    "at_ms": 1520,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-4",
+        "run_id": "surface-capture",
+        "mono_ms": 1520,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_status",
+          "data": {
+            "agent_id": "fixture",
+            "auto": true,
+            "threshold_tokens": 160000,
+            "speculation_tokens": 140000,
+            "speculation": "idle"
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 1520,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-22",
+        "run_id": "surface-capture",
+        "mono_ms": 1520,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-4",
+        "payload": {
+          "event_type": "user_message_submitted",
+          "data": {
+            "request_id": "turn-4",
+            "text": "Summarize what is left before we ship."
+          }
+        },
+        "schema_version": 1,
+        "seq": 22
+      }
+    }
+  },
+  {
+    "at_ms": 1520,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-23",
+        "run_id": "surface-capture",
+        "mono_ms": 1520,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-4",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-4",
+            "state": "queued",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 23
+      }
+    }
+  },
+  {
+    "at_ms": 1520,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-24",
+        "run_id": "surface-capture",
+        "mono_ms": 1520,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-4",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-4",
+            "state": "started",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 24
+      }
+    }
+  },
+  {
+    "at_ms": 1580,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-25",
+        "run_id": "surface-capture",
+        "mono_ms": 1580,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-4",
+        "payload": {
+          "event_type": "provider_request_started",
+          "data": {
+            "request_id": "provider-4",
+            "provider_id": "mock",
+            "model_id": "default",
+            "prompt_summary": "Summarize what is left before we ship.",
+            "request_digest": "digest-4",
+            "metadata": {
+              "context_budget": {
+                "status": "estimated",
+                "requested_output_tokens": null,
+                "reserved_output_tokens": null,
+                "maximum_input_tokens": 200000,
+                "safety_margin_tokens": 0,
+                "compaction_threshold_tokens": 160000,
+                "components": {
+                  "system_tokens": 4000,
+                  "tools_tokens": 6000,
+                  "history_tokens": 174000,
+                  "attachments_tokens": 0,
+                  "framing_tokens": 0,
+                  "pending_prompt_tokens": 0
+                },
+                "occupied_input_tokens": 184000,
+                "remaining_input_tokens": 0,
+                "requires_compaction": true,
+                "output_cap_disposition": "unspecified_unknown_limit"
+              }
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 25
+      }
+    }
+  },
+  {
+    "at_ms": 1640,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-26",
+        "run_id": "surface-capture",
+        "mono_ms": 1640,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-4",
+        "payload": {
+          "event_type": "provider_request_finished",
+          "data": {
+            "request_id": "provider-4",
+            "finish_reason": "stop"
+          }
+        },
+        "schema_version": 1,
+        "seq": 26
+      }
+    }
+  },
+  {
+    "at_ms": 1640,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-27",
+        "run_id": "surface-capture",
+        "mono_ms": 1640,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-4",
+        "payload": {
+          "event_type": "assistant_message_finished",
+          "data": {
+            "request_id": "provider-4",
+            "parts": [
+              {
+                "kind": "text",
+                "text": "Remaining work: wire the metrics counter, document the cap, run the soak test."
+              }
+            ],
+            "tool_call_count": 0
+          }
+        },
+        "schema_version": 1,
+        "seq": 27
+      }
+    }
+  },
+  {
+    "at_ms": 1640,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-28",
+        "run_id": "surface-capture",
+        "mono_ms": 1640,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-4",
+        "payload": {
+          "event_type": "task_completed",
+          "data": {
+            "task_id": "turn-4",
+            "result_summary": "Remaining work: wire the metrics counter, document the cap, run the soak test.",
+            "result_digest": "result-4",
+            "metadata": {
+              "lineage": null,
+              "task_scope": "agent_turn",
+              "timing": null,
+              "hook_executions": []
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 28
+      }
+    }
+  },
+  {
+    "at_ms": 1760,
+    "frame_id": 5
+  },
+  {
+    "at_ms": 2060,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-5",
+        "run_id": "surface-capture",
+        "mono_ms": 2060,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_lifecycle",
+          "data": {
+            "agent_id": "fixture",
+            "operation_id": "op-auto",
+            "phase": "start",
+            "reason": "threshold",
+            "action": "context-full",
+            "will_retry": false,
+            "aborted": false,
+            "skipped": false,
+            "error": null,
+            "result": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 2060,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-6",
+        "run_id": "surface-capture",
+        "mono_ms": 2060,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 1,
+            "trigger_reason": "threshold",
+            "preview": "Preparing the older turns.",
+            "stage": {
+              "reason": "threshold",
+              "method": "soft",
+              "phase": "preparing",
+              "tokens_before": 184000,
+              "tokens_after": null,
+              "summarized_tokens": 153000,
+              "kept_tokens": 20000,
+              "fixed_tokens": 10000,
+              "threshold_tokens": 160000,
+              "window_tokens": 200000,
+              "first_kept_seq": 100,
+              "windows_done": 0,
+              "windows_total": 2,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 2460,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-7",
+        "run_id": "surface-capture",
+        "mono_ms": 2460,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 1,
+            "trigger_reason": "threshold",
+            "preview": "Keep the backoff decisions and the open tasks.",
+            "stage": {
+              "reason": "threshold",
+              "method": "soft",
+              "phase": "summarizing",
+              "tokens_before": 184000,
+              "tokens_after": null,
+              "summarized_tokens": 153000,
+              "kept_tokens": 20000,
+              "fixed_tokens": 10000,
+              "threshold_tokens": 160000,
+              "window_tokens": 200000,
+              "first_kept_seq": 100,
+              "windows_done": 1,
+              "windows_total": 2,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 3060,
+    "frame_id": 6
+  },
+  {
+    "at_ms": 3060,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-8",
+        "run_id": "surface-capture",
+        "mono_ms": 3060,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 1,
+            "trigger_reason": "threshold",
+            "preview": null,
+            "stage": {
+              "reason": "threshold",
+              "method": "soft",
+              "phase": "committing",
+              "tokens_before": 184000,
+              "tokens_after": null,
+              "summarized_tokens": 153000,
+              "kept_tokens": 20000,
+              "fixed_tokens": 10000,
+              "threshold_tokens": 160000,
+              "window_tokens": 200000,
+              "first_kept_seq": 100,
+              "windows_done": 1,
+              "windows_total": 2,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 3560,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-9",
+        "run_id": "surface-capture",
+        "mono_ms": 3560,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "runtime_notice",
+          "data": {
+            "source": "compaction",
+            "severity": "info",
+            "message": "Summarizing 153,000 tokens of older history."
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 3560,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-10",
+        "run_id": "surface-capture",
+        "mono_ms": 3560,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "runtime_notice",
+          "data": {
+            "source": "compaction",
+            "severity": "info",
+            "message": "Kept the latest turn verbatim; summary is ready."
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 3560,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-29",
+        "run_id": "surface-capture",
+        "mono_ms": 3560,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "session_compaction",
+          "data": {
+            "agent_id": "fixture",
+            "summary": "## Goal\nShip the sync worker retry policy.\n## Done\n- [x] Backoff with full jitter and a thirty second cap.\n- [x] Tests for the cap and the jitter window.\n## Next steps\n1. Wire the counter, document the cap, run the soak test.",
+            "first_kept_event_seq": 22,
+            "first_kept_request_id": null,
+            "first_kept_entry_id": null,
+            "tokens_before": 184000,
+            "tokens_after": 31000,
+            "summary_usage": null,
+            "summary_provider_id": null,
+            "summary_model_id": null,
+            "read_files": [
+              "src/sync/backoff.rs"
+            ],
+            "modified_files": [
+              "src/sync/worker.rs"
+            ],
+            "task_intent": null,
+            "current_intent": null,
+            "trigger_reason": "threshold",
+            "from_hook": false,
+            "short_summary": "Retry policy shipped except metrics and soak test",
+            "method": "soft",
+            "warning": null,
+            "provider_replay_through_seq": null,
+            "native": null,
+            "archive": null,
+            "operation_id": "op-auto"
+          }
+        },
+        "schema_version": 1,
+        "seq": 29
+      }
+    }
+  },
+  {
+    "at_ms": 3560,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-11",
+        "run_id": "surface-capture",
+        "mono_ms": 3560,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 1,
+            "trigger_reason": "threshold",
+            "preview": null,
+            "stage": {
+              "reason": "threshold",
+              "method": "soft",
+              "phase": "done",
+              "tokens_before": 184000,
+              "tokens_after": 31000,
+              "summarized_tokens": 153000,
+              "kept_tokens": 20000,
+              "fixed_tokens": 10000,
+              "threshold_tokens": 160000,
+              "window_tokens": 200000,
+              "first_kept_seq": 100,
+              "windows_done": 1,
+              "windows_total": 2,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 3560,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-12",
+        "run_id": "surface-capture",
+        "mono_ms": 3560,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 1,
+            "trigger_reason": "threshold",
+            "preview": null,
+            "stage": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 3560,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-13",
+        "run_id": "surface-capture",
+        "mono_ms": 3560,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_lifecycle",
+          "data": {
+            "agent_id": "fixture",
+            "operation_id": "op-auto",
+            "phase": "end",
+            "reason": "threshold",
+            "action": "context-full",
+            "will_retry": false,
+            "aborted": false,
+            "skipped": false,
+            "error": null,
+            "result": {
+              "method": "soft",
+              "tokens_before": 184000,
+              "tokens_after": 31000,
+              "short_summary": "Retry policy shipped except metrics and soak test",
+              "warning": null,
+              "first_kept_seq": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 5160,
+    "frame_id": 7
+  },
+  {
+    "at_ms": 5160,
+    "frame_id": 8
+  },
+  {
+    "at_ms": 5160,
+    "key": "ctrl+alt+k"
+  },
+  {
+    "at_ms": 5360,
+    "frame_id": 9
+  },
+  {
+    "at_ms": 5360,
+    "key": "pageup"
+  },
+  {
+    "at_ms": 5560,
+    "frame_id": 10
+  },
+  {
+    "at_ms": 5560,
+    "key": "ctrl+alt+k"
+  },
+  {
+    "at_ms": 5760,
+    "frame_id": 11
+  },
+  {
+    "at_ms": 5760,
+    "key": "ctrl+alt+o"
+  },
+  {
+    "at_ms": 5960,
+    "frame_id": 12
+  },
+  {
+    "at_ms": 5960,
+    "key": "ctrl+alt+o"
+  },
+  {
+    "at_ms": 6260,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-14",
+        "run_id": "surface-capture",
+        "mono_ms": 6260,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_lifecycle",
+          "data": {
+            "agent_id": "fixture",
+            "operation_id": "op-fail",
+            "phase": "start",
+            "reason": "threshold",
+            "action": "context-full",
+            "will_retry": false,
+            "aborted": false,
+            "skipped": false,
+            "error": null,
+            "result": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 6560,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-15",
+        "run_id": "surface-capture",
+        "mono_ms": 6560,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "runtime_notice",
+          "data": {
+            "source": "compaction",
+            "severity": "warning",
+            "message": "Summary model returned a partial answer; keeping the previous summary."
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 6560,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-16",
+        "run_id": "surface-capture",
+        "mono_ms": 6560,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_lifecycle",
+          "data": {
+            "agent_id": "fixture",
+            "operation_id": "op-fail",
+            "phase": "end",
+            "reason": "threshold",
+            "action": "context-full",
+            "will_retry": false,
+            "aborted": false,
+            "skipped": false,
+            "error": "Auto-compaction failed: summary rate limited",
+            "result": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 6860,
+    "frame_id": 13
+  },
+  {
+    "at_ms": 7160,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-30",
+        "run_id": "surface-capture",
+        "mono_ms": 7160,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-5",
+        "payload": {
+          "event_type": "user_message_submitted",
+          "data": {
+            "request_id": "turn-5",
+            "text": "Add the metrics counter next."
+          }
+        },
+        "schema_version": 1,
+        "seq": 30
+      }
+    }
+  },
+  {
+    "at_ms": 7160,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-31",
+        "run_id": "surface-capture",
+        "mono_ms": 7160,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-5",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-5",
+            "state": "queued",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 31
+      }
+    }
+  },
+  {
+    "at_ms": 7160,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-32",
+        "run_id": "surface-capture",
+        "mono_ms": 7160,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-5",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-5",
+            "state": "started",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 32
+      }
+    }
+  },
+  {
+    "at_ms": 7220,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-33",
+        "run_id": "surface-capture",
+        "mono_ms": 7220,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-5",
+        "payload": {
+          "event_type": "provider_request_started",
+          "data": {
+            "request_id": "provider-5",
+            "provider_id": "mock",
+            "model_id": "default",
+            "prompt_summary": "Add the metrics counter next.",
+            "request_digest": "digest-5",
+            "metadata": {
+              "context_budget": {
+                "status": "estimated",
+                "requested_output_tokens": null,
+                "reserved_output_tokens": null,
+                "maximum_input_tokens": 200000,
+                "safety_margin_tokens": 0,
+                "compaction_threshold_tokens": 160000,
+                "components": {
+                  "system_tokens": 4000,
+                  "tools_tokens": 6000,
+                  "history_tokens": 110000,
+                  "attachments_tokens": 0,
+                  "framing_tokens": 0,
+                  "pending_prompt_tokens": 0
+                },
+                "occupied_input_tokens": 120000,
+                "remaining_input_tokens": 40000,
+                "requires_compaction": false,
+                "output_cap_disposition": "unspecified_unknown_limit"
+              }
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 33
+      }
+    }
+  },
+  {
+    "at_ms": 7280,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-34",
+        "run_id": "surface-capture",
+        "mono_ms": 7280,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-5",
+        "payload": {
+          "event_type": "provider_request_finished",
+          "data": {
+            "request_id": "provider-5",
+            "finish_reason": "stop"
+          }
+        },
+        "schema_version": 1,
+        "seq": 34
+      }
+    }
+  },
+  {
+    "at_ms": 7280,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-35",
+        "run_id": "surface-capture",
+        "mono_ms": 7280,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-5",
+        "payload": {
+          "event_type": "assistant_message_finished",
+          "data": {
+            "request_id": "provider-5",
+            "parts": [
+              {
+                "kind": "text",
+                "text": "Added sync_retry_total with a reason label; the counter increments before each sleep."
+              }
+            ],
+            "tool_call_count": 0
+          }
+        },
+        "schema_version": 1,
+        "seq": 35
+      }
+    }
+  },
+  {
+    "at_ms": 7280,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-36",
+        "run_id": "surface-capture",
+        "mono_ms": 7280,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-5",
+        "payload": {
+          "event_type": "task_completed",
+          "data": {
+            "task_id": "turn-5",
+            "result_summary": "Added sync_retry_total with a reason label; the counter increments before each sleep.",
+            "result_digest": "result-5",
+            "metadata": {
+              "lineage": null,
+              "task_scope": "agent_turn",
+              "timing": null,
+              "hook_executions": []
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 36
+      }
+    }
+  },
+  {
+    "at_ms": 7400,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-17",
+        "run_id": "surface-capture",
+        "mono_ms": 7400,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_lifecycle",
+          "data": {
+            "agent_id": "fixture",
+            "operation_id": "op-manual",
+            "phase": "start",
+            "reason": "manual",
+            "action": "context-full",
+            "will_retry": false,
+            "aborted": false,
+            "skipped": false,
+            "error": null,
+            "result": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 7400,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-18",
+        "run_id": "surface-capture",
+        "mono_ms": 7400,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 2,
+            "trigger_reason": "manual",
+            "preview": "Keep the counter work and the open tasks.",
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "summarizing",
+              "tokens_before": 120000,
+              "tokens_after": null,
+              "summarized_tokens": 89000,
+              "kept_tokens": 20000,
+              "fixed_tokens": 10000,
+              "threshold_tokens": 160000,
+              "window_tokens": 200000,
+              "first_kept_seq": 100,
+              "windows_done": 1,
+              "windows_total": 2,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 7900,
+    "frame_id": 14
+  },
+  {
+    "at_ms": 7900,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-37",
+        "run_id": "surface-capture",
+        "mono_ms": 7900,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "session_compaction",
+          "data": {
+            "agent_id": "fixture",
+            "summary": "## Goal\nShip the sync worker retry policy.\n## Done\n- [x] Backoff with full jitter and a thirty second cap.\n- [x] Tests for the cap and the jitter window.\n## Next steps\n1. Wire the counter, document the cap, run the soak test.",
+            "first_kept_event_seq": 30,
+            "first_kept_request_id": null,
+            "first_kept_entry_id": null,
+            "tokens_before": 120000,
+            "tokens_after": 24000,
+            "summary_usage": null,
+            "summary_provider_id": null,
+            "summary_model_id": null,
+            "read_files": [
+              "src/sync/backoff.rs"
+            ],
+            "modified_files": [
+              "src/sync/worker.rs"
+            ],
+            "task_intent": null,
+            "current_intent": null,
+            "trigger_reason": "manual",
+            "from_hook": false,
+            "short_summary": "Counter added; docs and soak test remain",
+            "method": "soft",
+            "warning": null,
+            "provider_replay_through_seq": null,
+            "native": null,
+            "archive": null,
+            "operation_id": "op-manual"
+          }
+        },
+        "schema_version": 1,
+        "seq": 37
+      }
+    }
+  },
+  {
+    "at_ms": 7900,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-19",
+        "run_id": "surface-capture",
+        "mono_ms": 7900,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 2,
+            "trigger_reason": "manual",
+            "preview": null,
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "done",
+              "tokens_before": 120000,
+              "tokens_after": 24000,
+              "summarized_tokens": 89000,
+              "kept_tokens": 20000,
+              "fixed_tokens": 10000,
+              "threshold_tokens": 160000,
+              "window_tokens": 200000,
+              "first_kept_seq": 100,
+              "windows_done": 1,
+              "windows_total": 2,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 7900,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-20",
+        "run_id": "surface-capture",
+        "mono_ms": 7900,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 2,
+            "trigger_reason": "manual",
+            "preview": null,
+            "stage": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 7900,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-21",
+        "run_id": "surface-capture",
+        "mono_ms": 7900,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_lifecycle",
+          "data": {
+            "agent_id": "fixture",
+            "operation_id": "op-manual",
+            "phase": "end",
+            "reason": "manual",
+            "action": "context-full",
+            "will_retry": false,
+            "aborted": false,
+            "skipped": false,
+            "error": null,
+            "result": {
+              "method": "soft",
+              "tokens_before": 120000,
+              "tokens_after": 24000,
+              "short_summary": "Counter added; docs and soak test remain",
+              "warning": null,
+              "first_kept_seq": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 7900,
+    "outcome": {
+      "kind": "compact",
+      "result": "done",
+      "message": "manual compaction applied",
+      "tokens_after": 24000
+    }
+  },
+  {
+    "at_ms": 9500,
+    "frame_id": 15
+  },
+  {
+    "at_ms": 9500,
+    "key": "ctrl+alt+k"
+  },
+  {
+    "at_ms": 9700,
+    "key": "pageup"
+  },
+  {
+    "at_ms": 9700,
+    "key": "pageup"
+  },
+  {
+    "at_ms": 9900,
+    "key": "ctrl+alt+o"
+  },
+  {
+    "at_ms": 9900,
+    "key": "pagedown"
+  },
+  {
+    "at_ms": 10100,
+    "frame_id": 16
+  },
+  {
+    "at_ms": 10100,
+    "key": "ctrl+alt+o"
+  },
+  {
+    "at_ms": 10100,
+    "key": "ctrl+alt+k"
+  },
+  {
+    "at_ms": 10300,
+    "outcome": {
+      "kind": "compact",
+      "result": "warning",
+      "message": "Nothing to compact (session too small or already rolled over)"
+    }
+  },
+  {
+    "at_ms": 10300,
+    "frame_id": 17
+  },
+  {
+    "at_ms": 10300,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-22",
+        "run_id": "surface-capture",
+        "mono_ms": 10300,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_lifecycle",
+          "data": {
+            "agent_id": "fixture",
+            "operation_id": "op-cancel",
+            "phase": "start",
+            "reason": "manual",
+            "action": "context-full",
+            "will_retry": false,
+            "aborted": false,
+            "skipped": false,
+            "error": null,
+            "result": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 10300,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-23",
+        "run_id": "surface-capture",
+        "mono_ms": 10300,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 3,
+            "trigger_reason": "manual",
+            "preview": "Keep the counter work and the open tasks.",
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "summarizing",
+              "tokens_before": 120000,
+              "tokens_after": null,
+              "summarized_tokens": 89000,
+              "kept_tokens": 20000,
+              "fixed_tokens": 10000,
+              "threshold_tokens": 160000,
+              "window_tokens": 200000,
+              "first_kept_seq": 100,
+              "windows_done": 1,
+              "windows_total": 2,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 10600,
+    "frame_id": 18
+  },
+  {
+    "at_ms": 10600,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-24",
+        "run_id": "surface-capture",
+        "mono_ms": 10600,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 3,
+            "trigger_reason": "manual",
+            "preview": null,
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "cancelled",
+              "tokens_before": 120000,
+              "tokens_after": null,
+              "summarized_tokens": 89000,
+              "kept_tokens": 20000,
+              "fixed_tokens": 10000,
+              "threshold_tokens": 160000,
+              "window_tokens": 200000,
+              "first_kept_seq": 100,
+              "windows_done": 1,
+              "windows_total": 2,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 10700,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-25",
+        "run_id": "surface-capture",
+        "mono_ms": 10700,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 3,
+            "trigger_reason": "manual",
+            "preview": null,
+            "stage": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 10700,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-26",
+        "run_id": "surface-capture",
+        "mono_ms": 10700,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_lifecycle",
+          "data": {
+            "agent_id": "fixture",
+            "operation_id": "op-cancel",
+            "phase": "end",
+            "reason": "manual",
+            "action": "context-full",
+            "will_retry": false,
+            "aborted": true,
+            "skipped": false,
+            "error": null,
+            "result": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 10700,
+    "outcome": {
+      "kind": "compact",
+      "result": "cancelled"
+    }
+  },
+  {
+    "at_ms": 11000,
+    "frame_id": 19
+  },
+  {
+    "at_ms": 11300,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-38",
+        "run_id": "surface-capture",
+        "mono_ms": 11300,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-6",
+        "payload": {
+          "event_type": "user_message_submitted",
+          "data": {
+            "request_id": "turn-6",
+            "text": "Document the cap in the runbook."
+          }
+        },
+        "schema_version": 1,
+        "seq": 38
+      }
+    }
+  },
+  {
+    "at_ms": 11300,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-39",
+        "run_id": "surface-capture",
+        "mono_ms": 11300,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-6",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-6",
+            "state": "queued",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 39
+      }
+    }
+  },
+  {
+    "at_ms": 11300,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-40",
+        "run_id": "surface-capture",
+        "mono_ms": 11300,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-6",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-6",
+            "state": "started",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 40
+      }
+    }
+  },
+  {
+    "at_ms": 11360,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-41",
+        "run_id": "surface-capture",
+        "mono_ms": 11360,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-6",
+        "payload": {
+          "event_type": "provider_request_started",
+          "data": {
+            "request_id": "provider-6",
+            "provider_id": "mock",
+            "model_id": "default",
+            "prompt_summary": "Document the cap in the runbook.",
+            "request_digest": "digest-6",
+            "metadata": {
+              "context_budget": {
+                "status": "estimated",
+                "requested_output_tokens": null,
+                "reserved_output_tokens": null,
+                "maximum_input_tokens": 200000,
+                "safety_margin_tokens": 0,
+                "compaction_threshold_tokens": 160000,
+                "components": {
+                  "system_tokens": 4000,
+                  "tools_tokens": 6000,
+                  "history_tokens": 140000,
+                  "attachments_tokens": 0,
+                  "framing_tokens": 0,
+                  "pending_prompt_tokens": 0
+                },
+                "occupied_input_tokens": 150000,
+                "remaining_input_tokens": 10000,
+                "requires_compaction": false,
+                "output_cap_disposition": "unspecified_unknown_limit"
+              }
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 41
+      }
+    }
+  },
+  {
+    "at_ms": 11420,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-42",
+        "run_id": "surface-capture",
+        "mono_ms": 11420,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-6",
+        "payload": {
+          "event_type": "provider_request_finished",
+          "data": {
+            "request_id": "provider-6",
+            "finish_reason": "stop"
+          }
+        },
+        "schema_version": 1,
+        "seq": 42
+      }
+    }
+  },
+  {
+    "at_ms": 11420,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-43",
+        "run_id": "surface-capture",
+        "mono_ms": 11420,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-6",
+        "payload": {
+          "event_type": "assistant_message_finished",
+          "data": {
+            "request_id": "provider-6",
+            "parts": [
+              {
+                "kind": "text",
+                "text": "Documented: the cap is thirty seconds and the jitter is full, so no two workers align."
+              }
+            ],
+            "tool_call_count": 0
+          }
+        },
+        "schema_version": 1,
+        "seq": 43
+      }
+    }
+  },
+  {
+    "at_ms": 11420,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-44",
+        "run_id": "surface-capture",
+        "mono_ms": 11420,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-6",
+        "payload": {
+          "event_type": "task_completed",
+          "data": {
+            "task_id": "turn-6",
+            "result_summary": "Documented: the cap is thirty seconds and the jitter is full, so no two workers align.",
+            "result_digest": "result-6",
+            "metadata": {
+              "lineage": null,
+              "task_scope": "agent_turn",
+              "timing": null,
+              "hook_executions": []
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 44
+      }
+    }
+  },
+  {
+    "at_ms": 11540,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-27",
+        "run_id": "surface-capture",
+        "mono_ms": 11540,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_lifecycle",
+          "data": {
+            "agent_id": "fixture",
+            "operation_id": "op-roll",
+            "phase": "start",
+            "reason": "threshold",
+            "action": "new-context",
+            "will_retry": false,
+            "aborted": false,
+            "skipped": false,
+            "error": null,
+            "result": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 11840,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-45",
+        "run_id": "surface-capture",
+        "mono_ms": 11840,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "session_compaction",
+          "data": {
+            "agent_id": "fixture",
+            "summary": "The context window rolled over.",
+            "first_kept_event_seq": 38,
+            "first_kept_request_id": null,
+            "first_kept_entry_id": null,
+            "tokens_before": 150000,
+            "tokens_after": 18000,
+            "summary_usage": null,
+            "summary_provider_id": null,
+            "summary_model_id": null,
+            "read_files": [
+              "src/sync/backoff.rs"
+            ],
+            "modified_files": [
+              "src/sync/worker.rs"
+            ],
+            "task_intent": null,
+            "current_intent": null,
+            "trigger_reason": "threshold",
+            "from_hook": false,
+            "short_summary": null,
+            "method": "soft",
+            "warning": null,
+            "provider_replay_through_seq": null,
+            "native": null,
+            "archive": null,
+            "operation_id": "op-roll",
+            "details": {
+              "kind": "notes_rollover",
+              "version": 1
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 45
+      }
+    }
+  },
+  {
+    "at_ms": 11840,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-28",
+        "run_id": "surface-capture",
+        "mono_ms": 11840,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "runtime_notice",
+          "data": {
+            "source": "compaction",
+            "severity": "info",
+            "message": "Context window rolled over; the notebook carries the work forward."
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 11840,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-29",
+        "run_id": "surface-capture",
+        "mono_ms": 11840,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_lifecycle",
+          "data": {
+            "agent_id": "fixture",
+            "operation_id": "op-roll",
+            "phase": "end",
+            "reason": "threshold",
+            "action": "new-context",
+            "will_retry": false,
+            "aborted": false,
+            "skipped": false,
+            "error": null,
+            "result": {
+              "method": "soft",
+              "tokens_before": 150000,
+              "tokens_after": 18000,
+              "short_summary": null,
+              "warning": null,
+              "first_kept_seq": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 13440,
+    "frame_id": 20
+  },
+  {
+    "at_ms": 13440,
+    "key": "ctrl+alt+o"
+  },
+  {
+    "at_ms": 13640,
+    "frame_id": 21
+  },
+  {
+    "at_ms": 13640,
+    "key": "ctrl+alt+o"
+  },
+  {
+    "at_ms": 13940,
+    "text": "/model"
+  },
+  {
+    "at_ms": 13940,
+    "key": "enter"
+  },
+  {
+    "at_ms": 14140,
+    "frame_id": 22
+  },
+  {
+    "at_ms": 14140,
+    "key": "ctrl+t"
+  },
+  {
+    "at_ms": 14340,
+    "frame_id": 23
+  },
+  {
+    "at_ms": 14340,
+    "text": "f150000"
+  },
+  {
+    "at_ms": 14540,
+    "frame_id": 24
+  },
+  {
+    "at_ms": 14540,
+    "text": "x"
+  },
+  {
+    "at_ms": 14740,
+    "frame_id": 25
+  },
+  {
+    "at_ms": 14740,
+    "key": "esc"
+  },
+  {
+    "at_ms": 14740,
+    "key": "esc"
+  },
+  {
+    "at_ms": 15040,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-46",
+        "run_id": "surface-capture",
+        "mono_ms": 15040,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-7",
+        "payload": {
+          "event_type": "user_message_submitted",
+          "data": {
+            "request_id": "turn-7",
+            "text": "Run the soak test now."
+          }
+        },
+        "schema_version": 1,
+        "seq": 46
+      }
+    }
+  },
+  {
+    "at_ms": 15040,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-47",
+        "run_id": "surface-capture",
+        "mono_ms": 15040,
+        "actor": {
+          "kind": "user",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-7",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-7",
+            "state": "queued",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 47
+      }
+    }
+  },
+  {
+    "at_ms": 15040,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-48",
+        "run_id": "surface-capture",
+        "mono_ms": 15040,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-7",
+        "payload": {
+          "event_type": "task_scheduled",
+          "data": {
+            "task_id": "turn-7",
+            "state": "started",
+            "queue_key": "fixture",
+            "metadata": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 48
+      }
+    }
+  },
+  {
+    "at_ms": 15100,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-49",
+        "run_id": "surface-capture",
+        "mono_ms": 15100,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-7",
+        "payload": {
+          "event_type": "provider_request_started",
+          "data": {
+            "request_id": "provider-7",
+            "provider_id": "mock",
+            "model_id": "default",
+            "prompt_summary": "Run the soak test now.",
+            "request_digest": "digest-7",
+            "metadata": {
+              "context_budget": {
+                "status": "estimated",
+                "requested_output_tokens": null,
+                "reserved_output_tokens": null,
+                "maximum_input_tokens": 200000,
+                "safety_margin_tokens": 0,
+                "compaction_threshold_tokens": 160000,
+                "components": {
+                  "system_tokens": 4000,
+                  "tools_tokens": 6000,
+                  "history_tokens": 162000,
+                  "attachments_tokens": 0,
+                  "framing_tokens": 0,
+                  "pending_prompt_tokens": 0
+                },
+                "occupied_input_tokens": 172000,
+                "remaining_input_tokens": 0,
+                "requires_compaction": true,
+                "output_cap_disposition": "unspecified_unknown_limit"
+              }
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 49
+      }
+    }
+  },
+  {
+    "at_ms": 15160,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-50",
+        "run_id": "surface-capture",
+        "mono_ms": 15160,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-7",
+        "payload": {
+          "event_type": "provider_request_finished",
+          "data": {
+            "request_id": "provider-7",
+            "finish_reason": "stop"
+          }
+        },
+        "schema_version": 1,
+        "seq": 50
+      }
+    }
+  },
+  {
+    "at_ms": 15160,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-51",
+        "run_id": "surface-capture",
+        "mono_ms": 15160,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-7",
+        "payload": {
+          "event_type": "assistant_message_finished",
+          "data": {
+            "request_id": "provider-7",
+            "parts": [
+              {
+                "kind": "text",
+                "text": "Soak test queued: twelve hours at the thirty second cap with injected failures."
+              }
+            ],
+            "tool_call_count": 0
+          }
+        },
+        "schema_version": 1,
+        "seq": 51
+      }
+    }
+  },
+  {
+    "at_ms": 15160,
+    "event": {
+      "delivery": "durable",
+      "event": {
+        "event_id": "surface-durable-52",
+        "run_id": "surface-capture",
+        "mono_ms": 15160,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn-7",
+        "payload": {
+          "event_type": "task_completed",
+          "data": {
+            "task_id": "turn-7",
+            "result_summary": "Soak test queued: twelve hours at the thirty second cap with injected failures.",
+            "result_digest": "result-7",
+            "metadata": {
+              "lineage": null,
+              "task_scope": "agent_turn",
+              "timing": null,
+              "hook_executions": []
+            }
+          }
+        },
+        "schema_version": 1,
+        "seq": 52
+      }
+    }
+  },
+  {
+    "at_ms": 15280,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-30",
+        "run_id": "surface-capture",
+        "mono_ms": 15280,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_lifecycle",
+          "data": {
+            "agent_id": "fixture",
+            "operation_id": "op-queue",
+            "phase": "start",
+            "reason": "threshold",
+            "action": "context-full",
+            "will_retry": false,
+            "aborted": false,
+            "skipped": false,
+            "error": null,
+            "result": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 15280,
+    "event": {
+      "delivery": "live",
+      "event": {
+        "event_id": "surface-live-31",
+        "run_id": "surface-capture",
+        "mono_ms": 15280,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "setup",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 4,
+            "trigger_reason": "threshold",
+            "preview": "Keep the soak test plan and the open tasks.",
+            "stage": {
+              "reason": "threshold",
+              "method": "soft",
+              "phase": "summarizing",
+              "tokens_before": 172000,
+              "tokens_after": null,
+              "summarized_tokens": 141000,
+              "kept_tokens": 20000,
+              "fixed_tokens": 10000,
+              "threshold_tokens": 160000,
+              "window_tokens": 200000,
+              "first_kept_seq": 100,
+              "windows_done": 1,
+              "windows_total": 2,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "at_ms": 15880,
+    "text": "Also check the jitter bounds."
+  },
+  {
+    "at_ms": 15880,
+    "key": "enter"
+  },
+  {
+    "at_ms": 15880,
+    "text": "Update the changelog after that."
+  },
+  {
+    "at_ms": 15880,
+    "key": "alt+i"
+  },
+  {
+    "at_ms": 15980,
+    "frame_id": 26
+  }
+]

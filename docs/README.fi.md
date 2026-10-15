@@ -312,7 +312,7 @@ lähtee ja milloin.
 
 ## Kehitä
 
-Työtila koostuu seitsemästä Rust 2024 -cratesta ja käyttää vakaata työkaluketjua.
+Työtila koostuu yhdeksästä Rust 2024 -cratesta ja käyttää vakaata työkaluketjua.
 Aloita [arkkitehtuuriohjeesta](architecture/architecture.md), joka kuvaa vastuut.
 Lue [päätekäyttöliittymän suunnitteluohje](../DESIGN.md) ennen käyttöliittymän
 muokkaamista.

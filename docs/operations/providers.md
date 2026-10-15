@@ -148,6 +148,81 @@ Copilot sends its bearer credential directly to the service. In automatic
 mode, Claude models use the native Anthropic Messages endpoint with bearer
 authentication. An explicit base URL can select another service endpoint.
 
+## Remote compaction
+
+The `remote` compaction method asks the provider to compact the context. Which
+routes a model gets depends on its wire API and host:
+
+| Route | Offered when |
+| --- | --- |
+| Streaming Responses | The model uses the Responses API, `runtime.compaction.remote_streaming_v2_enabled` is on and the model's `v2_streaming_enabled` is not `false`. Tried first, up to three attempts with 1 s and 2 s between them. |
+| Responses compact endpoint | The provider id is `openai`, or `remote_models` sets `enabled: true` for the model. Codex needs an explicit `endpoint`. |
+| Anthropic | The model is Claude 4.6 or 4.7 on `api.anthropic.com` or Vertex. Other Claude models, and the Azure AI and AWS routes, need `enabled: true`. |
+| Chat Completions | None. |
+
+`runtime.compaction.remote_enabled: false` or `enabled: false` in the model's
+`remote_models` entry offers no route at all, and a Codex model must be one of the
+allowed subscription models. `api` in a `remote_models` entry picks the wire API
+(`responses`, `anthropic` or `chat`), and `model` replaces the model id sent. Without an
+`endpoint` or `v2_endpoint`, Harness derives both Responses URLs from the
+provider's base URL: `https://api.openai.com/v1/responses/compact` and
+`https://api.openai.com/v1/responses` by default, and the
+`https://chatgpt.com/backend-api/codex/...` equivalents for Codex. Each request has
+a 300-second limit. When every route fails and `remote_endpoint` is set, the pass
+falls back to that endpoint; under the `remote` method it never falls back to the
+ordinary summarizer.
+
+Native payloads that a route returns are stored as private artifacts; see
+[sessions and replay](../architecture/sessions-and-replay.md#compaction-records).
+
+### Credentials
+
+Before each summarizer candidate runs, Harness asks its provider for a credential.
+The custom endpoint uses it; ordinary summary requests and handoffs authenticate
+through the provider as usual. An HTTP provider returns its API key and the headers
+configured for the model. A keyless provider returns an empty credential, so the
+request goes out unauthenticated. The Claude subscription provider is keyless on
+purpose, because its OAuth tokens never go to a custom endpoint. If the key source
+fails, the lookup stops the walk over summarizers with
+`Remote compaction credentials unavailable`, classed as an authentication failure.
+The same lookup decides whether `context_promotion` may switch to a target model.
+
+### Custom summary endpoint
+
+`remote_endpoint` must be an `http` or `https` URL without a username or password.
+Redirects are not followed. The path picks the format:
+
+- A path ending in `/chat/completions` (a trailing slash is fine, a query is
+  ignored) gets a Chat Completions request: `messages` with the system prompt and
+  the request, `stream: false`, `model` set to the summarizer's model id and
+  `max_tokens`. It carries `Authorization: Bearer <key>` when the credential has a
+  key, plus the model's configured headers. The reply must hold
+  `choices[0].message.content` as a string, or as an array of parts whose `text`
+  values are joined.
+- Any other path gets `{"systemPrompt", "prompt", "maxTokens"}` with only
+  `Content-Type: application/json`; no key and no model headers are sent. The reply
+  must be an object with a string `summary` and an optional string `shortSummary`.
+  Other fields are kept as received.
+
+Failures use these messages, which also reach the compaction warning:
+
+| Message | Cause |
+| --- | --- |
+| `invalid summary endpoint` | The URL does not parse, is not http or https, or embeds credentials |
+| `Remote compaction credentials unavailable` | The provider could not produce its key |
+| `Remote compaction credential header is invalid` | The key or a configured header cannot be sent as an HTTP header |
+| `Remote compaction client failed` | The HTTP client could not be built |
+| `Remote compaction request invalid` | The request body could not be serialized |
+| `Remote compaction connection failed` | The request did not reach the endpoint |
+| `Remote compaction failed (<status> <reason>)` | A non-success status, for example `Remote compaction failed (401 Unauthorized)`; 401 and 403 count as authentication failures, 429 as rate limiting |
+| `Remote compaction response parse failed` | The body is not JSON |
+| `Remote compaction response missing choices[0].message.content` | Chat format reply without text |
+| `Remote compaction response missing summary` | Other format reply without a string `summary` |
+| `Remote compaction cancelled` | The pass was cancelled |
+
+Failure bodies are redacted, capped at 8 KiB and kept out of the message; the
+message names the status only.
+
 ## Startup and model limits
 
 Catalog selection is offline. When the loaded config has no provider entries,

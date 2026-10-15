@@ -10,6 +10,8 @@ commits durable events and decides when cancellation or shutdown is complete.
 | --- | --- |
 | `harness` | Clap routing, explicit `CliIo`/`CliDeps`, runtime configuration and command output |
 | `harness-core` | Coordinator, permission policy, configuration, journal, projections, sessions and credentials |
+| `harness-compaction` | Pure context-maintenance algorithms: thresholds, cut points, summary requests, pruning, shake and the image archive |
+| `harness-tokenizer` | Offline per-model token counting from bundled vocabularies, model identity classification and image size probing; no I/O beyond decompressing its own assets |
 | `harness-providers` | HTTP transports, request lowering, stream normalization and provider fixtures |
 | `harness-tools` | Native tools, staged file edits, lazy LSP/MCP connections and process cleanup |
 | `harness-eval` | Persistent language kernels, cell lifecycle, output retention and host callbacks |
@@ -30,6 +32,40 @@ The loop uses the configured iteration and model budgets. Provider retries cover
 classified transient failures; model fallback updates the active model and prompt
 family. Unknown model limits remain explicit and use conservative admission.
 Compaction checkpoints restore from durable history rather than replaying work.
+
+Context maintenance lives in `coord/compaction.rs` and `coord/compaction/`. The
+worker measures the next request before each provider call and after a final
+answer; `maintain.rs` walks the configured methods, `generate.rs` runs summary
+and handoff requests, `native.rs` and `archive.rs` build provider-native and image
+drafts, `reduce.rs` prunes and shakes, `speculate.rs` prepares a background
+summary just below the threshold, and `commit.rs` appends the `SessionCompaction`
+event and swaps the live context. Algorithms come from `harness-compaction`, which
+does no I/O. `progress.rs` streams `CompactionProgress` live events for the TUI.
+
+Around that core, `hooks.rs` runs the compaction hooks and parses their JSON
+results, `manual.rs` tracks which pass owns an agent and whether an interrupted
+turn is owed a resume, `native_store.rs` writes and reloads provider-native
+payloads as private artifacts, `reexpand.rs` rebuilds history when a native
+boundary cannot be reused, `endpoint.rs` turns the remote settings into lane gates
+and `notes.rs` implements notes-backed context windows. Request-time imaging of the
+system prompt and tool results lives in `coord/turn/request/inline.rs` and applies
+to the outgoing copy only. Token counts in the coordinator come from a
+`harness_tokenizer::Counter` built from the request's provider and model, so
+thresholds, cuts and image prices follow the model that reads the context.
+
+While maintenance is active, the TUI keeps submitted drafts locally, including
+slash commands, tags, attachments and the requested steering or follow-up lane.
+The end marker starts ordered dispatch. Admission receipts retain each unsent
+draft until the runtime accepts it; failures restore the remaining drafts ahead
+of the editor draft. Alt+Up restores steering before follow-ups, preserving the
+editor's existing attachments first. Retry intent comes from the coordinator's
+overflow/incomplete reason mapping.
+
+This queue uses the existing submission contracts. Attached or tagged drafts
+therefore enter the ordinary prompt queue, since the coordinator's steering API
+accepts plain text only. Existing runtime queue withdrawal still returns only
+plain text; it cannot withdraw tagged or attached prompts. Harness does not
+currently expose skill slash-command expansion in the TUI.
 
 There is one command inbox, a worker `JoinSet`, and bounded provider/tool capacity.
 Accepted tool jobs, including those awaiting permission, cannot exceed the command
@@ -154,12 +190,24 @@ into coordinator calls.
 
 ### Terminal presentation
 
-Compaction streams on one status row with an animated spinner, a reason label,
-a Ctrl+C cancel hint and the trailing summary preview. Previews are redacted live
-events, never journaled. Generation identities reject late chunks, and replay
-does not restore an active spinner. Completed checkpoints show `[compaction]`
-and the prior token count. Ctrl+Alt+O expands or collapses the Markdown summary.
-The Ctrl+O permission action retains its binding.
+A maintenance pass renders as a live card (`ui_compaction_hero.rs`,
+`ui_compaction_map.rs`, `ui_compaction_motion.rs`): a two-row context bar of
+fixed, summarized, kept and headroom segments with threshold and window
+markers, a scan head that dissolves the summarized segment as summary windows
+finish, the streamed summary preview, per-method flourishes (archive frame
+thumbnails, remote uplink, handoff pen, shake debris) and, on commit, a squash
+into the summary capsule with a token countdown. Short or narrow terminals fall
+back to a three-row card; reduced motion keeps it static. Previews are redacted
+live events, never journaled, and generation identities reject late chunks;
+replay does not restore an active card. Committed passes settle into a divider
+labelled with the method and savings and archived turns recede behind a rail.
+Transcript history above the latest summary is collapsed (`collapse_compacted_history`,
+default on) except for the originals the summary does not cover; Ctrl+Alt+K
+(`toggle_collapsed_history`) shows or hides it and Ctrl+Alt+O
+(`toggle_compaction_details`) expands or collapses the focused summary. The Ctrl+O
+permission action retains its binding. `CompactionLifecycle` start and end events
+drive the loader label and the queue flush, and `RuntimeNotice` events become
+transcript rows; neither replaces the turn's own busy state.
 
 The coordinator prices each provider request as it finishes, from the model
 catalog and the request's start time, and saves the amount as

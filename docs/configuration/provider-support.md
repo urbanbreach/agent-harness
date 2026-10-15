@@ -88,11 +88,11 @@ working context, add an explicit model limit override:
 "limit": { "context": 1050000, "input": 288384, "output": 128000 }
 ```
 
-With the default `runtime.compaction.reserveTokens` of 16,384, this caps the
-compaction threshold at 272,000 tokens:
-`min(288384, 1050000 - 128000) - 16384`. A lower explicit compaction threshold
-takes precedence. The 128,000-token output reserve remains intact. Setting
-total `context` to 272,000 would leave only 127,616 tokens after both reserves.
+The compaction threshold never exceeds the request's input budget, so this caps
+it at 288,384 tokens: `min(1050000 - max(15% of 1050000, 16384), min(288384,
+1050000 - 128000))`. A lower explicit compaction threshold takes precedence.
+The 128,000-token output reserve remains intact. Setting total `context` to
+272,000 would leave only 144,000 tokens of input after the output reserve.
 Explicit local model entries are not overwritten by catalog refreshes.
 Availability depends on the account and endpoint; `harness doctor` is offline.
 
@@ -108,9 +108,9 @@ include encrypted reasoning content. Explicit settings take precedence.
 Tool calling uses the Responses API; `none` and `minimal` are not supported.
 
 Bundled API limits are 1,050,000 context tokens, 922,000 maximum input tokens,
-and 128,000 maximum output tokens. With the default 16,384-token compaction
-reserve, a custom 288,384-token input limit caps the compaction threshold at
-272,000 tokens. A lower explicit compaction threshold takes precedence.
+and 128,000 maximum output tokens. A custom 288,384-token input limit caps the
+compaction threshold at that input budget. A lower explicit compaction threshold
+takes precedence.
 Account and workspace rollout still determine access.
 See the [model specifications](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
 and [Codex availability](https://learn.chatgpt.com/docs/models#gpt-61-sol).

@@ -72,10 +72,14 @@ G006 assigned these changes:
 | Disable | trigger-specific compaction bypasses, checkpoint artifact writes, and any second success writer |
 | Delete | no G006 deletion of legacy event variants/readers; compatibility deletion belongs to G010 after migration evidence |
 
-Failure is atomic: empty, failing, cancelled, stale, malformed, or non-fitting summary generation
-leaves the previous boundary active and appends no replacement success event. The optional typed
+Failure is atomic: a failing or cancelled method leaves the previous boundary active and appends
+no success event; automatic passes then try the next configured method and report a warning.
+Summary text is not validated against a heading contract. The optional typed
 `SessionCompactionEvent` fields (`first_kept_entry_id`, `tokens_after`, `summary_usage`, provider/model
-provenance, file state, and current intent) are serde-defaulted so old logs remain readable.
+provenance, file state, current intent, `method`, `short_summary`, `warning`,
+`provider_replay_through_seq`, `native` and `archive`) are serde-defaulted so old logs remain readable.
+Mechanical reductions (stale-result pruning, shake, image and reasoning removal, dead-end rescue)
+append `ContextPruned` edits that replay applies in journal order.
 
 ## Runtime data flow
 

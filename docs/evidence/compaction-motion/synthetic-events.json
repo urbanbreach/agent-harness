@@ -1,0 +1,1805 @@
+[
+  [
+    200,
+    {
+      "delivery": "durable",
+      "event": {
+        "event_id": "maintenance-durable-1",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 200,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "user_message_submitted",
+          "data": {
+            "request_id": "turn",
+            "text": "Preserve the implementation decisions while reducing context."
+          }
+        },
+        "schema_version": 1,
+        "seq": 1
+      }
+    }
+  ],
+  [
+    200,
+    {
+      "delivery": "durable",
+      "event": {
+        "event_id": "maintenance-durable-2",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 200,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "provider_request_started",
+          "data": {
+            "request_id": "provider",
+            "provider_id": "mock",
+            "model_id": "model",
+            "prompt_summary": "Maintenance evidence",
+            "request_digest": "synthetic"
+          }
+        },
+        "schema_version": 1,
+        "seq": 2
+      }
+    }
+  ],
+  [
+    300,
+    {
+      "delivery": "durable",
+      "event": {
+        "event_id": "maintenance-durable-3",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 300,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "provider_request_finished",
+          "data": {
+            "request_id": "provider",
+            "finish_reason": "stop"
+          }
+        },
+        "schema_version": 1,
+        "seq": 3
+      }
+    }
+  ],
+  [
+    350,
+    {
+      "delivery": "durable",
+      "event": {
+        "event_id": "maintenance-durable-4",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 350,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "assistant_message_finished",
+          "data": {
+            "request_id": "provider",
+            "parts": [
+              {
+                "kind": "text",
+                "text": "Earlier decisions remain readable in the archived transcript."
+              }
+            ],
+            "tool_call_count": 0
+          }
+        },
+        "schema_version": 1,
+        "seq": 4
+      }
+    }
+  ],
+  [
+    900,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-1",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 900,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 1,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "preparing",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 0,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    2000,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-2",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 2000,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 1,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "summarizing",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    3100,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-3",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 3100,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 1,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "turn_prefix",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    4200,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-4",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 4200,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 1,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "short_summary",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    5300,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-5",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 5300,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 1,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "committing",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    6400,
+    {
+      "delivery": "durable",
+      "event": {
+        "event_id": "maintenance-durable-5",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 6400,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "session_compaction",
+          "data": {
+            "agent_id": "fixture",
+            "summary": "## Retained decisions\n\nPreserve the API contract and continue the scoped checks.",
+            "first_kept_event_seq": 100,
+            "first_kept_request_id": null,
+            "first_kept_entry_id": null,
+            "tokens_before": 182400,
+            "tokens_after": 31050,
+            "summary_usage": null,
+            "summary_provider_id": null,
+            "summary_model_id": null,
+            "read_files": [
+              "src/context.rs"
+            ],
+            "modified_files": [
+              "src/session.rs"
+            ],
+            "task_intent": null,
+            "current_intent": null,
+            "trigger_reason": "manual",
+            "from_hook": false,
+            "short_summary": "Preserve contracts",
+            "method": "soft",
+            "warning": null,
+            "provider_replay_through_seq": null,
+            "native": null,
+            "archive": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 5
+      }
+    }
+  ],
+  [
+    6400,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-6",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 6400,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 1,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "done",
+              "tokens_before": 182400,
+              "tokens_after": 31050,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    6430,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-7",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 6430,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 1,
+            "trigger_reason": "manual",
+            "preview": null,
+            "stage": null
+          }
+        }
+      }
+    }
+  ],
+  [
+    7500,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-8",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 7500,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 2,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "remote",
+              "phase": "preparing",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 0,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    8600,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-9",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 8600,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 2,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "remote",
+              "phase": "remote",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    9700,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-10",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 9700,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 2,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "remote",
+              "phase": "committing",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    10800,
+    {
+      "delivery": "durable",
+      "event": {
+        "event_id": "maintenance-durable-6",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 10800,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "session_compaction",
+          "data": {
+            "agent_id": "fixture",
+            "summary": "## Retained decisions\n\nPreserve the API contract and continue the scoped checks.",
+            "first_kept_event_seq": 100,
+            "first_kept_request_id": null,
+            "first_kept_entry_id": null,
+            "tokens_before": 182400,
+            "tokens_after": 31050,
+            "summary_usage": null,
+            "summary_provider_id": null,
+            "summary_model_id": null,
+            "read_files": [
+              "src/context.rs"
+            ],
+            "modified_files": [
+              "src/session.rs"
+            ],
+            "task_intent": null,
+            "current_intent": null,
+            "trigger_reason": "manual",
+            "from_hook": false,
+            "short_summary": "Preserve contracts",
+            "method": "remote",
+            "warning": null,
+            "provider_replay_through_seq": null,
+            "native": null,
+            "archive": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 6
+      }
+    }
+  ],
+  [
+    10800,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-11",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 10800,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 2,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "remote",
+              "phase": "done",
+              "tokens_before": 182400,
+              "tokens_after": 31050,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    10830,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-12",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 10830,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 2,
+            "trigger_reason": "manual",
+            "preview": null,
+            "stage": null
+          }
+        }
+      }
+    }
+  ],
+  [
+    11900,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-13",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 11900,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 3,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "archive",
+              "phase": "preparing",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 0,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 3,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    13000,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-14",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 13000,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 3,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "archive",
+              "phase": "archiving",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 1,
+              "frames_total": 3,
+              "thumbnails": [
+                {
+                  "width": 16,
+                  "height": 4,
+                  "bits": "//+qVf8AVao="
+                }
+              ],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    13350,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-15",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 13350,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 3,
+            "trigger_reason": "manual",
+            "preview": "Printing archive frames.",
+            "stage": {
+              "reason": "manual",
+              "method": "archive",
+              "phase": "archiving",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 2,
+              "frames_total": 3,
+              "thumbnails": [
+                {
+                  "width": 16,
+                  "height": 4,
+                  "bits": "//+qVf8AVao="
+                },
+                {
+                  "width": 16,
+                  "height": 4,
+                  "bits": "//+rVf8AVao="
+                }
+              ],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    13650,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-16",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 13650,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 3,
+            "trigger_reason": "manual",
+            "preview": "Printing archive frames.",
+            "stage": {
+              "reason": "manual",
+              "method": "archive",
+              "phase": "archiving",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 3,
+              "frames_total": 3,
+              "thumbnails": [
+                {
+                  "width": 16,
+                  "height": 4,
+                  "bits": "//+qVf8AVao="
+                },
+                {
+                  "width": 16,
+                  "height": 4,
+                  "bits": "//+rVf8AVao="
+                },
+                {
+                  "width": 16,
+                  "height": 4,
+                  "bits": "//+sVf8AVao="
+                }
+              ],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    14100,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-17",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 14100,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 3,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "archive",
+              "phase": "committing",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 3,
+              "frames_total": 3,
+              "thumbnails": [
+                {
+                  "width": 16,
+                  "height": 4,
+                  "bits": "//+qVf8AVao="
+                },
+                {
+                  "width": 16,
+                  "height": 4,
+                  "bits": "//+rVf8AVao="
+                },
+                {
+                  "width": 16,
+                  "height": 4,
+                  "bits": "//+sVf8AVao="
+                }
+              ],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    15200,
+    {
+      "delivery": "durable",
+      "event": {
+        "event_id": "maintenance-durable-7",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 15200,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "session_compaction",
+          "data": {
+            "agent_id": "fixture",
+            "summary": "## Retained decisions\n\nPreserve the API contract and continue the scoped checks.",
+            "first_kept_event_seq": 100,
+            "first_kept_request_id": null,
+            "first_kept_entry_id": null,
+            "tokens_before": 182400,
+            "tokens_after": 31050,
+            "summary_usage": null,
+            "summary_provider_id": null,
+            "summary_model_id": null,
+            "read_files": [
+              "src/context.rs"
+            ],
+            "modified_files": [
+              "src/session.rs"
+            ],
+            "task_intent": null,
+            "current_intent": null,
+            "trigger_reason": "manual",
+            "from_hook": false,
+            "short_summary": "Preserve contracts",
+            "method": "archive",
+            "warning": null,
+            "provider_replay_through_seq": null,
+            "native": null,
+            "archive": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 7
+      }
+    }
+  ],
+  [
+    15200,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-18",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 15200,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 3,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "archive",
+              "phase": "done",
+              "tokens_before": 182400,
+              "tokens_after": 31050,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 3,
+              "frames_total": 3,
+              "thumbnails": [
+                {
+                  "width": 16,
+                  "height": 4,
+                  "bits": "//+qVf8AVao="
+                },
+                {
+                  "width": 16,
+                  "height": 4,
+                  "bits": "//+rVf8AVao="
+                },
+                {
+                  "width": 16,
+                  "height": 4,
+                  "bits": "//+sVf8AVao="
+                }
+              ],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    15230,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-19",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 15230,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 3,
+            "trigger_reason": "manual",
+            "preview": null,
+            "stage": null
+          }
+        }
+      }
+    }
+  ],
+  [
+    16300,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-20",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 16300,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 4,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "handoff",
+              "phase": "preparing",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 0,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    17400,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-21",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 17400,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 4,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "handoff",
+              "phase": "handoff",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    18500,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-22",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 18500,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 4,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "handoff",
+              "phase": "committing",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    19600,
+    {
+      "delivery": "durable",
+      "event": {
+        "event_id": "maintenance-durable-8",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 19600,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "session_compaction",
+          "data": {
+            "agent_id": "fixture",
+            "summary": "## Retained decisions\n\nPreserve the API contract and continue the scoped checks.",
+            "first_kept_event_seq": 100,
+            "first_kept_request_id": null,
+            "first_kept_entry_id": null,
+            "tokens_before": 182400,
+            "tokens_after": 31050,
+            "summary_usage": null,
+            "summary_provider_id": null,
+            "summary_model_id": null,
+            "read_files": [
+              "src/context.rs"
+            ],
+            "modified_files": [
+              "src/session.rs"
+            ],
+            "task_intent": null,
+            "current_intent": null,
+            "trigger_reason": "manual",
+            "from_hook": false,
+            "short_summary": "Preserve contracts",
+            "method": "handoff",
+            "warning": null,
+            "provider_replay_through_seq": null,
+            "native": null,
+            "archive": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 8
+      }
+    }
+  ],
+  [
+    19600,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-23",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 19600,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 4,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "handoff",
+              "phase": "done",
+              "tokens_before": 182400,
+              "tokens_after": 31050,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    19630,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-24",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 19630,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 4,
+            "trigger_reason": "manual",
+            "preview": null,
+            "stage": null
+          }
+        }
+      }
+    }
+  ],
+  [
+    20700,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-25",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 20700,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 5,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "shake",
+              "phase": "preparing",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": null,
+              "windows_done": 0,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    21800,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-26",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 21800,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 5,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "shake",
+              "phase": "shaking",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": null,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    22900,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-27",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 22900,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 5,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "shake",
+              "phase": "committing",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": null,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    24000,
+    {
+      "delivery": "durable",
+      "event": {
+        "event_id": "maintenance-durable-9",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 24000,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "context_pruned",
+          "data": {
+            "agent_id": "fixture",
+            "kind": "shake",
+            "edits": [
+              {
+                "kind": "text_range",
+                "seq": 4,
+                "start": 0,
+                "end": 7,
+                "text": "[pruned]"
+              }
+            ],
+            "tokens_saved": 151350,
+            "artifact_path": null,
+            "warning": null
+          }
+        },
+        "schema_version": 1,
+        "seq": 9
+      }
+    }
+  ],
+  [
+    24000,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-28",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 24000,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 5,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "shake",
+              "phase": "done",
+              "tokens_before": 182400,
+              "tokens_after": 31050,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": null,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    24030,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-29",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 24030,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 5,
+            "trigger_reason": "manual",
+            "preview": null,
+            "stage": null
+          }
+        }
+      }
+    }
+  ],
+  [
+    25100,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-30",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 25100,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 6,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "failed",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    25130,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-31",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 25130,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 6,
+            "trigger_reason": "manual",
+            "preview": null,
+            "stage": null
+          }
+        }
+      }
+    }
+  ],
+  [
+    26200,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-32",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 26200,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 7,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "cancelled",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    26230,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-33",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 26230,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 7,
+            "trigger_reason": "manual",
+            "preview": null,
+            "stage": null
+          }
+        }
+      }
+    }
+  ],
+  [
+    27300,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-34",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 27300,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 8,
+            "trigger_reason": "manual",
+            "preview": "Keep the API contract and next steps.",
+            "stage": {
+              "reason": "manual",
+              "method": "soft",
+              "phase": "skipped",
+              "tokens_before": 182400,
+              "tokens_after": null,
+              "summarized_tokens": 151350,
+              "kept_tokens": 20000,
+              "fixed_tokens": 8000,
+              "threshold_tokens": 220000,
+              "window_tokens": 262144,
+              "first_kept_seq": 100,
+              "windows_done": 2,
+              "windows_total": 3,
+              "frames_done": 0,
+              "frames_total": 0,
+              "thumbnails": [],
+              "message": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  [
+    27330,
+    {
+      "delivery": "live",
+      "event": {
+        "event_id": "maintenance-live-35",
+        "run_id": "synthetic-maintenance",
+        "mono_ms": 27330,
+        "actor": {
+          "kind": "worker",
+          "agent_id": "fixture"
+        },
+        "correlation_id": "turn",
+        "payload": {
+          "event_type": "compaction_progress",
+          "data": {
+            "agent_id": "fixture",
+            "generation": 8,
+            "trigger_reason": "manual",
+            "preview": null,
+            "stage": null
+          }
+        }
+      }
+    }
+  ]
+]

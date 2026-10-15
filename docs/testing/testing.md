@@ -224,6 +224,24 @@ Node.js 20 or newer with npm, util-linux `script` and executable
 assertions check interaction and artifact contracts; review the PNGs for visual
 parity.
 
+The real coordinator compaction capture is independent of synthetic motion fixtures:
+
+```bash
+cargo build -p harness --bin harness
+node scripts/qa/lib/compaction-live-capture.mjs \
+  .omo/evidence/compaction-coordinator target/debug/harness
+```
+
+It uses the same browser dependencies plus `ffmpeg`. The local
+`compaction_interactive` provider streams generated public text only; the actual
+coordinator detects the threshold, generates the summary and commits the boundary.
+The runner types through xterm.js into a real PTY, checks the live card, durable
+divider and continued answer, then exercises `/compact` and `/shake`. PNGs, a GIF,
+the unmodified coordinator journal and an assertion manifest are written under
+`real/` in the selected evidence directory. The module does not build the binary.
+It also exports `captureCoordinatorCompaction({root, output, target})` for the
+combined motion capture runner.
+
 Browser stages write to `signoff-pty/stages/<stage>/artifacts/` under the lane
 artifact root. Successful captures include PNGs, `terminal.ansi`,
 `terminal-ansi.txt`, `terminal.txt`, `buffer.json`, `interactions.json`,

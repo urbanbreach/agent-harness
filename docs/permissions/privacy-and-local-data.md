@@ -9,6 +9,8 @@ can send data over the network.
 | Action | Network behavior |
 | --- | --- |
 | Live provider turn | Sends the selected context to the configured provider. |
+| Compaction pass | Sends the history being summarized to the summarizer's provider, which can differ from the live provider (`summary_models`, `summary_model`, `@smol`, `@slow`, then the largest-window catalog model), to a provider-native compaction route, or to `runtime.compaction.remote_endpoint`. |
+| Inline imaging | With `archive.system_prompt` or `archive.tool_results` on, sends the system prompt or large tool output to the provider as images instead of text. |
 | MCP tool call | Connects lazily over the configured transport after permission checks. Stdio servers may make their own network requests. |
 | `webfetch`, `websearch`, `codesearch`, GitHub tools | Sends a request to the selected URL or configured service under tool permission policy. |
 | Model-catalog refresh | Downloads metadata from `https://models.dev/api.json` at TUI and `prompt`/`run` startup when the cache is older than two hours, after each sign-in, and on `harness models refresh`. |
@@ -54,7 +56,13 @@ Older `--path--` directories are preserved but require
 | User instructions | `<home>/AGENTS.md` |
 | Project instructions | First existing of `AGENTS.md`, then `CLAUDE.md`, in each project directory |
 | Workspace permission grants | Project `.harness/permission-grants.json` |
-| Events and artifacts | `<home>/sessions/<project-key>/<run-id>`, unless session storage is explicitly overridden |
+| Events and artifacts | `<home>/sessions/<project-key>/<run-id>` (the run directory, `<run-dir>` below), unless session storage is explicitly overridden |
+| Archive frames | `<run-dir>/artifacts/<blake3>.attachment`, private blobs referenced from the compaction event |
+| Provider-native compaction payloads | `<run-dir>/artifacts/native-<blake3>.bin`, private (0600), referenced by digest from the compaction event |
+| Shake recovery text | `<run-dir>/artifacts/<blake3>.txt`, redacted, up to 8 MiB |
+| Handoff documents | `<run-dir>/artifacts/handoff-<UTC time>.md`, redacted and private, written only with `runtime.compaction.handoff_save_to_disk` for automatic passes |
+| Notes revisions | `context_notes` records in the run's `events.jsonl`, redacted, at most 16 KiB each |
+| Inline imaging savings journal | `<home>/inline-savings.jsonl`: timestamp, session, provider, model, tool call id and tokens saved; no text content |
 | Memory, code index, edit attribution and plans | `<home>/projects/<project-key>` |
 | Managed Git worktrees | `<home>/worktrees/<project-key>` |
 | Stored credentials | `<home>/credentials/<authProvider>.json` |
@@ -82,10 +90,15 @@ private disk artifacts contain semantic conversation state, redacted and
 normalized tool arguments, bounded tool results, read-state hashes and usage
 counts. They omit reasoning, raw tool results and complete provider requests.
 Resuming after restart uses that semantic state and never repeats historical tools.
+Provider-native compaction payloads are the one exception. They are opaque items a
+provider returned, so Harness stores them unchanged rather than redacted, in a
+private file. It reuses one after a restart only for the same provider, model and
+API, and leaves it out of every export.
 Support export redacts registered credentials and recognized secret patterns,
 including API keys, bearer tokens, cookies and private-key blocks. It removes
 provider stream and reasoning deltas, reasoning parts, thinking summaries and
-signatures, and raw tool output JSON. The bundle includes local configuration,
+signatures, native compaction payloads and their artifact records, and raw tool
+output JSON. The bundle includes local configuration,
 metadata, a replay summary, tool readiness and cleaned events. It does not make
 provider or MCP requests. It refuses the export if the final secret scan fails.
 It does not promise to remove arbitrary private prose or project instructions.

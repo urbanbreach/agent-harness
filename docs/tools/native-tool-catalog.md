@@ -11,10 +11,10 @@ release that capacity. Cancellation waits for tool cleanup before shutdown.
 
 | Tool | Permission | Behavior |
 | --- | --- | --- |
-| `read` | `read` | Read UTF-8 text (1-based offset, at most 2,000 lines and 64 KiB before coordinator limits), a PNG, JPEG, GIF, or WebP image, or a retained PDF artifact. Hashline mode adds line/hash anchors. |
+| `read` | `read` | Read UTF-8 text (1-based offset, at most 2,000 lines and 64 KiB before coordinator limits), a PNG, JPEG, GIF, or WebP image, or a retained PDF artifact. Hashline mode adds line/hash anchors. With `notes_windows` on, `history://current/full` reads the agent's whole branch history. |
 | `list` | `read` | List up to 1,000 immediate directory entries in name order. |
 | `glob` | `read` | Find paths with ignore-file support, newest first. It lists names without reading file contents. Default limit 100, accepted range 1 through 1,000. |
-| `grep` | `read` | Search UTF-8 contents with ignore-file support; skip files that need separate read approval. Default limit and head limit 100, accepted range 1 through 1,000; context defaults to 0 and accepts up to 64 lines. |
+| `grep` | `read` | Search UTF-8 contents with ignore-file support; skip files that need separate read approval. Default limit and head limit 100, accepted range 1 through 1,000; context defaults to 0 and accepts up to 64 lines. With `notes_windows` on, the path `history://current/full` searches the agent's whole branch history. |
 | `ast_grep_search`, `ast_grep_replace` | `read`, plus `edit` when applying | Structural search, previews, and checked rewrites using the installed ast-grep CLI. See [structural edits](ast-grep-replace-safety-gate.md). |
 | `lsp` | `lsp` and `read` | Query an installed language server for symbols, definitions, references, hover, call hierarchy, and diagnostics. See [language tools](lsp.md). |
 | `lsp.rename` | `lsp`, `read`, plus `edit` when applying | Preview or apply a semantic rename with path approvals, diffs and undo. |
@@ -35,6 +35,7 @@ release that capacity. Cancellation waits for tool cleanup before shutdown.
 | `todoread` | `task` | Read the current run's journaled todo list. |
 | `todowrite` | `task` and `todowrite` | Replace the validated todo list. |
 | `session_list`, `session_read`, `session_search`, `session_info` | Tool ID | Inspect existing session journals. See [session tools](sessions.md). |
+| `context_notes`, `new_context` | `read` to read the notes; `edit` to replace them and for `new_context` | Keep persistent notes across context windows and start a fresh window. Present only with `runtime.compaction.notes_windows` on. See [context notes and new windows](#context-notes-and-new-windows). |
 
 Paths outside the workspace also require `external_directory` approval. Native
 edits cannot modify managed session storage or the permission-grant file. These
@@ -81,13 +82,54 @@ survive resume; most tools send them alongside display text. Subagent tools and
 their aliases send display text to the provider without the structured wrapper.
 Raw provider fragments remain transient. Settled assistant content is
 retained for conversation continuity; support exports omit provider reasoning.
+A `grep`, `glob`, `ast_grep_search` or `session_search` call that finds nothing,
+and a `history://current/full` search with no matches, is flagged useless. With
+`runtime.compaction.drop_useless` on, compaction can elide such results. A
+`session_search` where every attempted session failed to load is not flagged,
+because that is a failure the model should see.
 
 Image results reach the provider through the same attachment path as prompt
 images. The journal stores metadata and digests; private blobs hold the bytes.
 Resume checks those digests without repeating the read or remote call. Rewind
 removes attachments from the discarded conversation. File reads are limited to
-8 MiB. A request may contain up to 16 attachments and 16 MiB of attachment bytes.
+8 MiB. A request may contain up to 16 text attachments and 16 MiB of attachment
+bytes. Archive frames and inline imaging follow per-deployment image caps instead
+of the 16-attachment count (see `crates/harness-providers/src/attachment_protocol/limits.rs`).
 Provider limits can be stricter. PDFs and other binary downloads are retained as private artifacts; their contents are not extracted or sent as provider input.
+
+## Context notes and new windows
+
+`context_notes` and `new_context` exist only with `runtime.compaction.notes_windows`
+on, and only for an unrestricted primary profile: one whose toolset has `read`,
+`grep` and at least one of `edit`, `write`, `apply_patch` or `bash`. Subagents never
+get them and an explicit toolset is never widened. With the setting off, both
+tools are removed even from an explicit list.
+
+`context_notes` with no arguments reads the notebook. With nothing saved it answers
+"No context notes are stored for this session branch." With `text`, it replaces
+the whole notebook, and an empty string clears it. Nothing is merged. The notebook
+is plain UTF-8 text of at most 16 KiB (16,384 bytes), checked after redaction. A
+larger one is refused with "Context notes are <n> bytes; the limit is 16384 UTF-8
+bytes. Shorten the notebook and use history://current/full to recover raw detail."
+A non-string `text` fails with "context_notes text must be a string." A save
+returns "Context notes saved." with `entry_id`, `text` and `bytes`, and is refused
+if the session branch changed while it ran. Each revision is a `ContextNotes`
+journal record, so the notebook survives resume, and a rewind restores the earlier
+revision.
+
+`new_context` takes no arguments. Once the current tool calls finish, the worker
+rolls the conversation over: older messages leave the live window, and the
+notebook, the latest user or parent request and the most recent messages are
+carried forward. It works even below the threshold and with automatic compaction
+off, and it does not summarize anything.
+
+`read` and `grep` resolve the path `history://current/full` to the caller's active
+branch rendered as Markdown, including what the live window no longer holds. The
+usual `offset`, `limit` and search arguments apply. Any other `history://` path
+fails with "Invalid history://current route; use exactly history://current/full
+(selectors may follow it)". With the setting off, the route answers
+"history://current/full is available only when runtime.compaction.notes_windows is
+enabled". See [configuration](../configuration/config.md#notes-backed-context-windows).
 
 ## Code execution
 

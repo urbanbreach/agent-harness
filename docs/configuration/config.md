@@ -50,7 +50,19 @@ can run longer. Connection setup has a separate limit of at most 30 seconds.
 
 The live TUI shows generation speed, session cost and prompt cache hits next to
 context usage in the row above the transcript, for example
-`49.6 tok/s · $0.047 · CH96.4% · 9.9K / 192K 5%`.
+`49.6 tok/s · $0.047 · CH96.4% · ⟲ ◫ 5.2%/192K ░░░░░░░╎┃░`.
+The context segment shows the share of the model's context window in use and the
+window size, for example `◫ 42.0%/200K`. While usage is unknown, as right after a
+compaction, only the window shows; while the window is unknown it reads
+`900/?`. The text turns yellow at 50% of the window or 150K tokens, purple at 70%
+or 270K and red at 90% or 500K, whichever comes first. `⟲` appears while
+automatic compaction is on. It pulses while maintenance runs, stays in the
+accent colour inside the background-summary window just below the compaction
+threshold, and otherwise takes the usage colour. The gauge marks the compaction
+threshold with `┃` and the point where background summaries start with `╎`; ASCII
+terminals use `ctx:`, `[A]`, `|` and `:`. The row drops the gauge first, then
+`⟲`, then speed, cost and cache hits as it narrows.
+
 Speed updates while the model streams. It counts streamed text, reasoning and
 tool input at roughly four bytes per token, weights the last minute or so of
 streaming most, and corrects itself to the provider's billed count when each
@@ -463,7 +475,7 @@ Use a live prompt when you need to check account and transport access.
 | Runtime config file | `harness.json` / `harness.jsonc` | Personal defaults live in `<home>`, normally `~/.harness`. |
 | TUI config file | `tui.json` / `tui.jsonc` | Runtime and TUI settings are intentionally split. |
 | Core runtime keys | `provider`, `model`, `model_roles`, `agent`, `permission`, `mcp`, `skills`, `instructions`, plus Harness runtime extensions | `agent` configures the `default` parent and custom profiles; `subagents` configures native child definitions. |
-| TUI settings | `keybinds`, `confirm_before_rewind` | Unsupported TUI-only fields fail validation. |
+| TUI settings | `keybinds`, `confirm_before_rewind`, `collapse_compacted_history` | Unsupported TUI-only fields fail validation. |
 | Permission naming | `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`, plus safety kinds `read`, `external_directory`, and `doom_loop` | Legacy `shell` / `network` remain compatibility-only. `external_directory` and `doom_loop` default to ask; `read` defaults to allow with `.env` pattern asks. |
 | Prompt assets | `.harness/prompts/models/*.md`, shared templates and existing agent definitions | `AGENTS.md` is auto-discovered separately as project context. |
 
@@ -1143,6 +1155,7 @@ project and user Markdown definitions can replace a built-in with the same name.
 | `$schema` | Optional schema URI for editor integration. |
 | `keybinds` | Supported TUI keybinding overrides. |
 | `confirm_before_rewind` | Ask before rewinding a conversation (default `true`). The rewind panel's "Yes, and don't ask again" choice saves `false`. |
+| `collapse_compacted_history` | Hide transcript entries that a compaction summary replaced (default `true`). The originals the summary does not cover stay visible. The settings overlay (Appearance, Collapse Compacted History) and Ctrl+Alt+K write this key to the active `tui.jsonc` or `tui.json`; it appears in the settings registry as `harness.tui.collapse_compacted_history`. |
 
 ## TUI default bindings
 
@@ -1237,12 +1250,21 @@ inserts a newline and `Alt+Enter` submits or steers.
 | `next_message` | Ctrl+Alt+n |
 | `previous_message` | Ctrl+Alt+p |
 | `prompt_stash` | Ctrl+s, Alt+s |
+| `toggle_compaction_details` | Ctrl+Alt+o |
+| `toggle_collapsed_history` | Ctrl+Alt+k |
 
 These actions are also accepted as override IDs but have no shipped binding:
 `toggle_follow`, `scroll_up`, `scroll_down`, `open_event_log`,
 `revert_workspace`, `toggle_scrollbar`, `open_error_details`, `prompt_stash_pop`,
 `prompt_stash_list`, `open_session_history`, `open_settings`, `open_view_plan`,
-`open_memory_browser` and `open_worktree_picker`.
+`open_memory_browser`, `open_worktree_picker` and `interrupt_turn`.
+
+`interrupt_turn` interrupts the running turn or compaction. Ctrl+C is the built-in
+interrupt key and stays mapped to `dismiss_modal` and the composer's clear-draft
+step; binding `interrupt_turn` adds a key and changes the hint the loader shows.
+From a focused child view the interrupt returns to the main view instead of
+cancelling. In the model switcher, Ctrl+T opens the compaction threshold editor
+for the selected model; the overlay owns that key.
 
 Input aliases are `toggle_operator_sidebar` for `open_status_dialog`,
 `resume_session` for `open_session_history`, `settings` for `open_settings`,
@@ -1662,37 +1684,100 @@ fallback for unconfigured kinds. Prefer the public scalar and selector-map forms
 
 ## Provider context compaction expectations
 
-Provider-context compaction consumes the same redacted request-budget snapshot
-prepared for provider dispatch. Resolved model limits, the reserved output,
-provider framing, tools, attachments, history, the pending prompt, and the
-configured safety margin are accounted once before the snapshot reaches the
-compaction path. Model variants still override base model limits during model
-resolution; compaction does not reconstruct those limits from scalar metadata.
+Harness measures the next request before each provider call, after a final
+answer, and between tool batches. The measure is the larger of the provider's
+last reported usage plus estimates for newer entries and a local estimate of the
+whole request, so system prompts, tools, attachments and the pending prompt
+count once. Maintenance runs when that measure exceeds the threshold; equality
+does not trigger it.
 
-Known limits produce an estimated compaction threshold, and equality with that
-threshold requires compaction. When all model limits are unknown, automatic
-compaction has no threshold unless the explicit conservative fallback below is
-enabled. Manual and provider-overflow compaction remain available without known
-capacity. The preserved history allowance is the snapshot threshold minus
-current non-history request components, capped by `keep_recent_tokens`.
+Without an override, the threshold is the window minus a reserve: the larger of
+15% of the window and `reserve_tokens` (16,384 when unset). On small windows an
+unset reserve falls back to the proportional 15%. A percentage or fixed
+threshold replaces that default. Either way the threshold never exceeds the
+request's input budget, which already reserves the model's output. Automatic
+maintenance needs a known window; with unknown limits only the explicit
+conservative fallback (`fallback_input_tokens`) applies. Manual commands and
+provider-overflow recovery work without known capacity.
 
-Compaction settings live under `runtime.compaction`:
+Each pass walks `method_order`, skipping methods that cannot run: `remote`
+needs a provider-native compaction route or `remote_endpoint`, `archive` needs a
+vision-capable model, `handoff` runs automatically or through `/handoff` but
+never for overflow recovery or plain `/compact`, and `shake` never runs from
+`/compact`. Automatic failures become warnings and the turn continues. A pass
+that cannot bring the context under 80% of the threshold pauses automatic
+maintenance for the rest of the turn instead of compacting in a loop.
+
+The archive method renders older history into dense text frames that ride the
+summary message as images, in reading order: guide, head text, frames, tail
+text. It is refused before commit when it would not shrink the context, would
+not fit the window, or would leave no headroom while a later summarizing method
+could run; the walk then moves on. Frames count against the deployment's image
+allowance after retained images (for example 600 on Anthropic's own API, 200 on
+OpenAI's and 5 on a host Harness knows nothing about), and an oversized render is
+retried up to twice with fewer frames. The bundled bitmap fonts draw most Latin,
+Greek and symbol text. With `archive.shape` at `auto`, text they cannot draw
+safely switches to the bundled Silver font (shape `silver16-bw`), which also
+covers Japanese, Chinese and Korean. So does text that is mostly wide CJK
+characters: at least 8 of them and a quarter of the graphics. History that
+neither font can draw for more than 5% of its characters is not archived. An
+explicit `archive.shape` is never switched. Models that do not read archived
+reasoning (the Anthropic family) get frames without it. That reasoning-free view
+is rendered once per reader and saved as a `compaction_patched` record, and the
+stored archive keeps the original.
+
+With `async_enabled`, a summary is prepared in the background once the context is
+within `min(32000, max(8192, threshold / 8))` tokens of the threshold. When the
+threshold is crossed, a ready summary commits immediately if its snapshot is
+still the start of the conversation; a running one may finish while the context
+stays below `min(threshold + lead, window - 8192)`.
+
+Compaction settings live under `runtime.compaction`. Snake_case keys also accept camelCase aliases.
 
 | Key | Default | Purpose |
 | --- | --- | --- |
-| `enabled` | `true` | Master switch for proactive, pre-prompt, overflow-retry, and manual compaction. When `false`, all compaction paths become no-ops. |
-| `threshold_percent` | unset | Fixed percentage of the context window, an integer from 1 through 100. Used when no global token threshold is set. |
-| `threshold_tokens` | unset | Fixed positive token count; overrides the global percentage when both are set. |
-| `model_thresholds` | `{}` | Percentages or `{ "tokens": count }` keyed by canonical `provider:model` references; override the global threshold. |
-| `agent_thresholds` | `{}` | Percentages or `{ "tokens": count }` keyed by agent profile names from `agent`; override model and global thresholds. |
-| `reserveTokens` / `reserve_tokens` | `16384` | Safety margin subtracted from the usable context window before compaction is considered. |
-| `keepRecentTokens` / `keep_recent_tokens` | `20000` | Target number of recent tokens to preserve verbatim after compaction. The latest complete turn is always preserved. |
-| `splitOversizedTurns` / `split_oversized_turns` | `false` | Allows overflow compaction to split an oversized latest turn, summarizing the earlier portion while preserving a suffix as recent provider context. |
-| `autoRetryOverflow` / `auto_retry_overflow` | `true` | Enables the one-shot overflow compaction retry after a provider context-window error. Set `false` to fail immediately. |
-| `structuredSummaryContract` / `structured_summary_contract` | `true` | Requires summaries to carry the Harness sections `Goal`, `Constraints`, `Progress`, `Key Decisions`, `Next Steps`, and `Critical Context`. Set `false` only for legacy heading compatibility. |
-| `estimatedTokenTriggers` / `estimated_token_triggers` | `true` | Enables the explicitly conservative automatic-compaction mode only when all model limits are unknown. This mode is labeled conservative and never claims exact model capacity or a percentage. |
-| `suppress_auto_compaction` / `suppressAutoCompaction` | `false` | Suppress automatic pre-request compaction without disabling manual compaction. |
-| `fallbackInputTokens` / `fallback_input_tokens` | `32768` | Non-exact conservative input cap used only by that all-limits-unknown mode. Set to `0` (or disable `estimatedTokenTriggers`) to leave capacity unknown and automatic pressure undecided. |
+| `enabled` | `true` | Enable automatic maintenance. Manual commands always remain available. |
+| `mid_turn_enabled` | `true` | Allow maintenance between tool batches. Subagents always enable it. |
+| `method_order` | `[remote, archive, handoff, shake, soft]` | Try available methods in this order. Unknown names are dropped, the first duplicate wins and a value that is not an array means the default. |
+| `threshold_percent` | unset | Trigger as a share of the window: a number above 0 and at most 100, or an `N%` string such as `80%` or `80.5%`. `null` or `-1` means unset. The trigger stays between 1% and 99% of the window. |
+| `threshold_tokens` | unset | Fixed trigger in tokens, a positive whole number; larger values saturate at 4,294,967,295. Overrides the global percentage. A trigger at or above the window falls back to the input budget. `null` or `-1` means unset. |
+| `base_window_tokens` | unset | Window that percentage triggers and the default scale from when it is smaller than the model's own window. Positive whole number; `null` or `-1` means unset. |
+| `model_thresholds` | `{}` | Model overrides keyed by `provider/model` or `provider:model`; a terminal `*` matches a model prefix. Entries are `"80%"`, `"f150000"`, `{ "tokens": N }`, `{ "base": N }` or a bare number (a base window). |
+| `model_thresholds_enabled` | `true` | Apply configured model overrides. |
+| `agent_thresholds` | `{}` | Profile overrides: `"80%"`, a bare number or `{ "tokens": N }` (fixed tokens). `fN` strings and `base` are rejected. |
+| `reserve_tokens` | unset | Reserve the default threshold leaves below the window; an explicit token count replaces 16,384. `null` or `-1` means unset. |
+| `keep_recent_tokens` | `20000` | Recent transcript token allowance. Oversized turns can retain a suffix. |
+| `auto_continue` | `true` | Continue the turn after automatic compaction recovery. |
+| `async_enabled` | `true` | Prepare summaries in the background when possible. |
+| `handoff_save_to_disk` | `false` | Save the handoff document of an automatic pass, redacted, as `handoff-<UTC time>.md` in the session's artifacts directory (a private file). A manual `/handoff` is not saved. |
+| `remote_enabled` | `true` | Provider-native compaction as a whole. Only `false` disables it: no lane is offered and no native boundary is reused. `remote_endpoint` is separate. |
+| `remote_streaming_v2_enabled` | `true` | Allow the streaming Responses lane, which is tried before the compact endpoint. |
+| `remote_endpoint` | unset | Text-summary endpoint the `remote` method uses when the provider offers no native lane or the lane fails. Empty or whitespace means unset. See [remote compaction](../operations/providers.md#remote-compaction). |
+| `remote_models` | `{}` | Per-model remote overrides keyed like `model_thresholds` (exact key first, then the longest prefix). Fields: `enabled`, `api` (`responses`, `anthropic` or `chat`), `endpoint`, `model`, `v2_streaming_enabled` and `v2_endpoint`. |
+| `v2_retained_message_budget` | `64000` | Token allowance for the typed user messages the streaming lane retains. A finite number is floored and clamped, so negatives become 0. |
+| `idle_enabled` | `false` | Enable maintenance after idle time. |
+| `idle_threshold_tokens` | `200000` | Minimum context occupancy for idle maintenance. |
+| `idle_timeout_seconds` | `300` | Idle delay in seconds. |
+| `supersede_reads` | `true` | Elide reads superseded by newer results. |
+| `drop_useless` | `true` | Elide successful results explicitly marked uneventful. |
+| `context_promotion` | `false` | When the context is full, run the turn on the larger model from `promotion_targets` instead of compacting. The target needs a larger window and a provider with a usable credential. The switch lasts for the turn and never rewrites your model selection. |
+| `promotion_targets` | `{}` | Map source models to destination model references. |
+| `summary_model` | unset | Model reference tried first for summaries. `@smol` and `@slow` name the model roles. |
+| `summary_models` | `{}` | Summarizer per live model, keyed `provider/model` or `provider:model`. Preferred over `summary_model`. Values are model references or `@smol` and `@slow`. |
+| `retry.enabled` | `true` | Retry failed automatic summary requests. Manual and background passes never back off. |
+| `retry.max_retries` | `10` | Retries per summarizer. Timeouts and context overflow are never retried. |
+| `retry.base_delay_ms` | `500` | First retry delay. It doubles each attempt and rises to a server's retry-after hint. A wait over 30 seconds moves on to the next summarizer when one remains. |
+| `notes_windows` | `false` | Roll a full window over to persistent notes instead of summarizing it. See [notes-backed context windows](#notes-backed-context-windows). |
+| `auto_retry_overflow` | `true` | Retry after provider context-window recovery. |
+| `estimated_token_triggers` | `true` | Allow conservative triggers when model limits are unknown. |
+| `fallback_input_tokens` | `32768` | Conservative unknown-model input allowance; zero disables it. |
+| `archive.shape` | `auto` | Archive rendering shape. `auto` follows the model; an id such as `silver16-bw` fixes it. |
+| `archive.system_prompt` | `none` | Image the system prompt in the outgoing request: `none`, `agents_md` (repository rules and loaded instructions) or `all`. See [inline imaging](#inline-imaging). |
+| `archive.tool_results` | `false` | Image large tool results in the outgoing request. |
+| `branch_summary.enabled` | `false` | Generate summaries when returning from a branch. |
+| `branch_summary.reserve_tokens` | `16384` | Output reserve for branch summaries. |
+
+Removed compaction keys are rejected as unknown fields. Set `enabled` to `false` to disable automatic maintenance without disabling manual commands.
 
 For example, merge this into a config that defines the `explore` agent profile:
 
@@ -1701,15 +1786,16 @@ For example, merge this into a config that defines the `explore` agent profile:
   "runtime": {
     "compaction": {
       "threshold_percent": 70,
-      "model_thresholds": { "openai:gpt-4o-mini": 80 },
-      "agent_thresholds": { "explore": 55 }
+      "model_thresholds": { "openai:gpt-4o-mini": "80%" },
+      "agent_thresholds": { "explore": "55%" }
     }
   }
 }
 ```
 
-For absolute amounts, use `threshold_tokens` globally and `{ "tokens": count }`
-inside model/agent maps. Bare numbers inside those maps remain percentages:
+For absolute amounts, use `threshold_tokens` globally, `{ "tokens": count }` or
+`"f<count>"` inside the model map, and `{ "tokens": count }` or a bare number
+inside the agent map. A bare number in the model map is a base window instead:
 
 ```jsonc
 {
@@ -1723,39 +1809,86 @@ inside model/agent maps. Bare numbers inside those maps remain percentages:
 }
 ```
 
-Token amounts must be integers from 1 through 4,294,967,295. At the global scope,
-`threshold_tokens` takes priority over `threshold_percent`; set it to `null` to
-clear an inherited token amount. Precedence is agent profile, then selected model,
-then global threshold, then the adaptive default, regardless of the unit. Profile
-overrides apply to every instance of that profile. A
-fixed override does not change after a high-yield compaction. Without an override,
-the default is 45%, 50%, 55%, 60%, 70%, or 80% for windows ending at 16,000, 32,000,
-64,000, 128,000, 512,000, or above 512,000 tokens, respectively. Saving more than
-half the previous context lowers the next threshold by five percentage points.
-Savings count replaced messages and the old summary minus the new summary;
-retained messages and provider overhead do not count as savings.
-Fractional token thresholds round up; compaction is required at equality.
+Token amounts are whole numbers from 1 up. At the global scope,
+`threshold_tokens` takes priority over `threshold_percent`; set either to `null`
+to clear an inherited value. Precedence is agent profile, then selected model,
+then global threshold, then the reserve-based default, regardless of the unit.
+Profile overrides apply to every instance of that profile, and an agent override
+disables model overrides for that profile. A model key matches the exact
+`provider/model` or `provider:model` first, then the longest terminal-`*` prefix.
+A `base` entry caps the window that the percentage or reserve policy scales from;
+it does not move a fixed trigger. Model and agent maps merge by key across config
+layers, and a `null` entry removes a key an earlier layer set. Numbers from 1
+to 100 in these maps used to mean percentages; saving settings from the TUI
+rewrites them as `"N%"` strings, and a hand-written `55` now means 55 tokens. In
+the TUI, Ctrl+T in the model switcher edits the entry of the selected model: `80%`,
+`f150000` or `200K` (a base window, with `K`, `M` and `B` suffixes) saves to
+`runtime.compaction.model_thresholds` in the project config, and an empty line
+removes the key. The editor refuses a fixed trigger above the model window,
+flags a base window at or above it and previews where compaction would start.
 
-These are soft thresholds. The model's input budget and reserve still require
-compaction earlier when necessary, even with `threshold_percent: 100`. Background
-preparation may start before the threshold but cannot commit solely because its
-summary is ready. Unknown model capacity still follows the conservative fallback
-setting; an override does not establish an unknown model's true limits. Model and
-agent threshold maps merge by key across config layers.
+A committed pass appends one `SessionCompaction` event with the summary, method, short summary, token counts, the first kept event, file lists, trigger reason and any warning. Archive frames are stored as private attachment artifacts. A provider-native compaction payload is stored as the private artifact `artifacts/native-<blake3>.bin`, referenced from the event by digest and never written to `events.jsonl`; support exports and trace archives leave it out. Resume rebuilds the summary entry, the kept entries and the `ContextPruned` edits (superseded reads, uneventful results, aged output, shake and dead-end rescue) in journal order. After a restart a native compaction is reused only when its payload loads for the live provider, model and API; otherwise resume falls back to the previous readable compaction and the originals it kept. See [sessions and replay](../architecture/sessions-and-replay.md#compaction-records). New logs do not persist provider deltas.
 
-On successful compaction, the coordinator appends a single `SessionCompaction` event to the event log and updates the in-memory provider context. The event carries the generated summary, token estimate before compaction, the sequence number of the first preserved event, replay-derived read/modified file lists, the trigger reason, and hook provenance. No separate checkpoint artifact is written; the summary lives entirely in the event and the in-memory `ProviderContext`. Resume reads the latest `SessionCompaction` for the agent and the committed events that follow it. New logs do not persist provider deltas.
+`/compact [remote|archive|soft] [focus]` interrupts a running turn, compacts, and resumes the interrupted turn once the pass commits or finds nothing to compact. A second `/compact` or `/handoff` while one is running is rejected with `Compaction already in progress`. `/handoff [focus]` has the current model write a handoff document that replaces older history. `/shake [elide|images|thinking]` removes heavy tool output (saved to a recoverable artifact), attached images or reasoning without a model call. When nothing is older than the recent window, the command reports a no-op.
 
-Manual `/compact` summarizes older completed turns now, preserves the latest completed turn verbatim, and appends a `SessionCompaction` event. The success notice reports the active-context estimate delta when available, or says the estimate was unchanged. The default summary contract uses the Harness sections for goal, constraints, progress, key decisions, next steps, and critical context, with operational memory and source facts added as replay-derived context; it is still lossy. Sessions with only one completed turn no-op because there is no older turn to summarize.
+Compaction hooks can cancel a pass, supply the compaction themselves, add context to the summary request and observe the saved entry. Handlers that fail or time out contribute nothing; only a `critical` hook stops the pass. Background summaries do not start while a `compaction_requested` hook is configured. Older compaction event variants remain readable. See [hook execution](../operations/hooks.md#compaction-hooks).
 
-Lifecycle hooks can veto compaction before its summary is committed. Hook output does not replace the summary. The journal writes `SessionCompaction`; older compaction event variants remain readable. See [hook execution](../operations/hooks.md).
-
-If the provider rejects a request because it exceeds the context window, the coordinator may compact and retry once when the retry can prove it shrank the provider-visible payload. Estimated pre-prompt compaction uses the same `SessionCompaction` path before provider request construction. If a pre-prompt compaction cannot reduce the estimated active context, the coordinator records the failure and does not loop on the same turn.
+If the provider rejects a request as too long, recovery compacts and retries, up to three passes, as long as each pass makes the request fit. A request-size or media rejection (HTTP 413) is not treated as a token problem: when the window is known, the local estimate is under 90% of it and the error names no image limit, Harness shrinks older history without image-producing methods or model promotion and retries; otherwise the turn stops with a warning that names the size limit. A response that stops at its output limit is kept with a warning when it delivered text or tool calls and the context is under the threshold. Otherwise Harness compacts when the context is full, or retries with a reminder, and gives up after three consecutive empty responses.
 
 Failed or aborted provider turns can be preserved in active context. Replay/debug projections keep the incomplete marker, failure stage, and redacted reason so a future provider call does not treat partial assistant output as a completed answer.
 
 Operational memory is derived from persisted events, not from live filesystem scans. The `SessionCompaction` event records capped read-file and modified-file lists, and replay projections expose these facts so operators can see what context survived compaction.
 
 TUI memory or transcript caps are separate presentation settings. They affect what the operator sees on screen, not the persisted provider context used for resume or overflow-retry compaction. The TUI distinguishes active context estimate from cumulative provider tokens spent: active context may decrease after `SessionCompaction`, while total spend remains cumulative and never decreases.
+
+### Token counting
+
+Harness counts tokens locally with the `harness-tokenizer` crate. It bundles
+vocabularies for OpenAI's o200k, four Claude generations, Qwen3, DeepSeek, Kimi and
+GLM, picks one from the provider and model id, and counts offline: nothing is
+downloaded and no model weights are loaded. The Claude counts come from a
+third-party reconstruction of the tokenizer, so treat them as close estimates. The
+license notices of every bundled vocabulary are in
+`crates/harness-tokenizer/LICENSES.md`. A model with no bundled vocabulary counts
+at four bytes per token, rounded up per fragment; set
+`HARNESS_TOKENIZER_ACCURATE=1` to count such models with o200k instead. Images are
+priced from the model's own image rules, not from their bytes. Usage the provider
+reports still anchors the measure; the tokenizer prices what came after the last
+report and what a provider never reports.
+
+### Notes-backed context windows
+
+With `runtime.compaction.notes_windows` on, a full window is not summarized. The
+agent keeps a notebook with the `context_notes` tool: UTF-8 text of at most 16 KiB,
+redacted before it is saved. When the window rolls over, Harness commits a
+compaction whose summary is a fixed notice, keeps the recent messages up to
+`keep_recent_tokens`, puts the latest notebook back at the head of the context and
+carries the latest user or parent request forward. No summarizer runs, and the
+old transcript stays readable at `history://current/full` through `read` and
+`grep`. Automatic threshold, overflow, incomplete-response and idle passes roll
+over, and so does a manual `/compact` with no mode or focus. The `new_context`
+tool rolls over on demand, even below the threshold or with automatic compaction
+off. Once per window, when the context enters the band just below the threshold
+where background summaries would start, a reminder asks the agent to bring its
+notes up to date. The setting changes behavior only for an agent that can call
+`context_notes`, `new_context`, `read` and `grep`; every other agent keeps the
+normal methods. See the [tool catalog](../tools/native-tool-catalog.md#context-notes-and-new-windows).
+
+### Inline imaging
+
+`archive.system_prompt` and `archive.tool_results` send text as images in the
+outgoing request. They apply to vision-capable models only and change just the
+copy that goes to the provider; the stored context, the journal and the
+transcript stay as they are. With `agents_md`, the repository rules and loaded
+context-file instructions become images; with `all`, the whole system prompt does.
+The frames ride the first user message and the system prompt keeps a short
+pointer to them. Tool results are imaged when they hold at least 3,000 text
+tokens and the frames cost at most 90% of that; errors are never imaged, and
+`read` output only for Anthropic Opus models from 5.5 up to 10. Each swap that
+saves tokens appends one line with `ts`, `session`, `provider`, `model`,
+`toolCallId` and `savedTokens` to `inline-savings.jsonl` in the Harness home, once
+per tool call. The journal is best effort: a write failure is logged at debug level
+and never reaches the request.
 
 ## Runtime behavior guidance
 
@@ -1784,8 +1917,9 @@ under `runtime.behavior`:
 While a turn runs, including while its tools
 run, `Enter` (`Alt+Enter` in multiline mode) steers it: the message is journaled as
 `SteeringAccepted` and joins the turn before its next model request, including a
-message that arrives while the turn's last request streams. Until then the
-transcript marks it `STEERING`. A tool that would keep the message waiting returns
+message that arrives while the turn's last request streams. Until then it waits in
+the pending band above the status row under `Steering`; queued follow-ups wait
+under `After yield`. A tool that would keep the message waiting returns
 early, as its own timeout would. A foreground `spawn_subagent` moves the child to
 the background, `wait_commands_or_subagents` and `get_command_or_subagent_output`
 return with the work still running, `bash` with `block_until_ms` leaves its
