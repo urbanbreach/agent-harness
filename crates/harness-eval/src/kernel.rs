@@ -76,10 +76,7 @@ impl Process {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.as_std_mut().process_group(0);
-        }
+        detach(&mut command);
         let executable = std::path::PathBuf::from(command.as_std().get_program());
         let mut child = command.spawn()?;
         #[cfg(unix)]
@@ -260,6 +257,21 @@ pub(crate) fn interpreter(options: &SessionOptions, names: &[&str]) -> Result<st
         }
     }
     Err(format!("eval interpreter is unavailable: {}", names.join(" or ")).into())
+}
+
+/// Starts `command` in its own session and process group, with no controlling terminal.
+///
+/// A program that opens `/dev/tty` to prompt then fails at once instead of drawing over the TUI.
+#[cfg(unix)]
+#[allow(
+    unsafe_code,
+    reason = "std has no stable setsid for a child; pre_exec is the hook"
+)]
+pub(crate) fn detach(command: &mut Command) {
+    // SAFETY: `setsid` is async-signal-safe, so it may run between `fork` and `exec`.
+    unsafe {
+        command.pre_exec(|| rustix::process::setsid().map(drop).map_err(Into::into));
+    }
 }
 
 // Julia's standard library has no JSON parser. Encode trusted protocol values

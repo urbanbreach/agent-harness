@@ -60,10 +60,24 @@ impl Group {
     }
 }
 
+/// Starts `command` in its own session and process group, with no controlling terminal.
+///
+/// A program that opens `/dev/tty` to prompt then fails at once instead of drawing over the TUI.
+#[cfg(unix)]
+#[allow(
+    unsafe_code,
+    reason = "std has no stable setsid for a child; pre_exec is the hook"
+)]
+pub fn detach(command: &mut Command) {
+    // SAFETY: `setsid` is async-signal-safe, so it may run between `fork` and `exec`.
+    unsafe {
+        command.pre_exec(|| rustix::process::setsid().map(drop).map_err(Into::into));
+    }
+}
+
 #[cfg(unix)]
 pub fn spawn_group(mut command: Command) -> Result<(tokio::process::Child, Group), ToolError> {
-    use std::os::unix::process::CommandExt;
-    command.as_std_mut().process_group(0);
+    detach(&mut command);
     let child = command.kill_on_drop(true).spawn()?;
     let pid = child
         .id()
@@ -169,14 +183,26 @@ async fn capture(mut stream: impl AsyncRead + Unpin) -> Result<(Vec<u8>, bool), 
     }
 }
 
-/// Deliberately pass only process lookup, terminal, temporary-directory and locale settings.
+/// Deliberately pass only process lookup, terminal, temporary-directory, locale, home, user and
+/// SSH-agent settings. Git and ssh find the user's config and credentials through the last three.
 pub fn environment(command: &mut Command) {
     command
         .env_clear()
         .env("PATH", "/usr/local/bin:/usr/bin:/bin")
         .env("TERM", "dumb");
     for key in [
-        "PATH", "TERM", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "LC_CTYPE",
+        "PATH",
+        "TERM",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SSH_AUTH_SOCK",
     ] {
         if let Some(value) = std::env::var_os(key) {
             command.env(key, value);

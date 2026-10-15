@@ -129,8 +129,9 @@ Selected files and paths outside the workspace use the same read/edit gates.
 Native edits validate the current read fingerprint, prepare private staged output,
 format it, then publish a checked replacement and bounded undo baseline. Undo
 refuses concurrent editor changes. Shell commands use bounded output, filtered
-environments, process groups and joined cancellation. Optional Linux filesystem
-confinement is separate from application policy.
+environments, their own session and process group with no controlling terminal,
+and joined cancellation. Optional Linux filesystem confinement is separate from
+application policy.
 
 `edit.mode` and `edit.model_variants` select `apply_patch`, `replace` or
 `hashline` editing for each model. `auto` resolves a model-family preference.

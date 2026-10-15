@@ -74,6 +74,11 @@ The first public release.
 - A message the run refuses, such as one over 1 MiB, goes back to the editor
   with the reason. It used to disappear, and the TUI then dropped every later
   prompt, interrupt and permission answer.
+- Commands the agent runs no longer share your terminal. A credential prompt,
+  such as git asking for a GitHub username, used to draw over the TUI and stall
+  the turn until the command timed out. It now fails at once with an error the
+  agent can read. Bash commands, hooks and code kernels also receive HOME, USER,
+  LOGNAME and SSH_AUTH_SOCK, so git finds your identity and credential helpers.
 
 ### Added
 

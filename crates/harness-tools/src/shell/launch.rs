@@ -40,7 +40,7 @@ pub(super) fn prepare(
     };
     let plan = build_fs_plan(policy, &roots)
         .ok_or_else(|| ToolError::Execution("invalid OS sandbox filesystem roots".into()))?;
-    // setpriv applies Landlock after exec. No unsafe fork hook or extra resident process.
+    // setpriv applies Landlock after exec. No Landlock code runs in the forked child, and no extra process stays resident.
     let mut command = Command::new("/usr/bin/setpriv");
     command.args(["--no-new-privs", "--landlock-access", &format!("fs:{ALL}")]);
     for path in &plan.read_roots {

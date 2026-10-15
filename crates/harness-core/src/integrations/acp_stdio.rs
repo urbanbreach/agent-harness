@@ -145,7 +145,7 @@ fn serve(
     requests: mpsc::Receiver<Request>,
     ready: mpsc::SyncSender<Result<(), String>>,
 ) {
-    use std::{os::unix::process::CommandExt, process::Stdio};
+    use std::process::Stdio;
     use tokio::{io::BufReader, process::Command};
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -168,7 +168,7 @@ fn serve(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
-    process.as_std_mut().process_group(0);
+    crate::process::detach(&mut process);
     let mut child = match process.spawn() {
         Ok(child) => child,
         Err(_) => {

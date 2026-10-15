@@ -15,6 +15,7 @@ fn shell_filters_environment_and_enforces_filesystem_policy_only_in_children(
             .env("HARNESS_SHELL_ENV_PROBE", "1")
             .env("GITHUB_TOKEN", "synthetic-shell-environment-secret")
             .env("PYTHONSTARTUP", "/must-not-be-inherited")
+            .env("HOME", "/synthetic-home")
             .output()?;
         assert!(
             output.status.success(),
@@ -46,6 +47,8 @@ fn shell_filters_environment_and_enforces_filesystem_policy_only_in_children(
             handle.start_run(policy, &root).await?;
             let script = format!(r#"import json, os, pathlib, tempfile
 assert 'GITHUB_TOKEN' not in os.environ and 'PYTHONSTARTUP' not in os.environ
+assert os.environ.get('HOME') == '/synthetic-home'
+assert os.getsid(0) != os.getsid({0}), 'command shares the harness terminal session'
 assert pathlib.Path('source').read_text() == 'original'
 try:
     pathlib.Path('/proc/{}/environ').read_bytes()

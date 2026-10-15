@@ -148,9 +148,12 @@ permission, outcome, output summary, and failure reason. Missing values have no
 environment variable. Text fields are redacted and capped at 4,096 characters.
 Raw tool arguments, provider payloads, and reasoning fragments are not supplied.
 
-The inherited environment contains only PATH, TERM, temporary-directory settings,
-and locale settings. Add other values explicitly with `env`; these values join
-the credential redactor before execution. `HARNESS_HOOK_*` names are reserved.
+The inherited environment contains only PATH, TERM, HOME, USER, LOGNAME,
+SSH_AUTH_SOCK, temporary-directory settings and locale settings. Add other values
+explicitly with `env`; these values join the credential redactor before
+execution. `HARNESS_HOOK_*` names are reserved. Hooks run in their own session
+without a controlling terminal, so a command that prompts on `/dev/tty` fails
+instead of waiting for input.
 
 There are at most 64 configured hooks. Each command and its configured environment
 may occupy at most 128 KiB. Timeouts range from 1 to 300,000 ms; `timeout_ms`

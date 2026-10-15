@@ -110,10 +110,7 @@ pub(crate) async fn install(session: &Inner, cell: &Cell, args: &Value) -> Resul
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.as_std_mut().process_group(0);
-    }
+    crate::kernel::detach(&mut command);
     let mut child = command.spawn()?;
     let _group = ProcessGroup(child.id());
     let stdout = child.stdout.take().ok_or("installer stdout missing")?;
