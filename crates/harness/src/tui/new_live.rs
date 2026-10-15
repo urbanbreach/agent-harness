@@ -28,6 +28,7 @@ use super::coordinator_warmup::LiveCoordinatorConfigWarmup;
 use super::live_events::forward_events_to_tui;
 use super::live_intents::{handle_ui_intents, LiveAgentTarget};
 use super::live_options::new_live_tui_options;
+use super::live_runtime::bootstrap_new_live_runtime;
 use super::live_settings::{launch_metadata_for_mode, prepare_new_live_workspace, LiveSettings};
 use super::profile_log::profile_handoff;
 use super::session_history::load_startup_session_history_entries;
@@ -80,7 +81,7 @@ pub(super) async fn run_new_worktree_live_session(
     .await
 }
 
-fn prepare_worktree_live_settings(
+pub(super) fn prepare_worktree_live_settings(
     settings: &LiveSettings,
     name: Option<&str>,
 ) -> Result<LiveSettings, String> {
@@ -328,10 +329,10 @@ async fn run_new_live_runtime(
     }
 }
 
-struct NewLiveRuntime {
-    coordinator: CoordinatorHandle,
-    event_forwarder_task: JoinHandle<Result<(), String>>,
-    ui_intent_task: JoinHandle<Result<(), String>>,
+pub(super) struct NewLiveRuntime {
+    pub(super) coordinator: CoordinatorHandle,
+    pub(super) event_forwarder_task: JoinHandle<Result<(), String>>,
+    pub(super) ui_intent_task: JoinHandle<Result<(), String>>,
 }
 
 impl NewLiveRuntime {
@@ -375,118 +376,4 @@ async fn runtime_bootstrap_error_notice(
 ) -> Result<(), String> {
     let _ = shutdown_rx.await;
     Err(err.to_string())
-}
-
-async fn bootstrap_new_live_runtime(
-    settings: &LiveSettings,
-    demo_mode: bool,
-    run_id_override: String,
-    launch_metadata: LaunchMetadata,
-    coordinator_config_warmup: LiveCoordinatorConfigWarmup,
-    launch_selection: LaunchSelection,
-    live_update_tx: LiveUpdateSender,
-    intent_rx: mpsc::UnboundedReceiver<UiIntent>,
-) -> Result<NewLiveRuntime, String> {
-    let workspace = prepare_new_live_workspace(settings, demo_mode, run_id_override.as_str())?;
-    profile_handoff("new_live.workspace_ready");
-
-    let clock: Arc<dyn Clock + Send + Sync> = if settings.deterministic {
-        Arc::new(FakeClock::new())
-    } else {
-        Arc::new(RealClock::new())
-    };
-
-    let mut coordinator_config = coordinator_config_warmup
-        .coordinator_config(settings, demo_mode)
-        .await?;
-    profile_handoff("new_live.coordinator_ready");
-    coordinator_config.run_id_override = Some(run_id_override);
-    coordinator_config.session_mode_source = Some(if demo_mode {
-        SessionModeSource::InteractiveMock
-    } else {
-        SessionModeSource::InteractiveLive
-    });
-    apply_runtime_metadata(
-        &mut coordinator_config,
-        settings.deterministic,
-        &settings.config_digest,
-    );
-
-    let run_name = create_default_title(clock.as_ref(), false);
-    let yolo_on_start = coordinator_config.yolo_on_start;
-    let coordinator = spawn_coordinator(
-        coordinator_config,
-        clock,
-        Arc::new(DefaultRedactor::default()),
-    );
-    profile_handoff("new_live.coordinator_spawned");
-
-    let run = coordinator
-        .start_run(run_name, &workspace)
-        .await
-        .map_err(|err| err.to_string())?;
-    profile_handoff("new_live.start_run_done");
-    let _ = live_update_tx.send(LiveUpdate::YoloModeChanged {
-        enabled: yolo_on_start,
-    });
-    if let Some(config) = settings.config.as_ref() {
-        let _ = logging::init_logging(config, &run.run_dir)?;
-    }
-    let store = coordinator
-        .event_store()
-        .await
-        .map_err(|err| err.to_string())?;
-    profile_handoff("new_live.event_store_done");
-
-    let agent_id = coordinator
-        .spawn_agent_idle(
-            supervisor_actor(),
-            launch_metadata.profile().to_string(),
-            None,
-        )
-        .await
-        .map_err(|err| err.to_string())?;
-    profile_handoff("new_live.spawn_agent_idle_done");
-
-    let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
-        agent_id: Some(agent_id),
-        profile: launch_metadata.profile().to_string(),
-        last_request_id: None,
-    }));
-    let event_forwarder_task = tokio::spawn({
-        let live_update_tx = live_update_tx.clone();
-        let forwarder_live_agent_target = Arc::clone(&live_agent_target);
-        async move {
-            forward_events_to_tui(
-                store,
-                live_update_tx,
-                1,
-                Some(forwarder_live_agent_target),
-                false,
-            )
-            .await
-        }
-    });
-
-    let intent_coordinator = coordinator.clone();
-    let intent_live_agent_target = Arc::clone(&live_agent_target);
-    let auth_backend = TuiAuthBackendContext::from_settings(settings)
-        .with_login_refresh(coordinator_config_warmup, launch_selection);
-    let ui_intent_task = tokio::spawn(async move {
-        handle_ui_intents(
-            intent_coordinator,
-            intent_rx,
-            user_actor(),
-            Some(intent_live_agent_target),
-            live_update_tx,
-            auth_backend,
-        )
-        .await
-    });
-
-    Ok(NewLiveRuntime {
-        coordinator,
-        event_forwarder_task,
-        ui_intent_task,
-    })
 }

@@ -5,6 +5,11 @@ over stdin/stdout. The server owns everything Harness-specific: configuration,
 credentials, sessions, coordinators, events and intents. The GUI process owns
 generic workspace work (files, Git, terminals) and never writes Harness journals.
 
+`harness gui` launches `HARNESS_GUI` when set (an executable path), otherwise
+`harness-gui` beside the current Harness executable. It passes `HARNESS_BIN`
+to the child and creates no files. `harness gui-server --mock` uses the
+deterministic TUI mock runtime; the server subcommand is hidden from help.
+
 ## Transport
 
 - One JSON object per line, UTF-8, `\n` terminated. stderr carries diagnostics only.
@@ -78,12 +83,16 @@ type SessionRow = {
 - `session.continue { runDir }` → `{ sessionId, runDir, cwd }`. Fails with the
   resume-disabled reason when the journal cannot be continued.
 - `session.close { sessionId }` → `null`. Stops the run.
-- `session.intent { sessionId, intent: Intent }` → `null` once accepted by the
-  session's intent handler. Outcomes arrive as `session.update` notifications.
+- `session.intent { sessionId, intent: Intent }` → `null` once queued for the
+  session's existing intent handler. Outcomes arrive as `session.update` notifications.
 
 ```ts
 type ModelSelection = { profile: string; model?: string; variant?: string }
 type AccessMode = "supervised" | "autoEdits" | "auto" | "full"
+
+// supervised keeps the configured permission rules and disables YOLO.
+// autoEdits automatically answers edit-family permission requests for this session.
+// auto currently behaves exactly like autoEdits. full enables coordinator YOLO.
 
 type Intent =
   | { kind: "submit" | "followUp"; text: string; fileTags?: SelectedFileTag[];
@@ -138,6 +147,16 @@ type Update =
   | { kind: "exited"; error?: string }
 ```
 
+Fork and clone materialize a child journal and emit `forked`; they do not replace
+the source coordinator. The GUI selects the child with `session.continue`.
+The optional fork request id identifies a `user_message_submitted.request_id`;
+the child ends immediately before that prompt, which becomes `draft`. A clone
+uses the latest stable history and an empty draft.
+
+Session-history refresh and provider-catalog refresh updates map to `status`;
+session-local authentication notices map to `notice`. Dedicated `auth.start`
+attempts use the `auth.update` notification below.
+
 Durable events are delivered once each, in `seq` order. After a lag the server
 replays durable events from the journal before resuming; clients drop any `seq`
 they already applied.
@@ -149,6 +168,9 @@ they already applied.
 - `commands.list { cwd }` → `{ name, description, argumentHint?, scope:
   "builtin" | "project" | "user", template? }[]`.
 - `files.index { cwd, limit? }` → `{ path, dir }[]` (project relative, capped).
+
+`files.index` defaults to 20,000 rows and caps larger limits there. It respects
+ignore files even outside Git repositories and excludes build/dependency trees.
 
 ```ts
 type ModelEntry = {
@@ -171,3 +193,11 @@ type ModelEntry = {
 - `settings.list { cwd }` → `{ id, surface, label, description, kind, value,
   defaultValue, editable, choices?: string[] }[]`.
 - `settings.write { cwd, id, value }` → `null`; `settings.reset { cwd, id }` → `null`.
+
+Runtime setting writes target the explicit `--config` path when supplied,
+otherwise `cwd/harness.jsonc` (or an existing `cwd/harness.json`). The core
+settings writer creates that file on demand and validates changes. Settings
+marked non-editable or secret cannot be written through this protocol. TUI
+preferences use the existing TUI configuration writers. Reset restores the
+registry default. Changes invalidate cached settings for future sessions;
+already running coordinators keep their current configuration.

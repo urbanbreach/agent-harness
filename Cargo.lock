@@ -1603,6 +1603,7 @@ name = "harness"
 version = "0.0.1"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "blake3",
  "clap",
  "clap_complete",

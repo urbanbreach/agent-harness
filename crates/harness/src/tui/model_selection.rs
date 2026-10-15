@@ -151,6 +151,13 @@ pub(super) fn apply_model_selection_to_launch_metadata(
     let Some(option) = matching_persisted_model_option(&launch_metadata, selection) else {
         return launch_metadata;
     };
+    launch_metadata_from_model_option(&launch_metadata, option)
+}
+
+pub(super) fn launch_metadata_from_model_option(
+    launch_metadata: &LaunchMetadata,
+    option: &ModelOption,
+) -> LaunchMetadata {
     LaunchMetadata::from_model_option(option)
         .with_resolved_models(launch_metadata.resolved_models().to_vec())
         .with_available_models(launch_metadata.available_models().to_vec())

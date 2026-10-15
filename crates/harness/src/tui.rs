@@ -64,6 +64,8 @@ use crate::scenarios::{
 mod auth_backend;
 #[path = "tui/coordinator_warmup.rs"]
 mod coordinator_warmup;
+#[path = "tui/gui_server.rs"]
+pub(crate) mod gui_server;
 #[path = "tui/launch_metadata.rs"]
 mod launch_metadata;
 #[path = "tui/lineage.rs"]
@@ -74,6 +76,8 @@ mod live_events;
 mod live_intents;
 #[path = "tui/live_options.rs"]
 mod live_options;
+#[path = "tui/live_runtime.rs"]
+mod live_runtime;
 #[path = "tui/live_settings.rs"]
 mod live_settings;
 #[path = "tui/model_selection.rs"]
@@ -721,129 +725,29 @@ async fn run_continue_session_bootstrap(
     launch_selection: LaunchSelection,
     coordinator_config_warmup: LiveCoordinatorConfigWarmup,
 ) -> Result<InteractiveWorkflow, String> {
-    profile_handoff(&format!("continue_bootstrap.begin run_id={run_id}"));
-    let resume_plan = inspect_resume_plan(&run_dir);
-    if !resume_plan.is_resumable {
-        let reason = resume_plan
-            .resume_disabled_reason
-            .unwrap_or_else(|| RESUME_UNAVAILABLE_FALLBACK_REASON.to_string());
-        return Err(format!(
-            "continue session is disabled for {run_id}: {reason}"
-        ));
-    }
-
-    let historical_events = load_events_from_run_dir(&run_dir).map_err(|err| err.to_string())?;
-    let resume_agent_id = select_resume_agent_id(&resume_plan, &historical_events, &run_id)?;
-    let run_name = latest_run_name(&historical_events)
-        .unwrap_or_else(|| DEFAULT_INTERACTIVE_RUN_NAME.to_string());
-
-    let clock: Arc<dyn Clock + Send + Sync> = if settings.deterministic {
-        Arc::new(FakeClock::new())
-    } else {
-        Arc::new(RealClock::new())
-    };
-
-    let mut coordinator_config = coordinator_config_warmup
-        .coordinator_config(settings, demo_mode)
-        .await?;
-    profile_handoff("continue_bootstrap.coordinator_ready");
-    apply_runtime_metadata(
-        &mut coordinator_config,
-        settings.deterministic,
-        &settings.config_digest,
-    );
-
-    let coordinator = spawn_coordinator(
-        coordinator_config,
-        clock,
-        Arc::new(DefaultRedactor::default()),
-    );
-    profile_handoff("continue_bootstrap.coordinator_spawned");
-
-    let run = coordinator
-        .resume_run(run_id.clone(), run_name)
-        .await
-        .map_err(|err| err.to_string())?;
-    profile_handoff("continue_bootstrap.resume_run_done");
-    if let Some(config) = settings.config.as_ref() {
-        let _ = logging::init_logging(config, &run.run_dir)?;
-    }
-    let store = coordinator
-        .event_store()
-        .await
-        .map_err(|err| err.to_string())?;
-    profile_handoff("continue_bootstrap.event_store_done");
-
-    let preloaded_last_seq = historical_events.last().map(|event| event.seq).unwrap_or(0);
-    let recorded_runtime_context = load_recorded_runtime_context(&run_dir);
-    let resume_profile = resume_plan
-        .known_agents
-        .get(&resume_agent_id)
-        .map(String::as_str);
-    let (available_models, resolved_models) = {
-        let selection = recover_mutex_lock(&launch_selection);
-        (
-            selection.metadata.available_models().to_vec(),
-            selection.metadata.resolved_models().to_vec(),
-        )
-    };
-    let continue_metadata = continue_launch_metadata(
-        run.run_id.as_str(),
-        recorded_runtime_context.as_ref(),
-        &historical_events,
-        &resume_agent_id,
-        resume_profile,
-    )
-    .with_available_models(available_models)
-    .with_resolved_models(resolved_models);
     let (live_update_tx, live_update_rx) = live_update_channel();
-    let _ = live_update_tx.send(LiveUpdate::YoloModeChanged {
-        enabled: coordinator
-            .yolo_mode()
-            .await
-            .map_err(|err| err.to_string())?,
-    });
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
-    let intent_live_update_tx = live_update_tx.clone();
-
-    let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
-        agent_id: Some(resume_agent_id.clone()),
-        profile: continue_metadata.profile().to_string(),
-        last_request_id: latest_request_id_for_agent(&historical_events, &resume_agent_id),
-    }));
-    let forwarder_live_agent_target = Arc::clone(&live_agent_target);
-    let event_forwarder_task = tokio::spawn(async move {
-        forward_events_to_tui(
-            store,
-            live_update_tx,
-            preloaded_last_seq.saturating_add(1),
-            Some(forwarder_live_agent_target),
-            false,
-        )
-        .await
-    });
-
-    let intent_coordinator = coordinator.clone();
-    let intent_live_agent_target = Arc::clone(&live_agent_target);
-    let auth_backend = TuiAuthBackendContext::from_settings(settings).with_login_refresh(
-        coordinator_config_warmup.clone(),
+    let receipt_updates = live_update_tx.clone();
+    let (runtime, continue_metadata, historical_events) = live_runtime::bootstrap(
+        settings,
+        demo_mode,
+        run_id,
+        run_dir,
         Arc::clone(&launch_selection),
-    );
-    if let Some(notice) = auth_backend.model_prompt_notice(&continue_metadata) {
-        let _ = intent_live_update_tx.send(notice);
-    }
-    let receipt_updates = intent_live_update_tx.clone();
-    let ui_intent_task = tokio::spawn(async move {
-        handle_ui_intents(
-            intent_coordinator,
-            intent_rx,
-            user_actor(),
-            Some(intent_live_agent_target),
-            intent_live_update_tx,
-            auth_backend,
-        )
+        coordinator_config_warmup,
+        live_update_tx,
+        intent_rx,
+    )
+    .await?;
+    let new_live::NewLiveRuntime {
+        coordinator,
+        event_forwarder_task,
+        ui_intent_task,
+    } = runtime;
+    let run = coordinator
+        .run_info()
         .await
-    });
+        .map_err(|err| err.to_string())?;
 
     let (selected_workflow, ui_intent_sender) = build_live_ui_intent_router(
         intent_tx.clone(),

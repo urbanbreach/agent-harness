@@ -81,6 +81,13 @@ enum Commands {
     Wrap(archives::WrapCommand),
     /// Open the interactive terminal interface.
     Tui(tui::TuiCommand),
+    /// Open the native desktop interface.
+    Gui,
+    #[command(hide = true)]
+    GuiServer {
+        #[arg(long)]
+        mock: bool,
+    },
     /// Manage provider credentials and authentication.
     Auth(auth::AuthCommand),
     /// Check local configuration without contacting providers or creating files.
@@ -165,6 +172,13 @@ where
         })
     });
     let result = match command {
+        Commands::Gui => tui::gui_server::launch(),
+        Commands::GuiServer { mock } => tui::gui_server::execute(
+            mock || cli.mock,
+            cli.config,
+            cli.session_dir,
+            deps.config_load_context(),
+        ),
         Commands::Prompt(mut command) => {
             command.profile = command.profile.or(cli.profile);
             command.mock |= cli.mock;
@@ -248,7 +262,7 @@ pub fn run_os() -> ExitCode {
     let _ = dotenvy::dotenv();
     let (stdin, stdout, stderr) = (std::io::stdin(), std::io::stdout(), std::io::stderr());
     let terminal = stdin.is_terminal();
-    let (mut stdin, mut stdout, mut stderr) = (stdin.lock(), stdout, stderr);
+    let (mut stdin, mut stdout, mut stderr) = (std::io::BufReader::new(stdin), stdout, stderr);
     let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr).with_stdin_terminal(terminal);
     ExitCode::from(
         u8::try_from(run(std::env::args_os(), &mut io, CliDeps::real()).code).unwrap_or(1),
