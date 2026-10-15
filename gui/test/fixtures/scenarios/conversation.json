@@ -1,0 +1,112 @@
+{
+  "projects": [{ "id": "demo", "name": "Demo project", "cwd": "/fixture/demo" }],
+  "sessions": [
+    {
+      "row": {
+        "runId": "chat",
+        "runDir": "/fixture/sessions/chat",
+        "cwd": "/fixture/demo",
+        "createdAt": "2026-01-03T12:00:00Z",
+        "live": false,
+        "catalog": {
+          "run_id": "chat",
+          "run_name": "A short conversation",
+          "status": "finished",
+          "last_updated_at": "2026-01-03T12:00:03Z",
+          "workspace_root": "/fixture/demo",
+          "profile_preset": "demo",
+          "provider_model": "mock/demo",
+          "mode_source": "scenario_fixture",
+          "is_resumable": true,
+          "resume_disabled_reason": null,
+          "artifact_count": 0,
+          "child_session_count": 0,
+          "parent_session_id": null
+        }
+      },
+      "events": [
+        {
+          "schema_version": 1,
+          "event_id": "chat-1",
+          "seq": 1,
+          "run_id": "chat",
+          "mono_ms": 0,
+          "actor": { "kind": "user" },
+          "payload": {
+            "event_type": "user_message_submitted",
+            "data": { "request_id": "turn-1", "text": "What does this project do?" }
+          }
+        },
+        {
+          "schema_version": 1,
+          "event_id": "chat-2",
+          "seq": 2,
+          "run_id": "chat",
+          "mono_ms": 1000,
+          "actor": { "kind": "supervisor" },
+          "payload": {
+            "event_type": "provider_text_delta",
+            "data": { "request_id": "turn-1", "delta": "It is a small, synthetic desktop demo." }
+          }
+        }
+      ]
+    },
+    {
+      "row": {
+        "runId": "notes",
+        "runDir": "/fixture/sessions/notes",
+        "cwd": "/fixture/demo",
+        "createdAt": "2026-01-02T12:00:00Z",
+        "live": false,
+        "catalog": {
+          "run_id": "notes",
+          "run_name": "Plan the next change",
+          "status": "finished",
+          "last_updated_at": "2026-01-02T12:00:00Z",
+          "workspace_root": "/fixture/demo",
+          "profile_preset": null,
+          "provider_model": null,
+          "mode_source": "scenario_fixture",
+          "is_resumable": true,
+          "resume_disabled_reason": null,
+          "artifact_count": 0,
+          "child_session_count": 0,
+          "parent_session_id": null
+        }
+      },
+      "events": []
+    },
+    {
+      "row": {
+        "runId": "draft",
+        "runDir": "/fixture/sessions/draft",
+        "cwd": "/fixture/demo",
+        "createdAt": "2026-01-01T12:00:00Z",
+        "live": false,
+        "catalog": {
+          "run_id": "draft",
+          "run_name": "Explore the workspace",
+          "status": "failed",
+          "last_updated_at": "2026-01-01T12:00:00Z",
+          "workspace_root": "/fixture/demo",
+          "profile_preset": null,
+          "provider_model": null,
+          "mode_source": "scenario_fixture",
+          "is_resumable": true,
+          "resume_disabled_reason": null,
+          "artifact_count": 0,
+          "child_session_count": 0,
+          "parent_session_id": null
+        }
+      },
+      "events": []
+    }
+  ],
+  "updates": [
+    {
+      "sessionId": "chat",
+      "delayMs": 10,
+      "update": { "kind": "status", "text": "Ready for another message" }
+    }
+  ]
+}
