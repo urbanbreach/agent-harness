@@ -208,6 +208,7 @@ impl Provider for CapturingInteractiveProvider {
                             prompt_tokens: 5,
                             completion_tokens: 1,
                             total_tokens: 6,
+                            ..Default::default()
                         }),
                     },
                 ],

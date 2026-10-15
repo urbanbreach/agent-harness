@@ -76,9 +76,10 @@ fn subscription_prompts_use_their_wire_contract_and_redact_credentials(
                 .without_env("HARNESS_CONFIG_CONTENT"),
         );
         let (headers, body) = server.join().map_err(|_| "HTTP fixture stopped")??;
+        // A truncated answer that delivered text is kept with an output-limit warning.
         assert_eq!(
             result.code,
-            i32::from(truncated),
+            0,
             "{profile}: {}",
             String::from_utf8_lossy(&stderr)
         );
@@ -106,8 +107,7 @@ fn subscription_prompts_use_their_wire_contract_and_redact_credentials(
             )));
             assert!(!events.iter().any(|event| matches!(
                 &event.payload,
-                harness_core::event::EventV1::TaskCompleted(_)
-                    | harness_core::event::EventV1::ToolCallRequested(_)
+                harness_core::event::EventV1::ToolCallRequested(_)
             )));
         }
     }

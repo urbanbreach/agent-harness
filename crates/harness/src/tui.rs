@@ -33,12 +33,12 @@ use harness_tui::app::{
     set_pending_settings_project_config, SessionHistoryEntry,
 };
 use harness_tui::live_update_channel;
-#[cfg(test)]
-use harness_tui::OperatorNoticeLevel;
 use harness_tui::{
     close_preserved_terminal_session, run_tui_with_options, LiveUpdate, TuiMode, TuiOptions,
     UiIntent,
 };
+#[cfg(test)]
+use harness_tui::{CompactionCommandKind, CompactionCommandOutcome, OperatorNoticeLevel};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
@@ -104,9 +104,7 @@ use self::launch_metadata::interactive_launch_metadata;
 use self::lineage::{materialize_tui_fork_child, materialize_tui_lineage_child};
 use self::live_events::{forward_events_to_tui, latest_request_id_for_agent};
 #[cfg(test)]
-use self::live_intents::{
-    foreground_background_success_message, manual_compaction_success_message,
-};
+use self::live_intents::foreground_background_success_message;
 use self::live_intents::{handle_ui_intents, LiveAgentTarget};
 use self::live_options::{continue_live_tui_options, new_live_tui_options};
 #[cfg(test)]
@@ -666,8 +664,12 @@ async fn run_startup_launcher(
                 | UiIntent::ContinueSession { .. }
                 | UiIntent::SubmitPrompt { .. }
                 | UiIntent::SteerPrompt { .. }
+                | UiIntent::FollowUpPrompt { .. }
                 | UiIntent::CancelCompaction { .. }
                 | UiIntent::CompactSession { .. }
+                | UiIntent::Handoff { .. }
+                | UiIntent::Shake { .. }
+                | UiIntent::IdleCompaction
                 | UiIntent::InterruptSession { .. }
                 | UiIntent::QuitRequested
         ) {
@@ -830,6 +832,7 @@ async fn run_continue_session_bootstrap(
     if let Some(notice) = auth_backend.model_prompt_notice(&continue_metadata) {
         let _ = intent_live_update_tx.send(notice);
     }
+    let receipt_updates = intent_live_update_tx.clone();
     let ui_intent_task = tokio::spawn(async move {
         handle_ui_intents(
             intent_coordinator,
@@ -844,6 +847,7 @@ async fn run_continue_session_bootstrap(
 
     let (selected_workflow, ui_intent_sender) = build_live_ui_intent_router(
         intent_tx.clone(),
+        receipt_updates,
         Arc::clone(&launch_selection),
         settings.config.is_some() && !demo_mode,
     );
@@ -868,10 +872,10 @@ async fn run_continue_session_bootstrap(
             .as_ref()
             .map(|config| config.runtime.compaction.auto_retry_overflow)
             .unwrap_or(true);
-        let compaction_structured_summary_contract = settings
+        let compaction_mid_turn_enabled = settings
             .config
             .as_ref()
-            .map(|config| config.runtime.compaction.structured_summary_contract)
+            .map(|config| config.runtime.compaction.mid_turn_enabled)
             .unwrap_or(true);
         let compaction_estimated_token_triggers = settings
             .config
@@ -887,9 +891,17 @@ async fn run_continue_session_bootstrap(
             config_path,
             compaction_enabled,
             compaction_auto_retry_overflow,
-            compaction_structured_summary_contract,
+            compaction_mid_turn_enabled,
             compaction_estimated_token_triggers,
             deterministic_enabled,
+        );
+    }
+    if let Some(config) = &settings.config {
+        let compact = &config.runtime.compaction;
+        harness_tui::app::set_pending_idle_compaction_settings(
+            compact.idle_enabled,
+            compact.idle_threshold_tokens,
+            compact.idle_timeout_seconds,
         );
     }
     let prompt_history_path = Some(prompt_history_path_for_session_dir(&settings.session_dir));
@@ -987,6 +999,9 @@ async fn run_live_mode(
         Arc::new(coordinator_registry(settings.shell_allowlist.clone()));
     coordinator_config.provider = Arc::new(golden_path_provider());
     coordinator_config.agent_profiles = golden_path_profiles();
+    if scenario.is_compaction() {
+        crate::scenarios::configure_compaction_scenario(&mut coordinator_config, scenario);
+    }
     coordinator_config.run_id_override = deterministic_run_id;
     coordinator_config.session_mode_source =
         Some(harness_core::proj::SessionModeSource::ScenarioFixture);
@@ -1020,6 +1035,21 @@ async fn run_live_mode(
     if let Some(config) = settings.config.as_ref() {
         let _ = logging::init_logging(config, &run_dir)?;
     }
+    let live_agent_target = if scenario.is_compaction() {
+        let agent_id = coordinator
+            .spawn_agent_idle(supervisor_actor(), "default", None)
+            .await
+            .map_err(|error| error.to_string())?;
+        Some(Arc::new(std::sync::Mutex::new(
+            live_intents::LiveAgentTarget {
+                agent_id: Some(agent_id),
+                profile: "default".into(),
+                last_request_id: None,
+            },
+        )))
+    } else {
+        None
+    };
 
     let stop_forwarder_after_terminal_event = cmd.exit_on_finish;
     let event_forwarder_task = tokio::spawn(async move {
@@ -1034,13 +1064,14 @@ async fn run_live_mode(
     });
 
     let intent_coordinator = coordinator.clone();
+    let receipt_updates = intent_live_update_tx.clone();
     let auth_backend = TuiAuthBackendContext::from_settings(settings);
     let ui_intent_task = tokio::spawn(async move {
         handle_ui_intents(
             intent_coordinator,
             intent_rx,
             user_actor(),
-            None,
+            live_agent_target,
             intent_live_update_tx,
             auth_backend,
         )
@@ -1050,7 +1081,14 @@ async fn run_live_mode(
     let ui_intent_sender = {
         let intent_tx = intent_tx.clone();
         Arc::new(move |intent: UiIntent| {
-            let _ = intent_tx.send(intent);
+            if let Err(error) = intent_tx.send(intent)
+                && let UiIntent::QueuedPrompt { id, .. } = error.0
+            {
+                let _ = receipt_updates.send(LiveUpdate::QueuedPromptReceipt {
+                    id,
+                    result: Err("live session input channel is closed".to_owned()),
+                });
+            }
         })
     };
 
@@ -1063,7 +1101,30 @@ async fn run_live_mode(
         .map(|config| config.ui.keybindings.clone());
     let prompt_history_path = Some(prompt_history_path_for_session_dir(&settings.session_dir));
     set_pending_prompt_commands_from_settings(settings);
-    set_pending_live_launch_metadata(scenario_launch_metadata());
+    if scenario.is_compaction() {
+        // The scenario has no config file; settings writes land beside the session store.
+        set_pending_settings_project_config(
+            settings.session_dir.with_extension("settings.jsonc"),
+            true,
+            true,
+            true,
+            true,
+            false,
+        );
+    }
+    let launch_metadata = if scenario.is_compaction() {
+        let mut model = harness_tui::app::ModelOption::from_model_ref("default", "mock:default");
+        model.model_limits = harness_core::config::ResolvedModelLimits::from_values(
+            Some(64_000),
+            Some(64_000),
+            Some(8_192),
+            Default::default(),
+        );
+        harness_tui::app::LaunchMetadata::from_model_option(&model).with_mode_label("Local fixture")
+    } else {
+        scenario_launch_metadata()
+    };
+    set_pending_live_launch_metadata(launch_metadata);
     let session_history_entries =
         load_live_session_history_entries(&run_dir, &settings.session_dir)?;
 
@@ -1140,6 +1201,9 @@ async fn run_scenario_runner(
         store,
         run_dir: run.run_dir.clone(),
     });
+    if scenario.is_compaction() {
+        return Ok(());
+    }
 
     let agent_id = coordinator
         .spawn_agent(supervisor_actor(), "default", None)

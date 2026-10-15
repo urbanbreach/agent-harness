@@ -159,13 +159,14 @@ pub(super) async fn run_new_live_session(
         launch_metadata.clone(),
         coordinator_config_warmup,
         Arc::clone(&launch_selection),
-        live_update_tx,
+        live_update_tx.clone(),
         intent_rx,
         shutdown_rx,
     ));
 
     let (selected_workflow, ui_intent_sender) = build_live_ui_intent_router(
         intent_tx.clone(),
+        live_update_tx,
         Arc::clone(&launch_selection),
         settings.config.is_some() && !demo_mode,
     );
@@ -191,10 +192,10 @@ pub(super) async fn run_new_live_session(
             .as_ref()
             .map(|config| config.runtime.compaction.auto_retry_overflow)
             .unwrap_or(true);
-        let compaction_structured_summary_contract = settings
+        let compaction_mid_turn_enabled = settings
             .config
             .as_ref()
-            .map(|config| config.runtime.compaction.structured_summary_contract)
+            .map(|config| config.runtime.compaction.mid_turn_enabled)
             .unwrap_or(true);
         let compaction_estimated_token_triggers = settings
             .config
@@ -210,9 +211,17 @@ pub(super) async fn run_new_live_session(
             config_path,
             compaction_enabled,
             compaction_auto_retry_overflow,
-            compaction_structured_summary_contract,
+            compaction_mid_turn_enabled,
             compaction_estimated_token_triggers,
             deterministic_enabled,
+        );
+    }
+    if let Some(config) = &settings.config {
+        let compact = &config.runtime.compaction;
+        harness_tui::app::set_pending_idle_compaction_settings(
+            compact.idle_enabled,
+            compact.idle_threshold_tokens,
+            compact.idle_timeout_seconds,
         );
     }
 

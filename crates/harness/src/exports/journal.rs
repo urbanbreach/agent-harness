@@ -46,7 +46,25 @@ fn remap(event: &mut EventEnvelopeV1, kept: &[u64]) {
     event.seq = kept.len() as u64;
     match &mut event.payload {
         EventV1::ConversationRewound(e) => e.target_seq = from(e.target_seq),
-        EventV1::SessionCompaction(e) => e.first_kept_event_seq = from(e.first_kept_event_seq),
+        EventV1::SessionCompaction(e) => {
+            e.first_kept_event_seq = from(e.first_kept_event_seq);
+            e.provider_replay_through_seq = e.provider_replay_through_seq.map(through);
+            e.supersedes_seq = e.supersedes_seq.map(through);
+        }
+        EventV1::CompactionPatched(e) => e.compaction_seq = through(e.compaction_seq),
+        EventV1::ContextPruned(e) => {
+            for edit in &mut e.edits {
+                match edit {
+                    harness_core::event::ContextEdit::ToolResult { seq: Some(seq), .. }
+                    | harness_core::event::ContextEdit::TextRange { seq, .. }
+                    | harness_core::event::ContextEdit::DropReasoning { seq, .. }
+                    | harness_core::event::ContextEdit::DropAttachments { seq, .. } => {
+                        *seq = through(*seq)
+                    }
+                    harness_core::event::ContextEdit::ToolResult { .. } => {}
+                }
+            }
+        }
         EventV1::BranchSummary(e) => e.from_event_seq = through(e.from_event_seq),
         EventV1::CompactionRequested(e) => e.through_seq = through(e.through_seq),
         EventV1::CompactionWritten(e) => e.through_seq = through(e.through_seq),

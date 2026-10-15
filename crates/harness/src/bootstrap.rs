@@ -1,3 +1,5 @@
+#[path = "bootstrap/notes_tools.rs"]
+mod notes_tools;
 #[path = "bootstrap/providers.rs"]
 mod providers;
 #[path = "bootstrap/secrets.rs"]
@@ -200,6 +202,17 @@ pub(crate) fn build(
                 }
             }
         }
+    }
+    for (name, profile) in &mut result.agent_profiles {
+        let primary = config
+            .agents
+            .get(name)
+            .is_some_and(|p| p.mode == harness_core::config::AgentMode::Primary);
+        notes_tools::gate(
+            &mut profile.toolset,
+            config.runtime.compaction.notes_windows,
+            primary,
+        );
     }
     let store = (!mock)
         .then(|| CredentialStore::from_lookup(&|name| deps.env_var_value(name)))

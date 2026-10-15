@@ -3,7 +3,10 @@ use std::sync::{Arc, Mutex};
 
 use harness_core::coord::{CoordinatorHandle, ManualCompactionOutcome};
 use harness_core::event::{EventActor, EventEnvelopeV1, EventV1};
-use harness_tui::{LiveUpdate, LiveUpdateSender, OperatorNoticeLevel, UiIntent};
+use harness_tui::{
+    CompactionCommandKind, CompactionCommandOutcome, LiveUpdate, LiveUpdateSender,
+    OperatorNoticeLevel, UiIntent,
+};
 use tokio::sync::mpsc;
 
 use super::auth_backend::{spawn_tui_auth_backend_task, TuiAuthBackendContext};
@@ -157,37 +160,40 @@ async fn request_selected_turn(
 }
 
 /// Steers the agent's running turn, or submits a normal prompt when the coordinator
-/// reports the agent idle. Returns the turn the text joined or started.
+/// reports the agent idle. Returns the turn the text joined or started. Steering is
+/// text-only, so an image-bearing steer goes through the queued-turn submission, which
+/// waits behind a running turn and keeps its images.
 async fn steer_or_submit(
     coordinator: &CoordinatorHandle,
     user_actor: &EventActor,
     agent_id: String,
     text: String,
+    attachments: &[harness_tui::composer_integration::SubmissionAttachment],
     launch_metadata: &harness_tui::app::LaunchMetadata,
 ) -> Result<String, String> {
-    let outcome = coordinator
-        .steer_agent_turn(user_actor.clone(), agent_id.clone(), text.clone())
-        .await
-        .map_err(|error| error.to_string())?;
-    match outcome {
-        harness_core::coord::SteerOutcome::Steering { turn_id, .. } => Ok(turn_id),
-        harness_core::coord::SteerOutcome::Idle => {
-            request_selected_turn(
-                coordinator,
-                user_actor,
-                agent_id,
-                text,
-                harness_core::file_tag::SelectedPromptTags {
-                    files: Vec::new(),
-                    agents: Vec::new(),
-                    resources: Vec::new(),
-                },
-                &[],
-                launch_metadata,
-            )
+    if attachments.is_empty() {
+        let outcome = coordinator
+            .steer_agent_turn(user_actor.clone(), agent_id.clone(), text.clone())
             .await
+            .map_err(|error| error.to_string())?;
+        if let harness_core::coord::SteerOutcome::Steering { turn_id, .. } = outcome {
+            return Ok(turn_id);
         }
     }
+    request_selected_turn(
+        coordinator,
+        user_actor,
+        agent_id,
+        text,
+        harness_core::file_tag::SelectedPromptTags {
+            files: Vec::new(),
+            agents: Vec::new(),
+            resources: Vec::new(),
+        },
+        attachments,
+        launch_metadata,
+    )
+    .await
 }
 
 /// Starts or steers a turn for a submitted draft and records it for the live agent. A
@@ -200,14 +206,38 @@ async fn send_prompt(
     updates: &LiveUpdateSender,
     intent: UiIntent,
 ) -> Result<(), String> {
+    let (receipt, intent) = match intent {
+        UiIntent::QueuedPrompt { id, prompt } => (Some(id), *prompt),
+        intent => (None, intent),
+    };
     let Some(target) = target else {
+        if let Some(id) = receipt {
+            let _ = updates.send(LiveUpdate::QueuedPromptReceipt {
+                id,
+                result: Err("live agent target is unavailable".to_owned()),
+            });
+        }
         return Ok(());
     };
     let Some(agent_id) = target.lock().ok().and_then(|state| state.agent_id.clone()) else {
+        if let Some(id) = receipt {
+            let _ = updates.send(LiveUpdate::QueuedPromptReceipt {
+                id,
+                result: Err("live agent target is unavailable".to_owned()),
+            });
+        }
         return Ok(());
     };
     let (text, sent) = match intent {
         UiIntent::SubmitPrompt {
+            text,
+            selected_file_tags,
+            selected_agent_tags,
+            selected_resource_tags,
+            attachments,
+            launch_metadata,
+        }
+        | UiIntent::FollowUpPrompt {
             text,
             selected_file_tags,
             selected_agent_tags,
@@ -234,6 +264,7 @@ async fn send_prompt(
         }
         UiIntent::SteerPrompt {
             text,
+            attachments,
             launch_metadata,
         } => {
             let sent = steer_or_submit(
@@ -241,13 +272,61 @@ async fn send_prompt(
                 user_actor,
                 agent_id,
                 text.clone(),
+                &attachments,
                 &launch_metadata,
             )
             .await;
             (text, sent)
         }
-        _ => return Ok(()),
+        command @ (UiIntent::CompactSession { .. }
+        | UiIntent::Handoff { .. }
+        | UiIntent::Shake { .. })
+            if receipt.is_some() =>
+        {
+            let result = match manual_compaction_outcome(coordinator, Some(target), command).await {
+                Ok((kind, outcome)) => {
+                    let result = command_receipt(&outcome);
+                    let _ = updates.send(LiveUpdate::CompactionCommand { kind, outcome });
+                    result
+                }
+                Err(message) => Err(message),
+            };
+            (String::new(), result)
+        }
+        UiIntent::UpdateSessionTitle { title } if receipt.is_some() => {
+            let result = coordinator
+                .update_session_title(title)
+                .await
+                .map(|_| String::new())
+                .map_err(|error| error.to_string());
+            (String::new(), result)
+        }
+        _ => {
+            if let Some(id) = receipt {
+                let _ = updates.send(LiveUpdate::QueuedPromptReceipt {
+                    id,
+                    result: Err("unsupported queued runtime intent".to_owned()),
+                });
+            }
+            return Ok(());
+        }
     };
+    if let Some(id) = receipt {
+        let result = match sent {
+            Ok(request_id) => match target.lock() {
+                Ok(mut target) => {
+                    if !request_id.is_empty() {
+                        target.last_request_id = Some(request_id);
+                    }
+                    Ok(())
+                }
+                Err(_) => Err("live agent target lock poisoned".to_owned()),
+            },
+            Err(error) => Err(error),
+        };
+        let _ = updates.send(LiveUpdate::QueuedPromptReceipt { id, result });
+        return Ok(());
+    }
     match sent {
         Ok(request_id) => {
             target
@@ -327,7 +406,10 @@ pub(super) async fn handle_ui_intents(
                     .await
                     .map_err(|err| err.to_string())?;
             }
-            intent @ (UiIntent::SubmitPrompt { .. } | UiIntent::SteerPrompt { .. }) => {
+            intent @ (UiIntent::SubmitPrompt { .. }
+            | UiIntent::SteerPrompt { .. }
+            | UiIntent::FollowUpPrompt { .. }
+            | UiIntent::QueuedPrompt { .. }) => {
                 send_prompt(
                     &coordinator,
                     &user_actor,
@@ -337,21 +419,25 @@ pub(super) async fn handle_ui_intents(
                 )
                 .await?;
             }
-            UiIntent::CompactSession {
-                custom_instructions,
-            } => {
+            intent @ (UiIntent::CompactSession { .. }
+            | UiIntent::Handoff { .. }
+            | UiIntent::Shake { .. }
+            | UiIntent::IdleCompaction) => {
                 let coordinator = coordinator.clone();
                 let target = live_agent_target.clone();
                 let updates = live_update_tx.clone();
                 tokio::spawn(async move {
-                    let (message, level) = manual_compaction_notice(
-                        &coordinator,
-                        target.as_ref(),
-                        custom_instructions,
-                    )
-                    .await
-                    .unwrap_or_else(|message| (message, OperatorNoticeLevel::Error));
-                    let _ = updates.send(LiveUpdate::OperatorNotice { message, level });
+                    match manual_compaction_outcome(&coordinator, target.as_ref(), intent).await {
+                        Ok((kind, outcome)) => {
+                            let _ = updates.send(LiveUpdate::CompactionCommand { kind, outcome });
+                        }
+                        Err(message) => {
+                            let _ = updates.send(LiveUpdate::OperatorNotice {
+                                message,
+                                level: OperatorNoticeLevel::Error,
+                            });
+                        }
+                    }
                 });
             }
             UiIntent::CancelCompaction { agent_id } => {
@@ -396,12 +482,12 @@ pub(super) async fn handle_ui_intents(
                 )
                 .await;
             }
-            UiIntent::WithdrawQueuedInput => {
+            intent @ (UiIntent::WithdrawQueuedInput | UiIntent::WithdrawAcceptedInput) => {
                 return_queued_input(
                     &coordinator,
                     &live_update_tx,
                     live_agent_target.as_ref(),
-                    true,
+                    Withdrawal::for_intent(&intent),
                 )
                 .await;
             }
@@ -604,13 +690,32 @@ fn delete_session_notice(run_id: &str, run_dir: &std::path::Path) -> (String, Op
     }
 }
 
-/// Puts the agent's undelivered steering and plain queued follow-ups back in the editor, in
-/// the order they were sent. `report_empty` says so when nothing was waiting.
+/// What to take back from the agent's queue.
+#[derive(Clone, Copy)]
+enum Withdrawal {
+    /// Undelivered steering and plain queued follow-ups; `report_empty` says so when nothing
+    /// was waiting.
+    Plain { report_empty: bool },
+    /// Everything the user queued, prompts with tags or attachments included: the rollback of
+    /// a failed delivery, silent when nothing was accepted.
+    Everything,
+}
+
+impl Withdrawal {
+    fn for_intent(intent: &UiIntent) -> Self {
+        match intent {
+            UiIntent::WithdrawAcceptedInput => Self::Everything,
+            _ => Self::Plain { report_empty: true },
+        }
+    }
+}
+
+/// Puts the agent's queued user input back in the editor, in the order it was sent.
 async fn return_queued_input(
     coordinator: &CoordinatorHandle,
     live_update_tx: &LiveUpdateSender,
     live_agent_target: Option<&LiveAgentTargetState>,
-    report_empty: bool,
+    withdrawal: Withdrawal,
 ) {
     let Some(agent) = live_agent_target.and_then(|target| {
         target
@@ -620,7 +725,13 @@ async fn return_queued_input(
     }) else {
         return;
     };
-    let notice = match coordinator.withdraw_queued_input(agent).await {
+    let (result, report_empty) = match withdrawal {
+        Withdrawal::Plain { report_empty } => {
+            (coordinator.withdraw_queued_input(agent).await, report_empty)
+        }
+        Withdrawal::Everything => (coordinator.withdraw_accepted_input(agent).await, false),
+    };
+    let notice = match result {
         Ok(texts) if texts.is_empty() => report_empty.then(|| {
             (
                 "Nothing is waiting to be sent".to_string(),
@@ -648,10 +759,18 @@ async fn interrupt_tasks(
     task_ids: Vec<String>,
     reason: harness_tui::app::InterruptReason,
 ) {
-    // Like OMP and Senpi, a user interrupt returns queued steering and follow-ups to the
-    // editor before the turn stops, so none of them starts a turn on its own.
+    // A user interrupt returns queued steering and follow-ups to the editor before the
+    // turn stops, so none of them starts a turn on its own.
     if reason == harness_tui::app::InterruptReason::User {
-        return_queued_input(coordinator, live_update_tx, live_agent_target, false).await;
+        return_queued_input(
+            coordinator,
+            live_update_tx,
+            live_agent_target,
+            Withdrawal::Plain {
+                report_empty: false,
+            },
+        )
+        .await;
     }
     for task_id in task_ids {
         if let Err(err) = coordinator
@@ -695,7 +814,7 @@ async fn select_live_model(
     Ok(())
 }
 
-/// Senpi's `model_select` and `thinking_level_select` fire at the pick, not at the next turn.
+/// Model and reasoning selections fire at the pick, not at the next turn.
 async fn announce_selection(
     coordinator: &CoordinatorHandle,
     live_agent_target: Option<&LiveAgentTargetState>,
@@ -751,15 +870,23 @@ async fn switch_live_model(
     Ok(())
 }
 
-async fn manual_compaction_notice(
+/// Runs one manual maintenance command and types how it ended. A cancellation or failure
+/// is never folded into an info notice: the interface presents both as errors.
+async fn manual_compaction_outcome(
     coordinator: &CoordinatorHandle,
     live_agent_target: Option<&LiveAgentTargetState>,
-    custom_instructions: Option<String>,
-) -> Result<(String, OperatorNoticeLevel), String> {
+    intent: UiIntent,
+) -> Result<(CompactionCommandKind, CompactionCommandOutcome), String> {
+    let kind = match &intent {
+        UiIntent::Handoff { .. } => CompactionCommandKind::Handoff,
+        UiIntent::Shake { .. } => CompactionCommandKind::Shake,
+        UiIntent::IdleCompaction => CompactionCommandKind::Idle,
+        _ => CompactionCommandKind::Compact,
+    };
     let Some(live_agent_target) = live_agent_target else {
         return Ok((
-            "manual compaction unavailable: no live agent target".to_string(),
-            OperatorNoticeLevel::Error,
+            kind,
+            CompactionCommandOutcome::Failed("no live agent target".into()),
         ));
     };
     let (agent_id, through_request_id) = live_agent_target
@@ -768,43 +895,98 @@ async fn manual_compaction_notice(
         .map(|target| (target.agent_id.clone(), target.last_request_id.clone()))?;
     let Some(agent_id) = agent_id else {
         return Ok((
-            "manual compaction unavailable: no active live agent".to_string(),
-            OperatorNoticeLevel::Error,
+            kind,
+            CompactionCommandOutcome::Failed("no active live agent".into()),
         ));
     };
 
-    Ok(
-        match coordinator
-            .compact_agent_context_with_instructions(
-                agent_id,
-                through_request_id,
-                "manual",
-                custom_instructions,
-            )
-            .await
-        {
+    let result = match intent {
+        UiIntent::CompactSession { instructions, mode } => {
+            coordinator
+                .compact_agent_context_with_options(
+                    agent_id,
+                    harness_core::coord::ManualCompactionOptions {
+                        through_request_id,
+                        reason: "manual".into(),
+                        instructions,
+                        internal_guidance: None,
+                        mode,
+                        suppress_continuation: false,
+                    },
+                )
+                .await
+        }
+        UiIntent::Handoff { focus } => coordinator.handoff_agent_context(agent_id, focus).await,
+        UiIntent::IdleCompaction => coordinator.idle_compact_agent_context(agent_id).await,
+        UiIntent::Shake { mode } => {
+            return Ok((
+                kind,
+                match coordinator.shake_agent_context(agent_id, mode).await {
+                    Ok(outcome) => shake_outcome(&outcome),
+                    Err(error) => CompactionCommandOutcome::Failed(error.to_string()),
+                },
+            ));
+        }
+        _ => return Err("Unsupported maintenance intent".into()),
+    };
+    Ok((
+        kind,
+        match result {
             Ok(ManualCompactionOutcome::Compacted {
-                tokens_before,
                 tokens_after,
-                summary_preview,
-            }) => (
-                manual_compaction_success_message(&summary_preview, tokens_before, tokens_after),
-                OperatorNoticeLevel::Info,
-            ),
-            Ok(ManualCompactionOutcome::NoOp) => (
-                "Nothing to compact: the recent context already fits.".to_string(),
-                OperatorNoticeLevel::Info,
-            ),
-            Err(harness_core::coord::CoordinatorError::CompactionCancelled { .. }) => (
-                "Compaction cancelled".to_string(),
-                OperatorNoticeLevel::Info,
-            ),
-            Err(err) => (
-                format!("manual compaction failed: {err}"),
-                OperatorNoticeLevel::Error,
-            ),
+                saved_path,
+                ..
+            }) => CompactionCommandOutcome::Done {
+                message: None,
+                tokens_after: Some(tokens_after),
+                saved_path,
+                rebuild: true,
+            },
+            Ok(ManualCompactionOutcome::NoOp { reason }) => {
+                CompactionCommandOutcome::Warning(reason)
+            }
+            Err(harness_core::coord::CoordinatorError::CompactionRejected(rejection)) => {
+                CompactionCommandOutcome::Warning(rejection.to_string())
+            }
+            Err(harness_core::coord::CoordinatorError::CompactionCancelled { .. }) => {
+                CompactionCommandOutcome::Cancelled
+            }
+            Err(error) => CompactionCommandOutcome::Failed(error.to_string()),
         },
-    )
+    ))
+}
+
+/// `/shake` reports what it dropped; a pass that dropped nothing says so, whichever mode
+/// asked, and does not rebuild the transcript.
+pub(super) fn shake_outcome(
+    outcome: &harness_core::coord::ShakeOutcome,
+) -> CompactionCommandOutcome {
+    let nothing = outcome.tokens_freed == 0
+        && (outcome.summary.starts_with("No images found")
+            || outcome.summary.starts_with("No thinking blocks found")
+            || outcome.summary == "Nothing to shake.");
+    CompactionCommandOutcome::Done {
+        message: Some(if nothing {
+            "Nothing to shake.".into()
+        } else {
+            outcome.summary.clone()
+        }),
+        tokens_after: None,
+        saved_path: None,
+        rebuild: !nothing,
+    }
+}
+
+/// The queue's receipt of a command: it only fails when the command did not run to a
+/// result the user can act on.
+fn command_receipt(outcome: &CompactionCommandOutcome) -> Result<String, String> {
+    match outcome {
+        CompactionCommandOutcome::Done { .. } | CompactionCommandOutcome::Warning(_) => {
+            Ok(String::new())
+        }
+        CompactionCommandOutcome::Cancelled => Err("cancelled".into()),
+        CompactionCommandOutcome::Failed(error) => Err(error.clone()),
+    }
 }
 
 async fn background_foreground_notice(
@@ -952,39 +1134,6 @@ pub(super) fn foreground_background_success_message(count: usize) -> String {
     } else {
         format!("{count} foreground subagents moved to background")
     }
-}
-
-pub(super) fn manual_compaction_success_message(
-    summary_preview: &str,
-    tokens_before: u32,
-    tokens_after: u32,
-) -> String {
-    let prefix = "manual compaction applied".to_string();
-    let token_info = if tokens_before != tokens_after {
-        format!(
-            " · ctx {} → {} est",
-            compact_token_estimate(tokens_before),
-            compact_token_estimate(tokens_after)
-        )
-    } else {
-        " · ctx estimate unchanged".to_string()
-    };
-    let preview = if summary_preview.is_empty() {
-        String::new()
-    } else {
-        format!(" · {summary_preview}")
-    };
-    format!("{prefix}{token_info}{preview}")
-}
-
-fn compact_token_estimate(value: u32) -> String {
-    if value >= 1_000_000 {
-        return format!("{:.1}M", f64::from(value) / 1_000_000.0);
-    }
-    if value >= 1_000 {
-        return format!("{:.1}K", f64::from(value) / 1_000.0);
-    }
-    value.to_string()
 }
 
 /// Move a session run directory to a sibling `trash/` folder.

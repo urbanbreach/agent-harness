@@ -16,6 +16,7 @@ clap_complete = "4"
 crossterm.workspace = true
 dotenvy = "0.15"
 harness-core = { path = "../harness-core" }
+harness-compaction = { path = "../harness-compaction" }
 harness-providers = { path = "../harness-providers" }
 harness-tools = { path = "../harness-tools" }
 harness-tui = { path = "../harness-tui" }

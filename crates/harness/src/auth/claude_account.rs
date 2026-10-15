@@ -1,10 +1,10 @@
-//! senpi `/claude-account`: list, remove, pin, unpin, rename and clear-name.
+//! `/claude-account`: list, remove, pin, unpin, rename and clear-name.
 use super::*;
 
 const CLAUDE_ACCOUNT_USAGE: &str =
     "Usage: /claude-account [add | remove <id> | pin <id> | unpin | rename <id> <display name...> | clear-name <id>]";
 
-/// senpi `/claude-account`; returns the notice it would show.
+/// `/claude-account`; returns the notice it would show.
 pub(super) fn claude_account(
     args: &[String],
     store: &CredentialStore,

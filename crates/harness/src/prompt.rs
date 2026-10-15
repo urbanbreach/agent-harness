@@ -338,6 +338,9 @@ fn execute_prompt(
         }
         .map_err(|e| e.to_string())?;
         output.finish().map_err(|e| e.to_string())?;
+        for warning in output.take_warnings() {
+            writeln!(io.stderr, "warning: {warning}").map_err(|e| e.to_string())?;
+        }
         result?;
         if let Some(path) = command.out {
             session::export(&run.events_path, &root.join(path), redactor.as_ref())?;

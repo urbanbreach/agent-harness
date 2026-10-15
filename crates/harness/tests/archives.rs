@@ -139,3 +139,85 @@ fn legacy_journal(source: &Path) -> Result<String, Box<dyn std::error::Error>> {
         + "\n";
     Ok(journal)
 }
+
+#[test]
+fn trace_archive_never_contains_native_compaction_payloads(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use harness_core::event::{
+        ArtifactWrittenEvent, EventV1, NativeCompactionMeta, NativePayloadRef,
+        SessionCompactionEvent, NATIVE_ARTIFACT_KIND,
+    };
+    let root = tempfile::tempdir()?;
+    let (code, error) = invoke(
+        root.path(),
+        &[
+            "prompt",
+            "--mock",
+            "--text",
+            "Hello",
+            "--session-id",
+            "saved",
+        ],
+    );
+    assert_eq!(code, 0, "{error}");
+    let session = root.path().join("sessions/saved");
+    let payload = b"opaque native compaction ciphertext";
+    let digest = blake3::hash(payload).to_hex().to_string();
+    let path = format!("artifacts/native-{digest}.bin");
+    fs::create_dir_all(session.join("artifacts"))?;
+    fs::write(session.join(&path), payload)?;
+    let mut events = read_events(&session.join("events.jsonl"))?;
+    let template = events.last().cloned().ok_or("empty journal")?;
+    let mut artifact = template.clone();
+    artifact.seq += 1;
+    artifact.event_id = "native-artifact".into();
+    artifact.payload = EventV1::ArtifactWritten(ArtifactWrittenEvent {
+        path: path.clone(),
+        digest: digest.clone(),
+        bytes: payload.len() as u64,
+        tool_call_id: None,
+        tool_metadata: None,
+        metadata: BTreeMap::from([("kind".into(), NATIVE_ARTIFACT_KIND.into())]),
+    });
+    let mut compaction = template;
+    compaction.seq += 2;
+    compaction.event_id = "native-compaction".into();
+    compaction.payload = EventV1::SessionCompaction(SessionCompactionEvent {
+        summary: "summary".into(),
+        first_kept_event_seq: compaction.seq,
+        native: Some(NativeCompactionMeta {
+            lane: "openai_v1".into(),
+            provider_id: Some("openai".into()),
+            model_id: Some("gpt".into()),
+            api: Some("responses".into()),
+            payload: Some(NativePayloadRef {
+                path: path.clone(),
+                digest: digest.clone(),
+                bytes: payload.len() as u64,
+            }),
+        }),
+        ..Default::default()
+    });
+    events.extend([artifact, compaction]);
+    let journal = events
+        .iter()
+        .map(serde_json::to_string)
+        .collect::<Result<Vec<_>, _>>()?
+        .join("\n")
+        + "\n";
+    fs::write(session.join("events.jsonl"), journal)?;
+    let (code, error) = invoke(
+        root.path(),
+        &["trace", "saved", "--output", "bundle.tar.gz", "--json"],
+    );
+    assert_eq!(code, 0, "{error}");
+    let files = members(&root.path().join("bundle.tar.gz"))?;
+    assert!(files.keys().all(|name| !name.contains("native-")));
+    for bytes in files.values() {
+        let text = String::from_utf8_lossy(bytes);
+        assert!(!text.contains("opaque native compaction ciphertext"));
+        assert!(!text.contains(&path));
+        assert!(!text.contains(&digest));
+    }
+    Ok(())
+}

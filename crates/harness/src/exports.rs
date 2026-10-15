@@ -141,6 +141,18 @@ fn clean_event(
             tool.output_json = None;
             true
         }
+        EventV1::ArtifactWritten(artifact)
+            if artifact.metadata.get("kind").map(String::as_str)
+                == Some(harness_core::event::NATIVE_ARTIFACT_KIND) =>
+        {
+            false
+        }
+        EventV1::SessionCompaction(compaction) => {
+            if let Some(native) = compaction.native.as_mut() {
+                native.payload = None;
+            }
+            true
+        }
         _ => true,
     }
 }

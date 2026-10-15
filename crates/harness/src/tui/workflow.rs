@@ -125,7 +125,11 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         Some(UiIntent::ContinueSession { run_id, run_dir }) => {
             InteractiveWorkflow::Continue { run_id, run_dir }
         }
-        Some(UiIntent::SubmitPrompt { text, .. } | UiIntent::SteerPrompt { text, .. }) => {
+        Some(
+            UiIntent::SubmitPrompt { text, .. }
+            | UiIntent::SteerPrompt { text, .. }
+            | UiIntent::FollowUpPrompt { text, .. },
+        ) => {
             set_pending_live_prompt_auto_submit(Some(text));
             InteractiveWorkflow::NewSession
         }
@@ -137,10 +141,14 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::AuthBackendInput { .. })
         | Some(UiIntent::CancelCompaction { .. })
         | Some(UiIntent::CompactSession { .. })
+        | Some(UiIntent::Handoff { .. })
+        | Some(UiIntent::Shake { .. })
+        | Some(UiIntent::IdleCompaction)
         | Some(UiIntent::BackgroundForegroundSubagents)
         | Some(UiIntent::DemoteForegroundChildTask { .. })
         | Some(UiIntent::InterruptSession { .. })
         | Some(UiIntent::WithdrawQueuedInput)
+        | Some(UiIntent::WithdrawAcceptedInput)
         | Some(UiIntent::CancelSubagent { .. })
         | Some(UiIntent::InspectCommand { .. })
         | Some(UiIntent::ForkSession { .. })
@@ -153,12 +161,14 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::RevertWorkspace { .. })
         | Some(UiIntent::ExportSession)
         | Some(UiIntent::ImportForeignSession { .. })
-        | Some(UiIntent::RunShellCommand { .. }) => InteractiveWorkflow::Quit,
+        | Some(UiIntent::RunShellCommand { .. })
+        | Some(UiIntent::QueuedPrompt { .. }) => InteractiveWorkflow::Quit,
     }
 }
 
 pub(super) fn build_live_ui_intent_router(
     intent_tx: mpsc::UnboundedSender<UiIntent>,
+    receipt_updates: harness_tui::LiveUpdateSender,
     launch_selection: LaunchSelection,
     persist_model_selection: bool,
 ) -> (SelectedWorkflow, UiIntentSink) {
@@ -169,8 +179,14 @@ pub(super) fn build_live_ui_intent_router(
         if let Some(workflow) = live_workflow_from_intent(&intent) {
             capture_first_workflow(&selected_workflow_sink, workflow);
         }
-        if forward_intent_to_live_run(&intent) {
-            let _ = intent_tx.send(intent);
+        if forward_intent_to_live_run(&intent)
+            && let Err(error) = intent_tx.send(intent)
+            && let UiIntent::QueuedPrompt { id, .. } = error.0
+        {
+            let _ = receipt_updates.send(harness_tui::LiveUpdate::QueuedPromptReceipt {
+                id,
+                result: Err("live session input channel is closed".to_owned()),
+            });
         }
     });
 
@@ -200,11 +216,17 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         | UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::SteerPrompt { .. }
+        | UiIntent::FollowUpPrompt { .. }
+        | UiIntent::QueuedPrompt { .. }
         | UiIntent::WithdrawQueuedInput
+        | UiIntent::WithdrawAcceptedInput
         | UiIntent::OpenAuthManager { .. }
         | UiIntent::AuthBackendInput { .. }
         | UiIntent::CancelCompaction { .. }
         | UiIntent::CompactSession { .. }
+        | UiIntent::Handoff { .. }
+        | UiIntent::Shake { .. }
+        | UiIntent::IdleCompaction
         | UiIntent::BackgroundForegroundSubagents
         | UiIntent::DemoteForegroundChildTask { .. }
         | UiIntent::InterruptSession { .. }
@@ -231,11 +253,17 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
             | UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
             | UiIntent::SteerPrompt { .. }
+            | UiIntent::FollowUpPrompt { .. }
+            | UiIntent::QueuedPrompt { .. }
             | UiIntent::WithdrawQueuedInput
+            | UiIntent::WithdrawAcceptedInput
             | UiIntent::OpenAuthManager { .. }
             | UiIntent::AuthBackendInput { .. }
             | UiIntent::CancelCompaction { .. }
             | UiIntent::CompactSession { .. }
+            | UiIntent::Handoff { .. }
+            | UiIntent::Shake { .. }
+            | UiIntent::IdleCompaction
             | UiIntent::BackgroundForegroundSubagents
             | UiIntent::DemoteForegroundChildTask { .. }
             | UiIntent::InterruptSession { .. }

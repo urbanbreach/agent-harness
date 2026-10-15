@@ -30,6 +30,9 @@ pub(super) fn execute(
     io: &mut CliIo<'_>,
     deps: &CliDeps,
 ) -> Result<(), String> {
+    if scenario.is_compaction() {
+        return Err(format!("{} requires harness tui", scenario.as_str()));
+    }
     let root = deps.current_dir().map_err(|e| e.to_string())?;
     let config_path = config.map(|path| root.join(path));
     let config = load_resolved_config_with_lookup(

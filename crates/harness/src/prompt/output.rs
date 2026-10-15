@@ -1,5 +1,5 @@
 use harness_core::{
-    event::{EventEnvelopeV1, EventV1, LiveEventEnvelope, LiveEventV1},
+    event::{EventEnvelopeV1, EventV1, LiveEventEnvelope, LiveEventV1, NoticeSeverity},
     session::AssistantPart,
 };
 use std::io::Write;
@@ -21,6 +21,8 @@ pub(super) struct Output<'a> {
     /// Default format prints only the last tool-free assistant message, like print modes in
     /// other harnesses: opening lines and narration from tool-calling messages stay out of stdout.
     answer: Option<String>,
+    /// Runtime warnings for the turn, reported on stderr after the answer.
+    warnings: Vec<String>,
 }
 impl<'a> Output<'a> {
     pub fn new(writer: &'a mut dyn Write, format: Format, thinking: bool) -> Self {
@@ -32,6 +34,7 @@ impl<'a> Output<'a> {
             reasoning_section: false,
             live_enabled: true,
             answer: None,
+            warnings: Vec::new(),
         }
     }
     pub fn event(&mut self, event: &EventEnvelopeV1, task: &str) -> std::io::Result<()> {
@@ -74,6 +77,15 @@ impl<'a> Output<'a> {
         let (thinking, delta) = match &event.payload {
             LiveEventV1::ProviderTextDelta { delta, .. } => (false, delta),
             LiveEventV1::ProviderReasoningDelta { delta, .. } if self.thinking => (true, delta),
+            LiveEventV1::RuntimeWarning { message }
+            | LiveEventV1::RuntimeNotice {
+                severity: NoticeSeverity::Warning | NoticeSeverity::Error,
+                message,
+                ..
+            } => {
+                self.warnings.push(message.clone());
+                return Ok(());
+            }
             _ => return Ok(()),
         };
         if delta.is_empty() {
@@ -129,6 +141,10 @@ impl<'a> Output<'a> {
                 .write_all(if self.first { b"[]\n" } else { b"]\n" })?;
         }
         self.writer.flush()
+    }
+    /// Warnings collected during the turn, such as a truncated answer or a maintenance pause.
+    pub fn take_warnings(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.warnings)
     }
 }
 

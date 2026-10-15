@@ -219,7 +219,12 @@ fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
         config_digest: initial.config_digest,
     }));
     let (tx, _) = mpsc::unbounded_channel();
-    let (_, sink) = build_live_ui_intent_router(tx, Arc::clone(&selection), false);
+    let (_, sink) = build_live_ui_intent_router(
+        tx,
+        harness_tui::live_update_channel().0,
+        Arc::clone(&selection),
+        false,
+    );
     let (message, _, success) = run_tui_auth_backend_streaming_with_deps(
         vec![
             "login".into(),

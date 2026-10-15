@@ -322,7 +322,8 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
 
     intent_tx
         .send(UiIntent::CompactSession {
-            custom_instructions: None,
+            instructions: None,
+            mode: None,
         })
         .unwrap_or_abort();
     drop(intent_tx);
@@ -331,25 +332,13 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
     let status = status_rx.recv().unwrap_or_abort();
     assert!(matches!(
         status,
-        LiveUpdate::OperatorNotice {
-            message,
-            level: OperatorNoticeLevel::Info,
-        } if message == "Nothing to compact: the recent context already fits."
+        LiveUpdate::CompactionCommand {
+            kind: CompactionCommandKind::Compact,
+            outcome: CompactionCommandOutcome::Warning(message),
+        } if message == "Nothing to compact (session too small)"
     ));
 
     coordinator.stop_run().await.unwrap_or_abort();
-}
-
-#[test]
-fn manual_compaction_success_message_reports_active_context_delta() {
-    assert_eq!(
-        manual_compaction_success_message("summary preview", 18_200, 4_100),
-        "manual compaction applied · ctx 18.2K → 4.1K est · summary preview"
-    );
-    assert_eq!(
-        manual_compaction_success_message("summary preview", 4_100, 4_100),
-        "manual compaction applied · ctx estimate unchanged · summary preview"
-    );
 }
 
 #[tokio::test]
@@ -616,7 +605,8 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
 
     intent_tx
         .send(UiIntent::CompactSession {
-            custom_instructions: None,
+            instructions: None,
+            mode: None,
         })
         .unwrap_or_abort();
     drop(intent_tx);
@@ -625,13 +615,21 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
     let status = status_rx.recv().unwrap_or_abort();
     assert!(matches!(
         status,
-        LiveUpdate::OperatorNotice {
-            message,
-            level: OperatorNoticeLevel::Error,
-        } if message == "manual compaction unavailable: no live agent target"
+        LiveUpdate::CompactionCommand {
+            kind: CompactionCommandKind::Compact,
+            outcome: CompactionCommandOutcome::Failed(message),
+        } if message == "no live agent target"
     ));
 
     coordinator.stop_run().await.unwrap_or_abort();
+}
+
+fn png_attachment() -> harness_tui::composer_integration::SubmissionAttachment {
+    harness_tui::composer_integration::SubmissionAttachment {
+        id: harness_tui::composer_atoms::AttachmentId::new(1),
+        mime: harness_tui::attachment_lifecycle::MimeKind::Png,
+        bytes: vec![0x89, b'P', b'N', b'G'],
+    }
 }
 
 #[test]
@@ -642,19 +640,47 @@ fn live_ui_router_forwards_runtime_intents_without_switching_workflow() {
         metadata: LaunchMetadata::default(),
         config_digest: "test-digest".into(),
     }));
-    let (selected_workflow, sink) =
-        build_live_ui_intent_router(intent_tx, Arc::clone(&launch_selection), false);
+    let (receipt_updates, receipts) = live_update_channel();
+    let (selected_workflow, sink) = build_live_ui_intent_router(
+        intent_tx,
+        receipt_updates,
+        Arc::clone(&launch_selection),
+        false,
+    );
     let intents = [
         UiIntent::SteerPrompt {
             text: "router sentinel".into(),
+            attachments: Vec::new(),
+            launch_metadata: LaunchMetadata::default(),
+        },
+        UiIntent::SteerPrompt {
+            text: "image steer sentinel".into(),
+            attachments: vec![png_attachment()],
+            launch_metadata: LaunchMetadata::default(),
+        },
+        UiIntent::FollowUpPrompt {
+            text: "image follow-up sentinel".into(),
+            selected_file_tags: Vec::new(),
+            selected_agent_tags: Vec::new(),
+            selected_resource_tags: Vec::new(),
+            attachments: vec![png_attachment()],
             launch_metadata: LaunchMetadata::default(),
         },
         UiIntent::CompactSession {
-            custom_instructions: None,
+            instructions: None,
+            mode: None,
         },
         UiIntent::InterruptSession {
             task_ids: vec!["task_active".to_string()],
             reason: harness_tui::app::InterruptReason::User,
+        },
+        UiIntent::QueuedPrompt {
+            id: 18,
+            prompt: Box::new(UiIntent::SteerPrompt {
+                text: "receipt sentinel".into(),
+                attachments: Vec::new(),
+                launch_metadata: LaunchMetadata::default(),
+            }),
         },
         UiIntent::BackgroundForegroundSubagents,
         UiIntent::DemoteForegroundChildTask {
@@ -670,6 +696,18 @@ fn live_ui_router_forwards_runtime_intents_without_switching_workflow() {
         assert!(recover_mutex_lock(&selected_workflow).is_none());
         assert_eq!(intent_rx.try_recv().ok(), Some(intent));
     }
+    drop(intent_rx);
+    sink(UiIntent::QueuedPrompt {
+        id: 19,
+        prompt: Box::new(UiIntent::SteerPrompt {
+            text: "closed sentinel".into(),
+            attachments: Vec::new(),
+            launch_metadata: LaunchMetadata::default(),
+        }),
+    });
+    assert!(
+        matches!(receipts.try_iter().next(), Some(LiveUpdate::QueuedPromptReceipt { id: 19, result: Err(error) }) if error == "live session input channel is closed")
+    );
 }
 
 #[test]
@@ -679,8 +717,12 @@ fn live_ui_router_records_model_switch_without_switching_workflow() {
         metadata: LaunchMetadata::default(),
         config_digest: "test-digest".into(),
     }));
-    let (selected_workflow, sink) =
-        build_live_ui_intent_router(intent_tx, Arc::clone(&launch_selection), false);
+    let (selected_workflow, sink) = build_live_ui_intent_router(
+        intent_tx,
+        live_update_channel().0,
+        Arc::clone(&launch_selection),
+        false,
+    );
     let launch_metadata =
         LaunchMetadata::from_model_ref("ops", "anthropic:claude-3.7").with_mode_label("Live");
 
@@ -814,6 +856,7 @@ async fn steering_intents_reach_the_running_turn_or_return_to_the_editor(
     };
     let steer = |text: &str| UiIntent::SteerPrompt {
         text: text.into(),
+        attachments: Vec::new(),
         launch_metadata: LaunchMetadata::default(),
     };
     let send = |intents: Vec<UiIntent>| {
@@ -832,6 +875,10 @@ async fn steering_intents_reach_the_running_turn_or_return_to_the_editor(
         coordinator.clone(),
         send(vec![
             steer(&oversized),
+            UiIntent::QueuedPrompt {
+                id: 91,
+                prompt: Box::new(steer(&oversized)),
+            },
             steer("withdrawn sentinel"),
             UiIntent::WithdrawQueuedInput,
             steer("steering sentinel"),
@@ -848,8 +895,9 @@ async fn steering_intents_reach_the_running_turn_or_return_to_the_editor(
         [
             LiveUpdate::RestoreQueuedInput(refused),
             LiveUpdate::OperatorNotice { level: harness_tui::OperatorNoticeLevel::Error, .. },
+            LiveUpdate::QueuedPromptReceipt { id: 91, result: Err(error) },
             LiveUpdate::RestoreQueuedInput(dequeued),
-        ] if refused == &[oversized] && dequeued == &["withdrawn sentinel"]
+        ] if !error.is_empty() && refused == &[oversized] && dequeued == &["withdrawn sentinel"]
     ));
     assert_eq!(
         target
@@ -918,4 +966,24 @@ async fn steering_intents_reach_the_running_turn_or_return_to_the_editor(
     );
     coordinator.stop_run().await?;
     Ok(())
+}
+
+#[test]
+fn zero_change_shake_modes_report_nothing_to_shake() {
+    use harness_core::coord::ShakeOutcome;
+    for summary in [
+        "No images found in this session.",
+        "No thinking blocks found in this session.",
+        "Nothing to shake.",
+    ] {
+        let outcome = super::live_intents::shake_outcome(&ShakeOutcome {
+            summary: summary.into(),
+            tokens_freed: 0,
+        });
+        assert!(matches!(
+            outcome,
+            CompactionCommandOutcome::Done { message: Some(message), rebuild: false, .. }
+                if message == "Nothing to shake."
+        ));
+    }
 }

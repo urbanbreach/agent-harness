@@ -117,6 +117,7 @@ impl<'a> CensusFold<'a> {
             EventV1::SessionCompaction(_) | EventV1::CompactionApplied(_) => {
                 self.by_model.entry(model).or_default().compactions += 1;
             }
+            EventV1::ContextPruned(_) => {}
             EventV1::TaskCompleted(_) | EventV1::TaskCancelled(_) if turn_id(event).is_some() => {
                 self.finish_turn(event, owner, model);
                 let actor = event.actor.agent_id.as_deref().unwrap_or("");

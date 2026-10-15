@@ -18,6 +18,8 @@ pub enum ScenarioName {
     GoldenPath,
     GoldenPathInteractive,
     QuestionInteractive,
+    CompactionInteractive,
+    CompactionNotesInteractive,
 }
 impl ScenarioName {
     pub fn as_str(self) -> &'static str {
@@ -25,7 +27,16 @@ impl ScenarioName {
             Self::GoldenPath => "golden_path",
             Self::GoldenPathInteractive => "golden_path_interactive",
             Self::QuestionInteractive => "question_interactive",
+            Self::CompactionInteractive => "compaction_interactive",
+            Self::CompactionNotesInteractive => "compaction_notes_interactive",
         }
+    }
+    /// Scenarios whose conversation is driven by the local compaction provider.
+    pub fn is_compaction(self) -> bool {
+        matches!(
+            self,
+            Self::CompactionInteractive | Self::CompactionNotesInteractive
+        )
     }
     pub fn interactive_permissions(self) -> bool {
         self != Self::GoldenPath
@@ -129,4 +140,146 @@ pub(crate) fn reset_fixture(sessions: &Path, id: &str) -> Result<(), String> {
     let _writer = harness_core::store::Journal::open_existing(sessions, id, true)
         .map_err(|e| e.to_string())?;
     std::fs::remove_dir_all(directory).map_err(|e| e.to_string())
+}
+/// A local provider whose responses exercise the coordinator's real maintenance path.
+pub struct CompactionScenarioProvider;
+
+#[async_trait::async_trait]
+impl harness_providers::Provider for CompactionScenarioProvider {
+    async fn stream_completion(
+        &self,
+        request: harness_providers::CompletionRequest,
+    ) -> harness_providers::ProviderEventStream {
+        use harness_providers::ProviderStreamEvent;
+        let summary = request.messages.first().is_some_and(|message| {
+            message.content == harness_compaction::prompts::summarization_system_prompt()
+        });
+        let short = summary
+            && request.messages.iter().any(|message| {
+                message
+                    .content
+                    .contains("Write exactly two or three first-person sentences")
+            });
+        let text = if short {
+            "I preserved the synthetic checkpoint and its pending request. I kept the continuation ready for the next answer.".to_string()
+        } else if summary {
+            "## Goal
+Continue the synthetic conversation after context maintenance.
+## Constraints & Preferences
+Use only generated public fixture text.
+## Progress
+### Done
+- [x] Recorded the synthetic context seed.
+### In Progress
+- [ ] Answer the latest continuation request.
+## Key Decisions
+**Retain the checkpoint** so the next turn can continue.
+## Next Steps
+1. Answer the latest user request.
+## Critical Context
+The checkpoint marker is cedar-checkpoint.
+## Additional Notes
+No private files or credentials are involved."
+                .to_string()
+        } else if request
+            .messages
+            .iter()
+            .any(|message| message.content.starts_with("Seed the synthetic context:"))
+            && !request
+                .messages
+                .iter()
+                .any(|message| message.role == harness_providers::MessageRole::Assistant)
+        {
+            format!(
+                "Synthetic context recorded: cedar-checkpoint.\n{}",
+                "Generated public answer record. ".repeat(20)
+            )
+        } else if request.messages.iter().any(|message| {
+            message.content.contains("<summary>") && message.content.contains("cedar-checkpoint")
+        }) {
+            "Continued answer: cedar-checkpoint survived real coordinator compaction.".to_string()
+        } else {
+            "No compacted checkpoint was present in the provider request.".to_string()
+        };
+        let (sender, receiver) = tokio::sync::mpsc::channel(8);
+        tokio::spawn(async move {
+            if sender.send(ProviderStreamEvent::Start).await.is_err() {
+                return;
+            }
+            // Keep the real live card observable without altering coordinator events. The pause
+            // outlasts a screenshot, so a captured frame still shows the pass it was taken in.
+            if summary {
+                tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
+            }
+            for chunk in text.as_bytes().chunks(if summary { 48 } else { 1024 }) {
+                tokio::time::sleep(std::time::Duration::from_millis(if summary {
+                    120
+                } else {
+                    80
+                }))
+                .await;
+                if sender
+                    .send(ProviderStreamEvent::TextDelta(
+                        String::from_utf8_lossy(chunk).into_owned(),
+                    ))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+            let _ = sender.send(ProviderStreamEvent::Done { usage: None }).await;
+        });
+        Box::pin(tokio_stream::wrappers::ReceiverStream::new(receiver))
+    }
+}
+
+pub fn configure_compaction_scenario(
+    config: &mut harness_core::coord::CoordinatorConfig,
+    scenario: ScenarioName,
+) {
+    use harness_core::config::{ResolvedModelLimits, ResolvedModelTarget};
+    config.provider = std::sync::Arc::new(CompactionScenarioProvider);
+    config.interactive = true;
+    let notes = scenario == ScenarioName::CompactionNotesInteractive;
+    // The notes rollover needs its tools callable, so that scenario keeps the real registry.
+    if !notes {
+        config.tool_registry = std::sync::Arc::new(harness_core::tool::ToolRegistry::new());
+    }
+    let mut profile = AgentProfile::fallback("default");
+    if notes {
+        profile.toolset = ["read", "grep", "edit", "context_notes", "new_context"]
+            .map(str::to_owned)
+            .into();
+    }
+    config.agent_profiles.insert("default".into(), profile);
+    config.compaction.notes_windows = notes;
+    config.agent_model_targets.insert(
+        "default".into(),
+        ResolvedModelTarget {
+            model_ref: "mock:default".into(),
+            provider: "mock".into(),
+            model: "default".into(),
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
+            thinking: None,
+            limits: ResolvedModelLimits::from_values(
+                Some(64_000),
+                Some(64_000),
+                Some(8_192),
+                Default::default(),
+            ),
+            resolution: Default::default(),
+            catalog_entry: None,
+        },
+    );
+    config.compaction.enabled = true;
+    config.compaction.method_order = vec![harness_compaction::CompactionMethod::Soft];
+    config.compaction.async_enabled = false;
+    config.compaction.idle_enabled = false;
+    config.compaction.threshold_tokens = std::num::NonZeroU32::new(5_000);
+    config.compaction.keep_recent_tokens = 100;
+    config.compaction.reserve_tokens = Some(0);
 }
