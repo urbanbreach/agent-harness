@@ -185,6 +185,10 @@ the hints. Question cards and other overlays handle their own navigation.
 | Ctrl+Enter or Alt+r | Cancel the running turn and replace it with the draft |
 | Shift+Enter, Ctrl+j, or Alt+Enter | Insert a newline in single-line mode |
 | Alt+m | Toggle multiline mode (Enter inserts a newline; Alt+Enter sends) |
+| Ctrl+Alt+o | Expand or collapse the focused compaction summary |
+| Ctrl+Alt+k | Show or hide the history above the latest compaction summary |
+| Ctrl+c | Clear a non-empty draft, otherwise interrupt the running turn or compaction (`interrupt_turn` binds an extra key) |
+| Ctrl+t in the model switcher | Edit the compaction threshold of the selected model |
 
 ### Tools and diffs
 

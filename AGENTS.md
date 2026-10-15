@@ -20,10 +20,12 @@ agent-harness/
 ├── crates/
 │   ├── harness/             # CLI adapter and command orchestration
 │   ├── harness-core/        # coordinator, durable events, config, projections; prompts/ embeds defaults
+│   ├── harness-compaction/  # pure context-maintenance algorithms: cut, summaries, prune, shake, archive
 │   ├── harness-providers/   # provider transports and stream normalization
 │   ├── harness-eval/        # persistent code kernels and host-tool composition
 │   ├── harness-tools/       # native and MCP tool registry/execution
 │   ├── harness-tui/         # Ratatui/Crossterm live, replay, and review shells
+│   ├── harness-tokenizer/   # offline per-model token counting, model identity, image size probing
 │   └── harness-testkit/     # temporary workspaces and preserved terminal fixtures
 ├── configs/                 # strict JSON/JSONC configuration contracts
 ├── docs/                    # operator, architecture, and testing documentation
@@ -35,6 +37,8 @@ agent-harness/
 | Task | Location | Notes |
 |------|----------|-------|
 | Change runtime coordination | `crates/harness-core/src/coord.rs`, `crates/harness-core/src/coord/` | Coordinator owns transitions and authority |
+| Change context maintenance | `crates/harness-compaction/src/` (algorithms), `crates/harness-core/src/coord/compaction.rs`, `crates/harness-core/src/coord/compaction/` (triggers, methods, commit, speculation) | Pure crate does no I/O; the coordinator owns provider calls, events and progress |
+| Change token counting or model identity | `crates/harness-tokenizer/src/` | Pure accounting crate; vocabularies in `data/` ship with `LICENSES.md` and are rebuilt by `tools/pack_assets.py` |
 | Change durable history | `crates/harness-core/src/event.rs`, `crates/harness-core/src/event/`, `crates/harness-core/src/store.rs`, `crates/harness-core/src/session/`, `crates/harness-core/src/proj/` | Append-only events feed replay projections |
 | Add or modify a CLI command | `crates/harness/src/` | `lib.rs` owns Clap routing; `main.rs` only calls `run_os()` |
 | Add a provider/backend | `crates/harness-providers/src/` | Normalize backend protocol into common stream events |
@@ -131,7 +135,10 @@ When running tests, use nextest instead of cargo test.
 - Do not replay historical tools or hooks, mutate source histories, or perform network
   work while inspecting replay/readiness state.
 - Do not persist provider deltas, raw payloads, secrets, unredacted arguments, or
-  provider reasoning details as durable state or support evidence.
+  provider reasoning details as durable state or support evidence. The one exception
+  is a native compaction payload: it is stored as a private (0600) artifact outside
+  `events.jsonl`, referenced by digest, reused only for the same provider, model and
+  API, and excluded from support exports and trace archives.
 - Do not bypass coordinator-owned permission, cancellation, scheduling, event-append,
   or lifecycle gates. Permissions are policy checks, not an OS sandbox.
 - Do not treat unknown model limits or unavailable platform probes as success; preserve
@@ -170,7 +177,11 @@ bash scripts/harness-qa-dogfood.sh --self-test
 ## NOTES
 
 - `rust-toolchain.toml` selects stable Rust with rustfmt and clippy; Cargo resolver 3
-  coordinates the seven-crate workspace.
+  coordinates the nine-crate workspace.
+- `harness-tokenizer` counts tokens offline from bundled, zstd-packed vocabularies
+  and never loads model weights or calls a service. Unknown models count at four bytes
+  per token unless `HARNESS_TOKENIZER_ACCURATE=1` selects o200k. Keep `LICENSES.md`
+  in step with `data/manifest.json` when changing an asset.
 - Nextest defaults to no retries and CPU-count parallelism, excludes performance,
   live, PTY, and native binaries, and serializes process-global-state tests.
 - Performance contracts use release-mode tests; Linux PTY signoff requires

@@ -299,7 +299,7 @@ machine and when.
 
 ## Contributing
 
-The workspace is seven Rust 2024 crates on the stable toolchain. Start with the
+The workspace is nine Rust 2024 crates on the stable toolchain. Start with the
 [architecture guide](docs/architecture/architecture.md) to see who owns what, and
 the [terminal design guide](DESIGN.md) before touching the UI.
 
