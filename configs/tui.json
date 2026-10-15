@@ -17,6 +17,13 @@
       ],
       "default": null
     },
+    "collapse_compacted_history": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "default": null
+    },
     "keybinds": {
       "type": "object",
       "additionalProperties": {

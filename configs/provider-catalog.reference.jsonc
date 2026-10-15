@@ -65,9 +65,15 @@
   "runtime": {
     "compaction": {
       "enabled": true,
-      "split_oversized_turns": false,
+      "mid_turn_enabled": true,
+      "method_order": ["remote", "archive", "handoff", "shake", "soft"],
+      "reserve_tokens": null,
       "auto_retry_overflow": true,
-      "structured_summary_contract": true,
+      "auto_continue": true,
+      "async_enabled": true,
+      "model_thresholds_enabled": true,
+      "supersede_reads": true,
+      "drop_useless": true,
       "estimated_token_triggers": true,
       "fallback_input_tokens": 32768
     }
