@@ -1,6 +1,6 @@
 use super::*;
 
-/// The widest account label the badge carries (senpi's footer budget).
+/// The widest account label the badge carries (footer budget).
 const ACCOUNT_LABEL_MAX_COLUMNS: usize = 24;
 
 pub(crate) fn composer_model_badge(
@@ -37,9 +37,6 @@ pub(crate) fn composer_model_badge(
     }
     if app.shell_mode() {
         status.push("shell".to_string());
-    }
-    if app.queued_prompt_count > 0 {
-        status.push(format!("queued {}", app.queued_prompt_count));
     }
     if app.composer.multiline_mode {
         status.push("MULTILINE".to_string());

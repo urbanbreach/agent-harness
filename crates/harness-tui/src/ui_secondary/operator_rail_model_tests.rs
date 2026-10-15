@@ -29,78 +29,54 @@ pub(crate) fn exact_test_operator_rail_section_model_builds_pinned_summary() {
     );
 }
 
-#[cfg(test)]
-pub(crate) fn exact_test_compaction_applied_updates_active_context_usage_estimate() {
+#[test]
+fn compaction_metrics_count_each_committed_pass_once() {
     let mut app = AppState::new_live(None, false, None);
-    app.active_context_usage = Some(ActiveContextUsage::estimate(500));
-    app.activities.push_back(ActivityEntry {
-        request_id: "req_000001".to_string(),
-        profile_label: "build".to_string(),
-        model_id: "model-1".to_string(),
-        provider_id: "default".to_string(),
-        status: ActivityStatus::Done,
-        user_message: None,
-        user_timestamp: None,
-        request_data: None,
-        thinking_text: String::new(),
-        thinking_first_mono_ms: None,
-        thinking_last_mono_ms: None,
-        transcript_text: String::new(),
-        first_delta_mono_ms: None,
-        usage: Some(ActivityUsage {
-            prompt_tokens: 400,
-            completion_tokens: 100,
-            total_tokens: 500,
-        }),
-        cache_usage: None,
-        error_message: None,
-        permissions: Vec::new(),
-        tool_calls: Vec::new(),
-        first_seq: 1,
-        last_seq: 2,
-        first_mono_ms: 10,
-        last_mono_ms: 20,
-        request_started_mono_ms: None,
-        revision: 0,
-    });
-    assert_eq!(
-        app.active_context_usage(),
-        Some(ActiveContextUsage::estimate(500))
-    );
-    assert_eq!(app.compaction_usage_metrics().completed_count, 0);
-
+    let system =
+        || harness_core::event::EventActor::new(harness_core::event::ActorKind::System, None);
     app.ingest_event(operator_rail_test_event(
-        3,
-        harness_core::event::EventActor::new(
-            harness_core::event::ActorKind::System,
-            Some("coordinator".to_string()),
-        ),
-        harness_core::event::EventV1::CompactionApplied(
-            harness_core::event::CompactionAppliedEvent {
-                checkpoint_id: "checkpoint_000003".to_string(),
-                agent_id: "agent_000001".to_string(),
-                through_seq: 2,
-                through_request_id: Some("req_000001".to_string()),
-                tokens_before_estimate: Some(500),
-                tokens_after_estimate: Some(120),
-                summary_tokens_estimate: Some(80),
-                compacted_turns: Some(1),
-                preserved_turns: Some(1),
-                reduction_tokens_estimate: Some(380),
-                reduction_percent_estimate: Some(76),
-                estimate_source: None,
-            },
-        ),
+        1,
+        system(),
+        harness_core::event::EventV1::RunStarted(harness_core::event::RunStartedEvent {
+            run_name: "metrics".into(),
+            workspace_root: "/tmp".to_string(),
+        }),
     ));
-
+    app.ingest_event(operator_rail_test_event(
+        2,
+        system(),
+        harness_core::event::EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
+            agent_id: "agent_000001".to_string(),
+            profile: "default".to_string(),
+            parent_agent_id: None,
+        }),
+    ));
+    assert_eq!(app.compaction_usage_metrics().completed_count, 0);
+    // Two passes, the second followed by its rescue replacement: two passes, not three.
+    for (seq, supersedes_seq) in [(3, None), (4, None), (5, Some(4))] {
+        app.ingest_event(operator_rail_test_event(
+            seq,
+            harness_core::event::EventActor::new(
+                harness_core::event::ActorKind::System,
+                Some("coordinator".to_string()),
+            ),
+            harness_core::event::EventV1::SessionCompaction(
+                harness_core::event::SessionCompactionEvent {
+                    agent_id: "agent_000001".to_string(),
+                    summary: "summary".to_string(),
+                    first_kept_event_seq: 3,
+                    tokens_after: Some(120),
+                    supersedes_seq,
+                    ..Default::default()
+                },
+            ),
+        ));
+    }
+    assert_eq!(app.compaction_usage_metrics().completed_count, 2);
     assert_eq!(
         app.active_context_usage(),
         Some(ActiveContextUsage::estimate(120))
     );
-    let metrics = app.compaction_usage_metrics();
-    assert_eq!(metrics.completed_count, 1);
-    assert_eq!(metrics.summary_tokens_estimate, 80);
-    assert_eq!(metrics.reduction_tokens_estimate, 380);
 }
 
 #[cfg(test)]

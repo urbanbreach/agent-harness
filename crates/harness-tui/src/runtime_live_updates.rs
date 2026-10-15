@@ -220,6 +220,9 @@ fn apply_update(
         LiveUpdate::OperatorNotice { message, level } => {
             apply_operator_notice(app, message, level);
         }
+        LiveUpdate::CompactionCommand { kind, outcome } => {
+            app.apply_compaction_command_outcome(kind, outcome);
+        }
         LiveUpdate::AuthBackendNotice {
             attempt,
             message,
@@ -263,6 +266,9 @@ fn apply_update(
             }
         }
         LiveUpdate::RestoreQueuedInput(texts) => app.restore_queued_input(texts),
+        LiveUpdate::QueuedPromptReceipt { id, result } => {
+            app.maintenance_prompt_receipt(id, result)
+        }
     }
     true
 }

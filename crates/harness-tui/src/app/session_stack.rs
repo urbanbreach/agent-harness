@@ -338,6 +338,7 @@ impl AppState {
     }
 
     fn restore_session_snapshot(&mut self, snapshot: SessionNavigationSnapshot) {
+        self.cancel_idle_compaction();
         self.streaming_text.clear();
         self.replay_mode = snapshot.replay_mode;
         self.session_path = Some(snapshot.session_path);

@@ -74,6 +74,7 @@ pub(in crate::ui) struct TranscriptVisualEntryMetadata {
     pub(in crate::ui) foldable: bool,
     pub(in crate::ui) context_group: bool,
     pub(in crate::ui) id: TranscriptVisualEntryId,
+    pub(in crate::ui) source_event_seq: u64,
     pub(in crate::ui) display_mode: TranscriptVisualEntryDisplayMode,
 }
 
@@ -86,6 +87,7 @@ impl TranscriptVisualEntryMetadata {
     ) -> Self {
         Self {
             foldable: false,
+            source_event_seq: activity_first_seq,
             context_group: false,
             id: TranscriptVisualEntryId::Part {
                 activity_first_seq,
@@ -114,6 +116,16 @@ impl ResolvedTranscriptVisualEntryDraft {
         Self {
             metadata: TranscriptVisualEntryMetadata {
                 id,
+                source_event_seq: match id {
+                    TranscriptVisualEntryId::User { activity_first_seq }
+                    | TranscriptVisualEntryId::Part {
+                        activity_first_seq, ..
+                    }
+                    | TranscriptVisualEntryId::ToolGroup {
+                        activity_first_seq, ..
+                    }
+                    | TranscriptVisualEntryId::Footer { activity_first_seq } => activity_first_seq,
+                },
                 foldable: false,
                 context_group: false,
                 display_mode,
@@ -157,9 +169,18 @@ impl ResolvedTranscriptVisualEntryDraft {
             TranscriptAssistantPart::Compaction(compaction) => {
                 ("compaction", Some(compaction.summary.as_str()), true, false)
             }
+            TranscriptAssistantPart::Notice(notice) => {
+                ("notice", Some(notice.text.as_str()), false, false)
+            }
         };
         let key = if let TranscriptAssistantPart::ToolCall(tool) = part {
             semantic_key([tool.tool_call_id.as_str()])
+        } else if let TranscriptAssistantPart::Notice(notice) = part {
+            semantic_key([format!(
+                "{}:notice:{}:{}",
+                turn.request_id, notice.anchor_seq, notice.ordinal
+            )
+            .as_str()])
         } else {
             part_source_key(turn, index, role, source)
         };
@@ -172,6 +193,10 @@ impl ResolvedTranscriptVisualEntryDraft {
             source,
         );
         entry.metadata.foldable = foldable;
+        entry.metadata.source_event_seq = turn
+            .assistant_part_source_ids
+            .get(index)
+            .map_or(turn.activity_first_seq, |source| source.0);
         if matches!(
             part,
             TranscriptAssistantPart::ToolCall(_) | TranscriptAssistantPart::Reasoning(_)
@@ -198,6 +223,12 @@ impl ResolvedTranscriptVisualEntryDraft {
             draft,
             None,
         );
+        entry.metadata.source_event_seq = std::iter::once(group.start)
+            .chain(group.hidden.iter().copied())
+            .filter_map(|index| turn.assistant_part_source_ids.get(index))
+            .map(|source| source.0)
+            .max()
+            .unwrap_or(turn.activity_first_seq);
         entry.metadata.foldable =
             turn.assistant_parts[group.start]
                 .tool_call()

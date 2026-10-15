@@ -455,7 +455,11 @@ fn model_switcher_model(app: &AppState, popup: Rect) -> Option<ModalSurfaceModel
         1,
     );
     let list = super::model_switcher::model_switcher_list_area(popup);
-    let rows = super::model_switcher::model_switcher_rows(app);
+    let rows = if app.threshold_editor.is_some() {
+        Vec::new()
+    } else {
+        super::model_switcher::model_switcher_rows(app)
+    };
     visual_rows_model(
         app,
         key,

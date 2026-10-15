@@ -19,10 +19,10 @@ use harness_core::crash_recovery::{
 use harness_core::edit_attribution::EditAttributionSummary;
 use harness_core::event::{
     ActorKind, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
-    LiveEventEnvelope, LiveEventV1, ProviderRequestStartedEvent, ResolvedToolIdentity,
-    RunFinishedEvent, RuntimeEvent, TaskLineageMetadata, TaskScheduleMetadata,
-    ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus, UserMessageSubmittedEvent,
-    SCHEMA_VERSION,
+    LifecyclePhase, LiveEventEnvelope, LiveEventV1, ProviderRequestStartedEvent,
+    ResolvedToolIdentity, RunFinishedEvent, RuntimeEvent, TaskLineageMetadata,
+    TaskScheduleMetadata, ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus,
+    UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::foreground_demote::{DemoteOutcomeSummary, DemoteToBackgroundResult};
 use harness_core::foreign_session::{
@@ -93,16 +93,22 @@ mod child_inspection;
 mod child_links;
 mod child_markdown;
 mod child_session;
+mod compaction_commands;
+mod compaction_keys;
+mod compaction_view;
 mod composer;
 mod composer_editing;
+pub(crate) mod context_status;
 mod file_mentions;
 mod focus;
 mod foreign_import;
 mod ghost_suggestion;
 mod help_browser;
+mod idle_compaction;
 mod key_interaction;
 mod lifecycle;
 mod lineage;
+pub(crate) mod maintenance;
 mod memory_browser;
 mod modal_interaction;
 mod model_favorites;
@@ -111,6 +117,7 @@ mod model_switcher;
 mod motion;
 mod mouse_interaction;
 mod new_worktree_dialog;
+pub(crate) mod notices;
 pub mod notifications;
 mod operator_sidebar;
 pub(crate) mod palette_controller;
@@ -124,6 +131,7 @@ mod prompt_commands;
 mod prompt_history;
 mod prompt_history_picker;
 mod prompt_input;
+mod prompt_queue;
 mod prompt_stash;
 mod prompt_stash_actions;
 mod question_prompt;
@@ -133,6 +141,7 @@ pub(crate) mod session_history;
 mod streaming;
 mod streaming_text;
 pub(crate) mod subagents;
+pub(crate) use prompt_queue::PendingBandRow;
 pub(crate) use session_history::format_relative_age;
 pub(crate) mod pane_query;
 mod rewind;
@@ -192,6 +201,7 @@ pub use self::lifecycle::{
 pub(crate) use self::modal_interaction::{
     ModalAction, ModalInteractionState, ModalSurfaceKey, ModalTarget, ModalViewKey,
 };
+pub(crate) use self::model_switcher::threshold_editor::{ThresholdEditorView, ThresholdLineTone};
 use self::new_worktree_dialog::NewWorktreeDialogState;
 use self::permission_prompt::PermissionPromptState;
 use self::permissions::{
@@ -203,7 +213,9 @@ pub use self::session_history::SessionHistoryEntry;
 use self::session_projection::SessionProjection;
 pub(crate) use self::session_projection::{LiveTurnPhase, LiveTurnWatchers, WaitingReason};
 use self::session_stack::{SessionLineage, SessionNavigationSnapshot};
-pub(crate) use self::settings_editor::{human_label as settings_label, SettingsTab};
+pub(crate) use self::settings_editor::{
+    human_label as settings_label, settings_description, SettingsTab,
+};
 use self::terminal_panel::terminal_panel_event_is_shell;
 use self::terminal_panel::TerminalPanelState;
 pub use self::terminal_panel::{TerminalPanelEntry, TerminalPanelStatus};
@@ -254,12 +266,14 @@ pub use lineage::{ForkSelectorState, LineageBrowserState};
 pub use memory_browser::{MemoryBrowserEntry, MemoryBrowserState};
 pub use model_metadata::{LaunchMetadata, McpResourceOption, ModelOption};
 pub use pending_live::{
-    set_pending_connect_providers, set_pending_live_launch_metadata,
-    set_pending_live_prompt_auto_submit, set_pending_live_prompt_draft,
-    set_pending_prompt_commands, set_pending_settings_project_config,
+    set_pending_connect_providers, set_pending_idle_compaction_settings,
+    set_pending_live_launch_metadata, set_pending_live_prompt_auto_submit,
+    set_pending_live_prompt_draft, set_pending_prompt_commands,
+    set_pending_settings_project_config,
 };
 use pending_live::{
-    take_pending_connect_providers, take_pending_live_launch_metadata, take_pending_live_prompt,
+    set_pending_live_prompt_with_images, take_pending_connect_providers,
+    take_pending_live_launch_metadata, take_pending_live_prompt,
     take_pending_settings_project_config, PendingLivePrompt,
 };
 use permissions::permission_display_summary;
@@ -328,6 +342,7 @@ pub struct AppState {
     projection: SessionProjection,
     pub should_quit: bool,
     pub(crate) rewind: rewind::RewindUi,
+    pub(crate) compaction_view: compaction_view::CompactionViewState,
     pub(crate) quit_confirmation_pending: bool,
     pub(crate) quit_confirmation_shortcut: Option<KeyBinding>,
     pub(crate) quit_confirmation_expires_at: Option<Instant>,
@@ -399,8 +414,11 @@ pub struct AppState {
     pub(crate) settings_parent: Option<settings_editor::SettingsParent>,
     pub(crate) settings_project_config_path: Option<PathBuf>,
     pub(crate) settings_compaction_enabled: bool,
+    idle_compaction: idle_compaction::IdleCompactionTimer,
+    pub(crate) maintenance: maintenance::MaintenanceState,
+    pub(crate) notices: notices::TranscriptNotices,
     pub(crate) settings_compaction_auto_retry_overflow: bool,
-    pub(crate) settings_compaction_structured_summary_contract: bool,
+    pub(crate) settings_compaction_mid_turn_enabled: bool,
     pub(crate) settings_compaction_estimated_token_triggers: bool,
     pub(crate) settings_deterministic_enabled: bool,
     /// Optional operator-facing multi-run crash scan counts for the status dialog.
@@ -510,6 +528,7 @@ pub struct AppState {
     pub model_options: Vec<ModelOption>,
     pub model_filtered: Vec<usize>,
     pub model_selected: usize,
+    pub(crate) threshold_editor: Option<model_switcher::threshold_editor::ThresholdEditor>,
     pub model_favorites: BTreeSet<String>,
     model_favorites_path: Option<PathBuf>,
     pub model_recents: Vec<String>,
@@ -603,6 +622,7 @@ impl Default for AppState {
             projection: SessionProjection::default(),
             should_quit: false,
             rewind: rewind::RewindUi::default(),
+            compaction_view: Default::default(),
             quit_confirmation_pending: false,
             quit_confirmation_shortcut: None,
             quit_confirmation_expires_at: None,
@@ -676,8 +696,11 @@ impl Default for AppState {
             settings_parent: None,
             settings_project_config_path: None,
             settings_compaction_enabled: true,
+            idle_compaction: Default::default(),
+            maintenance: Default::default(),
+            notices: Default::default(),
             settings_compaction_auto_retry_overflow: true,
-            settings_compaction_structured_summary_contract: true,
+            settings_compaction_mid_turn_enabled: true,
             settings_compaction_estimated_token_triggers: true,
             settings_deterministic_enabled: false,
             crash_recovery_scan_summary: None,
@@ -737,6 +760,7 @@ impl Default for AppState {
             model_options: Vec::new(),
             model_filtered: Vec::new(),
             model_selected: 0,
+            threshold_editor: None,
             model_favorites: BTreeSet::new(),
             model_favorites_path: None,
             model_recents: Vec::new(),
@@ -1619,6 +1643,8 @@ impl AppState {
         }
         self.bump_transcript_render_epoch();
         self.projection.reset();
+        self.notices.clear();
+        self.maintenance = Default::default();
         self.projection
             .set_fallback_profile_label(self.active_profile().to_string());
         self.dismissed_permissions.clear();
@@ -1700,7 +1726,30 @@ impl AppState {
         self.starting_session_seed = false;
         let previous_phase = self.current_live_turn_phase();
         self.note_live_fragment_timing(event);
+        if matches!(event.payload, LiveEventV1::CompactionProgress { .. }) {
+            self.cancel_idle_compaction();
+        }
         self.projection.ingest_live_event(event);
+        match &event.payload {
+            LiveEventV1::CompactionProgress {
+                agent_id,
+                stage: Some(stage),
+                ..
+            } => {
+                if let Some(method) = stage.method {
+                    self.note_maintenance_method(agent_id, method);
+                }
+            }
+            LiveEventV1::CompactionLifecycle(lifecycle) => match lifecycle.phase {
+                LifecyclePhase::Start => self.begin_maintenance(lifecycle),
+                LifecyclePhase::End => self.end_maintenance(lifecycle),
+            },
+            LiveEventV1::RuntimeNotice {
+                severity, message, ..
+            } => self.push_transcript_notice((*severity).into(), message.clone()),
+            LiveEventV1::CompactionStatus(status) => self.note_compaction_status(status.clone()),
+            _ => {}
+        }
         self.observe_streaming_text(event);
         self.sync_live_turn_phase_timing(previous_phase);
         self.sync_transcript_state(true);
@@ -1729,6 +1778,9 @@ impl AppState {
         if self.projection.has_seen_seq(event.seq) {
             return;
         }
+        self.notices.note_transcript_child();
+        let turn_was_in_progress = !historical && self.active_turn_in_progress();
+        self.cancel_idle_for_durable_event(&event.payload, historical);
         if !historical {
             let now = self.now();
             self.projection.usage.observe(event.mono_ms, now);
@@ -1830,6 +1882,7 @@ impl AppState {
 
         self.update_queued_prompt_count();
         self.sync_transcript_state(!historical);
+        self.rearm_idle_after_settled(turn_was_in_progress);
         if self.status_dashboard_is_active() {
             self.refresh_status_dashboard();
         }
@@ -1932,6 +1985,9 @@ impl AppState {
                 | LiveEventV1::MonitorState { .. }
                 | LiveEventV1::CompactionProgress { .. }
                 | LiveEventV1::RuntimeWarning { .. }
+                | LiveEventV1::RuntimeNotice { .. }
+                | LiveEventV1::CompactionLifecycle(_)
+                | LiveEventV1::CompactionStatus(_)
                 | LiveEventV1::SubagentProgress(_)
                 | LiveEventV1::EvalProgress { .. } => return,
                 LiveEventV1::ProviderTextDelta { request_id, .. }
@@ -2855,7 +2911,7 @@ impl AppState {
     "compaction": {
       "enabled": true,
       "auto_retry_overflow": true,
-      "structured_summary_contract": true,
+      "mid_turn_enabled": true,
       "estimated_token_triggers": true
     }
   },
@@ -2878,10 +2934,8 @@ impl AppState {
             &settings_path,
             false,
         );
-        let _ = harness_core::config::write_project_compaction_structured_summary_contract(
-            &settings_path,
-            false,
-        );
+        let _ =
+            harness_core::config::write_project_compaction_mid_turn_enabled(&settings_path, false);
         let _ = harness_core::config::write_project_compaction_estimated_token_triggers(
             &settings_path,
             false,
@@ -2890,9 +2944,7 @@ impl AppState {
         let _ = harness_core::config::reset_project_setting_to_default(&settings_path, "edit.mode");
         let _ = harness_core::config::reset_project_compaction_enabled(&settings_path);
         let _ = harness_core::config::reset_project_compaction_auto_retry_overflow(&settings_path);
-        let _ = harness_core::config::reset_project_compaction_structured_summary_contract(
-            &settings_path,
-        );
+        let _ = harness_core::config::reset_project_compaction_mid_turn_enabled(&settings_path);
         let _ =
             harness_core::config::reset_project_compaction_estimated_token_triggers(&settings_path);
         let _ = harness_core::config::reset_project_deterministic_enabled(&settings_path);
@@ -2903,10 +2955,8 @@ impl AppState {
             &settings_path,
             true,
         );
-        let _ = harness_core::config::write_project_compaction_structured_summary_contract(
-            &settings_path,
-            true,
-        );
+        let _ =
+            harness_core::config::write_project_compaction_mid_turn_enabled(&settings_path, true);
         let _ = harness_core::config::write_project_compaction_estimated_token_triggers(
             &settings_path,
             true,
@@ -2918,11 +2968,9 @@ impl AppState {
         let compaction_auto_retry_overflow =
             harness_core::config::read_effective_compaction_auto_retry_overflow(&settings_path)
                 .unwrap_or(true);
-        let compaction_structured_summary_contract =
-            harness_core::config::read_effective_compaction_structured_summary_contract(
-                &settings_path,
-            )
-            .unwrap_or(true);
+        let compaction_mid_turn_enabled =
+            harness_core::config::read_effective_compaction_mid_turn_enabled(&settings_path)
+                .unwrap_or(true);
         let compaction_estimated_token_triggers =
             harness_core::config::read_effective_compaction_estimated_token_triggers(
                 &settings_path,
@@ -2935,7 +2983,7 @@ impl AppState {
             &settings_path,
             compaction_enabled,
             compaction_auto_retry_overflow,
-            compaction_structured_summary_contract,
+            compaction_mid_turn_enabled,
             compaction_estimated_token_triggers,
             deterministic_enabled,
         );

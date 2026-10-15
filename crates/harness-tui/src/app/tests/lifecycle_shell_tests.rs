@@ -64,11 +64,11 @@ fn assert_settings_values(app: &AppState) {
         settings.bound,
         "expected project config bound: {settings:?}"
     );
-    assert_eq!((settings.writable_paths, settings.editable), (22, 21));
+    assert_eq!((settings.writable_paths, settings.editable), (56, 55));
     assert!(settings.with_effective_value >= 6);
     assert!(settings.total >= 38);
     assert!(settings.one_line().contains("bound=true"));
-    assert!(settings.one_line().contains("writable_paths=22"));
+    assert!(settings.one_line().contains("writable_paths=56"));
     assert!(
         app.settings_project_config_path()
             .is_some_and(|path| path.ends_with("harness.json")),
@@ -76,7 +76,7 @@ fn assert_settings_values(app: &AppState) {
     );
     assert!(app.settings_compaction_enabled());
     assert!(app.settings_compaction_auto_retry_overflow());
-    assert!(app.settings_compaction_structured_summary_contract());
+    assert!(app.settings_compaction_mid_turn_enabled());
     assert!(app.settings_compaction_estimated_token_triggers());
     assert!(!app.settings_deterministic_enabled());
     let settings_path = app
@@ -101,9 +101,9 @@ fn assert_settings_values(app: &AppState) {
         app.settings_compaction_auto_retry_overflow()
     );
     assert_eq!(
-        harness_core::config::read_effective_compaction_structured_summary_contract(&settings_path)
+        harness_core::config::read_effective_compaction_mid_turn_enabled(&settings_path)
             .expect("structured_summary"),
-        app.settings_compaction_structured_summary_contract()
+        app.settings_compaction_mid_turn_enabled()
     );
     assert_eq!(
         harness_core::config::read_effective_compaction_estimated_token_triggers(&settings_path)
@@ -132,7 +132,7 @@ fn assert_settings_definitions() {
         "edit.mode",
         "runtime.compaction.enabled",
         "runtime.compaction.auto_retry_overflow",
-        "runtime.compaction.structured_summary_contract",
+        "runtime.compaction.mid_turn_enabled",
         "runtime.compaction.estimated_token_triggers",
         "runtime.deterministic.enabled",
     ];

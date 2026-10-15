@@ -21,6 +21,17 @@ use crate::theme::Theme;
 
 #[path = "ui_chrome.rs"]
 mod ui_chrome;
+#[path = "ui_compaction_hero.rs"]
+mod ui_compaction_hero;
+#[path = "ui_compaction_labels.rs"]
+mod ui_compaction_labels;
+#[path = "ui_compaction_map.rs"]
+mod ui_compaction_map;
+#[path = "ui_compaction_motion.rs"]
+mod ui_compaction_motion;
+#[cfg(test)]
+#[path = "ui_compaction_motion_tests.rs"]
+mod ui_compaction_motion_tests;
 #[path = "ui_context_budget.rs"]
 mod ui_context_budget;
 #[path = "ui_diff.rs"]
@@ -191,7 +202,6 @@ pub(crate) use ui_secondary::operator_sidebar_text_for_test;
 pub(crate) use ui_secondary::orchestration_card_text_for_test;
 #[cfg(test)]
 pub(crate) use ui_secondary::{
-    exact_test_compaction_applied_updates_active_context_usage_estimate,
     exact_test_operator_rail_collapses_modified_files_section_body,
     exact_test_operator_rail_collapses_todo_section_body,
     exact_test_operator_rail_hides_completed_todo_state,

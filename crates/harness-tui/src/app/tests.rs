@@ -37,6 +37,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 mod live_compaction_tests;
+mod maintenance_lifecycle_tests;
 #[path = "tests/rewind_tests.rs"]
 mod rewind_tests;
 mod tool_runtime_capture_tests;
@@ -1426,7 +1427,7 @@ delegate_test!(settings_editor_fails_closed_for_secret_setting => settings_edito
 delegate_test!(settings_editor_toggles_compaction_auto_retry_overflow_persists_and_reloads => settings_editor_tests::settings_editor_toggles_compaction_auto_retry_overflow_persists_and_reloads);
 delegate_test!(settings_editor_summary_counts_bound_writable_paths => settings_editor_tests::settings_editor_summary_counts_bound_writable_paths);
 delegate_test!(settings_editor_toggles_deterministic_enabled_persists_and_reloads => settings_editor_tests::settings_editor_toggles_deterministic_enabled_persists_and_reloads);
-delegate_test!(settings_editor_toggles_compaction_structured_summary_contract_persists_and_reloads => settings_editor_tests::settings_editor_toggles_compaction_structured_summary_contract_persists_and_reloads);
+delegate_test!(settings_editor_toggles_compaction_mid_turn_enabled_persists_and_reloads => settings_editor_tests::settings_editor_toggles_compaction_mid_turn_enabled_persists_and_reloads);
 delegate_test!(settings_editor_toggles_compaction_estimated_token_triggers_persists_and_reloads => settings_editor_tests::settings_editor_toggles_compaction_estimated_token_triggers_persists_and_reloads);
 delegate_test!(settings_editor_e2e_open_edit_persist_and_read_effective => settings_editor_tests::settings_editor_e2e_open_edit_persist_and_read_effective);
 delegate_test!(pending_settings_project_config_is_applied_on_new_live => settings_editor_tests::pending_settings_project_config_is_applied_on_new_live);
@@ -1448,6 +1449,10 @@ delegate_test!(queued_prompt_indicator_renders_when_count_positive => prompt_sta
 #[cfg(test)]
 #[path = "tests/p0_04_composer_tests.rs"]
 mod p0_04_composer_tests;
+
+#[cfg(test)]
+#[path = "tests/prompt_queue_tests.rs"]
+mod prompt_queue_tests;
 
 #[cfg(test)]
 #[path = "tests/file_mention_tests.rs"]

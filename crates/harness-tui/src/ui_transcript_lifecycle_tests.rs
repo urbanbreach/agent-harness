@@ -210,9 +210,10 @@ fn queued_user_followup_keeps_active_status_out_of_transcript() {
         lines.iter().all(|line| !line.contains("gpt-5.4-mini")),
         "active lifecycle text should not be duplicated in the transcript footer: {lines:#?}"
     );
-    assert!(
-        lines.iter().any(|line| line.contains(" QUEUED ")),
-        "queued follow-up should still show the user badge: {lines:#?}"
+    assert_eq!(
+        app.pending_queue_display().after_yield.len(),
+        1,
+        "the queued follow-up is listed once, in the pending band"
     );
     assert!(
         lines

@@ -20,8 +20,7 @@ fn context_budget_snapshot(
         status,
         requested_output_tokens: None,
         reserved_output_tokens: None,
-        maximum_input_tokens: compaction_threshold_tokens
-            .map(|threshold| threshold.saturating_add(8_192)),
+        maximum_input_tokens: compaction_threshold_tokens,
         safety_margin_tokens: 0,
         compaction_threshold_tokens,
         components: RequestBudgetComponents {
@@ -83,8 +82,8 @@ fn context_budget_snapshot_known_capacity_drives_status_segment() {
     // act: the context-budget presentation is projected.
     let label = live.runtime_context_budget_text();
 
-    // assert: the percentage denominator is the snapshot threshold, not the 128,000 maximum input.
-    assert_eq!(label, Some("ctx ~60000/119808 50%".to_string()));
+    // assert: usage is a one-decimal percentage of the model's 128,000 token context window.
+    assert_eq!(label, Some("◫ 46.9%/128K".to_string()));
 }
 
 #[test]
@@ -104,8 +103,8 @@ fn context_budget_snapshot_unknown_capacity_avoids_percentage() {
     // act: the context-budget presentation is projected.
     let label = replay.runtime_context_budget_text();
 
-    // assert: unknown capacity is explicit and has no percentage.
-    assert_eq!(label, Some("ctx ~321 · capacity unknown".to_string()));
+    // assert: unknown capacity shows the used tokens over `?` and no percentage.
+    assert_eq!(label, Some("◫ 321/?".to_string()));
     assert!(!label.unwrap_or_abort().contains('%'));
 }
 
@@ -122,8 +121,8 @@ fn context_budget_snapshot_unknown_missing_replay_metadata_is_explicit() {
     // act: the context-budget presentation is projected.
     let label = replay.runtime_context_budget_text();
 
-    // assert: replay does not infer capacity from model registries.
-    assert_eq!(label, Some("ctx ~0 · capacity unknown".to_string()));
+    // assert: replay does not infer capacity from model registries and invents no usage.
+    assert_eq!(label, None);
 }
 
 #[test]
@@ -139,8 +138,8 @@ fn context_budget_snapshot_conservative_avoids_percentage() {
     // act: the context-budget presentation is projected.
     let label = live.runtime_context_budget_text();
 
-    // assert: conservative capacity is explicit and has no percentage.
-    assert_eq!(label, Some("ctx ~400 · conservative".to_string()));
+    // assert: a conservative guess is not a window, so there is no percentage.
+    assert_eq!(label, Some("◫ 400/?".to_string()));
     assert!(!label.unwrap_or_abort().contains('%'));
 }
 
@@ -164,7 +163,7 @@ fn context_budget_snapshot_latest_request_sequence_wins_across_root_and_child() 
     // assert: event sequence, not ingestion order or actor kind, selects the snapshot.
     assert_eq!(
         live.runtime_context_budget_text(),
-        Some("ctx ~700/2000 35%".to_string())
+        Some("◫ 35.0%/2K".to_string())
     );
 }
 
@@ -183,10 +182,7 @@ fn context_budget_snapshot_latest_request_without_snapshot_renders_unknown() {
     live.ingest_event(latest);
 
     // assert: the older capacity is not presented as current.
-    assert_eq!(
-        live.runtime_context_budget_text(),
-        Some("ctx ~0 · capacity unknown".to_string())
-    );
+    assert_eq!(live.runtime_context_budget_text(), None);
 }
 
 #[test]
@@ -206,7 +202,7 @@ fn context_budget_snapshot_replay_uses_request_event_before_persisted_bootstrap(
     // assert: replay uses the event snapshot before the metadata bootstrap.
     assert_eq!(
         replay.runtime_context_budget_text(),
-        Some("ctx ~777 · capacity unknown".to_string())
+        Some("◫ 777/?".to_string())
     );
 }
 
@@ -231,7 +227,7 @@ fn runtime_context_after_model_switch_keeps_snapshot_until_next_request() {
     // assert: current-runtime budget evidence remains active until another request starts.
     assert_eq!(
         live.runtime_context_budget_text(),
-        Some("ctx ~600/1200 50%".to_string())
+        Some("◫ 50.0%/1.2K".to_string())
     );
 }
 
@@ -274,9 +270,9 @@ fn context_budget_snapshot_refreshing_precedes_latest_snapshot() {
         .unwrap_or_abort(),
     });
 
-    // assert: refresh precedence hides the stale request snapshot.
+    // assert: usage is unknown until the next response, so only the window shows (not 0%).
     assert_eq!(
         live.runtime_context_budget_text(),
-        Some("ctx compacted · refreshing".to_string())
+        Some("◫ 1.2K".to_string())
     );
 }

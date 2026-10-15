@@ -526,7 +526,6 @@ impl TranscriptTurnSection {
 pub(super) struct TranscriptUserMessageSection {
     pub(super) text: String,
     /// Label shown under a message that has not reached the model yet.
-    pub(super) badge: Option<&'static str>,
     pub(super) wall_clock: Option<String>,
     pub(super) expanded_wall_clock: Option<String>,
     pub(super) wall_clock_hovered: bool,
@@ -685,14 +684,41 @@ pub(super) enum TranscriptCompactionKind {
     BranchSummary,
 }
 
+/// One compaction card. `seq` is the compaction event sequence and the card's identity for
+/// expansion state; superseded cards keep their amounts, method and warning but carry the
+/// placeholder summary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptCompactionSection {
+    pub(super) seq: u64,
     pub(super) expanded: bool,
     pub(super) kind: TranscriptCompactionKind,
     pub(super) summary: String,
+    pub(super) short_summary: Option<String>,
+    pub(super) at_ms: Option<u64>,
+    pub(super) superseded: bool,
+    /// A notes rollover: expands to the fixed rollover notice instead of a summary.
+    pub(super) rollover: bool,
     pub(super) tokens_before: Option<u32>,
+    pub(super) tokens_after: Option<u32>,
+    pub(super) method: Option<harness_core::event::CompactionMethod>,
+    pub(super) warning: Option<String>,
+    /// Archive head text, frames and tail text; present only for the active card of the
+    /// full-history transcript.
+    pub(super) archive: Option<std::sync::Arc<harness_core::event::ArchiveRecord>>,
+    pub(super) archive_frames: usize,
     pub(super) read_files: Vec<String>,
     pub(super) modified_files: Vec<String>,
+    /// Display text of the key that expands the card.
+    pub(super) expand_hint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct TranscriptNoticeSection {
+    /// Position among the session's notices; keeps rows with the same anchor apart.
+    pub(super) ordinal: usize,
+    pub(super) anchor_seq: u64,
+    pub(super) kind: crate::app::notices::TranscriptNoticeKind,
+    pub(super) text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -703,6 +729,7 @@ pub(super) enum TranscriptAssistantPart {
     ToolCall(Box<TranscriptToolCallSection>),
     Error(TranscriptErrorSection),
     Compaction(TranscriptCompactionSection),
+    Notice(TranscriptNoticeSection),
 }
 
 impl TranscriptAssistantPart {
@@ -713,7 +740,8 @@ impl TranscriptAssistantPart {
             | Self::Reasoning(_)
             | Self::Body(_)
             | Self::Error(_)
-            | Self::Compaction(_) => None,
+            | Self::Compaction(_)
+            | Self::Notice(_) => None,
         }
     }
 }

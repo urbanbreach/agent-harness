@@ -37,11 +37,79 @@ pub(super) fn render_model_switcher_overlay(
         1,
     );
 
+    if let Some(view) = app.threshold_editor_view() {
+        render_threshold_editor(frame, theme, overlay, &view);
+        modal_chrome::render_body(frame, theme, overlay, modal_chrome::THRESHOLD_CHROME);
+        return;
+    }
     render_command_palette_header(frame, theme, header, title);
     render_command_palette_input(frame, app, theme, input);
     render_model_switcher_list(frame, app, theme, list);
     render_model_switcher_status(frame, app, theme, status);
     modal_chrome::render_body(frame, theme, overlay, modal_chrome::MODELS_CHROME);
+}
+
+/// Threshold input, validation and preview lines in place of the model list.
+fn render_threshold_editor(
+    frame: &mut Frame,
+    theme: &Theme,
+    overlay: Rect,
+    view: &crate::app::ThresholdEditorView,
+) {
+    use crate::app::ThresholdLineTone;
+    let surface = ui_chrome::command_palette_surface(theme);
+    let width = overlay.width.saturating_sub(8);
+    let x = overlay.x.saturating_add(4);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(surface)),
+        Rect::new(
+            overlay.x.saturating_add(1),
+            overlay.y.saturating_add(1),
+            overlay.width.saturating_sub(2),
+            overlay.height.saturating_sub(3),
+        ),
+    );
+    frame.render_widget(
+        Paragraph::new(truncate_plain_text(&view.title, usize::from(width))).style(
+            Style::default()
+                .fg(ui_chrome::command_palette_title(theme))
+                .bg(surface)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Rect::new(x, overlay.y.saturating_add(1), width, 1),
+    );
+    super::settings_editor::render_input(
+        frame,
+        theme,
+        Rect::new(x, overlay.y.saturating_add(3), width, 1),
+        &view.input,
+        view.cursor,
+        true,
+        view.selected,
+    );
+    let last = overlay.bottom().saturating_sub(3);
+    for (offset, (tone, line)) in view.lines.iter().enumerate() {
+        let y = overlay
+            .y
+            .saturating_add(5)
+            .saturating_add(u16::try_from(offset).unwrap_or(u16::MAX));
+        if y > last {
+            break;
+        }
+        let color = match tone {
+            ThresholdLineTone::Plain => ui_chrome::command_palette_muted(theme),
+            ThresholdLineTone::Warning => theme.status.warning,
+            ThresholdLineTone::Error => theme.status.error,
+        };
+        frame.render_widget(
+            Paragraph::new(truncate_plain_text(
+                &crate::ui::safe_product_text(line),
+                usize::from(width),
+            ))
+            .style(Style::default().fg(color).bg(surface)),
+            Rect::new(x, y, width, 1),
+        );
+    }
 }
 
 pub(super) fn model_switcher_list_area(overlay: Rect) -> Rect {

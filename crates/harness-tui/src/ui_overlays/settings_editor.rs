@@ -3,8 +3,12 @@ use harness_core::config::SettingEditorKind;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-pub(super) fn choices(app: &AppState) -> Option<(&'static [&'static str], usize)> {
+/// Labels and selected index of the open choice list (preset menu or plain choices).
+pub(super) fn choices(app: &AppState) -> Option<(Vec<String>, usize)> {
     let edit = app.settings_interaction.edit.as_ref()?;
+    if let Some(menu) = edit.menu.as_ref() {
+        return Some((menu.labels(), menu.selected));
+    }
     let SettingEditorKind::Choice(choices) = edit.kind else {
         return None;
     };
@@ -13,7 +17,10 @@ pub(super) fn choices(app: &AppState) -> Option<(&'static [&'static str], usize)
         .iter()
         .position(|choice| *choice == value)
         .unwrap_or(0);
-    Some((choices, selected))
+    Some((
+        choices.iter().map(|choice| (*choice).to_string()).collect(),
+        selected,
+    ))
 }
 
 pub(super) fn render_settings_editor_overlay(
@@ -66,8 +73,14 @@ pub(super) fn render_settings_editor_overlay(
         );
         if let Some((choices, selected)) = choices(app) {
             if inner.height > 2 {
+                let hint = crate::app::settings_description(&edit.id)
+                    .unwrap_or("Choose a value; Enter saves");
                 frame.render_widget(
-                    Paragraph::new("Choose a value; Enter saves").style(muted),
+                    Paragraph::new(truncate_plain_text(
+                        hint,
+                        usize::from(inner.width.saturating_sub(2)),
+                    ))
+                    .style(muted),
                     Rect::new(inner.x + 1, inner.y + 1, inner.width.saturating_sub(2), 1),
                 );
             }
@@ -152,16 +165,18 @@ pub(super) fn render_settings_editor_overlay(
         );
         let width = usize::from(row.layout.content.width);
         let meta = if width < 32 {
-            ""
+            String::new()
         } else if entry.sensitivity == "secret" {
-            "secret"
+            "secret".to_string()
+        } else if entry.editable && width >= 64 && entry.group != "General" {
+            format!("{} · Enter edit", group_tag(&entry.group))
         } else if entry.editable {
-            "Enter edit"
+            "Enter edit".to_string()
         } else {
-            "read only"
+            "read only".to_string()
         };
-        let label = crate::app::settings_label(&entry.setting_id);
-        let label = match entry.effective_value.as_ref() {
+        let label = entry.label.clone();
+        let label = match entry.display_value.as_ref() {
             Some(value) => format!("{label} = {}", crate::ui::safe_product_text(value)),
             None => label,
         };
@@ -220,10 +235,16 @@ fn render_value(frame: &mut Frame, app: &AppState, theme: &Theme, inner: Rect) {
         edit.editor.selection().is_some(),
     );
     if inner.height > 4 {
-        let message = edit
-            .error
-            .as_deref()
-            .unwrap_or("Applies next session · Ctrl+A selects all");
+        let hint = "Applies next session · Ctrl+A selects all";
+        let message = match (
+            edit.error.as_deref(),
+            crate::app::settings_description(&edit.id),
+        ) {
+            (Some(error), _) => error.to_string(),
+            (None, Some(description)) => format!("{description} {hint}"),
+            (None, None) => hint.to_string(),
+        };
+        let message = message.as_str();
         frame.render_widget(
             Paragraph::new(crate::ui::safe_product_text(message))
                 .style(Style::default().fg(if edit.error.is_some() {
@@ -242,7 +263,7 @@ fn render_value(frame: &mut Frame, app: &AppState, theme: &Theme, inner: Rect) {
     }
 }
 
-fn render_input(
+pub(super) fn render_input(
     frame: &mut Frame,
     theme: &Theme,
     area: Rect,
@@ -277,4 +298,9 @@ fn render_input(
         }
         frame.set_cursor_position(position);
     }
+}
+
+/// Last segment of a group title: `Context / Compaction` shows as `Compaction`.
+fn group_tag(title: &str) -> &str {
+    title.rsplit(" / ").next().unwrap_or(title)
 }

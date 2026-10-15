@@ -114,21 +114,6 @@ pub(super) fn assistant_primary_label_color(status: ActivityStatus, theme: &Them
     }
 }
 
-pub(super) fn selected_foreground_for_badge(background: Color, theme: &Theme) -> Color {
-    match background {
-        Color::Rgb(red, green, blue) => {
-            let luminance =
-                0.299 * f64::from(red) + 0.587 * f64::from(green) + 0.114 * f64::from(blue);
-            if luminance > 127.5 {
-                theme.text.inverse
-            } else {
-                theme.text.primary
-            }
-        }
-        _ => theme.text.inverse,
-    }
-}
-
 pub(super) fn assistant_primary_rail_color(
     status: ActivityStatus,
     profile_label: &str,

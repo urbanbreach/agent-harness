@@ -600,7 +600,6 @@ mod operator_rail_test_fixtures;
 mod operator_rail_model_tests;
 #[cfg(test)]
 pub(crate) use operator_rail_model_tests::{
-    exact_test_compaction_applied_updates_active_context_usage_estimate,
     exact_test_operator_rail_collapses_modified_files_section_body,
     exact_test_operator_rail_low_activity_presentation_prefers_primary_stack,
     exact_test_operator_rail_matches_sidebar_text_styles,

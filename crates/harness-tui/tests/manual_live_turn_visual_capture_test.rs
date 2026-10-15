@@ -2,8 +2,15 @@
 mod capture_events;
 #[path = "support/manual_live_turn_visual_capture_runtime.rs"]
 mod capture_runtime;
+#[path = "support/manual_compaction_capture.rs"]
+mod compaction_capture;
 #[path = "support/manual_tool_capture_events.rs"]
 mod tool_capture_events;
+
+#[test]
+fn capture_compaction_state_from_environment() -> TestResult {
+    compaction_capture::run()
+}
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 

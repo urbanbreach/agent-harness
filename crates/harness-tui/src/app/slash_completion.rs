@@ -84,6 +84,15 @@ impl AppState {
     }
 
     pub(crate) fn slash_completion_label(&self, index: usize) -> String {
+        if let Some(name) = self.slash_filtered.get(index) {
+            match name.as_str() {
+                "compact" => return "/compact [soft|remote|archive] [focus]".into(),
+                "handoff" => return "/handoff [focus instructions]".into(),
+                "shake" => return "/shake [elide|images|thinking]".into(),
+                "compact soft" | "compact remote" => return format!("/{name} [focus]"),
+                _ => {}
+            }
+        }
         if let Some(option) = self.slash_arguments.get(index) {
             if self.slash_model_pending.is_some() {
                 option
@@ -112,6 +121,26 @@ impl AppState {
     }
 
     pub(crate) fn slash_completion_description(&self, index: usize) -> String {
+        match self.slash_filtered.get(index).map(String::as_str) {
+            Some("compact") => {
+                return self.context_used_percent().map_or_else(
+                    || "Compact: context unavailable".into(),
+                    |percent| format!("Compact: context {percent}% used"),
+                );
+            }
+            Some("handoff" | "shake") => {
+                return keybindings::slash_command_description(self.slash_filtered[index].as_str())
+                    .into()
+            }
+            _ => {}
+        }
+        if let Some(entry) = self
+            .slash_filtered
+            .get(index)
+            .and_then(|name| maintenance_description(name))
+        {
+            return entry.to_string();
+        }
         if let Some(option) = self.slash_arguments.get(index) {
             if self.slash_model_pending.is_some() {
                 "Reasoning effort · Enter to select".to_string()
@@ -141,6 +170,52 @@ impl AppState {
         }
     }
 
+    pub(in crate::app) fn sync_maintenance_completions(&mut self, command: &str) -> bool {
+        let modes = match command {
+            "compact" => ["soft", "remote", "archive"],
+            "shake" => ["elide", "images", "thinking"],
+            _ => return false,
+        };
+        let query = self
+            .active_slash_parts_full()
+            .and_then(|(_, args)| args)
+            .unwrap_or("")
+            .trim()
+            .to_lowercase();
+        self.slash_arguments.clear();
+        self.slash_model_pending = None;
+        if query.contains(char::is_whitespace) {
+            self.clear_slash_menu();
+            return true;
+        }
+        self.slash_filtered = modes
+            .into_iter()
+            .filter(|mode| mode.starts_with(&query))
+            .map(|mode| format!("{command} {mode}"))
+            .collect();
+        self.slash_visible = !self.slash_filtered.is_empty();
+        self.slash_selected = 0;
+        true
+    }
+
+    pub(in crate::app) fn accept_maintenance_completion(&mut self, execute: bool) -> bool {
+        let Some(selected) = self.slash_filtered.get(self.slash_selected).cloned() else {
+            return false;
+        };
+        let Some((command, _mode)) = selected.split_once(' ') else {
+            return false;
+        };
+        if !matches!(command, "compact" | "shake") {
+            return false;
+        }
+        self.replace_prompt_input(format!("/{selected} "));
+        if execute {
+            self.execute_slash_command(command, None);
+        } else {
+            self.sync_slash_overlay();
+        }
+        true
+    }
     pub(in crate::app) fn sync_slash_model_completions(&mut self) {
         let args = self
             .active_slash_parts_full()
@@ -263,5 +338,20 @@ impl AppState {
             self.sync_slash_overlay();
         }
         true
+    }
+}
+
+fn maintenance_description(name: &str) -> Option<&'static str> {
+    let (command, mode) = name.split_once(' ')?;
+    match command {
+        "compact" => harness_compaction::method::ManualMode::ALL
+            .into_iter()
+            .find(|item| item.as_str() == mode)
+            .map(harness_compaction::method::ManualMode::description),
+        "shake" => harness_compaction::method::ShakeMode::ALL
+            .into_iter()
+            .find(|item| item.as_str() == mode)
+            .map(harness_compaction::method::ShakeMode::description),
+        _ => None,
     }
 }

@@ -391,9 +391,7 @@ impl AppState {
         self.transcript_view.show_transcript_thinking.hash(hasher);
         self.transcript_view.show_transcript_timestamps.hash(hasher);
         self.transcript_view.show_tool_details.hash(hasher);
-        self.transcript_view
-            .compaction_details_expanded
-            .hash(hasher);
+        self.hash_compaction_view(hasher);
         self.transcript_view.show_generic_tool_output.hash(hasher);
         self.transcript_view.stacked_transcript_diffs.hash(hasher);
         self.transcript_view.hovered_transcript_target.hash(hasher);
@@ -771,6 +769,7 @@ impl AppState {
             } => {
                 self.toggle_patch_file_output(&tool_call_id, &file_path);
             }
+            TranscriptMouseTarget::Compaction { seq } => self.toggle_compaction_card(seq),
         }
     }
 

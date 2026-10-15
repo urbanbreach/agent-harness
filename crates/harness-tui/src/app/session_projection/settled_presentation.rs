@@ -26,6 +26,7 @@ mod tasks;
 
 use self::canonical_orchestration::*;
 use self::canonical_provider::*;
+use self::compaction::applied_compactions;
 use self::parts::*;
 use self::presentation_merge::*;
 use self::tasks::*;
@@ -276,8 +277,9 @@ impl SessionProjection {
                 .is_some_and(|row| !row.state.is_terminal())
         });
         let checkpoint = transcript.compaction_checkpoints.last().cloned();
+        let applied = applied_compactions(&transcript.compaction_checkpoints);
         self.enforce_orchestration_retention();
-        self.rebuild_compaction_presentation(checkpoint.as_ref());
+        self.rebuild_compaction_presentation(checkpoint.as_ref(), applied);
         if self.compaction_status.is_none() {
             self.rebuild_legacy_compaction_presentation(legacy_compaction.as_ref());
         }

@@ -216,6 +216,7 @@ pub(super) fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
     app.on_ui_intent = Some(sink);
 
     app.apply_pending_live_prompt(PendingLivePrompt {
+        images: Vec::new(),
         text: "boot prompt".to_string(),
         auto_submit: true,
     });
@@ -246,6 +247,7 @@ pub(super) fn startup_auto_submit_owns_status_over_empty_session_seed() {
     // Given: the startup handoff auto-submits the first prompt before any runtime event exists.
     let mut app = AppState::new();
     app.apply_pending_live_prompt(PendingLivePrompt {
+        images: Vec::new(),
         text: "boot prompt".to_string(),
         auto_submit: true,
     });

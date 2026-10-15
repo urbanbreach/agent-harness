@@ -1,4 +1,4 @@
-//! Live generation throughput, after oh-my-pi's `TokenRateMeter`.
+//! Live generation throughput.
 //!
 //! The reading is a kernel-weighted rate over recent stream time: token and time sums decayed
 //! on three half-lives, so a burst shifts it in proportion to its token mass instead of

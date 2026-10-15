@@ -337,6 +337,7 @@ fn child_waits_tool_descriptions_and_retries_use_native_activity_presentation() 
             generation: 1,
             trigger_reason: "threshold".into(),
             preview: Some(String::new()),
+            stage: None,
         },
     );
     assert!(render_text(&app, 160, 40).contains("Compacting…"));
@@ -347,6 +348,7 @@ fn child_waits_tool_descriptions_and_retries_use_native_activity_presentation() 
             generation: 1,
             trigger_reason: "threshold".into(),
             preview: None,
+            stage: None,
         },
     );
     assert!(render_text(&app, 160, 40).contains("Waiting for response…"));

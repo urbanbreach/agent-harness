@@ -13,8 +13,7 @@ pub(super) fn welcome_mouse_move_applies_hover_state_to_the_action_row() {
         let layout = app.welcome_layout(startup_area);
         let header = layout.changelog_header_rect.unwrap_or_abort();
         let mut terminal =
-            Terminal::new(TestBackend::new(frame_area.width, frame_area.height))
-                .unwrap_or_abort();
+            Terminal::new(TestBackend::new(frame_area.width, frame_area.height)).unwrap_or_abort();
 
         for (target, header_hovered, hovered_action) in [
             (layout.action_rects[0], false, Some(0)),
@@ -42,7 +41,10 @@ pub(super) fn welcome_mouse_move_applies_hover_state_to_the_action_row() {
             let buffer = terminal.backend().buffer();
             let heading = &buffer[(header.0, header.1)];
 
-            assert!(changed, "moving to {target:?} must redraw at {frame_area:?}");
+            assert!(
+                changed,
+                "moving to {target:?} must redraw at {frame_area:?}"
+            );
             assert_eq!(
                 (heading.fg, heading.modifier.contains(Modifier::DIM)),
                 if header_hovered {
@@ -106,7 +108,6 @@ pub(super) fn welcome_mouse_move_away_clears_hover_state_and_row_surface() {
     );
 }
 
-
 pub(super) fn welcome_changelog_expanded_mouse_down_opens_release_notes_and_up_is_inert() {
     // arrange: the semantic-ready startup state already exposes expanded Changelog content.
     let mut app = AppState::new_startup(Vec::new(), None);
@@ -152,8 +153,6 @@ pub(super) fn welcome_changelog_expanded_mouse_down_opens_release_notes_and_up_i
     assert!(!up_changed);
 }
 
-
-
 pub(super) fn welcome_changelog_keyboard_activation_opens_modal_and_restores_focus() {
     // Given: keyboard focus is on the Changelog menu action.
     let mut app = AppState::new_startup(Vec::new(), None);
@@ -196,8 +195,6 @@ pub(super) fn welcome_changelog_mouse_down_preserves_pointer_hover_for_inline_pr
     assert!(app.welcome_state().changelog_header_hovered());
     assert_eq!(app.welcome_state().hovered_action(), None);
 }
-
-
 
 pub(super) fn welcome_changelog_keyboard_activation_does_not_synthesize_pointer_hover() {
     // Given: keyboard focus is moved from Prompt to Changelog.

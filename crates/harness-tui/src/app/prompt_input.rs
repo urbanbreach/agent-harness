@@ -2,6 +2,8 @@
 use super::prompt_history::PromptHistoryDraft;
 use super::*;
 
+pub(in crate::app) use super::prompt_queue::MaintenanceQueue;
+
 impl AppState {
     pub(crate) fn queued_prompt_send_now_available(&self) -> bool {
         let visible_activity = self
@@ -183,6 +185,7 @@ impl AppState {
     pub(in crate::app) fn clear_prompt_input(&mut self) {
         self.reset_clear_prompt_confirmation();
         let _ = self.composer.replace_editor_text("");
+        drop(self.composer.slice.take_attachments());
         self.composer.prompt_buffer.clear();
         self.composer.prompt_cursor = 0;
         self.composer.selection_anchor = None;
@@ -254,49 +257,15 @@ impl AppState {
     }
 
     pub(in crate::app) fn apply_pending_live_prompt(&mut self, pending_prompt: PendingLivePrompt) {
+        self.composer
+            .slice
+            .append_attachments(pending_prompt.images);
         if pending_prompt.auto_submit {
             self.replace_prompt_input(pending_prompt.text);
             self.dispatch_submitted_prompt(false);
         } else {
             self.replace_prompt_input(pending_prompt.text);
         }
-    }
-
-    /// Puts input queued for an interrupted turn back into the editor ahead of any draft,
-    /// as OMP and Senpi do, and drops the rows that showed it as sent or queued.
-    pub fn restore_queued_input(&mut self, texts: Vec<String>) {
-        if texts.is_empty() {
-            return;
-        }
-        self.activities.retain(|activity| {
-            let never_started = activity.request_id.is_empty()
-                || (matches!(
-                    activity.status,
-                    ActivityStatus::Queued | ActivityStatus::Error
-                ) && activity.transcript_text.is_empty()
-                    && activity.tool_calls.is_empty());
-            !(never_started
-                && activity
-                    .user_message
-                    .as_ref()
-                    .is_some_and(|message| texts.contains(&message.text)))
-        });
-        self.bump_transcript_render_epoch();
-        let count = texts.len();
-        let mut restored = texts.join("\n\n");
-        if !self.composer.prompt_buffer.trim().is_empty() {
-            restored.push_str("\n\n");
-            restored.push_str(&self.composer.prompt_buffer);
-        }
-        self.replace_prompt_input(restored);
-        self.show_toast(
-            if count == 1 {
-                "Restored the queued message to the editor".to_string()
-            } else {
-                format!("Restored {count} queued messages to the editor")
-            },
-            ToastVariant::Info,
-        );
     }
 
     pub(in crate::app) fn insert_prompt_char(&mut self, c: char) {
@@ -373,6 +342,10 @@ impl AppState {
         match self.overlay_stack().top() {
             Some(OverlayKind::SettingsEditor) => {
                 self.handle_settings_editor_paste(text);
+                return;
+            }
+            Some(OverlayKind::CommandPalette) if self.threshold_editor_open() => {
+                self.handle_threshold_editor_paste(text);
                 return;
             }
             Some(OverlayKind::NewWorktreeDialog) => {
@@ -576,7 +549,7 @@ impl AppState {
         }
     }
 
-    fn save_prompt_history(&mut self) {
+    pub(in crate::app) fn save_prompt_history(&mut self) {
         let Some(path) = self.composer.prompt_history_path.as_deref() else {
             return;
         };
@@ -608,9 +581,7 @@ impl AppState {
         let selected_file_tags = self.selected_file_tags();
         let selected_agent_tags = self.selected_agent_tags();
         let selected_resource_tags = self.selected_resource_tags();
-        // Like OMP and Senpi, submitting while a turn runs (tools included) steers it, and
-        // the follow-up action queues the draft for after the turn. Steering carries plain
-        // text only, so tagged or attached drafts queue instead.
+        // Steering carries plain text only; tagged or attached drafts queue after the turn.
         let steering = !follow_up
             && self.active_turn_in_progress()
             && selected_file_tags.is_empty()
@@ -621,6 +592,7 @@ impl AppState {
         if steering {
             self.emit_ui_intent(UiIntent::SteerPrompt {
                 text,
+                attachments: Vec::new(),
                 launch_metadata: self.launch_metadata.clone(),
             });
             return;
@@ -649,6 +621,14 @@ impl AppState {
             return;
         }
 
+        if !self.replay_mode
+            && !self.composer_disabled()
+            && !self.composer.prompt_buffer.trim().is_empty()
+            && (self.maintenance_running() || self.composer.maintenance_queue.awaiting.is_some())
+        {
+            self.queue_maintenance_draft(follow_up);
+            return;
+        }
         if !self.replay_mode
             && !self.composer_disabled()
             && let Some(command) = self.typed_slash_command()

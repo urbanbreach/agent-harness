@@ -284,7 +284,7 @@ pub(super) fn settings_editor_summary_counts_bound_writable_paths() {
     assert_eq!(unbound.total, settings_registry().len());
     assert!(!unbound.bound);
     assert_eq!(unbound.editable, 0);
-    assert_eq!(unbound.writable_paths, 22);
+    assert_eq!(unbound.writable_paths, 56);
     assert!(unbound.secret > 0);
     assert_eq!(unbound.editable + unbound.read_only, unbound.total);
     assert!(unbound.one_line().starts_with("settings editor: "));
@@ -313,11 +313,11 @@ pub(super) fn settings_editor_summary_counts_bound_writable_paths() {
             bound.editable,
             bound.with_effective_value
         ),
-        (22, 21, 20)
+        (56, 55, 49)
     );
     assert!(bound.has_editable());
     assert!(bound.one_line().contains("bound=true"));
-    assert!(bound.one_line().contains("editable=21"));
+    assert!(bound.one_line().contains("editable=55"));
     assert!(bound.overlay_line().contains("bound"));
     assert!(bound.overlay_line().contains("editable"));
     assert!(!bound.overlay_line().contains("unbound"));
@@ -399,8 +399,7 @@ pub(super) fn settings_editor_toggles_deterministic_enabled_persists_and_reloads
     let _ = fs::remove_dir_all(&dir);
 }
 
-pub(super) fn settings_editor_toggles_compaction_structured_summary_contract_persists_and_reloads()
-{
+pub(super) fn settings_editor_toggles_compaction_mid_turn_enabled_persists_and_reloads() {
     // Given: bound project config (same shape as compaction.enabled fixture)
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("harness.json");
@@ -441,24 +440,21 @@ pub(super) fn settings_editor_toggles_compaction_structured_summary_contract_per
     let mut app = AppState::new_live(None, false, None);
     app.bind_settings_project_config(&path, true, true, true, true, false);
     app.execute_action(Action::OpenSettings);
-    assert!(app.settings_compaction_structured_summary_contract());
+    assert!(app.settings_compaction_mid_turn_enabled());
 
-    // When: select structured_summary_contract and activate
+    // When: select mid_turn_enabled and activate
     let index = settings_registry()
         .iter()
-        .position(|entry| {
-            entry.setting_id.as_str() == "runtime.compaction.structured_summary_contract"
-        })
-        .expect("structured_summary_contract registered");
+        .position(|entry| entry.setting_id.as_str() == "runtime.compaction.mid_turn_enabled")
+        .expect("mid_turn_enabled registered");
     app.settings_editor_selected = index;
     app.handle_key(key(KeyCode::Enter));
 
     // Then: flipped and nested key persisted
-    assert!(!app.settings_compaction_structured_summary_contract());
+    assert!(!app.settings_compaction_mid_turn_enabled());
     let body = fs::read_to_string(&path).expect("reread");
     assert!(
-        body.contains("\"structured_summary_contract\": false")
-            || body.contains("\"structured_summary_contract\":false"),
+        body.contains("\"mid_turn_enabled\": false") || body.contains("\"mid_turn_enabled\":false"),
         "body={body}"
     );
 
@@ -466,7 +462,7 @@ pub(super) fn settings_editor_toggles_compaction_structured_summary_contract_per
     app.handle_key(key(KeyCode::Char('r')));
 
     // Then: default true again
-    assert!(app.settings_compaction_structured_summary_contract());
+    assert!(app.settings_compaction_mid_turn_enabled());
 }
 
 pub(super) fn settings_editor_toggles_compaction_estimated_token_triggers_persists_and_reloads() {
@@ -594,8 +590,8 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::SettingsEditor));
     let summary = app.settings_editor_summary();
     assert!(summary.bound);
-    assert_eq!(summary.writable_paths, 22);
-    assert_eq!(summary.editable, 21);
+    assert_eq!(summary.writable_paths, 56);
+    assert_eq!(summary.editable, 55);
     assert!(summary.with_effective_value >= 6);
 
     // Choice drafts do not persist until Enter commits them.

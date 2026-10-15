@@ -473,10 +473,7 @@ pub(super) fn debounced_resize_preserves_detached_wide_glyph_display_column_anch
     let _ = render_text(&app, resized.width, resized.height);
 
     // Then: measured reflow retains the exact logical line and source display column.
-    assert_eq!(
-        app.transcript_view.measured_anchor,
-        Some(anchor_before)
-    );
+    assert_eq!(app.transcript_view.measured_anchor, Some(anchor_before));
 }
 
 pub(super) fn detached_page_flip_reconciles_when_resize_reaches_bottom() {

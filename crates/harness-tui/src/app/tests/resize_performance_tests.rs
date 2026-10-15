@@ -112,11 +112,21 @@ fn perf_interactive_resources_under_load() -> TestResult {
                 current_intent: None,
                 trigger_reason: "manual".into(),
                 from_hook: false,
+                short_summary: None,
+                method: None,
+                warning: None,
+                provider_replay_through_seq: None,
+                native: None,
+                archive: None,
                 read_files: Vec::new(),
                 modified_files: Vec::new(),
+                details: Default::default(),
+                operation_id: Default::default(),
+                preserve_data: Default::default(),
+                supersedes_seq: Default::default(),
             }),
         )]);
-        app.transcript_view.compaction_details_expanded = true;
+        app.toggle_compaction_card(1);
     }
     if matches!(
         scenario.as_str(),

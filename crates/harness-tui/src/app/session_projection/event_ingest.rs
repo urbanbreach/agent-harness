@@ -8,6 +8,10 @@ impl SessionProjection {
         historical: bool,
     ) {
         self.update_phase_for_event(event);
+        if matches!(event.payload, EventV1::ContextPruned(_)) {
+            self.active_context_usage = Some(ActiveContextUsage::compacted_pending_refresh());
+            return;
+        }
         if let Some(fragment) = canonical_provider_fragment_for_event(event) {
             self.update_compatibility_provider_fragment(event, fragment);
             return;

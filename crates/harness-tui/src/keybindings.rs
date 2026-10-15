@@ -134,6 +134,12 @@ pub enum Action {
     OpenViewPlan,
     OpenMemoryBrowser,
     OpenWorktreePicker,
+    /// Expand or collapse the focused compaction summary card
+    ToggleCompactionDetails,
+    /// Show or hide the pre-compaction history above the latest summary
+    ToggleCollapsedHistory,
+    /// Interrupt the running turn or compaction (display and rebinding only; Ctrl+C stays the default)
+    InterruptTurn,
 }
 
 macro_rules! action_ids {
@@ -245,6 +251,9 @@ action_ids! {
     OpenViewPlan => "open_view_plan" | "view_plan" | "view-plan",
     OpenMemoryBrowser => "open_memory_browser" | "memory",
     OpenWorktreePicker => "open_worktree_picker" | "worktree" | "switch_worktree",
+    ToggleCompactionDetails => "toggle_compaction_details",
+    ToggleCollapsedHistory => "toggle_collapsed_history",
+    InterruptTurn => "interrupt_turn",
 }
 
 impl Action {
@@ -442,6 +451,8 @@ fn parse_key_code(s: &str) -> Result<KeyCode, String> {
         _ => Err(format!("unknown key: {s}")),
     }
 }
+
+const DEFAULT_INTERRUPT_HINT: &str = "Ctrl+C";
 
 /// Manages key bindings mapping keys to actions.
 #[derive(Debug, Clone)]
@@ -870,6 +881,21 @@ impl KeyMap {
             Action::PreviousMessage,
         );
 
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('o'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ),
+            Action::ToggleCompactionDetails,
+        );
+        keymap.bind(
+            KeyBinding::new(
+                KeyCode::Char('k'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ),
+            Action::ToggleCollapsedHistory,
+        );
+
         keymap.register_default_leader_sequences();
         keymap
     }
@@ -1044,6 +1070,15 @@ impl KeyMap {
                     .map(ToString::to_string)
             })
             .unwrap_or_else(|| "-".to_string())
+    }
+
+    /// Display string for the interrupt key: the configured `interrupt_turn`
+    /// binding, otherwise the built-in Ctrl+C (which the keymap keeps mapped to
+    /// `DismissModal` so modal dismissal is unaffected).
+    pub fn interrupt_hint(&self) -> String {
+        self.bindings_for_action(Action::InterruptTurn)
+            .next()
+            .map_or_else(|| DEFAULT_INTERRUPT_HINT.to_string(), ToString::to_string)
     }
 
     pub fn get_binding_strs(&self, action: Action) -> Vec<String> {

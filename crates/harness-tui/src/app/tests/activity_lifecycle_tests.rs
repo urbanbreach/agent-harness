@@ -103,6 +103,7 @@ pub(super) fn provider_request_finished_total_tokens_populates_active_context_us
                 prompt_tokens: 0,
                 completion_tokens: 0,
                 total_tokens: 250,
+                ..Default::default()
             }),
             metadata: None,
         }),
@@ -150,6 +151,7 @@ pub(super) fn provider_request_finished_prompt_tokens_prefer_active_context() {
                 prompt_tokens: 10_000,
                 completion_tokens: 200,
                 total_tokens: 10_200,
+                ..Default::default()
             }),
             metadata: None,
         }),
@@ -398,7 +400,7 @@ pub(super) fn cache_read_write_tokens_render_as_separate_status_labels() {
             }),
         }),
     ));
-    // senpi's footer `provider@account`: the pooled account that served the request.
+    // Footer `provider@account`: the pooled account that served the request.
     assert_eq!(app.current_account_label(), Some("Work (work)"));
 
     assert!(

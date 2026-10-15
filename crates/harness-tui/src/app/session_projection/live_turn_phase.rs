@@ -88,7 +88,7 @@ impl SessionProjection {
         let agent = self.child_request_agents.get(&activity.request_id);
         if let Some(compaction) = agent
             .and_then(|id| self.live_compactions.get(id))
-            .filter(|state| state.preview.is_some())
+            .filter(|state| !state.finished)
         {
             return (LiveTurnPhase::Compacting, compaction.started_mono_ms);
         }
@@ -335,6 +335,9 @@ impl SessionProjection {
             | LiveEventV1::MonitorState { .. }
             | LiveEventV1::CompactionProgress { .. }
             | LiveEventV1::RuntimeWarning { .. }
+            | LiveEventV1::RuntimeNotice { .. }
+            | LiveEventV1::CompactionLifecycle(_)
+            | LiveEventV1::CompactionStatus(_)
             | LiveEventV1::SubagentProgress(_)
             | LiveEventV1::EvalProgress { .. } => return,
             LiveEventV1::ProviderReasoningDelta { request_id, delta } => {

@@ -23,7 +23,16 @@ pub(super) fn live_turn_control_visibility(
     app: &AppState,
     area: Rect,
 ) -> LiveTurnControlVisibility {
-    if live_turn_is_parked(app) || app.active_compaction().is_some() {
+    if app.active_compaction().is_some() {
+        // A running maintenance pass takes the stop control; the interrupt path is shared
+        // with the key.
+        let width = display_width(STOP_LABEL).saturating_add(MIN_STATUS_LABEL_WIDTH);
+        return LiveTurnControlVisibility {
+            stop: usize::from(area.width) >= width,
+            background: false,
+        };
+    }
+    if live_turn_is_parked(app) {
         return LiveTurnControlVisibility::default();
     }
     let spinner_width = display_width(glyph_routed_monitor_pulse_frame(

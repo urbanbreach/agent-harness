@@ -77,7 +77,7 @@ fn idle_context_budget_renders_in_breadcrumb_without_footer_counter() {
 
         // Then: the breadcrumb shows the percentage and the footer has no duplicate.
         assert!(
-            debug.contains("116K / 128K 91%") && !debug.contains("ctx ~"),
+            debug.contains("◫ 90.6%/128K") && !debug.contains("ctx ~"),
             "context budget belongs in the breadcrumb at width {width}\n{debug}"
         );
     }
@@ -97,9 +97,43 @@ fn clear_confirmation_keeps_context_budget_disclosure_stable() {
 
     // assert
     assert!(
-        debug.contains("96K / 128K 75%") && debug.contains("Esc:press again to clear"),
+        debug.contains("◫ 75.0%/128K") && debug.contains("Esc:press again to clear"),
         "confirmation must take over only the footer while context remains stable\n{debug}"
     );
+}
+
+#[test]
+fn breadcrumb_context_segment_sheds_gauge_then_auto_icon_within_half_the_row() {
+    // Given: auto-compaction enabled with 84,000 of 128,000 tokens in context.
+    let mut app = app_with_context_budget(84_000);
+    app.note_compaction_status(harness_core::event::CompactionStatusEvent {
+        agent_id: "agent-alpha".into(),
+        auto: true,
+        threshold_tokens: Some(102_400),
+        speculation_tokens: Some(92_160),
+        speculation: harness_core::event::SpeculationState::Idle,
+    });
+
+    // When: the breadcrumb meta is built for narrowing rows, in both glyph sets.
+    for (ascii, row, expected) in [
+        (false, 200, "⟲ ◫ 65.6%/128K ███████╎┃░"),
+        (false, 40, "⟲ ◫ 65.6%/128K"),
+        (false, 26, "◫ 65.6%/128K"),
+        (true, 200, "[A] ctx: 65.6%/128K #######:|-"),
+        (true, 40, "[A] ctx: 65.6%/128K"),
+        (true, 30, "ctx: 65.6%/128K"),
+    ] {
+        app.set_glyph_mode(if ascii {
+            crate::theme::GlyphMode::Ascii
+        } else {
+            crate::theme::GlyphMode::Preferred
+        });
+        let meta = ui_lifecycle::breadcrumb_meta(&app, row).map(|meta| meta.plain());
+
+        // Then: the gauge drops first, then the auto icon, and the meta never exceeds half the row.
+        assert_eq!(meta.as_deref(), Some(expected), "ascii={ascii} row={row}");
+        assert!(display_width(expected) * 2 <= row, "{expected} in {row}");
+    }
 }
 
 #[test]
@@ -226,6 +260,7 @@ fn resumed_breadcrumb_shows_the_last_request_rate_cache_hits_and_session_cost() 
                 prompt_tokens: prompt,
                 completion_tokens: completion,
                 total_tokens: prompt + completion,
+                ..Default::default()
             }),
             metadata: Some(harness_core::event::ProviderRequestFinishedMetadata {
                 cache_read_tokens: Some(read),

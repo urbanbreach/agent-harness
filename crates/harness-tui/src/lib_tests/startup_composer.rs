@@ -203,7 +203,7 @@ pub(super) fn live_composer_disclosure_keeps_compact_summary_and_commands() {
         .unwrap_or_abort(),
     ));
     assert_eq!(ready.compaction_usage_metrics().completed_count, 1);
-    let full = "compactions 1 · summary 0 tok Enter:send │ Shift+Tab:mode │ Ctrl+x:shortcuts";
+    let full = "compactions 1 Enter:send │ Shift+Tab:mode │ Ctrl+x:shortcuts";
     let disconnected =
         "connection lost · reopen the TUI to establish the live stream ? commands · Ctrl+q quit";
     for (status, expected) in [
@@ -212,8 +212,8 @@ pub(super) fn live_composer_disclosure_keeps_compact_summary_and_commands() {
             [
                 full,
                 full,
-                "compactions 1 · summary 0 tok Enter:send │ Ctrl+x:shortcuts",
-                "cmp 1 · sum 0 tok Enter:send │ Ctrl+x:shortcuts",
+                "compactions 1 Enter:send │ Ctrl+x:shortcuts",
+                "compactions 1 Enter:send │ Ctrl+x:shortcuts",
                 "Enter:send │ Ctrl+x:shortcuts",
             ],
         ),

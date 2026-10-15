@@ -296,14 +296,10 @@ fn steering_rows_show_pending_until_delivered_and_keep_turn_output_order(
         .activities
         .iter()
         .all(|activity| activity.status != ActivityStatus::Queued));
-    // Until the turn takes it, the steering row says it is still on its way.
-    let pending = build_transcript_sections(&app);
+    // Until the turn takes it, the pending band lists the steering as still on its way.
     assert_eq!(
-        pending
-            .last()
-            .and_then(|turn| turn.user_message.as_ref())
-            .and_then(|message| message.badge),
-        Some("STEERING")
+        app.pending_queue_display().steering,
+        vec!["steering sentinel".to_string()]
     );
     app.ingest_event(event(
         5,
@@ -317,6 +313,7 @@ fn steering_rows_show_pending_until_delivered_and_keep_turn_output_order(
     assert_eq!(app.activities.len(), 1);
     assert_eq!(app.activities[0].status, ActivityStatus::Streaming);
     assert_eq!(app.queued_prompt_count, 0);
+    assert!(app.pending_queue_display().steering.is_empty());
     app.ingest_event(event(
         6,
         "running",

@@ -290,9 +290,11 @@ pub(super) fn queued_prompt_indicator_renders_when_count_positive() {
 
     assert!(app.queued_prompt_count > 0);
 
+    // The pending band is the one rendering of what is waiting.
     let rendered = render_debug(&app, 140, 40);
     assert!(
-        rendered.contains("queued 1"),
-        "expected queued indicator in rendered composer metadata"
+        rendered.contains("After yield") && rendered.contains("queued"),
+        "expected the queued prompt in the pending band\n{rendered}"
     );
+    assert!(!rendered.contains("queued 1"));
 }

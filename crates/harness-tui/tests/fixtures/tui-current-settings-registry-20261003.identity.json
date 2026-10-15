@@ -200,7 +200,7 @@
       ],
       [
         "runtime.compaction.enabled",
-        "None"
+        "Some(Boolean)"
       ],
       [
         "runtime.compaction.reserve_tokens",
@@ -212,19 +212,19 @@
       ],
       [
         "runtime.compaction.threshold_percent",
-        "None"
+        "Some(Integer)"
       ],
       [
         "runtime.compaction.threshold_tokens",
-        "None"
+        "Some(Integer)"
       ],
       [
         "runtime.compaction.model_thresholds",
-        "None"
+        "Some(Json)"
       ],
       [
         "runtime.compaction.agent_thresholds",
-        "None"
+        "Some(Json)"
       ],
       [
         "runtime.compaction.fallback_input_tokens",
@@ -232,15 +232,131 @@
       ],
       [
         "runtime.compaction.auto_retry_overflow",
-        "None"
-      ],
-      [
-        "runtime.compaction.structured_summary_contract",
-        "None"
+        "Some(Boolean)"
       ],
       [
         "runtime.compaction.estimated_token_triggers",
-        "None"
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.mid_turn_enabled",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.method_order",
+        "Some(Json)"
+      ],
+      [
+        "runtime.compaction.model_thresholds_enabled",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.auto_continue",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.async_enabled",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.handoff_save_to_disk",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.remote_streaming_v2_enabled",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.remote_enabled",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.remote_models",
+        "Some(Json)"
+      ],
+      [
+        "runtime.compaction.base_window_tokens",
+        "Some(Integer)"
+      ],
+      [
+        "runtime.compaction.remote_endpoint",
+        "Some(String)"
+      ],
+      [
+        "runtime.compaction.v2_retained_message_budget",
+        "Some(Integer)"
+      ],
+      [
+        "runtime.compaction.idle_enabled",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.idle_threshold_tokens",
+        "Some(Integer)"
+      ],
+      [
+        "runtime.compaction.idle_timeout_seconds",
+        "Some(Integer)"
+      ],
+      [
+        "runtime.compaction.supersede_reads",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.drop_useless",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.context_promotion",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.promotion_targets",
+        "Some(Json)"
+      ],
+      [
+        "runtime.compaction.summary_model",
+        "Some(String)"
+      ],
+      [
+        "runtime.compaction.summary_models",
+        "Some(Json)"
+      ],
+      [
+        "runtime.compaction.retry.enabled",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.retry.max_retries",
+        "Some(Integer)"
+      ],
+      [
+        "runtime.compaction.retry.base_delay_ms",
+        "Some(Integer)"
+      ],
+      [
+        "runtime.compaction.notes_windows",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.archive.shape",
+        "Some(String)"
+      ],
+      [
+        "runtime.compaction.archive.system_prompt",
+        "Some(Choice([\"none\", \"agents_md\", \"all\"]))"
+      ],
+      [
+        "runtime.compaction.archive.tool_results",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.branch_summary.enabled",
+        "Some(Boolean)"
+      ],
+      [
+        "runtime.compaction.branch_summary.reserve_tokens",
+        "Some(Integer)"
       ],
       [
         "runtime.deterministic.enabled",
@@ -252,6 +368,10 @@
       ],
       [
         "confirm_before_rewind",
+        "None"
+      ],
+      [
+        "collapse_compacted_history",
         "None"
       ],
       [
@@ -887,7 +1007,7 @@
       {
         "capability_dependency": null,
         "default_scope": "project",
-        "default_value": "16384",
+        "default_value": "null",
         "merge_strategy": "replace",
         "mutability": "editable",
         "restart_required": false,
@@ -987,9 +1107,9 @@
         "merge_strategy": "replace",
         "mutability": "editable",
         "restart_required": false,
-        "schema_id": "harness.runtime.compaction.structured_summary_contract",
+        "schema_id": "harness.runtime.compaction.estimated_token_triggers",
         "sensitivity": "public",
-        "setting_id": "runtime.compaction.structured_summary_contract",
+        "setting_id": "runtime.compaction.estimated_token_triggers",
         "surface": "runtime"
       },
       {
@@ -999,9 +1119,357 @@
         "merge_strategy": "replace",
         "mutability": "editable",
         "restart_required": false,
-        "schema_id": "harness.runtime.compaction.estimated_token_triggers",
+        "schema_id": "harness.runtime.compaction.mid_turn_enabled",
         "sensitivity": "public",
-        "setting_id": "runtime.compaction.estimated_token_triggers",
+        "setting_id": "runtime.compaction.mid_turn_enabled",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "[\"remote\",\"archive\",\"handoff\",\"shake\",\"soft\"]",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.method_order",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.method_order",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.model_thresholds_enabled",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.model_thresholds_enabled",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.auto_continue",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.auto_continue",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.async_enabled",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.async_enabled",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "false",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.handoff_save_to_disk",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.handoff_save_to_disk",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.remote_streaming_v2_enabled",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.remote_streaming_v2_enabled",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.remote_enabled",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.remote_enabled",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "{}",
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.remote_models",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.remote_models",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.base_window_tokens",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.base_window_tokens",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.remote_endpoint",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.remote_endpoint",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "64000",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.v2_retained_message_budget",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.v2_retained_message_budget",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "false",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.idle_enabled",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.idle_enabled",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "200000",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.idle_threshold_tokens",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.idle_threshold_tokens",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "300",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.idle_timeout_seconds",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.idle_timeout_seconds",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.supersede_reads",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.supersede_reads",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.drop_useless",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.drop_useless",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "false",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.context_promotion",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.context_promotion",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "{}",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.promotion_targets",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.promotion_targets",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": null,
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.summary_model",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.summary_model",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "{}",
+        "merge_strategy": "deep_merge_map",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.summary_models",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.summary_models",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.retry.enabled",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.retry.enabled",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "10",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.retry.max_retries",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.retry.max_retries",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "500",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.retry.base_delay_ms",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.retry.base_delay_ms",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "false",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.notes_windows",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.notes_windows",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "auto",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.archive.shape",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.archive.shape",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "none",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.archive.system_prompt",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.archive.system_prompt",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "false",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.archive.tool_results",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.archive.tool_results",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "false",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.branch_summary.enabled",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.branch_summary.enabled",
+        "surface": "runtime"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
+        "default_value": "16384",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.runtime.compaction.branch_summary.reserve_tokens",
+        "sensitivity": "public",
+        "setting_id": "runtime.compaction.branch_summary.reserve_tokens",
         "surface": "runtime"
       },
       {
@@ -1043,6 +1511,18 @@
       {
         "capability_dependency": null,
         "default_scope": "project",
+        "default_value": "true",
+        "merge_strategy": "replace",
+        "mutability": "editable",
+        "restart_required": false,
+        "schema_id": "harness.tui.collapse_compacted_history",
+        "sensitivity": "public",
+        "setting_id": "collapse_compacted_history",
+        "surface": "tui"
+      },
+      {
+        "capability_dependency": null,
+        "default_scope": "project",
         "default_value": "{}",
         "merge_strategy": "deep_merge_map",
         "mutability": "editable",
@@ -1066,5 +1546,5 @@
       }
     ]
   },
-  "fixture_sha256": "370ab2cbe36afc16c0ef9f6b4f9fb60831eabee015acf5496098adb7776ec913"
+  "fixture_sha256": "94ecda369025603594a52c9d2bc9385434d34f2f1f936739e6540df7f6e0347c"
 }

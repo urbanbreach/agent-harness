@@ -34,7 +34,7 @@ fn rewind_keyboard_mouse_draft_confirmation_and_toast_contract() {
     );
     assert_eq!(
         app.toast().unwrap_or_abort().message,
-        "Press Ctrl+c to cancel the turn"
+        "Press Ctrl+C to cancel the turn"
     );
     app.open_rewind();
     assert!(matches!(

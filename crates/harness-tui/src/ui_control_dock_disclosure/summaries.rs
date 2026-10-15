@@ -75,11 +75,14 @@ fn compaction_text(app: &AppState, compact: bool) -> Cow<'_, str> {
     }
     let count_label = if compact { "cmp" } else { "compactions" };
     let summary_label = if compact { "sum" } else { "summary" };
-    let mut text = format!(
-        "{count_label} {} · {summary_label} {} tok",
-        metrics.completed_count,
-        usage_count(metrics.summary_tokens_estimate)
-    );
+    let mut text = format!("{count_label} {}", metrics.completed_count);
+    if metrics.summary_tokens_estimate > 0 {
+        let _ = write!(
+            text,
+            " · {summary_label} {} tok",
+            usage_count(metrics.summary_tokens_estimate)
+        );
+    }
     if metrics.reduction_tokens_estimate > 0 && !compact {
         let _ = write!(
             text,

@@ -8,13 +8,13 @@ const QUIT_CONFIRMATION_BANNER: &str = "Press Ctrl+Q again to quit";
 
 impl AppState {
     fn handle_compaction_details_key(&mut self, key: KeyEvent) -> bool {
-        if key.code != KeyCode::Char('o')
-            || key.modifiers != (KeyModifiers::CONTROL | KeyModifiers::ALT)
-        {
-            return false;
+        // Handled here rather than through `execute_action` so inspected child sessions,
+        // which filter actions, can still open their cards.
+        match self.keymap.get_action(&key) {
+            Some(Action::ToggleCompactionDetails) => self.toggle_focused_compaction_details(),
+            Some(Action::ToggleCollapsedHistory) => self.toggle_collapsed_history(),
+            _ => return false,
         }
-        self.transcript_view.compaction_details_expanded =
-            !self.transcript_view.compaction_details_expanded;
         true
     }
 
@@ -110,11 +110,7 @@ impl AppState {
             return;
         }
 
-        if self.handle_compaction_details_key(key)
-            || (key.modifiers == KeyModifiers::CONTROL
-                && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
-                && self.handle_ctrl_c_clear_or_cancel())
-        {
+        if self.handle_compaction_details_key(key) || self.handle_interrupt_key(&key) {
             self.maybe_auto_exit();
             return;
         }
@@ -703,6 +699,7 @@ impl AppState {
                 return;
             }
             Action::DequeuePrompt => {
+                self.restore_maintenance_queue();
                 self.emit_ui_intent(UiIntent::WithdrawQueuedInput);
                 return;
             }
@@ -1087,6 +1084,12 @@ impl AppState {
             }
             Action::OpenWorktreePicker => {
                 self.open_worktree_picker();
+            }
+            Action::ToggleCompactionDetails => {
+                self.toggle_focused_compaction_details();
+            }
+            Action::ToggleCollapsedHistory => {
+                self.toggle_collapsed_history();
             }
             _ => {}
         }

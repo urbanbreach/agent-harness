@@ -28,10 +28,7 @@ pub(super) fn vanished_selection_anchor_stays_closed_through_mouse_up() {
         None,
     );
     let _ = render_text(&app, area.width, area.height);
-    assert!(app
-        .transcript_view
-        .transcript_selection_anchors
-        .is_some());
+    assert!(app.transcript_view.transcript_selection_anchors.is_some());
     app.activities[0].first_seq = 100;
     app.activities[0].transcript_text = "replacement content with unrelated cells".to_string();
     app.activities[0].revision = app.activities[0].revision.saturating_add(1);
@@ -55,10 +52,7 @@ pub(super) fn vanished_selection_anchor_stays_closed_through_mouse_up() {
     // Then: stale cells cannot replace the unresolved semantic selection or reach copy.
     assert_eq!(stale_hit, None);
     assert!(app.transcript_view.transcript_selection.is_none());
-    assert!(app
-        .transcript_view
-        .transcript_selection_anchors
-        .is_none());
+    assert!(app.transcript_view.transcript_selection_anchors.is_none());
 }
 
 pub(super) fn selection_mouse_up_does_not_activate_underlying_tool_target() {
@@ -330,7 +324,8 @@ pub(super) fn diff_hunk_navigation_advances_and_retreats_between_hunks() {
     let hunk_rows = crate::ui::transcript_diff_hunk_rows(&app, frame_area);
     assert_eq!(hunk_rows.len(), 2, "expected two navigable diff hunks");
     app.transcript_view.set_following(false);
-    app.transcript_view.set_offset(app.transcript_view.viewport.max_scroll());
+    app.transcript_view
+        .set_offset(app.transcript_view.viewport.max_scroll());
     app.set_transcript_page_flip_state(PageFlipState::Idle.begin(0).preserve_at(0));
 
     // act
@@ -343,7 +338,8 @@ pub(super) fn diff_hunk_navigation_advances_and_retreats_between_hunks() {
     );
     assert_eq!(
         app.transcript_view
-            .viewport.max_scroll()
+            .viewport
+            .max_scroll()
             .saturating_sub(app.transcript_scroll_offset()),
         first_hunk.min(app.transcript_view.viewport.max_scroll()),
         "diff navigation must move the visible scroll owner to the selected hunk"

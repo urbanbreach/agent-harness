@@ -187,6 +187,9 @@ define_command_metadata! {
     ("previous_message", "Previous message", "Jump to the previous transcript message"),
     ("copy_message", "Copy message", "Copy the selected transcript message"),
     ("export_session", "Export session", "Export the current session transcript"),
+    ("toggle_compaction_details", "Compaction details", "Expand or collapse the focused compaction summary"),
+    ("toggle_collapsed_history", "Collapsed history", "Show or hide history above the latest compaction summary"),
+    ("interrupt_turn", "Interrupt", "Interrupt the running turn or compaction"),
     ("open_error_details", "Error details", "Open details for the selected failed activity"),
     ("open_session_history", "Session history", "Browse saved sessions"),
     ("slash_new", "New", "Return to the home shell"),
@@ -198,6 +201,8 @@ define_command_metadata! {
     ("slash_clone", "Clone", "Prepare a Harness session clone"),
     ("slash_status", "Status", "View status"),
     ("slash_compact", "Compact", "Write a manual context checkpoint"),
+    ("slash_handoff", "Handoff", "Summarize the session into a handoff document and compact in place"),
+    ("slash_shake", "Shake", "Strip tool results, images or thinking from context"),
     ("slash_rename", "Rename", "Rename the current session"),
     ("slash_claude_account", "Claude accounts", "List and manage Anthropic Subscription accounts"),
     ("slash_vim", "Vim mode", "Toggle Vim navigation and simple input"),
@@ -254,6 +259,7 @@ pub(super) const fn help_category(action: Action) -> Option<HelpCategory> {
         | Action::Help
         | Action::OpenStatusDialog
         | Action::VariantCycle
+        | Action::InterruptTurn
         | Action::Quit => Some(HelpCategory::Essentials),
         Action::InsertNewline
         | Action::InterjectPrompt
@@ -294,6 +300,8 @@ pub(super) const fn help_category(action: Action) -> Option<HelpCategory> {
         | Action::TogglePromptFocus
         | Action::FocusPrev
         | Action::ToggleFollow
+        | Action::ToggleCompactionDetails
+        | Action::ToggleCollapsedHistory
         | Action::FirstMessage
         | Action::LastMessage
         | Action::NextMessage
@@ -352,7 +360,9 @@ define_slash_commands! {
     ("shell", "close_review_surface", &["session-shell"], false, false),
     ("follow", "toggle_follow", &[], false, false),
     ("rewind", "slash_rewind", &["undo"], false, false),
-    ("compact", "slash_compact", &["summarize"], false, false),
+    ("compact", "slash_compact", &["summarize"], true, false),
+    ("handoff", "slash_handoff", &[], true, false),
+    ("shake", "slash_shake", &[], true, false),
     ("exit", "quit", &["quit", "q"], false, false),
     ("rename", "slash_rename", &[], true, true),
     ("copy", "slash_copy", &[], false, false),
@@ -488,6 +498,8 @@ mod tests {
                 "follow",
                 "rewind",
                 "compact",
+                "handoff",
+                "shake",
                 "exit",
                 "rename",
                 "copy",

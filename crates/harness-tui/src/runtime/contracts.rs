@@ -22,7 +22,39 @@ pub(super) fn take_replay_metadata() -> Option<LaunchMetadata> {
         .take()
 }
 
+/// Which manual maintenance command an outcome belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompactionCommandKind {
+    Compact,
+    Handoff,
+    Shake,
+    /// A pass the idle timer started.
+    Idle,
+}
+
+/// How a manual maintenance command ended. A cancellation is presented as an error.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CompactionCommandOutcome {
+    /// The command did its work. `rebuild` asks for the settled rebuild; `message` is the
+    /// status line for commands that report one (shake); a handoff may name its saved file.
+    Done {
+        message: Option<String>,
+        tokens_after: Option<u32>,
+        saved_path: Option<String>,
+        rebuild: bool,
+    },
+    /// Nothing to do, or a refusal: shown as a warning.
+    Warning(String),
+    Cancelled,
+    Failed(String),
+}
+
 pub enum LiveUpdate {
+    /// Typed outcome of a manual maintenance command; the queue flushes after it settles.
+    CompactionCommand {
+        kind: CompactionCommandKind,
+        outcome: CompactionCommandOutcome,
+    },
     CommandOutput(Box<harness_core::coord::CommandSnapshot>),
     RewindPoints {
         generation: u64,
@@ -65,6 +97,10 @@ pub enum LiveUpdate {
     },
     /// Input the user queued for a turn they interrupted, returned to the editor.
     RestoreQueuedInput(Vec<String>),
+    QueuedPromptReceipt {
+        id: u64,
+        result: Result<(), String>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -10,6 +10,24 @@ use crate::ghost_suggestions::Request as SuggestionRequest;
 use super::slice::{AttachmentEntry, ComposerSlice, ComposerSliceError};
 
 impl ComposerSlice {
+    pub(crate) fn take_attachments(&mut self) -> Vec<AttachmentEntry> {
+        std::mem::take(&mut self.attachments)
+    }
+
+    pub(crate) fn append_attachments(&mut self, entries: Vec<AttachmentEntry>) {
+        let mut atom_id = self
+            .attachments
+            .iter()
+            .map(|entry| entry.atom_id)
+            .max()
+            .unwrap_or(0);
+        for mut entry in entries {
+            atom_id += 1;
+            entry.atom_id = atom_id;
+            self.attachments.push(entry);
+        }
+    }
+
     pub fn replace_text(&mut self, text: &str) -> Result<(), ComposerSliceError> {
         self.editor = ComposerEditor::from_text(text);
         self.after_edit()

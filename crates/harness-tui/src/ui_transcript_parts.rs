@@ -85,7 +85,6 @@ pub(super) fn build_assistant_parts(
                         event.seq,
                         TranscriptAssistantPart::User(TranscriptUserMessageSection {
                             text: data.text.clone(),
-                            badge: None,
                             wall_clock: timestamp.map(crate::time_format::wall_clock_12h),
                             expanded_wall_clock: timestamp
                                 .map(crate::time_format::wall_clock_hover_detail),
@@ -139,6 +138,7 @@ pub(super) fn build_assistant_parts(
             }),
         ));
     }
+    super::ui_transcript_pruned::apply(app, &mut parts);
     let mut result = (
         Vec::with_capacity(parts.len()),
         Vec::with_capacity(parts.len()),

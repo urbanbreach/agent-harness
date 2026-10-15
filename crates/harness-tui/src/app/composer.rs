@@ -39,6 +39,7 @@ pub struct ComposerState {
     pub multiline_mode: bool,
     pub vim_mode: bool,
     pub(crate) paste_preview: Option<PastePreview>,
+    pub(in crate::app) maintenance_queue: super::prompt_input::MaintenanceQueue,
 }
 
 impl ComposerState {

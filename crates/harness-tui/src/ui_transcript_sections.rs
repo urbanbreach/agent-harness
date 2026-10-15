@@ -18,6 +18,7 @@ pub(super) fn prepare_transcript_sections(
         .flatten()
         .map(|row| row.first_seq)
         .collect::<std::collections::BTreeSet<_>>();
+    let timeline = super::ui_transcript_compaction::plan::plan(app);
     let visible_activities = app
         .activities
         .iter()
@@ -26,30 +27,43 @@ pub(super) fn prepare_transcript_sections(
             !hidden_child_request_ids.contains(activity.request_id.as_str())
                 || notification_first_seqs.contains(&activity.first_seq)
         })
+        .filter(|(_, activity)| {
+            // Settled turns before the kept originals are hidden in the collapsed transcript.
+            !(matches!(
+                activity.status,
+                ActivityStatus::Done | ActivityStatus::Error
+            ) && timeline
+                .hide_before
+                .is_some_and(|first| activity.last_seq < first))
+        })
         .collect::<Vec<_>>();
     let mut turn_sections = Vec::with_capacity(visible_activities.len());
-    let pending_assistant_index = visible_activities
+    let mut fresh = Vec::with_capacity(visible_activities.len());
+    let reusable = previous
         .iter()
-        .rposition(|(_, activity)| activity.status == ActivityStatus::Streaming);
+        .map(|section| {
+            (
+                (section.activity_first_seq, section.request_id.as_str()),
+                section,
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
 
-    for (visible_index, (activity_index, activity)) in visible_activities.iter().enumerate() {
+    for (activity_index, activity) in &visible_activities {
         if *activity_index < dirty_from
-            && let Some(section) = previous.get(visible_index).filter(|section| {
-                (section.activity_first_seq, &section.request_id)
-                    == (activity.first_seq, &activity.request_id)
-            })
+            && let Some(section) = reusable.get(&(activity.first_seq, activity.request_id.as_str()))
         {
             turn_sections.push(Arc::clone(section));
+            fresh.push(false);
             continue;
         }
+        fresh.push(true);
         turn_sections.push(Arc::new(build_turn_section(
             app,
             *activity_index,
             notifications
                 .remove(activity.request_id.as_str())
                 .unwrap_or_default(),
-            activity.status == ActivityStatus::Queued
-                && pending_assistant_index.is_some_and(|pending| visible_index > pending),
         )));
     }
 
@@ -73,57 +87,14 @@ pub(super) fn prepare_transcript_sections(
         }
     }
 
-    inject_compaction_events(app, &visible_activities, &mut turn_sections, dirty_from);
-
-    turn_sections
-}
-
-fn inject_compaction_events(
-    app: &AppState,
-    visible_activities: &[(usize, &ActivityEntry)],
-    turn_sections: &mut [Arc<TranscriptTurnSection>],
-    dirty_from: usize,
-) {
-    for event in app.events() {
-        let compaction_section = match &event.payload {
-            harness_core::event::EventV1::SessionCompaction(data) => TranscriptCompactionSection {
-                expanded: app.transcript_view.compaction_details_expanded,
-                kind: TranscriptCompactionKind::SessionCompaction,
-                summary: data.summary.clone(),
-                tokens_before: Some(data.tokens_before),
-                read_files: data.read_files.clone(),
-                modified_files: data.modified_files.clone(),
-            },
-            harness_core::event::EventV1::BranchSummary(data) => TranscriptCompactionSection {
-                expanded: app.transcript_view.compaction_details_expanded,
-                kind: TranscriptCompactionKind::BranchSummary,
-                summary: data.summary.clone(),
-                tokens_before: None,
-                read_files: data.read_files.clone(),
-                modified_files: data.modified_files.clone(),
-            },
-            _ => continue,
-        };
-
-        let target_turn_index = visible_activities
-            .iter()
-            .enumerate()
-            .filter(|(_, (_, activity))| activity.last_seq <= event.seq)
-            .map(|(turn_idx, _)| turn_idx)
-            .next_back()
-            .or_else(|| (!visible_activities.is_empty()).then_some(0));
-
-        if let Some(turn_index) =
-            target_turn_index.filter(|index| visible_activities[*index].0 >= dirty_from)
-            && let Some(turn) = turn_sections.get_mut(turn_index)
-        {
-            let turn = Arc::make_mut(turn);
-            turn.assistant_parts
-                .push(TranscriptAssistantPart::Compaction(compaction_section));
-            turn.assistant_part_source_ids
-                .push(TranscriptAssistantPartSourceId(event.seq));
-        }
-    }
+    super::ui_transcript_compaction::placement::merge_timeline(
+        app,
+        &visible_activities,
+        turn_sections,
+        &fresh,
+        timeline.items,
+        previous,
+    )
 }
 
 fn turn_supports_assistant_footer(turn: &TranscriptTurnSection, app: &AppState) -> bool {
@@ -150,7 +121,6 @@ fn build_turn_section(
     app: &AppState,
     activity_index: usize,
     notifications: Vec<TranscriptOrderedToolCallSection>,
-    queued_user_message: bool,
 ) -> TranscriptTurnSection {
     let visible_activity = app.smoothed_activity(&app.activities[activity_index]);
     let activity = visible_activity.as_ref();
@@ -158,7 +128,7 @@ fn build_turn_section(
     let notification_created_activity = notifications
         .iter()
         .any(|row| row.first_seq == activity.first_seq);
-    let user_message = activity
+    let mut user_message = activity
         .user_message
         .as_ref()
         .filter(|_| !notification_created_activity)
@@ -169,16 +139,6 @@ fn build_turn_section(
                 .filter(|_| timestamps_visible);
             TranscriptUserMessageSection {
                 text: user_msg.text.clone(),
-                // Only the local echo of steering is done without a request id; delivery
-                // folds it into its turn and a missed turn gives it one.
-                badge: if queued_user_message {
-                    Some("QUEUED")
-                } else if activity.request_id.is_empty() && activity.status == ActivityStatus::Done
-                {
-                    Some("STEERING")
-                } else {
-                    None
-                },
                 wall_clock: timestamp.map(crate::time_format::wall_clock_12h),
                 expanded_wall_clock: timestamp.map(crate::time_format::wall_clock_hover_detail),
                 wall_clock_hovered: matches!(
@@ -188,6 +148,9 @@ fn build_turn_section(
                 ),
             }
         });
+    if let Some(user) = &mut user_message {
+        super::ui_transcript_pruned::apply_user(app, activity.first_seq, &mut user.text);
+    }
 
     let mut ordered_tool_calls: Vec<TranscriptOrderedToolCallSection> = Vec::new();
     for (index, tool_call) in activity.tool_calls.iter().enumerate() {

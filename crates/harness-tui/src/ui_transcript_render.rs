@@ -149,14 +149,7 @@ fn build_user_render_surface(
     let content_width = transcript_surface_content_width(render_width, false);
     let agent_accent = theme.agent_accent(&turn.header.profile_label);
     let body_style = Style::default().fg(theme.text.primary);
-    let lines = build_user_surface_lines(
-        user_msg,
-        theme,
-        content_width,
-        surface,
-        agent_accent,
-        body_style,
-    );
+    let lines = build_user_surface_lines(user_msg, theme, content_width, surface, body_style);
 
     let interaction_rows = user_msg.wall_clock.as_ref().map(|_| {
         let mut rows = vec![None; lines.len()];
@@ -203,7 +196,6 @@ fn build_user_surface_lines(
     theme: &Theme,
     content_width: u16,
     surface: Color,
-    agent_accent: Color,
     body_style: Style,
 ) -> Vec<Line<'static>> {
     let text_width = if user_msg.wall_clock.is_some() {
@@ -221,7 +213,6 @@ fn build_user_surface_lines(
         content_width,
         text_width,
         surface,
-        agent_accent,
         body_style,
     )
 }
@@ -232,7 +223,6 @@ fn assemble_user_surface_lines(
     content_width: u16,
     text_width: u16,
     surface: Color,
-    agent_accent: Color,
     body_style: Style,
 ) -> Vec<Line<'static>> {
     let mut lines = vec![user_surface_line(
@@ -259,20 +249,6 @@ fn assemble_user_surface_lines(
                 surface_span("  ", Style::default().fg(theme.markdown.text), surface),
             );
         }
-    }
-    if let Some(badge) = user_msg.badge {
-        lines.push(user_surface_line(
-            TRANSCRIPT_USER_BODY_PREFIX,
-            vec![Span::styled(
-                format!(" {badge} "),
-                Style::default()
-                    .fg(selected_foreground_for_badge(agent_accent, theme))
-                    .bg(agent_accent)
-                    .add_modifier(Modifier::BOLD),
-            )],
-            Style::default().fg(theme.text.secondary),
-            surface,
-        ));
     }
     lines.push(user_surface_line(
         TRANSCRIPT_USER_BODY_PREFIX,
@@ -655,12 +631,29 @@ fn build_assistant_part_render_surface(
             )
         }
         TranscriptAssistantPart::Compaction(compaction) => {
-            let render_width =
-                transcript_surface_render_width(width, TranscriptRenderSurfaceKind::Compaction);
             let content = super::ui_transcript_compaction::resolve_compaction_content(
                 compaction,
                 theme,
-                render_width,
+                width,
+                base_surface,
+            );
+            lines = content.lines;
+            (
+                TranscriptRenderSurfaceKind::Compaction,
+                false,
+                theme.border.subtle,
+                content.surface,
+                Some(content.interaction_rows),
+                None,
+                Vec::new(),
+                None,
+            )
+        }
+        TranscriptAssistantPart::Notice(notice) => {
+            let content = super::ui_transcript_compaction::resolve_notice_content(
+                notice,
+                theme,
+                width,
                 base_surface,
             );
             lines = content.lines;
@@ -1594,7 +1587,6 @@ mod tests {
             request_id: "request-selected-user".to_string(),
             user_message: Some(super::super::TranscriptUserMessageSection {
                 text: "Selected prompt".to_string(),
-                badge: None,
                 wall_clock: None,
                 expanded_wall_clock: None,
                 wall_clock_hovered: false,
@@ -1653,7 +1645,6 @@ mod tests {
         let lines = build_user_surface_lines(
             &super::super::TranscriptUserMessageSection {
                 text: "界".to_string(),
-                badge: None,
                 wall_clock: Some("12:34 PM".to_string()),
                 expanded_wall_clock: Some("12:34:56 | Aug 14".to_string()),
                 wall_clock_hovered: false,
@@ -1661,7 +1652,6 @@ mod tests {
             &theme,
             width,
             theme.surface.card,
-            theme.text.accent,
             ratatui::style::Style::default().fg(theme.text.primary),
         );
 

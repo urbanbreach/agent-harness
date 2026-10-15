@@ -444,6 +444,7 @@ fn compaction_update(preview: Option<&str>) -> LiveUpdate {
             generation: 1,
             trigger_reason: "manual".to_string(),
             preview: preview.map(str::to_string),
+            stage: None,
         },
     }))))
 }

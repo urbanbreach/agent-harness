@@ -1305,6 +1305,7 @@ mod pin_tests {
     ) -> TranscriptVisualEntryMetadata {
         TranscriptVisualEntryMetadata {
             foldable: false,
+            source_event_seq: 0,
             context_group: false,
             id: match kind {
                 TranscriptRenderSurfaceKind::User => TranscriptVisualEntryId::User {

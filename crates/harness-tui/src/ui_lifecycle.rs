@@ -1,6 +1,7 @@
 // allow: SIZE_OK — TUI rendering (indivisible view model)
 use super::*;
 
+use super::ui_context_budget::{ContextChrome, ContextDetail};
 use crate::welcome_surface::{WelcomeFocus, WelcomeLayout};
 use ratatui::widgets::{BorderType, Clear};
 use unicode_width::UnicodeWidthStr;
@@ -223,16 +224,17 @@ pub(super) fn render_live_breadcrumb(
         height: 1,
     };
     let meta = breadcrumb_meta(app, usize::from(row.width));
+    let meta_text = meta.as_ref().map(BreadcrumbMeta::plain);
     let text = pack_breadcrumb_line(
         &live_breadcrumb_text(app, area.width),
-        meta.as_deref(),
+        meta_text.as_deref(),
         usize::from(row.width),
     );
     let dim = Style::default()
         .fg(theme.text.tertiary)
         .bg(theme.surface.canvas)
         .add_modifier(Modifier::DIM);
-    let metadata = meta.as_deref().filter(|meta| text.ends_with(*meta));
+    let metadata = meta_text.as_deref().filter(|meta| text.ends_with(*meta));
     let split = text.len().saturating_sub(metadata.map_or(0, str::len));
     let left = &text[..split];
     let (prefix, _) = startup_breadcrumb_parts(app);
@@ -262,78 +264,79 @@ pub(super) fn render_live_breadcrumb(
                 .bg(theme.surface.canvas),
         ),
     ];
-    if let Some(meta) = metadata {
+    if let Some(meta) = meta.as_ref().filter(|_| metadata.is_some()) {
         spans.push(Span::styled(
-            meta.to_owned(),
+            meta.lead_text(),
             Style::default()
                 .fg(theme.text.primary)
                 .bg(theme.surface.canvas),
         ));
+        if let Some((chrome, detail)) = &meta.context {
+            spans.extend(chrome.spans(*detail, theme, theme.surface.canvas));
+        }
     }
     let line = Line::from(spans);
     frame.render_widget(Paragraph::new(line), row);
 }
 
-/// Tok/s, cost, cache hits and context usage: `42.1 tok/s · $0.123 · CH97.3% · 12K / 262K 5%`.
-/// Tok/s, then cost, then cache hits drop first so the meta stays within half the row.
-fn breadcrumb_meta(app: &AppState, width: usize) -> Option<String> {
-    let segments = [
+/// The breadcrumb's right side: tok/s, cost and cache hits, then the shared context segment.
+pub(super) struct BreadcrumbMeta {
+    lead: Vec<String>,
+    context: Option<(ContextChrome, ContextDetail)>,
+}
+
+impl BreadcrumbMeta {
+    fn lead_text(&self) -> String {
+        let mut lead = self.lead.join(" · ");
+        if !lead.is_empty() && self.context.is_some() {
+            lead.push_str(" · ");
+        }
+        lead
+    }
+
+    pub(super) fn plain(&self) -> String {
+        let context = self
+            .context
+            .as_ref()
+            .map(|(chrome, detail)| chrome.plain(*detail))
+            .unwrap_or_default();
+        format!("{}{context}", self.lead_text())
+    }
+}
+
+/// Tok/s, cost, cache hits and context: `42.1 tok/s · $0.123 · CH97.3% · ⟲ ◫ 42.0%/200K ██╎┃`.
+/// The meta stays within half the row: the gauge drops first, then the auto-compaction icon,
+/// then tok/s, cost and cache hits.
+pub(super) fn breadcrumb_meta(app: &AppState, width: usize) -> Option<BreadcrumbMeta> {
+    let lead = [
         app.generation_rate_label(None),
         app.session_cost_label(),
         app.cache_hit_label(),
-        breadcrumb_context_meta(app),
     ]
     .into_iter()
     .flatten()
     .collect::<Vec<_>>();
-    (0..segments.len())
-        .map(|skip| segments[skip..].join(" · "))
-        .find(|meta| super::display_width(meta) * 2 <= width)
-        .or_else(|| segments.last().cloned())
-}
-
-/// Compact context usage and rounded percentage: `12K / 262K 5%`.
-fn breadcrumb_context_meta(app: &AppState) -> Option<String> {
-    let snapshot = app.current_request_budget_snapshot()?;
-    if snapshot.status != harness_core::context_budget::BudgetStatus::Estimated {
-        return None;
-    }
-    let occupied =
-        (snapshot.occupied_input_tokens > 0).then_some(snapshot.occupied_input_tokens)?;
-    let threshold = snapshot
-        .compaction_threshold_tokens
-        .filter(|threshold| *threshold > 0)?;
-    let percent =
-        ((u64::from(occupied) * 100 + u64::from(threshold) / 2) / u64::from(threshold)).min(999);
-    Some(format!(
-        "{} / {} {percent}%",
-        format_breadcrumb_token_count(occupied),
-        format_breadcrumb_token_count(threshold)
-    ))
-}
-
-/// Freeze-matched compact token counts: `12K`, `1.5K`, `262K` (not `12.0K` / `262.1K`).
-fn format_breadcrumb_token_count(count: u32) -> String {
-    if count < 1_000 {
-        return count.to_string();
-    }
-    if count < 1_000_000 {
-        if count.is_multiple_of(1_000) {
-            return format!("{}K", count / 1_000);
+    let context = ContextChrome::from_app(app);
+    let candidates = ContextDetail::ALL
+        .into_iter()
+        .map(|detail| (detail, 0))
+        .chain((1..=lead.len()).map(|skip| (ContextDetail::TextOnly, skip)));
+    let mut narrowest = None;
+    for (detail, skip) in candidates {
+        let meta = BreadcrumbMeta {
+            lead: lead[skip..].to_vec(),
+            context: context.clone().map(|chrome| (chrome, detail)),
+        };
+        let plain = meta.plain();
+        if plain.is_empty() {
+            continue;
         }
-        // Context windows like 262144 freeze as whole thousands (`262K`).
-        if count >= 100_000 {
-            return format!("{}K", (count.saturating_add(500)) / 1_000);
+        if super::display_width(&plain) * 2 <= width {
+            return Some(meta);
         }
-        let thousands = f64::from(count) / 1_000.0;
-        return format!("{thousands:.1}K");
+        narrowest = Some(meta);
     }
-    let millions = f64::from(count) / 1_000_000.0;
-    if count.is_multiple_of(1_000_000) {
-        format!("{}M", count / 1_000_000)
-    } else {
-        format!("{millions:.1}M")
-    }
+    narrowest
 }
 
 fn pack_breadcrumb_line(left: &str, meta: Option<&str>, width: usize) -> String {
@@ -782,21 +785,12 @@ pub(super) fn live_empty_state_selection_surface(
 
 #[cfg(test)]
 mod breadcrumb_token_meta_tests {
-    use super::{format_breadcrumb_token_count, live_breadcrumb_text, pack_breadcrumb_line};
-
-    #[test]
-    fn format_breadcrumb_token_count_matches_freeze_style() {
-        assert_eq!(format_breadcrumb_token_count(42), "42");
-        assert_eq!(format_breadcrumb_token_count(1_500), "1.5K");
-        assert_eq!(format_breadcrumb_token_count(10_000), "10K");
-        assert_eq!(format_breadcrumb_token_count(12_000), "12K");
-        assert_eq!(format_breadcrumb_token_count(262_144), "262K");
-    }
+    use super::{live_breadcrumb_text, pack_breadcrumb_line};
 
     #[test]
     fn pack_breadcrumb_line_right_aligns_token_meta() {
-        let packed = pack_breadcrumb_line("  git:main ~/proj", Some("12K / 262K"), 40);
-        assert!(packed.ends_with("12K / 262K"), "packed={packed:?}");
+        let packed = pack_breadcrumb_line("  git:main ~/proj", Some("◫ 4.6%/262K"), 40);
+        assert!(packed.ends_with("◫ 4.6%/262K"), "packed={packed:?}");
         assert_eq!(super::super::display_width(&packed), 40);
         assert!(
             packed.contains("main") || packed.contains("proj"),
@@ -812,7 +806,7 @@ mod breadcrumb_token_meta_tests {
             packed.starts_with("  "),
             "left breadcrumb retained when meta absent: {packed:?}"
         );
-        assert!(!packed.contains("12K / 262K"), "packed={packed:?}");
+        assert!(!packed.contains("◫ 4.6%/262K"), "packed={packed:?}");
     }
 
     #[test]

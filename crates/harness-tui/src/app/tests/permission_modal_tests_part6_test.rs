@@ -105,9 +105,15 @@ fn permission_feedback_paste_respects_input_ownership_and_submission_guards() {
             feedback_before,
             "{boundary:?}"
         );
-        assert_eq!(app.question_prompt.answer_buffer, question_before, "{boundary:?}");
+        assert_eq!(
+            app.question_prompt.answer_buffer, question_before,
+            "{boundary:?}"
+        );
         assert_eq!(app.focus, focus_before, "{boundary:?}");
-        assert_eq!(app.composer.prompt_buffer, "preserved draft", "{boundary:?}");
+        assert_eq!(
+            app.composer.prompt_buffer, "preserved draft",
+            "{boundary:?}"
+        );
         assert_eq!(app.composer.prompt_cursor, 3, "{boundary:?}");
         assert_eq!(
             intents.lock().unwrap_or_abort().as_slice(),

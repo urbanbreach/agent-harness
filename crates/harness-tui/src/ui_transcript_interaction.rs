@@ -40,6 +40,10 @@ pub(crate) enum TranscriptMouseTarget {
         tool_call_id: String,
         file_path: String,
     },
+    /// The divider of a compaction card, keyed by the compaction event sequence.
+    Compaction {
+        seq: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

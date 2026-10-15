@@ -76,6 +76,7 @@ pub(super) fn project(
         };
         ControlDockLayout {
             shell: status,
+            pending: None,
             status: Some(status),
             composer: Rect::new(status.x, status.bottom(), status.width, 0),
             disclosure: None,
@@ -90,6 +91,7 @@ pub(super) fn project(
         plan.transcript = Some(body);
         ControlDockLayout {
             shell,
+            pending: None,
             status: None,
             composer: shell,
             disclosure: None,
@@ -97,17 +99,27 @@ pub(super) fn project(
     } else {
         let composer_height = prompt_height(app, column, terminal_height, startup);
         let spacer = composer_footer_spacer_rows(terminal_height);
-        let status = if app.live_turn_status_visible() || app.model_prompt_notice.is_some() {
-            tokens.spacing.heights.status
-        } else {
-            0
-        };
+        let status = compaction_status_height(
+            app,
+            tokens.spacing.heights.status,
+            terminal_height,
+            column.width,
+        );
         let status_gap = if status > 0 || app.activities.is_empty() {
             spacer
         } else {
             0
         };
         let disclosure = u16::from(!startup && app.review_surface().is_none());
+        let pending = if child_footer || startup {
+            0
+        } else {
+            u16::try_from(
+                app.pending_band(AppState::pending_band_capacity(terminal_height))
+                    .len(),
+            )
+            .unwrap_or(0)
+        };
         let height = if child_footer {
             0
         } else if startup {
@@ -121,6 +133,7 @@ pub(super) fn project(
                 .saturating_add(status)
                 .saturating_add(spacer)
                 .saturating_add(disclosure)
+                .saturating_add(pending)
         };
         let [_, body, shell] = surfaces::split_rows(column, 0, height);
         plan.transcript = Some(body);
@@ -128,6 +141,7 @@ pub(super) fn project(
             let [status, _, composer] = surfaces::split_rows(shell, status, composer_height);
             ControlDockLayout {
                 shell,
+                pending: None,
                 status: (status.height > 0).then_some(status),
                 composer: Rect {
                     height: composer
@@ -146,7 +160,7 @@ pub(super) fn project(
                 status,
                 status_gap,
                 spacer,
-                disclosure,
+                (disclosure, pending),
             )
         }
     };
@@ -200,6 +214,7 @@ pub(super) fn project(
         overlay: inspector,
         inspector,
     };
+    plan.pending = dock.pending;
     plan.status = dock.status;
     plan.composer = Some(dock.composer);
     plan.disclosure = dock.disclosure;
@@ -231,7 +246,7 @@ fn live_dock(
     status: u16,
     status_gap: u16,
     spacer: u16,
-    disclosure: u16,
+    (disclosure, pending): (u16, u16),
 ) -> ControlDockLayout {
     let disclosure = disclosure.min(shell.height.saturating_sub(1));
     let composer_height = composer_height.min(shell.height);
@@ -255,8 +270,15 @@ fn live_dock(
         .saturating_sub(composer_gap)
         .saturating_sub(composer_height);
     let status_y = composer_y.saturating_sub(status_gap).saturating_sub(status);
+    let pending = pending.min(status_y.saturating_sub(shell.y));
     ControlDockLayout {
         shell,
+        pending: (pending > 0).then_some(Rect::new(
+            shell.x,
+            status_y.saturating_sub(pending),
+            shell.width,
+            pending,
+        )),
         status: (status > 0).then_some(Rect::new(shell.x, status_y, shell.width, status)),
         composer: Rect::new(shell.x, composer_y, shell.width, composer_height),
         disclosure: (disclosure > 0).then_some(Rect::new(
@@ -319,4 +341,41 @@ fn terminal_panel(app: &AppState, body: Rect, gap: u16) -> (Rect, Option<Rect>) 
             height,
         )),
     )
+}
+
+fn compaction_status_height(app: &AppState, normal: u16, height: u16, width: u16) -> u16 {
+    if app
+        .displayed_compaction()
+        .is_some_and(|card| card.stage.is_some())
+    {
+        if height >= 34 && width >= 48 {
+            if app
+                .displayed_compaction()
+                .and_then(|card| card.stage.as_ref())
+                .is_some_and(|stage| {
+                    matches!(
+                        stage.method,
+                        Some(
+                            harness_core::event::CompactionMethod::Archive
+                                | harness_core::event::CompactionMethod::Remote
+                                | harness_core::event::CompactionMethod::Handoff
+                                | harness_core::event::CompactionMethod::Shake
+                        )
+                    )
+                })
+            {
+                11
+            } else {
+                7
+            }
+        } else if height >= 30 && width >= 48 {
+            8
+        } else {
+            3
+        }
+    } else if app.live_turn_status_visible() || app.model_prompt_notice.is_some() {
+        normal
+    } else {
+        0
+    }
 }

@@ -12,12 +12,15 @@ use std::sync::{
 use std::path::PathBuf;
 
 use super::{ConnectProviderOption, LaunchMetadata};
+use crate::composer_integration::AttachmentEntry;
 use crate::text::has_trimmed_content;
 
 #[cfg(not(test))]
 static PENDING_LIVE_LAUNCH_METADATA: Mutex<Option<LaunchMetadata>> = Mutex::new(None);
 #[cfg(not(test))]
 static PENDING_LIVE_PROMPT_DRAFT: Mutex<Option<String>> = Mutex::new(None);
+#[cfg(not(test))]
+static PENDING_LIVE_PROMPT_IMAGES: Mutex<Vec<AttachmentEntry>> = Mutex::new(Vec::new());
 #[cfg(not(test))]
 static PENDING_LIVE_PROMPT_AUTO_SUBMIT: AtomicBool = AtomicBool::new(false);
 #[cfg(not(test))]
@@ -30,6 +33,8 @@ static PENDING_PROMPT_COMMANDS: Mutex<Option<harness_core::commands::CommandDisc
 #[cfg(not(test))]
 static PENDING_SETTINGS_PROJECT_CONFIG: Mutex<Option<PendingSettingsProjectConfig>> =
     Mutex::new(None);
+#[cfg(not(test))]
+static PENDING_IDLE_COMPACTION: Mutex<Option<(bool, u32, u64)>> = Mutex::new(None);
 
 #[cfg(not(test))]
 const PENDING_LIVE_PROMPT_DRAFT_ENV: &str = "HARNESS_TUI_PENDING_LIVE_PROMPT_DRAFT";
@@ -40,11 +45,13 @@ const PENDING_LIVE_PROMPT_AUTO_SUBMIT_ENV: &str = "HARNESS_TUI_PENDING_LIVE_PROM
 thread_local! {
     static PENDING_LIVE_LAUNCH_METADATA: RefCell<Option<LaunchMetadata>> = const { RefCell::new(None) };
     static PENDING_LIVE_PROMPT_DRAFT: RefCell<Option<String>> = const { RefCell::new(None) };
+    static PENDING_LIVE_PROMPT_IMAGES: RefCell<Vec<AttachmentEntry>> = const { RefCell::new(Vec::new()) };
     static PENDING_LIVE_PROMPT_AUTO_SUBMIT: RefCell<bool> = const { RefCell::new(false) };
     static PENDING_CONNECT_PROVIDERS: RefCell<Vec<ConnectProviderOption>> = const { RefCell::new(Vec::new()) };
     static PENDING_PROMPT_COMMANDS: RefCell<Option<harness_core::commands::CommandDiscovery>> = const { RefCell::new(None) };
     static PENDING_SETTINGS_PROJECT_CONFIG: RefCell<Option<PendingSettingsProjectConfig>> =
         const { RefCell::new(None) };
+    static PENDING_IDLE_COMPACTION: RefCell<Option<(bool,u32,u64)>> = const { RefCell::new(None) };
 }
 
 /// Project runtime config binding for the settings editor write path.
@@ -53,7 +60,7 @@ pub struct PendingSettingsProjectConfig {
     pub path: PathBuf,
     pub compaction_enabled: bool,
     pub compaction_auto_retry_overflow: bool,
-    pub compaction_structured_summary_contract: bool,
+    pub compaction_mid_turn_enabled: bool,
     pub compaction_estimated_token_triggers: bool,
     pub deterministic_enabled: bool,
 }
@@ -61,6 +68,8 @@ pub struct PendingSettingsProjectConfig {
 pub(super) struct PendingLivePrompt {
     pub(super) text: String,
     pub(super) auto_submit: bool,
+    /// Images the prompt was queued with; they go into the new session's composer.
+    pub(super) images: Vec<AttachmentEntry>,
 }
 
 struct PendingLiveState;
@@ -97,7 +106,31 @@ impl PendingLiveState {
         }
     }
 
+    fn set_images(images: Vec<AttachmentEntry>) {
+        #[cfg(test)]
+        PENDING_LIVE_PROMPT_IMAGES.with(|pending| *pending.borrow_mut() = images);
+        #[cfg(not(test))]
+        {
+            *Self::lock(&PENDING_LIVE_PROMPT_IMAGES, "prompt images") = images;
+        }
+    }
+
+    fn take_images() -> Vec<AttachmentEntry> {
+        #[cfg(test)]
+        {
+            PENDING_LIVE_PROMPT_IMAGES.with(|pending| std::mem::take(&mut *pending.borrow_mut()))
+        }
+        #[cfg(not(test))]
+        {
+            std::mem::take(&mut *Self::lock(
+                &PENDING_LIVE_PROMPT_IMAGES,
+                "prompt images",
+            ))
+        }
+    }
+
     fn set_prompt(prompt: Option<String>, auto_submit: bool) {
+        Self::set_images(Vec::new());
         #[cfg(test)]
         {
             PENDING_LIVE_PROMPT_DRAFT.with(|pending| {
@@ -127,8 +160,13 @@ impl PendingLiveState {
         #[cfg(not(test))]
         let auto_submit = PENDING_LIVE_PROMPT_AUTO_SUBMIT.swap(false, Ordering::Relaxed);
 
+        let images = Self::take_images();
         if let Some(text) = draft {
-            return Some(PendingLivePrompt { text, auto_submit });
+            return Some(PendingLivePrompt {
+                text,
+                auto_submit,
+                images,
+            });
         }
 
         #[cfg(not(test))]
@@ -142,7 +180,11 @@ impl PendingLiveState {
                 .ok()
                 .map(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
                 .unwrap_or(false);
-            draft.map(|text| PendingLivePrompt { text, auto_submit })
+            draft.map(|text| PendingLivePrompt {
+                text,
+                auto_submit,
+                images: Vec::new(),
+            })
         }
 
         #[cfg(test)]
@@ -161,7 +203,7 @@ pub fn set_pending_settings_project_config(
     path: PathBuf,
     compaction_enabled: bool,
     compaction_auto_retry_overflow: bool,
-    compaction_structured_summary_contract: bool,
+    compaction_mid_turn_enabled: bool,
     compaction_estimated_token_triggers: bool,
     deterministic_enabled: bool,
 ) {
@@ -169,7 +211,7 @@ pub fn set_pending_settings_project_config(
         path,
         compaction_enabled,
         compaction_auto_retry_overflow,
-        compaction_structured_summary_contract,
+        compaction_mid_turn_enabled,
         compaction_estimated_token_triggers,
         deterministic_enabled,
     };
@@ -182,6 +224,31 @@ pub fn set_pending_settings_project_config(
     #[cfg(not(test))]
     {
         *PENDING_SETTINGS_PROJECT_CONFIG.lock().unwrap_or_abort() = Some(pending);
+    }
+}
+
+pub fn set_pending_idle_compaction_settings(
+    enabled: bool,
+    threshold_tokens: u32,
+    timeout_seconds: u64,
+) {
+    let settings = Some((enabled, threshold_tokens, timeout_seconds));
+    #[cfg(test)]
+    PENDING_IDLE_COMPACTION.with(|slot| *slot.borrow_mut() = settings);
+    #[cfg(not(test))]
+    {
+        *PENDING_IDLE_COMPACTION.lock().unwrap_or_abort() = settings;
+    }
+}
+
+pub(super) fn take_pending_idle_compaction_settings() -> Option<(bool, u32, u64)> {
+    #[cfg(test)]
+    {
+        PENDING_IDLE_COMPACTION.with(|slot| slot.borrow_mut().take())
+    }
+    #[cfg(not(test))]
+    {
+        PENDING_IDLE_COMPACTION.lock().unwrap_or_abort().take()
     }
 }
 
@@ -255,6 +322,13 @@ pub fn set_pending_live_prompt_auto_submit(prompt: Option<String>) {
     let prompt = non_empty_prompt(prompt);
     let should_auto_submit = prompt.is_some();
     PendingLiveState::set_prompt(prompt, should_auto_submit);
+}
+
+/// Stages a prompt for the next session's launch together with the images it was queued
+/// with. The prompt is submitted on launch.
+pub(super) fn set_pending_live_prompt_with_images(prompt: String, images: Vec<AttachmentEntry>) {
+    set_pending_live_prompt_auto_submit(Some(prompt));
+    PendingLiveState::set_images(images);
 }
 
 pub(super) fn take_pending_live_prompt() -> Option<PendingLivePrompt> {

@@ -33,7 +33,8 @@ mod signals;
 
 pub use crate::terminal::session::close_preserved_terminal_session;
 pub use contracts::{
-    set_pending_replay_launch_metadata, LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions,
+    set_pending_replay_launch_metadata, CompactionCommandKind, CompactionCommandOutcome,
+    LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions,
 };
 #[cfg(test)]
 pub(crate) use setup::apply_startup_capability_notice;
@@ -82,6 +83,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         app.set_toggles_config(toggles);
     }
     app.configure_rewind();
+    app.configure_collapsed_history();
     app.initialize_provider_connection();
     let profile = TerminalProfile::negotiate();
     let mut session = crate::terminal::session::Session::enter(options.skip_alternate_screen)

@@ -71,7 +71,7 @@ impl AppState {
         self.rewind.last_escape = None;
         self.slash_visible = false;
         self.palette_visible = false;
-        let busy = self.active_turn_in_progress() || self.active_compaction().is_some();
+        let busy = self.active_turn_in_progress() || self.maintenance_running();
         self.rewind.state = Some(RewindState {
             phase: if busy {
                 RewindPhase::CancelOffer { active_idx: 0 }
@@ -100,10 +100,8 @@ impl AppState {
         if let Some(state) = self.rewind.state.as_mut() {
             state.phase = RewindPhase::Loading;
         }
-        if cancel && let Some(compaction) = self.active_compaction() {
-            self.emit_ui_intent(UiIntent::CancelCompaction {
-                agent_id: compaction.agent_id.clone(),
-            });
+        if cancel && let Some(agent_id) = self.maintenance_agent() {
+            self.emit_ui_intent(UiIntent::CancelCompaction { agent_id });
         }
         self.emit_ui_intent(UiIntent::LoadRewindPoints {
             generation: self.rewind.generation,
@@ -329,12 +327,13 @@ impl AppState {
             self.rewind.last_escape = None;
             return false;
         }
-        if !self.replay_mode
-            && (self.active_turn_in_progress() || self.active_compaction().is_some())
-        {
+        if !self.replay_mode && (self.active_turn_in_progress() || self.maintenance_running()) {
             self.rewind.last_escape = None;
             self.rewind.suppress_until = Some(self.now() + Duration::from_millis(1000));
-            self.show_toast("Press Ctrl+c to cancel the turn", ToastVariant::Rewind);
+            self.show_toast(
+                format!("Press {} to cancel the turn", self.interrupt_key_hint()),
+                ToastVariant::Rewind,
+            );
             return true;
         }
         if self

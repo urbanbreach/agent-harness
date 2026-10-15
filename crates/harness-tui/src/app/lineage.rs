@@ -768,5 +768,8 @@ fn event_kind_label(event: &EventV1) -> &'static str {
         EventV1::UiIntentReceived(_) => "ui_intent_received",
         EventV1::SessionCompaction(_) => "session_compaction",
         EventV1::BranchSummary(_) => "branch_summary",
+        EventV1::CompactionPatched(_) => "compaction_patched",
+        EventV1::ContextNotes(_) => "context_notes",
+        EventV1::ContextPruned(_) => "context_pruned",
     }
 }

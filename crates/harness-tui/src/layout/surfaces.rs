@@ -11,6 +11,8 @@ const RUNTIME_STATE_SURFACE_MIN_HEIGHT: u16 = 5;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ControlDockLayout {
     pub shell: Rect,
+    /// The pending band (queued steering and follow-ups) directly above the status row.
+    pub pending: Option<Rect>,
     pub status: Option<Rect>,
     pub composer: Rect,
     pub disclosure: Option<Rect>,
@@ -153,6 +155,7 @@ pub(super) fn reserve_sidebar_gap(dock: ControlDockLayout, gap: u16) -> ControlD
         ..area
     };
     ControlDockLayout {
+        pending: dock.pending.map(shrink),
         status: dock.status.map(shrink),
         composer: shrink(dock.composer),
         disclosure: dock.disclosure.map(shrink),
@@ -197,6 +200,7 @@ pub(super) fn inset_dock(dock: ControlDockLayout, area: Rect, startup: bool) -> 
     };
     ControlDockLayout {
         shell: map(dock.shell),
+        pending: dock.pending.map(map),
         status: dock.status.map(map),
         composer: map(dock.composer),
         disclosure: dock.disclosure.map(map),

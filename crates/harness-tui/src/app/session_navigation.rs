@@ -205,6 +205,9 @@ impl AppState {
             self.sync_slash_model_completions();
             return;
         }
+        if has_args && self.sync_maintenance_completions(&slash_query) {
+            return;
+        }
         self.slash_arguments.clear();
         self.slash_model_pending = None;
         if has_args {
@@ -302,7 +305,7 @@ impl AppState {
             "shell" => self.active_review_surface.is_some(),
             "follow" => !self.replay_mode && !self.startup_mode,
             "rewind" => !self.replay_mode && !self.startup_shell_visible(),
-            "compact" => self.compact_session_supported,
+            "compact" | "handoff" | "shake" => !self.replay_mode && !self.startup_mode,
             "rename" => !self.replay_mode && !self.startup_mode,
             "copy" | "export" => !self.startup_mode,
             "import" => !self.startup_mode && !self.replay_mode,
@@ -315,7 +318,10 @@ impl AppState {
     }
 
     fn navigate_to_home_shell(&mut self, draft: String) {
+        self.cancel_idle_compaction();
         self.projection.reset();
+        self.notices.clear();
+        self.maintenance = Default::default();
         self.bump_transcript_render_epoch();
         self.selected_event_index = 0;
         self.transcript_view.selected_activity_index = 0;
@@ -447,18 +453,33 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.execute_action(Action::ToggleFollow);
             }
-            "compact" => {
-                let custom_instructions = self
+            "compact" | "handoff" | "shake" => {
+                let args = self
                     .active_slash_parts_full()
                     .and_then(|(_, args)| args)
-                    .map(str::trim)
-                    .filter(|text| !text.is_empty())
-                    .map(str::to_string);
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
                 self.restore_slash_draft(preserved_draft);
-                self.emit_ui_intent(UiIntent::CompactSession {
-                    custom_instructions,
-                });
+                match command {
+                    "compact" => match harness_compaction::method::parse_compact_args(&args) {
+                        Ok(args) => self.request_manual_compaction(args.focus, args.mode),
+                        Err(error) => self.push_transcript_notice(
+                            super::notices::TranscriptNoticeKind::Warning,
+                            error.into(),
+                        ),
+                    },
+                    "shake" => match harness_compaction::method::parse_shake_args(&args) {
+                        Ok(mode) => self.emit_ui_intent(UiIntent::Shake { mode }),
+                        Err(error) => self.push_transcript_notice(
+                            super::notices::TranscriptNoticeKind::Warning,
+                            error,
+                        ),
+                    },
+                    _ => self.request_handoff(args),
+                }
             }
+
             "rewind" => {
                 self.restore_slash_draft(preserved_draft);
                 self.open_rewind();
@@ -654,6 +675,9 @@ impl AppState {
     }
 
     pub(in crate::app) fn apply_selected_slash_completion(&mut self) {
+        if self.accept_maintenance_completion(false) {
+            return;
+        }
         if self.accept_slash_model(false) {
             return;
         }
@@ -694,6 +718,15 @@ impl AppState {
     }
 
     fn execute_selected_slash_completion(&mut self) {
+        if self.maintenance_running() || self.composer.maintenance_queue.awaiting.is_some() {
+            self.apply_selected_slash_completion();
+            self.clear_slash_menu();
+            self.submit_prompt();
+            return;
+        }
+        if self.accept_maintenance_completion(true) {
+            return;
+        }
         if self.accept_slash_model(true) {
             return;
         }
@@ -1030,12 +1063,15 @@ impl AppState {
     }
 
     pub(in crate::app) fn apply_fresh_session_launcher_selection(&mut self, intent: UiIntent) {
+        self.cancel_idle_compaction();
         let prompt_buffer = self.composer.prompt_buffer.clone();
         let prompt_cursor = self.composer.prompt_cursor;
         set_pending_live_prompt_draft(Some(prompt_buffer.clone()));
         set_pending_live_launch_metadata(self.launch_metadata.clone());
 
         self.projection.reset();
+        self.notices.clear();
+        self.maintenance = Default::default();
         self.bump_transcript_render_epoch();
         self.selected_event_index = 0;
         self.transcript_view.selected_activity_index = 0;

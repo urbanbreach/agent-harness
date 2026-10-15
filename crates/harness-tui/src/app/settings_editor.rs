@@ -5,30 +5,59 @@
 //! - `runtime.yolo`
 //! - `runtime.compaction.enabled`
 //! - `runtime.compaction.auto_retry_overflow`
-//! - `runtime.compaction.structured_summary_contract`
+//! - `runtime.compaction.mid_turn_enabled`
 //! - `runtime.compaction.estimated_token_triggers`
 //! - `runtime.deterministic.enabled`
 //!
-//! Secrets fail closed. Runtime/TUI surfaces stay separate.
+//! Secrets fail closed. Runtime/TUI surfaces stay separate. Compaction rows carry curated
+//! labels, descriptions and groups (`catalog`); numeric, list and shape rows open named
+//! preset menus (`presets`).
+
+mod catalog;
+#[cfg(test)]
+mod preset_tests;
+mod presets;
+
+use presets::PresetMenu;
 
 use std::path::{Path, PathBuf};
 
 use harness_core::config::{
     reset_project_compaction_auto_retry_overflow, reset_project_compaction_enabled,
-    reset_project_compaction_estimated_token_triggers,
-    reset_project_compaction_structured_summary_contract, reset_project_deterministic_enabled,
-    setting_definition, settings_registry, write_project_compaction_auto_retry_overflow,
-    write_project_compaction_enabled, write_project_compaction_estimated_token_triggers,
-    write_project_compaction_structured_summary_contract, write_project_deterministic_enabled,
-    SettingDefinition, SettingSensitivity, SettingWriteError,
+    reset_project_compaction_estimated_token_triggers, reset_project_compaction_mid_turn_enabled,
+    reset_project_deterministic_enabled, setting_definition, settings_registry,
+    write_project_compaction_auto_retry_overflow, write_project_compaction_enabled,
+    write_project_compaction_estimated_token_triggers, write_project_compaction_mid_turn_enabled,
+    write_project_deterministic_enabled, SettingDefinition, SettingSensitivity, SettingWriteError,
 };
 
 use super::{AppState, Focus, ToastVariant};
 use crate::composer_editing::{ComposerEditor, DeleteKind};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_core::config::{
-    read_project_setting_value, setting_editor_kind, write_project_setting_value, SettingEditorKind,
+    read_project_setting_value, reset_project_setting_to_default,
+    setting_editor_kind as core_setting_editor_kind, write_project_setting_value,
+    SettingEditorKind,
 };
+
+fn setting_editor_kind(id: &str) -> Option<SettingEditorKind> {
+    if matches!(
+        id,
+        "runtime.compaction.enabled"
+            | "runtime.compaction.auto_retry_overflow"
+            | "runtime.compaction.mid_turn_enabled"
+            | "runtime.compaction.estimated_token_triggers"
+    ) {
+        None
+    } else {
+        core_setting_editor_kind(id)
+    }
+}
+
+/// A reset of a setting with no registry default reports `null`; that means "unset".
+fn is_unset(value: &str) -> bool {
+    value == "null"
+}
 
 #[derive(Default)]
 pub(crate) struct SettingsInteraction {
@@ -43,6 +72,8 @@ pub(crate) struct SettingsValueEdit {
     pub(crate) editor: ComposerEditor,
     pub(crate) kind: SettingEditorKind,
     pub(crate) error: Option<String>,
+    /// Named choices for this setting; `None` for free text and plain choice lists.
+    pub(crate) menu: Option<PresetMenu>,
 }
 
 pub(crate) fn human_label(id: &str) -> String {
@@ -52,6 +83,9 @@ pub(crate) fn human_label(id: &str) -> String {
     if id == "runtime.yolo" {
         return "YOLO on startup".to_string();
     }
+    if let Some(label) = catalog::curated_label(id) {
+        return label;
+    }
     let label = id
         .strip_prefix("runtime.")
         .unwrap_or(id)
@@ -60,6 +94,11 @@ pub(crate) fn human_label(id: &str) -> String {
     chars.next().map_or_else(String::new, |first| {
         first.to_uppercase().chain(chars).collect()
     })
+}
+
+/// Description shown under the label while a setting is edited.
+pub(crate) fn settings_description(id: &str) -> Option<&'static str> {
+    catalog::description(id)
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -112,6 +151,14 @@ pub struct SettingsEditorRow {
     pub effective_value: Option<String>,
     pub editable: bool,
     pub selected: bool,
+    /// Curated label (or the id-derived fallback).
+    pub label: String,
+    /// Curated description, when the row has one.
+    pub description: Option<String>,
+    /// Group title, for example `Context / Compaction`.
+    pub group: String,
+    /// Value as shown in the list (`80%`, `5 minutes`, `Default`); `None` when unbound.
+    pub display_value: Option<String>,
 }
 
 /// Operator-facing counts for the settings editor overlay (diagnostics only).
@@ -162,13 +209,13 @@ impl SettingsEditorSummary {
 
 const COMPACTION_ENABLED_ID: &str = "runtime.compaction.enabled";
 const COMPACTION_AUTO_RETRY_OVERFLOW_ID: &str = "runtime.compaction.auto_retry_overflow";
-const COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID: &str =
-    "runtime.compaction.structured_summary_contract";
+const COMPACTION_MID_TURN_ENABLED_ID: &str = "runtime.compaction.mid_turn_enabled";
 const COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID: &str = "runtime.compaction.estimated_token_triggers";
 const DETERMINISTIC_ENABLED_ID: &str = "runtime.deterministic.enabled";
+const COLLAPSE_HISTORY_ID: &str = "collapse_compacted_history";
 
 fn is_writable_setting(setting_id: &str) -> bool {
-    if setting_id == "confirm_before_rewind" {
+    if matches!(setting_id, "confirm_before_rewind" | COLLAPSE_HISTORY_ID) {
         return true;
     }
     setting_editor_kind(setting_id).is_some()
@@ -176,13 +223,41 @@ fn is_writable_setting(setting_id: &str) -> bool {
             setting_id,
             COMPACTION_ENABLED_ID
                 | COMPACTION_AUTO_RETRY_OVERFLOW_ID
-                | COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID
+                | COMPACTION_MID_TURN_ENABLED_ID
                 | COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID
                 | DETERMINISTIC_ENABLED_ID
         )
 }
 
 impl AppState {
+    pub(in crate::app) fn compaction_setting(&self, id: &str) -> Option<&str> {
+        self.settings_interaction
+            .values
+            .get(id)
+            .map(String::as_str)
+            .or_else(|| setting_definition(id).and_then(|definition| definition.default_value))
+    }
+    pub(in crate::app) fn set_idle_compaction_settings(
+        &mut self,
+        enabled: bool,
+        threshold: u32,
+        seconds: u64,
+    ) {
+        for (id, value) in [
+            ("runtime.compaction.idle_enabled", enabled.to_string()),
+            (
+                "runtime.compaction.idle_threshold_tokens",
+                threshold.to_string(),
+            ),
+            (
+                "runtime.compaction.idle_timeout_seconds",
+                seconds.to_string(),
+            ),
+        ] {
+            self.settings_interaction.values.insert(id.into(), value);
+        }
+        self.rearm_idle_compaction();
+    }
     pub(in crate::app) fn capture_settings_palette_parent(&mut self) {
         self.settings_parent = Some(SettingsParent::Palette(CommandPaletteSnapshot {
             visible: self.palette_visible,
@@ -247,7 +322,7 @@ impl AppState {
         path: impl Into<PathBuf>,
         compaction_enabled: bool,
         compaction_auto_retry_overflow: bool,
-        compaction_structured_summary_contract: bool,
+        compaction_mid_turn_enabled: bool,
         compaction_estimated_token_triggers: bool,
         deterministic_enabled: bool,
     ) {
@@ -269,10 +344,10 @@ impl AppState {
         self.settings_project_config_path = Some(path);
         self.settings_compaction_enabled = compaction_enabled;
         self.settings_compaction_auto_retry_overflow = compaction_auto_retry_overflow;
-        self.settings_compaction_structured_summary_contract =
-            compaction_structured_summary_contract;
+        self.settings_compaction_mid_turn_enabled = compaction_mid_turn_enabled;
         self.settings_compaction_estimated_token_triggers = compaction_estimated_token_triggers;
         self.settings_deterministic_enabled = deterministic_enabled;
+        self.rearm_idle_compaction();
     }
 
     pub fn settings_project_config_path(&self) -> Option<&Path> {
@@ -287,8 +362,8 @@ impl AppState {
         self.settings_compaction_auto_retry_overflow
     }
 
-    pub fn settings_compaction_structured_summary_contract(&self) -> bool {
-        self.settings_compaction_structured_summary_contract
+    pub fn settings_compaction_mid_turn_enabled(&self) -> bool {
+        self.settings_compaction_mid_turn_enabled
     }
 
     pub fn settings_compaction_estimated_token_triggers(&self) -> bool {
@@ -337,11 +412,21 @@ impl AppState {
 
     fn setting_is_bound(&self, id: &str) -> bool {
         !self.replay_mode
-            && if id == "confirm_before_rewind" {
-                self.rewind.config_path.is_some()
-            } else {
-                self.settings_project_config_path.is_some()
+            && match id {
+                "confirm_before_rewind" => self.rewind.config_path.is_some(),
+                // The collapse flag lives in the tui.json beside the bound runtime config.
+                _ => self.settings_project_config_path.is_some(),
             }
+    }
+
+    fn row_display_value(&self, id: &str, effective: Option<&str>) -> Option<String> {
+        match effective {
+            Some(raw) => Some(presets::display_value(id, raw)),
+            None if self.settings_project_config_path.is_some() && presets::has_menu(id) => {
+                Some("Default".into())
+            }
+            None => None,
+        }
     }
 
     pub fn settings_editor_rows(&self) -> Vec<SettingsEditorRow> {
@@ -355,15 +440,20 @@ impl AppState {
             })
             .map(|(index, def)| {
                 let id = def.setting_id.as_str();
+                let effective_value = self.effective_value_for(id);
                 SettingsEditorRow {
                     setting_id: id.to_string(),
                     sensitivity: sensitivity_label(def.sensitivity).to_string(),
                     surface: surface_label(def).to_string(),
-                    effective_value: self.effective_value_for(id),
+                    display_value: self.row_display_value(id, effective_value.as_deref()),
+                    effective_value,
                     editable: def.is_editable()
                         && is_writable_setting(id)
                         && self.setting_is_bound(id),
                     selected: index == selected,
+                    label: human_label(id),
+                    description: catalog::description(id).map(str::to_string),
+                    group: catalog::group(id, def.surface).title().to_string(),
                 }
             })
             .collect()
@@ -457,6 +547,10 @@ impl AppState {
             self.set_rewind_confirmation(!self.rewind.confirm);
             return;
         }
+        if setting_id == COLLAPSE_HISTORY_ID {
+            self.set_collapse_compacted_history(!self.collapse_compacted_history());
+            return;
+        }
         let Some(path) = self.settings_project_config_path.clone() else {
             self.show_toast(
                 "no project config bound for settings write",
@@ -469,26 +563,26 @@ impl AppState {
                 let next = self.effective_value_for(setting_id).as_deref() != Some("true");
                 match write_project_setting_value(&path, setting_id, &next.to_string()) {
                     Ok(value) => {
-                        self.settings_interaction
-                            .values
-                            .insert(setting_id.to_string(), value);
-                        self.show_toast(
-                            "Startup setting saved; takes effect after restart",
-                            ToastVariant::Info,
-                        );
+                        self.store_setting_value(setting_id, value);
+                        self.rearm_idle_compaction();
+                        self.show_toast("Setting saved for the next session", ToastVariant::Info);
                     }
                     Err(err) => self.report_settings_write_error(err),
                 }
                 return;
             }
+            let current = self.effective_value_for(setting_id);
+            let menu = presets::menu(setting_id, current.as_deref());
             let mut editor = ComposerEditor::default();
-            let value = self.effective_value_for(setting_id).unwrap_or_default();
-            let _ = editor.insert_text(&value);
+            if menu.is_none() {
+                let _ = editor.insert_text(&current.unwrap_or_default());
+            }
             self.settings_interaction.edit = Some(SettingsValueEdit {
                 id: setting_id.to_string(),
                 editor,
                 kind,
                 error: None,
+                menu,
             });
             self.modal_interaction.invalidate();
             return;
@@ -520,15 +614,13 @@ impl AppState {
                     Err(err) => self.report_settings_write_error(err),
                 }
             }
-            COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID => {
-                let next = !self.settings_compaction_structured_summary_contract;
-                match write_project_compaction_structured_summary_contract(&path, next) {
+            COMPACTION_MID_TURN_ENABLED_ID => {
+                let next = !self.settings_compaction_mid_turn_enabled;
+                match write_project_compaction_mid_turn_enabled(&path, next) {
                     Ok(effective) => {
-                        self.settings_compaction_structured_summary_contract = effective;
+                        self.settings_compaction_mid_turn_enabled = effective;
                         self.show_toast(
-                            format!(
-                                "runtime.compaction.structured_summary_contract set to {effective}"
-                            ),
+                            format!("runtime.compaction.mid_turn_enabled set to {effective}"),
                             ToastVariant::Info,
                         );
                     }
@@ -594,6 +686,10 @@ impl AppState {
             self.set_rewind_confirmation(true);
             return;
         }
+        if setting_id == COLLAPSE_HISTORY_ID {
+            self.set_collapse_compacted_history(true);
+            return;
+        }
         let Some(path) = self.settings_project_config_path.clone() else {
             self.show_toast(
                 "no project config bound for settings reset",
@@ -604,13 +700,9 @@ impl AppState {
         if setting_editor_kind(setting_id).is_some() {
             match harness_core::config::reset_project_setting_to_default(&path, setting_id) {
                 Ok(value) => {
-                    self.settings_interaction
-                        .values
-                        .insert(setting_id.to_string(), value);
-                    self.show_toast(
-                        "Startup setting reset; takes effect after restart",
-                        ToastVariant::Info,
-                    );
+                    self.store_setting_value(setting_id, value);
+                    self.rearm_idle_compaction();
+                    self.show_toast("Setting reset to default", ToastVariant::Info);
                 }
                 Err(err) => self.report_settings_write_error(err),
             }
@@ -641,13 +733,13 @@ impl AppState {
                     Err(err) => self.report_settings_write_error(err),
                 }
             }
-            COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID => {
-                match reset_project_compaction_structured_summary_contract(&path) {
+            COMPACTION_MID_TURN_ENABLED_ID => {
+                match reset_project_compaction_mid_turn_enabled(&path) {
                     Ok(effective) => {
-                        self.settings_compaction_structured_summary_contract = effective;
+                        self.settings_compaction_mid_turn_enabled = effective;
                         self.show_toast(
                             format!(
-                                "runtime.compaction.structured_summary_contract reset to default ({effective})"
+                                "runtime.compaction.mid_turn_enabled reset to default ({effective})"
                             ),
                             ToastVariant::Info,
                         );
@@ -684,10 +776,12 @@ impl AppState {
     }
 
     fn settings_matches(&self, definition: &SettingDefinition) -> bool {
+        let id = definition.setting_id.as_str();
         let text = format!(
-            "{} {}",
-            definition.setting_id,
-            human_label(definition.setting_id.as_str())
+            "{} {} {}",
+            id,
+            human_label(id),
+            catalog::group(id, definition.surface).title()
         )
         .to_lowercase();
         self.settings_interaction
@@ -743,7 +837,7 @@ impl AppState {
     pub(in crate::app) fn handle_settings_editor_paste(&mut self, text: &str) {
         let text: String = text.chars().filter(|c| !c.is_control()).collect();
         if let Some(edit) = &mut self.settings_interaction.edit {
-            if !matches!(edit.kind, SettingEditorKind::Choice(_)) {
+            if edit.menu.is_none() && !matches!(edit.kind, SettingEditorKind::Choice(_)) {
                 edit.error = None;
                 let _ = edit.editor.insert_text(&text);
             }
@@ -757,12 +851,28 @@ impl AppState {
     }
 
     pub(in crate::app) fn settings_editor_choose(&mut self, index: usize) {
-        if let Some(edit) = &mut self.settings_interaction.edit
-            && let SettingEditorKind::Choice(choices) = edit.kind
+        let Some(edit) = &mut self.settings_interaction.edit else {
+            return;
+        };
+        if let Some(menu) = edit.menu.as_mut() {
+            menu.select(index);
+            edit.error = None;
+        } else if let SettingEditorKind::Choice(choices) = edit.kind
             && let Some(choice) = choices.get(index)
         {
             edit.editor = ComposerEditor::from_text(choice);
             edit.error = None;
+        }
+    }
+
+    /// Record the value a write returned. `null` (a reset of a key with no default) is unset.
+    pub(in crate::app) fn store_setting_value(&mut self, id: &str, value: String) {
+        if is_unset(&value) {
+            self.settings_interaction.values.remove(id);
+        } else {
+            self.settings_interaction
+                .values
+                .insert(id.to_string(), value);
         }
     }
 
@@ -775,11 +885,24 @@ impl AppState {
             let result = self
                 .settings_project_config_path
                 .as_ref()
-                .map(|path| write_project_setting_value(path, &edit.id, &edit.editor.text()));
+                .map(|path| commit_edit(path, &edit));
             match result {
                 Some(Ok(value)) => {
-                    self.settings_interaction.values.insert(edit.id, value);
-                    self.show_toast("Setting saved for the next session", ToastVariant::Info);
+                    let reset = edit
+                        .menu
+                        .as_ref()
+                        .and_then(PresetMenu::selected_preset)
+                        .is_some_and(|preset| preset.value.is_none());
+                    self.store_setting_value(&edit.id, value);
+                    self.rearm_idle_compaction();
+                    self.show_toast(
+                        if reset {
+                            "Setting reset to default"
+                        } else {
+                            "Setting saved for the next session"
+                        },
+                        ToastVariant::Info,
+                    );
                     self.modal_interaction.invalidate();
                     return;
                 }
@@ -796,9 +919,10 @@ impl AppState {
                             }
                             SettingEditorKind::Choice(_) => "Choose one of the listed values.",
                             SettingEditorKind::Boolean => "Choose true or false.",
-                            SettingEditorKind::Json => {
+                            SettingEditorKind::Json if edit.id == "edit.model_variants" => {
                                 "Enter a JSON object mapping model selectors to edit modes."
                             }
+                            SettingEditorKind::Json => "Enter valid JSON for this setting.",
                         }
                         .into(),
                     );
@@ -812,9 +936,12 @@ impl AppState {
         self.settings_interaction.edit = Some(edit);
     }
 
-    fn effective_value_for(&self, setting_id: &str) -> Option<String> {
+    pub(in crate::app) fn effective_value_for(&self, setting_id: &str) -> Option<String> {
         if setting_id == "confirm_before_rewind" {
             return Some(bool_label(self.rewind.confirm));
+        }
+        if setting_id == COLLAPSE_HISTORY_ID {
+            return Some(bool_label(self.collapse_compacted_history()));
         }
         self.settings_project_config_path.as_ref()?;
         if setting_editor_kind(setting_id).is_some() {
@@ -833,9 +960,9 @@ impl AppState {
             COMPACTION_AUTO_RETRY_OVERFLOW_ID => {
                 Some(bool_label(self.settings_compaction_auto_retry_overflow))
             }
-            COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID => Some(bool_label(
-                self.settings_compaction_structured_summary_contract,
-            )),
+            COMPACTION_MID_TURN_ENABLED_ID => {
+                Some(bool_label(self.settings_compaction_mid_turn_enabled))
+            }
             COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID => Some(bool_label(
                 self.settings_compaction_estimated_token_triggers,
             )),
@@ -878,8 +1005,37 @@ fn surface_label(def: &SettingDefinition) -> &'static str {
     }
 }
 
+/// Write the edit: a menu entry (Default removes the key) or the typed text.
+fn commit_edit(path: &Path, edit: &SettingsValueEdit) -> Result<String, SettingWriteError> {
+    match edit.menu.as_ref().and_then(PresetMenu::selected_preset) {
+        Some(preset) => match &preset.value {
+            Some(value) => write_project_setting_value(path, &edit.id, value),
+            None => reset_project_setting_to_default(path, &edit.id),
+        },
+        None => write_project_setting_value(path, &edit.id, &edit.editor.text()),
+    }
+}
+
 impl SettingsValueEdit {
+    fn handle_menu_key(&mut self, code: KeyCode) {
+        let Some(menu) = self.menu.as_mut() else {
+            return;
+        };
+        match code {
+            KeyCode::Left | KeyCode::Up | KeyCode::BackTab => menu.step(-1),
+            KeyCode::Right | KeyCode::Down | KeyCode::Tab => menu.step(1),
+            KeyCode::Home => menu.select(0),
+            KeyCode::End => menu.select(usize::MAX),
+            _ => return,
+        }
+        self.error = None;
+    }
+
     fn handle_key(&mut self, key: KeyEvent) {
+        if self.menu.is_some() {
+            self.handle_menu_key(key.code);
+            return;
+        }
         if let SettingEditorKind::Choice(choices) = self.kind {
             self.handle_choice_key(choices, key.code);
             return;

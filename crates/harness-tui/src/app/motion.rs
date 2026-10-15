@@ -29,6 +29,8 @@ impl AppState {
 
     pub(crate) fn refresh_motion_state(&mut self) -> bool {
         let now = self.now();
+        self.refresh_idle_compaction();
+        let compaction_changed = self.expire_compaction_card();
         self.clear_expired_interrupt_confirmation();
         let clear_prompt_confirmation_expired = self
             .clear_prompt_confirm_deadline
@@ -53,13 +55,39 @@ impl AppState {
             self.bump_transcript_render_epoch();
             self.motion_revision = self.motion_revision.wrapping_add(1);
         }
-        clear_prompt_confirmation_expired || toast_changed || tool_finished || viewer_copy_changed
+        compaction_changed
+            || clear_prompt_confirmation_expired
+            || toast_changed
+            || tool_finished
+            || viewer_copy_changed
     }
 
     pub(crate) fn motion_plan(&self) -> MotionPlan {
         let now = self.now();
         let mut plan = MotionPlan::none();
         let fast_cadence = Duration::from_millis(crate::scheduling::runtime_flush_interval_ms());
+        if let Some(card) = self.displayed_compaction() {
+            if card.finished {
+                let remaining = Duration::from_millis(900)
+                    .saturating_sub(now.saturating_duration_since(card.updated_at));
+                plan = plan.merge(MotionDemand::until(remaining));
+            }
+            if !self.reduced_motion
+                && card.stage.as_ref().is_none_or(|stage| {
+                    !matches!(
+                        stage.phase,
+                        harness_core::event::CompactionPhase::Failed
+                            | harness_core::event::CompactionPhase::Cancelled
+                            | harness_core::event::CompactionPhase::Skipped
+                    )
+                })
+            {
+                plan = plan.merge(MotionDemand::fast(Duration::from_millis(33)));
+            }
+        }
+        if let Some(deadline) = self.idle_compaction.deadline {
+            plan = plan.merge(MotionDemand::until(deadline.saturating_duration_since(now)));
+        }
 
         if !self.reduced_motion
             && self.presentation_is_live()
@@ -212,6 +240,7 @@ impl AppState {
     pub fn advance_wall_clock_for_motion_evidence(&mut self, elapsed: Duration) {
         let now = self.now() + elapsed;
         self.now_fn = std::sync::Arc::new(move || now);
+        self.projection.phase_clock = Some(std::sync::Arc::clone(&self.now_fn));
         self.sample_motion_clock();
     }
 

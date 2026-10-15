@@ -313,6 +313,7 @@ fn subagent_spend_reads_beside_own_spend_and_on_the_childs_task_row() {
                         prompt_tokens: prompt,
                         completion_tokens: completion,
                         total_tokens: prompt + completion,
+                        ..Default::default()
                     }),
                     metadata: None,
                 }),

@@ -39,6 +39,10 @@ pub(super) fn format_elapsed_ms(duration_ms: u64) -> String {
 }
 
 fn render_compaction_status(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) -> bool {
+    if super::ui_compaction_motion::render(frame, app, area, theme) {
+        render_compaction_stop(frame, app, area, theme);
+        return true;
+    }
     let Some(compaction) = app.active_compaction() else {
         return false;
     };
@@ -48,15 +52,14 @@ fn render_compaction_status(frame: &mut Frame, app: &AppState, area: Rect, theme
         app.transcript_motion_enabled(),
     );
     let preview = compaction.preview.as_deref().unwrap_or_default();
-    let label = match compaction.trigger_reason.as_str() {
-        "overflow" => "Context overflow detected, compacting...",
-        "pre_prompt" => "Compacting before next prompt...",
-        "threshold" | "proactive" | "idle" => "Auto-compacting...",
-        _ => "Compacting context...",
-    };
-    let full = format!("{spinner} {label} (ctrl+c to cancel)");
+    let ascii = theme.glyph_mode() == crate::theme::GlyphMode::Ascii;
+    let label = super::ui_compaction_labels::running_label(app, ascii);
+    let full = format!("{spinner} {label}");
     let status = if !preview.is_empty() || display_width(&full) > usize::from(area.width) {
-        format!("{spinner} Compacting... (ctrl+c to cancel)")
+        format!(
+            "{spinner} {}",
+            super::ui_compaction_labels::running_label_short(app)
+        )
     } else {
         full
     };
@@ -81,7 +84,32 @@ fn render_compaction_status(frame: &mut Frame, app: &AppState, area: Rect, theme
         Paragraph::new(line).style(Style::default().bg(theme.surface.canvas)),
         area,
     );
+    render_compaction_stop(frame, app, area, theme);
     true
+}
+
+/// The pointer stop control of a running pass; it dispatches the same interrupt as the key.
+fn render_compaction_stop(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    if app.active_compaction().is_none() || !geometry::live_turn_control_visibility(app, area).stop
+    {
+        return;
+    }
+    let width = u16::try_from(display_width(geometry::STOP_LABEL)).unwrap_or(u16::MAX);
+    let stop = Rect::new(area.right().saturating_sub(width), area.y, width, 1);
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            geometry::STOP_LABEL,
+            Style::default()
+                .fg(if app.live_turn_stop_hovered() {
+                    theme.status.error
+                } else {
+                    theme.live_turn_timer_color()
+                })
+                .bg(theme.live_turn_background_color())
+                .remove_modifier(Modifier::all()),
+        )),
+        stop,
+    );
 }
 
 pub(super) fn render_live_turn_status(
@@ -94,7 +122,7 @@ pub(super) fn render_live_turn_status(
     if area.width == 0 || area.height == 0 {
         return;
     }
-    if !app.live_turn_status_visible() {
+    if !app.live_turn_status_visible() && app.displayed_compaction().is_none() {
         let mut line = Line::default();
         append_prompt_notice(&mut line, app, usize::from(area.width), theme);
         frame.render_widget(
@@ -353,7 +381,7 @@ fn append_prompt_notice(line: &mut Line<'_>, app: &AppState, width: usize, theme
     ));
 }
 
-fn compaction_preview_tail(text: &str, width: usize) -> &str {
+pub(super) fn compaction_preview_tail(text: &str, width: usize) -> &str {
     use unicode_segmentation::UnicodeSegmentation;
     let mut cells = 0;
     let mut start = text.len();

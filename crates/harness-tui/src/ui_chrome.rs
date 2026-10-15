@@ -812,6 +812,9 @@ pub(super) fn render_unified_bottom_dock(
     }
 
     let active_permission = app.active_permission_view();
+    if let Some(pending_area) = dock_layout.pending {
+        render_pending_band(frame, app, pending_area, theme);
+    }
     if let Some(status_area) = dock_layout.status {
         if let Some(permission) = active_permission.as_ref() {
             render_permission_with_shell_footer(frame, app, status_area, theme, permission);
@@ -1463,6 +1466,45 @@ fn control_dock_summary_segment(
         tone,
     })
 }
+/// Queued steering and follow-ups above the status row: `Steering` then `After yield`.
+fn render_pending_band(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+    use crate::app::PendingBandRow;
+    let area = crate::layout::live_turn_status_content_area(area, theme);
+    let ascii = theme.glyph_mode() == crate::theme::GlyphMode::Ascii;
+    let bullet = if ascii { "-" } else { "·" };
+    let width = usize::from(area.width);
+    let lines = app
+        .pending_band(usize::from(area.height))
+        .into_iter()
+        .map(|row| match row {
+            PendingBandRow::Heading(title) => Line::from(Span::styled(
+                title,
+                Style::default()
+                    .fg(theme.text.secondary)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            PendingBandRow::Item(text) => Line::from(vec![
+                Span::styled(
+                    format!("{bullet} "),
+                    Style::default().fg(theme.text.tertiary),
+                ),
+                Span::styled(
+                    truncate_plain_text(&text, width.saturating_sub(2)),
+                    Style::default().fg(theme.text.secondary),
+                ),
+            ]),
+            PendingBandRow::More(count) => Line::from(Span::styled(
+                format!("{bullet} +{count} more"),
+                Style::default().fg(theme.text.tertiary),
+            )),
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(theme.surface.canvas)),
+        area,
+    );
+}
+
 #[cfg(test)]
 mod monitor_footer_tests {
     use super::*;

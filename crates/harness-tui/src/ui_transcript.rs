@@ -83,8 +83,8 @@ use super::ui_transcript_selection::{
 };
 use super::ui_transcript_style::{
     assistant_footer_label, assistant_primary_label_color, assistant_primary_rail_color,
-    blend_color, glyph_routed_streaming_spinner_frame, selected_foreground_for_badge,
-    thinking_header_color, transcript_emphasized_surface, transcript_running_tool_marker_color,
+    blend_color, glyph_routed_streaming_spinner_frame, thinking_header_color,
+    transcript_emphasized_surface, transcript_running_tool_marker_color,
 };
 use super::ui_transcript_surface::{
     append_prebuilt_surface_lines, append_prefixed_wrapped_spans_line, append_surface_row,
@@ -135,6 +135,9 @@ mod ui_transcript_sections;
 
 #[path = "ui_transcript_compaction.rs"]
 mod ui_transcript_compaction;
+pub(super) use ui_transcript_compaction::settling_divider;
+#[path = "ui_transcript_pruned.rs"]
+mod ui_transcript_pruned;
 
 pub(crate) use ui_transcript_entry::TranscriptVisualEntryId;
 pub(super) use ui_transcript_entry::{
@@ -592,6 +595,7 @@ fn render_measured_transcript_pane(
                 theme,
                 app.current_subagent_session_present(),
             );
+            render_compaction_rails(frame, app, layout, surface_area, transcript_scroll, theme);
             super::ui_transcript_search::highlight(frame, app, surface_area);
             if let Some(seq) = app.rewind_dim_from_seq() {
                 dim_rewind_transcript(frame, layout, surface_area, transcript_scroll, seq, theme);
@@ -1417,6 +1421,175 @@ fn dim_rewind_transcript(
             }
         }
     }
+}
+
+fn render_compaction_rails(
+    frame: &mut Frame,
+    app: &AppState,
+    layout: &MeasuredTranscriptLayout,
+    area: Rect,
+    scroll: usize,
+    theme: &Theme,
+) {
+    render_fresh_compaction_divider(frame, app, layout, area, scroll, theme);
+    let latest = app.events().rev().find_map(|event| match &event.payload {
+        harness_core::event::EventV1::SessionCompaction(data) => Some(data.first_kept_event_seq),
+        _ => None,
+    });
+    let pending = app
+        .active_compaction()
+        .and_then(|card| card.stage.as_ref())
+        .filter(|stage| {
+            !matches!(
+                stage.phase,
+                harness_core::event::CompactionPhase::Failed
+                    | harness_core::event::CompactionPhase::Cancelled
+                    | harness_core::event::CompactionPhase::Skipped
+            )
+        })
+        .and_then(|stage| stage.first_kept_seq);
+    let Some(boundary) = pending.or(latest) else {
+        return;
+    };
+    let running = pending.is_some();
+    let mut labelled = false;
+    for index in layout.visible_sections(scroll, usize::from(area.height)) {
+        let section = &layout.sections[index];
+        if section.activity_first_seq >= boundary {
+            continue;
+        }
+        for surface_index in 0..section.surfaces.len() {
+            if section.surfaces[surface_index].kind == TranscriptRenderSurfaceKind::Compaction
+                || section.surfaces[surface_index].metadata.source_event_seq >= boundary
+            {
+                continue;
+            }
+            let Some(placement) =
+                super::ui_transcript_layout::transcript_visual_entry_viewport_placement(
+                    layout,
+                    area,
+                    scroll,
+                    index,
+                    surface_index,
+                )
+            else {
+                continue;
+            };
+            paint_compaction_rail(frame.buffer_mut(), placement.rect, running, theme);
+            if !labelled {
+                labelled =
+                    paint_compaction_label(frame.buffer_mut(), placement.rect, running, theme);
+            }
+        }
+    }
+}
+
+fn render_fresh_compaction_divider(
+    frame: &mut Frame,
+    app: &AppState,
+    layout: &MeasuredTranscriptLayout,
+    area: Rect,
+    scroll: usize,
+    theme: &Theme,
+) {
+    if app.displayed_compaction().is_none() {
+        return;
+    }
+    let newest = layout
+        .sections
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, section)| {
+            section
+                .surfaces
+                .iter()
+                .rposition(|surface| {
+                    surface.kind == TranscriptRenderSurfaceKind::Compaction
+                        && surface.interaction_rows.is_some()
+                })
+                .map(|surface| (index, surface))
+        });
+    let Some((section, surface)) = newest else {
+        return;
+    };
+    let Some(placement) = super::ui_transcript_layout::transcript_visual_entry_viewport_placement(
+        layout, area, scroll, section, surface,
+    ) else {
+        return;
+    };
+    if placement.local_scroll > 1 {
+        return;
+    }
+    let rect = placement.rect;
+    let y = rect
+        .y
+        .saturating_add(u16::try_from(1 - placement.local_scroll).unwrap_or(0));
+    if y < rect.bottom() {
+        super::ui_compaction_motion::fresh_divider(
+            frame,
+            app,
+            Rect::new(rect.x, y, rect.width, 1),
+            theme,
+        );
+    }
+}
+
+fn paint_compaction_rail(
+    buffer: &mut ratatui::buffer::Buffer,
+    rect: Rect,
+    running: bool,
+    theme: &Theme,
+) {
+    for y in rect.y..rect.bottom() {
+        if !running {
+            for x in rect.x..rect.right() {
+                if let Some(cell) = buffer.cell_mut((x, y)) {
+                    cell.modifier.insert(Modifier::DIM);
+                }
+            }
+        }
+        if let Some(cell) = buffer.cell_mut((rect.x, y)) {
+            cell.set_symbol(if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+                "|"
+            } else {
+                "▏"
+            });
+            cell.set_fg(if running {
+                theme.text.accent
+            } else {
+                theme.text.tertiary
+            });
+        }
+    }
+}
+
+fn paint_compaction_label(
+    buffer: &mut ratatui::buffer::Buffer,
+    rect: Rect,
+    running: bool,
+    theme: &Theme,
+) -> bool {
+    if rect.width < 12
+        || rect.height == 0
+        || (rect.x.saturating_add(1)..rect.right()).any(|x| {
+            buffer
+                .cell((x, rect.y))
+                .is_some_and(|cell| !cell.symbol().trim().is_empty())
+        })
+    {
+        return false;
+    }
+    buffer.set_stringn(
+        rect.x + 2,
+        rect.y,
+        if running { "compacting" } else { "archived" },
+        usize::from(rect.width - 3),
+        Style::default()
+            .fg(theme.text.secondary)
+            .remove_modifier(Modifier::DIM),
+    );
+    true
 }
 
 fn dim_rewind_rect(buffer: &mut ratatui::buffer::Buffer, area: Rect, theme: &Theme) {

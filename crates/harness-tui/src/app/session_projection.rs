@@ -69,6 +69,23 @@ pub(crate) struct LiveCompaction {
     pub(crate) generation: u64,
     pub(crate) trigger_reason: String,
     pub(crate) preview: Option<String>,
+    pub(crate) finished: bool,
+    pub(crate) preview_updated_at: std::time::Instant,
+    pub(crate) stage: Option<harness_core::event::CompactionStage>,
+    pub(crate) updated_at: std::time::Instant,
+    pub(crate) started_at: std::time::Instant,
+    pub(crate) thumbnails: Vec<(Vec<u8>, std::time::Instant)>,
+}
+
+fn decode_compaction_thumbnail(frame: &harness_core::event::FrameThumbnail) -> Vec<u8> {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(&frame.bits)
+        .unwrap_or_default()
+}
+
+fn preview_character_visible(character: &char) -> bool {
+    !character.is_control() || *character == char::from(10)
 }
 
 impl AppState {
@@ -80,10 +97,47 @@ impl AppState {
             .live_compactions
             .values()
             .filter(|status| {
-                status.preview.is_some()
-                    && !self.projection.child_agent_ids.contains(&status.agent_id)
+                !status.finished && !self.projection.child_agent_ids.contains(&status.agent_id)
             })
             .max_by_key(|status| status.generation)
+    }
+
+    pub(crate) fn displayed_compaction(&self) -> Option<&LiveCompaction> {
+        self.active_compaction().or_else(|| {
+            if self.replay_mode || !self.transcript_motion_enabled() {
+                return None;
+            }
+            self.projection
+                .live_compactions
+                .values()
+                .filter(|status| {
+                    status.finished
+                        && status.stage.is_some()
+                        && self
+                            .now()
+                            .saturating_duration_since(status.updated_at)
+                            .as_millis()
+                            < 900
+                        && !self.projection.child_agent_ids.contains(&status.agent_id)
+                })
+                .max_by_key(|status| status.generation)
+        })
+    }
+
+    pub(crate) fn expire_compaction_card(&mut self) -> bool {
+        let now = self.now();
+        let settle = self.replay_mode || !self.transcript_motion_enabled();
+        let mut changed = false;
+        for card in self.projection.live_compactions.values_mut() {
+            if card.finished
+                && card.stage.is_some()
+                && (settle || now.saturating_duration_since(card.updated_at).as_millis() >= 900)
+            {
+                card.stage = None;
+                changed = true;
+            }
+        }
+        changed
     }
 }
 
@@ -159,6 +213,18 @@ pub struct SessionProjection {
 }
 
 impl SessionProjection {
+    /// Whether the agent is a child session of the visible conversation.
+    pub(crate) fn is_child_agent(&self, agent_id: &str) -> bool {
+        self.child_agent_ids.contains(agent_id)
+    }
+
+    /// A lifecycle end settles the agent's card even when its closing progress event is late.
+    pub(crate) fn finish_live_compaction(&mut self, agent_id: &str) {
+        if let Some(card) = self.live_compactions.get_mut(agent_id) {
+            card.finished = true;
+        }
+    }
+
     pub(super) fn copy_child_live_presentation(&mut self, source: &Self, child: &str) {
         if let Some(progress) = source.subagents.progress.get(child) {
             self.subagents
@@ -367,7 +433,10 @@ impl SessionProjection {
                 self.subagents.apply_progress(progress, event.mono_ms);
                 return;
             }
-            LiveEventV1::RuntimeWarning { .. } => return,
+            LiveEventV1::RuntimeWarning { .. }
+            | LiveEventV1::RuntimeNotice { .. }
+            | LiveEventV1::CompactionLifecycle(_)
+            | LiveEventV1::CompactionStatus(_) => return,
             LiveEventV1::ProviderRetrying { turn_id, retry } => {
                 self.note_retry(turn_id.as_str(), *retry, event.mono_ms);
                 return;
@@ -377,18 +446,25 @@ impl SessionProjection {
                 generation,
                 trigger_reason,
                 preview,
+                stage,
             } => {
                 if self.live_compactions.get(agent_id).is_some_and(|current| {
                     current.generation > *generation
-                        || (current.generation == *generation && current.preview.is_none())
+                        || (current.generation == *generation && current.finished)
                 }) {
                     return;
                 }
                 let preview = preview.as_ref().map(|text| {
                     use unicode_segmentation::UnicodeSegmentation;
-                    let text = crate::text::collapse_inline_whitespace(
-                        &crate::text::strip_ansi_escapes(text),
-                    );
+                    let stripped = crate::text::strip_ansi_escapes(text);
+                    let text = if stage.is_some() {
+                        stripped
+                            .chars()
+                            .filter(preview_character_visible)
+                            .collect::<String>()
+                    } else {
+                        crate::text::collapse_inline_whitespace(&stripped)
+                    };
                     let start = text
                         .grapheme_indices(true)
                         .rev()
@@ -401,6 +477,83 @@ impl SessionProjection {
                     .get(agent_id)
                     .filter(|c| c.generation == *generation)
                     .map_or(event.mono_ms, |c| c.started_mono_ms);
+                let mut previous = self
+                    .live_compactions
+                    .remove(agent_id)
+                    .filter(|card| card.generation == *generation);
+                let phase = stage.as_ref().map(|next| (next.phase, next.method));
+                let updated_at = previous
+                    .as_ref()
+                    .filter(|card| {
+                        phase.is_none()
+                            || card.stage.as_ref().map(|old| (old.phase, old.method)) == phase
+                    })
+                    .map_or_else(|| self.phase_now(), |card| card.updated_at);
+                let started_at = previous
+                    .as_ref()
+                    .map_or_else(|| self.phase_now(), |card| card.started_at);
+                let reusable = previous.as_ref().is_some_and(|card| {
+                    stage.as_ref().is_none_or(|next| {
+                        card.stage
+                            .as_ref()
+                            .is_some_and(|old| next.thumbnails.starts_with(&old.thumbnails))
+                    })
+                });
+                let mut thumbnails = if reusable {
+                    previous
+                        .as_mut()
+                        .map_or_else(Vec::new, |card| std::mem::take(&mut card.thumbnails))
+                } else {
+                    Vec::new()
+                };
+                if let Some(next) = &stage {
+                    let now = self.phase_now();
+                    thumbnails.extend(
+                        next.thumbnails
+                            .iter()
+                            .skip(thumbnails.len())
+                            .map(|frame| (decode_compaction_thumbnail(frame), now)),
+                    );
+                }
+                let finished = preview.is_none();
+                let preserve_preview = finished
+                    || stage.as_ref().is_some_and(|stage| {
+                        matches!(
+                            stage.phase,
+                            harness_core::event::CompactionPhase::Committing
+                                | harness_core::event::CompactionPhase::Done
+                        )
+                    });
+                let preview_updated_at = previous
+                    .as_ref()
+                    .filter(|card| preserve_preview || card.preview == preview)
+                    .map_or_else(|| self.phase_now(), |card| card.preview_updated_at);
+                let preview = if preserve_preview {
+                    previous
+                        .as_mut()
+                        .and_then(|card| card.preview.take())
+                        .or(preview)
+                } else {
+                    preview
+                };
+                let mut stage = stage
+                    .clone()
+                    .or_else(|| previous.as_mut().and_then(|card| card.stage.take()));
+                if let Some(stage) = &mut stage {
+                    stage.message = stage.message.take().map(|text| {
+                        crate::text::collapse_inline_whitespace(&crate::text::strip_ansi_escapes(
+                            &text,
+                        ))
+                    });
+                }
+                if !self.child_agent_ids.contains(agent_id)
+                    && let Some(tokens) = stage
+                        .as_ref()
+                        .filter(|stage| stage.phase == harness_core::event::CompactionPhase::Done)
+                        .and_then(|stage| stage.tokens_after)
+                {
+                    self.active_context_usage = Some(ActiveContextUsage::estimate(tokens));
+                }
                 self.live_compactions.insert(
                     agent_id.clone(),
                     LiveCompaction {
@@ -408,7 +561,13 @@ impl SessionProjection {
                         agent_id: agent_id.clone(),
                         generation: *generation,
                         trigger_reason: trigger_reason.clone(),
+                        finished,
+                        preview_updated_at,
                         preview,
+                        stage,
+                        updated_at,
+                        started_at,
+                        thumbnails,
                     },
                 );
                 return;
@@ -466,6 +625,9 @@ impl SessionProjection {
             | LiveEventV1::MonitorState { .. }
             | LiveEventV1::CompactionProgress { .. }
             | LiveEventV1::RuntimeWarning { .. }
+            | LiveEventV1::RuntimeNotice { .. }
+            | LiveEventV1::CompactionLifecycle(_)
+            | LiveEventV1::CompactionStatus(_)
             | LiveEventV1::SubagentProgress(_)
             | LiveEventV1::EvalProgress { .. } => return,
             LiveEventV1::ProviderTextDelta { delta, .. } => {
@@ -820,7 +982,10 @@ impl SessionProjection {
                 ProjectionDelta::FullRebuild
             };
         }
-        if matches!(event.payload, EventV1::SessionCompaction(_)) {
+        if matches!(
+            event.payload,
+            EventV1::SessionCompaction(_) | EventV1::ContextPruned(_)
+        ) {
             return ProjectionDelta::FullRebuild;
         }
         self.transcript_activity_index_for_event(event)

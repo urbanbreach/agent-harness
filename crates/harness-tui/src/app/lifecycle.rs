@@ -150,6 +150,10 @@ pub enum UiIntent {
         run_id: String,
         run_dir: PathBuf,
     },
+    QueuedPrompt {
+        id: u64,
+        prompt: Box<UiIntent>,
+    },
     SubmitPrompt {
         text: String,
         selected_file_tags: Vec<harness_core::file_tag::SelectedFileTag>,
@@ -162,14 +166,37 @@ pub enum UiIntent {
     /// running; when none is, the text is submitted as a normal prompt with this metadata.
     SteerPrompt {
         text: String,
+        /// Images ride along; the coordinator has no attachment steering, so image-bearing
+        /// steers queue behind the running turn instead.
+        attachments: Vec<crate::composer_integration::SubmissionAttachment>,
+        launch_metadata: LaunchMetadata,
+    },
+    /// Queues a prompt for after the running turn. With no turn running it starts one.
+    FollowUpPrompt {
+        text: String,
+        selected_file_tags: Vec<harness_core::file_tag::SelectedFileTag>,
+        selected_agent_tags: Vec<harness_core::file_tag::SelectedAgentTag>,
+        selected_resource_tags: Vec<harness_core::file_tag::SelectedResourceTag>,
+        attachments: Vec<crate::composer_integration::SubmissionAttachment>,
         launch_metadata: LaunchMetadata,
     },
     /// Takes pending steering and plain queued follow-ups back into the editor, in the
     /// order they were sent, without stopping the running turn.
     WithdrawQueuedInput,
+    /// Rolls back a failed queue delivery: takes back everything the agent accepted from
+    /// it, prompts with tags or attachments included.
+    WithdrawAcceptedInput,
     CompactSession {
-        custom_instructions: Option<String>,
+        instructions: Option<String>,
+        mode: Option<harness_compaction::method::ManualMode>,
     },
+    Handoff {
+        focus: Option<String>,
+    },
+    Shake {
+        mode: harness_compaction::method::ShakeMode,
+    },
+    IdleCompaction,
     CancelCompaction {
         agent_id: String,
     },
@@ -462,10 +489,15 @@ impl AppState {
                 settings_config.path,
                 settings_config.compaction_enabled,
                 settings_config.compaction_auto_retry_overflow,
-                settings_config.compaction_structured_summary_contract,
+                settings_config.compaction_mid_turn_enabled,
                 settings_config.compaction_estimated_token_triggers,
                 settings_config.deterministic_enabled,
             );
+        }
+        if let Some((enabled, threshold, seconds)) =
+            super::pending_live::take_pending_idle_compaction_settings()
+        {
+            state.set_idle_compaction_settings(enabled, threshold, seconds);
         }
         state
     }
@@ -853,6 +885,15 @@ impl AppState {
     }
 
     pub fn emit_ui_intent(&mut self, intent: UiIntent) {
+        let intent = if let Some(id) = self.composer.maintenance_queue.command_dispatch {
+            self.composer.maintenance_queue.awaiting = Some(id);
+            UiIntent::QueuedPrompt {
+                id,
+                prompt: Box::new(intent),
+            }
+        } else {
+            intent
+        };
         if let Some(handler) = &self.on_ui_intent {
             handler(intent);
         }
@@ -882,8 +923,8 @@ impl AppState {
         self.delegated_child_request_ids_for_parent_view(self.current_session_id())
     }
 
-    /// Like OMP's and Senpi's session run state, a turn stays in progress until its task
-    /// ends, including while its tools run after the model response finished.
+    /// A turn stays in progress until its task ends, including while its tools run after the
+    /// model response finished.
     pub(crate) fn active_turn_in_progress(&self) -> bool {
         let hidden_child_request_ids = self.hidden_delegated_child_request_ids_in_current_view();
         self.activities
@@ -1025,7 +1066,7 @@ impl AppState {
     }
 
     pub(in crate::app) fn handle_ctrl_c_clear_or_cancel(&mut self) -> bool {
-        if self.active_compaction().is_some() {
+        if self.maintenance_running() {
             return self.interrupt_active_turn();
         }
         if !self.composer_disabled() && !self.composer.prompt_buffer.is_empty() {
@@ -1047,8 +1088,12 @@ impl AppState {
     }
 
     pub(in crate::app) fn interrupt_active_turn(&mut self) -> bool {
-        if let Some(compaction) = self.active_compaction() {
-            let agent_id = compaction.agent_id.clone();
+        if self.maintenance_running() && self.current_subagent_session_present() {
+            // A focused child returns to the main view; cancelling stays a main-view action.
+            self.navigate_to_parent_session();
+            return true;
+        }
+        if let Some(agent_id) = self.maintenance_agent() {
             self.emit_ui_intent(UiIntent::CancelCompaction { agent_id });
             self.rewind.suppress_until = Some(self.now() + Duration::from_millis(1000));
             self.rewind.last_escape = None;
@@ -1073,7 +1118,7 @@ impl AppState {
         true
     }
 
-    pub(in crate::app) fn now(&self) -> Instant {
+    pub(crate) fn now(&self) -> Instant {
         (self.now_fn)()
     }
 

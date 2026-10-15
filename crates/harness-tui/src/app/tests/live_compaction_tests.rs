@@ -16,6 +16,7 @@ fn progress(generation: u64, reason: &str, preview: Option<&str>) -> RuntimeEven
             generation,
             trigger_reason: reason.to_string(),
             preview: preview.map(str::to_string),
+            stage: None,
         },
     }))
 }
@@ -66,8 +67,10 @@ fn compaction_stream_is_one_row_cancellable_and_generation_fenced() {
             1,
             "{rows:?}"
         );
-        if width >= 48 {
-            assert!(rows.iter().any(|row| row.contains("(ctrl+c to cancel)")));
+        if width >= 100 {
+            assert!(rows.iter().any(|row| row.contains("(Ctrl+C to cancel)")));
+        } else if width >= 48 {
+            assert!(rows.iter().any(|row| row.contains("Ctrl+C")));
         }
         assert!(rows.iter().all(|row| !row.contains('\u{1b}')));
         if let Ok(dir) = std::env::var("HARNESS_COMPACTION_CAPTURE_DIR") {
@@ -89,7 +92,7 @@ fn compaction_stream_is_one_row_cancellable_and_generation_fenced() {
     app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert_eq!(
         app.toast().unwrap_or_abort().message,
-        "Press Ctrl+c to cancel the turn"
+        "Press Ctrl+C to cancel the turn"
     );
     app.handle_key(KeyEvent::new_with_kind(
         KeyCode::Esc,
@@ -130,11 +133,177 @@ fn compaction_details_shortcut_does_not_change_permission_mode() {
         KeyCode::Char('o'),
         KeyModifiers::CONTROL | KeyModifiers::ALT,
     ));
-    assert!(app.transcript_view.compaction_details_expanded);
     app.handle_key(KeyEvent::new(
         KeyCode::Char('o'),
         KeyModifiers::CONTROL | KeyModifiers::ALT,
     ));
-    assert!(!app.transcript_view.compaction_details_expanded);
     assert!(intents.lock().unwrap_or_abort().is_empty());
+}
+
+fn command_app(messages: usize) -> (AppState, Arc<Mutex<Vec<UiIntent>>>) {
+    let intents = Arc::new(Mutex::new(Vec::new()));
+    let output = Arc::clone(&intents);
+    let mut app = AppState::new_live(
+        None,
+        false,
+        Some(Arc::new(move |intent| {
+            output.lock().unwrap_or_abort().push(intent);
+        })),
+    );
+    for index in 0..messages {
+        let request = format!("message-{index}");
+        app.ingest_event(envelope(
+            u64::try_from(index).unwrap_or_abort() + 1,
+            &request,
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request.clone().into(),
+                text: "Retain the session contract".into(),
+            }),
+        ));
+    }
+    for activity in &mut app.activities {
+        activity.status = ActivityStatus::Done;
+    }
+    (app, intents)
+}
+
+fn submit_maintenance_command(app: &mut AppState, text: &str) {
+    app.replace_prompt_input(text.to_string());
+    app.sync_slash_overlay();
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+}
+
+#[test]
+fn maintenance_commands_emit_typed_modes_and_preserve_focus() {
+    use harness_compaction::{ManualMode, ShakeMode};
+    for (command, expected) in [
+        (
+            "/compact",
+            UiIntent::CompactSession {
+                instructions: None,
+                mode: None,
+            },
+        ),
+        (
+            "/compact SOFT keep API notes",
+            UiIntent::CompactSession {
+                instructions: Some("keep API notes".into()),
+                mode: Some(ManualMode::Soft),
+            },
+        ),
+        (
+            "/compact remote",
+            UiIntent::CompactSession {
+                instructions: None,
+                mode: Some(ManualMode::Remote),
+            },
+        ),
+        (
+            "/compact archive",
+            UiIntent::CompactSession {
+                instructions: None,
+                mode: Some(ManualMode::Archive),
+            },
+        ),
+        (
+            "/compact softly keep notes",
+            UiIntent::CompactSession {
+                instructions: Some("softly keep notes".into()),
+                mode: None,
+            },
+        ),
+        ("/handoff", UiIntent::Handoff { focus: None }),
+        (
+            "/handoff preserve API notes",
+            UiIntent::Handoff {
+                focus: Some("preserve API notes".into()),
+            },
+        ),
+        (
+            "/shake",
+            UiIntent::Shake {
+                mode: ShakeMode::Elide,
+            },
+        ),
+        (
+            "/shake IMAGES",
+            UiIntent::Shake {
+                mode: ShakeMode::Images,
+            },
+        ),
+        (
+            "/shake thinking",
+            UiIntent::Shake {
+                mode: ShakeMode::Thinking,
+            },
+        ),
+    ] {
+        let (mut app, intents) = command_app(2);
+        submit_maintenance_command(&mut app, command);
+        assert_eq!(
+            intents.lock().unwrap_or_abort().as_slice(),
+            &[expected],
+            "{command}"
+        );
+        assert!(app.composer.prompt_buffer.is_empty(), "{command}");
+    }
+}
+
+#[test]
+fn maintenance_command_guards_clear_submitted_text_without_emitting_intents() {
+    for (messages, command, warning) in [
+        (0, "/compact", "Nothing to compact (no messages yet)"),
+        (1, "/compact soft", "Nothing to compact (no messages yet)"),
+        (0, "/handoff", "Nothing to hand off (no messages yet)"),
+        (2, "/compact archive preserve notes", "/compact archive does not take focus instructions (it archives history without an LLM summary)."),
+        (2, "/shake images extra", "Unknown /shake mode \"images extra\". Use elide, images, or thinking."),
+    ] {
+        let (mut app, intents) = command_app(messages);
+        submit_maintenance_command(&mut app, command);
+        assert!(intents.lock().unwrap_or_abort().is_empty(), "{command}");
+        assert_eq!(
+            app.transcript_notices().last().map(|notice| notice.text.as_str()),
+            Some(warning),
+            "{command}"
+        );
+        assert!(app.composer.prompt_buffer.is_empty(), "{command}");
+    }
+    let (mut app, intents) = command_app(2);
+    app.ingest_runtime_event(progress(1, "manual", Some("retained preview")));
+    submit_maintenance_command(&mut app, "/handoff notes");
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+    assert_eq!(app.maintenance_queue_lanes(), (1, 0));
+    assert!(app.composer.prompt_buffer.is_empty());
+    let (mut app, intents) = command_app(2);
+    app.ingest_event(provider_started(3, "message-1", "mock", "model"));
+    submit_maintenance_command(&mut app, "/handoff notes");
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+    assert_eq!(
+        app.transcript_notices()
+            .last()
+            .map(|notice| notice.text.as_str()),
+        Some("Wait for the current response to finish or abort it before handing off.")
+    );
+}
+
+#[test]
+fn maintenance_autocomplete_accepts_modes_without_executing_them() {
+    for (query, completion, description) in [
+        ("/compact so", "/compact soft ", "Summarize locally"),
+        ("/compact re", "/compact remote ", "provider-native"),
+        ("/compact ar", "/compact archive ", "bitmap frames"),
+        ("/shake el", "/shake elide ", "tool results"),
+        ("/shake im", "/shake images ", "image blocks"),
+        ("/shake th", "/shake thinking ", "thinking blocks"),
+    ] {
+        let (mut app, intents) = command_app(2);
+        app.replace_prompt_input(query.into());
+        app.sync_slash_overlay();
+        assert!(app.slash_visible, "{query}");
+        let screen = render_text(&app, 120, 40);
+        assert!(screen.contains(description), "{query}: {screen}");
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.composer.prompt_buffer, completion, "{query}");
+        assert!(intents.lock().unwrap_or_abort().is_empty(), "{query}");
+    }
 }

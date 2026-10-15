@@ -1,9 +1,29 @@
 use super::*;
+use harness_core::transcript_projection::CompactionCheckpointProjection;
+
+/// Committed passes: applied checkpoints, counting a rescue record and the record it
+/// replaces as one pass.
+pub(super) fn applied_compactions(checkpoints: &[CompactionCheckpointProjection]) -> u32 {
+    let superseded: std::collections::BTreeSet<u64> = checkpoints
+        .iter()
+        .filter_map(|c| c.supersedes_seq)
+        .collect();
+    let applied = checkpoints.iter().filter(|c| {
+        matches!(
+            c.status,
+            CompactionCheckpointStatus::Applied
+                | CompactionCheckpointStatus::SessionCompacted
+                | CompactionCheckpointStatus::BranchSummary
+        ) && !superseded.contains(&c.provenance.first_seq)
+    });
+    u32::try_from(applied.count()).unwrap_or(u32::MAX)
+}
 
 impl SessionProjection {
     pub(super) fn rebuild_compaction_presentation(
         &mut self,
-        checkpoint: Option<&harness_core::transcript_projection::CompactionCheckpointProjection>,
+        checkpoint: Option<&CompactionCheckpointProjection>,
+        applied: u32,
     ) {
         self.compaction_status = None;
         self.compaction_usage_metrics = CompactionUsageMetrics::default();
@@ -19,7 +39,7 @@ impl SessionProjection {
             | CompactionCheckpointStatus::BranchSummary => (CompactionState::Applied, "applied"),
         };
         if state == CompactionState::Applied {
-            self.compaction_usage_metrics.completed_count = 1;
+            self.compaction_usage_metrics.completed_count = applied;
             self.compaction_usage_metrics.summary_tokens_estimate =
                 u64::from(checkpoint.summary_tokens_estimate.unwrap_or(0));
             self.compaction_usage_metrics.reduction_tokens_estimate =

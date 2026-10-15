@@ -8,6 +8,10 @@ use super::session_history::{fuzzy_subsequence_score, session_history_profile_la
 use super::{set_pending_live_launch_metadata, AppState, UiIntent};
 use crate::text::has_trimmed_content;
 
+pub(crate) mod threshold_editor;
+#[cfg(test)]
+mod threshold_editor_tests;
+
 fn non_empty_str(value: &str) -> Option<&str> {
     has_trimmed_content(value).then_some(value)
 }
@@ -131,7 +135,7 @@ impl AppState {
         }
     }
 
-    /// senpi's footer `provider@account`: the pooled account that served the active provider.
+    /// Footer `provider@account`: the pooled account that served the active provider.
     pub(crate) fn current_account_label(&self) -> Option<&str> {
         self.projection.latest_account(self.active_provider())
     }
@@ -281,8 +285,15 @@ impl AppState {
     }
 
     pub(in crate::app) fn handle_model_key(&mut self, key: &KeyEvent) -> bool {
+        if self.threshold_editor_open() {
+            return self.handle_threshold_editor_key(key);
+        }
         let ctrl_only = key.modifiers == KeyModifiers::CONTROL;
         match key.code {
+            KeyCode::Char('t') if ctrl_only => {
+                self.open_threshold_editor();
+                true
+            }
             KeyCode::Esc => {
                 self.close_palette();
                 true
@@ -749,6 +760,7 @@ impl AppState {
             self.model_switcher_visible = false;
             return;
         }
+        self.threshold_editor = None;
         if !self.model_switcher_visible {
             self.palette_focus_return.get_or_insert(self.focus);
         }

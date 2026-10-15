@@ -7,7 +7,7 @@ use harness_core::event::{
 };
 use std::sync::{Arc, Mutex};
 
-fn capturing_live_app() -> (AppState, Arc<Mutex<Vec<UiIntent>>>) {
+pub(super) fn capturing_live_app() -> (AppState, Arc<Mutex<Vec<UiIntent>>>) {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let captured = Arc::clone(&intents);
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(move |intent| {
@@ -16,7 +16,7 @@ fn capturing_live_app() -> (AppState, Arc<Mutex<Vec<UiIntent>>>) {
     (AppState::new_live(None, false, Some(sink)), intents)
 }
 
-fn active_turn(app: &mut AppState) {
+pub(super) fn active_turn(app: &mut AppState) {
     app.ingest_event(envelope(
         1,
         "req_active",
@@ -47,6 +47,299 @@ fn active_turn(app: &mut AppState) {
             delta: "streaming".into(),
         }),
     ));
+}
+
+/// Starts or ends one automatic maintenance pass: its lifecycle events and the progress
+/// events of its card. Queued input flushes when the lifecycle ends.
+pub(super) fn maintenance(app: &mut AppState, reason: &str, active: bool) {
+    use harness_core::event::{
+        CompactionLifecycleEvent, LifecyclePhase, LiveEventEnvelope, LiveEventV1, RuntimeEvent,
+    };
+    let reason = if reason == "manual" {
+        "threshold"
+    } else {
+        reason
+    };
+    let live = |payload| {
+        RuntimeEvent::Live(Box::new(LiveEventEnvelope {
+            event_id: format!("queue-{active}"),
+            run_id: "run_app_tests".into(),
+            mono_ms: 1,
+            ts: None,
+            actor: EventActor::new(ActorKind::Worker, Some("queue-agent".into())),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: Some("agent:queue-agent".into()),
+            payload,
+        }))
+    };
+    let lifecycle = |phase| CompactionLifecycleEvent {
+        agent_id: "queue-agent".into(),
+        operation_id: "queue-op".into(),
+        phase,
+        reason: reason.into(),
+        action: "context-full".into(),
+        will_retry: matches!(reason, "overflow" | "incomplete"),
+        aborted: false,
+        skipped: false,
+        error: None,
+        result: None,
+    };
+    let progress = live(LiveEventV1::CompactionProgress {
+        agent_id: "queue-agent".into(),
+        generation: 1,
+        trigger_reason: reason.into(),
+        preview: active.then(String::new),
+        stage: None,
+    });
+    if active {
+        app.ingest_runtime_event(live(LiveEventV1::CompactionLifecycle(lifecycle(
+            LifecyclePhase::Start,
+        ))));
+        app.ingest_runtime_event(progress);
+    } else {
+        app.ingest_runtime_event(progress);
+        app.ingest_runtime_event(live(LiveEventV1::CompactionLifecycle(lifecycle(
+            LifecyclePhase::End,
+        ))));
+    }
+}
+
+#[test]
+fn maintenance_flush_reparses_commands_and_preserves_requested_lanes() {
+    for retry in [false, true] {
+        assert_mixed_maintenance_flush(retry);
+    }
+}
+
+fn queue_mixed_drafts(app: &mut AppState) {
+    for (text, follow_up) in [
+        ("/timestamps", false),
+        ("first ordinary", false),
+        ("/thinking", false),
+        ("after yield", true),
+    ] {
+        app.handle_paste(text);
+        if follow_up {
+            app.submit_follow_up_prompt();
+        } else {
+            app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        }
+    }
+}
+
+fn assert_mixed_maintenance_flush(retry: bool) {
+    let (mut app, intents) = capturing_live_app();
+    let timestamps = app.transcript_view.show_transcript_timestamps;
+    let thinking = app.transcript_view.show_transcript_thinking;
+    maintenance(&mut app, if retry { "overflow" } else { "manual" }, true);
+    queue_mixed_drafts(&mut app);
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+    assert_eq!(app.maintenance_queue_lanes(), (3, 1));
+    maintenance(&mut app, if retry { "overflow" } else { "manual" }, false);
+    // The queue was snapshotted and emptied before the first delivery.
+    assert_eq!(app.maintenance_queue_lanes(), (0, 0));
+    assert_ne!(app.transcript_view.show_transcript_timestamps, timestamps);
+    assert_eq!(app.transcript_view.show_transcript_thinking, thinking);
+    let (id, first) = last_queued_submission(&intents);
+    assert!(if retry {
+        matches!(first, UiIntent::SteerPrompt { text, .. } if text == "first ordinary")
+    } else {
+        matches!(first, UiIntent::SubmitPrompt { text, .. } if text == "first ordinary")
+    });
+    app.maintenance_prompt_receipt(id, Ok(()));
+    assert_mixed_maintenance_tail(&mut app, &intents, retry, thinking);
+}
+
+fn assert_mixed_maintenance_tail(
+    app: &mut AppState,
+    intents: &Arc<Mutex<Vec<UiIntent>>>,
+    retry: bool,
+    thinking: bool,
+) {
+    if retry {
+        // Commands keep running locally in order when the retry delivers every item.
+        assert_ne!(app.transcript_view.show_transcript_thinking, thinking);
+    } else {
+        // Text after the first ordinary prompt is delivered to its lane, never executed.
+        assert_eq!(app.transcript_view.show_transcript_thinking, thinking);
+        let (id, second) = last_queued_submission(intents);
+        assert!(matches!(second, UiIntent::SteerPrompt { text, .. } if text == "/thinking"));
+        app.maintenance_prompt_receipt(id, Ok(()));
+    }
+    let (id, last) = last_queued_submission(intents);
+    assert!(matches!(last, UiIntent::FollowUpPrompt { text, .. } if text == "after yield"));
+    app.maintenance_prompt_receipt(id, Ok(()));
+    assert_eq!(app.maintenance_queue_lanes(), (0, 0));
+    assert!(app.composer.maintenance_queue.awaiting.is_none());
+}
+
+#[test]
+fn maintenance_flush_executes_command_only_queue_in_order() {
+    let (mut app, intents) = capturing_live_app();
+    let timestamps = app.transcript_view.show_transcript_timestamps;
+    let thinking = app.transcript_view.show_transcript_thinking;
+    maintenance(&mut app, "manual", true);
+    for command in ["/timestamps", "/thinking"] {
+        app.handle_paste(command);
+        app.submit_prompt();
+    }
+    maintenance(&mut app, "manual", false);
+    assert_ne!(app.transcript_view.show_transcript_timestamps, timestamps);
+    assert_ne!(app.transcript_view.show_transcript_thinking, thinking);
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+}
+
+pub(super) fn last_queued_submission(intents: &Arc<Mutex<Vec<UiIntent>>>) -> (u64, UiIntent) {
+    intents
+        .lock()
+        .unwrap_or_abort()
+        .last()
+        .and_then(|intent| match intent {
+            UiIntent::QueuedPrompt { id, prompt } => Some((*id, *prompt.clone())),
+            _ => None,
+        })
+        .unwrap_or_abort()
+}
+
+#[test]
+fn failed_maintenance_admission_restores_attachments_and_remaining_draft(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("attachment.txt");
+    std::fs::write(&path, "retained bytes")?;
+    let ingestor = crate::attachment_lifecycle::AttachmentIngestor::new(
+        crate::attachment_lifecycle::AttachmentPolicy::new(temp.path())?,
+    );
+    let (mut app, intents) = capturing_live_app();
+    maintenance(&mut app, "manual", true);
+    app.handle_paste("attached queued");
+    app.file_mention_tags.push(FileMentionTag {
+        start: 0,
+        end: 8,
+        part: file_mentions::FileMentionSelectedTag::Agent(
+            harness_core::file_tag::SelectedAgentTag {
+                name: "worker".into(),
+                source: harness_core::file_tag::FileTagSource {
+                    start: 0,
+                    end: 8,
+                    value: "attached".into(),
+                },
+            },
+        ),
+    });
+    app.composer_attach(
+        crate::composer_atoms::AttachmentId::new(1),
+        ingestor.ingest_file(
+            &path,
+            &crate::attachment_lifecycle::CancellationToken::new(),
+        )?,
+    )?;
+    app.submit_prompt();
+    assert!(app.composer.slice.attachments().is_empty());
+    app.handle_paste("follow-up queued");
+    app.submit_follow_up_prompt();
+    app.clear_prompt_input();
+    app.handle_paste("existing draft");
+    app.composer_attach(
+        crate::composer_atoms::AttachmentId::new(1),
+        ingestor.ingest_file(
+            &path,
+            &crate::attachment_lifecycle::CancellationToken::new(),
+        )?,
+    )?;
+    maintenance(&mut app, "manual", false);
+    let id = match intents.lock().unwrap_or_abort().last() {
+        Some(UiIntent::QueuedPrompt { id, .. }) => *id,
+        _ => return Err("missing queued receipt".into()),
+    };
+    app.maintenance_prompt_receipt(id, Err("admission refused".into()));
+    assert_eq!(
+        app.toast().ok_or("missing failure toast")?.message,
+        "Failed to send queued messages: admission refused"
+    );
+    assert_eq!(app.composer.slice.attachments().len(), 2);
+    assert_eq!(app.composer.slice.attachments()[0].id.get(), 1);
+    assert_eq!(app.composer.slice.attachments()[1].id.get(), 2);
+    assert!(app.composer.prompt_buffer.starts_with(
+        "attached queued[attachment:2]\n\nfollow-up queued\n\nexisting draft[attachment:1]"
+    ));
+    assert_eq!(
+        app.composer.slice.attachments()[1].attachment.bytes(),
+        b"retained bytes"
+    );
+    assert_eq!(app.selected_agent_tags()[0].name, "worker");
+    assert_eq!(app.selected_agent_tags()[0].source.start, 0);
+    assert_eq!(app.maintenance_queue_lanes(), (0, 0));
+    Ok(())
+}
+
+#[test]
+fn dequeue_maintenance_input_restores_steering_before_follow_up() {
+    let (mut app, _) = capturing_live_app();
+    maintenance(&mut app, "manual", true);
+    app.handle_paste("after yield");
+    app.submit_follow_up_prompt();
+    assert_eq!(app.composer.prompt_buffer, "after yield");
+    app.clear_prompt_input();
+    app.handle_paste("steering");
+    app.submit_prompt();
+    app.handle_paste("draft");
+    app.execute_action(Action::DequeuePrompt);
+    assert_eq!(
+        app.composer.prompt_buffer,
+        "steering\n\nafter yield\n\ndraft"
+    );
+    assert_eq!(app.maintenance_queue_lanes(), (0, 0));
+}
+
+#[test]
+fn maintenance_custom_command_expands_at_dispatch_not_capture() {
+    let (mut app, intents) = capturing_live_app();
+    app.prompt_commands
+        .push(harness_core::commands::PromptCommand {
+            name: "greet".into(),
+            description: String::new(),
+            argument_hint: None,
+            template: "Hello $1".into(),
+        });
+    maintenance(&mut app, "manual", true);
+    app.handle_paste("/greet friend");
+    app.submit_prompt();
+    assert_eq!(
+        app.composer.prompt_history.last().map(String::as_str),
+        Some("/greet friend")
+    );
+    maintenance(&mut app, "manual", false);
+    assert!(
+        matches!(intents.lock().unwrap_or_abort().last(), Some(UiIntent::QueuedPrompt { prompt, .. })
+        if matches!(prompt.as_ref(), UiIntent::SubmitPrompt { text, .. } if text == "Hello friend"))
+    );
+}
+
+#[test]
+fn maintenance_single_failure_keeps_draft_and_singular_error() {
+    let (mut app, intents) = capturing_live_app();
+    maintenance(&mut app, "manual", true);
+    app.handle_paste("queued");
+    app.submit_prompt();
+    app.handle_paste("draft");
+    maintenance(&mut app, "manual", false);
+    let id = intents
+        .lock()
+        .unwrap_or_abort()
+        .last()
+        .and_then(|intent| match intent {
+            UiIntent::QueuedPrompt { id, .. } => Some(*id),
+            _ => None,
+        })
+        .unwrap_or_abort();
+    app.maintenance_prompt_receipt(id, Err("refused".into()));
+    assert_eq!(app.composer.prompt_buffer, "queued\n\ndraft");
+    assert_eq!(
+        app.toast().unwrap_or_abort().message,
+        "Failed to send queued message: refused"
+    );
 }
 
 fn intent_count(intents: &[UiIntent], predicate: impl Fn(&UiIntent) -> bool) -> usize {
@@ -245,6 +538,12 @@ fn idle_submit_and_tagged_or_attached_drafts_submit_normally(
     assert!(
         matches!(intents.lock().map_err(|_| "intent lock poisoned")?.as_slice(),
         [UiIntent::SubmitPrompt { attachments, .. }] if attachments.len() == 1)
+    );
+    assert!(app.composer.slice.attachments().is_empty());
+    app.handle_paste("next unattached draft");
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(
+        matches!(intents.lock().map_err(|_| "intent lock poisoned")?.last(), Some(UiIntent::SteerPrompt { text, .. }) if text == "next unattached draft")
     );
     Ok(())
 }
@@ -467,7 +766,7 @@ fn multiline_getter_badge_and_queue_state_are_visible() {
     // Then: the getter and existing queue state agree with the visible state.
     assert!(app.composer.composer_multiline_mode());
     assert_eq!(app.queued_prompt_count, 1);
-    assert!(rendered.contains("queued 1"));
+    assert!(!rendered.contains("queued 1"));
     assert_eq!(rendered.matches("MULTILINE").count(), 1);
     assert!(!rendered.contains(" · multiline"));
     assert!(

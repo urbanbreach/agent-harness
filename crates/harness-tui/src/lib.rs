@@ -167,7 +167,8 @@ pub use keybindings::{Action, KeyMap};
 pub use layout::FrameLayoutPlan;
 pub use runtime::{
     close_preserved_terminal_session, run_tui, run_tui_with_options,
-    set_pending_replay_launch_metadata, LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions,
+    set_pending_replay_launch_metadata, CompactionCommandKind, CompactionCommandOutcome,
+    LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions,
 };
 pub use runtime_live_updates::{
     live_update_channel, LiveUpdateReceiver, LiveUpdateSendError, LiveUpdateSender,

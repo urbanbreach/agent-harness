@@ -55,10 +55,10 @@ pub(in crate::ui) fn transcript_surface_render_width(
         // User surfaces pack wall-clock on the first content row. A trailing gap of 2
         // drops content_width below freeze packing (e.g. "all names" + clock at 120x32
         // with dual gutter + scrollbar needs content_width >= 108).
-        TranscriptRenderSurfaceKind::User => width.max(1),
+        // The compaction divider spans the whole transcript row between its outer gutters.
+        TranscriptRenderSurfaceKind::User | TranscriptRenderSurfaceKind::Compaction => width.max(1),
         TranscriptRenderSurfaceKind::AssistantCommandTool
-        | TranscriptRenderSurfaceKind::AssistantTool
-        | TranscriptRenderSurfaceKind::Compaction => width
+        | TranscriptRenderSurfaceKind::AssistantTool => width
             .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
             .max(1),
         _ => width.max(1),

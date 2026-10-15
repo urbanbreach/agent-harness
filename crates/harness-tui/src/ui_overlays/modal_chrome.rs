@@ -28,7 +28,14 @@ pub(super) const MODELS_CHROME: ModalChrome = ModalChrome {
     title: "Models",
     breadcrumb: None,
     tabs: None,
-    footer: "↑/↓ navigate · Enter select · Esc close",
+    footer: "↑/↓ navigate · Enter select · Ctrl+T threshold · Esc close",
+};
+
+pub(super) const THRESHOLD_CHROME: ModalChrome = ModalChrome {
+    title: "Models",
+    breadcrumb: None,
+    tabs: None,
+    footer: "Enter save · Esc back",
 };
 
 pub(crate) const HELP_CHROME: ModalChrome = ModalChrome {
