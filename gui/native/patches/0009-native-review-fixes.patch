@@ -1,0 +1,904 @@
+diff --git a/README.md b/README.md
+index 91316f05..0bb8472b 100644
+--- a/README.md
++++ b/README.md
+@@ -2568,8 +2568,7 @@ retains real Unicode/UTF-16 editing offsets. Controlled change events still
+ contain the real value; applications must not log them.
+ 
+ `renderer.inputRevealRange(id, start, end)` reveals a UTF-16 range without
+-changing selection. `renderer.inputScrollTo(id, x, y)` uses clamped pixel
+-offsets. Existing `inputSetSelection` and `inputReplaceSelection` remain
++changing selection. Existing `inputSetSelection` and `inputReplaceSelection` remain
+ independent operations.
+ 
+ Native editors emit key-down events in capture phase, before editor actions.
+diff --git a/packages/native/index.d.ts b/packages/native/index.d.ts
+index 887ecb7e..db6cdd91 100644
+--- a/packages/native/index.d.ts
++++ b/packages/native/index.d.ts
+@@ -46,11 +46,6 @@ export declare class GpuixRenderer {
+   readClipboardImage(): ClipboardImage | null
+   /** Query the actual decoration mode and compositor-reported tiled edges. */
+   windowDecorations(): NativeWindowDecorations
+-  /**
+-   * Request client decorations, or server decorations when disabled.
+-   * The compositor decides the actual mode returned by windowDecorations.
+-   */
+-  requestClientDecorations(enabled: boolean): void
+   /** Begin the platform's interactive move operation. */
+   startWindowMove(): void
+   /** Begin an interactive resize on n, s, e, w, ne, nw, se, or sw. */
+@@ -70,8 +65,6 @@ export declare class GpuixRenderer {
+   inputSetSelection(id: number, start: number, end: number): void
+   /** Reveal a UTF-16 range without modifying the editor selection. */
+   inputRevealRange(id: number, start: number, end: number): void
+-  /** Scroll the editor to pixel offsets, clamped to its content. */
+-  inputScrollTo(id: number, x: number, y: number): void
+   /** Replace the current selection as one independent undoable edit. */
+   inputReplaceSelection(id: number, text: string): void
+   /** Execute an editing command on the addressed input, regardless of focus. */
+diff --git a/packages/native/src/desktop_api.rs b/packages/native/src/desktop_api.rs
+index 75b4503c..d96322c2 100644
+--- a/packages/native/src/desktop_api.rs
++++ b/packages/native/src/desktop_api.rs
+@@ -1,4 +1,4 @@
+-use gpui::{ClipboardEntry, ClipboardItem, Decorations, ResizeEdge, WindowAppearance, WindowDecorations};
++use gpui::{ClipboardEntry, ClipboardItem, Decorations, ResizeEdge, WindowAppearance};
+ use napi::bindgen_prelude::Buffer;
+ use napi::{Error, Result, Status};
+ use napi_derive::napi;
+@@ -172,18 +172,6 @@ impl GpuixRenderer {
+         })
+     }
+ 
+-    /// Request client decorations, or server decorations when disabled.
+-    /// The compositor decides the actual mode returned by windowDecorations.
+-    #[napi]
+-    pub fn request_client_decorations(&self, enabled: bool) -> Result<()> {
+-        self.with_native_window(move |window, _cx| {
+-            window.request_decorations(if enabled {
+-                WindowDecorations::Client
+-            } else {
+-                WindowDecorations::Server
+-            });
+-        })
+-    }
+ 
+     /// Begin the platform's interactive move operation.
+     #[napi]
+diff --git a/packages/native/src/input_api.rs b/packages/native/src/input_api.rs
+index f2c5c77a..9c807246 100644
+--- a/packages/native/src/input_api.rs
++++ b/packages/native/src/input_api.rs
+@@ -54,14 +54,6 @@ impl GpuixRenderer {
+         })
+     }
+ 
+-    /// Scroll the editor to pixel offsets, clamped to its content.
+-    #[napi]
+-    pub fn input_scroll_to(&self, id: f64, x: f64, y: f64) -> Result<()> {
+-        if !x.is_finite() || !y.is_finite() {
+-            return Err(Error::from_reason("Scroll offsets must be finite"));
+-        }
+-        self.apply_input_operation(id, InputOperation::ScrollTo { x: x as f32, y: y as f32 })
+-    }
+ 
+     /// Replace the current selection as one independent undoable edit.
+     #[napi]
+diff --git a/packages/native/src/custom_elements/input.rs b/packages/native/src/custom_elements/input.rs
+index d800b9a2..59e16261 100644
+--- a/packages/native/src/custom_elements/input.rs
++++ b/packages/native/src/custom_elements/input.rs
+@@ -26,7 +26,7 @@ use web_time::Instant;
+ use super::{CustomElement, CustomElementFactory, CustomRenderContext};
+ use crate::renderer::{emit_event_full, emit_key_event, EventCallback};
+ use crate::theme::Theme;
+-use super::rich_text::{Run, styled_runs, color};
++use super::rich_text::{Run, StylingCache, color};
+ use std::sync::Arc;
+ 
+ #[derive(Clone, serde::Deserialize)]
+@@ -320,7 +320,6 @@ fn word_navigation_uses_alt() -> bool {
+ pub enum InputOperation {
+     SetSelection { start: usize, end: usize },
+     RevealRange { start: usize, end: usize },
+-    ScrollTo { x: f32, y: f32 },
+     ReplaceSelection(String),
+     Command(InputCommand),
+     SetSelectionListener(Option<EventCallback>),
+@@ -455,6 +454,7 @@ impl CustomElement for TextEditorElement {
+                     read_only,
+                     secure: false,
+                     runs: Arc::default(),
++                    styling: StylingCache::default(),
+                     highlights: Arc::default(),
+                     gutter: None,
+                     wrap: true,
+@@ -720,19 +720,13 @@ impl CustomElement for TextEditorElement {
+                     state.follow_cursor = false;
+                     cx.notify();
+                 }
+-                InputOperation::ScrollTo { x, y } => {
+-                    state.scroll_left = x.max(0.0);
+-                    state.scroll_top = y.max(0.0);
+-                    state.follow_cursor = false;
+-                    cx.notify();
+-                }
+                 InputOperation::SetSelectionListener(callback) => {
+                     state.selection_listener = callback;
+                 }
+                 InputOperation::SetSelection { start, end } => {
+                     state.marked_range = None;
+                     state.last_edit = None;
+-                    state.set_selected_text_range(start.min(end)..start.max(end), window, cx);
++                    state.set_selected_text_range(start..end, window, cx);
+                 }
+                 InputOperation::ReplaceSelection(text) => {
+                     // Keep each imperative replacement separate from adjacent typing.
+@@ -858,6 +852,7 @@ struct TextEditorState {
+     read_only: bool,
+     secure: bool,
+     runs: Arc<Vec<Run>>,
++    styling: StylingCache,
+     highlights: Arc<Vec<SearchHighlight>>,
+     gutter: Option<Gutter>,
+     wrap: bool,
+@@ -1698,13 +1693,15 @@ impl TextEditorState {
+         } else {
+             style.color
+         };
++        let marked_range = self.marked_range.as_ref().map(|range| self.display_offset(range.start)..self.display_offset(range.end));
++        let wrap_width = (self.multiline && self.wrap).then_some((width - px(self.gutter_width())).max(px(1.0)));
+         let mut runs = if is_placeholder || self.secure {
+-            vec![TextRun { len: display.len(), font: style.font(), color, background_color: None, underline: None, strikethrough: None }]
++            std::borrow::Cow::Owned(vec![TextRun { len: display.len(), font: style.font(), color, background_color: None, underline: None, strikethrough: None }])
+         } else {
+-            styled_runs(&display[..display.len() - ghost_len], &self.runs, style.font(), color)
++            std::borrow::Cow::Borrowed(self.styling.get(&display[..display.len() - ghost_len], &self.runs, style.font(), color).as_slice())
+         };
+         if ghost_len > 0 {
+-            runs.push(TextRun {
++            runs.to_mut().push(TextRun {
+                 len: ghost_len,
+                 font: style.font(),
+                 color: self.placeholder_color,
+@@ -1713,10 +1710,9 @@ impl TextEditorState {
+                 strikethrough: None,
+             });
+         }
+-        let marked_range = self.marked_range.as_ref().map(|range| self.display_offset(range.start)..self.display_offset(range.end));
+         if let Some(marked) = &marked_range {
+             let mut offset = 0;
+-            runs = runs.into_iter().flat_map(|run| {
++            runs = std::borrow::Cow::Owned(runs.iter().flat_map(|run| {
+                 let end = offset + run.len;
+                 let mut boundaries = vec![offset, end];
+                 boundaries.extend([marked.start, marked.end].into_iter().filter(|index| *index > offset && *index < end));
+@@ -1731,9 +1727,8 @@ impl TextEditorState {
+                 }).collect();
+                 offset = end;
+                 parts
+-            }).collect();
++            }).collect());
+         }
+-        let wrap_width = (self.multiline && self.wrap).then_some((width - px(self.gutter_width())).max(px(1.0)));
+         let lines = window
+             .text_system()
+             .shape_text(display, font_size, &runs, wrap_width, None)
+@@ -1971,7 +1966,7 @@ impl EntityInputHandler for TextEditorState {
+         self.selected_range = self.range_from_utf16(
+             &(range_utf16.start.min(range_utf16.end)..range_utf16.start.max(range_utf16.end)),
+         );
+-        self.selection_reversed = false;
++        self.selection_reversed = range_utf16.start > range_utf16.end;
+         self.follow_cursor = true;
+         self.reset_blink(cx);
+         cx.notify();
+diff --git a/packages/native/src/custom_elements/rich_text.rs b/packages/native/src/custom_elements/rich_text.rs
+index 34fd4f0a..dc6ceaa2 100644
+--- a/packages/native/src/custom_elements/rich_text.rs
++++ b/packages/native/src/custom_elements/rich_text.rs
+@@ -1,6 +1,7 @@
++use super::{CustomElement, CustomElementFactory, CustomRenderContext};
+ use gpui::{prelude::*, SharedString, TextRun};
+ use serde::Deserialize;
+-use super::{CustomElement, CustomElementFactory, CustomRenderContext};
++use std::{collections::BTreeSet, ops::Range, sync::Arc};
+ 
+ #[derive(Clone, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+@@ -17,86 +18,447 @@ pub(super) struct Run {
+     pub(super) wash: Option<Wash>,
+ }
+ #[derive(Clone, Deserialize)]
+-pub(super) struct Decoration { pub(super) color: Option<String>, pub(super) thickness: Option<f32>, pub(super) wavy: Option<bool> }
++pub(super) struct Decoration {
++    pub(super) color: Option<String>,
++    pub(super) thickness: Option<f32>,
++    pub(super) wavy: Option<bool>,
++}
+ #[derive(Clone, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+-pub(super) struct Wash { pub(super) color: String, pub(super) radius: Option<f32>, pub(super) pad_x: Option<f32>, pub(super) inset_y: Option<f32> }
++pub(super) struct Wash {
++    pub(super) color: String,
++    pub(super) radius: Option<f32>,
++    pub(super) pad_x: Option<f32>,
++    pub(super) inset_y: Option<f32>,
++}
+ 
+ pub struct RichTextFactory;
+ impl CustomElementFactory for RichTextFactory {
+-    fn element_type(&self) -> &str { "rich-text" }
+-    fn create(&self, _: u64) -> Box<dyn CustomElement> { Box::<RichText>::default() }
++    fn element_type(&self) -> &str {
++        "rich-text"
++    }
++    fn create(&self, _: u64) -> Box<dyn CustomElement> {
++        Box::<RichText>::default()
++    }
+ }
+ #[derive(Default)]
+-struct RichText { text: SharedString, runs: Vec<Run> }
++struct RichText {
++    text: SharedString,
++    runs: Arc<Vec<Run>>,
++    styling: StylingCache,
++    washes: Option<Arc<Vec<(Range<usize>, Wash)>>>,
++}
+ 
+-// A UTF-16 offset within a surrogate pair resolves to that scalar's beginning.
+-pub(super) fn byte_offset(text: &str, offset: usize) -> usize {
+-    let mut units = 0;
+-    for (byte, ch) in text.char_indices() {
+-        if units + ch.len_utf16() > offset { return byte; }
+-        units += ch.len_utf16();
+-    }
+-    text.len()
+-}
+ pub(super) fn color(value: Option<&str>) -> Option<gpui::Hsla> {
+-    value.and_then(crate::color::parse_color_rgba).map(Into::into)
++    value
++        .and_then(crate::color::parse_color_rgba)
++        .map(Into::into)
+ }
+-pub(super) fn styled_runs(text: &str, styles: &[Run], base_font: gpui::Font, base_color: gpui::Hsla) -> Vec<TextRun> {
+-    let ranges: Vec<_> = styles.iter().map(|run| (byte_offset(text, run.start)..byte_offset(text, run.end), run)).collect();
+-    let mut boundaries = vec![0, text.len()];
+-    for (range, _) in &ranges { boundaries.extend([range.start, range.end]); }
++// Sort requested UTF-16 boundaries, then advance through the document only once.
++fn byte_ranges(text: &str, styles: &[Run]) -> Vec<Range<usize>> {
++    let mut boundaries = Vec::with_capacity(styles.len() * 2);
++    for (index, run) in styles.iter().enumerate() {
++        boundaries.extend([(run.start, index, false), (run.end, index, true)]);
++    }
+     boundaries.sort_unstable();
+-    boundaries.dedup();
+-    boundaries.windows(2).filter(|pair| pair[0] < pair[1]).map(|pair| {
+-        let mut result = TextRun { len: pair[1] - pair[0], font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None };
+-        for (range, run) in &ranges {
+-            if range.start > pair[0] || range.end < pair[1] { continue; }
+-            if let Some(value) = color(run.color.as_deref()) { result.color = value; }
+-            if let Some(family) = &run.font_family { result.font.family = family.clone().into(); }
+-            if let Some(weight) = &run.font_weight { result.font.weight = crate::renderer::parse_font_weight(weight); }
+-            if let Some(italic) = run.italic { result.font.style = if italic { gpui::FontStyle::Italic } else { gpui::FontStyle::Normal }; }
+-            if let Some(decoration) = &run.underline { result.underline = Some(gpui::UnderlineStyle { color: color(decoration.color.as_deref()), thickness: gpui::px(decoration.thickness.unwrap_or(1.0)), wavy: decoration.wavy.unwrap_or(false) }); }
+-            if let Some(decoration) = &run.strikethrough { result.strikethrough = Some(gpui::StrikethroughStyle { color: color(decoration.color.as_deref()), thickness: gpui::px(decoration.thickness.unwrap_or(1.0)) }); }
+-            if let Some(value) = color(run.background.as_deref()) { result.background_color = Some(value); }
++    let mut ranges = vec![0..0; styles.len()];
++    let mut chars = text.char_indices().peekable();
++    let mut units = 0;
++    for (offset, index, end) in boundaries {
++        while let Some(&(_, ch)) = chars.peek() {
++            if units + ch.len_utf16() > offset {
++                break;
++            }
++            units += ch.len_utf16();
++            chars.next();
+         }
+-        result
+-    }).collect()
++        let byte = chars.peek().map_or(text.len(), |(byte, _)| *byte);
++        if end {
++            ranges[index].end = byte;
++        } else {
++            ranges[index].start = byte;
++        }
++    }
++    ranges
++}
++
++pub(super) fn styled_runs(
++    text: &str,
++    styles: &[Run],
++    base_font: gpui::Font,
++    base_color: gpui::Hsla,
++) -> Vec<TextRun> {
++    let base = TextRun {
++        len: 0,
++        font: base_font,
++        color: base_color,
++        background_color: None,
++        underline: None,
++        strikethrough: None,
++    };
++    let mut prepared = Vec::with_capacity(styles.len());
++    let mut events = Vec::with_capacity(styles.len() * 2 + 2);
++    for (index, (run, range)) in styles.iter().zip(byte_ranges(text, styles)).enumerate() {
++        let mut value = base.clone();
++        let foreground = color(run.color.as_deref());
++        let background = color(run.background.as_deref());
++        if let Some(color) = foreground {
++            value.color = color;
++        }
++        if let Some(family) = &run.font_family {
++            value.font.family = family.clone().into();
++        }
++        if let Some(weight) = &run.font_weight {
++            value.font.weight = crate::renderer::parse_font_weight(weight);
++        }
++        if let Some(italic) = run.italic {
++            value.font.style = if italic {
++                gpui::FontStyle::Italic
++            } else {
++                gpui::FontStyle::Normal
++            };
++        }
++        value.underline = run
++            .underline
++            .as_ref()
++            .map(|decoration| gpui::UnderlineStyle {
++                color: color(decoration.color.as_deref()),
++                thickness: gpui::px(decoration.thickness.unwrap_or(1.0)),
++                wavy: decoration.wavy.unwrap_or(false),
++            });
++        value.strikethrough =
++            run.strikethrough
++                .as_ref()
++                .map(|decoration| gpui::StrikethroughStyle {
++                    color: color(decoration.color.as_deref()),
++                    thickness: gpui::px(decoration.thickness.unwrap_or(1.0)),
++                });
++        value.background_color = background;
++        let properties = [
++            foreground.is_some(),
++            run.font_family.is_some(),
++            run.font_weight.is_some(),
++            run.italic.is_some(),
++            run.underline.is_some(),
++            run.strikethrough.is_some(),
++            background.is_some(),
++        ];
++        prepared.push((value, properties));
++        // Keep even empty/reversed range boundaries, but never activate their styles.
++        events.extend([
++            (range.start, index, range.start < range.end),
++            (range.end, index, false),
++        ]);
++    }
++    events.extend([(0, styles.len(), false), (text.len(), styles.len(), false)]);
++    events.sort_unstable();
++    let mut active: [BTreeSet<usize>; 7] = std::array::from_fn(|_| BTreeSet::new());
++    let mut result = Vec::with_capacity(events.len());
++    let mut cursor = 0;
++    while cursor < events.len() {
++        let start = events[cursor].0;
++        while cursor < events.len() && events[cursor].0 == start {
++            let (_, index, entering) = events[cursor];
++            if let Some((_, properties)) = prepared.get(index) {
++                for (set, present) in active.iter_mut().zip(properties) {
++                    if *present {
++                        if entering {
++                            set.insert(index);
++                        } else {
++                            set.remove(&index);
++                        }
++                    }
++                }
++            }
++            cursor += 1;
++        }
++        let Some(&(end, _, _)) = events.get(cursor) else {
++            break;
++        };
++        let mut value = base.clone();
++        value.len = end - start;
++        // Each property independently inherits from the last applicable input run.
++        for (property, set) in active.iter().enumerate() {
++            let Some(index) = set.last() else {
++                continue;
++            };
++            let source = &prepared[*index].0;
++            match property {
++                0 => value.color = source.color,
++                1 => value.font.family = source.font.family.clone(),
++                2 => value.font.weight = source.font.weight,
++                3 => value.font.style = source.font.style,
++                4 => value.underline = source.underline,
++                5 => value.strikethrough = source.strikethrough,
++                6 => value.background_color = source.background_color,
++                _ => unreachable!(),
++            }
++        }
++        result.push(value);
++    }
++    result
++}
++
++#[derive(Default)]
++pub(super) struct StylingCache {
++    entry: Option<(String, Arc<Vec<Run>>, gpui::Font, gpui::Hsla, Vec<TextRun>)>,
++}
++
++impl StylingCache {
++    pub(super) fn get(
++        &mut self,
++        text: &str,
++        styles: &Arc<Vec<Run>>,
++        font: gpui::Font,
++        color: gpui::Hsla,
++    ) -> &Vec<TextRun> {
++        let valid = self.entry.as_ref().is_some_and(
++            |(cached_text, cached_styles, cached_font, cached_color, _)| {
++                cached_text == text
++                    && Arc::ptr_eq(cached_styles, styles)
++                    && *cached_font == font
++                    && *cached_color == color
++            },
++        );
++        if !valid {
++            self.entry = None;
++        }
++        &self
++            .entry
++            .get_or_insert_with(|| {
++                let runs = styled_runs(text, styles, font.clone(), color);
++                (text.to_owned(), styles.clone(), font, color, runs)
++            })
++            .4
++    }
+ }
+ impl CustomElement for RichText {
+-    fn render(&mut self, ctx: CustomRenderContext, _window: &mut gpui::Window, _: &mut gpui::Context<crate::renderer::GpuixView>) -> gpui::AnyElement {
++    fn render(
++        &mut self,
++        ctx: CustomRenderContext,
++        _window: &mut gpui::Window,
++        _: &mut gpui::Context<crate::renderer::GpuixView>,
++    ) -> gpui::AnyElement {
+         let base_font = ctx.font.clone();
+         let base_color = ctx.color;
+-        let runs = styled_runs(&self.text, &self.runs, base_font, base_color);
+-        let washes: Vec<_> = self.runs.iter().filter_map(|run| run.wash.clone().map(|wash| (byte_offset(&self.text, run.start)..byte_offset(&self.text, run.end), wash))).collect();
+-        let mut text = crate::text::SelectableText::new(ctx.id, 0, self.text.clone().into(), Some(runs), ctx.selection.clone(), ctx.selection_wash);
++        let runs = self
++            .styling
++            .get(&self.text, &self.runs, base_font, base_color)
++            .clone();
++        let washes = self
++            .washes
++            .get_or_insert_with(|| {
++                Arc::new(
++                    self.runs
++                        .iter()
++                        .zip(byte_ranges(&self.text, &self.runs))
++                        .filter_map(|(run, range)| run.wash.clone().map(|wash| (range, wash)))
++                        .collect(),
++                )
++            })
++            .clone();
++        let mut text = crate::text::SelectableText::new(
++            ctx.id,
++            0,
++            self.text.clone().into(),
++            Some(runs),
++            ctx.selection.clone(),
++            ctx.selection_wash,
++        );
+         text.selectable = ctx.selectable;
+-        text.highlight = ctx.highlight_set.clone().map(crate::text::HighlightSource::Native);
++        text.highlight = ctx
++            .highlight_set
++            .clone()
++            .map(crate::text::HighlightSource::Native);
+         text.pointer_events = Some((ctx.event_callback.clone(), ctx.events.clone()));
+         text.extra_wash = Some(Box::new(move |layout, window| {
+-            for (range, wash) in &washes {
++            for (range, wash) in washes.iter() {
+                 if let Some(color) = color(Some(&wash.color)) {
+-                    for rect in crate::text::range_rects(layout, range, wash.pad_x.unwrap_or(2.0), wash.inset_y.unwrap_or(2.0)) {
+-                        window.paint_quad(gpui::quad(rect, gpui::px(wash.radius.unwrap_or(3.0)), color, gpui::px(0.0), gpui::transparent_black(), gpui::BorderStyle::default()));
++                    for rect in crate::text::range_rects(
++                        layout,
++                        range,
++                        wash.pad_x.unwrap_or(2.0),
++                        wash.inset_y.unwrap_or(2.0),
++                    ) {
++                        window.paint_quad(gpui::quad(
++                            rect,
++                            gpui::px(wash.radius.unwrap_or(3.0)),
++                            color,
++                            gpui::px(0.0),
++                            gpui::transparent_black(),
++                            gpui::BorderStyle::default(),
++                        ));
+                     }
+                 }
+             }
+         }));
+-        let container = gpui::div().id(SharedString::from(format!("rich-text-{}", ctx.id)));
++        let mut container = gpui::div().id(SharedString::from(format!("rich-text-{}", ctx.id)));
++        if let Some(handle) = ctx.focus_handle {
++            container = container.track_focus(handle);
++            container = crate::renderer::apply_focus_visible(
++                container,
++                ctx.id,
++                ctx.style,
++                ctx.keyboard_focus.as_deref(),
++            );
++        }
++        if ctx.events.contains("keyDown") {
++            let callback = ctx.event_callback.clone();
++            let id = ctx.id;
++            container = container.on_key_down(move |event, _, _| {
++                crate::renderer::emit_key_event(
++                    &callback,
++                    id,
++                    "keyDown",
++                    &event.keystroke,
++                    Some(event.is_held),
++                );
++            });
++        }
++        if ctx.events.contains("keyUp") {
++            let callback = ctx.event_callback.clone();
++            let id = ctx.id;
++            container = container.on_key_up(move |event, _, _| {
++                crate::renderer::emit_key_event(&callback, id, "keyUp", &event.keystroke, None);
++            });
++        }
+         // Pointer events are hit-tested against StyledText rather than the outer box.
+         let mut surface_ctx = ctx;
+-        let events = surface_ctx.events.iter().filter(|event| !matches!(event.as_str(), "click" | "mouseDown" | "mouseMove")).cloned().collect();
++        let events = surface_ctx
++            .events
++            .iter()
++            .filter(|event| !matches!(event.as_str(), "click" | "mouseDown" | "mouseMove"))
++            .cloned()
++            .collect();
+         surface_ctx.events = &events;
+-        super::custom_surface(container, &surface_ctx).child(crate::text::selectable_text(text)).into_any_element()
++        super::custom_surface(container, &surface_ctx)
++            .child(crate::text::selectable_text(text))
++            .into_any_element()
+     }
+     fn set_prop(&mut self, key: &str, value: serde_json::Value) {
+         match key {
+-            "text" => self.text = value.as_str().unwrap_or_default().into(),
+-            "runs" => self.runs = serde_json::from_value(value).unwrap_or_default(),
++            "text" => {
++                self.text = value.as_str().unwrap_or_default().into();
++                self.washes = None;
++            }
++            "runs" => {
++                self.runs = Arc::new(serde_json::from_value(value).unwrap_or_default());
++                self.washes = None;
++            }
+             _ => {}
+         }
+     }
+-    fn supported_props(&self) -> &'static [&'static str] { &["text", "runs"] }
+-    fn supported_events(&self) -> &'static [&'static str] { &["click", "mouseDown", "mouseMove", "mouseEnter", "mouseLeave", "fileDrop"] }
++    fn supported_props(&self) -> &'static [&'static str] {
++        &["text", "runs"]
++    }
++    fn supported_events(&self) -> &'static [&'static str] {
++        &[
++            "click",
++            "mouseDown",
++            "mouseMove",
++            "mouseEnter",
++            "mouseLeave",
++            "fileDrop",
++            "keyDown",
++            "keyUp",
++            "focus",
++            "blur",
++        ]
++    }
+     fn destroy(&mut self) {}
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn run(value: serde_json::Value) -> Run {
++        serde_json::from_value(value).unwrap()
++    }
++
++    #[test]
++    fn overlapping_utf16_styles_preserve_each_property_and_restore_earlier_runs() {
++        let styles = [
++            run(
++                serde_json::json!({"start": 0, "end": 99, "color": "#ff0000", "italic": true, "fontFamily": "mono", "fontWeight": 700, "underline": {}, "strikethrough": {}}),
++            ),
++            run(
++                serde_json::json!({"start": 2, "end": 4, "color": "#0000ff", "italic": false, "background": "#00ff00"}),
++            ),
++            run(serde_json::json!({"start": 1, "end": 3, "color": "invalid", "fontWeight": 400})),
++            run(serde_json::json!({"start": 3, "end": 1, "color": "#ffffff"})),
++            run(serde_json::json!({"start": 3, "end": 3, "color": "#ffffff"})),
++        ];
++        let font = gpui::font("base");
++        let result = styled_runs("a😀bc", &styles, font.clone(), gpui::Hsla::default());
++        let mut outer = TextRun {
++            len: 1,
++            font: gpui::font("mono"),
++            color: color(Some("#ff0000")).unwrap(),
++            background_color: None,
++            underline: Some(gpui::UnderlineStyle {
++                color: None,
++                thickness: gpui::px(1.0),
++                wavy: false,
++            }),
++            strikethrough: Some(gpui::StrikethroughStyle {
++                color: None,
++                thickness: gpui::px(1.0),
++            }),
++        };
++        outer.font.weight = gpui::FontWeight::BOLD;
++        outer.font.style = gpui::FontStyle::Italic;
++        let mut emoji = outer.clone();
++        emoji.len = 4;
++        emoji.font.weight = gpui::FontWeight::NORMAL;
++        emoji.font.style = gpui::FontStyle::Normal;
++        emoji.color = color(Some("#0000ff")).unwrap();
++        emoji.background_color = color(Some("#00ff00"));
++        let mut middle = emoji.clone();
++        middle.len = 1;
++        middle.font.weight = gpui::FontWeight::BOLD;
++        assert_eq!(result, vec![outer.clone(), emoji, middle, outer]);
++        assert!(styled_runs("", &styles, font, gpui::Hsla::default()).is_empty());
++    }
++
++    #[test]
++    fn cached_styling_tracks_text_runs_and_base_style() {
++        let mut cache = StylingCache::default();
++        let mut styles = Arc::new(vec![run(
++            serde_json::json!({"start": 1, "end": 2, "italic": true}),
++        )]);
++        let mut font = gpui::font("base");
++        let mut base_color = color(Some("#ffffff")).unwrap();
++        assert_eq!(
++            cache
++                .get("ab", &styles, font.clone(), base_color)
++                .iter()
++                .map(|run| run.len)
++                .collect::<Vec<_>>(),
++            vec![1, 1]
++        );
++        assert_eq!(
++            cache
++                .get("a😀", &styles, font.clone(), base_color)
++                .iter()
++                .map(|run| run.len)
++                .sum::<usize>(),
++            5
++        );
++        styles = Arc::new(Vec::new());
++        assert_eq!(cache.get("a😀", &styles, font.clone(), base_color).len(), 1);
++        font.family = "changed".into();
++        assert_eq!(
++            cache.get("a😀", &styles, font.clone(), base_color)[0]
++                .font
++                .family,
++            font.family
++        );
++        base_color = color(Some("#ff0000")).unwrap();
++        assert_eq!(
++            cache.get("a😀", &styles, font.clone(), base_color)[0].color,
++            base_color
++        );
++        assert_eq!(cache.get("a😀", &styles, font, base_color)[0].len, 5);
++    }
++}
+diff --git a/packages/native/src/text/paint.rs b/packages/native/src/text/paint.rs
+index 70856988..5cb61ad6 100644
+--- a/packages/native/src/text/paint.rs
++++ b/packages/native/src/text/paint.rs
+@@ -289,12 +289,15 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
+         None => StyledText::new(text.clone()),
+     };
+     let layout = styled.layout().clone();
++    let has_pointer_events = pointer_events.is_some();
+ 
+     let underlay = canvas(
+-        |_, _, _| (),
+-        move |_, _, window, _| {
+-            if let Some((callback, events)) = &pointer_events {
+-                register_pointer_events(window, &layout, element_id, &text, callback, events);
++        move |bounds, window, _| {
++            has_pointer_events.then(|| window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal))
++        },
++        move |_, hitbox, window, _| {
++            if let (Some((callback, events)), Some(hitbox)) = (&pointer_events, &hitbox) {
++                register_pointer_events(window, &layout, hitbox, element_id, &text, callback, events);
+             }
+             if let Some(paint) = &extra_wash {
+                 paint(&layout, window);
+@@ -356,6 +359,7 @@ pub fn selectable_text(opts: SelectableText) -> gpui::AnyElement {
+ fn register_pointer_events(
+     window: &mut Window,
+     layout: &TextLayout,
++    hitbox: &gpui::Hitbox,
+     id: u64,
+     text: &SharedString,
+     callback: &Option<crate::renderer::EventCallback>,
+@@ -364,9 +368,9 @@ fn register_pointer_events(
+     macro_rules! listen {
+         ($kind:literal, $ty:ty, $event:ident, $payload:ident, $filter:expr, $extra:block) => {
+             if events.contains($kind) {
+-                let (layout, text, callback) = (layout.clone(), text.clone(), callback.clone());
+-                window.on_mouse_event(move |$event: &$ty, phase, _, _| {
+-                    if phase != gpui::DispatchPhase::Bubble || !layout.bounds().contains(&$event.position) || !($filter) { return; }
++                let (layout, text, callback, hitbox) = (layout.clone(), text.clone(), callback.clone(), hitbox.clone());
++                window.on_mouse_event(move |$event: &$ty, phase, window, _| {
++                    if phase != gpui::DispatchPhase::Bubble || !hitbox.is_hovered(window) || !layout.bounds().contains(&$event.position) || !($filter) { return; }
+                     crate::renderer::emit_event_full(&callback, id, $kind, |$payload| {
+                         $payload.char_index = crate::element_tree::pointer_index(layout.index_for_position($event.position).ok().map(|byte| utf16_offset(&text, byte) as f64));
+                         $payload.x = Some(f32::from($event.position.x) as f64);
+diff --git a/packages/native/src/renderer.rs b/packages/native/src/renderer.rs
+index 03560ca5..e3c8e5bb 100644
+--- a/packages/native/src/renderer.rs
++++ b/packages/native/src/renderer.rs
+@@ -8386,3 +8386,149 @@ fn check_font(bytes: &[u8]) -> std::result::Result<(), String> {
+     }
+     Ok(())
+ }
++
++#[cfg(all(test, feature = "test-support"))]
++mod native_interaction_tests {
++    use super::*;
++    use crate::custom_elements::input::InputOperation;
++    use parking_lot::Mutex as EventMutex;
++
++    fn mount<'a>(
++        cx: &'a mut gpui::TestAppContext,
++        tree: Arc<Mutex<RetainedTree>>,
++        events: Arc<EventMutex<Vec<EventPayload>>>,
++    ) -> (gpui::Entity<GpuixView>, &'a mut gpui::VisualTestContext) {
++        let callback: EventCallback = Arc::new(move |event| events.lock().push(event));
++        let (view, cx) = cx.add_window_view(move |_, _| {
++            GpuixView::new(tree, Some(callback), String::new(), SharedSelection::default())
++        });
++        cx.update(|window, cx| window.draw(cx).clear(cx));
++        (view, cx)
++    }
++
++    fn rich_text_tree() -> RetainedTree {
++        let mut tree = RetainedTree::new();
++        tree.create_element(1, "div".to_string());
++        tree.create_element(2, "rich-text".to_string());
++        tree.set_style(1, Arc::new(serde_json::from_value(serde_json::json!({
++            "width": 240, "height": 80, "position": "relative",
++        })).unwrap()));
++        tree.set_style(2, Arc::new(serde_json::from_value(serde_json::json!({
++            "width": 240, "height": 40, "fontSize": 20,
++        })).unwrap()));
++        tree.set_custom_prop(2, "text".to_string(), serde_json::json!("MMMMMMMM"));
++        tree.append_child(1, 2);
++        tree.set_root(1);
++        tree
++    }
++
++    #[gpui::test]
++    fn focused_rich_text_delivers_enter_to_its_key_down_callback(cx: &mut gpui::TestAppContext) {
++        let mut tree = rich_text_tree();
++        tree.set_custom_prop(2, "tabIndex".to_string(), serde_json::json!(0));
++        tree.set_custom_prop(2, "autoFocus".to_string(), serde_json::json!(true));
++        tree.set_event_listener(2, "keyDown".to_string(), true);
++        let events = Arc::new(EventMutex::new(Vec::new()));
++        let (view, cx) = mount(cx, Arc::new(Mutex::new(tree)), events.clone());
++        cx.update(|window, cx| {
++            assert_eq!(view.read(cx).focused_element_id(window), Some(2));
++        });
++
++        cx.simulate_keystrokes("enter");
++
++        let events = events.lock();
++        let keys: Vec<_> = events.iter()
++            .filter(|event| event.event_type == "keyDown")
++            .map(|event| (event.element_id, event.key.as_deref()))
++            .collect();
++        assert_eq!(keys, vec![(2.0, Some("enter"))]);
++    }
++
++    #[gpui::test]
++    fn an_occluding_sibling_blocks_rich_text_pointer_callbacks(cx: &mut gpui::TestAppContext) {
++        let mut tree = rich_text_tree();
++        tree.set_event_listener(2, "click".to_string(), true);
++        let tree = Arc::new(Mutex::new(tree));
++        let events = Arc::new(EventMutex::new(Vec::new()));
++        let (view, cx) = mount(cx, tree.clone(), events.clone());
++        let position = gpui::point(gpui::px(6.), gpui::px(12.));
++
++        // First prove this coordinate hits actual glyphs, not empty layout space.
++        cx.simulate_click(position, gpui::Modifiers::none());
++        assert_eq!(events.lock().iter()
++            .filter(|event| event.element_id == 2.0 && event.event_type == "click")
++            .count(), 1);
++        events.lock().clear();
++
++        {
++            let mut tree = tree.lock().unwrap();
++            tree.create_element(3, "div".to_string());
++            tree.set_style(3, Arc::new(serde_json::from_value(serde_json::json!({
++                "position": "absolute", "left": 0, "top": 0,
++                "width": 240, "height": 40, "backgroundColor": "#ffffff",
++                "pointerEvents": "auto",
++            })).unwrap()));
++            tree.set_event_listener(3, "click".to_string(), true);
++            tree.append_child(1, 3);
++        }
++        cx.update(|window, cx| {
++            view.update(cx, |_, cx| cx.notify());
++            window.draw(cx).clear(cx);
++        });
++
++        cx.simulate_click(position, gpui::Modifiers::none());
++
++        let events = events.lock();
++        let clicked: Vec<_> = events.iter()
++            .filter(|event| event.event_type == "click")
++            .map(|event| event.element_id)
++            .collect();
++        assert_eq!(clicked, vec![3.0], "the overlay, not the covered glyphs, owns the click");
++    }
++
++    #[gpui::test]
++    fn backward_imperative_selection_keeps_its_anchor_during_shift_arrows(
++        cx: &mut gpui::TestAppContext,
++    ) {
++        cx.update(crate::custom_elements::input::init);
++        let mut tree = RetainedTree::new();
++        tree.create_element(1, "input".to_string());
++        tree.set_custom_prop(1, "value".to_string(), serde_json::json!("abcdef"));
++        tree.set_custom_prop(1, "autoFocus".to_string(), serde_json::json!(true));
++        tree.set_style(1, Arc::new(serde_json::from_value(serde_json::json!({
++            "width": 240, "height": 40,
++        })).unwrap()));
++        tree.set_root(1);
++        let events = Arc::new(EventMutex::new(Vec::new()));
++        let (view, cx) = mount(cx, Arc::new(Mutex::new(tree)), events.clone());
++        let listener_events = events.clone();
++        let listener: EventCallback = Arc::new(move |event| {
++            listener_events.lock().push(event);
++        });
++        cx.update(|window, cx| {
++            view.update(cx, |view, cx| {
++                view.custom_registry.input_operation(
++                    1, InputOperation::SetSelectionListener(Some(listener)), window, cx,
++                ).unwrap();
++                view.custom_registry.input_operation(
++                    1, InputOperation::SetSelection { start: 5, end: 2 }, window, cx,
++                ).unwrap();
++            });
++            window.draw(cx).clear(cx);
++        });
++
++        cx.simulate_keystrokes("shift-left shift-right shift-right");
++
++        let events = events.lock();
++        let selections: Vec<_> = events.iter()
++            .filter(|event| event.element_id == 1.0 && event.event_type == "selectionChange")
++            .map(|event| (event.selection_start, event.selection_end))
++            .collect();
++        assert_eq!(selections, vec![
++            (Some(2.0), Some(5.0)),
++            (Some(1.0), Some(5.0)),
++            (Some(2.0), Some(5.0)),
++            (Some(3.0), Some(5.0)),
++        ], "Shift+Arrow must move the active start while keeping the anchor at five");
++    }
++}

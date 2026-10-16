@@ -63,7 +63,6 @@ export interface HarnessNativeRenderer extends NativeRenderer {
   inputReplaceSelection(elementId: number, text: string): void;
   inputCommand(elementId: number, name: InputCommand): void;
   inputRevealRange(elementId: number, start: number, end: number): void;
-  inputScrollTo(elementId: number, x: number, y: number): void;
   writeClipboardText(text: string): void;
   readClipboardText(): string | null;
   readClipboardImage(): { mime: string; data: Buffer } | null;
@@ -84,7 +83,6 @@ export interface HarnessNativeRenderer extends NativeRenderer {
     displayId?: string | null;
   };
   closeWindow(): void;
-  requestClientDecorations(client: boolean): void;
   startWindowMove(): void;
   startWindowResize(edge: ResizeEdge): void;
   /** Poll getters to observe compositor changes without modifying the JS renderer. */
@@ -104,60 +102,10 @@ export function nativeRenderer(renderer: NativeRenderer): HarnessNativeRenderer 
 export function useNativeRenderer(): HarnessNativeRenderer {
   return nativeRenderer(useGpuixRequired());
 }
-export const inputSetSelection = (
-  renderer: NativeRenderer,
-  id: number,
-  start: number,
-  end: number,
-): void => nativeRenderer(renderer).inputSetSelection(id, start, end);
-export const inputReplaceSelection = (renderer: NativeRenderer, id: number, text: string): void =>
-  nativeRenderer(renderer).inputReplaceSelection(id, text);
-export const inputCommand = (renderer: NativeRenderer, id: number, name: InputCommand): void =>
-  nativeRenderer(renderer).inputCommand(id, name);
-export const inputRevealRange = (
-  renderer: NativeRenderer,
-  id: number,
-  start: number,
-  end: number,
-): void => nativeRenderer(renderer).inputRevealRange(id, start, end);
-export const inputScrollTo = (renderer: NativeRenderer, id: number, x: number, y: number): void =>
-  nativeRenderer(renderer).inputScrollTo(id, x, y);
 export const writeClipboardText = (renderer: NativeRenderer, text: string): void =>
   nativeRenderer(renderer).writeClipboardText(text);
-export const readClipboardText = (renderer: NativeRenderer): string | null =>
-  nativeRenderer(renderer).readClipboardText();
-export const readClipboardImage = (
-  renderer: NativeRenderer,
-): { mime: string; data: Buffer } | null => nativeRenderer(renderer).readClipboardImage();
-export const windowDecorations = (renderer: NativeRenderer): WindowDecorations =>
-  nativeRenderer(renderer).windowDecorations();
-export const requestClientDecorations = (renderer: NativeRenderer, client: boolean): void =>
-  nativeRenderer(renderer).requestClientDecorations(client);
-export const startWindowMove = (renderer: NativeRenderer): void =>
-  nativeRenderer(renderer).startWindowMove();
-export const setInputSelectionListener = (
-  renderer: NativeRenderer,
-  id: number,
-  callback: ((error: Error | null, event: NativeEvent) => void) | null,
-): void => nativeRenderer(renderer).setInputSelectionListener(id, callback);
-export const startWindowResize = (renderer: NativeRenderer, edge: ResizeEdge): void =>
-  nativeRenderer(renderer).startWindowResize(edge);
-export const isWindowMaximized = (renderer: NativeRenderer): boolean =>
-  nativeRenderer(renderer).isWindowMaximized();
-export const windowControls = (renderer: NativeRenderer): WindowControls =>
-  nativeRenderer(renderer).windowControls();
 export const isWindowActive = (renderer: NativeRenderer): boolean =>
   nativeRenderer(renderer).isWindowActive();
-export const windowAppearance = (renderer: NativeRenderer): 'light' | 'dark' =>
-  nativeRenderer(renderer).windowAppearance();
-export const registerFont = (renderer: NativeRenderer, bytes: Uint8Array): void =>
-  nativeRenderer(renderer).registerFont(bytes);
-export const setWindowAppearance = (
-  renderer: NativeRenderer,
-  appearance: 'light' | 'dark' | 'system',
-): void => nativeRenderer(renderer).setWindowAppearance(appearance);
-export const setRemSize = (renderer: NativeRenderer, size: number): void =>
-  nativeRenderer(renderer).setRemSize(size);
 
 declare module '@gpuix/react/jsx-runtime' {
   namespace JSX {

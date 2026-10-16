@@ -62,8 +62,9 @@ drag events, window chrome controls and virtual-list visibility notifications;
 they also keep virtual-list rows by identity and the editor's desired column.
 To change native code, edit the checkout, export the diff over the patch file,
 and rerun the script; `native/smoke/app.tsx` exercises every native addition.
-`gui/native/build.sh --test` also runs the native crate's tests, including the
-regression tests the patches add.
+`gui/native/build.sh --test` also runs the native crate's tests and the patched
+GPUI list regression. Rich-text links use native focus and hit testing; syntax
+runs are cached between text/style changes.
 
 ## Development
 

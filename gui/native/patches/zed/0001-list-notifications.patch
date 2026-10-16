@@ -1,7 +1,7 @@
-diff --git i/crates/gpui/src/elements/list.rs w/crates/gpui/src/elements/list.rs
-index 693ffcd..f294013 100644
---- i/crates/gpui/src/elements/list.rs
-+++ w/crates/gpui/src/elements/list.rs
+diff --git a/crates/gpui/src/elements/list.rs b/crates/gpui/src/elements/list.rs
+index 693ffcd..5da674d 100644
+--- a/crates/gpui/src/elements/list.rs
++++ b/crates/gpui/src/elements/list.rs
 @@ -71,6 +71,9 @@ struct StateInner {
      reset: bool,
      #[allow(clippy::type_complexity)]
@@ -122,12 +122,15 @@ index 693ffcd..f294013 100644
          ListPrepaintState { hitbox, layout }
      }
  
-@@ -1876,6 +1898,46 @@ mod test {
+@@ -1876,6 +1898,49 @@ mod test {
          assert_eq!(scroll_top.offset_in_item, px(10.));
      }
  
 +    #[gpui::test]
 +    fn test_layout_handler_reports_programmatic_scroll_without_wheel(cx: &mut TestAppContext) {
++        use crate::{ListAlignment, ListOffset};
++        use std::cell::RefCell;
++
 +        let cx = cx.add_empty_window();
 +        let state = ListState::new(20, ListAlignment::Bottom, px(10.))
 +            .with_uniform_item_height(px(20.));

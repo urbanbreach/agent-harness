@@ -178,12 +178,6 @@ function Smoke() {
         >
           <text>Reveal last range</text>
         </div>
-        <div
-          style={buttonStyle}
-          onClick={() => input.current && native.inputScrollTo(input.current.id, 0, 0)}
-        >
-          <text>Scroll to top</text>
-        </div>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         {(['cut', 'copy', 'paste', 'selectAll', 'undo', 'redo'] as const).map((name) => (
@@ -207,24 +201,6 @@ function Smoke() {
           }}
         >
           <text>Read image</text>
-        </div>
-        <div
-          style={buttonStyle}
-          onClick={() => {
-            native.requestClientDecorations(true);
-            report('decorations', native.windowDecorations());
-          }}
-        >
-          <text>Client chrome</text>
-        </div>
-        <div
-          style={buttonStyle}
-          onClick={() => {
-            native.requestClientDecorations(false);
-            report('decorations', native.windowDecorations());
-          }}
-        >
-          <text>Server chrome</text>
         </div>
         <div
           style={buttonStyle}
