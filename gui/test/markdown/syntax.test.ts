@@ -22,7 +22,8 @@ test('code colors preserve UTF-16 text, aliases, embedded fences and unfinished 
       samples: [
         ['const', '#9A4B92', '#C98BC0'],
         ['release', '#2F6690', '#8FB8D9'],
-        ['log', '#666666', '#A3A3A3'],
+        ['console', '#666666', '#A3A3A3'],
+        ['log', '#2F6690', '#8FB8D9'],
         ['😀<&>', '#3F7A36', '#94C08A'],
         ['still 😀<&>', '#3F7A36', '#94C08A'],
       ],
@@ -46,6 +47,21 @@ test('code colors preserve UTF-16 text, aliases, embedded fences and unfinished 
       samples: [
         ['const', '#9A4B92', '#C98BC0'],
         ['😀<&>', '#3F7A36', '#94C08A'],
+      ],
+    },
+    {
+      language: 'md',
+      text: '# Rollout\n**small changes** and *clear ownership* with `inline code` and [release guide](https://example.com/guide).\n1. Step\n- [x] Done\n- [ ] Pending',
+      samples: [
+        ['# Rollout', '#9A4B92', '#C98BC0'],
+        ['**small changes**', '#9A6019', '#D9A05B'],
+        ['*clear ownership*', '#9A6019', '#D9A05B'],
+        ['`inline code`', '#3F7A36', '#94C08A'],
+        ['release guide', '#2F6690', '#8FB8D9'],
+        ['https://example.com/guide', '#A4A4A4', '#575757'],
+        ['1.', '#858585', '#7D7D7D'],
+        ['[x]', '#9A6019', '#D9A05B'],
+        ['[ ]', '#9A6019', '#D9A05B'],
       ],
     },
     {

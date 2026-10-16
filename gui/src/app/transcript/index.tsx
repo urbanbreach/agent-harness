@@ -74,13 +74,15 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
   const [anchoredTurn, setAnchoredTurn] = useState<string>();
   const [railHover, setRailHover] = useState<number>();
   const [now, setNow] = useState(Date.now());
+  const referenceNow =
+    typeof preferences.referenceNow === 'number' ? preferences.referenceNow : undefined;
   const workingStart = useMemo(() => {
     const turn = view.turns.at(-1);
     const date = Date.parse(
       view.entries.find((entry) => entry.turnId === turn?.id && entry.timestamp)?.timestamp ?? '',
     );
-    return Number.isFinite(date) ? date : Date.now();
-  }, [sessionId, view.turns.at(-1)?.id]);
+    return Number.isFinite(date) ? date : (referenceNow ?? Date.now());
+  }, [sessionId, view.turns.at(-1)?.id, referenceNow]);
   const checkpoints = useTurnCheckpoints(sessionId, view);
   const rows = useMemo(
     () => transcriptRows(view, expanded, preferences.showReasoning !== false),
@@ -224,10 +226,11 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
     search.goTo(Math.max(0, nearest));
   }, [query]);
   useEffect(() => {
-    if (!['working', 'waiting', 'background'].includes(view.status)) return;
+    if (referenceNow !== undefined || !['working', 'waiting', 'background'].includes(view.status))
+      return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [view.status]);
+  }, [view.status, referenceNow]);
   useEffect(() => {
     setExpanded(new Set());
     setFindOpen(false);
@@ -472,7 +475,7 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
                           ? 'Waiting for background tasks'
                           : Object.values(view.retries).length
                             ? `Retrying (${Object.values(view.retries).at(-1)!.retry.attempt}/${Object.values(view.retries).at(-1)!.retry.max_attempts})…`
-                            : `Working for ${duration(Math.max(0, now - workingStart), true)}`}
+                            : `Working for ${duration(Math.max(0, (referenceNow ?? now) - workingStart), true)}`}
                       </text>
                     </div>
                     <BackgroundWork sessionId={sessionId} view={view} />
@@ -625,8 +628,9 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
             display: 'flex',
             flexDirection: 'row',
             alignItems: 'center',
-            gap: 5,
+            gap: 2.5,
             padding: 6,
+            paddingRight: 4.5,
             borderRadius: 8,
             borderWidth: 1,
             borderColor: colors.border_strong,
@@ -652,13 +656,14 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
               width: Math.max(104, Math.max(260, Math.min(430, width - 24)) - 154),
               flexShrink: 0,
               color: colors.text,
-              fontSize: sp(13),
+              fontSize: sp(12.5),
             }}
           />
           <text
             style={{
               minWidth: 48,
               flexGrow: 1,
+              marginLeft: 2.5,
               color: query && !matches.length ? colors.danger : colors.text_tertiary,
               fontSize: sp(12.5),
             }}
@@ -671,17 +676,19 @@ export function TranscriptView({ sessionId }: { sessionId: string }) {
           </text>
           <IconButton
             name="arrow-up"
+            size={13}
             label="Previous match"
             disabled={!matches.length}
             onClick={() => navigate(true)}
           />
           <IconButton
             name="arrow-down"
+            size={13}
             label="Next match"
             disabled={!matches.length}
             onClick={() => navigate(false)}
           />
-          <IconButton name="x" label="Close find" onClick={closeFind} />
+          <IconButton name="x" size={14} label="Close find" onClick={closeFind} />
         </div>
       )}
     </div>

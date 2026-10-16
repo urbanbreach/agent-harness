@@ -62,12 +62,19 @@ const scopes: Record<string, Token> = {
   title: 'type',
   class: 'type',
   function: 'type',
-  function_call: 'plain',
   comment: 'comment',
   doctag: 'comment',
   meta: 'meta',
   variable: 'meta',
+  'variable.language': 'plain',
   template: 'meta',
+  section: 'keyword',
+  strong: 'literal',
+  emphasis: 'literal',
+  code: 'string',
+  bullet: 'meta',
+  link: 'comment',
+  markdown_link_label: 'type',
   addition: 'added',
   deletion: 'removed',
 };
@@ -86,7 +93,9 @@ class RangeEmitter implements Emitter {
 
   // highlight.js also calls these tree methods directly for enclosing modes.
   openNode(scope: string): void {
-    this.stack.push(scopes[scope.split('.')[0]!] ?? this.stack[this.stack.length - 1]!);
+    this.stack.push(
+      scopes[scope] ?? scopes[scope.split('.')[0]!] ?? this.stack[this.stack.length - 1]!,
+    );
   }
   closeNode(): void {
     if (this.stack.length > 1) this.stack.pop();
@@ -191,18 +200,7 @@ for (const [language, words] of Object.entries(labels)) {
 const highlighter = hljs.newInstance();
 highlighter.configure({ __emitter: RangeEmitter });
 for (const [name, grammar] of Object.entries(languages)) {
-  highlighter.registerLanguage(name, (api) => {
-    const language = grammar(api);
-    if (name === 'javascript' || name === 'typescript') {
-      // These grammars share a title scope for declarations and invocations.
-      // Preserve named declarations while keeping ordinary calls in code ink.
-      for (const mode of language.contains ?? []) {
-        if (mode !== 'self' && mode.className === 'title.function' && mode.match)
-          mode.className = 'function_call';
-      }
-    }
-    return language;
-  });
+  highlighter.registerLanguage(name, grammar);
 }
 
 // The stock Markdown grammar treats fenced contents as opaque code. Give known
@@ -234,7 +232,19 @@ const embeddedFences: Mode[] = Object.entries(labels)
 highlighter.registerLanguage('markdown', (api) => {
   const grammar = markdown(api);
   grammar.case_insensitive = true;
-  grammar.contains.unshift(...embeddedFences);
+  for (const mode of grammar.contains) {
+    if (mode === 'self') continue;
+    const parts = mode.contains;
+    if (!parts?.some((part) => part !== 'self' && part.className === 'link')) continue;
+    // Markdown's grammar calls link labels strings; keep URLs muted and labels blue.
+    for (const part of parts) {
+      if (part !== 'self' && part.className === 'string') part.className = 'markdown_link_label';
+    }
+  }
+  grammar.contains.unshift(...embeddedFences, {
+    className: 'literal',
+    begin: /(?<=^[ \t]*[-+*][ \t]+)\[[ xX]\]/,
+  });
   return grammar;
 });
 

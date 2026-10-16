@@ -60,7 +60,7 @@ export function CheckpointCard({ sessionId, turnId }: { sessionId: string; turnI
             backgroundColor: colors.overlay_strong,
           }}
         >
-          <Icon name="file-diff" size={16} color={colors.text_secondary} />
+          <Icon name="file-diff" size={16} color={colors.text_tertiary} />
         </div>
         <div style={{ minWidth: 0, flexGrow: 1, gap: 0, position: 'relative', top: 2 }}>
           <div style={{ ...textStyle, fontWeight: 500, color: colors.text }}>
@@ -88,7 +88,7 @@ export function CheckpointCard({ sessionId, turnId }: { sessionId: string; turnI
             active: { backgroundColor: colors.overlay },
           }}
         >
-          <Icon name="file-diff" size={12} color={colors.text_secondary} />
+          <Icon name="file-diff" size={12} color={colors.text_tertiary} />
           <div>{t('transcript.review_changes')}</div>
         </Button>
       </div>

@@ -544,19 +544,26 @@ function InlineDiff({ files }: { files: ToolDiffFile[] }) {
                           ? '#4a3030'
                           : '#f7dada'
                         : undefined,
-                  borderLeftWidth: 2,
-                  borderColor:
-                    line.kind === '+'
-                      ? colors.success
-                      : line.kind === '-'
-                        ? colors.danger
-                        : 'transparent',
                 }}
               >
+                <div
+                  style={{
+                    width: 2,
+                    flexShrink: 0,
+                    marginRight: line.kind === '+' || line.kind === '-' ? 2 : 0,
+                    alignSelf: 'stretch',
+                    backgroundColor:
+                      line.kind === '+'
+                        ? colors.success
+                        : line.kind === '-'
+                          ? colors.danger
+                          : undefined,
+                  }}
+                />
                 <text
                   style={{
                     width: 51,
-                    paddingRight: 10,
+                    paddingRight: 9,
                     textAlign: 'right',
                     color:
                       line.kind === '+'
