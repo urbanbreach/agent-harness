@@ -30,6 +30,9 @@ test('fixture instances are deterministic and mutations never modify the authore
       'attachment:blake3:6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85',
     );
     expect(await a.call('blobs.get', { digest })).toEqual(blob);
+    expect(await a.call('sessions.attachment', { runDir: rows[0]!.runDir, ref: digest })).toEqual({
+      dataBase64: blob.dataBase64,
+    });
     expect(await b.call('blobs.get', { digest })).toBeNull();
     const updates: string[] = [];
     const delivered = Promise.withResolvers<void>();
@@ -80,17 +83,95 @@ test('fixture Markdown export writes visible session content and reports actual 
 
 test('fixture environment selects each packaged scenario without spawning Harness', async () => {
   const previous = process.env.HARNESS_GUI_FIXTURE;
+  const atlasSessions = [
+    'release-review',
+    'search-relevance',
+    'health-checks',
+    'onboarding-copy',
+    'migration-checklist',
+    'api-errors',
+  ];
   try {
-    for (const [name, count] of [
-      ['empty', 0],
-      ['project', 1],
-      ['conversation', 1],
+    for (const [name, count, cwd, sessionIds, theme] of [
+      ['atlas-transcript-light', 2, '/tmp/harness-panel-repos/atlas', atlasSessions, 'light'],
+      ['atlas-transcript', 2, '/tmp/harness-panel-repos/atlas', atlasSessions, 'dark'],
+      ['composer-attachments', 2, '/tmp/composer-atlas', atlasSessions, 'dark'],
+      ['composer-completions', 1, '/tmp/composer-atlas', [], null],
+      ['composer-files', 2, '/tmp/composer-atlas', atlasSessions, 'dark'],
+      ['composer-multiline', 2, '/tmp/composer-atlas', atlasSessions, 'dark'],
+      ['composer-no-providers', 2, '/tmp/composer-atlas', atlasSessions, 'dark'],
+      ['composer-queue', 2, '/tmp/composer-atlas', atlasSessions, 'dark'],
+      ['composer-readonly', 1, '/tmp/composerlive-workspace', ['readonly'], 'dark'],
+      ['composer-slash', 2, '/tmp/composer-atlas', atlasSessions, 'dark'],
+      ['composer', 1, '/tmp/composer-atlas', [], 'dark'],
+      ['conversation', 1, '/fixture/demo', ['chat', 'notes', 'draft'], null],
+      ['empty', 0, '/fixture', [], null],
+      ['palette-light', 2, '/tmp/harness-panel-repos/atlas', atlasSessions, 'light'],
+      ['palette-query', 2, '/tmp/harness-panel-repos/atlas', atlasSessions, 'dark'],
+      ['palette', 2, '/tmp/harness-panel-repos/atlas', atlasSessions, 'dark'],
+      ['panel-dark', 2, '/tmp/harness-panel-repos/atlas', atlasSessions, 'dark'],
+      ['panel-light', 2, '/tmp/harness-panel-repos/atlas', atlasSessions, 'light'],
+      ['project', 1, '/fixture/demo', [], null],
+      ['settings-accounts', 2, '/fixture/atlas', atlasSessions, null],
+      ['settings-auth', 1, '/fixture/auth', [], null],
+      ['settings-light', 2, '/fixture/atlas', atlasSessions, 'light'],
+      ['settings', 2, '/fixture/atlas', atlasSessions, 'dark'],
+      ['shell-blank', 2, '/tmp/harness-panel-repos/atlas', [], 'dark'],
+      ['shellparity-blank-dark', 2, '/tmp/shellparity-projects/atlas', [], 'dark'],
+      ['shellparity-blank-light', 2, '/tmp/shellparity-projects/atlas', [], 'light'],
+      [
+        'shellparity-branch',
+        2,
+        '/tmp/shellparity-projects/atlas',
+        ['release-review', 'health-checks', 'migration-checklist', 'api-errors'],
+        'dark',
+      ],
+      ['shellparity-narrow', 2, '/tmp/shellparity-projects/atlas', atlasSessions, 'dark'],
+      ['shellparity-sidebar-dark', 2, '/tmp/shellparity-projects/atlas', atlasSessions, 'dark'],
+      ['shellparity-sidebar-light', 2, '/tmp/shellparity-projects/atlas', atlasSessions, 'light'],
+      ['shellparity-sidebar-seven', 2, '/tmp/shellparity-projects/atlas', atlasSessions, 'dark'],
+      ['shellparity-sidebar-ten', 2, '/tmp/shellparity-projects/atlas', atlasSessions, 'dark'],
+      [
+        'shellparity-toast',
+        2,
+        '/tmp/shellparity-projects/atlas',
+        ['release-review', 'health-checks', 'migration-checklist', 'api-errors'],
+        'dark',
+      ],
+      ['shellparity-welcome-dark', 0, '/fixture', [], 'dark'],
+      ['shellparity-welcome-light', 0, '/fixture', [], 'light'],
+      [
+        'shellparity-working',
+        2,
+        '/tmp/shellparity-projects/atlas',
+        [
+          'question-only',
+          'release-review',
+          'search-relevance',
+          'health-checks',
+          'onboarding-copy',
+          'migration-checklist',
+          'api-errors',
+        ],
+        'dark',
+      ],
+      ['sidebar', 2, '/tmp/harness-panel-repos/atlas', atlasSessions, null],
     ] as const) {
       process.env.HARNESS_GUI_FIXTURE = name;
       const backend = await createBackend();
       try {
-        expect((await backend.call('app.initialize', {})).version).toBe('fixture');
-        expect(await backend.call('state.read', { name: 'projects' })).toHaveLength(count);
+        const initialized = await backend.call('app.initialize', {});
+        expect(initialized.version).toBe('fixture');
+        expect(initialized.defaultCwd).toBe(cwd);
+        const projects = await backend.call('state.read', { name: 'projects' });
+        expect(projects).toHaveLength(count);
+        if (count) expect(projects).toContainEqual(expect.objectContaining({ cwd }));
+        const sessions = await backend.call('sessions.list', { cwd });
+        expect(sessions.map((session) => session.runId)).toEqual([...sessionIds]);
+        if (theme !== null)
+          expect(await backend.call('state.read', { name: 'ui' })).toMatchObject({
+            appearance: { preference: theme },
+          });
       } finally {
         backend.close();
       }

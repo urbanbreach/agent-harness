@@ -1,14 +1,13 @@
 {
+  "base": "shellparity-blank-dark",
   "state": {
     "layout": {
-      "selectedProject": "atlas",
       "selectedTask": "release-review"
     },
     "preferences": {
       "referenceNow": 1792106434000,
       "sidebarGrouping": "updated",
-      "sidebarOrdering": "newest",
-      "lastAccessMode": "full"
+      "sidebarOrdering": "newest"
     },
     "turn-checkpoints": {
       "release-review": {
@@ -36,207 +35,8 @@
           }
         }
       }
-    },
-    "ui": {
-      "appearance": {
-        "preference": "dark",
-        "uiFontSize": 14,
-        "codeFontSize": 13
-      }
     }
   },
-  "extensions": {
-    "models.catalog": {
-      "current": {
-        "profile": "default",
-        "provider": "codex",
-        "providerLabel": "Codex",
-        "model": "gpt-6.1-sol",
-        "modelLabel": "GPT-6.1-Sol",
-        "variant": "low",
-        "variantLabel": "Low",
-        "label": "GPT-6.1-Sol",
-        "reasoningEffort": "low"
-      },
-      "models": [
-        {
-          "profile": "default",
-          "provider": "anthropic",
-          "providerLabel": "Claude",
-          "model": "default",
-          "modelLabel": "Default (recommended)",
-          "label": "Default (recommended)"
-        },
-        {
-          "profile": "default",
-          "provider": "anthropic",
-          "providerLabel": "Claude",
-          "model": "opus-5-5",
-          "modelLabel": "Opus 5.5",
-          "label": "Opus 5.5"
-        },
-        {
-          "profile": "default",
-          "provider": "anthropic",
-          "providerLabel": "Claude",
-          "model": "fable-5-1",
-          "modelLabel": "Fable 5.1",
-          "label": "Fable 5.1"
-        },
-        {
-          "profile": "default",
-          "provider": "anthropic",
-          "providerLabel": "Claude",
-          "model": "sonnet-5-5",
-          "modelLabel": "Sonnet 5.5",
-          "label": "Sonnet 5.5"
-        },
-        {
-          "profile": "default",
-          "provider": "anthropic",
-          "providerLabel": "Claude",
-          "model": "haiku-5-5",
-          "modelLabel": "Haiku 5.5",
-          "label": "Haiku 5.5"
-        },
-        {
-          "profile": "default",
-          "provider": "codex",
-          "providerLabel": "Codex",
-          "model": "gpt-6.1-sol",
-          "modelLabel": "GPT-6.1-Sol",
-          "variant": "low",
-          "variantLabel": "Low",
-          "label": "GPT-6.1-Sol",
-          "reasoningEffort": "low"
-        },
-        {
-          "profile": "default",
-          "provider": "codex",
-          "providerLabel": "Codex",
-          "model": "gpt-6.1-sol",
-          "modelLabel": "GPT-6.1-Sol",
-          "variant": "medium",
-          "variantLabel": "Medium",
-          "label": "GPT-6.1-Sol",
-          "reasoningEffort": "medium"
-        },
-        {
-          "profile": "default",
-          "provider": "codex",
-          "providerLabel": "Codex",
-          "model": "gpt-6.1-sol",
-          "modelLabel": "GPT-6.1-Sol",
-          "variant": "high",
-          "variantLabel": "High",
-          "label": "GPT-6.1-Sol",
-          "reasoningEffort": "high"
-        },
-        {
-          "profile": "default",
-          "provider": "codex",
-          "providerLabel": "Codex",
-          "model": "gpt-6.1-sol",
-          "modelLabel": "GPT-6.1-Sol",
-          "variant": "extra-high",
-          "variantLabel": "Extra High",
-          "label": "GPT-6.1-Sol",
-          "reasoningEffort": "extra-high"
-        },
-        {
-          "profile": "default",
-          "provider": "codex",
-          "providerLabel": "Codex",
-          "model": "gpt-6.1-sol",
-          "modelLabel": "GPT-6.1-Sol",
-          "variant": "max",
-          "variantLabel": "Max",
-          "label": "GPT-6.1-Sol",
-          "reasoningEffort": "max"
-        },
-        {
-          "profile": "default",
-          "provider": "codex",
-          "providerLabel": "Codex",
-          "model": "gpt-6.1-sol",
-          "modelLabel": "GPT-6.1-Sol",
-          "variant": "ultra",
-          "variantLabel": "Ultra",
-          "label": "GPT-6.1-Sol",
-          "reasoningEffort": "ultra"
-        },
-        {
-          "profile": "default",
-          "provider": "codex",
-          "providerLabel": "Codex",
-          "model": "gpt-6-astra",
-          "modelLabel": "GPT-6-Astra",
-          "variant": "low",
-          "variantLabel": "Low",
-          "label": "GPT-6-Astra",
-          "reasoningEffort": "low"
-        },
-        {
-          "profile": "default",
-          "provider": "codex",
-          "providerLabel": "Codex",
-          "model": "gpt-6-sol",
-          "modelLabel": "GPT-6-Sol",
-          "variant": "low",
-          "variantLabel": "Low",
-          "label": "GPT-6-Sol",
-          "reasoningEffort": "low"
-        },
-        {
-          "profile": "default",
-          "provider": "codex",
-          "providerLabel": "Codex",
-          "model": "gpt-6-luna",
-          "modelLabel": "GPT-6-Luna",
-          "variant": "low",
-          "variantLabel": "Low",
-          "label": "GPT-6-Luna",
-          "reasoningEffort": "low"
-        },
-        {
-          "profile": "default",
-          "provider": "codex",
-          "providerLabel": "Codex",
-          "model": "gpt-5.6-sol",
-          "modelLabel": "GPT-5.6-Sol",
-          "variant": "low",
-          "variantLabel": "Low",
-          "label": "GPT-5.6-Sol",
-          "reasoningEffort": "low"
-        },
-        {
-          "profile": "default",
-          "provider": "codex",
-          "providerLabel": "Codex",
-          "model": "gpt-5.6-terra",
-          "modelLabel": "GPT-5.6-Terra",
-          "variant": "low",
-          "variantLabel": "Low",
-          "label": "GPT-5.6-Terra",
-          "reasoningEffort": "low"
-        }
-      ],
-      "profiles": ["default"],
-      "defaultAccessMode": "full"
-    }
-  },
-  "projects": [
-    {
-      "id": "atlas",
-      "name": "atlas",
-      "cwd": "/tmp/shellparity-projects/atlas"
-    },
-    {
-      "id": "harbor",
-      "name": "harbor",
-      "cwd": "/tmp/harness-panel-repos/harbor"
-    }
-  ],
   "sessions": [
     {
       "row": {

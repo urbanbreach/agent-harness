@@ -10,6 +10,8 @@ process.env.HARNESS_HOME = home;
 const client = new BackendClient([process.env.HARNESS_BIN || 'harness', 'gui-server', '--mock']);
 const kinds: string[] = [];
 const completed = Promise.withResolvers<void>();
+// RPC setup may fail before we await completion; keep its rejection handled until then.
+void completed.promise.catch(() => {});
 let target: string | undefined;
 const timer = setTimeout(
   () =>
@@ -24,13 +26,22 @@ client.subscribe((message) => {
   kinds.push(
     update.kind === 'event' ? `${update.delivery}:${update.event.payload.event_type}` : update.kind,
   );
-  if (
-    (update.kind === 'event' &&
-      update.delivery === 'durable' &&
-      ['assistant_message_finished', 'run_finished'].includes(update.event.payload.event_type)) ||
-    update.kind === 'exited'
-  )
-    completed.resolve();
+  if (update.kind === 'event' && update.delivery === 'durable') {
+    if (update.event.payload.event_type === 'task_completed') completed.resolve();
+    else if (update.event.payload.event_type === 'task_cancelled')
+      completed.reject(new Error(update.event.payload.data.reason));
+    else if (update.event.payload.event_type === 'run_failed')
+      completed.reject(new Error(update.event.payload.data.error));
+  } else if (update.kind === 'notice' && update.level === 'error') {
+    completed.reject(new Error(update.message));
+  } else if (update.kind === 'exited') {
+    completed.reject(new Error(update.error || 'Session exited before durable run completion'));
+  }
+});
+client.subscribeStatus(() => {
+  const status = client.getStatus();
+  if (status.state === 'failed' || status.state === 'closed')
+    completed.reject(new Error(status.error || 'Backend closed before durable run completion'));
 });
 try {
   const initialized = await client.call('app.initialize', { cwd });

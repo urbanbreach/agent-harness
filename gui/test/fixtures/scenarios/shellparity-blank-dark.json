@@ -1,4 +1,5 @@
 {
+  "base": "shell-blank",
   "projects": [
     {
       "id": "atlas",
@@ -11,34 +12,11 @@
       "cwd": "/tmp/harness-panel-repos/harbor"
     }
   ],
-  "sessions": [],
-  "state": {
-    "layout": {
-      "selectedProject": "atlas"
-    },
-    "preferences": {
-      "lastAccessMode": "full"
-    },
-    "ui": {
-      "appearance": {
-        "preference": "dark",
-        "uiFontSize": 14,
-        "codeFontSize": 13
-      }
-    }
-  },
   "extensions": {
     "models.catalog": {
       "current": {
-        "profile": "default",
         "provider": "codex",
-        "providerLabel": "Codex",
-        "model": "gpt-6.1-sol",
-        "modelLabel": "GPT-6.1-Sol",
-        "variant": "low",
-        "variantLabel": "Low",
-        "label": "GPT-6.1-Sol",
-        "reasoningEffort": "low"
+        "providerLabel": "Codex"
       },
       "models": [
         {
@@ -203,7 +181,6 @@
           "reasoningEffort": "low"
         }
       ],
-      "profiles": ["default"],
       "defaultAccessMode": "full"
     }
   }

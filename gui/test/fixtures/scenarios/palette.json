@@ -1,14 +1,8 @@
 {
+  "base": "sidebar",
   "state": {
-    "layout": {
-      "selectedProject": "atlas",
-      "selectedTask": "release-review"
-    },
     "preferences": {
       "referenceNow": 1792106672539,
-      "sidebarGrouping": "updated",
-      "sidebarOrdering": "newest",
-      "lastAccessMode": "full",
       "favoriteModels": ["[\"default\",\"codex\",\"gpt-6.1-sol\"]"],
       "stashedDrafts": [
         {
@@ -16,33 +10,6 @@
           "attachments": []
         }
       ]
-    },
-    "turn-checkpoints": {
-      "release-review": {
-        "nextIndex": 2,
-        "pending": [],
-        "turns": {
-          "release-review-turn": {
-            "turn": 1,
-            "ref": "refs/harness-gui/release-review/1-end",
-            "startRef": "refs/harness-gui/release-review/1-start",
-            "endRef": "refs/harness-gui/release-review/1-end",
-            "cwd": "/tmp/harness-panel-repos/atlas",
-            "state": "ready",
-            "files": [
-              {
-                "path": "notes.txt",
-                "status": "modified",
-                "additions": 1,
-                "deletions": 0
-              }
-            ],
-            "additions": 1,
-            "deletions": 0,
-            "createdAt": 1792105954000
-          }
-        }
-      }
     },
     "ui": {
       "appearance": {
@@ -52,18 +19,6 @@
       }
     }
   },
-  "projects": [
-    {
-      "id": "atlas",
-      "name": "atlas",
-      "cwd": "/tmp/harness-panel-repos/atlas"
-    },
-    {
-      "id": "harbor",
-      "name": "harbor",
-      "cwd": "/tmp/harness-panel-repos/harbor"
-    }
-  ],
   "sessions": [
     {
       "row": {
@@ -1118,15 +1073,8 @@
     "models.catalog": {
       "defaultAccessMode": "full",
       "current": {
-        "profile": "default",
         "provider": "codex",
-        "providerLabel": "Codex",
-        "model": "gpt-6.1-sol",
-        "modelLabel": "GPT-6.1-Sol",
-        "variant": "low",
-        "variantLabel": "Low",
-        "label": "GPT-6.1-Sol",
-        "reasoningEffort": "low"
+        "providerLabel": "Codex"
       },
       "models": [
         {
@@ -1290,8 +1238,7 @@
           "modelLabel": "Haiku 5.5",
           "label": "Haiku 5.5"
         }
-      ],
-      "profiles": ["default"]
+      ]
     }
   }
 }

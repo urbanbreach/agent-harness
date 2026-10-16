@@ -1,0 +1,27 @@
+{
+  "base": "settings",
+  "extensions": {
+    "settings.list": [
+      {
+        "id": "runtime.compaction.summary_model",
+        "surface": "Compaction",
+        "label": "Summary model",
+        "description": "Model for compaction summaries.",
+        "kind": "string",
+        "value": null,
+        "defaultValue": null,
+        "editable": true
+      }
+    ],
+    "usage.history": {
+      "from": "2026-10-03",
+      "to": "2026-11-01",
+      "totals": {
+        "inputTokens": 10,
+        "cachedInputTokens": 20,
+        "cacheWriteTokens": 70,
+        "totalTokens": 100
+      }
+    }
+  }
+}

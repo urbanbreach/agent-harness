@@ -267,7 +267,10 @@ export class FixtureBackend implements Backend {
             last_updated_at: null,
             workspace_root: p.cwd,
             profile_preset: null,
-            provider_model: null,
+            provider_model:
+              p.selection?.provider && p.selection?.model
+                ? `${p.selection.provider}/${p.selection.model}`
+                : null,
             mode_source: 'scenario_fixture',
             is_resumable: true,
             resume_disabled_reason: null,
@@ -522,11 +525,34 @@ export class FixtureBackend implements Backend {
 export async function createBackend(): Promise<Backend> {
   const name = process.env.HARNESS_GUI_FIXTURE;
   if (!name) return new BackendClient();
-  if (!/^[a-z0-9-]+$/.test(name)) throw new Error('Invalid fixture scenario name');
-  const scenario = (await Bun.file(
-    new URL(`../../test/fixtures/scenarios/${name}.json`, import.meta.url),
-  ).json()) as Scenario;
-  return new FixtureBackend(scenario);
+  const merge = (base: Json, override: Json): Json => {
+    if (
+      base === null ||
+      override === null ||
+      typeof base !== 'object' ||
+      typeof override !== 'object' ||
+      Array.isArray(base) ||
+      Array.isArray(override)
+    )
+      return override;
+    const result = { ...base };
+    for (const [key, value] of Object.entries(override))
+      result[key] = key in base ? merge(base[key]!, value) : value;
+    return result;
+  };
+  const load = async (name: string, ancestors: string[] = []): Promise<Scenario> => {
+    if (!/^[a-z0-9-]+$/.test(name)) throw new Error('Invalid fixture scenario name');
+    if (ancestors.includes(name)) throw new Error('Circular fixture scenario base');
+    const { base, ...scenario } = (await Bun.file(
+      new URL(`../../test/fixtures/scenarios/${name}.json`, import.meta.url),
+    ).json()) as { base?: string } & Record<string, Json>;
+    if (base === undefined) return scenario as unknown as Scenario;
+    return merge(
+      (await load(base, [...ancestors, name])) as unknown as Json,
+      scenario,
+    ) as unknown as Scenario;
+  };
+  return new FixtureBackend(await load(name));
 }
 
 function expandTemplate(template: string, raw: string): string {

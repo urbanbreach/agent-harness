@@ -1,4 +1,5 @@
 {
+  "base": "shellparity-welcome-dark",
   "state": {
     "layout": {
       "selectedProject": "atlas",
@@ -36,13 +37,6 @@
             "createdAt": 1792105954000
           }
         }
-      }
-    },
-    "ui": {
-      "appearance": {
-        "preference": "dark",
-        "uiFontSize": 14,
-        "codeFontSize": 13
       }
     },
     "drafts": {

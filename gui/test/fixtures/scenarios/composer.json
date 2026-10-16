@@ -1,4 +1,5 @@
 {
+  "base": "shellparity-blank-dark",
   "projects": [
     {
       "id": "atlas",
@@ -6,43 +7,22 @@
       "cwd": "/tmp/composer-atlas"
     }
   ],
-  "sessions": [],
   "state": {
     "preferences": {
       "theme": "dark",
-      "lastAccessMode": "full",
       "favoriteModels": []
     },
     "layout": {
-      "selectedProject": "atlas",
       "selectedTask": null
     },
     "drafts": {
       "project:atlas": {
         "text": "Review the release checklist and suggest the next step."
       }
-    },
-    "ui": {
-      "appearance": {
-        "preference": "dark",
-        "uiFontSize": 14,
-        "codeFontSize": 13
-      }
     }
   },
   "extensions": {
     "models.catalog": {
-      "current": {
-        "profile": "default",
-        "provider": "codex",
-        "providerLabel": "Codex",
-        "model": "gpt-6.1-sol",
-        "modelLabel": "GPT-6.1-Sol",
-        "variant": "low",
-        "variantLabel": "Low",
-        "label": "GPT-6.1-Sol",
-        "reasoningEffort": "low"
-      },
       "models": [
         {
           "profile": "default",
@@ -240,11 +220,7 @@
           "model": "moonshotai/kimi-k2-instruct-0905",
           "label": "Kimi K2"
         }
-      ],
-      "profiles": [
-        "default"
-      ],
-      "defaultAccessMode": "full"
+      ]
     }
   }
 }

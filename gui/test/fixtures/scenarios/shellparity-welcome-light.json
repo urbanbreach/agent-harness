@@ -1,12 +1,9 @@
 {
-  "projects": [],
-  "sessions": [],
+  "base": "shellparity-welcome-dark",
   "state": {
     "ui": {
       "appearance": {
-        "preference": "light",
-        "uiFontSize": 14,
-        "codeFontSize": 13
+        "preference": "light"
       }
     }
   }

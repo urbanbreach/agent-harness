@@ -1,4 +1,5 @@
 {
+  "base": "shellparity-welcome-dark",
   "state": {
     "layout": {
       "selectedProject": "atlas",
@@ -8,13 +9,6 @@
       "referenceNow": 1792106066000,
       "sidebarGrouping": "updated",
       "sidebarOrdering": "newest"
-    },
-    "ui": {
-      "appearance": {
-        "preference": "dark",
-        "uiFontSize": 14,
-        "codeFontSize": 13
-      }
     }
   },
   "projects": [
@@ -711,14 +705,24 @@
         "id": "openai",
         "label": "OpenAI",
         "description": "Use OpenAI models with an API key.",
-        "methods": [{ "id": "api-key", "label": "API key" }],
+        "methods": [
+          {
+            "id": "api-key",
+            "label": "API key"
+          }
+        ],
         "connected": false
       },
       {
         "id": "anthropic",
         "label": "Anthropic",
         "description": "Claude API and subscription accounts.",
-        "methods": [{ "id": "api-key", "label": "API key" }],
+        "methods": [
+          {
+            "id": "api-key",
+            "label": "API key"
+          }
+        ],
         "connected": false
       }
     ],

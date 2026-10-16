@@ -1,6 +1,5 @@
 {
-  "projects": [],
-  "sessions": [],
+  "base": "empty",
   "state": {
     "ui": {
       "appearance": {

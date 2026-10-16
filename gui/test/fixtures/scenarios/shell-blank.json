@@ -1,13 +1,24 @@
 {
+  "base": "shellparity-welcome-dark",
   "projects": [
-    { "id": "atlas", "name": "atlas", "cwd": "/tmp/harness-panel-repos/atlas" },
-    { "id": "harbor", "name": "harbor", "cwd": "/tmp/harness-panel-repos/harbor" }
+    {
+      "id": "atlas",
+      "name": "atlas",
+      "cwd": "/tmp/harness-panel-repos/atlas"
+    },
+    {
+      "id": "harbor",
+      "name": "harbor",
+      "cwd": "/tmp/harness-panel-repos/harbor"
+    }
   ],
-  "sessions": [],
   "state": {
-    "layout": { "selectedProject": "atlas" },
-    "preferences": { "lastAccessMode": "full" },
-    "ui": { "appearance": { "preference": "dark", "uiFontSize": 14, "codeFontSize": 13 } }
+    "layout": {
+      "selectedProject": "atlas"
+    },
+    "preferences": {
+      "lastAccessMode": "full"
+    }
   },
   "extensions": {
     "models.catalog": {
