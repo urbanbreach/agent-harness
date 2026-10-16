@@ -138,6 +138,36 @@ jobs:
             target/nextest/ci/
           retention-days: 7
 
+  gui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/setup-rust
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.3"
+      - name: Install GPUI build dependencies
+        run: >
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          clang cmake pkg-config libfontconfig-dev libfreetype-dev libwayland-dev
+          libxkbcommon-x11-dev libx11-xcb-dev libvulkan-dev libzstd-dev libssl-dev
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/harness-gui-native
+          key: gui-native-${{ hashFiles('gui/native/build.sh', 'gui/native/patches/**') }}
+      - run: gui/native/build.sh
+      - run: bun install --frozen-lockfile
+        working-directory: gui
+      - run: bun x tsc --noEmit -p .
+        working-directory: gui
+      - run: bun test
+        working-directory: gui
+      - run: bun run format:check
+        working-directory: gui
+
   binary-smoke:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
