@@ -1,5 +1,6 @@
 import type { Backend, BackendStatus } from '../backend/client';
 import { runBeforeSubmit as runSubmitHooks } from '../app/turn-hooks';
+import { prepareTurnCheckpoint } from '../app/transcript/checkpoints';
 import type {
   AccessMode,
   Attachment,
@@ -581,6 +582,10 @@ export class AppStore {
       }
       const cwd = this.state.live[sessionId]?.cwd ?? this.row(sessionId)?.cwd;
       if (!cwd) throw new Error(`Unknown workspace for session ${sessionId}`);
+      if (target.kind !== 'session')
+        await prepareTurnCheckpoint({ sessionId, cwd }, this).catch((error) =>
+          this.reportError(String(error)),
+        );
       await runSubmitHooks({ sessionId, cwd }, (error) => this.reportError(String(error)));
       await runBeforeSubmit?.({ sessionId, cwd });
       const status = this.sessionStatus(sessionId);

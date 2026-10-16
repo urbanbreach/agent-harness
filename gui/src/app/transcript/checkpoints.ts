@@ -46,8 +46,7 @@ function immutable(checkpoint: TurnCheckpoint): TurnCheckpoint {
   Object.freeze(checkpoint.files);
   return Object.freeze(checkpoint);
 }
-function registry() {
-  const store = getAppStore();
+function registry(store = getAppStore()) {
   let result = registries.get(store);
   if (!result) {
     const sessions = new Map<string, SessionCheckpoints>();
@@ -68,15 +67,15 @@ function registry() {
           (state.data.pending.length ||
             Object.values(state.data.turns).some((c) => c.ref === c.startRef))
         ) {
-          void reconcile(id, view).catch(console.error);
+          void reconcile(id, view, store).catch(console.error);
         }
       }
     });
   }
   return result;
 }
-function session(sessionId: string): SessionCheckpoints {
-  const registryState = registry();
+function session(sessionId: string, store = getAppStore()): SessionCheckpoints {
+  const registryState = registry(store);
   let state = registryState.sessions.get(sessionId);
   if (!state) {
     state = {
@@ -103,8 +102,12 @@ function session(sessionId: string): SessionCheckpoints {
   }
   return state;
 }
-function enqueue(sessionId: string, operation: (state: SessionCheckpoints) => Promise<void>) {
-  const state = session(sessionId);
+function enqueue(
+  sessionId: string,
+  operation: (state: SessionCheckpoints) => Promise<void>,
+  store = getAppStore(),
+) {
+  const state = session(sessionId, store);
   const next = state.operations.then(async () => {
     await state.loaded;
     await operation(state);
@@ -112,13 +115,13 @@ function enqueue(sessionId: string, operation: (state: SessionCheckpoints) => Pr
   state.operations = next.catch(() => {});
   return next;
 }
-async function save(sessionId: string, state: SessionCheckpoints) {
+async function save(sessionId: string, state: SessionCheckpoints, store = getAppStore()) {
   state.listeners.forEach((listener) => listener());
-  const target = registry();
+  const target = registry(store);
   const data = state.data;
   const operation = target.writes.then(async () => {
     const document = { ...(await target.document), [sessionId]: data };
-    await getAppStore().backend.call('state.write', {
+    await store.backend.call('state.write', {
       name: 'turn-checkpoints',
       value: document as unknown as Json,
     });
@@ -127,40 +130,88 @@ async function save(sessionId: string, state: SessionCheckpoints) {
   target.writes = operation.catch(() => {});
   await operation;
 }
-function reconcile(sessionId: string, view: SessionView) {
-  return enqueue(sessionId, async (state) => {
-    let changed = false;
-    const turns = { ...state.data.turns };
-    const pending = [...state.data.pending];
-    for (const turn of view.turns) {
-      if (!turns[turn.id]) {
-        const index = pending.findIndex((item) => !item.knownTurns.includes(turn.id));
-        if (index >= 0) {
-          turns[turn.id] = pending.splice(index, 1)[0]!.checkpoint;
+function reconcile(sessionId: string, view: SessionView, store = getAppStore()) {
+  return enqueue(
+    sessionId,
+    async (state) => {
+      let changed = false;
+      const turns = { ...state.data.turns };
+      const pending = [...state.data.pending];
+      for (const turn of view.turns) {
+        if (!turns[turn.id]) {
+          const index = pending.findIndex((item) => !item.knownTurns.includes(turn.id));
+          if (index >= 0) {
+            turns[turn.id] = pending.splice(index, 1)[0]!.checkpoint;
+            changed = true;
+          }
+        }
+        const checkpoint = turns[turn.id];
+        if (
+          checkpoint &&
+          checkpoint.ref === checkpoint.startRef &&
+          ['completed', 'failed', 'interrupted'].includes(turn.status)
+        ) {
+          const end = await captureTurnEnd(checkpoint.cwd, sessionId, checkpoint.turn);
+          turns[turn.id] = immutable({
+            ...end,
+            cwd: checkpoint.cwd,
+            startRef: checkpoint.startRef,
+            endRef: end.ref,
+          });
           changed = true;
         }
       }
-      const checkpoint = turns[turn.id];
-      if (
-        checkpoint &&
-        checkpoint.ref === checkpoint.startRef &&
-        ['completed', 'failed', 'interrupted'].includes(turn.status)
-      ) {
-        const end = await captureTurnEnd(checkpoint.cwd, sessionId, checkpoint.turn);
-        turns[turn.id] = immutable({
-          ...end,
-          cwd: checkpoint.cwd,
-          startRef: checkpoint.startRef,
-          endRef: end.ref,
-        });
-        changed = true;
+      if (changed) {
+        state.data = { ...state.data, turns: Object.freeze(turns), pending };
+        await save(sessionId, state, store);
       }
-    }
-    if (changed) {
-      state.data = { ...state.data, turns: Object.freeze(turns), pending };
-      await save(sessionId, state);
-    }
-  });
+    },
+    store,
+  );
+}
+export async function prepareTurnCheckpoint(
+  context: { sessionId: string; cwd: string },
+  store = getAppStore(),
+) {
+  const view = store.getSnapshot().views[context.sessionId];
+  if (!view) return;
+  await reconcile(context.sessionId, view, store);
+  await enqueue(
+    context.sessionId,
+    async (current) => {
+      const knownTurns = view.turns.map((item) => item.id);
+      if (
+        current.data.pending.some(
+          (pending) =>
+            pending.knownTurns.length === knownTurns.length &&
+            pending.knownTurns.every((id, index) => id === knownTurns[index]),
+        )
+      )
+        return;
+      const turn = Math.max(1, current.data.nextIndex, view.turns.length + 1);
+      const startRef = await captureTurnStart(context.cwd, context.sessionId, turn);
+      if (!startRef) return;
+      const checkpoint = immutable({
+        turn,
+        ref: startRef,
+        state: 'unavailable',
+        files: [],
+        additions: 0,
+        deletions: 0,
+        createdAt: Date.now(),
+        startRef,
+        endRef: checkpointRef(context.sessionId, turn, 'end'),
+        cwd: context.cwd,
+      });
+      current.data = {
+        ...current.data,
+        nextIndex: turn + 1,
+        pending: [...current.data.pending, { checkpoint, knownTurns }],
+      };
+      await save(context.sessionId, current, store);
+    },
+    store,
+  );
 }
 
 /** Includes start-only checkpoints so rewind becomes available before a diff is ready. */
@@ -185,33 +236,7 @@ export function useTurnCheckpoints(
     void reconcile(sessionId, latest.current).catch(console.error);
     return registerBeforeSubmit(async (context) => {
       if (context.sessionId !== sessionId) return;
-      await reconcile(sessionId, latest.current);
-      await enqueue(sessionId, async (current) => {
-        const turn = Math.max(1, current.data.nextIndex, latest.current.turns.length + 1);
-        const startRef = await captureTurnStart(context.cwd, sessionId, turn);
-        if (!startRef) return;
-        const checkpoint = immutable({
-          turn,
-          ref: startRef,
-          state: 'unavailable',
-          files: [],
-          additions: 0,
-          deletions: 0,
-          createdAt: Date.now(),
-          startRef,
-          endRef: checkpointRef(sessionId, turn, 'end'),
-          cwd: context.cwd,
-        });
-        current.data = {
-          ...current.data,
-          nextIndex: turn + 1,
-          pending: [
-            ...current.data.pending,
-            { checkpoint, knownTurns: latest.current.turns.map((item) => item.id) },
-          ],
-        };
-        await save(sessionId, current);
-      });
+      await prepareTurnCheckpoint(context);
     });
   }, [sessionId, state]);
   useEffect(() => {
