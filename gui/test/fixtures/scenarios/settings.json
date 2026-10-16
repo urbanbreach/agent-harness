@@ -8,6 +8,13 @@
       "referenceNow": 1792106066000,
       "sidebarGrouping": "updated",
       "sidebarOrdering": "newest"
+    },
+    "ui": {
+      "appearance": {
+        "preference": "dark",
+        "uiFontSize": 14,
+        "codeFontSize": 13
+      }
     }
   },
   "projects": [
@@ -763,7 +770,7 @@
           ],
           "supportingFiles": 0,
           "sizeBytes": 128,
-          "updatedAt": 1792107543557
+          "updatedAt": 1792105826000
         },
         {
           "id": "incident-notes",
@@ -788,7 +795,7 @@
           ],
           "supportingFiles": 0,
           "sizeBytes": 138,
-          "updatedAt": 1792107543557
+          "updatedAt": 1792105826000
         },
         {
           "id": "legacy-migration",
@@ -813,7 +820,7 @@
           ],
           "supportingFiles": 0,
           "sizeBytes": 143,
-          "updatedAt": 1792107543557
+          "updatedAt": 1792105826000
         },
         {
           "id": "release-review",
@@ -838,7 +845,7 @@
           ],
           "supportingFiles": 0,
           "sizeBytes": 177,
-          "updatedAt": 1792107543557
+          "updatedAt": 1792105826000
         }
       ]
     }

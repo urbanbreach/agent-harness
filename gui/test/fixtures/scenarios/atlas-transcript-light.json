@@ -224,8 +224,8 @@
             "data": {
               "tool_call_id": "tool-0",
               "status": "succeeded",
-              "output_summary": " M notes.txt\n D README.md\n?? release.md\n?? summary.txt",
-              "output_json": " M notes.txt\n D README.md\n?? release.md\n?? summary.txt",
+              "output_summary": "M notes.txt\n D README.md\n?? release.md\n?? summary.txt",
+              "output_json": "M notes.txt\n D README.md\n?? release.md\n?? summary.txt",
               "metadata": null
             }
           }

@@ -28,9 +28,11 @@
     {
       "kind": "tool",
       "id": "panel-plan",
-      "toolId": "bash",
+      "toolId": "eval",
       "args": {
-        "command": "bash -lc 'for sessions in \"$HARNESS_HOME\"/sessions/v2-*; do if test -d \"$sessions\"; then runtime=\"$HARNESS_HOME/projects/${sessions##*/}\"; mkdir -p \"$runtime/plans\"; printf \"# Atlas rollout plan\\n\\n1. Confirm the launch window.\\n2. Stage the release and watch the metrics.\\n3. Share the outcome with the team.\\n\" > \"$runtime/plans/release.md\"; fi; done'"
+        "language": "py",
+        "summary": "Write the rollout plan in the isolated project runtime",
+        "code": "from pathlib import Path\nhome = Path.cwd().parent\nassert (home / 'gui').is_dir() and (home / 'sessions').is_dir(), 'Use the isolated panel proof driver'\nfor sessions in (home / 'sessions').glob('v2-*'):\n    plans = home / 'projects' / sessions.name / 'plans'\n    plans.mkdir(parents=True, exist_ok=True)\n    path = plans / 'release.md'\n    path.write_text('# Atlas rollout plan\\n\\n1. Confirm the launch window.\\n2. Stage the release and watch the metrics.\\n3. Share the outcome with the team.\\n')\n    print(path)"
       }
     },
     { "kind": "stop" }
