@@ -408,6 +408,7 @@ export function FilesView({
                     value={replacement}
                     onChange={setReplacement}
                     placeholder={t('input.replace')}
+                    interceptedKeys={['enter', 'shift-enter', 'ctrl-alt-enter']}
                     style={{
                       width: findWidth,
                       flexShrink: 0,
