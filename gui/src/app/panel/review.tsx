@@ -37,7 +37,6 @@ import {
 } from './review-model';
 import { FileIcon } from './shared';
 
-export { CommitDialog } from './commit';
 type Selection =
   { cwd: string; source: 'uncommitted' | 'branch' } | { sessionId: string; turnId: string };
 const selections = new Set<(selection: Selection) => void>();
@@ -223,8 +222,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
       setError(undefined);
       try {
         const captured = await collectReviewDiff(cwd, chosen, abort.signal);
-        const hydrated = await expandReviewContext(captured, 2_147_483_647, abort.signal);
-        const base = hydrated.patch.length > 32 * 1024 * 1024 ? captured : hydrated;
+        const base = await expandReviewContext(captured, 2_147_483_647, abort.signal);
         const names = (
           await gitCommand(
             base.root,
@@ -399,7 +397,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
     if (index >= 0) renderer?.scrollToItem?.(list.current.id, index, saved.offset);
   }, [rows, renderer]);
   useEffect(() => {
-    const target = navigationRefs.current.get(navigation[cursor]?.path ?? '');
+    const target = navigationRefs.current.get(navigation[cursor]?.id ?? '');
     if (treeFocused && target) renderer?.scrollIntoView?.(target.id);
   }, [cursor, navigation, treeFocused, renderer]);
   function jump(path: string) {
@@ -1044,7 +1042,9 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                         setCollapsed((old) => new Set([...old, item.path]));
                       else {
                         const parent = item.path.slice(0, item.path.lastIndexOf('/'));
-                        const index = navigation.findIndex((row) => row.path === parent);
+                        const index = navigation.findIndex(
+                          (row) => row.directory && row.path === parent,
+                        );
                         if (index >= 0) setCursor(index);
                       }
                     }
@@ -1073,10 +1073,10 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                         : colors.warning;
                   return (
                     <div
-                      key={item.path}
+                      key={item.id}
                       ref={(value) => {
-                        if (value) navigationRefs.current.set(item.path, value);
-                        else navigationRefs.current.delete(item.path);
+                        if (value) navigationRefs.current.set(item.id, value);
+                        else navigationRefs.current.delete(item.id);
                       }}
                       style={{
                         display: 'flex',
@@ -1091,7 +1091,7 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                         tabIndex={-1}
                         role="treeitem"
                         aria-label={item.path}
-                        aria-selected={selected === item.path}
+                        aria-selected={!item.directory && selected === item.path}
                         aria-expanded={
                           item.directory
                             ? query.trim()
@@ -1112,7 +1112,8 @@ function ReviewBody({ cwd, sessionId }: { cwd: string; sessionId: string | null 
                             cursor === index &&
                             (item.directory || selected === item.path)
                               ? colors.overlay_strong
-                              : (treeFocused && cursor === index) || selected === item.path
+                              : (treeFocused && cursor === index) ||
+                                  (!item.directory && selected === item.path)
                                 ? colors.overlay
                                 : undefined,
                         }}

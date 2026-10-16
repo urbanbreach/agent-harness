@@ -7,6 +7,7 @@ import { access } from 'node:fs/promises';
 import { Menu, Scrollbar, useToast } from '../../ui';
 import { useTheme } from '../../theme';
 import { useNativeRenderer, type Run } from '../../native';
+import { EmptyMessage } from './shared';
 import {
   startTerminal,
   openUrl,
@@ -242,13 +243,13 @@ export function TerminalView({ cwd, active }: { cwd: string | null; active: bool
       const foreground = native.isWindowActive();
       setWindowActive(foreground);
       setBlink(
-        foreground && Date.now() > pauseBlink.current
+        foreground && snapshot?.cursor.blink && Date.now() > pauseBlink.current
           ? Math.floor((Date.now() - pauseBlink.current) / 500) % 2 === 0
           : true,
       );
     }, 50);
     return () => clearInterval(timer);
-  }, [active, native]);
+  }, [active, native, snapshot?.cursor.blink]);
   const wakeCursor = () => {
     pauseBlink.current = Date.now() + 300;
     setBlink(true);
@@ -421,35 +422,10 @@ export function TerminalView({ cwd, active }: { cwd: string | null; active: bool
   }
   if (!cwd)
     return (
-      <div
-        style={{
-          flexGrow: 1,
-          flexShrink: 1,
-          flexBasis: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingBottom: 32,
-          backgroundColor: colors.surface,
-        }}
-      >
-        <text style={{ fontSize: sp(13), fontWeight: 500, color: colors.text }}>
-          {t('right_panel.terminal_unavailable')}
-        </text>
-        <text
-          style={{
-            marginTop: 6,
-            maxWidth: 300,
-            fontSize: sp(12.5),
-            lineHeight: sp(17),
-            textAlign: 'center',
-            color: colors.text_tertiary,
-          }}
-        >
-          {t('right_panel.terminal_unavailable_description')}
-        </text>
-      </div>
+      <EmptyMessage
+        title={t('right_panel.terminal_unavailable')}
+        description={t('right_panel.terminal_unavailable_description')}
+      />
     );
   const solid = focused && active && windowActive;
   const ordered = selection
@@ -636,11 +612,12 @@ export function TerminalView({ cwd, active }: { cwd: string | null; active: bool
                 compare({ row: row.row, column: at }, ordered[1]!) < 0;
               const filled =
                 snapshot.cursor.visible &&
+                snapshot.cursor.shape === 'block' &&
                 snapshot.cursor.row === y &&
                 snapshot.cursor.column >= at &&
                 snapshot.cursor.column < at + width &&
                 solid &&
-                blink;
+                (!snapshot.cursor.blink || blink);
               const foreground = filled ? colors.terminal : selected ? colors.text : run.foreground;
               const background = filled
                 ? colors.text
@@ -706,7 +683,23 @@ export function TerminalView({ cwd, active }: { cwd: string | null; active: bool
             </div>
           );
         })}
-        {snapshot?.cursor.visible && !solid && (
+        {snapshot?.cursor.visible &&
+          snapshot.cursor.shape !== 'block' &&
+          (!solid || !snapshot.cursor.blink || blink) && (
+            <div
+              style={{
+                position: 'absolute',
+                left: 10 + snapshot.cursor.column * cellWidth,
+                top:
+                  8 + snapshot.cursor.row * 18 + (snapshot.cursor.shape === 'underline' ? 16 : 0),
+                width: snapshot.cursor.shape === 'bar' ? 2 : cellWidth,
+                height: snapshot.cursor.shape === 'underline' ? 2 : 18,
+                backgroundColor: colors.text,
+                pointerEvents: 'none',
+              }}
+            />
+          )}
+        {snapshot?.cursor.visible && snapshot.cursor.shape === 'block' && !solid && (
           <div
             style={{
               position: 'absolute',

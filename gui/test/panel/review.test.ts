@@ -10,14 +10,19 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-// Protect header-based status, line numbering, and snapshot-backed context expansion together.
-test('review preserves immutable content, A/M/D/B status and line numbers through folded context expansion', async () => {
+async function repository(): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), 'harness-review-'));
   roots.push(cwd);
   await gitCommand(cwd, ['init', '-b', 'main']);
   await gitCommand(cwd, ['config', 'user.name', 'Review Test']);
   await gitCommand(cwd, ['config', 'user.email', 'review@example.invalid']);
   await gitCommand(cwd, ['config', 'commit.gpgsign', 'false']);
+  return cwd;
+}
+
+// Protect header-based status, line numbering, and snapshot-backed context expansion together.
+test('review preserves immutable content, A/M/D/B status and line numbers through folded context expansion', async () => {
+  const cwd = await repository();
   const original = Array.from({ length: 240 }, (_, index) => `line ${index + 1}`);
   await Bun.write(join(cwd, 'src/main.ts'), `${original.join('\n')}\n`);
   await Bun.write(join(cwd, 'removed.txt'), 'old\n');
@@ -111,4 +116,50 @@ test('tree filtering expands matching ancestors without changing stored collapse
   expect(reviewTree(files, '', collapsed).map((row) => row.path)).toEqual(['src', 'README.md']);
   expect(files.length).toBe(3);
   expect(reviewTree(files, 'does-not-exist', collapsed)).toEqual([]);
+});
+
+test('context hydration preserves late changes when an unchanged prefix exceeds the line cap', async () => {
+  const cwd = await repository();
+  await Bun.write(join(cwd, 'a-large.txt'), `${'unchanged\n'.repeat(50_100)}before\n`);
+  await Bun.write(join(cwd, 'z-last.txt'), 'before\n');
+  await gitCommand(cwd, ['add', '.']);
+  await gitCommand(cwd, ['commit', '-m', 'Initial']);
+  await Bun.write(join(cwd, 'a-large.txt'), `${'unchanged\n'.repeat(50_100)}after\n`);
+  await Bun.write(join(cwd, 'z-last.txt'), 'after\n');
+  const captured = await collectReviewDiff(cwd, 'uncommitted');
+  await Bun.write(join(cwd, 'z-last.txt'), 'later external edit\n');
+  const expanded = await expandReviewContext(captured, 2_147_483_647);
+  expect(expanded.completeContext).toBe(false);
+  expect(expanded.truncated).toBe(false);
+  const files = parseReviewPatch(expanded);
+  expect(files.map((file) => file.path)).toEqual(['a-large.txt', 'z-last.txt']);
+  expect(files.map((file) => file.lines.find((line) => line.kind === 'added'))).toEqual([
+    { kind: 'added', text: 'after', next: 50_101 },
+    { kind: 'added', text: 'after', next: 1 },
+  ]);
+});
+
+test('file and directory replacements retain independently navigable tree rows', async () => {
+  const cwd = await repository();
+  await Bun.write(join(cwd, 'src'), 'old file\n');
+  await gitCommand(cwd, ['add', '.']);
+  await gitCommand(cwd, ['commit', '-m', 'Initial']);
+  await rm(join(cwd, 'src'));
+  await Bun.write(join(cwd, 'src/main.ts'), 'new child\n');
+  const files = parseReviewPatch(await collectReviewDiff(cwd, 'uncommitted'));
+  for (const ordered of [files, [...files].reverse()]) {
+    const rows = reviewTree(ordered, '', new Set());
+    expect(rows.map((row) => [row.path, row.directory, row.file?.status])).toEqual([
+      ['src', true, undefined],
+      ['src/main.ts', false, 'A'],
+      ['src', false, 'D'],
+    ]);
+    expect(new Set(rows.map((row) => row.id)).size).toBe(3);
+    expect(
+      reviewTree(ordered, '', new Set(['src'])).map((row) => [row.path, row.directory]),
+    ).toEqual([
+      ['src', true],
+      ['src', false],
+    ]);
+  }
 });

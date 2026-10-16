@@ -21,6 +21,10 @@ describe('file search and replace', () => {
     );
     expect(searchText('abc', '[', regex).error).toBeDefined();
     expect(searchText('abc', '(?=b)', regex).matches).toEqual([{ start: 1, end: 1 }]);
+    expect(replaceMatches('abc', '(?=b)', 'X', regex)).toBe('aXbc');
+    expect(replaceMatches('abc', '^', 'X', regex)).toBe('Xabc');
+    expect(replaceMatch('abc', '(?=b)', 'X', regex, { start: 1, end: 1 })).toBe('aXbc');
+    expect(replaceMatches('ab', '(?<letter>a)(b)', '$<letter>-$2-$&-$$', regex)).toBe('a-b-ab-$');
     const text = 'a'.repeat(MATCH_CAP + 2);
     expect(searchText(text, 'a', literal)).toMatchObject({
       capped: true,

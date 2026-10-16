@@ -74,18 +74,22 @@ export function SessionSurface({ sessionId }: { sessionId: string | null }) {
   }
   useEffect(() => {
     let active = true;
+    let generation = 0;
     setInfo(undefined);
     setError(undefined);
     const refresh = () => {
-      if (sessionId)
-        void getAppStore()
-          .backend.call('session.info', { sessionId })
-          .then((next) => {
-            if (active) setInfo(next);
-          })
-          .catch((failure) => {
-            if (active) setError(String(failure));
-          });
+      if (!sessionId) return;
+      const request = ++generation;
+      void getAppStore()
+        .backend.call('session.info', { sessionId })
+        .then((next) => {
+          if (!active || request !== generation) return;
+          setInfo(next);
+          setError(undefined);
+        })
+        .catch((failure) => {
+          if (active && request === generation) setError(String(failure));
+        });
     };
     refresh();
     const timer = setInterval(refresh, 5000);
@@ -235,44 +239,67 @@ export function PlanSurface({ cwd }: { cwd: string }) {
   const [selected, setSelected] = useState<string>();
   const [content, setContent] = useState<string>();
   const [error, setError] = useState<string>();
+  const [listError, setListError] = useState<string>();
   useEffect(() => {
     let active = true;
-    void getAppStore()
-      .backend.call('plans.list', { cwd })
-      .then(({ plans: next }) => {
-        if (active) {
+    let generation = 0;
+    setPlans([]);
+    setSelected(undefined);
+    setListError(undefined);
+    const refresh = () => {
+      const request = ++generation;
+      void getAppStore()
+        .backend.call('plans.list', { cwd })
+        .then(({ plans: next }) => {
+          if (!active || request !== generation) return;
           setPlans(next);
-          setSelected(
-            next.find((plan) => plan.is_active)?.path ?? next.find((plan) => plan.exists)?.path,
+          setListError(undefined);
+          setSelected((current) =>
+            next.some((plan) => plan.path === current && plan.exists)
+              ? current
+              : (next.find((plan) => plan.is_active && plan.exists)?.path ??
+                next.find((plan) => plan.exists)?.path),
           );
-        }
-      })
-      .catch((failure) => {
-        if (active) setError(String(failure));
-      });
+        })
+        .catch((failure) => {
+          if (active && request === generation) setListError(String(failure));
+        });
+    };
+    refresh();
+    const timer = setInterval(refresh, 5000);
     return () => {
       active = false;
+      clearInterval(timer);
     };
   }, [cwd]);
   useEffect(() => {
     let active = true;
-    if (selected) {
-      setContent(undefined);
-      setError(undefined);
+    let generation = 0;
+    setContent(undefined);
+    setError(undefined);
+    if (!selected) return;
+    const refresh = () => {
+      const request = ++generation;
       void getAppStore()
         .backend.call('plans.read', { cwd, path: selected })
         .then((result) => {
-          if (active) setContent(result.content);
+          if (!active || request !== generation) return;
+          setContent(result.content);
+          setError(undefined);
         })
         .catch((failure) => {
-          if (active) setError(String(failure));
+          if (active && request === generation) setError(String(failure));
         });
-    }
+    };
+    refresh();
+    const timer = setInterval(refresh, 5000);
     return () => {
       active = false;
+      clearInterval(timer);
     };
   }, [cwd, selected]);
-  if (error) return <EmptyMessage title={t('panel.plan_unavailable')} description={error} />;
+  if (listError || error)
+    return <EmptyMessage title={t('panel.plan_unavailable')} description={listError || error} />;
   if (!selected)
     return (
       <EmptyMessage title={t('panel.no_plan')} description={t('panel.plans_empty_description')} />

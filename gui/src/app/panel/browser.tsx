@@ -12,7 +12,11 @@ export function BrowserView({ active }: { active: boolean }) {
   const input = useRef<PublicInstance>(null);
   const [address, setAddress] = useState('');
   useEffect(() => {
-    if (active && input.current) renderer?.focusElement?.(input.current.id);
+    if (!active) return;
+    const timer = setTimeout(() => {
+      if (input.current) renderer?.focusElement?.(input.current.id);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [active, renderer]);
   return (
     <div

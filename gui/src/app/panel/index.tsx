@@ -23,7 +23,6 @@ import { TerminalView } from './terminal';
 import { SessionSurface, TodosSurface, PlanSurface } from './session';
 import { FileIcon } from './shared';
 export { GitChangesChip } from './review';
-export { CommitDialog } from './commit';
 export type PanelKind = 'browser' | 'terminal' | 'files' | 'review' | 'session' | 'todos' | 'plan';
 interface Tab {
   id: number;
@@ -135,11 +134,8 @@ export async function saveActivePanelFile() {
   const state = currentState();
   const tab = state.tabs.find((item) => item.id === state.active);
   if (tab?.kind !== 'files') return;
-  const project = getAppStore()
-    .getSnapshot()
-    .projects.find((item) => item.id === getAppStore().getSnapshot().selectedProject);
-  if (project) {
-    await saveFileState(project.cwd, state.files);
+  if (state.cwd) {
+    await saveFileState(state.cwd, state.files);
     notify();
   }
 }

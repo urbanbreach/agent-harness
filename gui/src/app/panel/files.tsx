@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { t, useLocale } from '../../i18n';
 import { useGpuix, type KeyEvent, type PublicInstance } from '@gpuix/react';
-import { listTree, readText, writeText, type TreeEntry } from '../../workspace/files';
+import {
+  listTree,
+  readText,
+  writeText,
+  watchWorkspace,
+  type TreeEntry,
+} from '../../workspace/files';
 import { useTheme, CODE_FONT_FAMILY as MONO_FONT } from '../../theme';
 import { Button, Icon, IconButton, TextField, Tooltip, ellipsis, row, useToast } from '../../ui';
 import { nativeRenderer } from '../../native';
@@ -29,8 +35,9 @@ export function createFilesState(): FilesState {
 export async function saveFileState(cwd: string, state: FilesState): Promise<void> {
   const path = state.selected;
   const buffer = path ? state.buffers.get(path) : undefined;
-  if (!path || !buffer?.loaded || buffer.error) return;
+  if (!path || !buffer?.loaded || buffer.error || buffer.text === buffer.saved) return;
   const text = buffer.text;
+  if ((await readText(cwd, path)) !== buffer.saved) throw new Error(t('files.changed_on_disk'));
   await writeText(cwd, path, text);
   buffer.saved = text;
 }
@@ -51,6 +58,7 @@ export function FilesView({
   const queryInput = useRef<PublicInstance>(null);
   const selection = useRef({ start: 0, end: 0 });
   const documentSelectionAnchor = useRef<number | undefined>(undefined);
+  const refreshGeneration = useRef(0);
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [treeVersion, setTreeVersion] = useState(0);
   const [find, setFind] = useState(false);
@@ -99,10 +107,23 @@ export function FilesView({
       active = false;
     };
   }, [cwd, state, treeVersion]);
+  useEffect(
+    () =>
+      watchWorkspace(cwd, () => setTreeVersion((version) => version + 1), {
+        onError: (error) => showToast(String(error)),
+      }),
+    [cwd],
+  );
   useEffect(() => {
     setFind(false);
     documentSelectionAnchor.current = undefined;
   }, [state]);
+  useEffect(
+    () => () => {
+      refreshGeneration.current++;
+    },
+    [cwd, state.selected],
+  );
   useEffect(() => {
     const path = state.selected;
     if (!path || state.buffers.has(path)) return;
@@ -160,14 +181,31 @@ export function FilesView({
   }
   function edit(value: string) {
     if (!buffer || buffer.error) return;
+    refreshGeneration.current++;
     buffer.text = value;
     onChange();
   }
   function replaceCurrent() {
     const match = search.matches[activeMatch];
-    if (!search.matches.length || search.error) return;
-    if (!match || buffer?.error) return;
-    edit(replaceMatch(text, query, replacement, options, match));
+    if (!match || search.error || buffer?.error || !renderer || !input.current) return;
+    const next = replaceMatch(text, query, replacement, options, match);
+    const insertedLength = next.length - text.length + match.end - match.start;
+    const offset =
+      match.start + insertedLength + (match.start === match.end && !insertedLength ? 1 : 0);
+    const matches = searchText(next, query, options).matches;
+    const index = matches.findIndex((item) => item.start >= offset);
+    setActiveMatch(index < 0 ? 0 : index);
+    const native = nativeRenderer(renderer);
+    native.inputSetSelection(input.current.id, match.start, match.end);
+    native.inputReplaceSelection(
+      input.current.id,
+      next.slice(match.start, match.start + insertedLength),
+    );
+    const selected = matches[index < 0 ? 0 : index];
+    if (selected) {
+      native.inputSetSelection(input.current.id, selected.start, selected.end);
+      native.inputRevealRange(input.current.id, selected.start, selected.end);
+    }
   }
   function keys(event: KeyEvent) {
     if (event.defaultPrevented) return;
@@ -199,13 +237,6 @@ export function FilesView({
       onLayout={(event) => {
         if (event.width) setWidth(event.width);
       }}
-      onMouseMove={(event) => {
-        if (drag && event.x !== undefined) {
-          state.treeWidth = Math.max(140, Math.min(360, drag.width + drag.x - event.x));
-          onChange();
-        }
-      }}
-      onMouseUp={() => setDrag(undefined)}
       style={{ ...row, alignItems: 'stretch', flexGrow: 1, minHeight: 0, minWidth: 0 }}
     >
       {state.selected && (
@@ -298,6 +329,7 @@ export function FilesView({
                       setEditorFocused(false);
                     }}
                     value={query}
+                    interceptedKeys={['enter', 'shift-enter', 'ctrl-alt-enter']}
                     onChange={(event) => setQuery(event.value ?? '')}
                     placeholder={t('input.find')}
                     aria-label={t('panel.find_in_file')}
@@ -442,7 +474,15 @@ export function FilesView({
                     size={12}
                     style={{ width: 22, height: 22, borderRadius: 5 }}
                     disabled={!search.matches.length || !!buffer?.error}
-                    onClick={() => edit(replaceMatches(text, query, replacement, options))}
+                    onClick={() => {
+                      if (!renderer || !input.current) return;
+                      const native = nativeRenderer(renderer);
+                      native.inputSetSelection(input.current.id, 0, text.length);
+                      native.inputReplaceSelection(
+                        input.current.id,
+                        replaceMatches(text, query, replacement, options),
+                      );
+                    }}
                   />
                 </div>
               )}
@@ -508,21 +548,29 @@ export function FilesView({
               onChange={(event) => edit(event.value ?? '')}
               onFocus={() => {
                 setEditorFocused(true);
+                const generation = ++refreshGeneration.current;
                 const path = state.selected;
                 if (path && buffer?.loaded && !buffer.error && buffer.text === buffer.saved) {
                   const saved = buffer.saved;
                   void readText(cwd, path)
                     .then((content) => {
-                      if (buffer.text === saved && buffer.saved === saved) {
+                      if (
+                        generation === refreshGeneration.current &&
+                        buffer.text === saved &&
+                        buffer.saved === saved
+                      ) {
                         buffer.text = content;
                         buffer.saved = content;
                         onChange();
                       }
                     })
                     .catch((error) => {
-                      buffer.error = String(error);
-                      buffer.text = t('files.unable_to_edit', { error: String(error) });
-                      onChange();
+                      if (
+                        generation === refreshGeneration.current &&
+                        buffer.text === saved &&
+                        buffer.saved === saved
+                      )
+                        showToast(String(error));
                     });
                 }
               }}
@@ -579,6 +627,13 @@ export function FilesView({
               if (event.button === 0 && event.x !== undefined)
                 setDrag({ x: event.x, width: treeWidth });
             }}
+            onMouseMove={(event) => {
+              if (drag && event.x !== undefined) {
+                state.treeWidth = Math.max(140, Math.min(360, drag.width + drag.x - event.x));
+                onChange();
+              }
+            }}
+            onMouseUp={() => setDrag(undefined)}
             style={{
               position: 'absolute',
               left: -5,

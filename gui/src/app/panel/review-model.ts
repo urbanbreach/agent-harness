@@ -125,6 +125,7 @@ export function foldContext(
 }
 
 export interface TreeRow {
+  id: string;
   path: string;
   name: string;
   depth: number;
@@ -145,7 +146,9 @@ export function reviewTree(
     for (let depth = 0; depth < parts.length; depth++) {
       const path = parts.slice(0, depth + 1).join('/');
       const directory = depth < parts.length - 1;
-      rows.set(path, {
+      const id = directory ? `${path}/` : path;
+      rows.set(id, {
+        id,
         path,
         name: parts[depth]!,
         depth,
