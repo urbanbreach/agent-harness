@@ -13,9 +13,10 @@ import { providerColor } from '../../theme/colors';
 import { Button, Icon, IconButton, MenuChip, TextField, ellipsis, row } from '../../ui/controls';
 import { Dropdown, type MenuItem } from '../../ui/menus';
 import { useToast } from '../../ui/overlays';
+import type { IconName } from '../../ui/icon-names';
 import { registerAction, runAction } from '../actions';
 
-const accessChoices: { mode: AccessMode; name: string; description: string; icon: string }[] = [
+const accessChoices: { mode: AccessMode; name: string; description: string; icon: IconName }[] = [
   {
     mode: 'supervised',
     name: 'Supervised',
@@ -308,7 +309,7 @@ export function ModelControls({
   }
   const mode = accessChoices.find((choice) => choice.mode === accessMode)!;
   return (
-    <div style={{ ...row, gap: 1, minWidth: 0 }}>
+    <div style={{ ...row, gap: 2, minWidth: 0 }}>
       <div style={{ position: 'relative', ...row }}>
         <MenuChip
           ref={trigger}
@@ -316,6 +317,9 @@ export function ModelControls({
           open={open}
           onClick={() => changeOpen(!open)}
           icon={usable.length ? providerIcon(current?.provider ?? usable[0]!) : 'alert'}
+          iconColor={
+            usable.length ? providerColor(current?.provider ?? usable[0]!, colors) : colors.warning
+          }
           label={
             usable.length
               ? (current?.modelLabel ?? current?.label ?? 'Choose model')
@@ -363,6 +367,8 @@ export function ModelControls({
                 }}
                 style={{
                   ...row,
+                  position: 'relative',
+                  left: 1,
                   alignItems: 'stretch',
                   width: usable.length ? 460 : 320,
                   height: usable.length ? 390 : undefined,
@@ -390,9 +396,9 @@ export function ModelControls({
                       minWidth: 0,
                       paddingLeft: 24,
                       paddingRight: 24,
-                      paddingTop: 20,
-                      paddingBottom: 20,
-                      gap: 9,
+                      paddingTop: 22,
+                      paddingBottom: 22,
+                      gap: 7,
                     }}
                   >
                     <div
@@ -405,7 +411,7 @@ export function ModelControls({
                         backgroundColor: colors.overlay,
                       }}
                     >
-                      <Icon name="alert" size={19} color={colors.warning} />
+                      <Icon name="bot" size={19} />
                     </div>
                     <text style={{ color: colors.text, fontSize: sp(12.5), fontWeight: 500 }}>
                       No providers available
@@ -437,7 +443,7 @@ export function ModelControls({
                         borderRadius: 7,
                         borderColor: colors.border_strong,
                         gap: 6,
-                        marginTop: 3,
+                        marginTop: 5,
                       }}
                     >
                       <Icon name="settings" size={11} />
@@ -692,10 +698,16 @@ export function ModelControls({
           label={`${current?.variantLabel ?? current?.reasoningEffort ?? current?.variant ?? 'Model traits'}${windows.length > 1 && current?.contextWindow !== windows[0]?.contextWindow ? ` · ${current?.contextWindow! / 1000}K` : ''}`}
           items={traitItems}
           menuStyle={{ minWidth: 214 }}
+          menuItemStyle={{ minHeight: 26 }}
         />
       )}
       {!traitItems.length && (current?.variantLabel || current?.variant) && (
-        <MenuChip disabled chevron={false} label={current.variantLabel ?? current.variant!} />
+        <MenuChip
+          disabled
+          chevron={false}
+          label={current.variantLabel ?? current.variant!}
+          style={{ opacity: 1 }}
+        />
       )}
       {((catalog?.profiles.length ?? 0) > 1 || profileOpen) && (
         <Dropdown
@@ -748,14 +760,14 @@ export function ModelControls({
         chevron={false}
         icon={mode.icon}
         label={mode.name}
-        menuStyle={{ minWidth: 312, maxWidth: 320 }}
+        menuStyle={{ minWidth: 312, maxWidth: 320, position: 'relative', left: 1 }}
         items={accessChoices.map((choice) => ({
           id: choice.mode,
           selected: accessMode === choice.mode,
           label: choice.name,
           onSelect: () => onAccessMode(choice.mode),
           content: (
-            <div style={{ ...row, width: 288, paddingTop: 4, paddingBottom: 4, gap: 10 }}>
+            <div style={{ ...row, width: 288, paddingTop: 3, paddingBottom: 4, gap: 10 }}>
               <Icon name={choice.icon} size={14} />
               <div
                 style={{
@@ -770,6 +782,8 @@ export function ModelControls({
                 <text
                   style={{
                     ...ellipsis,
+                    position: 'relative',
+                    top: 0.5,
                     color: colors.text,
                     fontSize: sp(12.5),
                     fontWeight: accessMode === choice.mode ? 600 : 500,

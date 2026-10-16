@@ -138,7 +138,9 @@ export function Composer({ target }: { target: ComposerTarget }) {
     store.setDraft(selection, { ...draft, ...patch });
   }
   function focus() {
-    if (editor.current) renderer?.focusElement?.(editor.current.id);
+    if (!editor.current || !renderer?.focusElement) return;
+    renderer.focusElement(editor.current.id);
+    setFocused(true);
   }
   function saveQueue(items: FollowUp[]) {
     setQueuedDrafts(store, key, items);
@@ -156,6 +158,15 @@ export function Composer({ target }: { target: ComposerTarget }) {
         store.loadFiles(cwd),
       ]).catch(fail);
   }, [key, cwd]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      focus();
+      const end = draft.text.length;
+      if (editor.current) native.inputSetSelection(editor.current.id, end, end);
+      setCaret(end);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [key]);
   useEffect(() => {
     let cancelled = false;
     if (cwd)
@@ -232,7 +243,6 @@ export function Composer({ target }: { target: ComposerTarget }) {
   useEffect(() => {
     if (!editor.current) return;
     const id = editor.current.id;
-    setFocused(renderer?.getFocusedElementId?.() === id);
     native.setInputSelectionListener(id, (error, event) => {
       if (!error && event.selectionStart !== undefined && event.selectionEnd !== undefined) {
         selectionRange.current = { start: event.selectionStart, end: event.selectionEnd };
@@ -752,6 +762,8 @@ export function Composer({ target }: { target: ComposerTarget }) {
             interceptedKeys={[
               'ctrl-v',
               'cmd-v',
+              'ctrl-f',
+              'cmd-f',
               ...(popup && rows.length ? ['up', 'down', 'tab'] : []),
               ...(ghost?.text === draft.text && !popup ? ['tab', 'right'] : []),
               ...(!draft.text && attachments.length ? ['backspace'] : []),
@@ -810,7 +822,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
               flexDirection: 'row',
               alignItems: 'center',
               gap: 4,
-              paddingLeft: 10,
+              paddingLeft: 9,
               paddingRight: 10,
               marginTop: 8,
             }}
@@ -1001,12 +1013,13 @@ export function WorkspaceFooter({ target }: { target: ComposerTarget }) {
           height: 40,
           width: '100%',
           maxWidth: 720,
-          paddingLeft: 10,
+          paddingLeft: 9,
           paddingRight: 10,
+          paddingBottom: 4,
           display: 'flex',
           flexDirection: 'row',
           alignItems: 'center',
-          gap: 4,
+          gap: 0,
           color: colors.text_secondary,
         }}
       >
@@ -1036,7 +1049,7 @@ export function WorkspaceFooter({ target }: { target: ComposerTarget }) {
           open={worktreeOpen}
           onOpenChange={setWorktreeOpen}
           label={draft.worktree ? 'New worktree' : 'Local'}
-          icon="monitor"
+          icon="laptop"
           chevron={false}
           disabled={!!sessionId}
           menuSide="top"

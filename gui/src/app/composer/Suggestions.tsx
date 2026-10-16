@@ -4,6 +4,7 @@ import { useTheme } from '../../theme';
 import { Badge, Icon, Spinner } from '../../ui';
 import type { Suggestion } from './completion';
 import type { Run } from '../../native';
+import { FileIcon } from '../panel/shared';
 
 function MatchingText({
   item,
@@ -128,7 +129,7 @@ export function Suggestions({
                   display: 'flex',
                   flexDirection: 'row',
                   alignItems: 'center',
-                  paddingLeft: 8,
+                  paddingLeft: item.scope ? 7.5 : 8,
                   paddingRight: 8,
                   gap: 8,
                   borderRadius: 6,
@@ -136,18 +137,14 @@ export function Suggestions({
                   hover: { backgroundColor: colors.overlay },
                 }}
               >
-                <Icon
-                  name={
-                    item.scope === 'skill'
-                      ? 'sparkle'
-                      : item.scope
-                        ? 'command'
-                        : item.directory
-                          ? 'folder'
-                          : 'file'
-                  }
-                  size={13}
-                />
+                {!item.scope && !item.directory ? (
+                  <FileIcon path={item.label} size={13} color={colors.text_tertiary} />
+                ) : (
+                  <Icon
+                    name={item.scope === 'skill' ? 'sparkle' : item.scope ? 'command' : 'folder'}
+                    size={item.scope ? 12 : 13}
+                  />
+                )}
                 <MatchingText
                   item={item}
                   text={item.label}
@@ -189,7 +186,7 @@ export function Suggestions({
                     }}
                   >
                     <text style={{ color: colors.text_tertiary, fontSize: sp(10.5) }}>
-                      {item.scope}
+                      {item.scope === 'builtin' ? 'built-in' : item.scope}
                     </text>
                   </Badge>
                 )}
