@@ -57,7 +57,21 @@ export function Queue({
             <Tooltip content="Edit in composer">
               <Button
                 onClick={() => onEdit(item)}
-                style={{ width: '100%', minWidth: 0, justifyContent: 'flex-start' }}
+                style={{
+                  width: '100%',
+                  minWidth: 0,
+                  justifyContent: 'flex-start',
+                  borderWidth: 0,
+                  focusVisible: {
+                    boxShadow: {
+                      offsetX: 0,
+                      offsetY: 0,
+                      blurRadius: 0,
+                      spreadRadius: 1,
+                      color: colors.accent,
+                    },
+                  },
+                }}
               >
                 <text
                   style={{

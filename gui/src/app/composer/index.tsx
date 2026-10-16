@@ -830,6 +830,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
             <ModelControls
               cwd={cwd}
               sessionId={sessionId}
+              busy={busy}
               selection={draft.selection}
               accessMode={accessMode}
               onSelection={(value: ModelSelection) => {

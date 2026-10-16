@@ -59,6 +59,7 @@ function providerIcon(provider: string) {
 export function ModelControls({
   cwd,
   sessionId,
+  busy,
   selection,
   onSelection,
   accessMode,
@@ -66,6 +67,7 @@ export function ModelControls({
 }: {
   cwd: string;
   sessionId?: string;
+  busy: boolean;
   selection?: ModelSelection;
   onSelection: (selection: ModelSelection) => void;
   accessMode: AccessMode;
@@ -280,7 +282,7 @@ export function ModelControls({
                     borderColor: colors.border_strong,
                     backgroundColor: colors.overlay,
                     color: colors.text_tertiary,
-                    fontWeight: 600,
+                    fontWeight: 400,
                   }}
                 >
                   Default
@@ -307,6 +309,8 @@ export function ModelControls({
         onSelect: () => onSelection(selectionFor(entry)),
       });
   }
+  // Keep the started-session strip compact without disabling Harness model switching.
+  const compactModel = Boolean(sessionId && usable.length);
   const mode = accessChoices.find((choice) => choice.mode === accessMode)!;
   return (
     <div style={{ ...row, gap: 2, minWidth: 0 }}>
@@ -317,8 +321,13 @@ export function ModelControls({
           open={open}
           onClick={() => changeOpen(!open)}
           icon={usable.length ? providerIcon(current?.provider ?? usable[0]!) : 'alert'}
+          iconSize={busy ? 10.5 : 12}
           iconColor={
-            usable.length ? providerColor(current?.provider ?? usable[0]!, colors) : colors.warning
+            !usable.length
+              ? colors.warning
+              : compactModel
+                ? `${providerColor(current?.provider ?? usable[0]!, colors)}e6`
+                : providerColor(current?.provider ?? usable[0]!, colors)
           }
           label={
             usable.length
@@ -327,7 +336,12 @@ export function ModelControls({
                 ? 'Loading models…'
                 : 'No providers'
           }
-          style={{ maxWidth: 250 }}
+          style={{
+            maxWidth: 250,
+            height: compactModel ? 24 : 26,
+            fontSize: sp(busy ? 12.5 : 13),
+            lineHeight: sp(busy ? 14 : 16),
+          }}
         />
         {open && (
           <DismissableLayer
@@ -456,6 +470,7 @@ export function ModelControls({
                       style={{
                         display: 'flex',
                         flexDirection: 'column',
+                        alignItems: 'center',
                         width: 50,
                         flexShrink: 0,
                         padding: 5,
@@ -468,7 +483,8 @@ export function ModelControls({
                     >
                       <IconButton
                         name="star"
-                        size={17}
+                        size={18}
+                        color={tab === 'favorites' ? colors.text : undefined}
                         label="Favorites"
                         tabIndex={-1}
                         onClick={() => {
@@ -552,6 +568,7 @@ export function ModelControls({
                           }}
                           style={{
                             height: 34,
+                            fontSize: sp(13),
                             gap: 9,
                             borderRadius: 9,
                             backgroundColor: colors.raised,
@@ -649,11 +666,11 @@ export function ModelControls({
                                 >
                                   {entry.modelLabel ?? entry.label}
                                 </text>
-                                <div style={{ ...row, gap: 6 }}>
+                                <div style={{ ...row, gap: 6, position: 'relative', top: -0.5 }}>
                                   <Icon
                                     name={providerIcon(entry.provider)}
                                     size={10.5}
-                                    color={providerColor(entry.provider, colors)}
+                                    color={`${providerColor(entry.provider, colors)}d9`}
                                   />
                                   <text
                                     style={{
@@ -697,8 +714,8 @@ export function ModelControls({
           chevron={false}
           label={`${current?.variantLabel ?? current?.reasoningEffort ?? current?.variant ?? 'Model traits'}${windows.length > 1 && current?.contextWindow !== windows[0]?.contextWindow ? ` · ${current?.contextWindow! / 1000}K` : ''}`}
           items={traitItems}
-          menuStyle={{ minWidth: 214 }}
-          menuItemStyle={{ minHeight: 26 }}
+          menuStyle={{ minWidth: 214, position: 'relative', left: 1 }}
+          menuItemStyle={{ minHeight: 26, fontSize: sp(12.5), lineHeight: sp(16), fontWeight: 400 }}
         />
       )}
       {!traitItems.length && (current?.variantLabel || current?.variant) && (
@@ -761,6 +778,7 @@ export function ModelControls({
         icon={mode.icon}
         label={mode.name}
         menuStyle={{ minWidth: 312, maxWidth: 320, position: 'relative', left: 1 }}
+        menuItemStyle={{ lineHeight: sp(16) }}
         items={accessChoices.map((choice) => ({
           id: choice.mode,
           selected: accessMode === choice.mode,

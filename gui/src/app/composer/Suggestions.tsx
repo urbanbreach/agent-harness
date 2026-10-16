@@ -77,7 +77,7 @@ export function Suggestions({
         aria-label="Composer suggestions"
         onMouseDownOutside={onDismiss}
         style={{
-          width,
+          width: Math.max(0, width - 2),
           maxHeight: 302,
           padding: 4,
           backgroundColor: colors.raised,
@@ -129,7 +129,7 @@ export function Suggestions({
                   display: 'flex',
                   flexDirection: 'row',
                   alignItems: 'center',
-                  paddingLeft: item.scope ? 7.5 : 8,
+                  paddingLeft: 8,
                   paddingRight: 8,
                   gap: 8,
                   borderRadius: 6,
@@ -185,7 +185,7 @@ export function Suggestions({
                       borderRadius: 4,
                     }}
                   >
-                    <text style={{ color: colors.text_tertiary, fontSize: sp(10.5) }}>
+                    <text style={{ color: colors.text_tertiary, fontSize: sp(12.5) }}>
                       {item.scope === 'builtin' ? 'built-in' : item.scope}
                     </text>
                   </Badge>
