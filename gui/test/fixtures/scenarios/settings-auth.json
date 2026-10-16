@@ -1,0 +1,19 @@
+{
+  "state": { "layout": { "selectedProject": "auth-project" }, "preferences": {} },
+  "projects": [{ "id": "auth-project", "name": "Authentication Lab", "cwd": "/fixture/auth" }],
+  "sessions": [],
+  "providers": [
+    {
+      "id": "fixture-provider",
+      "label": "Fixture Provider",
+      "description": "Synthetic sign-in, no external requests",
+      "connected": false,
+      "methods": [
+        { "id": "browser", "label": "Browser sign-in" },
+        { "id": "device", "label": "Device code" },
+        { "id": "api-key", "label": "API key" }
+      ]
+    }
+  ],
+  "auth": { "url": "https://example.invalid/device", "code": "TEST-1234" }
+}

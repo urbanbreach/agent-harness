@@ -1,0 +1,36 @@
+{
+  "projects": [
+    { "id": "composerlive", "name": "Composer live", "cwd": "/tmp/composerlive-workspace" }
+  ],
+  "state": {
+    "layout": { "selectedProject": "composerlive", "selectedTask": "readonly" },
+    "ui": { "appearance": { "preference": "dark" } }
+  },
+  "sessions": [
+    {
+      "row": {
+        "runId": "readonly",
+        "runDir": "/fixture/sessions/readonly",
+        "cwd": "/tmp/composerlive-workspace",
+        "createdAt": "2026-10-16T00:00:00Z",
+        "live": false,
+        "catalog": {
+          "run_id": "readonly",
+          "run_name": "Imported read-only session",
+          "status": "finished",
+          "last_updated_at": "2026-10-16T00:00:00Z",
+          "workspace_root": "/tmp/composerlive-workspace",
+          "profile_preset": null,
+          "provider_model": null,
+          "mode_source": "replay_only",
+          "is_resumable": false,
+          "resume_disabled_reason": "Imported session is read-only and cannot be resumed.",
+          "artifact_count": 0,
+          "child_session_count": 0,
+          "parent_session_id": null
+        }
+      },
+      "events": []
+    }
+  ]
+}

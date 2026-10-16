@@ -1,0 +1,48 @@
+[
+  [
+    {
+      "kind": "error",
+      "message": "Scripted transient transport failure",
+      "retryable": true,
+      "delayMs": 2000
+    },
+    { "kind": "stop" }
+  ],
+  [
+    {
+      "kind": "reasoning",
+      "text": "Checking retry recovery and delegated work without contacting a provider.",
+      "delayMs": 3000
+    },
+    {
+      "kind": "tool",
+      "id": "transcript-delegate",
+      "toolId": "eval",
+      "args": {
+        "language": "js",
+        "summary": "Delegate and wait for the scripted reviewer",
+        "code": "var child = await tool.spawn_subagent({prompt:'Return the scripted review result.',description:'Scripted release reviewer',background:true,tools:[]}); display(child); var childId = child.details?.subagent_id ?? child.details?.task_id; if (!childId) throw new Error('Missing child handle'); display(await tool.wait_commands_or_subagents({task_ids:[childId],mode:'wait_all',timeout_ms:30000}));"
+      }
+    },
+    { "kind": "stop" }
+  ],
+  [
+    { "kind": "text", "text": "The scripted release review passed.", "delayMs": 8000 },
+    { "kind": "stop" }
+  ],
+  [
+    {
+      "kind": "text",
+      "text": "Retry recovered. Delegated work and its wait have settled.",
+      "delayMs": 5000
+    },
+    { "kind": "stop" }
+  ],
+  [
+    {
+      "kind": "text",
+      "text": "Compaction summary: checked retry recovery, delegated review, and wait completion."
+    },
+    { "kind": "stop" }
+  ]
+]

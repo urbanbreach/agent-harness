@@ -1,0 +1,13 @@
+[
+  [{ "kind": "text", "text": "Prepare Atlas release checklist" }, { "kind": "stop" }],
+  [
+    {
+      "kind": "tool",
+      "id": "panel-edit",
+      "toolId": "bash",
+      "args": { "command": "printf 'Scripted turn edit\\n' >> notes.txt" }
+    },
+    { "kind": "stop" }
+  ],
+  [{ "kind": "text", "text": "Updated the release checklist." }, { "kind": "stop" }]
+]
