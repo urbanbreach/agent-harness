@@ -50,6 +50,8 @@ mod grants;
 mod handle;
 pub use edits::EditReceipt;
 #[cfg(test)]
+mod auto_approval_tests;
+#[cfg(test)]
 mod grant_tests;
 #[cfg(test)]
 mod guidance_tests;

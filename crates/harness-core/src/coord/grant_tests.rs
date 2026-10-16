@@ -221,26 +221,9 @@ async fn yolo_releases_pending_tools_but_keeps_sensitive_requests_interactive(
             } else {
                 None
             };
-            if !already_enabled {
-                // Automatic approvers get exactly YOLO's authority.
-                let first = permission.clone().ok_or("missing approval")?;
-                let approved = coordinator
-                    .resolve_permission_if_yolo_eligible(first, "automatic approver")
-                    .await?;
-                assert_eq!(approved, allowed || external);
-            }
             coordinator.set_yolo_mode(true).await?;
             if external && !already_enabled {
-                let outside_request = approval(&mut events, &id).await?;
-                assert!(
-                    !coordinator
-                        .resolve_permission_if_yolo_eligible(
-                            outside_request.clone(),
-                            "automatic approver"
-                        )
-                        .await?
-                );
-                permission = Some(outside_request);
+                permission = Some(approval(&mut events, &id).await?);
             }
             if allowed {
                 super::history_tests::settled(&coordinator, &id).await?;
@@ -492,7 +475,7 @@ async fn remembered_path_grants_cover_the_approved_target_or_external_parent_onl
     Ok(())
 }
 
-async fn approval(
+pub(super) async fn approval(
     events: &mut crate::store::EventStream,
     task: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
