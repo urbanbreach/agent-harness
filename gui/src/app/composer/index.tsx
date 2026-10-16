@@ -193,6 +193,36 @@ export function Composer({ target }: { target: ComposerTarget }) {
     [popup, editMenu, tokenKey],
   );
   useEffect(() => startQueueDelivery(store), [store]);
+  const maintenanceArguments = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const unregister = (['compact', 'handoff', 'shake'] as const).map((kind) =>
+      registerAction({
+        id: `session.${kind}`,
+        label:
+          kind === 'compact'
+            ? 'Compact conversation'
+            : kind === 'handoff'
+              ? 'Prepare handoff'
+              : 'Prune conversation context',
+        enabled: () => !!sessionId,
+        run: () => {
+          if (!sessionId) return;
+          const argument = maintenanceArguments.current;
+          void store
+            .sendIntent(
+              sessionId,
+              kind === 'compact'
+                ? { kind, instructions: argument }
+                : kind === 'handoff'
+                  ? { kind, focus: argument }
+                  : { kind, args: argument },
+            )
+            .catch(fail);
+        },
+      }),
+    );
+    return () => unregister.forEach((remove) => remove());
+  }, [sessionId]);
   async function localCommand(text: string): Promise<boolean> {
     const match = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text);
     if (!match || !appCommands.includes(match[1]!)) return false;
@@ -203,17 +233,10 @@ export function Composer({ target }: { target: ComposerTarget }) {
       )
     )
       return false;
-    if (['compact', 'handoff', 'shake'].includes(name) && sessionId) {
-      await store.sendIntent(
-        sessionId,
-        name === 'compact'
-          ? { kind: 'compact', instructions: match[2] }
-          : name === 'handoff'
-            ? { kind: 'handoff', focus: match[2] }
-            : { kind: 'shake', args: match[2] },
-      );
-    } else if (!runAction(`session.${name}`) && !runAction(name))
-      throw new Error(`The ${name} command is unavailable here`);
+    maintenanceArguments.current = match[2];
+    const handled = runAction(`session.${name}`) || runAction(name);
+    maintenanceArguments.current = undefined;
+    if (!handled) throw new Error(`The ${name} command is unavailable here`);
     return true;
   }
   async function submit(steer = false, current = store.getDraft(selection) ?? emptyDraft) {
@@ -357,7 +380,8 @@ export function Composer({ target }: { target: ComposerTarget }) {
       const image = pasteImage();
       const paths = image ? undefined : native.readClipboardPaths();
       if (paths?.length) void attachPaths(paths);
-      if (!image && !paths?.length && editor.current) native.inputCommand(editor.current.id, 'paste');
+      if (!image && !paths?.length && editor.current)
+        native.inputCommand(editor.current.id, 'paste');
       return;
     }
     if (popup && keyName === 'escape') {
@@ -520,12 +544,20 @@ export function Composer({ target }: { target: ComposerTarget }) {
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onKeyDown={keys}
-            interceptedKeys={['ctrl-v', 'cmd-v', ...(popup && rows.length ? ['up', 'down', 'tab'] : []), ...(!draft.text && attachments.length ? ['backspace'] : [])]}
+            interceptedKeys={[
+              'ctrl-v',
+              'cmd-v',
+              ...(popup && rows.length ? ['up', 'down', 'tab'] : []),
+              ...(!draft.text && attachments.length ? ['backspace'] : []),
+            ]}
             onSubmit={(event) => {
               const primary = event.modifiers?.ctrl || event.modifiers?.cmd;
               if (popup && rows.length && !primary) accept(rows[highlight] ?? rows[0]!);
               else {
-                const current = { ...(store.getDraft(selection) ?? emptyDraft), text: event.value ?? draft.text };
+                const current = {
+                  ...(store.getDraft(selection) ?? emptyDraft),
+                  text: event.value ?? draft.text,
+                };
                 if (current.text.trim() || primary) void submit(!!primary, current);
               }
             }}
