@@ -211,6 +211,9 @@ export function BranchSelector(props: BranchSelectorProps) {
                 if (event.button === 0) setOpen(false);
               }}
               style={{
+                // Keep fractional positioning on the surface, outside the snapped anchor.
+                position: 'relative',
+                top: creating ? -0.5 : 0,
                 width: 360,
                 maxHeight: 390,
                 display: 'flex',

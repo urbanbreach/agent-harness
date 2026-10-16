@@ -259,6 +259,9 @@ export function ProjectPicker(
             if (event.button === 0) props.onClose();
           }}
           style={{
+            // Keep fractional positioning on the surface, outside the snapped anchor.
+            position: 'relative',
+            top: props.site === 'composer' ? -0.5 : 0,
             width: 300,
             display: 'flex',
             flexDirection: 'column',

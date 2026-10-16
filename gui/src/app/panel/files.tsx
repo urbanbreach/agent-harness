@@ -279,7 +279,7 @@ export function FilesView({
                     flexShrink: 0,
                     height: 24,
                     paddingLeft: 5,
-                    paddingRight: 5,
+                    paddingRight: 4,
                     borderWidth: 1,
                     borderRadius: 5,
                     borderColor: search.error
