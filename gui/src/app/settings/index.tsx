@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { useWindowSize } from '@gpuix/react';
+import { useWindowSize, type StyleDesc } from '@gpuix/react';
 import { useTheme } from '../../theme';
 import { Button, Dropdown, Icon, Switch, TextField } from '../../ui';
 import { getAppStore, usePreferences, useSelectedProject } from '../../store';
@@ -48,11 +48,15 @@ export function SettingsRow({
   description,
   children,
   last = false,
+  leading,
+  style,
 }: {
   title: string;
   description?: string;
   children?: ReactNode;
   last?: boolean;
+  leading?: ReactNode;
+  style?: StyleDesc;
 }) {
   const { colors, sp } = useTheme();
   const text = useSettingsText();
@@ -67,11 +71,13 @@ export function SettingsRow({
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 24,
+        gap: leading ? 12 : 24,
         borderBottomWidth: last ? 0 : 1,
         borderColor: colors.border,
+        ...style,
       }}
     >
+      {leading}
       <div style={{ flexGrow: 1, minWidth: 0 }}>
         <div style={{ fontSize: sp(13.5), fontWeight: 500, color: colors.text }}>{text(title)}</div>
         {description && (
@@ -99,6 +105,7 @@ function General() {
         <SettingsRow
           title="Local by default"
           description="Projects, conversations, and settings are stored on this computer"
+          style={{ minHeight: 74 }}
           last
         />
       </SettingsCard>
@@ -248,7 +255,7 @@ export function SettingsPage({
     >
       <div
         style={{
-          width: 252,
+          width: 253,
           flexShrink: 0,
           backgroundColor: colors.sidebar,
           borderRightWidth: 1,
@@ -292,14 +299,14 @@ export function SettingsPage({
             );
           }}
         />
-        <div style={{ marginTop: 18, gap: 3 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', marginTop: 18, gap: 3 }}>
           {visible.map(([id, label, icon]) => (
             <Button
               key={id}
               onClick={() => setCurrent(id)}
               style={{
-                height: 39,
-                paddingLeft: 11,
+                height: 36,
+                paddingLeft: 10,
                 gap: 10,
                 justifyContent: 'flex-start',
                 borderRadius: 8,
@@ -326,7 +333,9 @@ export function SettingsPage({
       >
         {current !== 'skills' && <div style={{ height: 48, flexShrink: 0 }} />}
         {current === 'skills' ? (
-          <SkillsPage cwd={cwd} />
+          <div style={{ display: 'flex', flexGrow: 1, minHeight: 0, marginLeft: -1 }}>
+            <SkillsPage cwd={cwd} />
+          </div>
         ) : (
           <div
             key={current}
@@ -340,11 +349,11 @@ export function SettingsPage({
               overflowY: 'scroll',
               paddingLeft: Math.max(
                 32,
-                (window.width - 252 - (current === 'usage' ? 1024 : 760)) / 2,
+                (window.width - 253 - (current === 'usage' ? 1024 : 760)) / 2,
               ),
               paddingRight: Math.max(
                 32,
-                (window.width - 252 - (current === 'usage' ? 1024 : 760)) / 2,
+                (window.width - 253 - (current === 'usage' ? 1024 : 760)) / 2,
               ),
               paddingBottom: 48,
             }}

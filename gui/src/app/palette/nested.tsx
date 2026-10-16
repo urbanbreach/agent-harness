@@ -113,7 +113,7 @@ export function NestedPalette({
           ...candidates
             .filter((candidate) => candidate.status === 'discoverable')
             .filter((candidate) => provider === 'all' || candidate.kind === provider)
-            .map((candidate) => ({
+            .map<PaletteRow>((candidate) => ({
               id: candidate.path,
               label: candidate.path.split('/').pop() ?? candidate.path,
               detail:

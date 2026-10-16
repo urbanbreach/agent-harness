@@ -3,7 +3,15 @@ import { useGpuix, type PublicInstance, type StyleDesc } from '@gpuix/react';
 import type { Methods } from '../../backend/protocol';
 import { getAppStore, useStore } from '../../store';
 import { CODE_FONT_FAMILY, useTheme } from '../../theme';
-import { Button, Dropdown, Icon, TextField, useToast } from '../../ui';
+import {
+  Button,
+  Dropdown,
+  Icon,
+  TextField,
+  useToast,
+  type IconName,
+  type MenuItem,
+} from '../../ui';
 import { bare, ellipsis, row } from '../../ui/controls';
 import { Markdown } from '../../markdown';
 import { nativeRenderer } from '../../native';
@@ -14,8 +22,8 @@ type Catalog = Methods['skills.list']['result'];
 type Skill = Catalog['skills'][number];
 const column: StyleDesc = { display: 'flex', flexDirection: 'column', minWidth: 0 };
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
-function updatedLabel(value: number) {
-  const seconds = Math.max(0, (Date.now() - value) / 1000);
+function updatedLabel(value: number, now: number) {
+  const seconds = Math.max(0, (now - value) / 1000);
   return seconds < 90
     ? 'Just now'
     : seconds < 3600
@@ -31,6 +39,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
   const { showToast } = useToast();
   const home = useStore((state) => state.initialized?.home);
   const mathEnabled = useStore((state) => state.preferences.renderMath !== false);
+  const referenceNow = useStore((state) => state.preferences.referenceNow);
   const [catalog, setCatalog] = useState<Catalog>();
   const [query, setQuery] = useState('');
   const [source, setSource] = useState('');
@@ -254,7 +263,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
   }
   function action(
     label: string,
-    icon: string,
+    icon: IconName,
     onClick: () => void,
     danger = false,
     props: { onMouseDownOutside?: () => void } = {},
@@ -454,7 +463,7 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
                 },
               },
               { id: 'separator', type: 'separator' },
-              ...filterSources.map((name) => {
+              ...filterSources.map<MenuItem>((name) => {
                 const count = skills.filter((skill) =>
                   skill.installs.some((install) => install.source === name),
                 ).length;
@@ -695,7 +704,10 @@ export function SkillsPage({ cwd }: { cwd?: string }) {
             {selected.updatedAt !== null &&
               metadata(
                 'Updated',
-                updatedLabel(selected.updatedAt),
+                updatedLabel(
+                  selected.updatedAt,
+                  typeof referenceNow === 'number' ? referenceNow : Date.now(),
+                ),
                 false,
                 !selected.allowedTools.length,
               )}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DismissableLayer, useGpuix, useWindowSize, type PublicInstance } from '@gpuix/react';
 import { getAppStore, useStore } from '../../store';
 import { useTheme } from '../../theme';
-import { Button, Icon, TextField, useToast } from '../../ui';
+import { Button, Icon, TextField, useToast, type IconName } from '../../ui';
 import { english, t, type TranslationKey } from '../../i18n';
 import { listActions, registerAction, runAction, subscribeActions } from '../actions';
 import { settingsPages } from '../settings';
@@ -18,7 +18,7 @@ export interface PaletteRow {
   searchTerms?: string;
   excerpt?: string;
   role?: 'user' | 'assistant';
-  icon?: string;
+  icon?: IconName;
   shortcut?: string;
   section: string;
   run(): void;
@@ -537,9 +537,10 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
               }
               style={{
                 flexShrink: 0,
-                height: 60,
-                paddingLeft: 19,
+                height: 59,
+                paddingLeft: 18,
                 paddingRight: 19,
+                paddingBottom: 1,
                 borderRadius: 0,
                 borderTopLeftRadius: 14,
                 borderTopRightRadius: 14,
@@ -548,6 +549,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
                 borderColor: colors.border,
                 backgroundColor: colors.raised,
                 fontSize: sp(16),
+                lineHeight: sp(25),
               }}
               onKeyDown={(event) => {
                 const key = event.key ?? '';
@@ -609,7 +611,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
                     <div
                       style={{
                         height: 30,
-                        paddingLeft: 9,
+                        paddingLeft: 8,
                         paddingTop: 10,
                         fontSize: sp(12.5),
                         fontWeight: 500,
@@ -626,7 +628,7 @@ function OpenPalette({ onClose, initialPage }: { onClose(): void; initialPage: P
                       width: '100%',
                       height: row.excerpt ? 60 : 44,
                       justifyContent: 'flex-start',
-                      paddingLeft: 11,
+                      paddingLeft: 14,
                       paddingRight: 11,
                       gap: 10,
                       borderRadius: 9,

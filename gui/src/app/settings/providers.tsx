@@ -3,6 +3,7 @@ import type { Notification, Provider } from '../../backend/protocol';
 import { getAppStore } from '../../store';
 import { Button, Icon, TextField } from '../../ui';
 import { useTheme } from '../../theme';
+import { providerColor } from '../../theme/colors';
 import { openUrl, writeClipboard } from '../../workspace/os';
 import { SettingsCard, SettingsRow } from './index';
 
@@ -80,11 +81,14 @@ export function ProvidersPage() {
       <SettingsRow
         title="Providers"
         description="Connect Harness directly to model providers. Add an API key or sign in to a subscription account, then refresh."
+        last
+        style={{ paddingTop: 14, paddingBottom: 2 }}
       >
         <Button
           onClick={() => void refresh()}
           style={{
             height: 28,
+            alignSelf: 'flex-start',
             paddingLeft: 12,
             paddingRight: 12,
             borderRadius: 7,
@@ -104,6 +108,46 @@ export function ProvidersPage() {
           <SettingsRow
             title={provider.label}
             description={`${provider.connected ? 'Connected' : 'Not connected'} · ${provider.description}`}
+            style={{ paddingTop: 10, paddingBottom: 10 }}
+            leading={
+              <div
+                style={{
+                  position: 'relative',
+                  width: 30,
+                  height: 30,
+                  flexShrink: 0,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 6,
+                  backgroundColor: colors.overlay,
+                }}
+              >
+                <Icon
+                  name={
+                    provider.id === 'openai'
+                      ? 'provider-openai'
+                      : provider.id.startsWith('anthropic')
+                        ? 'provider-claude'
+                        : 'bot'
+                  }
+                  size={20}
+                  color={providerColor(provider.id, colors)}
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: -2,
+                    bottom: -2,
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    borderWidth: 2,
+                    borderColor: colors.raised,
+                    backgroundColor: provider.connected ? colors.success : colors.text_ghost,
+                  }}
+                />
+              </div>
+            }
           >
             <Button
               aria-label={`Configure ${provider.label}`}

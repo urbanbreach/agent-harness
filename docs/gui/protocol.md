@@ -477,6 +477,8 @@ Scenarios may seed `state:Record<string,Json>` GUI documents and
 `extensions:Partial<{[M in Method]:Methods[M]["result"]}>` operation results.
 Each backend deep-copies its authored state. Skill/memory/toggle mutation handlers
 update local fixture state; attachment blobs use the same BLAKE3 digest algorithm.
+`state.preferences.referenceNow` freezes relative sidebar and skill-update labels;
+normal application state without that fixture clock uses the current time.
 `sessions.exportMarkdown` is not an authored-result shortcut: it projects the
 selected fixture session's visible user/assistant text, creates the destination's
 parent directories, writes a real local Markdown file, and returns its byte count.
